@@ -1,44 +1,72 @@
 {
-    "global_state" : {},
+    "global" : {
+        "state" : {},
+        "events":[
+            {
+                "when" : "condition",
+                "then_trigger_flow":{
+                    "name" : "",
+                    "initial_state" : "",
+                    "content_builder": ""
+                } 
+            }
+        ]
+    },
+    "per_player_state": {},
     "flows" : [
         {
             "name": "",
             "initial_state" : "",
             "content" : {},
+            "timers" : [
+                {
+                    "name" : "",
+                    "events" : [
+                        {
+                            "name" : "",
+                            "condition" : "if timer == flow.content...",
+                            "outcomes": [
+                                {
+                                    "if_current_state_is": [""],
+                                    "then_mutate_flow_content": "",
+                                    "then_go_to_state" : ""
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ],
+            "user_events" : [
+                {
+                    "name" : "",
+                    "allowed_when_state_is" : [],
+                    "params" : {},
+                    "outcomes" : [{
+                        "if_current_state_is": [""],
+                        "then_mutate_flow_content": "",
+                        "then_go_to_state" : ""
+                    }]
+                }
+            ],
             "state_machine" : [
                 {
                     "state_name" : "", 
                     "outcomes" : [
                         {
-                            "if" : "condition based on flow content, global state",
+                            "if" : ["condition based on flow content, global state"],
                             "mutate_flow_content" : "",
                             "mutate_global_state" : "",
                             "new_state" : "",
                             "trigger_flow" : "",
+                            "trigger_flow_content_builder" : "",
                             "pause_flows" : [],
                             "kill_flows" : [],
                             "unpause_flows" : [],
-                            "message": {
-                                "content_per_player" : {},
-                                "per_player_content_builder" : "",
-                                "wait_till_reply" : true,
-                                "wait_limit_sec" : 1,
-                                "ask_user" : {},
-                                "then_mutate_player_state" : "",
-                                "then_mutate_flow_content" : ""
-                            }
+                            "send_player_message_builder": ""
                         }
                     ]
                 }
             ]
-        }
-    ],
-    "user_events": [
-        {
-            "params" : {},
-            "allowed_if_player_state_condition" : "",
-            "triggers_flow" : "",
-            "initial_flow_content" : ""
         }
     ]
 }
