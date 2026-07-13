@@ -1,0 +1,36 @@
+# STRUCTURE
+
+- Its server based, there server works as the orchestrator of the game:
+    - Server stores global state
+    - Server triggers the initiation
+    - Server is responsible for spreading other actor's state
+    - Server can send events to other actors
+    - Server can send requests to other actors
+    - Actors logic is only getting the server msg content and storing in local state
+    - Schema is enforced for state structs, request structs and response structs
+- Actors are defined by using roles:
+    - The role is what sets the logic
+    - an actor is just an instance of a role, in games like parques is just one player role, but lets say among us, there's the killer role, and the normal player role
+- There are different types of interaction ways:
+    - Event sent:
+        - Can be sent from server to actors or from an actor to the server
+        - Is not blocking, doesnt expect a response
+        - Enforces Event content struct only
+        - Possible receiving roles dont need to implement handling for it (they can ignore)
+        - In case of actors it can be initiated by user interaction
+        - In case of server can be auto-initiated by timers in state
+    - Request sent:
+        - Can be sent from server to actors or from actor to server
+        - Is blocking, expects a response 
+        - Possible receiving roles MUST implement handling for it as there must be a response
+        - Enforces request content as well as response content structs
+        - In case of actors it can be initiated by user interaction
+        - In case of server can be auto-initiated by timers in state
+    - Event handling:
+        - Is how a receiving event is going to be handled
+        - implemented from server for actors events and from actors for server events
+    - Request handling:
+        - Is how a receiving request is going to be handled
+        - Implemented from server for actors requests and from actors for 
+- 
+    

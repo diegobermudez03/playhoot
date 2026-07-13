@@ -1,0 +1,87 @@
+{
+    "user_params" : {
+    },
+    "server": {
+        "global_state" : {
+            "users" : [
+                {
+                    "name" : "",
+                    "params" : {}
+                }
+            ],
+            "current_operations" : [{
+                "id" : "",
+                "operation_state" : {},
+                "history_stack" : [
+                    {
+                        "event_name" : ""
+                    }
+                ]
+            }]
+        },
+        "operations" : [
+            {
+                "name" : "",
+                "content" : {}
+            }
+        ],
+        "events" : [
+            {
+                "name" : "",
+                "code" : "input: actors, operation state and global state",
+                "starts_operation" : "",
+                "closes_operation" : true,
+                "handling_code" : "input: actors, operation state and global state, returns event result obj which then the message uses for the content",
+                "sends_messages": [
+                    {
+                        "name" : "", 
+                        "to_roles" : [],
+                        "msg_content" : {
+                            "operation_id" : ""
+                        }
+                    }
+                ]
+            }
+        ],
+        "messages_handling" : [
+            {
+                "by_role" : "",
+                "message_name" : "", 
+                "reply_to_event" : "",
+                "code" : "input: actors, message content, operation state and global state",
+                "then_trigger_event" :  ""
+            }
+        ],
+        "on_start_event_name" : ""
+    },
+    "roles" : [
+        {
+            "name" : "player",
+            "state" : {},
+            "message_receivers" : [
+                {
+                    "message_name" : "",
+                    "code" : "input: message content and actor state",
+                    "then_ask" : "",
+                    "ui_update": true
+                }
+            ],
+            "user_question" : [
+                {
+                    "name" : "",
+                    "is_user_initiated" : true,
+                    "params" : [
+                        {
+                            "name" : "", 
+                            "type": "int"
+                        }
+                    ],
+                    "then_send" : {
+                        "message_name" : "", 
+                        "payload" : "payload build code"
+                    }
+                }
+            ]
+        }
+    ]
+}
