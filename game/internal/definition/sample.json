@@ -6,82 +6,75 @@
             "users" : [
                 {
                     "name" : "",
-                    "params" : {}
+                    "params" : {},
+                    "state": {}
                 }
             ],
             "current_operations" : [{
                 "id" : "",
-                "operation_state" : {},
-                "history_stack" : [
-                    {
-                        "event_name" : ""
-                    }
-                ]
+                "operation_state" : {}
             }]
         },
         "operations" : [
             {
                 "name" : "",
-                "content" : {}
+                "state" : {}
             }
         ],
         "events" : [
             {
                 "name" : "",
-                "code" : "input: actors, operation state and global state",
-                "starts_operation" : "",
+                "part_of_operation" : "",
+                "starts_operation" : true,
                 "closes_operation" : true,
-                "handling_code" : "input: actors, operation state and global state, returns event result obj which then the message uses for the content",
-                "sends_messages": [
-                    {
-                        "name" : "", 
-                        "to_roles" : [],
-                        "msg_content" : {
-                            "operation_id" : ""
-                        }
+                "handling_code" : "input: operation state and global state, returns event result obj which has the message body per player that needs to receive the message",
+                "sends_messages": {
+                    "name" : "", 
+                    "msg_payload" : {
                     }
-                ]
+                },
+                "triggers_event" : ""
             }
         ],
         "messages_handling" : [
             {
-                "by_role" : "",
                 "message_name" : "", 
                 "reply_to_event" : "",
                 "code" : "input: actors, message content, operation state and global state",
                 "then_trigger_event" :  ""
             }
         ],
-        "on_start_event_name" : ""
-    },
-    "roles" : [
-        {
-            "name" : "player",
-            "state" : {},
-            "message_receivers" : [
-                {
-                    "message_name" : "",
-                    "code" : "input: message content and actor state",
-                    "then_ask" : "",
-                    "ui_update": true
-                }
-            ],
-            "user_question" : [
-                {
-                    "name" : "",
-                    "is_user_initiated" : true,
-                    "params" : [
-                        {
-                            "name" : "", 
-                            "type": "int"
-                        }
-                    ],
-                    "then_send" : {
-                        "message_name" : "", 
-                        "payload" : "payload build code"
-                    }
-                }
-            ]
+        "start_event" : {
+            "code" : "",
+            "then_triggers_event" : ""
         }
-    ]
+    },
+    "player" : {
+        "name" : "player",
+        "state" : {},
+        "message_receivers" : [
+            {
+                "message_name" : "",
+                "code" : "input: message content and actor state",
+                "then_ask" : "",
+                "ui_update": true
+            }
+        ],
+        "user_question" : [
+            {
+                "name" : "",
+                "is_user_initiated" : true,
+                "params" : [
+                    {
+                        "name" : "", 
+                        "type": "int"
+                    }
+                ],
+                "then_send" : {
+                    "message_name" : "", 
+                    "payload" : "payload build code"
+                }
+            }
+        ]
+    }
 }

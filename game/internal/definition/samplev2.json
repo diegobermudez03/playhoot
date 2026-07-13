@@ -1,0 +1,44 @@
+{
+    "global_state" : {},
+    "flows" : [
+        {
+            "name": "",
+            "initial_state" : "",
+            "content" : {},
+            "state_machine" : [
+                {
+                    "state_name" : "", 
+                    "outcomes" : [
+                        {
+                            "if" : "condition based on flow content, global state",
+                            "mutate_flow_content" : "",
+                            "mutate_global_state" : "",
+                            "new_state" : "",
+                            "trigger_flow" : "",
+                            "pause_flows" : [],
+                            "kill_flows" : [],
+                            "unpause_flows" : [],
+                            "message": {
+                                "content_per_player" : {},
+                                "per_player_content_builder" : "",
+                                "wait_till_reply" : true,
+                                "wait_limit_sec" : 1,
+                                "ask_user" : {},
+                                "then_mutate_player_state" : "",
+                                "then_mutate_flow_content" : ""
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+    "user_events": [
+        {
+            "params" : {},
+            "allowed_if_player_state_condition" : "",
+            "triggers_flow" : "",
+            "initial_flow_content" : ""
+        }
+    ]
+}
