@@ -84,11 +84,13 @@ const (
 
 type Game struct {
 	// Resources is the string of the the marshaled resources
-	Resources ValueType
+	Resources ObjectType
 	// PerPlayerState is the string of the marshaled per player state
-	PerPlayerStateSchema ValueType
+	PlayersState ListType
 	// RuntimeStateSchema marshaled schema for the mutable runtime schema
-	RuntimeStateSchema ValueType
+	RuntimeStateSchema ObjectType
+	Statuses           []Status
+	InitialStatus      string
 }
 
 type Status struct {
@@ -113,7 +115,7 @@ type InteractionGroup struct {
 	Connectors   []boolConnector
 }
 
-func (g *InteractionGroup) GetInteractionType() interactionType {
+func (g InteractionGroup) GetInteractionType() interactionType {
 	return waitGroupInteraction
 }
 
@@ -121,7 +123,7 @@ type TimerInteraction struct {
 	Seconds uint
 }
 
-func (t *TimerInteraction) GetInteractionType() interactionType {
+func (t TimerInteraction) GetInteractionType() interactionType {
 	return timerInteraction
 }
 
@@ -133,7 +135,7 @@ type UserInputInteraction struct {
 	UsersToInteractWithField RefType
 }
 
-func (t *UserInputInteraction) GetInteractionType() interactionType {
+func (t UserInputInteraction) GetInteractionType() interactionType {
 	return userInteraction
 }
 
@@ -147,7 +149,7 @@ type ForEachOp struct {
 	IterationOp Operation
 }
 
-func (f *ForEachOp) GetOperationType() operation {
+func (f ForEachOp) GetOperationType() operation {
 	return forEachOp
 }
 
@@ -158,7 +160,7 @@ type IfConditionOp struct {
 	IfFalse         Operation
 }
 
-func (f *IfConditionOp) GetOperationType() operation {
+func (f IfConditionOp) GetOperationType() operation {
 	return ifConditionOp
 }
 
@@ -168,7 +170,7 @@ type ScopeVariableCreationOp struct {
 	Op           Operation
 }
 
-func (v *ScopeVariableCreationOp) GetOperationType() operation {
+func (v ScopeVariableCreationOp) GetOperationType() operation {
 	return scopeVariableCreationOp
 }
 
@@ -177,7 +179,7 @@ type AssignmentOp struct {
 	Value Expression
 }
 
-func (v *AssignmentOp) GetOperationType() operation {
+func (v AssignmentOp) GetOperationType() operation {
 	return assignmentOp
 }
 
@@ -191,7 +193,7 @@ type BoolExpression struct {
 	Operation conditionOperation
 }
 
-func (e *BoolExpression) GetExpressionDataType() dataType {
+func (e BoolExpression) GetExpressionDataType() dataType {
 	return boolType
 }
 
@@ -201,7 +203,7 @@ type NumericExpression struct {
 	operation numericOperation
 }
 
-func (e *NumericExpression) GetExpressionDataType() dataType {
+func (e NumericExpression) GetExpressionDataType() dataType {
 	return numericType
 }
 
@@ -211,7 +213,7 @@ type StringExpression struct {
 	operation stringOperation
 }
 
-func (e *StringExpression) GetExpressionDataType() dataType {
+func (e StringExpression) GetExpressionDataType() dataType {
 	return stringType
 }
 
@@ -221,7 +223,7 @@ type ListExpression struct {
 	Value     *RefType
 }
 
-func (e *ListExpression) GetExpressionDataType() dataType {
+func (e ListExpression) GetExpressionDataType() dataType {
 	return listType
 }
 
@@ -235,7 +237,7 @@ type StringParam struct {
 	RefOptions RefType
 }
 
-func (p *StringParam) GetParamDataType() dataType {
+func (p StringParam) GetParamDataType() dataType {
 	return stringType
 }
 
@@ -255,7 +257,7 @@ type BoolParam struct {
 	Name string
 }
 
-func (p *BoolParam) GetParamDataType() dataType {
+func (p BoolParam) GetParamDataType() dataType {
 	return boolType
 }
 
@@ -272,7 +274,7 @@ type StringType struct {
 	Value string
 }
 
-func (t *StringType) GetDataType() dataType {
+func (t StringType) GetDataType() dataType {
 	return stringType
 }
 
@@ -280,7 +282,7 @@ type NumericType struct {
 	Value float64
 }
 
-func (t *NumericType) GetDataType() dataType {
+func (t NumericType) GetDataType() dataType {
 	return numericType
 }
 
@@ -288,7 +290,7 @@ type BoolType struct {
 	Value bool
 }
 
-func (t *BoolType) GetDataType() dataType {
+func (t BoolType) GetDataType() dataType {
 	return stringType
 }
 
@@ -297,7 +299,7 @@ type RefType struct {
 	VariableComposition []string
 }
 
-func (t *RefType) GetDataType() dataType {
+func (t RefType) GetDataType() dataType {
 	return refType
 }
 
@@ -305,15 +307,16 @@ type ObjectType struct {
 	Fields map[string]ValueType
 }
 
-func (t *ObjectType) GetDataType() dataType {
+func (t ObjectType) GetDataType() dataType {
 	return objType
 }
 
 type ListType struct {
-	Type   dataType
+	// for primitive types this is redundant, but for objects we need a clear schema
+	Type   ValueType
 	Values []ValueType
 }
 
-func (t *ListType) GetDataType() dataType {
+func (t ListType) GetDataType() dataType {
 	return listType
 }
