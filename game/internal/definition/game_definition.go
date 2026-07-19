@@ -22,106 +22,189 @@ const (
 	stringType  dataType = "string"
 	numericType dataType = "numeric"
 	boolType    dataType = "bool"
-	enumType    dataType = "enum"
+	refType     dataType = "ref"
+	objType     dataType = "obj"
+	listType    dataType = "list"
+)
+
+// defines the operations names
+const (
+	forEachOp               string = "for_each"
+	ifConditionOp           string = "if"
+	scopeVariableCreationOp string = "scope_variable"
+	assignmentOp            string = "assignment"
+)
+
+// defines interactioner types
+const (
+	timerInteraction     string = "timer"
+	userInteraction      string = "user_input"
+	waitGroupInteraction string = "wait_group"
+)
+
+// defines condition connectors
+const (
+	greaterConnector string = "GREATER_THAN"
+	lowerConnector   string = "LOWER_THAN"
+	equalConnector   string = "EQUAL_TO"
+)
+
+// defines numeric expression operations
+const (
+	plusOp  string = "PLUS"
+	minusOp string = "MINUS"
+	timesOp string = "TIMES"
+	divOp   string = "DIV"
+)
+
+// defines string expression operations
+const (
+	joinWithOp string = "JOIN_WITH"
+)
+
+// defines list operations
+const (
+	// add can only add a reference into the list, code never creates a new object, it only takes the ref to a state field
+	// and adds it into the list, is so that we dont have to support object creation through code
+	addOp string = "ADD"
+	// can only be performed inside foreach loop with the iterating item
+	removeOp string = "REMOVE"
+)
+
+// defines bool expression operations
+const (
+	andOp string = "AND"
+	orOp  string = "OR"
+)
+
+// defines wait connectors
+const (
+	andWaitConnector = "AND"
+	orWaitConnector  = "OR"
 )
 
 type Game struct {
-	State          GlobalState
-	PerPlayerState PlayerState
-	Flows          []Flow
+	// Resources is the string of the the marshaled resources
+	Resources string
+	// PerPlayerState is the string of the marshaled per player state
+	PerPlayerStateSchema string
+	// RuntimeStateSchema marshaled schema for the mutable runtime schema
+	RuntimeStateSchema string
 }
 
-type GlobalState struct {
-	Payload map[string]Field
-	Events  []GlobalEvent
+type Status struct {
+	Name string
+	Op   Operation
+	// if there's an interactioner its ran before next status changer
+	Interactioner Interactioner
+	NextStatus    []StatusChanger
 }
 
-type PlayerState struct {
-	InitialParams map[string]Param
-	State         map[string]Field
-	Events        []UIEvent
+type StatusChanger struct {
+	Condition  IfConditionOp
+	GoToStatus string
 }
 
-type UIEvent struct {
+type Interactioner interface {
+	GetInteractionType() string
 }
 
-type Field struct {
-	Name         string
-	TypeName     string
-	InitialValue string
-	Options      []string
+type InteractionGroup struct {
+	Interactions []Interactioner
+	Connectors   []string
+}
+
+func (g *InteractionGroup) GetInteractionType() string {
+	return waitGroupInteraction
+}
+
+type TimerInteraction struct {
+	Seconds uint
+}
+
+func (t *TimerInteraction) GetInteractionType() string {
+	return timerInteraction
+}
+
+type UserInputInteraction struct {
+	Params []Param
+	// these assignments can only perform assignments from the params received into the state
+	ThenWriteInState []AssignmentOp
+}
+
+func (t *UserInputInteraction) GetInteractionType() string {
+	return userInteraction
+}
+
+type Operation interface {
+	GetOperationType() string
+}
+
+type ForEachOp struct {
+	ListName    string
+	ItemName    string
+	IterationOp Operation
+}
+
+func (f *ForEachOp) GetOperationType() string {
+	return forEachOp
+}
+
+type IfConditionOp struct {
+	BoolExpressions []Expression
+	Connectors      []string
+	IfTrue          Operation
+	IfFalse         Operation
+}
+
+func (f *IfConditionOp) GetOperationType() string {
+	return ifConditionOp
+}
+
+type ScopeVariableCreationOp struct {
+	VariableName string
+	Value        string
+	Op           Operation
+}
+
+func (v *ScopeVariableCreationOp) GetOperationType() string {
+	return scopeVariableCreationOp
+}
+
+type AssignmentOp struct {
+	Field string
+	Value string
+}
+
+func (v *AssignmentOp) GetOperationType() string {
+	return assignmentOp
+}
+
+type Expression struct {
+	DataType  dataType
+	Value1    string
+	Value2    string
+	Operation string
 }
 
 // the difference between Field and Param is that Field is just a Field of the state, whereas Param is given by an user input
 // therefore Param requires validation as we need to validate if user value is accepted, whereas Field is always assigned by
 // Game internally so no need to validate
 type Param struct {
-	Field
-	// expression which validates that the input is accepted
-	ValidationExpresion string
+	Name     string
+	DataType dataType
+	// options has to be a ref to a state list field
+	OptionsField string
+	Validator    ParamValidator
 }
 
-type GlobalEvent struct {
-	Conditions []boolExpression
-	// ObserveFields defines based on which fields change is the event going to be emitted
-	// if empty the event will be emitted on every global state change
-	ObserveFields []string
-	Do            []FlowTrigger
-	PauseFlows    []string
-	KillFlows     []string
-	UnpauseFlows  []string
+type ParamValidator struct {
+	BoolExpressions []ParamValidatorExpression
+	Connectors      []string
 }
 
-type GlobalPlayerEvent struct {
-	AllowedIfFlowExists []string
-	// expression based on global player state
-	PlayerAllowedExpression boolExpression
-	Params                  []Param
-	Do                      []FlowTrigger
-	PauseFlows              []string
-	KillFlows               []string
-	UnpauseFlows            []string
-}
-
-type FlowTrigger struct {
-	FlowName         string
-	PlayersSelection playersSelectionExpression
-	// in this case the assignment expression will also receive the specific player
-	// as input
-	PerPlayerPayloadAssigner []FieldValueAssigner
-	InitialStatus            string
-	StatusStateAssigner      []FieldValueAssigner
-}
-
-type FieldValueAssigner struct {
-	FieldName            string
-	AssignmentExpression valueAssignmentExpression
-}
-
-type Flow struct {
-	Name        string
-	PlayerState PlayerState
-}
-
-type Status struct {
-	Name                string
-	StatusState         map[string]Field
-	ThenAskPlayer       *AskPlayer
-	WaitForSeconds      uint
-	WaitForAllUsersResp bool
-	ThenDo              []StatusChange
-}
-
-type AskPlayer struct {
-	Params                []Param
-	PlayersToAskSelection playersSelectionExpression
-}
-
-type StatusChange struct {
-	Conditions                 []boolExpression
-	GoToStatus                 string
-	StatusStateAssigner        []FieldValueAssigner
-	PerPlayerFlowStateChange   []FieldValueAssigner
-	UpdateGlobalState          []FieldValueAssigner
-	UpdatePerPlayerGlobalState []FieldValueAssigner
+// difference with Expression is that here the DataType and Value1 are infered by param, param is always Value1
+type ParamValidatorExpression struct {
+	Value2    string
+	Operation string
 }
