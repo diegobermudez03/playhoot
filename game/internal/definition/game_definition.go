@@ -4,12 +4,16 @@ type dataType string
 
 // defines data types names
 const (
-	stringType  dataType = "string"
-	numericType dataType = "numeric"
-	boolType    dataType = "bool"
-	refType     dataType = "ref"
-	objType     dataType = "obj"
-	listType    dataType = "list"
+	stringType       dataType = "string"
+	numericType      dataType = "numeric"
+	boolType         dataType = "bool"
+	refType          dataType = "ref"
+	objType          dataType = "obj"
+	listType         dataType = "list"
+	playersRefType   dataType = "player_ref"
+	numericConstType dataType = "numeric_const"
+	stringConstType  dataType = "string_const"
+	boolConstType    dataType = "bool_const"
 )
 
 type operation string
@@ -82,15 +86,13 @@ const (
 	orWaitConnector  = "OR"
 )
 
+// --------------------------------------------------------------------
 type Game struct {
-	// Resources is the string of the the marshaled resources
-	Resources ObjectType
-	// PerPlayerState is the string of the marshaled per player state
-	PlayersState ListType
-	// RuntimeStateSchema marshaled schema for the mutable runtime schema
-	RuntimeStateSchema ObjectType
-	Statuses           []Status
-	InitialStatus      string
+	Resources     ObjectType
+	PlayersState  ObjectType
+	State         ObjectType
+	Statuses      []Status
+	InitialStatus string
 }
 
 type Status struct {
@@ -105,6 +107,8 @@ type StatusChanger struct {
 	Condition  IfConditionOp
 	GoToStatus string
 }
+
+// --------------------------------------------------------------------
 
 type Interactioner interface {
 	GetInteractionType() interactionType
@@ -132,12 +136,14 @@ type UserInputInteraction struct {
 	// these assignments can only perform assignments from the params received into the state
 	ThenWriteInState []AssignmentOp
 	// state field which contains ref to the users
-	UsersToInteractWithField RefType
+	UsersToInteractWithField PlayesrRefType
 }
 
 func (t UserInputInteraction) GetInteractionType() interactionType {
 	return userInteraction
 }
+
+// --------------------------------------------------------------------
 
 type Operation interface {
 	GetOperationType() operation
@@ -183,6 +189,8 @@ func (v AssignmentOp) GetOperationType() operation {
 	return assignmentOp
 }
 
+// --------------------------------------------------------------------
+
 type Expression interface {
 	GetExpressionDataType() dataType
 }
@@ -227,6 +235,8 @@ func (e ListExpression) GetExpressionDataType() dataType {
 	return listType
 }
 
+// --------------------------------------------------------------------
+
 type Param interface {
 	GetParamDataType() dataType
 }
@@ -266,29 +276,25 @@ type NumericParamValidator struct {
 	Operation conditionOperation
 }
 
+// --------------------------------------------------------------------
+
 type ValueType interface {
 	GetDataType() dataType
 }
 
-type StringType struct {
-	Value string
-}
+type StringType struct{}
 
 func (t StringType) GetDataType() dataType {
 	return stringType
 }
 
-type NumericType struct {
-	Value float64
-}
+type NumericType struct{}
 
 func (t NumericType) GetDataType() dataType {
 	return numericType
 }
 
-type BoolType struct {
-	Value bool
-}
+type BoolType struct{}
 
 func (t BoolType) GetDataType() dataType {
 	return stringType
@@ -313,10 +319,39 @@ func (t ObjectType) GetDataType() dataType {
 
 type ListType struct {
 	// for primitive types this is redundant, but for objects we need a clear schema
-	Type   ValueType
-	Values []ValueType
+	Type ValueType
 }
 
 func (t ListType) GetDataType() dataType {
 	return listType
+}
+
+type PlayesrRefType struct{}
+
+func (t PlayesrRefType) GetDataType() dataType {
+	return playersRefType
+}
+
+type NumericConstType struct {
+	Value float64
+}
+
+func (t NumericConstType) GetDataType() dataType {
+	return playersRefType
+}
+
+type StringConstType struct {
+	Value string
+}
+
+func (t StringConstType) GetDataType() dataType {
+	return stringConstType
+}
+
+type BoolConstType struct {
+	Value bool
+}
+
+func (t BoolConstType) GetDataType() dataType {
+	return boolConstType
 }

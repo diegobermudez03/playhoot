@@ -13,13 +13,15 @@ const (
 )
 
 func (g *Game) Validate() error {
-	// I think  I gotta validate only resources to confirm that for lists is the same data type for all items
-
 	state := map[string]ValueType{
 		state:     g.RuntimeStateSchema,
 		resources: g.Resources,
 		players:   g.PlayersState,
 	}
+	if err := validateValues(state); err != nil {
+		return err
+	}
+
 	statusesMap := make(map[string]Status, len(g.Statuses))
 	for _, s := range g.Statuses {
 		statusesMap[s.Name] = s
@@ -34,6 +36,39 @@ func (g *Game) Validate() error {
 	unusedVariables := findUnusedVariables("", state, usedVariables)
 	if len(unusedVariables) > 0 {
 		return fmt.Errorf("unused variables found: %v", unusedVariables)
+	}
+
+	return nil
+}
+
+func validateValues(obj map[string]ValueType) error {
+	for key, val := range obj {
+		var err error
+		switch val.GetDataType() {
+		case stringType, numericType, boolType:
+		case refType:
+			_, err = getRefValueType(val.(RefType), obj, map[string]bool{})
+		case objType:
+			err = validateValues(val.(ObjectType).Fields)
+		case listType:
+			err = validateList(val.(ListType))
+		default:
+			err = fmt.Errorf("wrong data type for val %s", key)
+		}
+
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func validateList(v ListType) error {
+	for _, val := range v.Values {
+		if val.GetDataType() != v.Type.GetDataType() {
+			return fmt.Errorf("element %v is not from list data type %s", val, v.Type.GetDataType())
+		}
 	}
 
 	return nil
@@ -71,6 +106,12 @@ func (g *Game) validateStatus(statusesMap map[string]Status, statusName string, 
 			return err
 		}
 	}
+
+	// CREATE PLAYER REF DATA TYPE AND WORKAROUN THE PLAYERS SLICE
+
+	// validate interactioners
+
+	// validate next statuses
 
 	return nil
 }
@@ -169,6 +210,10 @@ func assignmentOpValidation(op AssignmentOp, state map[string]ValueType, listsIt
 	val, err := getRefValueType(op.Field, state, usedVariables)
 	if err != nil {
 		return err
+	}
+
+	if isResourcesField(op.Field) {
+		return fmt.Errorf("can't mutate resources field: %s", getCompositeVariable(op.Field.VariableComposition))
 	}
 
 	if op.Value.GetExpressionDataType() != val.GetDataType() {
@@ -285,6 +330,10 @@ func validateListExpression(e ListExpression, state map[string]ValueType, listsI
 		return fmt.Errorf("attempted list expression on non list variables %s", list.GetDataType())
 	}
 
+	if isResourcesField(e.ListRef) {
+		return fmt.Errorf("can't mutate resources list %s", getCompositeVariable(e.ListRef.VariableComposition))
+	}
+
 	if e.Operation == removeOp {
 		if _, ok := listsIterations[getCompositeVariable(e.ListRef.VariableComposition)]; !ok {
 			return fmt.Errorf("received list remove operations for non iterating list %s", getCompositeVariable(e.ListRef.VariableComposition))
@@ -334,4 +383,8 @@ func getRefValueType(ref RefType, state map[string]ValueType, usedVariables map[
 
 func getCompositeVariable(variables []string) string {
 	return strings.Join(variables, ".")
+}
+
+func isResourcesField(variable RefType) bool {
+	return variable.VariableComposition[0] == resources
 }
