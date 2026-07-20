@@ -14,7 +14,6 @@ const (
 
 func (g *Game) Validate() error {
 	// I think  I gotta validate only resources to confirm that for lists is the same data type for all items
-	r := g.Resources.Fields
 
 	state := map[string]ValueType{
 		state:     g.RuntimeStateSchema,
@@ -26,17 +25,49 @@ func (g *Game) Validate() error {
 		statusesMap[s.Name] = s
 	}
 
-	return g.validateStatus(statusesMap, g.InitialStatus, state)
+	usedVariables := map[string]bool{}
+	err := g.validateStatus(statusesMap, g.InitialStatus, state, usedVariables)
+	if err != nil {
+		return err
+	}
+
+	unusedVariables := findUnusedVariables("", state, usedVariables)
+	if len(unusedVariables) > 0 {
+		return fmt.Errorf("unused variables found: %v", unusedVariables)
+	}
+
+	return nil
 }
 
-func (g *Game) validateStatus(statusesMap map[string]Status, statusName string, state map[string]ValueType) error {
+func findUnusedVariables(prefix string, obj map[string]ValueType, usedVariables map[string]bool) map[string]bool {
+	unusedVariables := map[string]bool{}
+	for name, val := range obj {
+		varName := fmt.Sprintf("%s.%s", prefix, name)
+		if val.GetDataType() != objType {
+			_, ok := usedVariables[varName]
+			if !ok {
+				unusedVariables[varName] = true
+			}
+		} else {
+			objVal := val.(ObjectType)
+			subUnusedVariables := findUnusedVariables(varName, objVal.Fields, usedVariables)
+			for key := range subUnusedVariables {
+				unusedVariables[key] = true
+			}
+		}
+	}
+
+	return unusedVariables
+}
+
+func (g *Game) validateStatus(statusesMap map[string]Status, statusName string, state map[string]ValueType, usedVariables map[string]bool) error {
 	s, ok := statusesMap[statusName]
 	if !ok {
 		return fmt.Errorf("non existent status %s", statusName)
 	}
 
 	for _, op := range s.Operations {
-		if err := validateOperation(op, map[string]ValueType{}, map[string]struct{}{}); err != nil {
+		if err := validateOperation(op, state, map[string]struct{}{}, usedVariables); err != nil {
 			return err
 		}
 	}
@@ -44,22 +75,22 @@ func (g *Game) validateStatus(statusesMap map[string]Status, statusName string, 
 	return nil
 }
 
-func validateOperation(o Operation, state map[string]ValueType, listsIterations map[string]struct{}) error {
+func validateOperation(o Operation, state map[string]ValueType, listsIterations map[string]struct{}, usedVariables map[string]bool) error {
 	switch o.GetOperationType() {
 	case forEachOp:
-		return forEachOpValidation(o.(ForEachOp), state, listsIterations)
+		return forEachOpValidation(o.(ForEachOp), state, listsIterations, usedVariables)
 	case ifConditionOp:
-		return ifConditionValidation(o.(IfConditionOp), state, listsIterations)
+		return ifConditionValidation(o.(IfConditionOp), state, listsIterations, usedVariables)
 	case scopeVariableCreationOp:
-		return scopeVariableValidation(o.(ScopeVariableCreationOp), state, listsIterations)
+		return scopeVariableValidation(o.(ScopeVariableCreationOp), state, listsIterations, usedVariables)
 	case assignmentOp:
-		return assignmentOpValidation(o.(AssignmentOp), state, listsIterations)
+		return assignmentOpValidation(o.(AssignmentOp), state, listsIterations, usedVariables)
 	}
 	return nil
 }
 
-func forEachOpValidation(op ForEachOp, state map[string]ValueType, listsIterations map[string]struct{}) error {
-	expList, err := getRefValueType(op.List, state)
+func forEachOpValidation(op ForEachOp, state map[string]ValueType, listsIterations map[string]struct{}, usedVariables map[string]bool) error {
+	expList, err := getRefValueType(op.List, state, usedVariables)
 	if err != nil {
 		return err
 	}
@@ -78,7 +109,7 @@ func forEachOpValidation(op ForEachOp, state map[string]ValueType, listsIteratio
 	}()
 
 	for _, op := range op.IterationOps {
-		if err := validateOperation(op, state, listsIterations); err != nil {
+		if err := validateOperation(op, state, listsIterations, usedVariables); err != nil {
 			return err
 		}
 	}
@@ -86,9 +117,9 @@ func forEachOpValidation(op ForEachOp, state map[string]ValueType, listsIteratio
 	return nil
 }
 
-func ifConditionValidation(op IfConditionOp, state map[string]ValueType, listsIterations map[string]struct{}) error {
+func ifConditionValidation(op IfConditionOp, state map[string]ValueType, listsIterations map[string]struct{}, usedVariables map[string]bool) error {
 	for _, exp := range op.BoolExpressions {
-		if err := validateBoolExpression(exp, state, listsIterations); err != nil {
+		if err := validateBoolExpression(exp, state, listsIterations, usedVariables); err != nil {
 			return err
 		}
 	}
@@ -104,13 +135,13 @@ func ifConditionValidation(op IfConditionOp, state map[string]ValueType, listsIt
 	}
 
 	for _, op := range op.IfTrue {
-		if err := validateOperation(op, state, listsIterations); err != nil {
+		if err := validateOperation(op, state, listsIterations, usedVariables); err != nil {
 			return err
 		}
 	}
 
 	for _, op := range op.IfFalse {
-		if err := validateOperation(op, state, listsIterations); err != nil {
+		if err := validateOperation(op, state, listsIterations, usedVariables); err != nil {
 			return err
 		}
 	}
@@ -118,7 +149,7 @@ func ifConditionValidation(op IfConditionOp, state map[string]ValueType, listsIt
 	return nil
 }
 
-func scopeVariableValidation(op ScopeVariableCreationOp, state map[string]ValueType, listsIterations map[string]struct{}) error {
+func scopeVariableValidation(op ScopeVariableCreationOp, state map[string]ValueType, listsIterations map[string]struct{}, usedVariables map[string]bool) error {
 	state[op.VariableName] = op.Value
 	// to remove variable outside the scope
 	defer func() {
@@ -126,7 +157,7 @@ func scopeVariableValidation(op ScopeVariableCreationOp, state map[string]ValueT
 	}()
 
 	for _, op := range op.Ops {
-		if err := validateOperation(op, state, listsIterations); err != nil {
+		if err := validateOperation(op, state, listsIterations, usedVariables); err != nil {
 			return err
 		}
 	}
@@ -134,8 +165,8 @@ func scopeVariableValidation(op ScopeVariableCreationOp, state map[string]ValueT
 	return nil
 }
 
-func assignmentOpValidation(op AssignmentOp, state map[string]ValueType, listsIterations map[string]struct{}) error {
-	val, err := getRefValueType(op.Field, state)
+func assignmentOpValidation(op AssignmentOp, state map[string]ValueType, listsIterations map[string]struct{}, usedVariables map[string]bool) error {
+	val, err := getRefValueType(op.Field, state, usedVariables)
 	if err != nil {
 		return err
 	}
@@ -144,30 +175,30 @@ func assignmentOpValidation(op AssignmentOp, state map[string]ValueType, listsIt
 		return fmt.Errorf("expression has different data type %s from ref type %s", op.Value.GetExpressionDataType(), val.GetDataType())
 	}
 
-	return validateExpression(op.Value, state, listsIterations)
+	return validateExpression(op.Value, state, listsIterations, usedVariables)
 }
 
-func validateExpression(exp Expression, state map[string]ValueType, listsIterations map[string]struct{}) error {
+func validateExpression(exp Expression, state map[string]ValueType, listsIterations map[string]struct{}, usedVariables map[string]bool) error {
 	switch exp.GetExpressionDataType() {
 	case stringType:
-		return validateStringExpression(exp.(StringExpression), state, listsIterations)
+		return validateStringExpression(exp.(StringExpression), state, listsIterations, usedVariables)
 	case numericType:
-		return validateNumericExpression(exp.(NumericExpression), state, listsIterations)
+		return validateNumericExpression(exp.(NumericExpression), state, listsIterations, usedVariables)
 	case boolType:
-		return validateBoolExpression(exp.(BoolExpression), state, listsIterations)
+		return validateBoolExpression(exp.(BoolExpression), state, listsIterations, usedVariables)
 	case listType:
-		return validateListExpression(exp.(ListExpression), state, listsIterations)
+		return validateListExpression(exp.(ListExpression), state, listsIterations, usedVariables)
 	}
 	return nil
 }
 
-func validateStringExpression(e StringExpression, state map[string]ValueType, listsIterations map[string]struct{}) error {
-	val1, err := getRefValueType(e.Value1, state)
+func validateStringExpression(e StringExpression, state map[string]ValueType, listsIterations map[string]struct{}, usedVariables map[string]bool) error {
+	val1, err := getRefValueType(e.Value1, state, usedVariables)
 	if err != nil {
 		return err
 	}
 
-	val2, err := getRefValueType(e.Value2, state)
+	val2, err := getRefValueType(e.Value2, state, usedVariables)
 	if err != nil {
 		return err
 	}
@@ -188,13 +219,13 @@ func validateStringExpression(e StringExpression, state map[string]ValueType, li
 	return fmt.Errorf("invalid string operation %s", e.operation)
 }
 
-func validateNumericExpression(e NumericExpression, state map[string]ValueType, listsIterations map[string]struct{}) error {
-	val1, err := getRefValueType(e.Value1, state)
+func validateNumericExpression(e NumericExpression, state map[string]ValueType, listsIterations map[string]struct{}, usedVariables map[string]bool) error {
+	val1, err := getRefValueType(e.Value1, state, usedVariables)
 	if err != nil {
 		return err
 	}
 
-	val2, err := getRefValueType(e.Value2, state)
+	val2, err := getRefValueType(e.Value2, state, usedVariables)
 	if err != nil {
 		return err
 	}
@@ -215,13 +246,13 @@ func validateNumericExpression(e NumericExpression, state map[string]ValueType, 
 	return fmt.Errorf("invalid numeric operation %s", e.operation)
 }
 
-func validateBoolExpression(e BoolExpression, state map[string]ValueType, listsIterations map[string]struct{}) error {
-	val1, err := getRefValueType(e.Value1, state)
+func validateBoolExpression(e BoolExpression, state map[string]ValueType, listsIterations map[string]struct{}, usedVariables map[string]bool) error {
+	val1, err := getRefValueType(e.Value1, state, usedVariables)
 	if err != nil {
 		return err
 	}
 
-	val2, err := getRefValueType(e.Value2, state)
+	val2, err := getRefValueType(e.Value2, state, usedVariables)
 	if err != nil {
 		return err
 	}
@@ -244,8 +275,8 @@ func validateBoolExpression(e BoolExpression, state map[string]ValueType, listsI
 	return nil
 }
 
-func validateListExpression(e ListExpression, state map[string]ValueType, listsIterations map[string]struct{}) error {
-	list, err := getRefValueType(e.ListRef, state)
+func validateListExpression(e ListExpression, state map[string]ValueType, listsIterations map[string]struct{}, usedVariables map[string]bool) error {
+	list, err := getRefValueType(e.ListRef, state, usedVariables)
 	if err != nil {
 		return err
 	}
@@ -280,7 +311,7 @@ func validateBoolConnector(conn boolConnector) error {
 	return fmt.Errorf("invalid bool connector %s", string(andConnector))
 }
 
-func getRefValueType(ref RefType, state map[string]ValueType) (ValueType, error) {
+func getRefValueType(ref RefType, state map[string]ValueType, usedVariables map[string]bool) (ValueType, error) {
 	var referenced ValueType = ObjectType{Fields: state}
 	for _, key := range ref.VariableComposition {
 		obj, ok := referenced.(ObjectType)
@@ -295,6 +326,8 @@ func getRefValueType(ref RefType, state map[string]ValueType) (ValueType, error)
 
 		referenced = found
 	}
+
+	usedVariables[getCompositeVariable(ref.VariableComposition)] = true
 
 	return referenced, nil
 }
