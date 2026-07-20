@@ -63,9 +63,9 @@ type listOperation string
 const (
 	// add can only add a reference into the list, code never creates a new object, it only takes the ref to a state field
 	// and adds it into the list, is so that we dont have to support object creation through code
-	addOp string = "ADD"
+	addOp listOperation = "ADD"
 	// can only be performed inside foreach loop with the iterating item
-	removeOp string = "REMOVE"
+	removeOp listOperation = "REMOVE"
 )
 
 type boolConnector string
@@ -94,8 +94,8 @@ type Game struct {
 }
 
 type Status struct {
-	Name string
-	Op   Operation
+	Name       string
+	Operations []Operation
 	// if there's an interactioner its ran before next status changer
 	Interactioner Interactioner
 	NextStatus    []StatusChanger
@@ -144,9 +144,9 @@ type Operation interface {
 }
 
 type ForEachOp struct {
-	List        RefType
-	ItemName    string
-	IterationOp Operation
+	List         RefType
+	ItemName     string
+	IterationOps []Operation
 }
 
 func (f ForEachOp) GetOperationType() operation {
@@ -154,10 +154,10 @@ func (f ForEachOp) GetOperationType() operation {
 }
 
 type IfConditionOp struct {
-	BoolExpressions []Expression
+	BoolExpressions []BoolExpression
 	Connectors      []boolConnector
-	IfTrue          Operation
-	IfFalse         Operation
+	IfTrue          []Operation
+	IfFalse         []Operation
 }
 
 func (f IfConditionOp) GetOperationType() operation {
@@ -167,7 +167,7 @@ func (f IfConditionOp) GetOperationType() operation {
 type ScopeVariableCreationOp struct {
 	VariableName string
 	Value        ValueType
-	Op           Operation
+	Ops          []Operation
 }
 
 func (v ScopeVariableCreationOp) GetOperationType() operation {
@@ -198,8 +198,8 @@ func (e BoolExpression) GetExpressionDataType() dataType {
 }
 
 type NumericExpression struct {
-	Value1    float64
-	Value2    float64
+	Value1    RefType
+	Value2    RefType
 	operation numericOperation
 }
 
@@ -208,8 +208,8 @@ func (e NumericExpression) GetExpressionDataType() dataType {
 }
 
 type StringExpression struct {
-	Value1    string
-	Value2    string
+	Value1    RefType
+	Value2    RefType
 	operation stringOperation
 }
 
