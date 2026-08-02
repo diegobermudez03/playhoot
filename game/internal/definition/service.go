@@ -12,14 +12,36 @@ const (
 	players   string = "players"
 )
 
-func (g *Game) Validate() error {
-	state := map[string]ValueType{
-		state:     g.RuntimeStateSchema,
+type ValidationResults struct {
+	results []ValidationResult
+}
+
+func (r ValidationResults) Add(v ...ValidationResult) ValidationResults {
+	r.results = append(r.results, v)
+	return r
+}
+
+type ValidationResult interface {
+}
+
+type StatusValidationResult struct {
+	statusName string
+	problem    string
+}
+
+type Scope struct {
+	// variable names defined at the scope
+	variables []string
+	// if scope is due to an iteration then this references the iterating variable
+	// it can be empty (length == 0) if scope is a scope variable creation
+	iteratingVariable variableComposition
+}
+
+func (g *Game) Validate() ValidationResult {
+	stateSchema := map[string]ValueType{
+		state:     g.State,
 		resources: g.Resources,
 		players:   g.PlayersState,
-	}
-	if err := validateValues(state); err != nil {
-		return err
 	}
 
 	statusesMap := make(map[string]Status, len(g.Statuses))
@@ -27,48 +49,11 @@ func (g *Game) Validate() error {
 		statusesMap[s.Name] = s
 	}
 
-	usedVariables := map[string]bool{}
-	err := g.validateStatus(statusesMap, g.InitialStatus, state, usedVariables)
-	if err != nil {
-		return err
-	}
+	usedVariables, result := g.validateStatus(statusesMap, g.InitialStatus, stateSchema)
 
 	unusedVariables := findUnusedVariables("", state, usedVariables)
 	if len(unusedVariables) > 0 {
 		return fmt.Errorf("unused variables found: %v", unusedVariables)
-	}
-
-	return nil
-}
-
-func validateValues(obj map[string]ValueType) error {
-	for key, val := range obj {
-		var err error
-		switch val.GetDataType() {
-		case stringType, numericType, boolType:
-		case refType:
-			_, err = getRefValueType(val.(RefType), obj, map[string]bool{})
-		case objType:
-			err = validateValues(val.(ObjectType).Fields)
-		case listType:
-			err = validateList(val.(ListType))
-		default:
-			err = fmt.Errorf("wrong data type for val %s", key)
-		}
-
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func validateList(v ListType) error {
-	for _, val := range v.Values {
-		if val.GetDataType() != v.Type.GetDataType() {
-			return fmt.Errorf("element %v is not from list data type %s", val, v.Type.GetDataType())
-		}
 	}
 
 	return nil
@@ -95,16 +80,17 @@ func findUnusedVariables(prefix string, obj map[string]ValueType, usedVariables 
 	return unusedVariables
 }
 
-func (g *Game) validateStatus(statusesMap map[string]Status, statusName string, state map[string]ValueType, usedVariables map[string]bool) error {
+// returns map of used variables (set) and validation results
+func (g *Game) validateStatus(statusesMap map[string]Status, statusName string, stateSchema map[string]ValueType) (map[string]bool, ValidationResults) {
+	results := ValidationResults{}
 	s, ok := statusesMap[statusName]
 	if !ok {
-		return fmt.Errorf("non existent status %s", statusName)
+		return nil, results.Add(StatusValidationResult{statusName: statusName, problem: "not found"})
 	}
 
 	for _, op := range s.Operations {
-		if err := validateOperation(op, state, map[string]struct{}{}, usedVariables); err != nil {
-			return err
-		}
+		usedVariables, opValidationResult := validateOperation(op, stateSchema, []string{})
+		results.Add()
 	}
 
 	// CREATE PLAYER REF DATA TYPE AND WORKAROUN THE PLAYERS SLICE
@@ -116,7 +102,7 @@ func (g *Game) validateStatus(statusesMap map[string]Status, statusName string, 
 	return nil
 }
 
-func validateOperation(o Operation, state map[string]ValueType, listsIterations map[string]struct{}, usedVariables map[string]bool) error {
+func validateOperation(o Operation, stateSchema map[string]ValueType, scopeStack []string) (usedVariables map[string]bool, res ValidationResult) {
 	switch o.GetOperationType() {
 	case forEachOp:
 		return forEachOpValidation(o.(ForEachOp), state, listsIterations, usedVariables)

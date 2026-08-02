@@ -7,7 +7,7 @@ const (
 	stringType       dataType = "string"
 	numericType      dataType = "numeric"
 	boolType         dataType = "bool"
-	refType          dataType = "ref"
+	listItemRef      dataType = "list_item_ref"
 	objType          dataType = "obj"
 	listType         dataType = "list"
 	playersRefType   dataType = "player_ref"
@@ -62,6 +62,8 @@ const (
 )
 
 type listOperation string
+
+type variableComposition []string
 
 // defines list operations
 const (
@@ -150,7 +152,7 @@ type Operation interface {
 }
 
 type ForEachOp struct {
-	List         RefType
+	List         variableComposition
 	ItemName     string
 	IterationOps []Operation
 }
@@ -181,7 +183,7 @@ func (v ScopeVariableCreationOp) GetOperationType() operation {
 }
 
 type AssignmentOp struct {
-	Field RefType
+	Field variableComposition
 	Value Expression
 }
 
@@ -196,8 +198,9 @@ type Expression interface {
 }
 
 type BoolExpression struct {
-	Value1    RefType
-	Value2    RefType
+	// commented out because I dont know yet how to define these as they should be either consts or variable compositions of the type
+	// Value1
+	// Value2
 	Operation conditionOperation
 }
 
@@ -206,8 +209,9 @@ func (e BoolExpression) GetExpressionDataType() dataType {
 }
 
 type NumericExpression struct {
-	Value1    RefType
-	Value2    RefType
+	// commented out because I dont know yet how to define these as they should be either consts or variable compositions of the type
+	// Value1
+	// Value2
 	operation numericOperation
 }
 
@@ -216,8 +220,9 @@ func (e NumericExpression) GetExpressionDataType() dataType {
 }
 
 type StringExpression struct {
-	Value1    RefType
-	Value2    RefType
+	// commented out because I dont know yet how to define these as they should be either consts or variable compositions of the type
+	// Value1
+	// Value2
 	operation stringOperation
 }
 
@@ -226,9 +231,12 @@ func (e StringExpression) GetExpressionDataType() dataType {
 }
 
 type ListExpression struct {
-	ListRef   RefType
+	ListRef variableComposition
+	// if its a remove operation there's no need to pass a variable, that operation
+	// can only be called while iterating the list and when called its inferred that its the iterating item at the moment
 	Operation listOperation
-	Value     *RefType
+	// Add operations can only add a value from an existing variable
+	Variable variableComposition
 }
 
 func (e ListExpression) GetExpressionDataType() dataType {
@@ -242,9 +250,11 @@ type Param interface {
 }
 
 type StringParam struct {
-	Name       string
+	Name string
+	// if the param has const options
 	FixOptions []string
-	RefOptions RefType
+	// if the param has dynamic options, then it must reference a list of string type
+	RefOptions variableComposition
 }
 
 func (p StringParam) GetParamDataType() dataType {
@@ -252,9 +262,11 @@ func (p StringParam) GetParamDataType() dataType {
 }
 
 type NumericParam struct {
-	Name                            string
-	Options                         []float64
-	RefOptions                      RefType
+	Name string
+	// if the param has const options
+	Options []float64
+	// if the param has dynamic options, then it must reference a list of numeric type
+	RefOptions                      variableComposition
 	ValidationExpressions           []NumericParamValidator
 	ValidationExpressionsConnectors []boolConnector
 }
@@ -271,8 +283,10 @@ func (p BoolParam) GetParamDataType() dataType {
 	return boolType
 }
 
+// NumericParamValidator contains the value against to which to validate the param and the validation operation
 type NumericParamValidator struct {
-	Value2    RefType
+	// commented out as I dont know yet how to represent this that could be either a variable composition or a const
+	// Value2
 	Operation conditionOperation
 }
 
@@ -300,13 +314,16 @@ func (t BoolType) GetDataType() dataType {
 	return stringType
 }
 
-type RefType struct {
+// references an item from the list, list must be of non primitive (numeric, bool, string) type
+// the reference is direct so if a change is performed on this will affect the referenced variable
+// Just for Dev context, recall this is just the definition, the actual engine will have to store the index
+type ListItemRefType struct {
 	// stores the compositions like 'State' 'Obj1' 'field1'
-	VariableComposition []string
+	ListVariableComposition variableComposition
 }
 
-func (t RefType) GetDataType() dataType {
-	return refType
+func (t ListItemRefType) GetDataType() dataType {
+	return listItemRef
 }
 
 type ObjectType struct {
