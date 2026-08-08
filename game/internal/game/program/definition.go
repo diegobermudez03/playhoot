@@ -2,8 +2,8 @@ package program
 
 // Definition is the root source-level representation of an authored game.
 //
-// Definition is intentionally incomplete: projections and views will be
-// added in later steps.
+// Definition is intentionally incomplete: views will be added in a later
+// step.
 //
 // Declarations are stored in slices rather than maps to preserve author
 // order. Order matters for deterministic diagnostics, and duplicate names
@@ -28,6 +28,10 @@ type Definition struct {
 	// hold for every committed game snapshot. See InvariantDeclaration
 	// for its semantics.
 	Invariants []InvariantDeclaration
+
+	// Projections declares the game's pure, per-user visible-model
+	// transformations. See ProjectionDeclaration for its semantics.
+	Projections []ProjectionDeclaration
 
 	// UserIntents declares the typed, unsolicited actions users may
 	// initiate. See UserIntentDeclaration for its semantics.
