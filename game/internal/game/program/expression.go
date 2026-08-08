@@ -285,14 +285,18 @@ type ConditionalExpression struct {
 func (ConditionalExpression) isExpression() {}
 
 // CallExpression invokes a pure, value-producing function by name using
-// named arguments.
+// named arguments. Function is a static name that may resolve to either a
+// user-declared FunctionDeclaration or an engine-provided pure built-in
+// function; the source language has no function values, dynamic function
+// expressions, method dispatch, reflection-based invocation, or positional
+// arguments.
 //
 // CallExpression represents pure calls only; it must not be used for
 // mutating state, spawning workflows, asking users, scheduling timers, or
-// emitting UI effects. Those are modeled as operations in a later step.
-// The future compiler validates function existence, missing or unknown
-// arguments, duplicate arguments, argument types, and whether the target
-// is a built-in or user-declared pure function.
+// emitting UI effects. Those are modeled as operations. The future
+// compiler validates function existence, missing or unknown arguments,
+// duplicate arguments, argument types, and whether the target is a
+// built-in or user-declared pure function.
 type CallExpression struct {
 	Function  string
 	Arguments []CallArgument

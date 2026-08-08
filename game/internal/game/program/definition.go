@@ -20,6 +20,10 @@ type Definition struct {
 	// game session. See StateDeclaration for its semantics.
 	GlobalState StateDeclaration
 
+	// Functions declares the game's user-defined pure computations. See
+	// FunctionDeclaration for its semantics.
+	Functions []FunctionDeclaration
+
 	// UserIntents declares the typed, unsolicited actions users may
 	// initiate. See UserIntentDeclaration for its semantics.
 	UserIntents []UserIntentDeclaration
