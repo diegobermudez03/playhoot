@@ -87,6 +87,29 @@ type TimerExpiredSignalSource struct {
 
 func (TimerExpiredSignalSource) isSignalSource() {}
 
+// ChildCompletedSignalSource matches the signal produced when the child
+// workflow in the named child slot owned by the current workflow (see
+// ChildWorkflowSlotDeclaration) completes successfully.
+//
+// The signal schema exposes exactly one field, "result", typed as the
+// declared ResultType of the child workflow referenced by Slot — even a
+// child returning the unit built-in still exposes this field, typed as
+// unit. The signal never exposes child or parent workflow instance IDs,
+// the slot name as a value, other internal engine metadata, or arbitrary
+// child-local state.
+//
+// Handling this signal is how a parent joins an individual child slot: if
+// the parent's transition commits successfully, the child slot is cleared
+// and may be reused; if the transition fails, the slot remains
+// completed-awaiting-join with its result intact, and a duplicate or stale
+// completion delivery must not activate another transition once the slot
+// has already been joined and cleared.
+type ChildCompletedSignalSource struct {
+	Slot string
+}
+
+func (ChildCompletedSignalSource) isSignalSource() {}
+
 // SignalBinding binds Field from a matched signal's payload to the
 // immutable lexical name Name.
 type SignalBinding struct {

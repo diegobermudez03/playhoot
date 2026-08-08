@@ -43,6 +43,11 @@ type WorkflowDeclaration struct {
 	// semantics.
 	TimerSlots []TimerSlotDeclaration
 
+	// ChildSlots declares the statically named child-workflow slots owned
+	// by each instance of this workflow. See ChildWorkflowSlotDeclaration
+	// for its semantics.
+	ChildSlots []ChildWorkflowSlotDeclaration
+
 	// InitialState names the state a new workflow instance begins in.
 	// The future compiler validates that the named state exists.
 	InitialState string
