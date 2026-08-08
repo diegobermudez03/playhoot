@@ -2,9 +2,8 @@ package program
 
 // Definition is the root source-level representation of an authored game.
 //
-// Definition is intentionally incomplete: presentations connecting
-// projections, views, workflow states, and question slots will be added in
-// a later step.
+// Definition is intentionally incomplete and will continue to grow in
+// later steps.
 //
 // Declarations are stored in slices rather than maps to preserve author
 // order. Order matters for deterministic diagnostics, and duplicate names
@@ -37,6 +36,10 @@ type Definition struct {
 	// Views declares the game's reusable declarative client interfaces.
 	// See ViewDeclaration for its semantics.
 	Views []ViewDeclaration
+
+	// PresentationSlots declares the game's statically named per-user UI
+	// locations. See PresentationSlotDeclaration for its semantics.
+	PresentationSlots []PresentationSlotDeclaration
 
 	// UserIntents declares the typed, unsolicited actions users may
 	// initiate. See UserIntentDeclaration for its semantics.

@@ -68,13 +68,22 @@ func (SetLocalStateAction) isUIAction() {}
 // AnswerQuestionAction submits the result of Value as the answer to the
 // question instance currently active for the mounted view.
 //
+// This action is only valid when the containing view is mounted through a
+// pending question presentation (see QuestionPresentationDeclaration): the
+// mounted question context, not this action, identifies the concrete
+// question instance being answered, along with its recipient, response
+// type, and authoritative validator — which is why this action carries no
+// question-slot name. A ViewDeclaration containing AnswerQuestionAction
+// remains representable before any usage analysis; the future compiler
+// must reject using such a view in a non-question presentation unless the
+// action is proven unreachable under some future supported analysis. This
+// package performs no such validation.
+//
 // The action evaluates Value and submits it; it does not mutate
 // authoritative state directly and does not guarantee the answer is
 // accepted — the future authoritative engine independently validates
 // recipient identity, response type, and the question's Validation
-// expression, and a rejected answer never produces a workflow signal. This
-// action carries no question-slot name: the mounted question context
-// identifies the concrete question instance being answered.
+// expression, and a rejected answer never produces a workflow signal.
 type AnswerQuestionAction struct {
 	Value Expression
 }

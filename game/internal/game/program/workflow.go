@@ -48,6 +48,16 @@ type WorkflowDeclaration struct {
 	// for its semantics.
 	ChildSlots []ChildWorkflowSlotDeclaration
 
+	// Presentations declares this workflow's workflow-level presentations,
+	// each active for the entire lifetime of a workflow instance —
+	// created when the instance is created, remaining active across every
+	// state transition, and unmounted only when the instance completes,
+	// fails, or is cancelled. See PresentationDeclaration for its
+	// semantics. A child workflow instance owns its own workflow-level
+	// presentations independently, active only while that child instance
+	// exists.
+	Presentations []PresentationDeclaration
+
 	// InitialState names the state a new workflow instance begins in.
 	// The future compiler validates that the named state exists.
 	InitialState string
@@ -89,6 +99,16 @@ type WorkflowDeclaration struct {
 type QuestionSlotDeclaration struct {
 	Name     string
 	Question string
+
+	// Presentation optionally connects this slot's pending question
+	// instance to a presentation slot, projection, and view. A nil
+	// Presentation means opening the question still creates an
+	// authoritative pending question with no automatically mounted
+	// authored client view — it may still be answered through another
+	// supported client or testing mechanism; nil is never treated as an
+	// implicit default presentation. See QuestionPresentationDeclaration
+	// for its semantics.
+	Presentation *QuestionPresentationDeclaration
 }
 
 // WorkflowStateDeclaration is a stable checkpoint in the lifecycle of a
@@ -100,7 +120,20 @@ type QuestionSlotDeclaration struct {
 // until a signal activates one of the state's transitions or a matching
 // global transition.
 type WorkflowStateDeclaration struct {
-	Name        string
+	Name string
+
+	// Presentations declares this state's state-level presentations, each
+	// active only while the workflow instance remains in this state. A
+	// presentation instance is created when the workflow enters the
+	// state and unmounted when the workflow leaves it (through any
+	// WorkflowControl) or terminates; re-entering the same state later
+	// creates a new presentation instance with freshly initialized
+	// view-local state. See PresentationDeclaration for its semantics.
+	// Declaring presentations here is declarative state, not implicit
+	// entry or exit code — this package adds no OnEnter, OnExit, mount,
+	// or unmount operations.
+	Presentations []PresentationDeclaration
+
 	Transitions []TransitionDeclaration
 }
 
