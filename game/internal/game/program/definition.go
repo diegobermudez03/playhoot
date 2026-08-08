@@ -2,8 +2,8 @@ package program
 
 // Definition is the root source-level representation of an authored game.
 //
-// Definition is intentionally incomplete: projections, views, and
-// invariants will be added in later steps.
+// Definition is intentionally incomplete: projections and views will be
+// added in later steps.
 //
 // Declarations are stored in slices rather than maps to preserve author
 // order. Order matters for deterministic diagnostics, and duplicate names
@@ -23,6 +23,11 @@ type Definition struct {
 	// Functions declares the game's user-defined pure computations. See
 	// FunctionDeclaration for its semantics.
 	Functions []FunctionDeclaration
+
+	// Invariants declares the game's authored global conditions that must
+	// hold for every committed game snapshot. See InvariantDeclaration
+	// for its semantics.
+	Invariants []InvariantDeclaration
 
 	// UserIntents declares the typed, unsolicited actions users may
 	// initiate. See UserIntentDeclaration for its semantics.
