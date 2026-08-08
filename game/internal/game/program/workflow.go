@@ -33,6 +33,11 @@ type WorkflowDeclaration struct {
 	// is cancelled, except for its final result and trace.
 	LocalState StateDeclaration
 
+	// QuestionSlots declares the statically named question slots owned by
+	// each instance of this workflow. See QuestionSlotDeclaration for its
+	// semantics.
+	QuestionSlots []QuestionSlotDeclaration
+
 	// InitialState names the state a new workflow instance begins in.
 	// The future compiler validates that the named state exists.
 	InitialState string
@@ -51,6 +56,29 @@ type WorkflowDeclaration struct {
 
 	// States are the workflow's declared states, in declaration order.
 	States []WorkflowStateDeclaration
+}
+
+// QuestionSlotDeclaration declares a statically named, durable interaction
+// location owned by each instance of the enclosing workflow.
+//
+// A slot is associated with exactly one QuestionDeclaration named by
+// Question and may hold at most one pending question instance at a time;
+// it may be reopened once its previous question is answered or closed. A
+// slot remains addressable across all of the workflow instance's state
+// transitions and disappears only when the workflow instance terminates.
+// This durability is why a question slot is declared statically here
+// rather than represented as ordinary user-defined state: it is never a
+// StateFieldDeclaration, a runtime handle stored in local state, a
+// TypeReference, or a lexical binding, and its pending question instance
+// is tracked by the future engine's workflow snapshot metadata, not by the
+// source model.
+//
+// This package does not validate slot-name uniqueness within a workflow or
+// that Question refers to an existing question declaration; it preserves
+// duplicates so the future compiler can report them deterministically.
+type QuestionSlotDeclaration struct {
+	Name     string
+	Question string
 }
 
 // WorkflowStateDeclaration is a stable checkpoint in the lifecycle of a
