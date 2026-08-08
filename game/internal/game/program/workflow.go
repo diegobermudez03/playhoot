@@ -38,6 +38,11 @@ type WorkflowDeclaration struct {
 	// semantics.
 	QuestionSlots []QuestionSlotDeclaration
 
+	// AskGroupSlots declares the statically named ask-group slots owned by
+	// each instance of this workflow. See AskGroupSlotDeclaration for its
+	// semantics.
+	AskGroupSlots []AskGroupSlotDeclaration
+
 	// TimerSlots declares the statically named timer slots owned by each
 	// instance of this workflow. See TimerSlotDeclaration for its
 	// semantics.

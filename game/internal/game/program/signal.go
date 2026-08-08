@@ -110,6 +110,36 @@ type ChildCompletedSignalSource struct {
 
 func (ChildCompletedSignalSource) isSignalSource() {}
 
+// AskGroupCompletedSignalSource matches the signal produced when the ask
+// group in the named ask-group slot owned by the current workflow (see
+// AskGroupSlotDeclaration) completes, whether by satisfying its
+// AskGroupCompletionPolicy naturally or through FinalizeAskGroupOperation.
+//
+// The signal schema exposes exactly three fields: "responses"
+// (map<User, QuestionResponseType>, mapping each responding user to their
+// accepted answer, where QuestionResponseType is the ResponseType of the
+// question referenced by Slot — for a unit-returning question this is
+// map<User, unit>), "respondents" (list<User>, the responding users in
+// accepted-answer processing order), and "missing" (list<User>, the
+// originally targeted recipients who never had an accepted answer, in
+// original recipient-list order). The signal never exposes ask-group or
+// question-instance IDs, workflow-instance IDs, internal completion-policy
+// state, raw rejected responses, or other internal engine metadata; it
+// never produces a signal per individual answer, only once when the whole
+// group completes.
+//
+// Handling this signal is how a workflow joins an ask-group slot: if the
+// handling transition commits successfully, the slot is cleared and may
+// be reused; if it fails, the slot remains completed-awaiting-join with
+// its responses intact, and a duplicate or stale completion delivery must
+// not activate another transition once the slot has already been joined
+// and cleared.
+type AskGroupCompletedSignalSource struct {
+	Slot string
+}
+
+func (AskGroupCompletedSignalSource) isSignalSource() {}
+
 // SignalBinding binds Field from a matched signal's payload to the
 // immutable lexical name Name.
 type SignalBinding struct {
