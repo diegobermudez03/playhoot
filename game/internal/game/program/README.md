@@ -1,3 +1,5 @@
+Wrote by AI, human dev notes added as `Dev note:`
+
 # game/program
 
 The `program` package owns the source-level representation of the game programming language.

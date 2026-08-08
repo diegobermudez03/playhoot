@@ -49,18 +49,48 @@ type CompleteControl struct {
 
 func (CompleteControl) isWorkflowControl() {}
 
-// FailControl terminates the workflow instance as failed, with Error
-// describing the failure. The future compiler defines and validates the
-// allowed error-value types.
+// FailControl terminates the workflow instance in the authored failed
+// outcome, with Error describing the failure. Error must eventually
+// compile to the built-in string type; a nil Error may exist in a
+// partially constructed, invalid source object, but the future compiler
+// must reject it.
+//
+// FailControl is for explicit, authored process failure — it is not the
+// same thing as an engine or transition execution error (such as an
+// exceeded execution budget, an invalid runtime index, an occupied-slot
+// error, or an invariant violation). An execution error never runs
+// FailControl: the offending transition fails atomically, the workflow
+// instance remains at its previously committed state, and no authored
+// failure outcome is produced. A game that needs a typed business outcome
+// (for example Won, NoValidMove, or ParticipantUnavailable) should
+// normally represent it as a successful result via a user-declared enum or
+// union through CompleteControl instead of overloading FailControl.
+//
+// When the failing workflow is a child, its parent observes this outcome
+// through ChildFailedSignalSource. When it is the root workflow, there is
+// no parent to notify; a future session layer may observe the root's
+// terminal outcome.
 type FailControl struct {
 	Error Expression
 }
 
 func (FailControl) isWorkflowControl() {}
 
-// CancelControl terminates the workflow instance as cancelled, with Reason
-// describing the cancellation. Cancellation is a distinct outcome from
-// both failure and successful completion.
+// CancelControl terminates the workflow instance in the authored cancelled
+// outcome, with Reason describing the cancellation. Reason must eventually
+// compile to the built-in string type; a nil Reason may exist in a
+// partially constructed, invalid source object, but the future compiler
+// must reject it. Cancellation is a distinct outcome from both authored
+// failure and successful completion.
+//
+// CancelControl models a workflow cancelling itself; it is unrelated to a
+// parent cancelling a running child with CancelChildWorkflowOperation,
+// which never produces a child-outcome signal.
+//
+// When the cancelling workflow is a child, its parent observes this
+// outcome through ChildCancelledSignalSource. When it is the root
+// workflow, there is no parent to notify; a future session layer may
+// observe the root's terminal outcome.
 type CancelControl struct {
 	Reason Expression
 }

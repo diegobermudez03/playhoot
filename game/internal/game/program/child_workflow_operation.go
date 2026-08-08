@@ -17,12 +17,15 @@ package program
 // parent must use its own WorkflowControl to move into a state that waits
 // for or otherwise manages the child.
 //
-// Spawning into a slot that is not empty (whether running or holding a
-// completed child awaiting join) is an execution error: the future engine
-// must fail the entire transition atomically, creating no child and
-// leaving the slot's existing contents and every other pending mutation
-// or output unchanged. There is no implicit replacement, cancellation,
-// result discard, restart, or slot reset.
+// A slot is occupied, and therefore an invalid spawn target, whenever it
+// holds a running child or a terminal outcome still awaiting join
+// (completed, failed, or cancelled — see ChildCompletedSignalSource,
+// ChildFailedSignalSource, and ChildCancelledSignalSource). Spawning into
+// an occupied slot is an execution error: the future engine must fail the
+// entire transition atomically, creating no child and leaving the slot's
+// existing contents and every other pending mutation or output unchanged.
+// There is no implicit replacement, cancellation, result discard, restart,
+// or slot reset.
 //
 // Slot is a static, source-level name, not a runtime expression. The
 // future compiler validates that Slot exists, that it references a valid
@@ -39,20 +42,29 @@ func (SpawnChildWorkflowOperation) isOperation() {}
 // workflow instance in the named child slot, with Reason describing the
 // cancellation.
 //
+// This operation is parent-driven cancellation of a running child, which
+// is distinct from a child cancelling itself with CancelControl (observed
+// by the parent through ChildCancelledSignalSource): parent-driven
+// cancellation never produces a child-outcome signal, since the parent
+// already knows it requested the cancellation, and the parent transition
+// simply continues normally afterward.
+//
 // Conceptually, the operation evaluates Reason, recursively cancels the
 // running child and every descendant it owns, closes pending questions and
 // cancels pending timers owned by that child tree, and clears the slot. It
-// does not emit a ChildCompletedSignalSource signal, does not suspend, and
-// does not by itself change the parent workflow's state.
+// does not emit any child-outcome signal, does not suspend, and does not
+// by itself change the parent workflow's state.
 //
 // Cancelling an already empty slot is an idempotent no-op, which allows
 // unconditional cleanup sequences (for example cancelling a child, a
 // timer, and closing a question together) without source-level slot-status
-// checks. Cancelling a slot that holds a successfully completed child
-// still awaiting join is an execution error: a completed child's result
-// must be explicitly consumed through ChildCompletedSignalSource, never
-// silently discarded — the future compiler may detect some such invalid
-// paths statically, but the future runtime must enforce the rule
+// checks. Cancelling a slot that holds any terminal outcome still awaiting
+// join — completed, failed, or cancelled (see ChildCompletedSignalSource,
+// ChildFailedSignalSource, and ChildCancelledSignalSource) — is an
+// execution error: a completed result, a failure error, or a cancellation
+// reason must be explicitly consumed through its corresponding signal,
+// never silently discarded — the future compiler may detect some such
+// invalid paths statically, but the future runtime must enforce the rule
 // dynamically in every case.
 //
 // Slot is a static, source-level name, not a runtime expression. Reason

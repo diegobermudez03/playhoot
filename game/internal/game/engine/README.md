@@ -1,3 +1,5 @@
+Wrote by AI, human dev notes added as `Dev note:`
+
 # game/engine
 
 The `engine` package compiles and executes game programs.
