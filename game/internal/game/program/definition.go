@@ -2,8 +2,8 @@ package program
 
 // Definition is the root source-level representation of an authored game.
 //
-// Definition is intentionally incomplete: questions, projections, views,
-// and invariants will be added in later steps.
+// Definition is intentionally incomplete: projections, views, and
+// invariants will be added in later steps.
 //
 // Declarations are stored in slices rather than maps to preserve author
 // order. Order matters for deterministic diagnostics, and duplicate names
@@ -19,6 +19,20 @@ type Definition struct {
 	// GlobalState declares the mutable state instantiated for every new
 	// game session. See StateDeclaration for its semantics.
 	GlobalState StateDeclaration
+
+	// UserIntents declares the typed, unsolicited actions users may
+	// initiate. See UserIntentDeclaration for its semantics.
+	UserIntents []UserIntentDeclaration
+
+	// Questions declares the reusable, typed request contracts workflows
+	// may later open for users. See QuestionDeclaration for its
+	// semantics.
+	Questions []QuestionDeclaration
+
+	// Effects declares the reusable, typed, client-facing presentation
+	// events authoritative game logic may produce. See EffectDeclaration
+	// for its semantics.
+	Effects []EffectDeclaration
 
 	// RootWorkflow names the workflow used to start a game instance. The
 	// future engine compiler validates that it refers to a declared
