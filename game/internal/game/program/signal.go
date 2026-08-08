@@ -69,6 +69,24 @@ type QuestionAnsweredSignalSource struct {
 
 func (QuestionAnsweredSignalSource) isSignalSource() {}
 
+// TimerExpiredSignalSource matches the signal produced when the currently
+// pending timer in the named timer slot owned by the current workflow
+// (see TimerSlotDeclaration) expires.
+//
+// Timer-expiration signals expose no source-language payload fields in
+// this version, so a valid pattern using this source normally has a nil
+// Bindings; the future compiler rejects attempts to bind nonexistent
+// fields such as a scheduling time or a runtime timer identifier — that
+// identity is engine metadata and is never exposed in the authored
+// language. Only a timer instance that is still the current, uncancelled
+// pending timer for Slot at expiration time produces this signal; stale,
+// cancelled, or superseded timer deliveries never do.
+type TimerExpiredSignalSource struct {
+	Slot string
+}
+
+func (TimerExpiredSignalSource) isSignalSource() {}
+
 // SignalBinding binds Field from a matched signal's payload to the
 // immutable lexical name Name.
 type SignalBinding struct {
