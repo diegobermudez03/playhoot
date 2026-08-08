@@ -22,6 +22,15 @@ package program
 // workflow or that Workflow refers to an existing workflow declaration; it
 // preserves duplicate and invalid declarations so the future compiler can
 // report them deterministically.
+//
+// Use ChildWorkflowSlotDeclaration when one child has a stable,
+// statically named role addressed by a fixed slot and the parent handles
+// that one child's individual terminal outcome directly (through
+// ChildCompletedSignalSource, ChildFailedSignalSource, or
+// ChildCancelledSignalSource). When the number of children is determined
+// at runtime, every child shares the same workflow type, and the parent
+// wants one aggregated terminal signal instead, use
+// TaskGroupSlotDeclaration.
 type ChildWorkflowSlotDeclaration struct {
 	Name     string
 	Workflow string
