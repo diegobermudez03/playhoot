@@ -3,7 +3,7 @@ package program_test
 import (
 	"testing"
 
-	"github.com/diegobermudez03/playhoot/game/internal/game/program"
+	"github.com/diegobermudez03/playhoot/game/program"
 )
 
 func TestUnaryOperator_IsValid(t *testing.T) {

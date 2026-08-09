@@ -97,6 +97,22 @@ func dereferencePointer(value any) (resolved any, isNil bool) {
 	return value, false
 }
 
+// decodeOrdinaryObject decodes data into v, an ordinary (non-interface)
+// wire struct such as a Block, a SignalPattern, or one of this package's
+// reusable declarations. Unlike decodeUnion, JSON null is not a valid
+// encoding of an ordinary object: it produces a path-aware structural
+// error instead of silently leaving v at its zero value.
+func decodeOrdinaryObject(path string, data json.RawMessage, v any) error {
+	if isEmptyOrNull(data) {
+		return newDecodeError(path, "expected an object, got null or missing value", nil)
+	}
+	raw, err := decodeTopLevelValue(path, data)
+	if err != nil {
+		return err
+	}
+	return strictDecodeInto(path, raw, v)
+}
+
 // decodeUnion is a small dispatch helper shared by every closed-interface
 // decoder in this package: it handles the null/missing case, decodes and
 // isolates exactly one top-level JSON value, reads its "kind"
