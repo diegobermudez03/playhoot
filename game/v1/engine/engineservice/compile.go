@@ -96,34 +96,75 @@ func (ds Diagnostics) HasErrors() bool {
 // it cannot rely on any earlier validation having run.
 //
 // This version compiles def.Metadata, def.Types (enums, records, unions,
-// and new types), and def.Functions, together with the complete pure
-// expression language their bodies may use. Resources, global state,
-// invariants, projections, views, and workflows are not compiled yet —
-// those, along with the remaining semantic checks described in
+// and new types), def.Functions, def.Resources, def.GlobalState,
+// def.Invariants, and def.Workflows, together with the complete pure
+// expression language their bodies may use. Projections and views are
+// not compiled yet — a workflow presentation only validates that a
+// referenced projection or view name exists, not its signature — and
+// neither are workflow operations, so a compiled Transition carries only
+// its signal pattern, guard, and control; see engine.Transition's doc
+// comment. Those, along with the remaining semantic checks described in
 // LOGICAL_CONTRACT.md and engine/README.md's "Compiler responsibilities"
 // section, are added in later steps.
+//
+// Compilation order matters here in a way it does not for types and
+// functions: a resource's declared Type must be known before functions
+// compile, since a function body may reference resources; every
+// function must be compiled before any resource Value evaluates, since
+// a resource's Value may call one; every resource must be evaluated
+// before global state initializers or invariants compile, since both
+// may reference resources; and every workflow's declared ResultType must
+// be known before any workflow's body compiles, since a child or
+// task-group slot's completion signal may reference any workflow's
+// (including its own) ResultType.
 func Compile(def program.Definition) (engine.Program, Diagnostics) {
+	resourceValues := make(map[string]engine.Value)
+
 	c := &compiler{
-		definition:           def,
-		typeDeclarations:     make(map[string]typeEntry),
-		resolvedTypes:        make(map[string]engine.Type),
-		resolvingTypes:       make(map[string]bool),
-		functionDeclarations: make(map[string]funcEntry),
-		resolvedFunctions:    make(map[string]*engine.Function),
-		resolvingFunctions:   make(map[string]bool),
+		definition:              def,
+		typeDeclarations:        make(map[string]typeEntry),
+		resolvedTypes:           make(map[string]engine.Type),
+		resolvingTypes:          make(map[string]bool),
+		functionDeclarations:    make(map[string]funcEntry),
+		resolvedFunctions:       make(map[string]*engine.Function),
+		resolvingFunctions:      make(map[string]bool),
+		resourceDeclarations:    make(map[string]resourceEntry),
+		resourceTypes:           make(map[string]engine.Type),
+		resourceExprs:           make(map[string]engine.Expression),
+		resolvedResourceValues:  resourceValues,
+		resolvingResourceValues: make(map[string]bool),
+		workflowDeclarations:    make(map[string]workflowEntry),
+		workflowResultTypes:     make(map[string]engine.Type),
 	}
 
 	c.registerTypeNamespace()
 	types := c.compileTypeDeclarations()
 
+	c.registerResourceNamespace()
+	c.buildResourcesRecordType()
+
 	c.registerFunctionNamespace()
 	functions := c.compileFunctions()
+
+	c.compileResourceValues()
 
 	p := engine.Program{
 		Metadata:  compileMetadata(def.Metadata),
 		Types:     types,
 		Functions: functions,
+		Resources: resourceValues,
 	}
+	c.evaluateResources(p)
+
+	p.GlobalState = c.compileGlobalState()
+	p.Invariants = c.compileInvariants(globalStateRecordType(p.GlobalState))
+
+	c.registerWorkflowNamespace()
+	c.buildWorkflowResultTypes()
+	c.validateRootWorkflow()
+	p.Workflows = c.compileWorkflows(p)
+	p.RootWorkflow = def.RootWorkflow
+
 	return p, c.diagnostics
 }
 

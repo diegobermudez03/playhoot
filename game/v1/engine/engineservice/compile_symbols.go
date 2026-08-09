@@ -51,6 +51,56 @@ type compiler struct {
 	// initial language disallows all function recursion, unlike named
 	// types, which only reject an actual cycle.
 	resolvingFunctions map[string]bool
+
+	// resourcesType is the synthetic RecordType shape of the "resources"
+	// scope root, built once (from every registered resource's declared
+	// Type, before any resource Value is evaluated) and reused whenever
+	// a function body, a resource Value, a global-state initializer, or
+	// an invariant condition is compiled.
+	resourcesType engine.RecordType
+
+	// resourceDeclarations registers the resource namespace, the same
+	// way typeDeclarations does for types.
+	resourceDeclarations map[string]resourceEntry
+
+	// resourceTypes memoizes each registered resource's compiled Type,
+	// computed once from its own declaration without evaluating
+	// anything — this is what lets the "resources" scope root exist
+	// before any resource Value is evaluated.
+	resourceTypes map[string]engine.Type
+
+	// resourceExprs memoizes each registered resource's compiled Value
+	// expression.
+	resourceExprs map[string]engine.Expression
+
+	// resolvedResourceValues memoizes each resource's evaluated Value,
+	// filled in dependency order by resolveResourceValue. This map is
+	// also the live backing store the evaluator reads through the
+	// "resources" scope root while evaluating another resource's Value,
+	// a called function's body, or (later) global state initializers
+	// and invariants — see evaluate.go's withResources.
+	resolvedResourceValues map[string]engine.Value
+
+	// resolvingResourceValues tracks which resource names are currently
+	// being evaluated, so a dependency cycle — direct, or through
+	// another resource or a called function — can be diagnosed instead
+	// of recursing forever.
+	resolvingResourceValues map[string]bool
+
+	// workflowDeclarations registers the workflow namespace, the same
+	// way typeDeclarations does for types.
+	workflowDeclarations map[string]workflowEntry
+
+	// workflowResultTypes memoizes each registered workflow's compiled
+	// ResultType, computed once (in registerWorkflowNamespace's second
+	// pass, before any workflow's body compiles) from its own
+	// declaration without compiling the rest of it — this is what lets
+	// one workflow's child/task-group slot resolve another (or its own)
+	// ResultType for a child/task-group completion signal's schema
+	// without needing that workflow's full body compiled first, and
+	// without the recursion risk a named type or function has: a
+	// workflow's ResultType never depends on another workflow's body.
+	workflowResultTypes map[string]engine.Type
 }
 
 // typeEntry is the registered namespace entry for one declared type

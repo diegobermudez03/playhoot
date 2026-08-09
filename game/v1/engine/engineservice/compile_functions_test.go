@@ -33,7 +33,7 @@ func TestCompile_SimpleFunction(t *testing.T) {
 		},
 	}
 
-	p, diags := Compile(def)
+	p, diags := Compile(withMinimalRootWorkflow(def))
 	if diags.HasErrors() {
 		t.Fatalf("unexpected errors: %v", diags)
 	}
@@ -76,7 +76,7 @@ func TestCompile_FunctionCallsAnotherFunction(t *testing.T) {
 		},
 	}
 
-	p, diags := Compile(def)
+	p, diags := Compile(withMinimalRootWorkflow(def))
 	if diags.HasErrors() {
 		t.Fatalf("unexpected errors: %v", diags)
 	}
@@ -163,7 +163,7 @@ func TestCompile_BuiltinCatalog(t *testing.T) {
 			},
 		},
 	}
-	p, diags := Compile(def)
+	p, diags := Compile(withMinimalRootWorkflow(def))
 	if diags.HasErrors() {
 		t.Fatalf("unexpected errors: %v", diags)
 	}
@@ -188,7 +188,7 @@ func TestCompile_LengthBuiltinPolymorphic(t *testing.T) {
 			},
 		},
 	}
-	p, diags := Compile(def)
+	p, diags := Compile(withMinimalRootWorkflow(def))
 	if diags.HasErrors() {
 		t.Fatalf("unexpected errors: %v", diags)
 	}
@@ -292,7 +292,7 @@ func TestCompile_RecordAndEnumConstructionInFunction(t *testing.T) {
 			},
 		},
 	}
-	p, diags := Compile(def)
+	p, diags := Compile(withMinimalRootWorkflow(def))
 	if diags.HasErrors() {
 		t.Fatalf("unexpected errors: %v", diags)
 	}
@@ -365,7 +365,7 @@ func TestCompile_MatchExpression(t *testing.T) {
 			},
 		},
 	}
-	p, diags := Compile(def)
+	p, diags := Compile(withMinimalRootWorkflow(def))
 	if diags.HasErrors() {
 		t.Fatalf("unexpected errors: %v", diags)
 	}
@@ -415,7 +415,7 @@ func TestCompile_ListQueryExpressions(t *testing.T) {
 			},
 		},
 	}
-	p, diags := Compile(def)
+	p, diags := Compile(withMinimalRootWorkflow(def))
 	if diags.HasErrors() {
 		t.Fatalf("unexpected errors: %v", diags)
 	}

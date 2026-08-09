@@ -2,26 +2,62 @@ package engine
 
 // InitializationInput carries the data needed to create the initial
 // Snapshot for one new game instance of a Program.
-//
-// This is currently an empty placeholder: it establishes the shape of
-// engineservice.NewSnapshot's contract without yet defining what
-// initialization data a new game instance needs (for example, root
-// workflow arguments). Fields are added here as workflow-instantiation
-// semantics are implemented.
-type InitializationInput struct{}
+type InitializationInput struct {
+	// RootParameters supplies one argument value per the root
+	// workflow's declared Parameters, by name. engineservice.NewSnapshot
+	// validates each against its declared Type with Value.Validate
+	// before trusting it, since these values come from outside the
+	// compiler's control.
+	RootParameters map[string]Value
+
+	// Seed seeds the new instance's RandomState. The engine itself
+	// never reads operating-system randomness (see
+	// LOGICAL_CONTRACT.md); a caller that needs real unpredictability
+	// must draw Seed from its own legitimate source (for example, when
+	// a session is created) and supply it here, once, so every random
+	// value the engine ever produces afterward is a deterministic
+	// function of it.
+	Seed uint64
+}
 
 // Snapshot is a plain-data representation of the complete logical
 // position of one game instance: global game state, the root and child
-// workflow instances, workflow-local state, pending interactions and
-// timers, deterministic random state, and the current engine sequence.
+// workflow instances (with their own current state, parameters,
+// workflow-local state, and declared runtime slots), deterministic
+// random state, and the current engine sequence.
 //
 // A Snapshot is never mutated in place. engineservice.Step takes a
 // Snapshot and produces a new one inside its returned Commit; the
-// original Snapshot value remains valid and unchanged.
+// original Snapshot value remains valid and unchanged. A Snapshot is
+// self-contained enough to stop and resume execution between any two
+// steps — see LOGICAL_CONTRACT.md — without needing anything beyond
+// itself and the Program it belongs to.
 //
-// Snapshot is intentionally incomplete: this version does not yet define
-// any state a Snapshot actually holds, or how it records which Program
-// it belongs to — that identity, and the check that rejects a Snapshot
-// used with the wrong Program, is added once Program and Snapshot carry
-// real compiled/instance content.
-type Snapshot struct{}
+// Snapshot does not yet record which Program it belongs to; that
+// identity, and the check that rejects a Snapshot used with the wrong
+// Program, is added once real execution (engineservice.Step) needs it.
+type Snapshot struct {
+	// GlobalState is this game instance's mutable global state,
+	// evaluated once by engineservice.NewSnapshot from
+	// Program.GlobalState and, until a future step adds operations that
+	// mutate it, unchanged for the instance's lifetime. Its TypeName is
+	// always the reserved scope root name "global" — see
+	// program.InvariantDeclaration's documented "global" root — not a
+	// name declared in Program.Types.
+	GlobalState RecordValue
+
+	// Root is the root workflow instance — see program.Definition's
+	// RootWorkflow and Program.RootWorkflow — and, through its
+	// ChildSlots and TaskGroupSlots, the root of this game instance's
+	// entire child-workflow tree.
+	Root WorkflowInstance
+
+	// Random is this game instance's deterministic random state.
+	Random RandomState
+
+	// Sequence is the number of steps committed against this game
+	// instance so far. engineservice.NewSnapshot always starts it at 0;
+	// a future engineservice.Step increments it by exactly one per
+	// committed Commit.
+	Sequence uint64
+}

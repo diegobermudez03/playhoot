@@ -73,13 +73,14 @@ func (c *compiler) resolveFunction(name string) *engine.Function {
 }
 
 // compileFunctionDeclaration compiles d's parameters and result type,
-// then compiles Body in a scope containing exactly those parameters —
-// per program.FunctionDeclaration's documented scope restriction, a
-// function body sees only its own parameters, resources (not compiled
-// yet; see doc.go), other functions, and built-ins, never global,
-// local, signal, or any other execution-specific root.
+// then compiles Body in a scope containing exactly those parameters
+// plus the reserved "resources" root — per
+// program.FunctionDeclaration's documented scope restriction, a
+// function body sees only its own parameters, resources, other
+// functions, and built-ins, never global, local, signal, or any other
+// execution-specific root.
 func (c *compiler) compileFunctionDeclaration(d program.FunctionDeclaration, path string) *engine.Function {
-	scope := exprScope{}
+	scope := exprScope{resourcesScopeRootName: c.resourcesType}
 	params := make([]engine.FieldType, 0, len(d.Parameters))
 	seen := make(map[string]int, len(d.Parameters))
 	paramsPath := path + ".parameters"

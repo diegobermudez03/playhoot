@@ -7,6 +7,21 @@ import (
 	"github.com/diegobermudez03/playhoot/game/v1/program"
 )
 
+// withMinimalRootWorkflow adds a trivially valid root workflow to def,
+// for tests that exercise other compiler concerns and don't care about
+// workflow validation, but must satisfy validateRootWorkflow's now-
+// mandatory check to compile without errors.
+func withMinimalRootWorkflow(def program.Definition) program.Definition {
+	def.Workflows = append(def.Workflows, program.WorkflowDeclaration{
+		Name:         "Main",
+		ResultType:   program.BuiltinTypeReference{Type: program.BuiltinTypeUnit},
+		InitialState: "Start",
+		States:       []program.WorkflowStateDeclaration{{Name: "Start"}},
+	})
+	def.RootWorkflow = "Main"
+	return def
+}
+
 func TestCompile_Metadata(t *testing.T) {
 	def := program.Definition{
 		Metadata: program.Metadata{
@@ -18,7 +33,7 @@ func TestCompile_Metadata(t *testing.T) {
 		},
 	}
 
-	p, diags := Compile(def)
+	p, diags := Compile(withMinimalRootWorkflow(def))
 	if diags.HasErrors() {
 		t.Fatalf("unexpected errors: %v", diags)
 	}
@@ -46,7 +61,7 @@ func TestCompile_EnumType(t *testing.T) {
 		},
 	}
 
-	p, diags := Compile(def)
+	p, diags := Compile(withMinimalRootWorkflow(def))
 	if diags.HasErrors() {
 		t.Fatalf("unexpected errors: %v", diags)
 	}
@@ -77,7 +92,7 @@ func TestCompile_RecordWithNamedAndBuiltinFields(t *testing.T) {
 		},
 	}
 
-	p, diags := Compile(def)
+	p, diags := Compile(withMinimalRootWorkflow(def))
 	if diags.HasErrors() {
 		t.Fatalf("unexpected errors: %v", diags)
 	}
@@ -121,7 +136,7 @@ func TestCompile_UnionAndNewType(t *testing.T) {
 		},
 	}
 
-	p, diags := Compile(def)
+	p, diags := Compile(withMinimalRootWorkflow(def))
 	if diags.HasErrors() {
 		t.Fatalf("unexpected errors: %v", diags)
 	}
@@ -169,7 +184,7 @@ func TestCompile_ListMapOptionalReferences(t *testing.T) {
 		},
 	}
 
-	p, diags := Compile(def)
+	p, diags := Compile(withMinimalRootWorkflow(def))
 	if diags.HasErrors() {
 		t.Fatalf("unexpected errors: %v", diags)
 	}
@@ -236,7 +251,7 @@ func TestCompile_DuplicateFieldName(t *testing.T) {
 		},
 	}
 
-	p, diags := Compile(def)
+	p, diags := Compile(withMinimalRootWorkflow(def))
 	if !diags.HasErrors() {
 		t.Fatal("expected a duplicate field name error")
 	}
@@ -259,7 +274,7 @@ func TestCompile_UnknownBuiltinAndUndeclaredReference(t *testing.T) {
 		},
 	}
 
-	_, diags := Compile(def)
+	_, diags := Compile(withMinimalRootWorkflow(def))
 	if len(diags) != 2 {
 		t.Fatalf("expected exactly 2 diagnostics, got %d: %v", len(diags), diags)
 	}
@@ -342,7 +357,7 @@ func TestCompile_DiamondReferenceIsNotACycle(t *testing.T) {
 		},
 	}
 
-	p, diags := Compile(def)
+	p, diags := Compile(withMinimalRootWorkflow(def))
 	if diags.HasErrors() {
 		t.Fatalf("unexpected errors: %v", diags)
 	}

@@ -12,6 +12,15 @@ import (
 // produced by Compile, directly or as part of a compiled
 // engine.Function's Body — in scope.
 //
+// Evaluate always makes p.Resources available through the reserved
+// lexical name "resources" (see withResources), regardless of what scope
+// itself contains; a binding named "resources" in scope is shadowed, not
+// merged with p.Resources. Every nested evaluation this package performs
+// — a called engine.Function's body (evalCall), or, once
+// engineservice.NewSnapshot's initial-state construction reaches
+// invariants, "global" together with "resources" — carries this same
+// guarantee forward.
+//
 // Evaluate performs no I/O and reads no clock, network, environment
 // variable, or operating-system randomness; given the same expr, scope,
 // and p, it always returns the same result. Evaluate itself never
@@ -27,11 +36,26 @@ import (
 // — is reported as an *ExecutionError instead.
 func Evaluate(p engine.Program, expr engine.Expression, scope engine.Scope) (engine.Value, error) {
 	e := &evaluator{program: p}
-	return e.eval(expr, scope)
+	return e.eval(expr, e.withResources(scope))
 }
 
 type evaluator struct {
 	program engine.Program
+}
+
+// withResources returns scope extended with the reserved "resources"
+// binding, built fresh from e.program.Resources every call so that
+// evaluations running while engineservice.Compile is still resolving
+// resources (see resolveResourceValue) see each dependency's value as
+// soon as it is resolved, since e.program.Resources and the map
+// resolveResourceValue writes into are the same map.
+func (e *evaluator) withResources(scope engine.Scope) engine.Scope {
+	fields := make([]engine.FieldValue, 0, len(e.program.Resources))
+	for name, v := range e.program.Resources {
+		fields = append(fields, engine.FieldValue{Name: name, Value: v})
+	}
+	resources := engine.RecordValue{TypeName: resourcesScopeRootName, Fields: fields}
+	return extendScope(scope, resourcesScopeRootName, resources)
 }
 
 func (e *evaluator) eval(expr engine.Expression, scope engine.Scope) (engine.Value, error) {
@@ -460,7 +484,7 @@ func (e *evaluator) evalCall(x engine.CallExpression, scope engine.Scope) (engin
 	}
 
 	if fn, ok := e.program.Functions[x.Function]; ok {
-		return e.eval(fn.Body, engine.Scope{Bindings: args})
+		return e.eval(fn.Body, e.withResources(engine.Scope{Bindings: args}))
 	}
 	return evalBuiltinCall(x.Function, args)
 }

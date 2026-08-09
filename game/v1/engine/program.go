@@ -44,4 +44,44 @@ type Program struct {
 	// indirect, or through a cycle of several functions — is reported
 	// as a SeverityError diagnostic instead of being compiled.
 	Functions map[string]Function
+
+	// Resources holds every immutable, evaluated resource value of the
+	// compiled program.Definition, keyed by declared name. Unlike
+	// Types and Functions, a Resource has no further compiled shape to
+	// keep: its Value is evaluated once, during compilation, and this
+	// is that evaluated result. Evaluating an expression through
+	// engineservice.Evaluate makes every entry here available through
+	// the reserved lexical name "resources" — see evaluate.go's
+	// withResources.
+	//
+	// Resources does not yet support a resource that depends on itself
+	// — directly, through another resource, or through a called
+	// function's own resource references; engineservice.Compile reports
+	// that as a SeverityError diagnostic instead of evaluating it.
+	Resources map[string]Value
+
+	// GlobalState holds the compiled fields of
+	// program.Definition.GlobalState, in declaration order.
+	// engineservice.NewSnapshot evaluates these once per new game
+	// instance to build that instance's initial global state.
+	GlobalState []StateField
+
+	// Invariants holds every compiled program.InvariantDeclaration.
+	// engineservice.NewSnapshot evaluates every one of these against a
+	// new game instance's initial global state and rejects
+	// initialization atomically if any is false or fails to evaluate.
+	Invariants []Invariant
+
+	// Workflows holds every compiled program.WorkflowDeclaration, keyed
+	// by declared name. Every Workflow here is resolved and
+	// semantically validated — see engineservice's compile_workflows.go
+	// — but, per Transition's doc comment, not yet executable: no
+	// workflow instance can be created or stepped until operations are
+	// compiled.
+	Workflows map[string]Workflow
+
+	// RootWorkflow names the Workflow a future engine step uses to
+	// start a new game instance. The compiler guarantees it names an
+	// entry in Workflows.
+	RootWorkflow string
 }
