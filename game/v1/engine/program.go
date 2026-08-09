@@ -16,8 +16,32 @@ package engine
 // a caller that still needs the original Definition already has it,
 // since it is the caller who passes it to engineservice.Compile.
 //
-// Program is intentionally incomplete and will continue to grow: this
-// version does not yet define any compiled content — compiled
-// workflows, symbol tables, executable instructions — those fields are
-// added as compilation semantics are implemented.
-type Program struct{}
+// Program is intentionally incomplete and will continue to grow:
+// compiled workflows and executable instructions are added as
+// compilation semantics are implemented.
+type Program struct {
+	// Metadata is the compiled identity and versioning information of
+	// this game version, carried over unchanged from
+	// program.Definition.Metadata.
+	Metadata Metadata
+
+	// Types holds every named type declared by the compiled
+	// program.Definition — enums, records, unions, and new types —
+	// keyed by declared name and fully resolved: a field whose source
+	// type reference names another declared type holds that other
+	// type's own compiled Type value directly, not a further name to
+	// look up.
+	//
+	// Types does not yet support a named type that, directly or
+	// indirectly (including through a list, map, or optional), refers
+	// back to itself; engineservice.Compile reports that as a
+	// SeverityError diagnostic instead of compiling it.
+	Types map[string]Type
+
+	// Functions holds every user-declared pure function of the compiled
+	// program.Definition, keyed by declared name. A function's Body
+	// never sees another function's scope; recursion — direct,
+	// indirect, or through a cycle of several functions — is reported
+	// as a SeverityError diagnostic instead of being compiled.
+	Functions map[string]Function
+}

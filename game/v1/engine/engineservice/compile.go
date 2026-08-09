@@ -90,12 +90,49 @@ func (ds Diagnostics) HasErrors() bool {
 // any SeverityError entry, the returned engine.Program must not be
 // executed.
 //
-// This version does not yet perform symbol resolution, type checking,
-// control-flow validation, or any other semantic check described in
+// Compile does not assume def already passed gameservice.Validate; it
+// independently registers def's type namespace, resolves every type
+// reference by name, and detects duplicate and undeclared names, because
+// it cannot rely on any earlier validation having run.
+//
+// This version compiles def.Metadata, def.Types (enums, records, unions,
+// and new types), and def.Functions, together with the complete pure
+// expression language their bodies may use. Resources, global state,
+// invariants, projections, views, and workflows are not compiled yet —
+// those, along with the remaining semantic checks described in
 // LOGICAL_CONTRACT.md and engine/README.md's "Compiler responsibilities"
-// section — those are added in later steps. For now, Compile always
-// succeeds with no diagnostics, and its result must not be treated as a
-// guarantee that def is semantically valid.
+// section, are added in later steps.
 func Compile(def program.Definition) (engine.Program, Diagnostics) {
-	return engine.Program{}, nil
+	c := &compiler{
+		definition:           def,
+		typeDeclarations:     make(map[string]typeEntry),
+		resolvedTypes:        make(map[string]engine.Type),
+		resolvingTypes:       make(map[string]bool),
+		functionDeclarations: make(map[string]funcEntry),
+		resolvedFunctions:    make(map[string]*engine.Function),
+		resolvingFunctions:   make(map[string]bool),
+	}
+
+	c.registerTypeNamespace()
+	types := c.compileTypeDeclarations()
+
+	c.registerFunctionNamespace()
+	functions := c.compileFunctions()
+
+	p := engine.Program{
+		Metadata:  compileMetadata(def.Metadata),
+		Types:     types,
+		Functions: functions,
+	}
+	return p, c.diagnostics
+}
+
+func compileMetadata(m program.Metadata) engine.Metadata {
+	return engine.Metadata{
+		ID:              m.ID,
+		Name:            m.Name,
+		Description:     m.Description,
+		Version:         m.Version,
+		LanguageVersion: m.LanguageVersion,
+	}
 }

@@ -1,6 +1,10 @@
 package engineservice
 
-import "github.com/diegobermudez03/playhoot/game/v1/engine"
+import (
+	"fmt"
+
+	"github.com/diegobermudez03/playhoot/game/v1/engine"
+)
 
 // ExecutionErrorCode identifies the category of an ExecutionError.
 //
@@ -21,6 +25,33 @@ const (
 	// engine's real language semantics are being built out and is
 	// expected to disappear once execution is complete.
 	ExecutionErrorNotImplemented
+
+	// ExecutionErrorUndefinedReference marks a ReferenceExpression whose
+	// name is missing from the engine.Scope Evaluate was given. The
+	// compiler already guarantees the name was declared somewhere in
+	// scope at compile time; this can still happen because a caller
+	// assembles the runtime engine.Scope independently, outside the
+	// compiler's control.
+	ExecutionErrorUndefinedReference
+
+	// ExecutionErrorDivisionByZero marks a BinaryOperatorDivide or
+	// BinaryOperatorModulo evaluation whose right operand is zero.
+	ExecutionErrorDivisionByZero
+
+	// ExecutionErrorIndexOutOfRange marks an IndexExpression into a list
+	// whose evaluated index is negative, non-integer, or beyond the
+	// list's length.
+	ExecutionErrorIndexOutOfRange
+
+	// ExecutionErrorKeyNotFound marks an IndexExpression into a map
+	// whose evaluated key has no matching entry.
+	ExecutionErrorKeyNotFound
+
+	// ExecutionErrorNoMatchingCase marks a MatchExpression whose value
+	// matched none of its cases. The compiler does not require match
+	// cases to be exhaustive; this is the defined, non-panicking result
+	// of reaching a value no case covers.
+	ExecutionErrorNoMatchingCase
 )
 
 // ExecutionError is the error type returned by NewSnapshot and Step.
@@ -52,6 +83,12 @@ func (e *ExecutionError) Is(target error) bool {
 		return false
 	}
 	return e.Code == t.Code
+}
+
+// newExecutionError builds an *ExecutionError with the given code and a
+// formatted message.
+func newExecutionError(code ExecutionErrorCode, format string, args ...any) *ExecutionError {
+	return &ExecutionError{Code: code, Message: fmt.Sprintf(format, args...)}
 }
 
 // ErrExecutionNotImplemented is returned by any execution operation
