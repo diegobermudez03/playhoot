@@ -2,204 +2,121 @@ Wrote by AI, human dev notes added as `Dev note:`
 
 # game/program
 
-The `program` package owns the source-level representation of the game programming language.
+`program` defines the source-level language for describing a game: types, state, workflows, expressions, UI, and everything else an author writes down. It's a pure, in-memory data model — an AST, not a compiler or a runtime. It doesn't run games, doesn't talk to a database or the network, and doesn't know anything about any specific engine that will eventually consume it.
 
-It defines the vocabulary used to describe a game, independently of its serialized format and independently of the engine that will execute it.
+Encoding, decoding, and validating a `Definition` are not part of `program` itself — that behavior lives in the sibling package `game/program/gameservice`, built on top of `program`'s types.
 
-A `program.Definition` represents an authored game program. It may originate from JSON, YAML, an AI generation pipeline, an editor, or programmatic
-construction.
+```go
+import (
+    "github.com/diegobermudez03/playhoot/game/program"
+    "github.com/diegobermudez03/playhoot/game/program/gameservice"
+)
 
-This package does not compile or execute game programs.
+def, err := gameservice.DecodeJSON(data)
+if err != nil { ... }
 
-## Responsibilities
+if errs := gameservice.Validate(*def); len(errs) > 0 { ... }
 
-The package owns the source definitions for:
+out, err := gameservice.EncodeJSON(*def)
+```
 
-- metadata and language-version information;
-- user-defined types;
-- built-in types and built-in capabilities;
-- immutable resources;
-- global state declarations;
-- workflow declarations;
-- workflow states and transitions;
-- signal patterns;
-- expressions;
-- operations;
-- workflow control operations;
-- questions and ask-group policies;
-- user intents;
-- UI effects;
-- projections;
-- views and UI elements;
-- presentations;
-- local UI actions;
-- invariants.
+## What you get from `gameservice`
 
-The package also owns serialization and deserialization of source definitions.
+- **`EncodeJSON(program.Definition) ([]byte, error)`** — serializes a `Definition` to compact JSON. Deterministic: encoding the same value twice always produces identical bytes. No validation is performed.
+- **`DecodeJSON(data []byte) (*program.Definition, error)`** — parses JSON into a `Definition`. Structurally strict (unknown fields and unrecognized discriminators are rejected), but semantically permissive — a decoded definition can still be invalid in the ways `Validate` checks for.
+- **`DecodeError`** — the error type returned by `DecodeJSON` on malformed JSON. It carries a path (like `$.workflows[0].states[2].transitions[0]`) pointing at exactly where decoding failed.
+- **`Validate(program.Definition) []error`** — checks a `Definition` against the language's own rules: operator/operand type compatibility, named-type resolution, and duplicate names within a namespace (two types, two workflows, two questions with the same name, etc.). Returns `nil` if nothing is wrong. Each error is a `*gameservice.ValidationError` with a `Path` and `Message`.
 
-## Public API
+`Validate` is intentionally narrow. It does **not** resolve references, lexical scope, or anything that depends on where a name is used at runtime (e.g. whether `ReferenceExpression{Name: "foo"}` actually refers to something in scope). That's the job of a future _engine_ package that compiles a `Definition`. A `nil` result from `Validate` means the definition doesn't break any rule `program`/`gameservice` itself owns — it does not mean the definition will compile.
 
-The package exports the source model required to construct or inspect a game definition.
+## The core type: `Definition`
 
-The main exported type is:
+Everything hangs off one struct:
 
-- `Definition`: the root source-level game definition.
+```go
+type Definition struct {
+    Metadata Metadata
 
-Other exported types include:
+    Types []TypeDeclaration
 
-- metadata and language-version declarations;
-- type declarations and type references;
-- resource and state declarations;
-- workflow, state, transition, and signal declarations;
-- expression variants;
-- operation variants;
-- control-operation variants;
-- question and interaction declarations;
-- projection and view declarations;
-- UI element and UI action variants;
-- invariant declarations;
-- source-level errors;
-- source encoding and decoding functions.
+    Resources   []ResourceDeclaration
+    GlobalState StateDeclaration
 
-Interfaces representing closed language variants use unexported marker methods.
-This prevents packages outside `program` from introducing unsupported expression, operation, control, or UI element implementations.
+    Functions   []FunctionDeclaration
+    Invariants  []InvariantDeclaration
+    Projections []ProjectionDeclaration
+    Views       []ViewDeclaration
 
-## Private implementation
+    PresentationSlots []PresentationSlotDeclaration
 
-The package keeps the following implementation details private:
+    UserIntents []UserIntentDeclaration
+    Questions   []QuestionDeclaration
+    Effects     []EffectDeclaration
 
-- wire-format structs;
-- JSON or YAML discriminator fields;
-- custom union decoding;
-- codec helpers;
-- normalization helpers;
-- default-value insertion;
-- serialization compatibility logic;
-- internal validation used only to decode a structurally valid document.
+    RootWorkflow string
+    Workflows    []WorkflowDeclaration
+}
+```
 
-The wire representation is not the public language model.
+A `Definition` is just a value — build it by hand, decode it from JSON, mutate it, copy it, whatever. Nothing about it is tied to a live game session.
 
-Changing the serialized format must not require the engine to change, provided the decoded `Definition` remains semantically equivalent.
+One thing worth knowing up front: declarations are stored as **slices, not maps**, everywhere in this model (types, fields, cases, operations, ...). This is deliberate — it preserves the order the author wrote things in, and it lets a duplicate name exist in the source model instead of silently overwriting an earlier entry. `Validate` is what catches duplicates; `program` itself doesn't.
 
-## Validation boundary
+## Closed variant types
 
-The package performs only source-format and structural validation required to produce a valid `Definition`.
+A recurring pattern: several concepts are "one of a fixed set of variants," modeled as a Go interface that only types inside this package can implement (an unexported marker method). This is just `program`'s way of guaranteeing you can type-switch over every case exhaustively — you can't accidentally (or intentionally) add your own `Expression` or `Operation` type from outside the package. As a caller, you mostly just need to know these interfaces exist and switch over the listed variants:
 
-Examples include:
+| Interface                   | Represents                                 | Variants                                                                                                                                                                                                                                                                                                                                                                                |
+| --------------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TypeReference`             | the type of a value                        | `BuiltinTypeReference`, `NamedTypeReference`, `ListTypeReference`, `MapTypeReference`, `OptionalTypeReference`                                                                                                                                                                                                                                                                          |
+| `TypeDeclaration`           | a user-defined type                        | `EnumTypeDeclaration`, `RecordTypeDeclaration`, `UnionTypeDeclaration`, `NewTypeDeclaration`                                                                                                                                                                                                                                                                                            |
+| `Expression`                | a pure, value-producing computation        | literals, constructors, `ReferenceExpression`, `FieldExpression`, `IndexExpression`, `UnaryExpression`, `BinaryExpression`, `ConditionalExpression`, `CallExpression`, `MatchExpression`, and the list-query expressions (`ListMapExpression`, `ListFilterExpression`, `ListFlatMapExpression`, `ListAnyExpression`, `ListAllExpression`, `ListCountExpression`, `ListFirstExpression`) |
+| `Operation`                 | one synchronous step inside a transition   | `LetOperation`, `SetOperation`, list/map mutations, `IfOperation`, `ForEachOperation`, question/ask-group/child-workflow/task-group/timer operations, `DrawRandomOperation`, `MatchOperation`                                                                                                                                                                                           |
+| `AssignmentTarget`          | a writable location                        | `NameTarget`, `FieldTarget`, `IndexTarget`                                                                                                                                                                                                                                                                                                                                              |
+| `WorkflowControl`           | how a transition ends                      | `GotoControl`, `StayControl`, `CompleteControl`, `FailControl`, `CancelControl`, `ConditionalControl`, `MatchControl`                                                                                                                                                                                                                                                                   |
+| `SignalSource`              | what a transition reacts to                | `NamedSignalSource` (platform signals), `UserIntentSignalSource`, `QuestionAnsweredSignalSource`, `TimerExpiredSignalSource`, `ChildCompletedSignalSource`, `ChildFailedSignalSource`, `ChildCancelledSignalSource`, `AskGroupCompletedSignalSource`, `TaskGroupCompletedSignalSource`                                                                                                  |
+| `MatchPattern`              | what a match case matches against          | `WildcardMatchPattern`, `EnumValueMatchPattern`, `UnionVariantMatchPattern`, `OptionalNoneMatchPattern`, `OptionalSomeMatchPattern`                                                                                                                                                                                                                                                     |
+| `RandomGenerator`           | how `DrawRandomOperation` produces a value | `RandomIntegerGenerator`, `RandomElementGenerator`, `RandomShuffleGenerator`                                                                                                                                                                                                                                                                                                            |
+| `AskGroupCompletionPolicy`  | when an ask group is done                  | `AskGroupAllResponsesPolicy`, `AskGroupFirstResponsePolicy`, `AskGroupQuorumPolicy`                                                                                                                                                                                                                                                                                                     |
+| `TaskGroupCompletionPolicy` | when a task group is done                  | `TaskGroupAllTerminalPolicy`, `TaskGroupFirstTerminalPolicy`, `TaskGroupQuorumTerminalPolicy`                                                                                                                                                                                                                                                                                           |
+| `UILayout`                  | how a container arranges its children      | `StackLayout`, `AbsoluteLayout`, `LinearLayout`, `GridLayout`                                                                                                                                                                                                                                                                                                                           |
+| `UIElement`                 | a node in a client UI tree                 | `EmptyElement`, `ContainerElement`, `TextElement`, `ImageElement`, `ButtonElement`, `RepeatElement`, `ConditionalElement`                                                                                                                                                                                                                                                               |
+| `UIAction`                  | what a UI event handler does               | `SetLocalStateAction`, `AnswerQuestionAction`, `EmitUserIntentAction`                                                                                                                                                                                                                                                                                                                   |
 
-- required fields are present;
-- a discriminator identifies a supported source variant;
-- malformed literal values are rejected;
-- duplicate object keys in the source format are rejected when detectable;
-- the document can be converted into the source model.
+## Concepts you'll actually work with
 
-The package does not perform full semantic validation.
+### Types
 
-The following responsibilities belong to `engine.Compile`:
-`Dev note: there might be different engines, this pkg shouldn't be dependent on any specific engine implementation, it should simply expose its game definition behavior, however a specific engine wants to validate, compile and execute is up to them`
+`BuiltinType` covers `unit`, `bool`, `number`, `string`, and `user` (the platform-provided "a connected player" type). Everything else is author-defined via `TypeDeclaration`: enums, records (all fields present), unions (exactly one variant, chosen by name), and "new types" (a nominal wrapper distinct from its underlying type, unlike an alias).
 
-- symbol resolution;
-- duplicate declaration detection;
-- type checking;
-- reference validation;
-- workflow control-flow validation;
-- child-workflow ownership validation;
-- question and response compatibility;
-- projection and view compatibility;
-- execution-limit validation;
-- invariant compilation.
+### Resources vs. global state
 
-A definition may therefore be structurally decodable while still failing to compile.
+`ResourceDeclaration` is immutable, load-time data — constants, not something that changes during a game. `Definition.GlobalState` is the mutable state that exists once per game session and can be read/written by workflow transitions.
 
-## Built-in types
+### Workflows
 
-Platform-provided concepts such as `User` are represented as built-in language types.
+A `WorkflowDeclaration` is a deterministic, signal-driven finite-state machine: parameters, local state, some slots (see below), a set of states, and transitions. Every state change happens through exactly one `TransitionDeclaration`, which matches a `SignalPattern`, binds fields from the signal, checks an optional `Guard`, runs a `Block` of `Operation`s, and finishes with exactly one `WorkflowControl` (go to another state, stay, complete, fail, or cancel).
 
-The `program` package declares that these types and operations exist, but does not implement their runtime behavior.
+### Slots
 
-The runtime meaning of built-in types and operations belongs to the `engine` package.
-`Dev note: again, this shouldn't be coupled with the specific engine pkg, there could be many, consider this comment as just saying that those built-in types and operations belongs to the implementation of the engine consumer that we want, there could be muiltiple, even at some point we might decide to export this pkg as non internal pkg, so any dev in any project can define their own engine`
+Several concepts are modeled as "slots" — durable, statically named locations owned by a workflow instance that hold something in-flight: `QuestionSlotDeclaration` (a pending question), `AskGroupSlotDeclaration` (a pending multi-recipient ask), `TimerSlotDeclaration` (a pending timer), `ChildWorkflowSlotDeclaration` (one named child workflow), `TaskGroupSlotDeclaration` (a dynamically sized collection of homogeneous children). A slot name is always a static, source-level string — never a runtime expression. Which one to use depends on shape: one child with an individually-handled outcome → `ChildWorkflowSlotDeclaration`; a runtime-determined number of same-type children with one aggregated outcome → `TaskGroupSlotDeclaration`; a one-step ask to one or more users → `AskGroupSlotDeclaration`.
+
+### Questions, user intents, effects
+
+These are the three ways a workflow talks to players. `QuestionDeclaration` is a reusable request contract a workflow can open (with optional `Validation` logic) and later observe an answer to via `QuestionAnsweredSignalSource`. `UserIntentDeclaration` is a typed action a player can submit unprompted. `EffectDeclaration` is a client-facing presentation event (an animation, a sound) — never authoritative state, purely cosmetic.
+
+### Projections and views
+
+`ProjectionDeclaration` is a pure, per-viewer transformation from authoritative state into whatever a specific client is allowed to see — this is the language's privacy boundary. `ViewDeclaration` is a reusable, declarative client UI tree (`UIElement`) that's a pure function of a projection's output plus its own client-local state. `PresentationDeclaration` (and its question-specific cousin `QuestionPresentationDeclaration`) ties a set of target users, a `PresentationSlotDeclaration` (a named place on the client, like "hud" or "modal"), a projection, and a view together.
+
+### Functions and invariants
+
+`FunctionDeclaration` is a pure, deterministic, reusable computation — no mutation, no interaction with a live session. `InvariantDeclaration` is a boolean condition over global state and resources, checked after every committed transition; violating one rejects the whole step, unlike an authored `FailControl`/`CancelControl`, which are ordinary outcomes.
 
 ## Mutability
 
-A source `Definition` is an authoring object.
+A `Definition` is an authoring value: build it, decode it, edit it, throw it away, whatever you need. There's no hidden shared state and no lifecycle to manage — it only becomes meaningful once something (a future compiler/engine) consumes it.
 
-It may be created, edited, decoded, transformed, or regenerated before compilation.
+## What this package is not
 
-Once a definition has been compiled, modifying the original source object must not affect the resulting `engine.Program`.
-
-The compiler is responsible for creating an independent, immutable executable representation.
-
-## Dependency rules
-
-`program` must not import `engine`.
-
-The intended dependency direction is:
-
-    program <- engine
-
-The package should depend only on the Go standard library unless a serialization dependency is explicitly accepted.
-
-It must not depend on:
-
-- databases;
-- network transports;
-- WebSockets;
-- session management;
-- authentication;
-- timers;
-- persistence repositories;
-- infrastructure adapters.
-  `Dev note: this is true, but again, dont consider "engine" as the only specific engine pkg, but any consumer, the point is, program pkg doesnt care about how any consumer wants to use it`
-
-## Non-responsibilities
-
-This package does not own:
-
-- executable instructions;
-- compiled symbol identifiers;
-- runtime values;
-- workflow instances;
-- game snapshots;
-- runtime signals;
-- transition execution;
-- deterministic randomness;
-- commits;
-- traces;
-- persistence;
-- session concurrency;
-- delivery of UI outputs.
-
-## File organization
-
-`Dev note: this is initial organization given by AI, it might change after manual reviewing, so dont take it as source of truth, I might update organization and forget to update this doc`
-
-- `definition.go` defines the root game definition.
-- `metadata.go` defines identity, version, and language metadata.
-- `builtin.go` declares built-in types and built-in operation names.
-- `types.go` defines user-defined types and type references.
-- `state.go` defines resources and state declarations.
-- `workflow.go` defines workflows, states, and transitions.
-- `signal.go` defines source-level signal patterns.
-- `expression.go` defines expression variants.
-- `operation.go` defines operations and workflow control variants.
-- `interaction.go` defines questions, intents, effects, and interaction policies.
-- `ui.go` defines projections, views, elements, presentations, and UI actions.
-- `invariant.go` defines game invariant declarations.
-- `codec.go` exposes source encoding and decoding.
-- `wire.go` contains private serialization structs and codec helpers.
-- `errors.go` defines source-format and decoding errors.
-
-## Testing
-
-Package tests should focus on:
-
-- source decoding;
-- source encoding;
-- round-trip preservation;
-- union and discriminator handling;
-- malformed document rejection;
-- default-value behavior;
-- wire-format compatibility.
-
-Semantic compilation and execution behavior are tested by the `engine` package.
+`program` doesn't validate references or lexical scope, doesn't check that a workflow name in `RootWorkflow` actually exists, doesn't execute anything, and doesn't know about randomness streams, snapshots, sessions, or persistence at runtime. Those all belong to a future engine package built on top of this model.
