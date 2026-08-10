@@ -193,6 +193,69 @@ func (ctx *execContext) consumeOp() error {
 	return nil
 }
 
+// activeSlotCount counts every occupied interaction slot on ctx's
+// candidate instance state — pending questions, pending timers,
+// running or awaiting-join children, collecting or awaiting-join ask
+// groups, and individual task-group tasks — toward
+// Limits.MaxActiveSlotsPerInstance.
+func (ctx *execContext) activeSlotCount() int {
+	count := 0
+	for _, s := range ctx.questionSlots {
+		if s.Pending != nil {
+			count++
+		}
+	}
+	for _, s := range ctx.timerSlots {
+		if s.Pending {
+			count++
+		}
+	}
+	for _, s := range ctx.childSlots {
+		if s.Child != nil {
+			count++
+		}
+	}
+	for _, s := range ctx.askGroupSlots {
+		if s.Pending != nil {
+			count++
+		}
+	}
+	for _, s := range ctx.taskGroupSlots {
+		if s.Group != nil {
+			count += len(s.Group.Tasks)
+		}
+	}
+	return count
+}
+
+// checkActiveSlotLimit fails atomically if occupying one more
+// interaction slot on ctx's candidate instance would exceed
+// Limits.MaxActiveSlotsPerInstance — called by every operation that is
+// about to occupy a new slot (open a question, schedule a timer, spawn
+// a child, open an ask group, or spawn a task-group task), before it
+// does so.
+func (ctx *execContext) checkActiveSlotLimit() error {
+	if ctx.activeSlotCount() >= ctx.limits.MaxActiveSlotsPerInstance {
+		return newExecutionError(ExecutionErrorActiveSlotLimitExceeded,
+			"engineservice: instance already holds the maximum of %d active interaction slots", ctx.limits.MaxActiveSlotsPerInstance)
+	}
+	return nil
+}
+
+// checkWorkflowDepth fails atomically if spawning a new child or task
+// from ctx's candidate instance would exceed Limits.MaxWorkflowDepth —
+// called by SpawnChildWorkflowOperation and SpawnTaskGroupChildOperation
+// before creating their new instance. ctx.path is the current
+// instance's own depth (the root is at depth 0), so the new instance
+// would be at depth len(ctx.path)+1.
+func (ctx *execContext) checkWorkflowDepth() error {
+	if len(ctx.path)+1 > ctx.limits.MaxWorkflowDepth {
+		return newExecutionError(ExecutionErrorWorkflowDepthExceeded,
+			"engineservice: spawning here would create a child at depth %d, exceeding the maximum of %d", len(ctx.path)+1, ctx.limits.MaxWorkflowDepth)
+	}
+	return nil
+}
+
 // execBlock executes block's operations in order against ctx, threading
 // scope forward exactly as compileBlock threaded it at compile time, so
 // a LetOperation's binding is visible to later operations in this same
@@ -708,6 +771,9 @@ func (ctx *execContext) execOpenQuestion(o engine.OpenQuestionOperation, scope e
 	if ctx.questionSlots[idx].Pending != nil {
 		return newExecutionError(ExecutionErrorSlotOccupied, "engineservice: question slot %q is already occupied", o.Slot)
 	}
+	if err := ctx.checkActiveSlotLimit(); err != nil {
+		return err
+	}
 
 	recipientV, err := Evaluate(ctx.program, o.Recipient, scope)
 	if err != nil {
@@ -767,6 +833,9 @@ func (ctx *execContext) execScheduleTimer(o engine.ScheduleTimerOperation, scope
 	}
 	if ctx.timerSlots[idx].Pending {
 		return newExecutionError(ExecutionErrorSlotOccupied, "engineservice: timer slot %q is already occupied", o.Slot)
+	}
+	if err := ctx.checkActiveSlotLimit(); err != nil {
+		return err
 	}
 
 	delayV, err := Evaluate(ctx.program, o.DelayMilliseconds, scope)
@@ -839,6 +908,12 @@ func (ctx *execContext) execSpawnChildWorkflow(o engine.SpawnChildWorkflowOperat
 	}
 	if ctx.childSlots[idx].Child != nil {
 		return newExecutionError(ExecutionErrorSlotOccupied, "engineservice: child slot %q is already occupied", o.Slot)
+	}
+	if err := ctx.checkActiveSlotLimit(); err != nil {
+		return err
+	}
+	if err := ctx.checkWorkflowDepth(); err != nil {
+		return err
 	}
 
 	slotDecl, _ := ctx.childSlotDeclaration(o.Slot)

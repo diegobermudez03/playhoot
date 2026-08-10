@@ -13,10 +13,9 @@ package engine
 // type-switch over them exhaustively.
 //
 // This version defines the variants produced by single-user questions,
-// logical timers, and client-facing effects — see
-// engineservice's compile_operations.go and execute.go. Activating or
-// removing a presentation, publishing a projection update, and
-// reporting workflow completion are added once those concerns compile.
+// logical timers, client-facing effects, and presentations — see
+// engineservice's compile_operations.go and execute.go. Reporting
+// workflow completion is added once that concern compiles.
 type Output interface {
 	isOutput()
 }
@@ -73,3 +72,45 @@ type EmitEffectOutput struct {
 }
 
 func (EmitEffectOutput) isOutput() {}
+
+// ActivatePresentationOutput reports that the presentation named Name
+// was newly mounted for Recipient in the presentation slot Slot,
+// showing the view named View with the visible model Model. Per
+// program.PresentationSlotDeclaration, at most one presentation may
+// occupy a given (Slot, Recipient) pair at a time — see
+// engineservice's presentation.go.
+type ActivatePresentationOutput struct {
+	Slot      string
+	Recipient UserID
+	Name      string
+	View      string
+	Model     Value
+}
+
+func (ActivatePresentationOutput) isOutput() {}
+
+// UpdatePresentationOutput reports that the presentation named Name,
+// already active for Recipient in the presentation slot Slot, now has
+// the visible model Model — recomputed from the same, already-committed
+// snapshot an ActivatePresentationOutput or a prior
+// UpdatePresentationOutput for the same (Slot, Recipient) last reported.
+type UpdatePresentationOutput struct {
+	Slot      string
+	Recipient UserID
+	Name      string
+	Model     Value
+}
+
+func (UpdatePresentationOutput) isOutput() {}
+
+// RemovePresentationOutput reports that the presentation named Name,
+// previously active for Recipient in the presentation slot Slot, was
+// unmounted — its owning workflow-level scope, state, or pending
+// question ended, or it was superseded.
+type RemovePresentationOutput struct {
+	Slot      string
+	Recipient UserID
+	Name      string
+}
+
+func (RemovePresentationOutput) isOutput() {}

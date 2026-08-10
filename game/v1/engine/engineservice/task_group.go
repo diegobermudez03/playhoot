@@ -93,6 +93,12 @@ func (ctx *execContext) execSpawnTaskGroupChild(o engine.SpawnTaskGroupChildOper
 	if _, exists := findGroupTaskIndex(*group, keyV); exists {
 		return newExecutionError(ExecutionErrorDuplicateTaskKey, "engineservice: task-group slot %q already has a task for the given key", o.Slot)
 	}
+	if err := ctx.checkActiveSlotLimit(); err != nil {
+		return err
+	}
+	if err := ctx.checkWorkflowDepth(); err != nil {
+		return err
+	}
 
 	slotDecl, _ := ctx.taskGroupSlotDeclaration(o.Slot)
 	childWorkflow, ok := ctx.program.Workflows[slotDecl.Workflow]

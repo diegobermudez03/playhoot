@@ -136,6 +136,8 @@ func Compile(def program.Definition) (engine.Program, Diagnostics) {
 		workflowDeclarations:    make(map[string]workflowEntry),
 		workflowResultTypes:     make(map[string]engine.Type),
 		workflowParameterTypes:  make(map[string][]engine.FieldType),
+		compiledProjections:     make(map[string]engine.Projection),
+		compiledViews:           make(map[string]engine.View),
 	}
 
 	c.registerTypeNamespace()
@@ -165,6 +167,16 @@ func Compile(def program.Definition) (engine.Program, Diagnostics) {
 	c.compiledEffects = c.compileEffects()
 	p.Questions = c.compiledQuestions
 	p.Effects = c.compiledEffects
+
+	// Projections and views must be compiled before any workflow body,
+	// since a workflow-level, state-level, or question Presentation
+	// validates its Projection's ResultType against its View's
+	// ModelType, and its ProjectionArguments against the Projection's
+	// own Parameters.
+	c.compiledProjections = c.compileProjections(globalType)
+	c.compiledViews = c.compileViews()
+	p.Projections = c.compiledProjections
+	p.Views = c.compiledViews
 
 	c.registerWorkflowNamespace()
 	c.buildWorkflowResultTypes()

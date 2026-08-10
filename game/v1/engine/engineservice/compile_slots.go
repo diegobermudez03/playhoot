@@ -146,12 +146,6 @@ func (c *compiler) compileQuestionPresentation(pres program.QuestionPresentation
 	if !c.presentationSlotExists(pres.Slot) {
 		c.addf(path+".slot", "reference to undeclared presentation slot %q", pres.Slot)
 	}
-	if !c.projectionExists(pres.Projection) {
-		c.addf(path+".projection", "reference to undeclared projection %q", pres.Projection)
-	}
-	if !c.viewExists(pres.View) {
-		c.addf(path+".view", "reference to undeclared view %q", pres.View)
-	}
 
 	scope := exprScope{
 		resourcesScopeRootName: c.resourcesType,
@@ -166,14 +160,23 @@ func (c *compiler) compileQuestionPresentation(pres program.QuestionPresentation
 		}
 	}
 
-	args := make([]engine.CallArgument, 0, len(pres.ProjectionArguments))
-	for i, a := range pres.ProjectionArguments {
-		aPath := fmt.Sprintf("%s.projection_arguments[%d]", path, i)
-		v, _ := c.compileExpression(a.Value, scope, aPath+".value")
-		args = append(args, engine.CallArgument{Name: a.Name, Value: v})
+	args, argTypes, argsOK := c.compileCallArguments(pres.ProjectionArguments, scope, path)
+
+	projection, projOK := c.compiledProjections[pres.Projection]
+	if !projOK {
+		c.addf(path+".projection", "reference to undeclared projection %q", pres.Projection)
+	} else if argsOK {
+		c.checkCallArguments(projection.Parameters, args, argTypes, path)
 	}
 
-	return &engine.QuestionPresentation{Projection: pres.Projection, ProjectionArguments: args, View: pres.View}
+	if view, viewOK := c.compiledViews[pres.View]; !viewOK {
+		c.addf(path+".view", "reference to undeclared view %q", pres.View)
+	} else if projOK && projection.ResultType != nil && view.ModelType != nil && !projection.ResultType.Equal(view.ModelType) {
+		c.addf(path+".view", "projection %q result type %s is not assignable to view %q's model type %s",
+			pres.Projection, describeType(projection.ResultType), pres.View, describeType(view.ModelType))
+	}
+
+	return &engine.QuestionPresentation{Slot: pres.Slot, Projection: pres.Projection, ProjectionArguments: args, View: pres.View}
 }
 
 func (c *compiler) questionByName(name string) (program.QuestionDeclaration, bool) {

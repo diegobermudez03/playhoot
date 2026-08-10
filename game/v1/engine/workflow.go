@@ -56,11 +56,12 @@ type AskGroupSlot struct {
 }
 
 // QuestionPresentation is the compiled representation of one
-// program.QuestionPresentationDeclaration. Unlike the source form, it
-// carries no Slot field: it is always reached through the
-// QuestionSlot/AskGroupSlot that owns it, which already identifies the
-// slot.
+// program.QuestionPresentationDeclaration. Slot here names the
+// PresentationSlot the mounted view occupies (for example "modal") —
+// a different concept from the owning QuestionSlot's or AskGroupSlot's
+// own Name, which identifies the interaction, not the UI location.
 type QuestionPresentation struct {
+	Slot                string
 	Projection          string
 	ProjectionArguments []CallArgument
 	View                string

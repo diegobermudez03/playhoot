@@ -119,6 +119,15 @@ type compiler struct {
 	// Arguments against these.
 	compiledQuestions map[string]engine.Question
 	compiledEffects   map[string]engine.Effect
+
+	// compiledProjections and compiledViews hold every compiled
+	// program.ProjectionDeclaration and program.ViewDeclaration, keyed
+	// by declared name, computed once before any workflow compiles — a
+	// Presentation or QuestionPresentation validates its
+	// ProjectionArguments and result-type-to-model-type assignability
+	// against these.
+	compiledProjections map[string]engine.Projection
+	compiledViews       map[string]engine.View
 }
 
 // typeEntry is the registered namespace entry for one declared type

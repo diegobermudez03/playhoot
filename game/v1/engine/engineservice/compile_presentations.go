@@ -35,16 +35,14 @@ func (c *compiler) compilePresentations(decls []program.PresentationDeclaration,
 // Targets, and ProjectionArguments, are compiled in scope — the same
 // base scope (parameters, "local", "global", "resources") the enclosing
 // Workflow or WorkflowState uses for its transitions, since a
-// presentation is not tied to any one signal.
+// presentation is not tied to any one signal. Unlike a QuestionPresentation,
+// the referenced View must not contain an AnswerQuestionAction anywhere
+// in its element tree — per program.AnswerQuestionAction's documented
+// restriction, that action is only valid in a view mounted through a
+// pending question.
 func (c *compiler) compilePresentation(p program.PresentationDeclaration, path string, scope exprScope) engine.Presentation {
 	if !c.presentationSlotExists(p.Slot) {
 		c.addf(path+".slot", "reference to undeclared presentation slot %q", p.Slot)
-	}
-	if !c.projectionExists(p.Projection) {
-		c.addf(path+".projection", "reference to undeclared projection %q", p.Projection)
-	}
-	if !c.viewExists(p.View) {
-		c.addf(path+".view", "reference to undeclared view %q", p.View)
 	}
 
 	targets, targetsType := c.compileExpression(p.Targets, scope, path+".targets")
@@ -55,11 +53,27 @@ func (c *compiler) compilePresentation(p program.PresentationDeclaration, path s
 		}
 	}
 
-	args := make([]engine.CallArgument, 0, len(p.ProjectionArguments))
-	for i, a := range p.ProjectionArguments {
-		aPath := fmt.Sprintf("%s.projection_arguments[%d]", path, i)
-		v, _ := c.compileExpression(a.Value, scope, aPath+".value")
-		args = append(args, engine.CallArgument{Name: a.Name, Value: v})
+	args, argTypes, argsOK := c.compileCallArguments(p.ProjectionArguments, scope, path)
+
+	projection, projOK := c.compiledProjections[p.Projection]
+	if !projOK {
+		c.addf(path+".projection", "reference to undeclared projection %q", p.Projection)
+	} else if argsOK {
+		c.checkCallArguments(projection.Parameters, args, argTypes, path)
+	}
+
+	view, viewOK := c.compiledViews[p.View]
+	if !viewOK {
+		c.addf(path+".view", "reference to undeclared view %q", p.View)
+	}
+	if projOK && viewOK {
+		if projection.ResultType != nil && view.ModelType != nil && !projection.ResultType.Equal(view.ModelType) {
+			c.addf(path+".view", "projection %q result type %s is not assignable to view %q's model type %s",
+				p.Projection, describeType(projection.ResultType), p.View, describeType(view.ModelType))
+		}
+		if viewContainsAnswerQuestionAction(view.Root) {
+			c.addf(path+".view", "view %q uses AnswerQuestionAction, which is only valid in a view mounted through a pending question", p.View)
+		}
 	}
 
 	return engine.Presentation{

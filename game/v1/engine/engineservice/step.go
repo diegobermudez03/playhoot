@@ -165,7 +165,105 @@ const (
 	// must never remain in the building phase once its opening
 	// transition commits.
 	ExecutionErrorTaskGroupLeftBuilding
+
+	// ExecutionErrorPresentationSlotOccupied marks a committed
+	// transition whose resulting active-presentation set would occupy
+	// the same presentation slot more than once for the same user —
+	// either because one Presentation's evaluated Targets contains the
+	// same user more than once, or because two different presentations
+	// (workflow-level, state-level, or pending-question) target the
+	// same user on the same PresentationSlot at once. Per
+	// program.PresentationSlotDeclaration, a user may have at most one
+	// active presentation per slot at a time.
+	ExecutionErrorPresentationSlotOccupied
+
+	// ExecutionErrorWorkflowDepthExceeded marks a SpawnChildWorkflowOperation
+	// or SpawnTaskGroupChildOperation that would create a new instance
+	// deeper than engine.Limits.MaxWorkflowDepth allows — see that
+	// field's doc comment. This guards against an unbounded recursive
+	// spawn (a workflow that spawns a same-typed child that spawns
+	// another, forever).
+	ExecutionErrorWorkflowDepthExceeded
+
+	// ExecutionErrorActiveSlotLimitExceeded marks an operation that
+	// would occupy a new interaction slot (a question, a timer, a
+	// child, an ask-group, or a task-group task) on an instance that
+	// already holds engine.Limits.MaxActiveSlotsPerInstance occupied
+	// slots. This guards against unbounded fan-out — for example, a
+	// loop that spawns one task-group child per iteration with no
+	// bound on the collection driving it.
+	ExecutionErrorActiveSlotLimitExceeded
 )
+
+// String names code for logs, diagnostics, and debugging — see
+// "stable error categories" in engine/README.md: this mapping from
+// ExecutionErrorCode to a human-readable name is itself part of the
+// engine's stability contract, alongside the sentinel Err* values and
+// the Code values themselves. A future code is always added at the end
+// of the const block and given an entry here; an existing name is never
+// reused for a different meaning.
+func (c ExecutionErrorCode) String() string {
+	switch c {
+	case ExecutionErrorUnknown:
+		return "unknown"
+	case ExecutionErrorNotImplemented:
+		return "not_implemented"
+	case ExecutionErrorUndefinedReference:
+		return "undefined_reference"
+	case ExecutionErrorDivisionByZero:
+		return "division_by_zero"
+	case ExecutionErrorIndexOutOfRange:
+		return "index_out_of_range"
+	case ExecutionErrorKeyNotFound:
+		return "key_not_found"
+	case ExecutionErrorNoMatchingCase:
+		return "no_matching_case"
+	case ExecutionErrorInvalidInitialState:
+		return "invalid_initial_state"
+	case ExecutionErrorInvariantViolation:
+		return "invariant_violation"
+	case ExecutionErrorSnapshotProgramMismatch:
+		return "snapshot_program_mismatch"
+	case ExecutionErrorSignalRejected:
+		return "signal_rejected"
+	case ExecutionErrorBudgetExceeded:
+		return "budget_exceeded"
+	case ExecutionErrorLoopLimitExceeded:
+		return "loop_limit_exceeded"
+	case ExecutionErrorInvalidRandomRange:
+		return "invalid_random_range"
+	case ExecutionErrorEmptyRandomCollection:
+		return "empty_random_collection"
+	case ExecutionErrorSlotOccupied:
+		return "slot_occupied"
+	case ExecutionErrorInvalidTimerDelay:
+		return "invalid_timer_delay"
+	case ExecutionErrorInputRejected:
+		return "input_rejected"
+	case ExecutionErrorChildOutcomeNotJoined:
+		return "child_outcome_not_joined"
+	case ExecutionErrorDuplicateRecipient:
+		return "duplicate_recipient"
+	case ExecutionErrorInvalidQuorum:
+		return "invalid_quorum"
+	case ExecutionErrorAskGroupNotJoined:
+		return "ask_group_not_joined"
+	case ExecutionErrorDuplicateTaskKey:
+		return "duplicate_task_key"
+	case ExecutionErrorTaskGroupNotJoined:
+		return "task_group_not_joined"
+	case ExecutionErrorTaskGroupLeftBuilding:
+		return "task_group_left_building"
+	case ExecutionErrorPresentationSlotOccupied:
+		return "presentation_slot_occupied"
+	case ExecutionErrorWorkflowDepthExceeded:
+		return "workflow_depth_exceeded"
+	case ExecutionErrorActiveSlotLimitExceeded:
+		return "active_slot_limit_exceeded"
+	default:
+		return "unknown"
+	}
+}
 
 // ExecutionError is the error type returned by NewSnapshot and Step.
 //
@@ -183,7 +281,7 @@ type ExecutionError struct {
 }
 
 func (e *ExecutionError) Error() string {
-	return e.Message
+	return fmt.Sprintf("%s: %s", e.Code, e.Message)
 }
 
 // Is lets errors.Is(err, ErrExecutionNotImplemented) and similar checks
@@ -643,6 +741,26 @@ func Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal, limi
 		return engine.Commit{}, err
 	}
 
+	// Per program.ProjectionDeclaration's documented "only a
+	// successfully committed snapshot may ever be projected", active
+	// presentations are recalculated only now, against the already
+	// fully validated candidate state — never speculatively, and never
+	// before invariants passed. A genesis WorkflowStarted delivery has
+	// no "before": nothing about this instance was ever presented to a
+	// client prior to its own first transition.
+	var beforeActive []presentationEntry
+	if !(signal.Kind == engine.SignalKindNamed && signal.Name == "WorkflowStarted") {
+		beforeActive, err = deriveActivePresentations(p, workflow, target, snapshot.GlobalState)
+		if err != nil {
+			return engine.Commit{}, err
+		}
+	}
+	afterActive, err := deriveActivePresentations(p, workflow, newTarget, ctx.global)
+	if err != nil {
+		return engine.Commit{}, err
+	}
+	ctx.outputs = append(ctx.outputs, diffPresentations(beforeActive, afterActive)...)
+
 	commit := engine.Commit{
 		Snapshot: engine.Snapshot{
 			GlobalState: ctx.global,
@@ -652,10 +770,47 @@ func Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal, limi
 		},
 		InternalSignals: ctx.internalSignals,
 		Outputs:         ctx.outputs,
-		ConsumedSignal:  signal,
+		Trace: engine.Trace{
+			Path:           signal.Path,
+			Workflow:       workflow.Name,
+			TransitionName: transition.Name,
+			GuardEvaluated: transition.Guard != nil,
+			GuardResult:    transition.Guard != nil,
+			StateBefore:    target.State,
+			StateAfter:     newTarget.State,
+			Outcome:        newTarget.Outcome,
+			OperationCount: ctx.opCount,
+			Outputs:        ctx.outputs,
+		},
+		ConsumedSignal: signal,
 	}
 	return commit, nil
 }
+
+// ErrSignalRejected and ErrInputRejected are the two "stale signal"
+// outcomes Step ever returns, and they mean structurally different
+// things — a caller that wants to explain, log, or react differently
+// to each should switch on Code (or use errors.Is against these
+// sentinels) rather than treating "rejected" as one category:
+//
+//   - ErrSignalRejected means the addressing was fine (the targeted
+//     instance exists and is still running) but nothing in that
+//     instance's compiled Workflow was ever willing to react to this
+//     signal at all — no transition's SignalSource matched it, or the
+//     one that matched had a false Guard. This is the outcome for a
+//     signal.Path naming an instance that no longer exists (already
+//     terminated, or discarded by recursive cleanup) too.
+//   - ErrInputRejected means addressing AND matching both succeeded —
+//     something was clearly willing to react to a signal of this
+//     shape — but authoritative, kind-specific validation rejected the
+//     concrete payload: a stale or duplicate answer/expiration/outcome
+//     delivered to a slot already cleared, an unauthorized respondent,
+//     or an answer failing its response type or Validation expression.
+//
+// Both are non-error, defined outcomes, not bugs: snapshot is
+// unchanged, no Commit is produced, and retrying with the same
+// (unchanged) inputs always reproduces the identical rejection — see
+// LOGICAL_CONTRACT.md's determinism guarantee.
 
 // ErrSignalRejected is returned by Step when signal has no applicable
 // transition: none of the current state's transitions, or the

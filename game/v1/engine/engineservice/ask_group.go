@@ -20,6 +20,9 @@ func (ctx *execContext) execOpenAskGroup(o engine.OpenAskGroupOperation, scope e
 	if ctx.askGroupSlots[idx].Pending != nil {
 		return newExecutionError(ExecutionErrorSlotOccupied, "engineservice: ask-group slot %q is already occupied", o.Slot)
 	}
+	if err := ctx.checkActiveSlotLimit(); err != nil {
+		return err
+	}
 
 	recipientsV, err := Evaluate(ctx.program, o.Recipients, scope)
 	if err != nil {
@@ -271,7 +274,14 @@ func stepAskGroupAnswer(p engine.Program, snapshot engine.Snapshot, signal engin
 			Random:      snapshot.Random,
 			Sequence:    snapshot.Sequence + 1,
 		},
-		Outputs:        outputs,
+		Outputs: outputs,
+		Trace: engine.Trace{
+			Path:        signal.Path,
+			Workflow:    target.Workflow,
+			StateBefore: target.State,
+			StateAfter:  target.State,
+			Outputs:     outputs,
+		},
 		ConsumedSignal: signal,
 	}, nil
 }

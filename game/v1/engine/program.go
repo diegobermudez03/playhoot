@@ -85,6 +85,22 @@ type Program struct {
 	// Arguments against the named entry's Parameters at compile time.
 	Effects map[string]Effect
 
+	// Projections holds every compiled program.ProjectionDeclaration,
+	// keyed by declared name. A Presentation or QuestionPresentation
+	// validates its ProjectionArguments against the named entry's
+	// Parameters at compile time; engineservice evaluates Body, per
+	// viewer, only against an already-committed snapshot.
+	Projections map[string]Projection
+
+	// Views holds every compiled program.ViewDeclaration, keyed by
+	// declared name. A Presentation or QuestionPresentation validates
+	// its referenced Projection's ResultType is assignable to the named
+	// entry's ModelType at compile time. The engine never mounts or
+	// renders a View; a client fetches it once, by name, and constructs
+	// its interface from that plus the Model an ActivatePresentationOutput
+	// or UpdatePresentationOutput carries.
+	Views map[string]View
+
 	// Workflows holds every compiled program.WorkflowDeclaration, keyed
 	// by declared name. Every Workflow here is resolved and
 	// semantically validated — see engineservice's compile_workflows.go.
