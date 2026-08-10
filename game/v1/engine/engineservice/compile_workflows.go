@@ -79,6 +79,21 @@ func (c *compiler) buildWorkflowResultTypes() {
 	}
 }
 
+// buildWorkflowParameterTypes compiles every registered workflow's
+// declared Parameters — never the rest of its body — into
+// c.workflowParameterTypes, mirroring buildWorkflowResultTypes: this
+// lets a SpawnChildWorkflowOperation anywhere validate its Arguments
+// against the target slot's declared workflow's parameters before that
+// workflow's full body is compiled, and lets compileWorkflowDeclaration
+// reuse the same result for its own parameters instead of compiling (and
+// diagnosing) them a second time.
+func (c *compiler) buildWorkflowParameterTypes() {
+	for name, entry := range c.workflowDeclarations {
+		scope := exprScope{resourcesScopeRootName: c.resourcesType}
+		c.workflowParameterTypes[name] = c.compileFieldDeclarationsScope(entry.decl.Parameters, entry.path+".parameters", scope)
+	}
+}
+
 // validateRootWorkflow diagnoses a program.Definition.RootWorkflow that
 // is empty or does not name a registered workflow.
 func (c *compiler) validateRootWorkflow() {
@@ -127,9 +142,15 @@ func (c *compiler) compileWorkflowDeclaration(w program.WorkflowDeclaration, pat
 	// Local state initializers may see the workflow's own parameters
 	// (already available at instance-creation time) and resources, but
 	// not "global" or "local" itself — see compileStateFields's shared
-	// use for both this and Program.GlobalState.
+	// use for both this and Program.GlobalState. Parameters themselves
+	// were already compiled once, up front, by buildWorkflowParameterTypes;
+	// reused here rather than recompiled to avoid diagnosing the same
+	// declarations twice.
+	params := c.workflowParameterTypes[w.Name]
 	paramScope := exprScope{resourcesScopeRootName: c.resourcesType}
-	params := c.compileFieldDeclarationsScope(w.Parameters, path+".parameters", paramScope)
+	for _, p := range params {
+		paramScope[p.Name] = p.Type
+	}
 	localState := c.compileStateFields(w.LocalState.Fields, path+".local_state.fields", paramScope)
 	localType := engine.RecordType{Name: "local", Fields: stateFieldTypes(localState)}
 

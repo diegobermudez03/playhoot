@@ -135,6 +135,7 @@ func Compile(def program.Definition) (engine.Program, Diagnostics) {
 		resolvingResourceValues: make(map[string]bool),
 		workflowDeclarations:    make(map[string]workflowEntry),
 		workflowResultTypes:     make(map[string]engine.Type),
+		workflowParameterTypes:  make(map[string][]engine.FieldType),
 	}
 
 	c.registerTypeNamespace()
@@ -157,10 +158,17 @@ func Compile(def program.Definition) (engine.Program, Diagnostics) {
 	c.evaluateResources(p)
 
 	p.GlobalState = c.compileGlobalState()
-	p.Invariants = c.compileInvariants(globalStateRecordType(p.GlobalState))
+	globalType := globalStateRecordType(p.GlobalState)
+	p.Invariants = c.compileInvariants(globalType)
+
+	c.compiledQuestions = c.compileQuestions(globalType)
+	c.compiledEffects = c.compileEffects()
+	p.Questions = c.compiledQuestions
+	p.Effects = c.compiledEffects
 
 	c.registerWorkflowNamespace()
 	c.buildWorkflowResultTypes()
+	c.buildWorkflowParameterTypes()
 	c.validateRootWorkflow()
 	p.Workflows = c.compileWorkflows(p)
 	p.RootWorkflow = def.RootWorkflow

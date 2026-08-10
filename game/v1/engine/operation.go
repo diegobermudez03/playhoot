@@ -45,14 +45,10 @@ type Block struct {
 
 // Operation is the compiled representation of one program.Operation.
 //
-// This version compiles the operations a purely sequential workflow
-// needs — lexical bindings, mutation, conditionals, iteration, and
-// pattern-matched branching — and does not yet compile an operation
-// that opens an interaction, schedules a timer, spawns a child or task,
-// or draws a random value; a Block containing one of those is
-// diagnosed, at compile time, as using an unsupported operation, and
-// does not appear in the compiled Block at all — see engineservice's
-// compile_operations.go.
+// This version does not yet compile an ask-group or task-group
+// operation; a Block containing one of those is diagnosed, at compile
+// time, as using an unsupported operation, and does not appear in the
+// compiled Block at all — see engineservice's compile_operations.go.
 //
 // Operation is a closed interface, mirroring program's own
 // closed-interface pattern.
@@ -165,3 +161,112 @@ type MatchOperationCase struct {
 	Pattern MatchPattern
 	Body    Block
 }
+
+// DrawRandomOperation draws one value from Generator and introduces it
+// as the immutable lexical binding Name, behaving lexically like the
+// binding LetOperation introduces. Drawing advances the enclosing
+// engineservice.Step call's candidate RandomState; per
+// program.DrawRandomOperation's documented atomicity, that advancement
+// is rolled back, along with every other candidate change, if the step
+// fails for any reason.
+type DrawRandomOperation struct {
+	Name      string
+	Generator RandomGenerator
+}
+
+func (DrawRandomOperation) isOperation() {}
+
+// OpenQuestionOperation opens one concrete instance of the question
+// associated with the named workflow slot Slot, for Recipient, with
+// Arguments captured as that instance's parameters. The compiler
+// guarantees Recipient is statically user and Arguments matches the
+// slot's question's declared parameters exactly. Opening an already
+// occupied slot is an execution error that fails the transition
+// atomically — see program.OpenQuestionOperation.
+type OpenQuestionOperation struct {
+	Slot      string
+	Recipient Expression
+	Arguments []CallArgument
+}
+
+func (OpenQuestionOperation) isOperation() {}
+
+// CloseQuestionOperation closes the pending question instance in the
+// named workflow slot Slot, if any, without producing a
+// QuestionAnsweredSignalSource signal. Closing an already empty slot is
+// an idempotent no-op.
+type CloseQuestionOperation struct {
+	Slot string
+}
+
+func (CloseQuestionOperation) isOperation() {}
+
+// ScheduleTimerOperation schedules a timer in the named workflow timer
+// slot Slot, to fire after DelayMilliseconds evaluates. Scheduling into
+// an already occupied slot is an execution error that fails the
+// transition atomically — see program.ScheduleTimerOperation.
+type ScheduleTimerOperation struct {
+	Slot              string
+	DelayMilliseconds Expression
+}
+
+func (ScheduleTimerOperation) isOperation() {}
+
+// CancelTimerOperation cancels the currently pending timer in the named
+// workflow timer slot Slot, if any, without producing a
+// TimerExpiredSignalSource signal. Cancelling an already empty slot is
+// an idempotent no-op.
+type CancelTimerOperation struct {
+	Slot string
+}
+
+func (CancelTimerOperation) isOperation() {}
+
+// EmitEffectOperation emits one instance of the named effect Effect to
+// Recipients with the given Arguments. The compiler guarantees
+// Recipients is statically list<user> and Arguments matches Effect's
+// declared parameters exactly. This never mutates authoritative state;
+// it only produces a declarative EmitEffectOutput once the enclosing
+// transition commits.
+type EmitEffectOperation struct {
+	Effect     string
+	Recipients Expression
+	Arguments  []CallArgument
+}
+
+func (EmitEffectOperation) isOperation() {}
+
+// SpawnChildWorkflowOperation creates one child workflow instance in the
+// named child slot Slot, passing Arguments as the child's parameters.
+// The compiler guarantees Arguments matches the slot's declared
+// workflow's declared parameters exactly. Spawning into an already
+// occupied slot — holding a running child or a terminal outcome still
+// awaiting join — is an execution error that fails the transition
+// atomically. Spawning does not itself execute the child's
+// WorkflowStarted transition; it produces the corresponding
+// engine.Signal as one of the enclosing engineservice.Step call's
+// Commit.InternalSignals, for a later Step call to apply — see
+// program.SpawnChildWorkflowOperation.
+type SpawnChildWorkflowOperation struct {
+	Slot      string
+	Arguments []CallArgument
+}
+
+func (SpawnChildWorkflowOperation) isOperation() {}
+
+// CancelChildWorkflowOperation recursively cancels the running child
+// workflow instance in the named child slot Slot, together with every
+// descendant it owns, and clears the slot. This is parent-driven
+// cancellation: unlike a child cancelling itself (observed by its
+// parent through ChildCancelledSignalSource), it never produces a
+// signal. Cancelling an already empty slot is an idempotent no-op.
+// Cancelling a slot that holds a terminal outcome still awaiting join
+// is an execution error — that outcome must be joined through its
+// corresponding child-outcome signal first, never silently discarded.
+// See program.CancelChildWorkflowOperation.
+type CancelChildWorkflowOperation struct {
+	Slot   string
+	Reason Expression
+}
+
+func (CancelChildWorkflowOperation) isOperation() {}

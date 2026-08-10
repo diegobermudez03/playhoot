@@ -78,7 +78,7 @@ func TestStep_IncrementsGlobalStateAndStays(t *testing.T) {
 	p := counterProgram()
 	snap := counterSnapshot(0)
 
-	commit, err := Step(p, snap, engine.Signal{Name: "Increment"})
+	commit, err := Step(p, snap, engine.Signal{Name: "Increment"}, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -109,14 +109,14 @@ func TestStep_SequentialStepsCanStopAndResume(t *testing.T) {
 	snap := counterSnapshot(0)
 
 	for i := 0; i < 3; i++ {
-		commit, err := Step(p, snap, engine.Signal{Name: "Increment"})
+		commit, err := Step(p, snap, engine.Signal{Name: "Increment"}, engine.DefaultLimits())
 		if err != nil {
 			t.Fatalf("step %d: unexpected error: %v", i, err)
 		}
 		snap = commit.Snapshot // simulate persisting and resuming from the returned snapshot
 	}
 
-	commit, err := Step(p, snap, engine.Signal{Name: "Finish"})
+	commit, err := Step(p, snap, engine.Signal{Name: "Finish"}, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -132,7 +132,7 @@ func TestStep_GuardFalseRejectsSignal(t *testing.T) {
 	p := counterProgram()
 	snap := counterSnapshot(0) // count is 0, Finish's guard requires >= 3
 
-	_, err := Step(p, snap, engine.Signal{Name: "Finish"})
+	_, err := Step(p, snap, engine.Signal{Name: "Finish"}, engine.DefaultLimits())
 	if err != ErrSignalRejected {
 		t.Fatalf("expected ErrSignalRejected, got %v", err)
 	}
@@ -142,7 +142,7 @@ func TestStep_NoMatchingTransitionRejectsSignal(t *testing.T) {
 	p := counterProgram()
 	snap := counterSnapshot(0)
 
-	_, err := Step(p, snap, engine.Signal{Name: "Nonexistent"})
+	_, err := Step(p, snap, engine.Signal{Name: "Nonexistent"}, engine.DefaultLimits())
 	if err != ErrSignalRejected {
 		t.Fatalf("expected ErrSignalRejected, got %v", err)
 	}
@@ -152,7 +152,7 @@ func TestStep_GlobalTransitionFallback(t *testing.T) {
 	p := counterProgram()
 	snap := counterSnapshot(0)
 
-	commit, err := Step(p, snap, engine.Signal{Name: "Abort"})
+	commit, err := Step(p, snap, engine.Signal{Name: "Abort"}, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -178,7 +178,7 @@ func TestStep_StateLocalTransitionTakesPrecedenceOverGlobal(t *testing.T) {
 	})
 	p.Workflows["Counter"] = wf
 
-	commit, err := Step(p, counterSnapshot(0), engine.Signal{Name: "Abort"})
+	commit, err := Step(p, counterSnapshot(0), engine.Signal{Name: "Abort"}, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -191,11 +191,11 @@ func TestStep_TerminatedInstanceRejectsFurtherSignals(t *testing.T) {
 	p := counterProgram()
 	snap := counterSnapshot(3)
 
-	commit, err := Step(p, snap, engine.Signal{Name: "Finish"})
+	commit, err := Step(p, snap, engine.Signal{Name: "Finish"}, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	_, err = Step(p, commit.Snapshot, engine.Signal{Name: "Increment"})
+	_, err = Step(p, commit.Snapshot, engine.Signal{Name: "Increment"}, engine.DefaultLimits())
 	if err != ErrSignalRejected {
 		t.Fatalf("expected a terminated instance to reject further signals, got %v", err)
 	}
@@ -206,7 +206,7 @@ func TestStep_SnapshotProgramMismatch(t *testing.T) {
 	snap := counterSnapshot(0)
 	snap.Root.Workflow = "SomeOtherWorkflow"
 
-	_, err := Step(p, snap, engine.Signal{Name: "Increment"})
+	_, err := Step(p, snap, engine.Signal{Name: "Increment"}, engine.DefaultLimits())
 	execErr, ok := err.(*ExecutionError)
 	if !ok || execErr.Code != ExecutionErrorSnapshotProgramMismatch {
 		t.Fatalf("expected ExecutionErrorSnapshotProgramMismatch, got %v", err)
@@ -227,7 +227,7 @@ func TestStep_InvariantViolationAfterTransitionRejectsAtomically(t *testing.T) {
 	}
 	snap := counterSnapshot(1) // one more increment pushes count to 2, violating the invariant
 
-	_, err := Step(p, snap, engine.Signal{Name: "Increment"})
+	_, err := Step(p, snap, engine.Signal{Name: "Increment"}, engine.DefaultLimits())
 	execErr, ok := err.(*ExecutionError)
 	if !ok || execErr.Code != ExecutionErrorInvariantViolation {
 		t.Fatalf("expected ExecutionErrorInvariantViolation, got %v", err)
@@ -272,7 +272,7 @@ func TestStep_LetBindingVisibleToControl(t *testing.T) {
 		Root:        engine.WorkflowInstance{Workflow: "LetDemo", State: "S", LocalState: engine.RecordValue{TypeName: "local"}},
 	}
 
-	commit, err := Step(p, snap, engine.Signal{Name: "Go"})
+	commit, err := Step(p, snap, engine.Signal{Name: "Go"}, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -356,7 +356,7 @@ func TestStep_ListAndMapMutationsAndControlFlow(t *testing.T) {
 		Root: engine.WorkflowInstance{Workflow: "Mutate", State: "S", LocalState: engine.RecordValue{TypeName: "local"}},
 	}
 
-	commit, err := Step(p, snap, engine.Signal{Name: "Go"})
+	commit, err := Step(p, snap, engine.Signal{Name: "Go"}, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -419,7 +419,7 @@ func TestStep_MatchControlSelectsCorrectBranch(t *testing.T) {
 		Root:        engine.WorkflowInstance{Workflow: "MatchDemo", State: "S", LocalState: engine.RecordValue{TypeName: "local"}},
 	}
 
-	commit, err := Step(p, snap, engine.Signal{Name: "Go"})
+	commit, err := Step(p, snap, engine.Signal{Name: "Go"}, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -455,7 +455,7 @@ func TestStep_SignalBindingFeedsGuardAndControl(t *testing.T) {
 		Root:        engine.WorkflowInstance{Workflow: "BindDemo", State: "S", LocalState: engine.RecordValue{TypeName: "local"}},
 	}
 
-	commit, err := Step(p, snap, engine.Signal{Name: "Answer", Fields: map[string]engine.Value{"value": engine.NumberValue{Value: 7}}})
+	commit, err := Step(p, snap, engine.Signal{Name: "Answer", Fields: map[string]engine.Value{"value": engine.NumberValue{Value: 7}}}, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -463,7 +463,7 @@ func TestStep_SignalBindingFeedsGuardAndControl(t *testing.T) {
 		t.Fatalf("got %v, want 7", commit.Snapshot.Root.Outcome.Result)
 	}
 
-	_, err = Step(p, snap, engine.Signal{Name: "Answer", Fields: map[string]engine.Value{"value": engine.NumberValue{Value: -1}}})
+	_, err = Step(p, snap, engine.Signal{Name: "Answer", Fields: map[string]engine.Value{"value": engine.NumberValue{Value: -1}}}, engine.DefaultLimits())
 	if err != ErrSignalRejected {
 		t.Fatalf("expected guard to reject a non-positive bound value, got %v", err)
 	}

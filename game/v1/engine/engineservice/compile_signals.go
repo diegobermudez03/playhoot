@@ -48,7 +48,7 @@ func (c *compiler) compileTransition(t program.TransitionDeclaration, path strin
 		}
 	}
 
-	operations, postScope := c.compileBlock(t.Operations, scope, path+".operations")
+	operations, postScope := c.compileBlock(t.Operations, scope, path+".operations", ctx)
 
 	control := c.compileWorkflowControl(t.Control, postScope, path+".control", ctx)
 

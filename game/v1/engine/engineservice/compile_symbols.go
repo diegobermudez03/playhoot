@@ -101,6 +101,24 @@ type compiler struct {
 	// without the recursion risk a named type or function has: a
 	// workflow's ResultType never depends on another workflow's body.
 	workflowResultTypes map[string]engine.Type
+
+	// workflowParameterTypes memoizes each registered workflow's
+	// compiled Parameters, computed once (in buildWorkflowParameterTypes,
+	// before any workflow's body compiles) for the same reason
+	// workflowResultTypes is: a SpawnChildWorkflowOperation targeting a
+	// child slot must validate its Arguments against that slot's
+	// declared workflow's parameters without needing that workflow's
+	// full body compiled first, and without compiling the same
+	// parameter declarations — and diagnosing them — a second time.
+	workflowParameterTypes map[string][]engine.FieldType
+
+	// compiledQuestions and compiledEffects hold every compiled
+	// program.QuestionDeclaration and program.EffectDeclaration, keyed
+	// by declared name, computed once before any workflow compiles —
+	// an OpenQuestionOperation or EmitEffectOperation validates its
+	// Arguments against these.
+	compiledQuestions map[string]engine.Question
+	compiledEffects   map[string]engine.Effect
 }
 
 // typeEntry is the registered namespace entry for one declared type

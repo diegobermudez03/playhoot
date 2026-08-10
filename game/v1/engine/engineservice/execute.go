@@ -10,11 +10,135 @@ import (
 // the written value — the untouched rest of global/local is shared with
 // the original engine.Snapshot, never mutated in place, which is what
 // lets Step leave that original Snapshot valid and unchanged whenever
-// it returns an error.
+// it returns an error. random is likewise a local candidate: it only
+// ever advances here, in execOperation's DrawRandomOperation case, and
+// is only written back to the committed Snapshot on success — see
+// engine.RandomState's doc comment for why a failed step must not
+// advance it.
 type execContext struct {
-	program engine.Program
-	global  engine.RecordValue
-	local   engine.RecordValue
+	program  engine.Program
+	workflow engine.Workflow
+	global   engine.RecordValue
+	local    engine.RecordValue
+	random   engine.RandomState
+	limits   engine.Limits
+	opCount  int
+
+	// path addresses, within the current game instance's child-workflow
+	// tree, the WorkflowInstance this execContext is executing a
+	// transition for — the same path Step resolved via
+	// engine.Signal.Path. execSpawnChildWorkflow appends the spawned
+	// slot's name to this to address the new child's own WorkflowStarted
+	// signal.
+	path []string
+
+	// questionSlots, timerSlots, and childSlots are candidate copies of
+	// the current instance's slot instances — copied once, up front,
+	// from engine.Snapshot so every mutation (an operation's, or Step's
+	// own slot-clearing on an accepted answer, timer expiration, or
+	// child-outcome join) is applied to this copy and never to the
+	// original Snapshot's slices.
+	questionSlots []engine.QuestionSlotInstance
+	timerSlots    []engine.TimerSlotInstance
+	childSlots    []engine.ChildWorkflowSlotInstance
+
+	// outputs accumulates every declarative engine.Output produced so
+	// far. Per LOGICAL_CONTRACT.md, the engine only ever describes what
+	// should happen; ctx.outputs becomes engine.Commit.Outputs only if
+	// the whole step succeeds, and is discarded otherwise.
+	outputs []engine.Output
+
+	// internalSignals accumulates every engine.Signal this step causes
+	// but does not itself apply — currently, only the WorkflowStarted
+	// signal a SpawnChildWorkflowOperation causes for its new child.
+	// Per LOGICAL_CONTRACT.md, these become engine.Commit.InternalSignals
+	// only if the whole step succeeds, for a later Step call to apply.
+	internalSignals []engine.Signal
+}
+
+// findQuestionSlot returns the index of the question slot named name in
+// ctx.questionSlots, if any.
+func (ctx *execContext) findQuestionSlot(name string) (int, bool) {
+	for i, s := range ctx.questionSlots {
+		if s.Name == name {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+// findTimerSlot returns the index of the timer slot named name in
+// ctx.timerSlots, if any.
+func (ctx *execContext) findTimerSlot(name string) (int, bool) {
+	for i, s := range ctx.timerSlots {
+		if s.Name == name {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+// questionSlotDeclaration returns the compiled engine.QuestionSlot named
+// name on ctx.workflow, if any — used to recover the Question name a
+// slot was declared against, for OpenQuestionOutput.
+func (ctx *execContext) questionSlotDeclaration(name string) (engine.QuestionSlot, bool) {
+	for _, s := range ctx.workflow.QuestionSlots {
+		if s.Name == name {
+			return s, true
+		}
+	}
+	return engine.QuestionSlot{}, false
+}
+
+// findChildSlot returns the index of the child slot named name in
+// ctx.childSlots, if any.
+func (ctx *execContext) findChildSlot(name string) (int, bool) {
+	for i, s := range ctx.childSlots {
+		if s.Name == name {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+// childSlotDeclaration returns the compiled engine.ChildWorkflowSlot
+// named name on ctx.workflow, if any — used to recover the workflow
+// type a slot was declared against, for execSpawnChildWorkflow.
+func (ctx *execContext) childSlotDeclaration(name string) (engine.ChildWorkflowSlot, bool) {
+	for _, s := range ctx.workflow.ChildSlots {
+		if s.Name == name {
+			return s, true
+		}
+	}
+	return engine.ChildWorkflowSlot{}, false
+}
+
+// evalCallArguments evaluates args in order into their captured values.
+func evalCallArguments(ctx *execContext, args []engine.CallArgument, scope engine.Scope) ([]engine.FieldValue, error) {
+	result := make([]engine.FieldValue, len(args))
+	for i, a := range args {
+		v, err := Evaluate(ctx.program, a.Value, scope)
+		if err != nil {
+			return nil, err
+		}
+		result[i] = engine.FieldValue{Name: a.Name, Value: v}
+	}
+	return result, nil
+}
+
+// consumeOp counts one more operation toward ctx.limits.MaxOperations —
+// called once per operation execOperation executes, including once per
+// ForEachOperation iteration and once per branch taken inside a nested
+// Block, so a runaway transition (an enormous or effectively unbounded
+// combination of loops and branches) fails deterministically instead of
+// hanging.
+func (ctx *execContext) consumeOp() error {
+	ctx.opCount++
+	if ctx.opCount > ctx.limits.MaxOperations {
+		return newExecutionError(ExecutionErrorBudgetExceeded,
+			"engineservice: exceeded the maximum of %d operations for one step", ctx.limits.MaxOperations)
+	}
+	return nil
 }
 
 // execBlock executes block's operations in order against ctx, threading
@@ -33,6 +157,10 @@ func execBlock(ctx *execContext, block engine.Block, scope engine.Scope) (engine
 }
 
 func execOperation(ctx *execContext, op engine.Operation, scope engine.Scope) (engine.Scope, error) {
+	if err := ctx.consumeOp(); err != nil {
+		return scope, err
+	}
+
 	switch o := op.(type) {
 	case engine.LetOperation:
 		v, err := Evaluate(ctx.program, o.Value, scope)
@@ -160,12 +288,45 @@ func execOperation(ctx *execContext, op engine.Operation, scope engine.Scope) (e
 		if err != nil {
 			return scope, err
 		}
-		for i, item := range coll.(engine.ListValue).Elements {
+		elements := coll.(engine.ListValue).Elements
+		if len(elements) > ctx.limits.MaxLoopIterations {
+			return scope, newExecutionError(ExecutionErrorLoopLimitExceeded,
+				"engineservice: for-each would run %d iterations, exceeding the limit of %d", len(elements), ctx.limits.MaxLoopIterations)
+		}
+		for i, item := range elements {
 			if _, err := execBlock(ctx, o.Body, bindItem(scope, o.ItemName, o.IndexName, item, i)); err != nil {
 				return scope, err
 			}
 		}
 		return scope, nil
+
+	case engine.DrawRandomOperation:
+		v, err := ctx.drawRandom(o.Generator, scope)
+		if err != nil {
+			return scope, err
+		}
+		return extendScope(scope, o.Name, v), nil
+
+	case engine.OpenQuestionOperation:
+		return scope, ctx.execOpenQuestion(o, scope)
+
+	case engine.CloseQuestionOperation:
+		return scope, ctx.execCloseQuestion(o)
+
+	case engine.ScheduleTimerOperation:
+		return scope, ctx.execScheduleTimer(o, scope)
+
+	case engine.CancelTimerOperation:
+		return scope, ctx.execCancelTimer(o)
+
+	case engine.EmitEffectOperation:
+		return scope, ctx.execEmitEffect(o, scope)
+
+	case engine.SpawnChildWorkflowOperation:
+		return scope, ctx.execSpawnChildWorkflow(o, scope)
+
+	case engine.CancelChildWorkflowOperation:
+		return scope, ctx.execCancelChildWorkflow(o, scope)
 
 	case engine.MatchOperation:
 		v, err := Evaluate(ctx.program, o.Value, scope)
@@ -329,6 +490,67 @@ func intIndex(n float64) (int, bool) {
 	return i, float64(i) == n
 }
 
+// drawRandom evaluates generator against ctx's candidate RandomState,
+// advancing it exactly once per drawn value (once for
+// RandomIntegerGenerator and RandomElementGenerator, once per shuffled
+// element for RandomShuffleGenerator) and returning the produced Value.
+func (ctx *execContext) drawRandom(generator engine.RandomGenerator, scope engine.Scope) (engine.Value, error) {
+	switch g := generator.(type) {
+	case engine.RandomIntegerGenerator:
+		minV, err := Evaluate(ctx.program, g.Minimum, scope)
+		if err != nil {
+			return nil, err
+		}
+		maxV, err := Evaluate(ctx.program, g.Maximum, scope)
+		if err != nil {
+			return nil, err
+		}
+		minI, minOK := intIndex(minV.(engine.NumberValue).Value)
+		maxI, maxOK := intIndex(maxV.(engine.NumberValue).Value)
+		if !minOK || !maxOK || minI > maxI {
+			return nil, newExecutionError(ExecutionErrorInvalidRandomRange,
+				"engineservice: invalid random integer range [%v, %v]", minV.(engine.NumberValue).Value, maxV.(engine.NumberValue).Value)
+		}
+		span := uint64(maxI-minI) + 1
+		state, raw := ctx.random.Next()
+		ctx.random = state
+		return engine.NumberValue{Value: float64(minI) + float64(raw%span)}, nil
+
+	case engine.RandomElementGenerator:
+		collV, err := Evaluate(ctx.program, g.Collection, scope)
+		if err != nil {
+			return nil, err
+		}
+		elements := collV.(engine.ListValue).Elements
+		if len(elements) == 0 {
+			return nil, newExecutionError(ExecutionErrorEmptyRandomCollection,
+				"engineservice: cannot draw a random element from an empty collection")
+		}
+		state, raw := ctx.random.Next()
+		ctx.random = state
+		return elements[raw%uint64(len(elements))], nil
+
+	case engine.RandomShuffleGenerator:
+		collV, err := Evaluate(ctx.program, g.Collection, scope)
+		if err != nil {
+			return nil, err
+		}
+		list := collV.(engine.ListValue)
+		shuffled := make([]engine.Value, len(list.Elements))
+		copy(shuffled, list.Elements)
+		for i := len(shuffled) - 1; i > 0; i-- {
+			state, raw := ctx.random.Next()
+			ctx.random = state
+			j := int(raw % uint64(i+1))
+			shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+		}
+		return engine.ListValue{ElementType: list.ElementType, Elements: shuffled}, nil
+
+	default:
+		return nil, newExecutionError(ExecutionErrorUnknown, "engineservice: unsupported random generator %T", generator)
+	}
+}
+
 // controlOutcome is applyControl's result: either a state transition
 // (Goto sets Changed and State; Stay leaves Changed false) or a
 // terminal engine.WorkflowOutcome.
@@ -396,4 +618,208 @@ func applyControl(p engine.Program, control engine.WorkflowControl, scope engine
 	default:
 		return controlOutcome{}, newExecutionError(ExecutionErrorUnknown, "engineservice: cannot apply workflow control of type %T", control)
 	}
+}
+
+// execOpenQuestion evaluates o.Recipient and o.Arguments, then occupies
+// the named question slot in ctx's candidate instance state, producing
+// an OpenQuestionOutput. Opening an already occupied slot fails the
+// entire transition atomically — see program.OpenQuestionOperation.
+func (ctx *execContext) execOpenQuestion(o engine.OpenQuestionOperation, scope engine.Scope) error {
+	idx, ok := ctx.findQuestionSlot(o.Slot)
+	if !ok {
+		return newExecutionError(ExecutionErrorUnknown, "engineservice: question slot %q not found", o.Slot)
+	}
+	if ctx.questionSlots[idx].Pending != nil {
+		return newExecutionError(ExecutionErrorSlotOccupied, "engineservice: question slot %q is already occupied", o.Slot)
+	}
+
+	recipientV, err := Evaluate(ctx.program, o.Recipient, scope)
+	if err != nil {
+		return err
+	}
+	args, err := evalCallArguments(ctx, o.Arguments, scope)
+	if err != nil {
+		return err
+	}
+
+	recipient := recipientV.(engine.UserValue).ID
+	ctx.questionSlots[idx] = engine.QuestionSlotInstance{
+		Name:    o.Slot,
+		Pending: &engine.PendingQuestion{Recipient: recipient, Arguments: args},
+	}
+
+	slotDecl, _ := ctx.questionSlotDeclaration(o.Slot)
+	ctx.outputs = append(ctx.outputs, engine.OpenQuestionOutput{
+		Slot:      o.Slot,
+		Recipient: recipient,
+		Question:  slotDecl.Question,
+		Arguments: args,
+	})
+	return nil
+}
+
+// execCloseQuestion clears the named question slot in ctx's candidate
+// instance state, if occupied, producing a CloseQuestionOutput.
+// Closing an already empty slot is an idempotent no-op — see
+// program.CloseQuestionOperation.
+func (ctx *execContext) execCloseQuestion(o engine.CloseQuestionOperation) error {
+	idx, ok := ctx.findQuestionSlot(o.Slot)
+	if !ok {
+		return newExecutionError(ExecutionErrorUnknown, "engineservice: question slot %q not found", o.Slot)
+	}
+	pending := ctx.questionSlots[idx].Pending
+	if pending == nil {
+		return nil
+	}
+	ctx.questionSlots[idx] = engine.QuestionSlotInstance{Name: o.Slot}
+	ctx.outputs = append(ctx.outputs, engine.CloseQuestionOutput{Slot: o.Slot, Recipient: pending.Recipient})
+	return nil
+}
+
+// execScheduleTimer evaluates o.DelayMilliseconds, validates it is a
+// finite, non-negative integer, and occupies the named timer slot in
+// ctx's candidate instance state, producing a ScheduleTimerOutput.
+// Scheduling into an already occupied slot fails the entire transition
+// atomically — see program.ScheduleTimerOperation. The engine itself
+// never starts a real timer; delivering the resulting
+// TimerExpiredSignalSource signal after DelayMilliseconds is an
+// application layer's job.
+func (ctx *execContext) execScheduleTimer(o engine.ScheduleTimerOperation, scope engine.Scope) error {
+	idx, ok := ctx.findTimerSlot(o.Slot)
+	if !ok {
+		return newExecutionError(ExecutionErrorUnknown, "engineservice: timer slot %q not found", o.Slot)
+	}
+	if ctx.timerSlots[idx].Pending {
+		return newExecutionError(ExecutionErrorSlotOccupied, "engineservice: timer slot %q is already occupied", o.Slot)
+	}
+
+	delayV, err := Evaluate(ctx.program, o.DelayMilliseconds, scope)
+	if err != nil {
+		return err
+	}
+	delay := delayV.(engine.NumberValue).Value
+	if i, ok := intIndex(delay); !ok || i < 0 {
+		return newExecutionError(ExecutionErrorInvalidTimerDelay,
+			"engineservice: timer delay must be a non-negative integer number of milliseconds, got %v", delay)
+	}
+
+	ctx.timerSlots[idx] = engine.TimerSlotInstance{Name: o.Slot, Pending: true}
+	ctx.outputs = append(ctx.outputs, engine.ScheduleTimerOutput{Slot: o.Slot, DelayMilliseconds: delay})
+	return nil
+}
+
+// execCancelTimer clears the named timer slot in ctx's candidate
+// instance state, if occupied, producing a CancelTimerOutput.
+// Cancelling an already empty slot is an idempotent no-op — see
+// program.CancelTimerOperation.
+func (ctx *execContext) execCancelTimer(o engine.CancelTimerOperation) error {
+	idx, ok := ctx.findTimerSlot(o.Slot)
+	if !ok {
+		return newExecutionError(ExecutionErrorUnknown, "engineservice: timer slot %q not found", o.Slot)
+	}
+	if !ctx.timerSlots[idx].Pending {
+		return nil
+	}
+	ctx.timerSlots[idx] = engine.TimerSlotInstance{Name: o.Slot}
+	ctx.outputs = append(ctx.outputs, engine.CancelTimerOutput{Slot: o.Slot})
+	return nil
+}
+
+// execEmitEffect evaluates o.Recipients and o.Arguments and produces an
+// EmitEffectOutput. This never mutates any candidate state — an effect
+// is presentation-only.
+func (ctx *execContext) execEmitEffect(o engine.EmitEffectOperation, scope engine.Scope) error {
+	recipientsV, err := Evaluate(ctx.program, o.Recipients, scope)
+	if err != nil {
+		return err
+	}
+	elements := recipientsV.(engine.ListValue).Elements
+	recipients := make([]engine.UserID, len(elements))
+	for i, el := range elements {
+		recipients[i] = el.(engine.UserValue).ID
+	}
+
+	args, err := evalCallArguments(ctx, o.Arguments, scope)
+	if err != nil {
+		return err
+	}
+
+	ctx.outputs = append(ctx.outputs, engine.EmitEffectOutput{Effect: o.Effect, Recipients: recipients, Arguments: args})
+	return nil
+}
+
+// execSpawnChildWorkflow evaluates o.Arguments and creates a new child
+// workflow instance in the named child slot in ctx's candidate instance
+// state. Spawning into an already occupied slot — running or a terminal
+// outcome still awaiting join — fails the entire transition atomically
+// — see program.SpawnChildWorkflowOperation. This does not itself apply
+// the child's WorkflowStarted transition; it queues the corresponding
+// engine.Signal, addressed to the new child, as one of this step's
+// internalSignals for a later Step call to apply.
+func (ctx *execContext) execSpawnChildWorkflow(o engine.SpawnChildWorkflowOperation, scope engine.Scope) error {
+	idx, ok := ctx.findChildSlot(o.Slot)
+	if !ok {
+		return newExecutionError(ExecutionErrorUnknown, "engineservice: child slot %q not found", o.Slot)
+	}
+	if ctx.childSlots[idx].Child != nil {
+		return newExecutionError(ExecutionErrorSlotOccupied, "engineservice: child slot %q is already occupied", o.Slot)
+	}
+
+	slotDecl, _ := ctx.childSlotDeclaration(o.Slot)
+	childWorkflow, ok := ctx.program.Workflows[slotDecl.Workflow]
+	if !ok {
+		return newExecutionError(ExecutionErrorUnknown, "engineservice: workflow %q is not compiled", slotDecl.Workflow)
+	}
+
+	args, err := evalCallArguments(ctx, o.Arguments, scope)
+	if err != nil {
+		return err
+	}
+	child, err := newChildInstance(ctx.program, childWorkflow, args)
+	if err != nil {
+		return err
+	}
+
+	ctx.childSlots[idx] = engine.ChildWorkflowSlotInstance{Name: o.Slot, Child: &child}
+
+	childPath := make([]string, len(ctx.path)+1)
+	copy(childPath, ctx.path)
+	childPath[len(ctx.path)] = o.Slot
+	ctx.internalSignals = append(ctx.internalSignals, engine.Signal{Kind: engine.SignalKindNamed, Path: childPath, Name: "WorkflowStarted"})
+	return nil
+}
+
+// execCancelChildWorkflow evaluates o.Reason and recursively discards
+// the running child workflow instance — together with every descendant
+// it owns — in the named child slot in ctx's candidate instance state.
+// This is parent-driven cancellation: it never produces a signal, since
+// program.CancelChildWorkflowOperation documents that the parent already
+// knows it requested the cancellation. Cancelling an already empty slot
+// is an idempotent no-op. Cancelling a slot holding a terminal outcome
+// still awaiting join fails the entire transition atomically — that
+// outcome must be joined through its own child-outcome signal first,
+// never silently discarded.
+func (ctx *execContext) execCancelChildWorkflow(o engine.CancelChildWorkflowOperation, scope engine.Scope) error {
+	idx, ok := ctx.findChildSlot(o.Slot)
+	if !ok {
+		return newExecutionError(ExecutionErrorUnknown, "engineservice: child slot %q not found", o.Slot)
+	}
+	child := ctx.childSlots[idx].Child
+	if child == nil {
+		return nil
+	}
+	if child.Outcome != nil {
+		return newExecutionError(ExecutionErrorChildOutcomeNotJoined,
+			"engineservice: child slot %q holds a terminal outcome that must be joined before it can be cancelled", o.Slot)
+	}
+
+	if _, err := Evaluate(ctx.program, o.Reason, scope); err != nil {
+		return err
+	}
+
+	// Dropping the pointer discards the entire subtree at once: every
+	// descendant this child owns goes with it, recursively, since
+	// nothing else references it.
+	ctx.childSlots[idx] = engine.ChildWorkflowSlotInstance{Name: o.Slot}
+	return nil
 }

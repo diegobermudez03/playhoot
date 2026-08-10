@@ -72,12 +72,22 @@ type Program struct {
 	// initialization atomically if any is false or fails to evaluate.
 	Invariants []Invariant
 
+	// Questions holds every compiled program.QuestionDeclaration, keyed
+	// by declared name. A workflow's OpenQuestionOperation validates its
+	// Arguments against the named entry's Parameters at compile time;
+	// engineservice.Step evaluates its Validation, if any, against a
+	// submitted answer before ever producing a
+	// QuestionAnsweredSignalSource signal.
+	Questions map[string]Question
+
+	// Effects holds every compiled program.EffectDeclaration, keyed by
+	// declared name. A workflow's EmitEffectOperation validates its
+	// Arguments against the named entry's Parameters at compile time.
+	Effects map[string]Effect
+
 	// Workflows holds every compiled program.WorkflowDeclaration, keyed
 	// by declared name. Every Workflow here is resolved and
-	// semantically validated — see engineservice's compile_workflows.go
-	// — but, per Transition's doc comment, not yet executable: no
-	// workflow instance can be created or stepped until operations are
-	// compiled.
+	// semantically validated — see engineservice's compile_workflows.go.
 	Workflows map[string]Workflow
 
 	// RootWorkflow names the Workflow a future engine step uses to

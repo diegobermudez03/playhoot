@@ -78,6 +78,54 @@ const (
 	// original Snapshot is unchanged, exactly as for any other
 	// ExecutionError.
 	ExecutionErrorSignalRejected
+
+	// ExecutionErrorBudgetExceeded marks a Step call whose transition
+	// executed more synchronous operations than engine.Limits.MaxOperations
+	// allows.
+	ExecutionErrorBudgetExceeded
+
+	// ExecutionErrorLoopLimitExceeded marks a Step call whose transition
+	// ran a ForEachOperation over more elements than
+	// engine.Limits.MaxLoopIterations allows.
+	ExecutionErrorLoopLimitExceeded
+
+	// ExecutionErrorInvalidRandomRange marks a DrawRandomOperation whose
+	// RandomIntegerGenerator bounds are not both finite integers with
+	// Minimum not exceeding Maximum.
+	ExecutionErrorInvalidRandomRange
+
+	// ExecutionErrorEmptyRandomCollection marks a DrawRandomOperation
+	// using RandomElementGenerator whose Collection evaluated to an
+	// empty list.
+	ExecutionErrorEmptyRandomCollection
+
+	// ExecutionErrorSlotOccupied marks an OpenQuestionOperation or
+	// ScheduleTimerOperation targeting a slot that already holds a
+	// pending question or timer.
+	ExecutionErrorSlotOccupied
+
+	// ExecutionErrorInvalidTimerDelay marks a ScheduleTimerOperation
+	// whose evaluated DelayMilliseconds is not a finite, non-negative
+	// integer.
+	ExecutionErrorInvalidTimerDelay
+
+	// ExecutionErrorInputRejected marks a Step call for a
+	// SignalKindQuestionAnswered, SignalKindTimerExpired, or
+	// child-outcome Signal that did not pass authoritative validation:
+	// the targeted slot was already empty (stale or duplicate), the
+	// answer's respondent did not match the slot's pending recipient
+	// (unauthorized), the submitted answer failed response-type or
+	// Validation checks (invalid), or a child-outcome signal's slot did
+	// not hold a matching terminal outcome awaiting join. See
+	// ErrInputRejected.
+	ExecutionErrorInputRejected
+
+	// ExecutionErrorChildOutcomeNotJoined marks a
+	// CancelChildWorkflowOperation targeting a child slot that holds a
+	// terminal outcome still awaiting join — that outcome must be
+	// consumed through its corresponding child-outcome signal first,
+	// never silently discarded by cancellation.
+	ExecutionErrorChildOutcomeNotJoined
 )
 
 // ExecutionError is the error type returned by NewSnapshot and Step.
@@ -198,7 +246,7 @@ func NewSnapshot(p engine.Program, input engine.InitializationInput) (engine.Sna
 	snapshot := engine.Snapshot{
 		GlobalState: globalState,
 		Root:        rootInstance,
-		Random:      engine.RandomState{Seed: input.Seed},
+		Random:      engine.RandomState{State: input.Seed},
 		Sequence:    0,
 	}
 	return snapshot, engine.Signal{Name: "WorkflowStarted"}, nil
@@ -281,6 +329,44 @@ func newChildWorkflowSlotInstances(slots []engine.ChildWorkflowSlot) []engine.Ch
 	return result
 }
 
+// newChildInstance creates the initial WorkflowInstance for one child
+// spawned by a SpawnChildWorkflowOperation: it binds workflow's declared
+// Parameters from args by name, evaluates its LocalState, creates its
+// declared runtime slots (all empty), and places it in its declared
+// InitialState — mirroring NewSnapshot's construction of the root
+// instance. The compiler already guarantees args matches workflow's
+// Parameters exactly (see compileSpawnChildWorkflow), so, unlike
+// bindParameters, this does not re-validate each value's type.
+func newChildInstance(p engine.Program, workflow engine.Workflow, args []engine.FieldValue) (engine.WorkflowInstance, error) {
+	argMap := fieldValueMap(args)
+	params := make([]engine.FieldValue, 0, len(workflow.Parameters))
+	for _, decl := range workflow.Parameters {
+		v, ok := argMap[decl.Name]
+		if !ok {
+			return engine.WorkflowInstance{}, newExecutionError(ExecutionErrorUnknown,
+				"engineservice: missing child workflow argument %q", decl.Name)
+		}
+		params = append(params, engine.FieldValue{Name: decl.Name, Value: v})
+	}
+
+	localFields, err := evaluateStateFields(p, workflow.LocalState, engine.Scope{Bindings: argMap})
+	if err != nil {
+		return engine.WorkflowInstance{}, err
+	}
+
+	return engine.WorkflowInstance{
+		Workflow:       workflow.Name,
+		State:          workflow.InitialState,
+		Parameters:     params,
+		LocalState:     engine.RecordValue{TypeName: "local", Fields: localFields},
+		QuestionSlots:  newQuestionSlotInstances(workflow.QuestionSlots),
+		AskGroupSlots:  newAskGroupSlotInstances(workflow.AskGroupSlots),
+		TimerSlots:     newTimerSlotInstances(workflow.TimerSlots),
+		ChildSlots:     newChildWorkflowSlotInstances(workflow.ChildSlots),
+		TaskGroupSlots: newTaskGroupSlotInstances(workflow.TaskGroupSlots),
+	}, nil
+}
+
 func newTaskGroupSlotInstances(slots []engine.TaskGroupSlot) []engine.TaskGroupSlotInstance {
 	result := make([]engine.TaskGroupSlotInstance, len(slots))
 	for i, s := range slots {
@@ -313,13 +399,15 @@ func newTaskGroupSlotInstances(slots []engine.TaskGroupSlot) []engine.TaskGroupS
 // produced, and no engine.Output is considered published, per
 // LOGICAL_CONTRACT.md.
 //
-// This version only ever targets the root instance: it does not yet
-// address a child or task anywhere in the child-workflow tree, and does
-// not yet produce any engine.Output or engine.Trace content, or apply
-// structured-concurrency rules — those follow once interaction and
-// concurrency operations are compiled (see engine.Operation's doc
-// comment).
-func Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal) (engine.Commit, error) {
+// limits bounds the transition's execution — see engine.Limits — and is
+// itself part of what a Commit is a deterministic function of: the same
+// program, snapshot, signal, and limits always produce the same result.
+//
+// signal.Path addresses which workflow instance in the child-workflow
+// tree this call targets — see engine.Signal's doc comment. This version
+// does not yet produce any engine.Trace content or address an ask-group
+// or task-group slot.
+func Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal, limits engine.Limits) (engine.Commit, error) {
 	if snapshot.Root.Workflow != p.RootWorkflow {
 		return engine.Commit{}, newExecutionError(ExecutionErrorSnapshotProgramMismatch,
 			"engineservice: snapshot's root instance runs workflow %q, but this program's root workflow is %q", snapshot.Root.Workflow, p.RootWorkflow)
@@ -328,13 +416,48 @@ func Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal) (eng
 		return engine.Commit{}, ErrSignalRejected
 	}
 
-	workflow, ok := p.Workflows[snapshot.Root.Workflow]
-	if !ok {
-		return engine.Commit{}, newExecutionError(ExecutionErrorUnknown, "engineservice: workflow %q is not compiled", snapshot.Root.Workflow)
+	target, ok := resolveInstance(snapshot.Root, signal.Path)
+	if !ok || target.Outcome != nil {
+		return engine.Commit{}, ErrSignalRejected
 	}
-	state, ok := workflowStateByName(workflow, snapshot.Root.State)
+
+	workflow, ok := p.Workflows[target.Workflow]
 	if !ok {
-		return engine.Commit{}, newExecutionError(ExecutionErrorUnknown, "engineservice: workflow %q has no state named %q", workflow.Name, snapshot.Root.State)
+		return engine.Commit{}, newExecutionError(ExecutionErrorUnknown, "engineservice: workflow %q is not compiled", target.Workflow)
+	}
+
+	// Per program.QuestionAnsweredSignalSource, program.TimerExpiredSignalSource,
+	// program.ChildCompletedSignalSource, program.ChildFailedSignalSource, and
+	// program.ChildCancelledSignalSource, a signal of these kinds only
+	// exists once authoritative validation accepts it — a stale,
+	// duplicate, unauthorized, or invalid submission is rejected here,
+	// before any transition is even considered.
+	switch signal.Kind {
+	case engine.SignalKindQuestionAnswered:
+		if err := validateQuestionAnswer(p, target, signal); err != nil {
+			return engine.Commit{}, err
+		}
+	case engine.SignalKindTimerExpired:
+		if err := validateTimerExpiration(target, signal); err != nil {
+			return engine.Commit{}, err
+		}
+	case engine.SignalKindChildCompleted:
+		if err := validateChildOutcome(target, signal, engine.WorkflowOutcomeCompleted); err != nil {
+			return engine.Commit{}, err
+		}
+	case engine.SignalKindChildFailed:
+		if err := validateChildOutcome(target, signal, engine.WorkflowOutcomeFailed); err != nil {
+			return engine.Commit{}, err
+		}
+	case engine.SignalKindChildCancelled:
+		if err := validateChildOutcome(target, signal, engine.WorkflowOutcomeCancelled); err != nil {
+			return engine.Commit{}, err
+		}
+	}
+
+	state, ok := workflowStateByName(workflow, target.State)
+	if !ok {
+		return engine.Commit{}, newExecutionError(ExecutionErrorUnknown, "engineservice: workflow %q has no state named %q", workflow.Name, target.State)
 	}
 
 	transition, ok := selectTransition(state, workflow, signal)
@@ -342,9 +465,10 @@ func Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal) (eng
 		return engine.Commit{}, ErrSignalRejected
 	}
 
-	scope := instanceBaseScope(snapshot.Root, snapshot.GlobalState)
+	scope := instanceBaseScope(target, snapshot.GlobalState)
+	fields := signalSchemaFields(target, signal)
 	for _, b := range transition.Signal.Bindings {
-		scope = extendScope(scope, b.Name, signal.Fields[b.Field])
+		scope = extendScope(scope, b.Name, fields[b.Field])
 	}
 
 	if transition.Guard != nil {
@@ -357,7 +481,38 @@ func Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal) (eng
 		}
 	}
 
-	ctx := &execContext{program: p, global: snapshot.GlobalState, local: snapshot.Root.LocalState}
+	ctx := &execContext{
+		program:       p,
+		workflow:      workflow,
+		path:          signal.Path,
+		global:        snapshot.GlobalState,
+		local:         target.LocalState,
+		random:        snapshot.Random,
+		limits:        limits,
+		questionSlots: append([]engine.QuestionSlotInstance{}, target.QuestionSlots...),
+		timerSlots:    append([]engine.TimerSlotInstance{}, target.TimerSlots...),
+		childSlots:    append([]engine.ChildWorkflowSlotInstance{}, target.ChildSlots...),
+	}
+
+	// Accepting a validated answer, expiration, or child outcome clears
+	// its slot, atomic with everything else this step does — if the step
+	// fails for any other reason below, this candidate clearing is
+	// discarded along with it, and the slot remains occupied.
+	switch signal.Kind {
+	case engine.SignalKindQuestionAnswered:
+		if idx, ok := ctx.findQuestionSlot(signal.Slot); ok {
+			ctx.questionSlots[idx] = engine.QuestionSlotInstance{Name: signal.Slot}
+		}
+	case engine.SignalKindTimerExpired:
+		if idx, ok := ctx.findTimerSlot(signal.Slot); ok {
+			ctx.timerSlots[idx] = engine.TimerSlotInstance{Name: signal.Slot}
+		}
+	case engine.SignalKindChildCompleted, engine.SignalKindChildFailed, engine.SignalKindChildCancelled:
+		if idx, ok := ctx.findChildSlot(signal.Slot); ok {
+			ctx.childSlots[idx] = engine.ChildWorkflowSlotInstance{Name: signal.Slot}
+		}
+	}
+
 	scope, err := execBlock(ctx, transition.Operations, scope)
 	if err != nil {
 		return engine.Commit{}, err
@@ -380,23 +535,40 @@ func Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal) (eng
 		}
 	}
 
-	newRoot := snapshot.Root
-	newRoot.LocalState = ctx.local
+	newTarget := target
+	newTarget.LocalState = ctx.local
+	newTarget.QuestionSlots = ctx.questionSlots
+	newTarget.TimerSlots = ctx.timerSlots
+	newTarget.ChildSlots = ctx.childSlots
 	if outcome.changed {
-		newRoot.State = outcome.state
+		newTarget.State = outcome.state
 	}
 	if outcome.outcome != nil {
-		newRoot.Outcome = outcome.outcome
+		newTarget.Outcome = outcome.outcome
+		// Per ChildWorkflowSlotDeclaration's documented "disappears when
+		// the parent workflow terminates": once this instance itself
+		// reaches a terminal outcome, every child slot it owns —
+		// running or terminal-awaiting-join — is discarded along with
+		// its entire subtree. Nothing can ever join a slot belonging to
+		// an instance that no longer runs any transitions.
+		newTarget.ChildSlots = clearedChildSlots(newTarget.ChildSlots)
+	}
+
+	newRoot, err := applyInstancePath(snapshot.Root, signal.Path, newTarget)
+	if err != nil {
+		return engine.Commit{}, err
 	}
 
 	commit := engine.Commit{
 		Snapshot: engine.Snapshot{
 			GlobalState: ctx.global,
 			Root:        newRoot,
-			Random:      snapshot.Random,
+			Random:      ctx.random,
 			Sequence:    snapshot.Sequence + 1,
 		},
-		ConsumedSignal: signal,
+		InternalSignals: ctx.internalSignals,
+		Outputs:         ctx.outputs,
+		ConsumedSignal:  signal,
 	}
 	return commit, nil
 }
@@ -408,6 +580,226 @@ func Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal) (eng
 var ErrSignalRejected = &ExecutionError{
 	Code:    ExecutionErrorSignalRejected,
 	Message: "engineservice: signal was rejected: no transition matched, or its guard was false",
+}
+
+// ErrInputRejected is returned by Step for a SignalKindQuestionAnswered
+// or SignalKindTimerExpired Signal that failed authoritative
+// validation — see ExecutionErrorInputRejected. Because an accepted
+// answer or expiration clears its slot atomically with the rest of the
+// step that handles it, a duplicate delivery of the same input always
+// finds the slot already empty and is rejected here too — "stale" and
+// "duplicate" are the same check.
+var ErrInputRejected = &ExecutionError{
+	Code:    ExecutionErrorInputRejected,
+	Message: "engineservice: input was rejected: stale, duplicate, unauthorized, or invalid",
+}
+
+// validateQuestionAnswer implements program.QuestionAnsweredSignalSource's
+// documented acceptance rule: the slot must currently hold a pending
+// question, signal.Respondent must be that question's recipient, and
+// signal.Answer must satisfy the question's ResponseType and, if
+// present, its Validation expression.
+//
+// This does not detect a slot that was closed and reopened for an
+// unrelated question between when a client sent its answer and when
+// this runs — the pending question's identity is not tracked beyond
+// "is this slot currently occupied, and by whom" — a known, narrow gap
+// left for whenever a stronger identity is needed.
+func validateQuestionAnswer(p engine.Program, instance engine.WorkflowInstance, signal engine.Signal) error {
+	slot, ok := findInstanceQuestionSlot(instance, signal.Slot)
+	if !ok || slot.Pending == nil {
+		return ErrInputRejected
+	}
+	if slot.Pending.Recipient != signal.Respondent {
+		return ErrInputRejected
+	}
+
+	workflow, ok := p.Workflows[instance.Workflow]
+	if !ok {
+		return newExecutionError(ExecutionErrorUnknown, "engineservice: workflow %q is not compiled", instance.Workflow)
+	}
+	slotDecl, ok := workflowQuestionSlot(workflow, signal.Slot)
+	if !ok {
+		return newExecutionError(ExecutionErrorUnknown, "engineservice: workflow %q has no question slot named %q", instance.Workflow, signal.Slot)
+	}
+	question, ok := p.Questions[slotDecl.Question]
+	if !ok {
+		return newExecutionError(ExecutionErrorUnknown, "engineservice: question %q is not compiled", slotDecl.Question)
+	}
+
+	if signal.Answer == nil || !signal.Answer.Validate(question.ResponseType) {
+		return ErrInputRejected
+	}
+	if question.Validation != nil {
+		bindings := map[string]engine.Value{"respondent": engine.UserValue{ID: signal.Respondent}, "answer": signal.Answer}
+		for _, arg := range slot.Pending.Arguments {
+			bindings[arg.Name] = arg.Value
+		}
+		v, err := Evaluate(p, question.Validation, engine.Scope{Bindings: bindings})
+		if err != nil {
+			return err
+		}
+		if !v.(engine.BoolValue).Value {
+			return ErrInputRejected
+		}
+	}
+	return nil
+}
+
+// validateTimerExpiration implements program.TimerExpiredSignalSource's
+// documented acceptance rule: the slot must currently hold a pending
+// timer. Per validateQuestionAnswer's doc comment, this has the same
+// narrow "reopened slot" gap.
+func validateTimerExpiration(instance engine.WorkflowInstance, signal engine.Signal) error {
+	slot, ok := findInstanceTimerSlot(instance, signal.Slot)
+	if !ok || !slot.Pending {
+		return ErrInputRejected
+	}
+	return nil
+}
+
+func findInstanceQuestionSlot(instance engine.WorkflowInstance, name string) (engine.QuestionSlotInstance, bool) {
+	for _, s := range instance.QuestionSlots {
+		if s.Name == name {
+			return s, true
+		}
+	}
+	return engine.QuestionSlotInstance{}, false
+}
+
+func findInstanceTimerSlot(instance engine.WorkflowInstance, name string) (engine.TimerSlotInstance, bool) {
+	for _, s := range instance.TimerSlots {
+		if s.Name == name {
+			return s, true
+		}
+	}
+	return engine.TimerSlotInstance{}, false
+}
+
+// validateChildOutcome implements program.ChildCompletedSignalSource's,
+// program.ChildFailedSignalSource's, and program.ChildCancelledSignalSource's
+// shared acceptance rule: the named child slot on instance must
+// currently hold a terminal outcome of exactly the kind want, awaiting
+// join. Per validateQuestionAnswer's doc comment, this has the same
+// narrow "reopened slot" gap; it also doubles as the "duplicate
+// delivery after joining" check, since an accepted child-outcome signal
+// clears its slot atomically with the rest of the step that handles it.
+func validateChildOutcome(instance engine.WorkflowInstance, signal engine.Signal, want engine.WorkflowOutcomeKind) error {
+	slot, ok := findInstanceChildSlot(instance, signal.Slot)
+	if !ok || slot.Child == nil || slot.Child.Outcome == nil || slot.Child.Outcome.Kind != want {
+		return ErrInputRejected
+	}
+	return nil
+}
+
+func findInstanceChildSlot(instance engine.WorkflowInstance, name string) (engine.ChildWorkflowSlotInstance, bool) {
+	for _, s := range instance.ChildSlots {
+		if s.Name == name {
+			return s, true
+		}
+	}
+	return engine.ChildWorkflowSlotInstance{}, false
+}
+
+// resolveInstance walks path from root, following ChildSlots by name,
+// and returns a copy of the workflow instance it addresses — see
+// engine.Signal.Path. An empty path returns root itself. resolveInstance
+// fails if any step names an undeclared slot or an empty one: there is
+// no running or terminal-awaiting-join child there to target.
+func resolveInstance(root engine.WorkflowInstance, path []string) (engine.WorkflowInstance, bool) {
+	current := root
+	for _, slotName := range path {
+		slot, ok := findInstanceChildSlot(current, slotName)
+		if !ok || slot.Child == nil {
+			return engine.WorkflowInstance{}, false
+		}
+		current = *slot.Child
+	}
+	return current, true
+}
+
+// applyInstancePath reconstructs root with the instance at path replaced
+// by updated, copying only the WorkflowInstance and ChildWorkflowSlotInstance
+// values along that path — mirroring applyPath's copy-on-write discipline
+// for global/local state, but for the child-workflow tree. An empty path
+// replaces root itself.
+func applyInstancePath(root engine.WorkflowInstance, path []string, updated engine.WorkflowInstance) (engine.WorkflowInstance, error) {
+	if len(path) == 0 {
+		return updated, nil
+	}
+	slotName := path[0]
+	idx, ok := findChildSlotIndex(root.ChildSlots, slotName)
+	if !ok || root.ChildSlots[idx].Child == nil {
+		return engine.WorkflowInstance{}, newExecutionError(ExecutionErrorUnknown, "engineservice: no child instance in slot %q", slotName)
+	}
+	updatedChild, err := applyInstancePath(*root.ChildSlots[idx].Child, path[1:], updated)
+	if err != nil {
+		return engine.WorkflowInstance{}, err
+	}
+	newSlots := make([]engine.ChildWorkflowSlotInstance, len(root.ChildSlots))
+	copy(newSlots, root.ChildSlots)
+	newSlots[idx] = engine.ChildWorkflowSlotInstance{Name: slotName, Child: &updatedChild}
+	root.ChildSlots = newSlots
+	return root, nil
+}
+
+func findChildSlotIndex(slots []engine.ChildWorkflowSlotInstance, name string) (int, bool) {
+	for i, s := range slots {
+		if s.Name == name {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+// clearedChildSlots returns a copy of slots with every entry emptied —
+// see ChildWorkflowSlotDeclaration's documented "disappears when the
+// parent workflow terminates".
+func clearedChildSlots(slots []engine.ChildWorkflowSlotInstance) []engine.ChildWorkflowSlotInstance {
+	cleared := make([]engine.ChildWorkflowSlotInstance, len(slots))
+	for i, s := range slots {
+		cleared[i] = engine.ChildWorkflowSlotInstance{Name: s.Name}
+	}
+	return cleared
+}
+
+func workflowQuestionSlot(workflow engine.Workflow, name string) (engine.QuestionSlot, bool) {
+	for _, s := range workflow.QuestionSlots {
+		if s.Name == name {
+			return s, true
+		}
+	}
+	return engine.QuestionSlot{}, false
+}
+
+// signalSchemaFields builds the field-name-to-value map a Signal's
+// schema exposes for binding — see engineservice's compileSignalSource
+// for the matching compile-time schema each SignalKind resolves to. A
+// child-outcome signal carries no payload of its own; its fields come
+// from instance's own slot, read before Step clears it.
+func signalSchemaFields(instance engine.WorkflowInstance, signal engine.Signal) map[string]engine.Value {
+	switch signal.Kind {
+	case engine.SignalKindIntent:
+		fields := make(map[string]engine.Value, len(signal.Fields)+1)
+		for k, v := range signal.Fields {
+			fields[k] = v
+		}
+		fields["actor"] = engine.UserValue{ID: signal.Actor}
+		return fields
+	case engine.SignalKindQuestionAnswered:
+		return map[string]engine.Value{"respondent": engine.UserValue{ID: signal.Respondent}, "answer": signal.Answer}
+	case engine.SignalKindChildCompleted:
+		slot, _ := findInstanceChildSlot(instance, signal.Slot)
+		return map[string]engine.Value{"result": slot.Child.Outcome.Result}
+	case engine.SignalKindChildFailed:
+		slot, _ := findInstanceChildSlot(instance, signal.Slot)
+		return map[string]engine.Value{"error": engine.StringValue{Value: slot.Child.Outcome.Error}}
+	case engine.SignalKindChildCancelled:
+		slot, _ := findInstanceChildSlot(instance, signal.Slot)
+		return map[string]engine.Value{"reason": engine.StringValue{Value: slot.Child.Outcome.Reason}}
+	default:
+		return signal.Fields
+	}
 }
 
 // workflowStateByName returns workflow's state named name, if any.
@@ -438,14 +830,29 @@ func selectTransition(state engine.WorkflowState, workflow engine.Workflow, sign
 	return engine.Transition{}, false
 }
 
-// signalMatchesSource reports whether signal is what source matches.
-// Signal is currently always a named signal (see engine.Signal's doc
-// comment), so only engine.NamedSignalSource can ever match; a
-// transition declared against any other SignalSource variant simply
-// never matches until Step dispatches that kind too.
+// signalMatchesSource reports whether signal is what source matches. An
+// ask-group or task-group completion source never matches yet — those
+// slots are not addressed until ask-group and task-group operations are
+// compiled.
 func signalMatchesSource(source engine.SignalSource, signal engine.Signal) bool {
-	named, ok := source.(engine.NamedSignalSource)
-	return ok && named.Name == signal.Name
+	switch s := source.(type) {
+	case engine.NamedSignalSource:
+		return signal.Kind == engine.SignalKindNamed && s.Name == signal.Name
+	case engine.UserIntentSignalSource:
+		return signal.Kind == engine.SignalKindIntent && s.Intent == signal.Intent
+	case engine.QuestionAnsweredSignalSource:
+		return signal.Kind == engine.SignalKindQuestionAnswered && s.Slot == signal.Slot
+	case engine.TimerExpiredSignalSource:
+		return signal.Kind == engine.SignalKindTimerExpired && s.Slot == signal.Slot
+	case engine.ChildCompletedSignalSource:
+		return signal.Kind == engine.SignalKindChildCompleted && s.Slot == signal.Slot
+	case engine.ChildFailedSignalSource:
+		return signal.Kind == engine.SignalKindChildFailed && s.Slot == signal.Slot
+	case engine.ChildCancelledSignalSource:
+		return signal.Kind == engine.SignalKindChildCancelled && s.Slot == signal.Slot
+	default:
+		return false
+	}
 }
 
 // instanceBaseScope builds the scope a transition's Guard, Operations,

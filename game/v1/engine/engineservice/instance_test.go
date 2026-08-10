@@ -82,8 +82,8 @@ func TestNewSnapshot_RootInstanceHasAllDeclaredSlotsEmpty(t *testing.T) {
 	if signal.Name != "WorkflowStarted" {
 		t.Fatalf("expected WorkflowStarted signal, got %+v", signal)
 	}
-	if snap.Random.Seed != 42 {
-		t.Fatalf("got seed %d, want 42", snap.Random.Seed)
+	if snap.Random.State != 42 {
+		t.Fatalf("got seed %d, want 42", snap.Random.State)
 	}
 	if snap.Sequence != 0 {
 		t.Fatalf("got sequence %d, want 0", snap.Sequence)

@@ -1,23 +1,102 @@
 package engine
 
+// SignalKind identifies which of Signal's fields are meaningful.
+type SignalKind int
+
+const (
+	// SignalKindNamed is the zero value: Name identifies a named
+	// platform or lifecycle signal (see engineservice's named lifecycle
+	// signal catalog) — the only kind engineservice.NewSnapshot
+	// produces, as the "first lifecycle signal" LOGICAL_CONTRACT.md
+	// requires.
+	SignalKindNamed SignalKind = iota
+
+	// SignalKindIntent identifies a player-submitted user intent:
+	// Intent names a program.UserIntentDeclaration, Actor is the
+	// submitting user, and Fields holds the intent's own declared
+	// parameters.
+	SignalKindIntent
+
+	// SignalKindQuestionAnswered identifies a submitted answer to the
+	// pending question in the workflow slot named Slot: Respondent is
+	// the answering user and Answer the submitted value.
+	//
+	// Per program.QuestionAnsweredSignalSource, only a validated answer
+	// ever reaches a workflow as a signal — engineservice.Step verifies
+	// Respondent against the slot's pending recipient, validates
+	// Answer against the question's response type and Validation
+	// expression, and rejects a stale, duplicate, unauthorized, or
+	// invalid submission before any transition is even considered; see
+	// ErrInputRejected.
+	SignalKindQuestionAnswered
+
+	// SignalKindTimerExpired identifies the expiration of the pending
+	// timer in the workflow slot named Slot.
+	//
+	// Per program.TimerExpiredSignalSource, only a still-current,
+	// uncancelled pending timer produces a signal — a stale or
+	// cancelled delivery is rejected before any transition is
+	// considered; see ErrInputRejected.
+	SignalKindTimerExpired
+
+	// SignalKindChildCompleted identifies that the child workflow
+	// instance in the child slot named Slot, owned by the instance
+	// Path addresses, completed successfully. engineservice.Step reads
+	// the child's durable result directly from the slot — Signal
+	// carries no payload of its own for this kind — and rejects a
+	// stale or duplicate delivery once the slot has already been
+	// joined and cleared; see program.ChildCompletedSignalSource and
+	// ErrInputRejected.
+	SignalKindChildCompleted
+
+	// SignalKindChildFailed identifies that the child workflow instance
+	// in the child slot named Slot, owned by the instance Path
+	// addresses, terminated through an authored FailControl. See
+	// SignalKindChildCompleted and program.ChildFailedSignalSource.
+	SignalKindChildFailed
+
+	// SignalKindChildCancelled identifies that the child workflow
+	// instance in the child slot named Slot, owned by the instance Path
+	// addresses, terminated itself through an authored CancelControl.
+	// This is distinct from parent-driven cancellation
+	// (CancelChildWorkflowOperation), which never produces a Signal.
+	// See SignalKindChildCompleted and program.ChildCancelledSignalSource.
+	SignalKindChildCancelled
+)
+
 // Signal is one runtime input to engineservice.Step: something that
-// happened, identified by Name, together with whatever payload Fields
-// its schema exposes for binding — see engine.SignalPattern and
-// engine.SignalBinding.
+// happened, together with whatever payload its schema exposes for
+// binding — see engine.SignalPattern and engine.SignalBinding. Which
+// fields are meaningful depends on Kind; see each SignalKind constant.
 //
 // A Signal is always consumed by exactly one Step call; Step never
 // applies more than one Signal, and the engine does not recursively
 // generate and apply further transitions inside one Step.
-//
-// This is currently narrower than program.SignalSource's full variant
-// set: Name only ever identifies a named platform or lifecycle signal
-// (see engineservice's named lifecycle signal catalog) — the only kind
-// engineservice.NewSnapshot produces, as the "first lifecycle signal"
-// LOGICAL_CONTRACT.md requires. A user intent, a question answer, a
-// timer expiration, and a child/ask-group/task-group completion are
-// added once a future step makes engineservice.Step actually dispatch a
-// Signal against a compiled SignalPattern.
 type Signal struct {
-	Name   string
+	Kind SignalKind
+
+	// Path addresses which workflow instance in the current
+	// child-workflow tree this Signal targets, as a sequence of child
+	// slot names walked from the root instance down — for example,
+	// []string{"Opponent"} targets the child currently occupying the
+	// root instance's "Opponent" child slot. A nil or empty Path
+	// targets the root instance itself.
+	//
+	// A child-outcome signal (SignalKindChildCompleted,
+	// SignalKindChildFailed, SignalKindChildCancelled) targets the
+	// parent that owns the terminated child's slot, not the terminated
+	// child itself — joining is something the parent's own transition
+	// does.
+	Path []string
+
+	Name string
+
+	Intent string
+	Actor  UserID
+
+	Slot       string
+	Respondent UserID
+	Answer     Value
+
 	Fields map[string]Value
 }
