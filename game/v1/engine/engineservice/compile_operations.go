@@ -213,6 +213,15 @@ func (c *compiler) compileOperation(op program.Operation, scope exprScope, path 
 	case program.CancelChildWorkflowOperation:
 		return c.compileCancelChildWorkflow(o, scope, path, ctx)
 
+	case program.OpenAskGroupOperation:
+		return c.compileOpenAskGroup(o, scope, path, ctx)
+
+	case program.FinalizeAskGroupOperation:
+		return c.compileFinalizeAskGroup(o, scope, path, ctx)
+
+	case program.CancelAskGroupOperation:
+		return c.compileCancelAskGroup(o, scope, path, ctx)
+
 	default:
 		c.addf(path, "operation %T is not yet supported by this compiler", op)
 		return nil, scope, false

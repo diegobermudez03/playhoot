@@ -126,6 +126,25 @@ const (
 	// consumed through its corresponding child-outcome signal first,
 	// never silently discarded by cancellation.
 	ExecutionErrorChildOutcomeNotJoined
+
+	// ExecutionErrorDuplicateRecipient marks an OpenAskGroupOperation
+	// whose evaluated Recipients contains the same user identity more
+	// than once.
+	ExecutionErrorDuplicateRecipient
+
+	// ExecutionErrorInvalidQuorum marks an OpenAskGroupOperation whose
+	// Completion is an AskGroupQuorumPolicy evaluating to something
+	// other than a positive integer no greater than the number of
+	// recipients, or an AskGroupFirstResponsePolicy opened with no
+	// recipients.
+	ExecutionErrorInvalidQuorum
+
+	// ExecutionErrorAskGroupNotJoined marks a CancelAskGroupOperation
+	// targeting an ask-group slot that holds a terminal outcome still
+	// awaiting join — that outcome must be consumed through
+	// AskGroupCompletedSignalSource first, never silently discarded by
+	// cancellation.
+	ExecutionErrorAskGroupNotJoined
 )
 
 // ExecutionError is the error type returned by NewSnapshot and Step.
@@ -416,6 +435,16 @@ func Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal, limi
 		return engine.Commit{}, ErrSignalRejected
 	}
 
+	// Per program.AskGroupCompletedSignalSource's documented "never
+	// produces a signal per individual answer", a submitted answer to a
+	// still-collecting ask group never itself selects or runs a
+	// transition — it only records the answer and re-evaluates the
+	// group's completion policy. This is handled entirely separately
+	// from the transition-selection flow below.
+	if signal.Kind == engine.SignalKindAskGroupAnswered {
+		return stepAskGroupAnswer(p, snapshot, signal)
+	}
+
 	target, ok := resolveInstance(snapshot.Root, signal.Path)
 	if !ok || target.Outcome != nil {
 		return engine.Commit{}, ErrSignalRejected
@@ -453,6 +482,10 @@ func Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal, limi
 		if err := validateChildOutcome(target, signal, engine.WorkflowOutcomeCancelled); err != nil {
 			return engine.Commit{}, err
 		}
+	case engine.SignalKindAskGroupCompleted:
+		if err := validateAskGroupCompletion(target, signal); err != nil {
+			return engine.Commit{}, err
+		}
 	}
 
 	state, ok := workflowStateByName(workflow, target.State)
@@ -466,7 +499,7 @@ func Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal, limi
 	}
 
 	scope := instanceBaseScope(target, snapshot.GlobalState)
-	fields := signalSchemaFields(target, signal)
+	fields := signalSchemaFields(p, workflow, target, signal)
 	for _, b := range transition.Signal.Bindings {
 		scope = extendScope(scope, b.Name, fields[b.Field])
 	}
@@ -492,12 +525,14 @@ func Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal, limi
 		questionSlots: append([]engine.QuestionSlotInstance{}, target.QuestionSlots...),
 		timerSlots:    append([]engine.TimerSlotInstance{}, target.TimerSlots...),
 		childSlots:    append([]engine.ChildWorkflowSlotInstance{}, target.ChildSlots...),
+		askGroupSlots: append([]engine.AskGroupSlotInstance{}, target.AskGroupSlots...),
 	}
 
-	// Accepting a validated answer, expiration, or child outcome clears
-	// its slot, atomic with everything else this step does — if the step
-	// fails for any other reason below, this candidate clearing is
-	// discarded along with it, and the slot remains occupied.
+	// Accepting a validated answer, expiration, child outcome, or
+	// ask-group completion clears its slot, atomic with everything else
+	// this step does — if the step fails for any other reason below,
+	// this candidate clearing is discarded along with it, and the slot
+	// remains occupied.
 	switch signal.Kind {
 	case engine.SignalKindQuestionAnswered:
 		if idx, ok := ctx.findQuestionSlot(signal.Slot); ok {
@@ -510,6 +545,10 @@ func Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal, limi
 	case engine.SignalKindChildCompleted, engine.SignalKindChildFailed, engine.SignalKindChildCancelled:
 		if idx, ok := ctx.findChildSlot(signal.Slot); ok {
 			ctx.childSlots[idx] = engine.ChildWorkflowSlotInstance{Name: signal.Slot}
+		}
+	case engine.SignalKindAskGroupCompleted:
+		if idx, ok := ctx.findAskGroupSlot(signal.Slot); ok {
+			ctx.askGroupSlots[idx] = engine.AskGroupSlotInstance{Name: signal.Slot}
 		}
 	}
 
@@ -540,6 +579,7 @@ func Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal, limi
 	newTarget.QuestionSlots = ctx.questionSlots
 	newTarget.TimerSlots = ctx.timerSlots
 	newTarget.ChildSlots = ctx.childSlots
+	newTarget.AskGroupSlots = ctx.askGroupSlots
 	if outcome.changed {
 		newTarget.State = outcome.state
 	}
@@ -775,9 +815,10 @@ func workflowQuestionSlot(workflow engine.Workflow, name string) (engine.Questio
 // signalSchemaFields builds the field-name-to-value map a Signal's
 // schema exposes for binding — see engineservice's compileSignalSource
 // for the matching compile-time schema each SignalKind resolves to. A
-// child-outcome signal carries no payload of its own; its fields come
-// from instance's own slot, read before Step clears it.
-func signalSchemaFields(instance engine.WorkflowInstance, signal engine.Signal) map[string]engine.Value {
+// child-outcome or ask-group-completion signal carries no payload of its
+// own; its fields come from instance's own slot, read before Step clears
+// it.
+func signalSchemaFields(p engine.Program, workflow engine.Workflow, instance engine.WorkflowInstance, signal engine.Signal) map[string]engine.Value {
 	switch signal.Kind {
 	case engine.SignalKindIntent:
 		fields := make(map[string]engine.Value, len(signal.Fields)+1)
@@ -797,6 +838,9 @@ func signalSchemaFields(instance engine.WorkflowInstance, signal engine.Signal) 
 	case engine.SignalKindChildCancelled:
 		slot, _ := findInstanceChildSlot(instance, signal.Slot)
 		return map[string]engine.Value{"reason": engine.StringValue{Value: slot.Child.Outcome.Reason}}
+	case engine.SignalKindAskGroupCompleted:
+		slot, _ := findInstanceAskGroupSlot(instance, signal.Slot)
+		return askGroupCompletionFields(p, workflow, slot.Pending, signal.Slot)
 	default:
 		return signal.Fields
 	}
@@ -830,10 +874,9 @@ func selectTransition(state engine.WorkflowState, workflow engine.Workflow, sign
 	return engine.Transition{}, false
 }
 
-// signalMatchesSource reports whether signal is what source matches. An
-// ask-group or task-group completion source never matches yet — those
-// slots are not addressed until ask-group and task-group operations are
-// compiled.
+// signalMatchesSource reports whether signal is what source matches. A
+// task-group completion source never matches yet — task-group operations
+// are not compiled.
 func signalMatchesSource(source engine.SignalSource, signal engine.Signal) bool {
 	switch s := source.(type) {
 	case engine.NamedSignalSource:
@@ -850,6 +893,8 @@ func signalMatchesSource(source engine.SignalSource, signal engine.Signal) bool 
 		return signal.Kind == engine.SignalKindChildFailed && s.Slot == signal.Slot
 	case engine.ChildCancelledSignalSource:
 		return signal.Kind == engine.SignalKindChildCancelled && s.Slot == signal.Slot
+	case engine.AskGroupCompletedSignalSource:
+		return signal.Kind == engine.SignalKindAskGroupCompleted && s.Slot == signal.Slot
 	default:
 		return false
 	}

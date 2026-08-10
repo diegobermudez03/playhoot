@@ -72,9 +72,46 @@ type AskGroupSlotInstance struct {
 // program.AskGroupSlotDeclaration.
 type PendingAskGroup struct {
 	Recipients []UserID
-	Responses  []AskGroupResponse
-	Completed  bool
+
+	// Arguments are the question's shared arguments, evaluated once for
+	// the whole group when it was opened — see
+	// program.OpenAskGroupOperation's documented "shared arguments".
+	Arguments []FieldValue
+
+	// Responses holds every accepted answer, in the order each was
+	// accepted — this is both the durable record used to compute
+	// AskGroupCompletedSignalSource's "respondents" field and the input
+	// to CompletionKind's evaluation.
+	Responses []AskGroupResponse
+
+	Completed bool
+
+	// CompletionKind and QuorumCount capture the AskGroupCompletionPolicy
+	// this group was opened with, evaluated once at open time — see
+	// program.AskGroupCompletionPolicy's documented "evaluated once ...
+	// does not change afterward". QuorumCount is only meaningful when
+	// CompletionKind is AskGroupCompletionQuorum.
+	CompletionKind AskGroupCompletionKind
+	QuorumCount    int
 }
+
+// AskGroupCompletionKind identifies which AskGroupCompletionPolicy
+// variant a PendingAskGroup was opened with.
+type AskGroupCompletionKind int
+
+const (
+	// AskGroupCompletionAllResponses is the zero value: the group
+	// completes once every unique recipient has an accepted answer.
+	AskGroupCompletionAllResponses AskGroupCompletionKind = iota
+
+	// AskGroupCompletionFirstResponse: the group completes on the first
+	// accepted answer.
+	AskGroupCompletionFirstResponse
+
+	// AskGroupCompletionQuorum: the group completes once QuorumCount
+	// unique recipients have an accepted answer.
+	AskGroupCompletionQuorum
+)
 
 // AskGroupResponse is one accepted answer collected by a
 // PendingAskGroup.

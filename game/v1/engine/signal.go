@@ -62,6 +62,34 @@ const (
 	// (CancelChildWorkflowOperation), which never produces a Signal.
 	// See SignalKindChildCompleted and program.ChildCancelledSignalSource.
 	SignalKindChildCancelled
+
+	// SignalKindAskGroupAnswered identifies a submitted answer to the
+	// ask group collecting in the workflow slot named Slot: Respondent
+	// is the answering user and Answer the submitted value.
+	//
+	// Unlike every other SignalKind, this one never itself selects or
+	// runs a transition — per program.AskGroupCompletedSignalSource,
+	// an ask group "never produces a signal per individual answer".
+	// engineservice.Step instead validates Respondent is a current,
+	// not-yet-answered recipient of the slot's still-collecting group,
+	// validates Answer against the question's response type and
+	// Validation expression exactly as for SignalKindQuestionAnswered,
+	// and, if accepted, records the answer and re-evaluates the group's
+	// completion policy — all as one atomic Commit with no transition
+	// selected. A stale, duplicate, unauthorized, or invalid submission
+	// is rejected; see ErrInputRejected.
+	SignalKindAskGroupAnswered
+
+	// SignalKindAskGroupCompleted identifies that the ask group in the
+	// slot named Slot, owned by the instance Path addresses, is
+	// completed-awaiting-join — its completion policy was satisfied
+	// naturally, or a FinalizeAskGroupOperation forced it. Signal
+	// carries no payload of its own; engineservice.Step reads the
+	// group's durable "responses", "respondents", and "missing" data
+	// directly from the slot. A stale or duplicate delivery once the
+	// slot has already been joined and cleared is rejected; see
+	// program.AskGroupCompletedSignalSource and ErrInputRejected.
+	SignalKindAskGroupCompleted
 )
 
 // Signal is one runtime input to engineservice.Step: something that

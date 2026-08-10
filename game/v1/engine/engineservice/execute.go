@@ -32,15 +32,17 @@ type execContext struct {
 	// signal.
 	path []string
 
-	// questionSlots, timerSlots, and childSlots are candidate copies of
-	// the current instance's slot instances — copied once, up front,
-	// from engine.Snapshot so every mutation (an operation's, or Step's
-	// own slot-clearing on an accepted answer, timer expiration, or
-	// child-outcome join) is applied to this copy and never to the
-	// original Snapshot's slices.
+	// questionSlots, timerSlots, childSlots, and askGroupSlots are
+	// candidate copies of the current instance's slot instances — copied
+	// once, up front, from engine.Snapshot so every mutation (an
+	// operation's, or Step's own slot-clearing on an accepted answer,
+	// timer expiration, child-outcome join, or ask-group-completion
+	// join) is applied to this copy and never to the original
+	// Snapshot's slices.
 	questionSlots []engine.QuestionSlotInstance
 	timerSlots    []engine.TimerSlotInstance
 	childSlots    []engine.ChildWorkflowSlotInstance
+	askGroupSlots []engine.AskGroupSlotInstance
 
 	// outputs accumulates every declarative engine.Output produced so
 	// far. Per LOGICAL_CONTRACT.md, the engine only ever describes what
@@ -111,6 +113,29 @@ func (ctx *execContext) childSlotDeclaration(name string) (engine.ChildWorkflowS
 		}
 	}
 	return engine.ChildWorkflowSlot{}, false
+}
+
+// findAskGroupSlot returns the index of the ask-group slot named name in
+// ctx.askGroupSlots, if any.
+func (ctx *execContext) findAskGroupSlot(name string) (int, bool) {
+	for i, s := range ctx.askGroupSlots {
+		if s.Name == name {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+// askGroupSlotDeclaration returns the compiled engine.AskGroupSlot named
+// name on ctx.workflow, if any — used to recover the Question name a
+// slot was declared against, for OpenQuestionOutput.
+func (ctx *execContext) askGroupSlotDeclaration(name string) (engine.AskGroupSlot, bool) {
+	for _, s := range ctx.workflow.AskGroupSlots {
+		if s.Name == name {
+			return s, true
+		}
+	}
+	return engine.AskGroupSlot{}, false
 }
 
 // evalCallArguments evaluates args in order into their captured values.
@@ -327,6 +352,15 @@ func execOperation(ctx *execContext, op engine.Operation, scope engine.Scope) (e
 
 	case engine.CancelChildWorkflowOperation:
 		return scope, ctx.execCancelChildWorkflow(o, scope)
+
+	case engine.OpenAskGroupOperation:
+		return scope, ctx.execOpenAskGroup(o, scope)
+
+	case engine.FinalizeAskGroupOperation:
+		return scope, ctx.execFinalizeAskGroup(o)
+
+	case engine.CancelAskGroupOperation:
+		return scope, ctx.execCancelAskGroup(o)
 
 	case engine.MatchOperation:
 		v, err := Evaluate(ctx.program, o.Value, scope)
