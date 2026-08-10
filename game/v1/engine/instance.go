@@ -23,11 +23,17 @@ type WorkflowInstance struct {
 
 	// LocalState is this instance's mutable, workflow-local state,
 	// evaluated once at creation from its Workflow's declared
-	// LocalState and, until a future step adds operations that mutate
-	// it, unchanged for the instance's lifetime. Its TypeName is always
-	// the reserved scope root name "local" — never a name declared in
-	// Program.Types.
+	// LocalState and mutated in place by engineservice.Step's compiled
+	// operations. Its TypeName is always the reserved scope root name
+	// "local" — never a name declared in Program.Types.
 	LocalState RecordValue
+
+	// Outcome is nil while this instance is still running. Once a
+	// transition applies a CompleteControl, FailControl, or
+	// CancelControl to it, Outcome is set and no further transition may
+	// apply to this instance — see program.WorkflowControl's variants
+	// for the outcomes they produce.
+	Outcome *WorkflowOutcome
 
 	QuestionSlots  []QuestionSlotInstance
 	AskGroupSlots  []AskGroupSlotInstance
@@ -111,4 +117,53 @@ type TaskGroupSlotInstance struct {
 type TaskGroupTask struct {
 	Key   Value
 	Child WorkflowInstance
+}
+
+// WorkflowOutcomeKind identifies which terminal outcome a
+// WorkflowOutcome represents.
+type WorkflowOutcomeKind int
+
+const (
+	// WorkflowOutcomeCompleted marks a workflow instance that completed
+	// successfully through CompleteControl.
+	WorkflowOutcomeCompleted WorkflowOutcomeKind = iota
+
+	// WorkflowOutcomeFailed marks a workflow instance that terminated
+	// through an authored FailControl.
+	WorkflowOutcomeFailed
+
+	// WorkflowOutcomeCancelled marks a workflow instance that
+	// terminated through an authored CancelControl.
+	WorkflowOutcomeCancelled
+)
+
+func (k WorkflowOutcomeKind) String() string {
+	switch k {
+	case WorkflowOutcomeCompleted:
+		return "completed"
+	case WorkflowOutcomeFailed:
+		return "failed"
+	case WorkflowOutcomeCancelled:
+		return "cancelled"
+	default:
+		return "unknown"
+	}
+}
+
+// WorkflowOutcome is the terminal outcome of one WorkflowInstance. Only
+// the field matching Kind is meaningful: Result for
+// WorkflowOutcomeCompleted, Error for WorkflowOutcomeFailed, Reason for
+// WorkflowOutcomeCancelled.
+//
+// When the terminated instance is a child, its parent observes this
+// outcome through ChildCompletedSignalSource, ChildFailedSignalSource,
+// or ChildCancelledSignalSource. When it is the root, per
+// program.FailControl's and program.CancelControl's documentation,
+// there is no parent to notify — a future session layer may observe it
+// here directly.
+type WorkflowOutcome struct {
+	Kind   WorkflowOutcomeKind
+	Result Value
+	Error  string
+	Reason string
 }

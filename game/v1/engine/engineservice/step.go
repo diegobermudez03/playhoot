@@ -58,12 +58,26 @@ const (
 	// invariant's Condition for the new game instance.
 	ExecutionErrorInvalidInitialState
 
-	// ExecutionErrorInvariantViolation marks a NewSnapshot call whose
-	// evaluated initial global state violates one of p.Invariants. Per
-	// program.InvariantDeclaration's documented violation semantics,
-	// this rejects initialization entirely rather than producing a
-	// Snapshot with invalid state.
+	// ExecutionErrorInvariantViolation marks a NewSnapshot or Step call
+	// whose evaluated candidate global state violates one of
+	// p.Invariants. Per program.InvariantDeclaration's documented
+	// violation semantics, this rejects the entire initialization or
+	// step, not an authored outcome.
 	ExecutionErrorInvariantViolation
+
+	// ExecutionErrorSnapshotProgramMismatch marks a Step call whose
+	// snapshot does not belong to p: its root instance's Workflow does
+	// not name p's own RootWorkflow.
+	ExecutionErrorSnapshotProgramMismatch
+
+	// ExecutionErrorSignalRejected marks a Step call that found no
+	// applicable transition for the given Signal — no transition
+	// matched it at all, or the one that matched had a Guard that
+	// evaluated to false. This is a defined, non-error outcome
+	// described in LOGICAL_CONTRACT.md as a "rejected signal": the
+	// original Snapshot is unchanged, exactly as for any other
+	// ExecutionError.
+	ExecutionErrorSignalRejected
 )
 
 // ExecutionError is the error type returned by NewSnapshot and Step.
@@ -278,20 +292,172 @@ func newTaskGroupSlotInstances(slots []engine.TaskGroupSlot) []engine.TaskGroupS
 // Step applies exactly one Signal to snapshot and returns the atomic
 // result as an engine.Commit.
 //
-// Step never mutates snapshot in place; on success it returns a new
-// engine.Snapshot inside the engine.Commit, leaving snapshot itself
-// valid and unchanged. If Step returns a non-nil error, snapshot is
-// unchanged, no engine.Commit is produced, and no engine.Output is
-// considered published — the step is atomic from the caller's
-// perspective, per LOGICAL_CONTRACT.md.
+// Step follows program's documented per-transition order: locate the
+// root instance's current WorkflowState, select one transition (a
+// state-local transition for signal takes priority over a
+// GlobalTransition for the same signal; the global one only applies
+// when the current state has none — see engine.Workflow's
+// GlobalTransitions doc comment), bind signal, evaluate Guard, execute
+// Operations against a candidate copy of global and local state, apply
+// exactly one WorkflowControl, then validate every invariant against
+// the candidate global state. If no transition matches signal, or the
+// one that does has a false Guard, Step returns
+// ErrSignalRejected — a defined outcome, not a bug.
 //
-// This version does not yet verify that snapshot belongs to p — that
-// check returns once engine.Program and engine.Snapshot carry real
-// compiled/instance identity — and does not implement the remaining
-// execution contract described in engine/README.md's "Execution
-// contract" section (transition selection, guard evaluation, operation
-// execution, invariant validation, projection recalculation, or output
-// creation). It always returns ErrExecutionNotImplemented.
+// Step never mutates snapshot in place: every operation goes through
+// execContext's copy-on-write update (see execute.go), so the returned
+// engine.Commit's Snapshot is a new value and snapshot itself remains
+// valid and unchanged. If Step returns a non-nil error for any other
+// reason — an evaluation failure, or an invariant violated by the
+// candidate state — snapshot is equally unchanged, no engine.Commit is
+// produced, and no engine.Output is considered published, per
+// LOGICAL_CONTRACT.md.
+//
+// This version only ever targets the root instance: it does not yet
+// address a child or task anywhere in the child-workflow tree, and does
+// not yet produce any engine.Output or engine.Trace content, or apply
+// structured-concurrency rules — those follow once interaction and
+// concurrency operations are compiled (see engine.Operation's doc
+// comment).
 func Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal) (engine.Commit, error) {
-	return engine.Commit{}, ErrExecutionNotImplemented
+	if snapshot.Root.Workflow != p.RootWorkflow {
+		return engine.Commit{}, newExecutionError(ExecutionErrorSnapshotProgramMismatch,
+			"engineservice: snapshot's root instance runs workflow %q, but this program's root workflow is %q", snapshot.Root.Workflow, p.RootWorkflow)
+	}
+	if snapshot.Root.Outcome != nil {
+		return engine.Commit{}, ErrSignalRejected
+	}
+
+	workflow, ok := p.Workflows[snapshot.Root.Workflow]
+	if !ok {
+		return engine.Commit{}, newExecutionError(ExecutionErrorUnknown, "engineservice: workflow %q is not compiled", snapshot.Root.Workflow)
+	}
+	state, ok := workflowStateByName(workflow, snapshot.Root.State)
+	if !ok {
+		return engine.Commit{}, newExecutionError(ExecutionErrorUnknown, "engineservice: workflow %q has no state named %q", workflow.Name, snapshot.Root.State)
+	}
+
+	transition, ok := selectTransition(state, workflow, signal)
+	if !ok {
+		return engine.Commit{}, ErrSignalRejected
+	}
+
+	scope := instanceBaseScope(snapshot.Root, snapshot.GlobalState)
+	for _, b := range transition.Signal.Bindings {
+		scope = extendScope(scope, b.Name, signal.Fields[b.Field])
+	}
+
+	if transition.Guard != nil {
+		v, err := Evaluate(p, transition.Guard, scope)
+		if err != nil {
+			return engine.Commit{}, err
+		}
+		if !v.(engine.BoolValue).Value {
+			return engine.Commit{}, ErrSignalRejected
+		}
+	}
+
+	ctx := &execContext{program: p, global: snapshot.GlobalState, local: snapshot.Root.LocalState}
+	scope, err := execBlock(ctx, transition.Operations, scope)
+	if err != nil {
+		return engine.Commit{}, err
+	}
+
+	outcome, err := applyControl(p, transition.Control, scope)
+	if err != nil {
+		return engine.Commit{}, err
+	}
+
+	invariantScope := engine.Scope{Bindings: map[string]engine.Value{globalScopeRootName: ctx.global}}
+	for _, inv := range p.Invariants {
+		v, err := Evaluate(p, inv.Condition, invariantScope)
+		if err != nil {
+			return engine.Commit{}, err
+		}
+		if !v.(engine.BoolValue).Value {
+			return engine.Commit{}, newExecutionError(ExecutionErrorInvariantViolation,
+				"engineservice: invariant %q is violated after transition %q", inv.Name, transition.Name)
+		}
+	}
+
+	newRoot := snapshot.Root
+	newRoot.LocalState = ctx.local
+	if outcome.changed {
+		newRoot.State = outcome.state
+	}
+	if outcome.outcome != nil {
+		newRoot.Outcome = outcome.outcome
+	}
+
+	commit := engine.Commit{
+		Snapshot: engine.Snapshot{
+			GlobalState: ctx.global,
+			Root:        newRoot,
+			Random:      snapshot.Random,
+			Sequence:    snapshot.Sequence + 1,
+		},
+		ConsumedSignal: signal,
+	}
+	return commit, nil
+}
+
+// ErrSignalRejected is returned by Step when signal has no applicable
+// transition: none of the current state's transitions, or the
+// workflow's GlobalTransitions, matched it, or the one that matched had
+// a Guard that evaluated to false. See ExecutionErrorSignalRejected.
+var ErrSignalRejected = &ExecutionError{
+	Code:    ExecutionErrorSignalRejected,
+	Message: "engineservice: signal was rejected: no transition matched, or its guard was false",
+}
+
+// workflowStateByName returns workflow's state named name, if any.
+func workflowStateByName(workflow engine.Workflow, name string) (engine.WorkflowState, bool) {
+	for _, s := range workflow.States {
+		if s.Name == name {
+			return s, true
+		}
+	}
+	return engine.WorkflowState{}, false
+}
+
+// selectTransition implements state-local transition precedence with
+// global-transition fallback: it returns the current state's own
+// transition for signal if one exists, and only otherwise falls back to
+// checking workflow.GlobalTransitions.
+func selectTransition(state engine.WorkflowState, workflow engine.Workflow, signal engine.Signal) (engine.Transition, bool) {
+	for _, t := range state.Transitions {
+		if signalMatchesSource(t.Signal.Source, signal) {
+			return t, true
+		}
+	}
+	for _, t := range workflow.GlobalTransitions {
+		if signalMatchesSource(t.Signal.Source, signal) {
+			return t, true
+		}
+	}
+	return engine.Transition{}, false
+}
+
+// signalMatchesSource reports whether signal is what source matches.
+// Signal is currently always a named signal (see engine.Signal's doc
+// comment), so only engine.NamedSignalSource can ever match; a
+// transition declared against any other SignalSource variant simply
+// never matches until Step dispatches that kind too.
+func signalMatchesSource(source engine.SignalSource, signal engine.Signal) bool {
+	named, ok := source.(engine.NamedSignalSource)
+	return ok && named.Name == signal.Name
+}
+
+// instanceBaseScope builds the scope a transition's Guard, Operations,
+// and Control evaluate in: the instance's own Parameters bound directly
+// by name, plus the reserved "local" and "global" roots. "resources" is
+// added automatically by Evaluate — see evaluate.go's withResources.
+func instanceBaseScope(instance engine.WorkflowInstance, global engine.RecordValue) engine.Scope {
+	bindings := make(map[string]engine.Value, len(instance.Parameters)+2)
+	for _, p := range instance.Parameters {
+		bindings[p.Name] = p.Value
+	}
+	bindings["local"] = instance.LocalState
+	bindings[globalScopeRootName] = global
+	return engine.Scope{Bindings: bindings}
 }

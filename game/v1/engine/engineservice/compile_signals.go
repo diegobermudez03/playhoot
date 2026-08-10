@@ -27,12 +27,13 @@ var namedLifecycleSignals = map[string]map[string]engine.Type{
 	"ParentCancelled":  {},
 }
 
-// compileTransition compiles t's signal pattern, guard, and control.
-//
-// It does not yet compile Operations — see engine.Transition's doc
-// comment — so a transition whose only semantic content is its
-// Operations block (uncommon, but not disallowed) compiles here without
-// diagnosing anything about that block at all.
+// compileTransition compiles t's signal pattern, guard, operations, and
+// control, in program's documented execution order: Guard compiles
+// against the scope signal binding produces, before Operations exists;
+// Operations then compiles against that same scope, and Control against
+// whatever scope Operations leaves behind — so a top-level LetOperation
+// is visible to Control, exactly as it would be to a later operation in
+// the same Block.
 func (c *compiler) compileTransition(t program.TransitionDeclaration, path string, ctx *workflowContext) engine.Transition {
 	signal, scope := c.compileSignalPattern(t.Signal, path+".signal", ctx)
 
@@ -47,9 +48,11 @@ func (c *compiler) compileTransition(t program.TransitionDeclaration, path strin
 		}
 	}
 
-	control := c.compileWorkflowControl(t.Control, scope, path+".control", ctx)
+	operations, postScope := c.compileBlock(t.Operations, scope, path+".operations")
 
-	return engine.Transition{Name: t.Name, Signal: signal, Guard: guard, Control: control}
+	control := c.compileWorkflowControl(t.Control, postScope, path+".control", ctx)
+
+	return engine.Transition{Name: t.Name, Signal: signal, Guard: guard, Operations: operations, Control: control}
 }
 
 // compileSignalPattern resolves pattern.Source's schema (see

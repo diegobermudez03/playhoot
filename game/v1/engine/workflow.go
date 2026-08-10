@@ -106,15 +106,14 @@ type WorkflowState struct {
 // Transition is the compiled representation of one
 // program.TransitionDeclaration.
 //
-// Transition does not yet carry compiled operations: program's model
-// executes a transition as match signal, bind, evaluate Guard, run
-// Operations, then evaluate Control, but this compiler step only
-// resolves and validates Signal, Guard, and Control — Operations
-// (mutation, interactions, structured concurrency) is a separate,
-// larger compilation concern left for a future step.
+// Executed in program's documented order: match Signal, bind, evaluate
+// Guard, run Operations, then evaluate Control. Operations only compiles
+// the operation kinds a purely sequential workflow needs — see
+// Operation's doc comment for what is not compiled yet.
 type Transition struct {
-	Name    string
-	Signal  SignalPattern
-	Guard   Expression
-	Control WorkflowControl
+	Name       string
+	Signal     SignalPattern
+	Guard      Expression
+	Operations Block
+	Control    WorkflowControl
 }
