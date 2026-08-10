@@ -27,22 +27,24 @@ type execContext struct {
 	// path addresses, within the current game instance's child-workflow
 	// tree, the WorkflowInstance this execContext is executing a
 	// transition for — the same path Step resolved via
-	// engine.Signal.Path. execSpawnChildWorkflow appends the spawned
-	// slot's name to this to address the new child's own WorkflowStarted
+	// engine.Signal.Path. execSpawnChildWorkflow and
+	// execSpawnTaskGroupChild each append one more engine.PathStep to
+	// this to address their new child's or task's own WorkflowStarted
 	// signal.
-	path []string
+	path []engine.PathStep
 
-	// questionSlots, timerSlots, childSlots, and askGroupSlots are
-	// candidate copies of the current instance's slot instances — copied
-	// once, up front, from engine.Snapshot so every mutation (an
-	// operation's, or Step's own slot-clearing on an accepted answer,
-	// timer expiration, child-outcome join, or ask-group-completion
-	// join) is applied to this copy and never to the original
-	// Snapshot's slices.
-	questionSlots []engine.QuestionSlotInstance
-	timerSlots    []engine.TimerSlotInstance
-	childSlots    []engine.ChildWorkflowSlotInstance
-	askGroupSlots []engine.AskGroupSlotInstance
+	// questionSlots, timerSlots, childSlots, askGroupSlots, and
+	// taskGroupSlots are candidate copies of the current instance's slot
+	// instances — copied once, up front, from engine.Snapshot so every
+	// mutation (an operation's, or Step's own slot-clearing on an
+	// accepted answer, timer expiration, child-outcome join,
+	// ask-group-completion join, or task-group-completion join) is
+	// applied to this copy and never to the original Snapshot's slices.
+	questionSlots  []engine.QuestionSlotInstance
+	timerSlots     []engine.TimerSlotInstance
+	childSlots     []engine.ChildWorkflowSlotInstance
+	askGroupSlots  []engine.AskGroupSlotInstance
+	taskGroupSlots []engine.TaskGroupSlotInstance
 
 	// outputs accumulates every declarative engine.Output produced so
 	// far. Per LOGICAL_CONTRACT.md, the engine only ever describes what
@@ -51,10 +53,11 @@ type execContext struct {
 	outputs []engine.Output
 
 	// internalSignals accumulates every engine.Signal this step causes
-	// but does not itself apply — currently, only the WorkflowStarted
-	// signal a SpawnChildWorkflowOperation causes for its new child.
-	// Per LOGICAL_CONTRACT.md, these become engine.Commit.InternalSignals
-	// only if the whole step succeeds, for a later Step call to apply.
+	// but does not itself apply — currently, the WorkflowStarted signal
+	// a SpawnChildWorkflowOperation or SpawnTaskGroupChildOperation
+	// causes for its new child or task. Per LOGICAL_CONTRACT.md, these
+	// become engine.Commit.InternalSignals only if the whole step
+	// succeeds, for a later Step call to apply.
 	internalSignals []engine.Signal
 }
 
@@ -136,6 +139,30 @@ func (ctx *execContext) askGroupSlotDeclaration(name string) (engine.AskGroupSlo
 		}
 	}
 	return engine.AskGroupSlot{}, false
+}
+
+// findTaskGroupSlot returns the index of the task-group slot named name
+// in ctx.taskGroupSlots, if any.
+func (ctx *execContext) findTaskGroupSlot(name string) (int, bool) {
+	for i, s := range ctx.taskGroupSlots {
+		if s.Name == name {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+// taskGroupSlotDeclaration returns the compiled engine.TaskGroupSlot
+// named name on ctx.workflow, if any — used to recover the workflow
+// type and key type a slot was declared against, for
+// execSpawnTaskGroupChild.
+func (ctx *execContext) taskGroupSlotDeclaration(name string) (engine.TaskGroupSlot, bool) {
+	for _, s := range ctx.workflow.TaskGroupSlots {
+		if s.Name == name {
+			return s, true
+		}
+	}
+	return engine.TaskGroupSlot{}, false
 }
 
 // evalCallArguments evaluates args in order into their captured values.
@@ -361,6 +388,21 @@ func execOperation(ctx *execContext, op engine.Operation, scope engine.Scope) (e
 
 	case engine.CancelAskGroupOperation:
 		return scope, ctx.execCancelAskGroup(o)
+
+	case engine.BeginTaskGroupOperation:
+		return scope, ctx.execBeginTaskGroup(o, scope)
+
+	case engine.SpawnTaskGroupChildOperation:
+		return scope, ctx.execSpawnTaskGroupChild(o, scope)
+
+	case engine.SealTaskGroupOperation:
+		return scope, ctx.execSealTaskGroup(o)
+
+	case engine.FinalizeTaskGroupOperation:
+		return scope, ctx.execFinalizeTaskGroup(o)
+
+	case engine.CancelTaskGroupOperation:
+		return scope, ctx.execCancelTaskGroup(o, scope)
 
 	case engine.MatchOperation:
 		v, err := Evaluate(ctx.program, o.Value, scope)
@@ -816,9 +858,7 @@ func (ctx *execContext) execSpawnChildWorkflow(o engine.SpawnChildWorkflowOperat
 
 	ctx.childSlots[idx] = engine.ChildWorkflowSlotInstance{Name: o.Slot, Child: &child}
 
-	childPath := make([]string, len(ctx.path)+1)
-	copy(childPath, ctx.path)
-	childPath[len(ctx.path)] = o.Slot
+	childPath := append(append([]engine.PathStep{}, ctx.path...), engine.PathStep{Slot: o.Slot})
 	ctx.internalSignals = append(ctx.internalSignals, engine.Signal{Kind: engine.SignalKindNamed, Path: childPath, Name: "WorkflowStarted"})
 	return nil
 }

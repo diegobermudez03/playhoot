@@ -97,7 +97,7 @@ func spawnAndStart(t *testing.T, p engine.Program, snap engine.Snapshot) engine.
 		t.Fatalf("got %d internal signals, want 1", len(commit.InternalSignals))
 	}
 	started := commit.InternalSignals[0]
-	if started.Name != "WorkflowStarted" || len(started.Path) != 1 || started.Path[0] != "W" {
+	if started.Name != "WorkflowStarted" || len(started.Path) != 1 || started.Path[0].Slot != "W" {
 		t.Fatalf("got %+v", started)
 	}
 	commit, err = Step(p, commit.Snapshot, started, engine.DefaultLimits())
@@ -135,7 +135,7 @@ func TestExec_ChildCompletesAndParentJoins(t *testing.T) {
 	p := childWorkflowProgram()
 	snap := spawnAndStart(t, p, mainSnapshot())
 
-	commit, err := Step(p, snap, engine.Signal{Kind: engine.SignalKindIntent, Path: []string{"W"}, Intent: "Succeed"}, engine.DefaultLimits())
+	commit, err := Step(p, snap, engine.Signal{Kind: engine.SignalKindIntent, Path: []engine.PathStep{{Slot: "W"}}, Intent: "Succeed"}, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error completing child: %v", err)
 	}
@@ -167,7 +167,7 @@ func TestExec_ChildFailsAndParentJoins(t *testing.T) {
 	p := childWorkflowProgram()
 	snap := spawnAndStart(t, p, mainSnapshot())
 
-	commit, err := Step(p, snap, engine.Signal{Kind: engine.SignalKindIntent, Path: []string{"W"}, Intent: "Fail"}, engine.DefaultLimits())
+	commit, err := Step(p, snap, engine.Signal{Kind: engine.SignalKindIntent, Path: []engine.PathStep{{Slot: "W"}}, Intent: "Fail"}, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error failing child: %v", err)
 	}
@@ -189,7 +189,7 @@ func TestExec_ChildSelfCancelsAndParentJoins(t *testing.T) {
 	p := childWorkflowProgram()
 	snap := spawnAndStart(t, p, mainSnapshot())
 
-	commit, err := Step(p, snap, engine.Signal{Kind: engine.SignalKindIntent, Path: []string{"W"}, Intent: "SelfCancel"}, engine.DefaultLimits())
+	commit, err := Step(p, snap, engine.Signal{Kind: engine.SignalKindIntent, Path: []engine.PathStep{{Slot: "W"}}, Intent: "SelfCancel"}, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error self-cancelling child: %v", err)
 	}
@@ -211,7 +211,7 @@ func TestExec_ChildOutcomeWrongKindRejected(t *testing.T) {
 	p := childWorkflowProgram()
 	snap := spawnAndStart(t, p, mainSnapshot())
 
-	commit, err := Step(p, snap, engine.Signal{Kind: engine.SignalKindIntent, Path: []string{"W"}, Intent: "Succeed"}, engine.DefaultLimits())
+	commit, err := Step(p, snap, engine.Signal{Kind: engine.SignalKindIntent, Path: []engine.PathStep{{Slot: "W"}}, Intent: "Succeed"}, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -256,7 +256,7 @@ func TestExec_ParentDrivenCancelOnEmptySlotIsNoOp(t *testing.T) {
 func TestExec_ParentDrivenCancelOnTerminalAwaitingJoinFailsAtomically(t *testing.T) {
 	p := childWorkflowProgram()
 	snap := spawnAndStart(t, p, mainSnapshot())
-	commit, err := Step(p, snap, engine.Signal{Kind: engine.SignalKindIntent, Path: []string{"W"}, Intent: "Succeed"}, engine.DefaultLimits())
+	commit, err := Step(p, snap, engine.Signal{Kind: engine.SignalKindIntent, Path: []engine.PathStep{{Slot: "W"}}, Intent: "Succeed"}, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -293,7 +293,7 @@ func TestExec_RecursiveCleanupOnParentTermination_RunningChild(t *testing.T) {
 func TestExec_RecursiveCleanupOnParentTermination_AwaitingJoinChild(t *testing.T) {
 	p := childWorkflowProgram()
 	snap := spawnAndStart(t, p, mainSnapshot())
-	commit, err := Step(p, snap, engine.Signal{Kind: engine.SignalKindIntent, Path: []string{"W"}, Intent: "Succeed"}, engine.DefaultLimits())
+	commit, err := Step(p, snap, engine.Signal{Kind: engine.SignalKindIntent, Path: []engine.PathStep{{Slot: "W"}}, Intent: "Succeed"}, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -312,7 +312,7 @@ func TestExec_SignalToNonexistentChildPathIsRejected(t *testing.T) {
 	p := childWorkflowProgram()
 	snap := mainSnapshot() // slot "W" is empty: no child to address
 
-	_, err := Step(p, snap, engine.Signal{Kind: engine.SignalKindIntent, Path: []string{"W"}, Intent: "Succeed"}, engine.DefaultLimits())
+	_, err := Step(p, snap, engine.Signal{Kind: engine.SignalKindIntent, Path: []engine.PathStep{{Slot: "W"}}, Intent: "Succeed"}, engine.DefaultLimits())
 	if err != ErrSignalRejected {
 		t.Fatalf("expected ErrSignalRejected for a signal addressed to a nonexistent child, got %v", err)
 	}

@@ -222,6 +222,21 @@ func (c *compiler) compileOperation(op program.Operation, scope exprScope, path 
 	case program.CancelAskGroupOperation:
 		return c.compileCancelAskGroup(o, scope, path, ctx)
 
+	case program.BeginTaskGroupOperation:
+		return c.compileBeginTaskGroup(o, scope, path, ctx)
+
+	case program.SpawnTaskGroupChildOperation:
+		return c.compileSpawnTaskGroupChild(o, scope, path, ctx)
+
+	case program.SealTaskGroupOperation:
+		return c.compileSealTaskGroup(o, scope, path, ctx)
+
+	case program.FinalizeTaskGroupOperation:
+		return c.compileFinalizeTaskGroup(o, scope, path, ctx)
+
+	case program.CancelTaskGroupOperation:
+		return c.compileCancelTaskGroup(o, scope, path, ctx)
+
 	default:
 		c.addf(path, "operation %T is not yet supported by this compiler", op)
 		return nil, scope, false

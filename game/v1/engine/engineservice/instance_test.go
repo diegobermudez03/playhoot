@@ -75,7 +75,7 @@ func TestNewSnapshot_RootInstanceHasAllDeclaredSlotsEmpty(t *testing.T) {
 	if len(root.ChildSlots) != 1 || root.ChildSlots[0].Name != "SubSlot" || root.ChildSlots[0].Child != nil {
 		t.Fatalf("got %+v", root.ChildSlots)
 	}
-	if len(root.TaskGroupSlots) != 1 || root.TaskGroupSlots[0].Name != "Tasks" || root.TaskGroupSlots[0].Tasks != nil {
+	if len(root.TaskGroupSlots) != 1 || root.TaskGroupSlots[0].Name != "Tasks" || root.TaskGroupSlots[0].Group != nil {
 		t.Fatalf("got %+v", root.TaskGroupSlots)
 	}
 
