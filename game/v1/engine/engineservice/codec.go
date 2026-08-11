@@ -18,6 +18,8 @@
 package engineservice
 
 import (
+	"fmt"
+
 	"github.com/diegobermudez03/playhoot/game/v1/engine"
 	"github.com/diegobermudez03/playhoot/game/v1/engine/internal/codec"
 )
@@ -62,16 +64,16 @@ func DecodeSnapshot(data []byte) (engine.Snapshot, error) {
 // stepping an older persisted Snapshot against it.
 func CheckSnapshotCompatibility(p engine.Program, snapshot engine.Snapshot) error {
 	if snapshot.Root.Workflow != p.RootWorkflow {
-		return newExecutionError(ExecutionErrorSnapshotProgramMismatch,
-			"engineservice: snapshot's root instance runs workflow %q, but this program's root workflow is %q", snapshot.Root.Workflow, p.RootWorkflow)
+		return &ExecutionError{Code: ExecutionErrorSnapshotProgramMismatch, Message: fmt.Sprintf(
+			"engineservice: snapshot's root instance runs workflow %q, but this program's root workflow is %q", snapshot.Root.Workflow, p.RootWorkflow)}
 	}
 	return checkInstanceCompatibility(p, snapshot.Root)
 }
 
 func checkInstanceCompatibility(p engine.Program, instance engine.WorkflowInstance) error {
 	if _, ok := p.Workflows[instance.Workflow]; !ok {
-		return newExecutionError(ExecutionErrorSnapshotProgramMismatch,
-			"engineservice: snapshot references workflow %q, which this program does not compile", instance.Workflow)
+		return &ExecutionError{Code: ExecutionErrorSnapshotProgramMismatch, Message: fmt.Sprintf(
+			"engineservice: snapshot references workflow %q, which this program does not compile", instance.Workflow)}
 	}
 	for _, s := range instance.ChildSlots {
 		if s.Child != nil {

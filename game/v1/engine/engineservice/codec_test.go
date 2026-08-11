@@ -1,15 +1,16 @@
-package engineservice
+package engineservice_test
 
 import (
 	"testing"
 
 	"github.com/diegobermudez03/playhoot/game/v1/engine"
+	"github.com/diegobermudez03/playhoot/game/v1/engine/engineservice"
 	"github.com/diegobermudez03/playhoot/game/v1/program"
 )
 
 // counterProgramDefinition is a program.Definition-level counterpart to
 // step_test.go's hand-built engine-IR counterProgram, for tests that
-// need to go through the real Compile pipeline.
+// need to go through the real engineservice.Compile pipeline.
 func counterProgramDefinition() program.Definition {
 	globalCount := program.FieldExpression{Target: program.ReferenceExpression{Name: "global"}, Field: "count"}
 	return program.Definition{
@@ -56,11 +57,11 @@ func counterProgramDefinition() program.Definition {
 
 func roundTripSnapshot(t *testing.T, snap engine.Snapshot) engine.Snapshot {
 	t.Helper()
-	data, err := EncodeSnapshot(snap)
+	data, err := engineservice.EncodeSnapshot(snap)
 	if err != nil {
 		t.Fatalf("unexpected encode error: %v", err)
 	}
-	decoded, err := DecodeSnapshot(data)
+	decoded, err := engineservice.DecodeSnapshot(data)
 	if err != nil {
 		t.Fatalf("unexpected decode error: %v (data: %s)", err, data)
 	}
@@ -71,17 +72,17 @@ func roundTripSnapshot(t *testing.T, snap engine.Snapshot) engine.Snapshot {
 // rather than reflect.DeepEqual on the decoded Go structs directly:
 // several construction paths elsewhere in this package build an empty
 // slice as make([]T, 0, n) (non-nil) rather than leaving it nil, and
-// EncodeSnapshot already treats "nil" and "empty" identically (both hit
+// engineservice.EncodeSnapshot already treats "nil" and "empty" identically (both hit
 // omitempty) — so encoded-byte equality is the meaningful notion of
 // "the same Snapshot" here, and DeepEqual on the raw structs would
 // otherwise fail on an incidental, semantically irrelevant difference.
 func assertSnapshotsEqual(t *testing.T, a, b engine.Snapshot) {
 	t.Helper()
-	aBytes, err := EncodeSnapshot(a)
+	aBytes, err := engineservice.EncodeSnapshot(a)
 	if err != nil {
 		t.Fatalf("unexpected encode error: %v", err)
 	}
-	bBytes, err := EncodeSnapshot(b)
+	bBytes, err := engineservice.EncodeSnapshot(b)
 	if err != nil {
 		t.Fatalf("unexpected encode error: %v", err)
 	}
@@ -108,7 +109,7 @@ func TestCodec_ChildWorkflowTreeRoundTrips(t *testing.T) {
 
 func TestCodec_TaskGroupRoundTrips(t *testing.T) {
 	p := taskGroupProgram(engine.TaskGroupQuorumTerminalPolicy{Count: engine.NumberLiteralExpression{Value: 2}}, []float64{10, 20, 30}, engine.UnitType{}, engine.StayControl{})
-	commit, err := Step(p, taskGroupSnapshot(), engine.Signal{Name: "BeginAndSeal"}, engine.DefaultLimits())
+	commit, err := engineservice.Step(p, taskGroupSnapshot(), engine.Signal{Name: "BeginAndSeal"}, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -125,7 +126,7 @@ func TestCodec_TaskGroupRoundTrips(t *testing.T) {
 
 func TestCodec_AskGroupRoundTrips(t *testing.T) {
 	p := askGroupProgram(engine.AskGroupAllResponsesPolicy{}, engine.UnitType{}, engine.StayControl{})
-	commit, _ := Step(p, askGroupSnapshot([]engine.UserID{askAlice, askBob}), engine.Signal{Name: "Open"}, engine.DefaultLimits())
+	commit, _ := engineservice.Step(p, askGroupSnapshot([]engine.UserID{askAlice, askBob}), engine.Signal{Name: "Open"}, engine.DefaultLimits())
 	commit, err := answerAskGroup(p, commit.Snapshot, askAlice, true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -141,7 +142,7 @@ func TestCodec_AskGroupRoundTrips(t *testing.T) {
 
 func TestCodec_PendingQuestionRoundTrips(t *testing.T) {
 	p := questionDemoProgram()
-	commit, err := Step(p, questionDemoSnapshot(), engine.Signal{Name: "Open"}, engine.DefaultLimits())
+	commit, err := engineservice.Step(p, questionDemoSnapshot(), engine.Signal{Name: "Open"}, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -155,7 +156,7 @@ func TestCodec_PendingQuestionRoundTrips(t *testing.T) {
 
 func TestCodec_TerminalOutcomeRoundTrips(t *testing.T) {
 	p := counterProgram()
-	commit, err := Step(p, counterSnapshot(3), engine.Signal{Name: "Finish"}, engine.DefaultLimits())
+	commit, err := engineservice.Step(p, counterSnapshot(3), engine.Signal{Name: "Finish"}, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -215,16 +216,16 @@ func TestCodec_EveryValueKindRoundTrips(t *testing.T) {
 }
 
 func TestCodec_DecodeMalformedJSONReturnsPathAwareError(t *testing.T) {
-	_, err := DecodeSnapshot([]byte(`{"root": {`))
+	_, err := engineservice.DecodeSnapshot([]byte(`{"root": {`))
 	if err == nil {
 		t.Fatal("expected a decode error")
 	}
-	var decErr *DecodeError
-	if de, ok := err.(*DecodeError); ok {
+	var decErr *engineservice.DecodeError
+	if de, ok := err.(*engineservice.DecodeError); ok {
 		decErr = de
 	}
 	if decErr == nil {
-		t.Fatalf("expected a *DecodeError, got %T", err)
+		t.Fatalf("expected a *engineservice.DecodeError, got %T", err)
 	}
 	if decErr.Path == "" {
 		t.Fatal("expected a non-empty path")
@@ -232,12 +233,12 @@ func TestCodec_DecodeMalformedJSONReturnsPathAwareError(t *testing.T) {
 }
 
 func TestCodec_DecodeUnknownFieldRejected(t *testing.T) {
-	valid, err := EncodeSnapshot(counterSnapshot(0))
+	valid, err := engineservice.EncodeSnapshot(counterSnapshot(0))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	tampered := append(valid[:len(valid)-1], []byte(`,"bogus_field":1}`)...)
-	_, err = DecodeSnapshot(tampered)
+	_, err = engineservice.DecodeSnapshot(tampered)
 	if err == nil {
 		t.Fatal("expected an unknown-field decode error")
 	}
@@ -246,15 +247,15 @@ func TestCodec_DecodeUnknownFieldRejected(t *testing.T) {
 func TestCodec_CheckSnapshotCompatibility(t *testing.T) {
 	p := counterProgram()
 	snap := counterSnapshot(0)
-	if err := CheckSnapshotCompatibility(p, snap); err != nil {
+	if err := engineservice.CheckSnapshotCompatibility(p, snap); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	mismatched := snap
 	mismatched.Root.Workflow = "SomeOtherWorkflow"
-	err := CheckSnapshotCompatibility(p, mismatched)
-	if e, ok := err.(*ExecutionError); !ok || e.Code != ExecutionErrorSnapshotProgramMismatch {
-		t.Fatalf("expected ExecutionErrorSnapshotProgramMismatch, got %v", err)
+	err := engineservice.CheckSnapshotCompatibility(p, mismatched)
+	if e, ok := err.(*engineservice.ExecutionError); !ok || e.Code != engineservice.ExecutionErrorSnapshotProgramMismatch {
+		t.Fatalf("expected engineservice.ExecutionErrorSnapshotProgramMismatch, got %v", err)
 	}
 }
 
@@ -264,9 +265,9 @@ func TestCodec_CheckSnapshotCompatibilityDetectsMissingChildWorkflow(t *testing.
 
 	// Simulate resuming against a newer program version that dropped "Worker".
 	trimmed := engine.Program{RootWorkflow: p.RootWorkflow, Workflows: map[string]engine.Workflow{"Main": p.Workflows["Main"]}}
-	err := CheckSnapshotCompatibility(trimmed, snap)
-	if e, ok := err.(*ExecutionError); !ok || e.Code != ExecutionErrorSnapshotProgramMismatch {
-		t.Fatalf("expected ExecutionErrorSnapshotProgramMismatch, got %v", err)
+	err := engineservice.CheckSnapshotCompatibility(trimmed, snap)
+	if e, ok := err.(*engineservice.ExecutionError); !ok || e.Code != engineservice.ExecutionErrorSnapshotProgramMismatch {
+		t.Fatalf("expected engineservice.ExecutionErrorSnapshotProgramMismatch, got %v", err)
 	}
 }
 
@@ -277,15 +278,15 @@ func TestCodec_CheckSnapshotCompatibilityDetectsMissingChildWorkflow(t *testing.
 // all — and asserts both reach an identical final Snapshot.
 func TestIntegration_PersistRestoreContinueMatchesUninterruptedExecution(t *testing.T) {
 	def := counterProgramDefinition()
-	p, diags := Compile(def)
+	p, diags := engineservice.Compile(def)
 	if diags.HasErrors() {
 		t.Fatalf("unexpected compile errors: %v", diags)
 	}
-	if err := CheckSnapshotCompatibility(p, engine.Snapshot{Root: engine.WorkflowInstance{Workflow: p.RootWorkflow}}); err != nil {
+	if err := engineservice.CheckSnapshotCompatibility(p, engine.Snapshot{Root: engine.WorkflowInstance{Workflow: p.RootWorkflow}}); err != nil {
 		t.Fatalf("unexpected incompatibility on a freshly compiled program: %v", err)
 	}
 
-	snapDirect, startSignal, err := NewSnapshot(p, engine.InitializationInput{})
+	snapDirect, startSignal, err := engineservice.NewSnapshot(p, engine.InitializationInput{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -295,21 +296,21 @@ func TestIntegration_PersistRestoreContinueMatchesUninterruptedExecution(t *test
 	finish := engine.Signal{Kind: engine.SignalKindIntent, Intent: "Finish"}
 	signals := []engine.Signal{startSignal, increment, increment, increment, finish}
 	for _, sig := range signals {
-		commit, err := Step(p, snapDirect, sig, engine.DefaultLimits())
+		commit, err := engineservice.Step(p, snapDirect, sig, engine.DefaultLimits())
 		if err != nil {
 			t.Fatalf("unexpected error (direct): %v", err)
 		}
 		snapDirect = commit.Snapshot
 
-		commit, err = Step(p, snapPersisted, sig, engine.DefaultLimits())
+		commit, err = engineservice.Step(p, snapPersisted, sig, engine.DefaultLimits())
 		if err != nil {
 			t.Fatalf("unexpected error (persisted): %v", err)
 		}
-		data, err := EncodeSnapshot(commit.Snapshot)
+		data, err := engineservice.EncodeSnapshot(commit.Snapshot)
 		if err != nil {
 			t.Fatalf("unexpected encode error: %v", err)
 		}
-		snapPersisted, err = DecodeSnapshot(data)
+		snapPersisted, err = engineservice.DecodeSnapshot(data)
 		if err != nil {
 			t.Fatalf("unexpected decode error: %v", err)
 		}

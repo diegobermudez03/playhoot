@@ -1,39 +1,40 @@
-package engineservice
+package engineservice_test
 
 import (
 	"testing"
 
 	"github.com/diegobermudez03/playhoot/game/v1/engine"
+	"github.com/diegobermudez03/playhoot/game/v1/engine/engineservice"
 	"github.com/diegobermudez03/playhoot/game/v1/program"
 )
 
 // TestIntegration_CounterWorkflow drives counterProgramDefinition
-// through the real Compile -> NewSnapshot -> Step pipeline, as the
+// through the real engineservice.Compile -> engineservice.NewSnapshot -> engineservice.Step pipeline, as the
 // "simple counter workflow" integration test.
 func TestIntegration_CounterWorkflow(t *testing.T) {
-	p, diags := Compile(counterProgramDefinition())
+	p, diags := engineservice.Compile(counterProgramDefinition())
 	if diags.HasErrors() {
 		t.Fatalf("unexpected compile errors: %v", diags)
 	}
-	snap, startSignal, err := NewSnapshot(p, engine.InitializationInput{})
+	snap, startSignal, err := engineservice.NewSnapshot(p, engine.InitializationInput{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	commit, err := Step(p, snap, startSignal, engine.DefaultLimits())
+	commit, err := engineservice.Step(p, snap, startSignal, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	snap = commit.Snapshot
 
 	for i := 0; i < 3; i++ {
-		commit, err = Step(p, snap, engine.Signal{Kind: engine.SignalKindIntent, Intent: "Increment"}, engine.DefaultLimits())
+		commit, err = engineservice.Step(p, snap, engine.Signal{Kind: engine.SignalKindIntent, Intent: "Increment"}, engine.DefaultLimits())
 		if err != nil {
 			t.Fatalf("unexpected error incrementing: %v", err)
 		}
 		snap = commit.Snapshot
 	}
 
-	commit, err = Step(p, snap, engine.Signal{Kind: engine.SignalKindIntent, Intent: "Finish"}, engine.DefaultLimits())
+	commit, err = engineservice.Step(p, snap, engine.Signal{Kind: engine.SignalKindIntent, Intent: "Finish"}, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -95,15 +96,15 @@ func questionWithTimeoutDefinition() program.Definition {
 }
 
 func TestIntegration_QuestionAnsweredBeforeTimeout(t *testing.T) {
-	p, diags := Compile(questionWithTimeoutDefinition())
+	p, diags := engineservice.Compile(questionWithTimeoutDefinition())
 	if diags.HasErrors() {
 		t.Fatalf("unexpected compile errors: %v", diags)
 	}
-	snap, startSignal, err := NewSnapshot(p, engine.InitializationInput{RootParameters: map[string]engine.Value{"player": engine.UserValue{ID: player}}})
+	snap, startSignal, err := engineservice.NewSnapshot(p, engine.InitializationInput{RootParameters: map[string]engine.Value{"player": engine.UserValue{ID: player}}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	commit, err := Step(p, snap, startSignal, engine.DefaultLimits())
+	commit, err := engineservice.Step(p, snap, startSignal, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -111,7 +112,7 @@ func TestIntegration_QuestionAnsweredBeforeTimeout(t *testing.T) {
 		t.Fatalf("got %d outputs, want 2: %+v", len(commit.Outputs), commit.Outputs)
 	}
 
-	commit, err = Step(p, commit.Snapshot, engine.Signal{Kind: engine.SignalKindQuestionAnswered, Slot: "Ask", Respondent: player, Answer: engine.BoolValue{Value: true}}, engine.DefaultLimits())
+	commit, err = engineservice.Step(p, commit.Snapshot, engine.Signal{Kind: engine.SignalKindQuestionAnswered, Slot: "Ask", Respondent: player, Answer: engine.BoolValue{Value: true}}, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error answering: %v", err)
 	}
@@ -130,20 +131,20 @@ func TestIntegration_QuestionAnsweredBeforeTimeout(t *testing.T) {
 }
 
 func TestIntegration_TimerFiresBeforeAnswer(t *testing.T) {
-	p, diags := Compile(questionWithTimeoutDefinition())
+	p, diags := engineservice.Compile(questionWithTimeoutDefinition())
 	if diags.HasErrors() {
 		t.Fatalf("unexpected compile errors: %v", diags)
 	}
-	snap, startSignal, err := NewSnapshot(p, engine.InitializationInput{RootParameters: map[string]engine.Value{"player": engine.UserValue{ID: player}}})
+	snap, startSignal, err := engineservice.NewSnapshot(p, engine.InitializationInput{RootParameters: map[string]engine.Value{"player": engine.UserValue{ID: player}}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	commit, err := Step(p, snap, startSignal, engine.DefaultLimits())
+	commit, err := engineservice.Step(p, snap, startSignal, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	commit, err = Step(p, commit.Snapshot, engine.Signal{Kind: engine.SignalKindTimerExpired, Slot: "Deadline"}, engine.DefaultLimits())
+	commit, err = engineservice.Step(p, commit.Snapshot, engine.Signal{Kind: engine.SignalKindTimerExpired, Slot: "Deadline"}, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error on timeout: %v", err)
 	}
@@ -152,8 +153,8 @@ func TestIntegration_TimerFiresBeforeAnswer(t *testing.T) {
 	}
 
 	// A late answer must now be rejected — the question was closed.
-	_, err = Step(p, commit.Snapshot, engine.Signal{Kind: engine.SignalKindQuestionAnswered, Slot: "Ask", Respondent: player, Answer: engine.BoolValue{Value: true}}, engine.DefaultLimits())
-	if err != ErrSignalRejected {
+	_, err = engineservice.Step(p, commit.Snapshot, engine.Signal{Kind: engine.SignalKindQuestionAnswered, Slot: "Ask", Respondent: player, Answer: engine.BoolValue{Value: true}}, engine.DefaultLimits())
+	if err != engineservice.ErrSignalRejected {
 		t.Fatalf("expected the terminated workflow to reject a late answer, got %v", err)
 	}
 }
@@ -207,22 +208,22 @@ func childWorkflowDefinition() program.Definition {
 }
 
 func TestIntegration_ChildWorkflowSpawnAndJoin(t *testing.T) {
-	p, diags := Compile(childWorkflowDefinition())
+	p, diags := engineservice.Compile(childWorkflowDefinition())
 	if diags.HasErrors() {
 		t.Fatalf("unexpected compile errors: %v", diags)
 	}
-	snap, startSignal, err := NewSnapshot(p, engine.InitializationInput{})
+	snap, startSignal, err := engineservice.NewSnapshot(p, engine.InitializationInput{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	commit, err := Step(p, snap, startSignal, engine.DefaultLimits())
+	commit, err := engineservice.Step(p, snap, startSignal, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error spawning: %v", err)
 	}
 	if len(commit.InternalSignals) != 1 {
 		t.Fatalf("expected one internal WorkflowStarted signal for the child, got %+v", commit.InternalSignals)
 	}
-	commit, err = Step(p, commit.Snapshot, commit.InternalSignals[0], engine.DefaultLimits())
+	commit, err = engineservice.Step(p, commit.Snapshot, commit.InternalSignals[0], engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error starting the child: %v", err)
 	}
@@ -230,7 +231,7 @@ func TestIntegration_ChildWorkflowSpawnAndJoin(t *testing.T) {
 		t.Fatalf("expected the child to have already completed")
 	}
 
-	commit, err = Step(p, commit.Snapshot, engine.Signal{Kind: engine.SignalKindChildCompleted, Slot: "W"}, engine.DefaultLimits())
+	commit, err = engineservice.Step(p, commit.Snapshot, engine.Signal{Kind: engine.SignalKindChildCompleted, Slot: "W"}, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error joining: %v", err)
 	}
@@ -280,17 +281,17 @@ func askGroupDefinitionForIntegration() program.Definition {
 }
 
 func TestIntegration_AskGroupOpenAnswerJoin(t *testing.T) {
-	p, diags := Compile(askGroupDefinitionForIntegration())
+	p, diags := engineservice.Compile(askGroupDefinitionForIntegration())
 	if diags.HasErrors() {
 		t.Fatalf("unexpected compile errors: %v", diags)
 	}
-	snap, startSignal, err := NewSnapshot(p, engine.InitializationInput{RootParameters: map[string]engine.Value{
+	snap, startSignal, err := engineservice.NewSnapshot(p, engine.InitializationInput{RootParameters: map[string]engine.Value{
 		"voters": engine.ListValue{ElementType: engine.UserType{}, Elements: []engine.Value{engine.UserValue{ID: askAlice}, engine.UserValue{ID: askBob}}},
 	}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	commit, err := Step(p, snap, startSignal, engine.DefaultLimits())
+	commit, err := engineservice.Step(p, snap, startSignal, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error opening: %v", err)
 	}
@@ -298,16 +299,16 @@ func TestIntegration_AskGroupOpenAnswerJoin(t *testing.T) {
 		t.Fatalf("got %d outputs, want 2", len(commit.Outputs))
 	}
 
-	commit, err = Step(p, commit.Snapshot, engine.Signal{Kind: engine.SignalKindAskGroupAnswered, Slot: "Poll", Respondent: askAlice, Answer: engine.BoolValue{Value: true}}, engine.DefaultLimits())
+	commit, err = engineservice.Step(p, commit.Snapshot, engine.Signal{Kind: engine.SignalKindAskGroupAnswered, Slot: "Poll", Respondent: askAlice, Answer: engine.BoolValue{Value: true}}, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error answering: %v", err)
 	}
-	commit, err = Step(p, commit.Snapshot, engine.Signal{Kind: engine.SignalKindAskGroupAnswered, Slot: "Poll", Respondent: askBob, Answer: engine.BoolValue{Value: false}}, engine.DefaultLimits())
+	commit, err = engineservice.Step(p, commit.Snapshot, engine.Signal{Kind: engine.SignalKindAskGroupAnswered, Slot: "Poll", Respondent: askBob, Answer: engine.BoolValue{Value: false}}, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error answering: %v", err)
 	}
 
-	commit, err = Step(p, commit.Snapshot, engine.Signal{Kind: engine.SignalKindAskGroupCompleted, Slot: "Poll"}, engine.DefaultLimits())
+	commit, err = engineservice.Step(p, commit.Snapshot, engine.Signal{Kind: engine.SignalKindAskGroupCompleted, Slot: "Poll"}, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error joining: %v", err)
 	}
@@ -370,15 +371,15 @@ func taskGroupDefinitionForIntegration() program.Definition {
 }
 
 func TestIntegration_TaskGroupBeginSpawnSealJoin(t *testing.T) {
-	p, diags := Compile(taskGroupDefinitionForIntegration())
+	p, diags := engineservice.Compile(taskGroupDefinitionForIntegration())
 	if diags.HasErrors() {
 		t.Fatalf("unexpected compile errors: %v", diags)
 	}
-	snap, startSignal, err := NewSnapshot(p, engine.InitializationInput{})
+	snap, startSignal, err := engineservice.NewSnapshot(p, engine.InitializationInput{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	commit, err := Step(p, snap, startSignal, engine.DefaultLimits())
+	commit, err := engineservice.Step(p, snap, startSignal, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error beginning: %v", err)
 	}
@@ -387,7 +388,7 @@ func TestIntegration_TaskGroupBeginSpawnSealJoin(t *testing.T) {
 	}
 	snap = commit.Snapshot
 	for _, s := range commit.InternalSignals {
-		c, err := Step(p, snap, s, engine.DefaultLimits())
+		c, err := engineservice.Step(p, snap, s, engine.DefaultLimits())
 		if err != nil {
 			t.Fatalf("unexpected error starting a task: %v", err)
 		}
@@ -399,7 +400,7 @@ func TestIntegration_TaskGroupBeginSpawnSealJoin(t *testing.T) {
 		t.Fatalf("expected the all-terminal group to complete once both tasks finished, got %+v", group)
 	}
 
-	commit, err = Step(p, snap, engine.Signal{Kind: engine.SignalKindTaskGroupCompleted, Slot: "Workers"}, engine.DefaultLimits())
+	commit, err = engineservice.Step(p, snap, engine.Signal{Kind: engine.SignalKindTaskGroupCompleted, Slot: "Workers"}, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error joining: %v", err)
 	}
@@ -463,18 +464,18 @@ func projectionAndPresentationDefinition() program.Definition {
 }
 
 func TestIntegration_ProjectionAndPresentationFlow(t *testing.T) {
-	p, diags := Compile(projectionAndPresentationDefinition())
+	p, diags := engineservice.Compile(projectionAndPresentationDefinition())
 	if diags.HasErrors() {
 		t.Fatalf("unexpected compile errors: %v", diags)
 	}
-	snap, startSignal, err := NewSnapshot(p, engine.InitializationInput{RootParameters: map[string]engine.Value{
+	snap, startSignal, err := engineservice.NewSnapshot(p, engine.InitializationInput{RootParameters: map[string]engine.Value{
 		"players": engine.ListValue{ElementType: engine.UserType{}, Elements: []engine.Value{engine.UserValue{ID: presP1}, engine.UserValue{ID: presP2}}},
 	}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	commit, err := Step(p, snap, startSignal, engine.DefaultLimits())
+	commit, err := engineservice.Step(p, snap, startSignal, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -488,7 +489,7 @@ func TestIntegration_ProjectionAndPresentationFlow(t *testing.T) {
 		}
 	}
 
-	commit, err = Step(p, commit.Snapshot, engine.Signal{Kind: engine.SignalKindIntent, Intent: "AddPoint"}, engine.DefaultLimits())
+	commit, err = engineservice.Step(p, commit.Snapshot, engine.Signal{Kind: engine.SignalKindIntent, Intent: "AddPoint"}, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

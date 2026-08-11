@@ -1,19 +1,39 @@
-// Package engineservice implements the engine's three operations —
-// compile, initialize, and step — on top of the plain data types
-// declared in engine.
+// Package engineservice is the engine's public API contract: a thin
+// façade exposing exactly the operations LOGICAL_CONTRACT.md describes
+// (compile, initialize, step) plus Snapshot persistence, and nothing
+// else.
 //
 // engineservice is the direct analog, for engine, of gameservice for
 // program: engine itself holds no behavior and imports nothing but the
 // standard library, the same way program holds no behavior beyond its
 // own data shapes. engineservice is what actually compiles a
 // program.Definition into an engine.Program, creates an engine.Program's
-// initial engine.Snapshot, and applies an engine.Signal to an
-// engine.Snapshot. It is free to import both engine and program, and,
-// once real compilation/execution logic exists, a private
-// engine/internal package for the parts that should not be part of this
-// package's own public surface.
+// initial engine.Snapshot, applies an engine.Signal to an
+// engine.Snapshot, and persists/restores a Snapshot.
 //
-// This package currently only establishes the shape of that behavior —
-// see engine/doc.go and LOGICAL_CONTRACT.md for what is deliberately not
-// implemented yet.
+// # Where the implementation actually lives
+//
+// This package intentionally contains almost no logic of its own. Every
+// file at this level — compile.go, runtime.go, codec.go — is a short
+// wrapper (or, for shared types like Diagnostic and ExecutionError, a
+// type alias) around one of three sibling internal packages:
+//
+//   - engine/internal/compiler owns the whole Compile pipeline: symbol
+//     resolution, type checking, expression/operation/control
+//     compilation, structured-concurrency and UI validation, and
+//     diagnostic collection.
+//   - engine/internal/runtime owns NewSnapshot, Step, and expression
+//     evaluation: transition selection, operation execution, workflow
+//     control, invariant checking, presentation derivation, and
+//     execution-error reporting.
+//   - engine/internal/codec owns Snapshot's JSON wire format.
+//
+// A caller depending only on engineservice sees a small, stable set of
+// functions and types — Compile, NewSnapshot, Step, Evaluate,
+// EncodeSnapshot, DecodeSnapshot, CheckSnapshotCompatibility, Diagnostic
+// and its kin, ExecutionError and its kin — without needing to read, or
+// be affected by changes to, any of the three internal packages behind
+// them. Nothing outside game/v1/engine can import those internal
+// packages directly, by Go's own internal-package visibility rule; this
+// package is deliberately the only supported way in.
 package engineservice

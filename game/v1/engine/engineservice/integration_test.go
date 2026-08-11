@@ -1,14 +1,15 @@
-package engineservice
+package engineservice_test
 
 import (
 	"testing"
 
 	"github.com/diegobermudez03/playhoot/game/v1/engine"
+	"github.com/diegobermudez03/playhoot/game/v1/engine/engineservice"
 	"github.com/diegobermudez03/playhoot/game/v1/program"
 )
 
 // TestIntegration_HeadlessGuessTheRollGame exercises the full
-// Compile -> NewSnapshot -> Step pipeline for a small but complete
+// engineservice.Compile -> engineservice.NewSnapshot -> engineservice.Step pipeline for a small but complete
 // headless game: state (global attempts/rolled), rules (a guess must
 // match the authoritative roll, capped at 3 attempts), turns (repeated
 // "Guess" signals), and randomness (an authoritative dice roll drawn
@@ -84,22 +85,22 @@ func TestIntegration_HeadlessGuessTheRollGame(t *testing.T) {
 		RootWorkflow: "Game",
 	}
 
-	p, diags := Compile(def)
+	p, diags := engineservice.Compile(def)
 	if diags.HasErrors() {
 		t.Fatalf("unexpected compile errors: %v", diags)
 	}
 
-	snap, startSignal, err := NewSnapshot(p, engine.InitializationInput{Seed: 123})
+	snap, startSignal, err := engineservice.NewSnapshot(p, engine.InitializationInput{Seed: 123})
 	if err != nil {
-		t.Fatalf("unexpected NewSnapshot error: %v", err)
+		t.Fatalf("unexpected engineservice.NewSnapshot error: %v", err)
 	}
 	if snap.Root.State != "Start" {
 		t.Fatalf("expected the root to start in 'Start', got %q", snap.Root.State)
 	}
 
-	// Apply the first lifecycle signal NewSnapshot handed back — this is
-	// the caller's job, not NewSnapshot's; see LOGICAL_CONTRACT.md.
-	commit, err := Step(p, snap, startSignal, engine.DefaultLimits())
+	// Apply the first lifecycle signal engineservice.NewSnapshot handed back — this is
+	// the caller's job, not engineservice.NewSnapshot's; see LOGICAL_CONTRACT.md.
+	commit, err := engineservice.Step(p, snap, startSignal, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error applying WorkflowStarted: %v", err)
 	}
@@ -121,7 +122,7 @@ func TestIntegration_HeadlessGuessTheRollGame(t *testing.T) {
 		wrongGuess = 1
 	}
 	for i := 0; i < 2; i++ {
-		commit, err = Step(p, snap, engine.Signal{Kind: engine.SignalKindIntent, Intent: "Guess", Fields: map[string]engine.Value{"value": engine.NumberValue{Value: wrongGuess}}}, engine.DefaultLimits())
+		commit, err = engineservice.Step(p, snap, engine.Signal{Kind: engine.SignalKindIntent, Intent: "Guess", Fields: map[string]engine.Value{"value": engine.NumberValue{Value: wrongGuess}}}, engine.DefaultLimits())
 		if err != nil {
 			t.Fatalf("unexpected error on wrong guess %d: %v", i, err)
 		}
@@ -131,7 +132,7 @@ func TestIntegration_HeadlessGuessTheRollGame(t *testing.T) {
 		}
 	}
 
-	commit, err = Step(p, snap, engine.Signal{Kind: engine.SignalKindIntent, Intent: "Guess", Fields: map[string]engine.Value{"value": engine.NumberValue{Value: rolled}}}, engine.DefaultLimits())
+	commit, err = engineservice.Step(p, snap, engine.Signal{Kind: engine.SignalKindIntent, Intent: "Guess", Fields: map[string]engine.Value{"value": engine.NumberValue{Value: rolled}}}, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error on correct guess: %v", err)
 	}
@@ -148,8 +149,8 @@ func TestIntegration_HeadlessGuessTheRollGame(t *testing.T) {
 	}
 
 	// The instance is terminated: further signals are rejected.
-	_, err = Step(p, snap, engine.Signal{Kind: engine.SignalKindIntent, Intent: "Guess", Fields: map[string]engine.Value{"value": engine.NumberValue{Value: rolled}}}, engine.DefaultLimits())
-	if err != ErrSignalRejected {
+	_, err = engineservice.Step(p, snap, engine.Signal{Kind: engine.SignalKindIntent, Intent: "Guess", Fields: map[string]engine.Value{"value": engine.NumberValue{Value: rolled}}}, engine.DefaultLimits())
+	if err != engineservice.ErrSignalRejected {
 		t.Fatalf("expected a terminated game to reject further signals, got %v", err)
 	}
 }
