@@ -15,10 +15,6 @@ package engine
 // compiled from: engine does not import program at all (see doc.go), and
 // a caller that still needs the original Definition already has it,
 // since it is the caller who passes it to engineservice.Compile.
-//
-// Program is intentionally incomplete and will continue to grow:
-// compiled workflows and executable instructions are added as
-// compilation semantics are implemented.
 type Program struct {
 	// Metadata is the compiled identity and versioning information of
 	// this game version, carried over unchanged from

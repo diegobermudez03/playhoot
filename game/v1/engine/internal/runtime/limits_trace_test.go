@@ -231,7 +231,7 @@ func TestExec_SignalToNonexistentPathIsSignalRejectedNotInputRejected(t *testing
 
 func TestExec_ExecutionErrorCodeStringIsExhaustiveAndStable(t *testing.T) {
 	codes := []runtime.ExecutionErrorCode{
-		runtime.ExecutionErrorUnknown, runtime.ExecutionErrorNotImplemented, runtime.ExecutionErrorUndefinedReference,
+		runtime.ExecutionErrorUnknown, runtime.ExecutionErrorUndefinedReference,
 		runtime.ExecutionErrorDivisionByZero, runtime.ExecutionErrorIndexOutOfRange, runtime.ExecutionErrorKeyNotFound,
 		runtime.ExecutionErrorNoMatchingCase, runtime.ExecutionErrorInvalidInitialState, runtime.ExecutionErrorInvariantViolation,
 		runtime.ExecutionErrorSnapshotProgramMismatch, runtime.ExecutionErrorSignalRejected, runtime.ExecutionErrorBudgetExceeded,

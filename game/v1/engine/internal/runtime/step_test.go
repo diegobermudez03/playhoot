@@ -127,6 +127,19 @@ func TestStep_SequentialStepsCanStopAndResume(t *testing.T) {
 	if commit.Snapshot.Root.Outcome.Result.(engine.NumberValue).Value != 3 {
 		t.Fatalf("got result %v, want 3", commit.Snapshot.Root.Outcome.Result)
 	}
+
+	var completed *engine.WorkflowCompletedOutput
+	for _, o := range commit.Outputs {
+		if c, ok := o.(engine.WorkflowCompletedOutput); ok {
+			completed = &c
+		}
+	}
+	if completed == nil {
+		t.Fatalf("expected a WorkflowCompletedOutput, got %+v", commit.Outputs)
+	}
+	if len(completed.Path) != 0 || completed.Workflow != "Counter" || completed.Outcome.Kind != engine.WorkflowOutcomeCompleted {
+		t.Fatalf("got %+v", completed)
+	}
 }
 
 func TestStep_GuardFalseRejectsSignal(t *testing.T) {

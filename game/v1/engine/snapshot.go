@@ -33,9 +33,11 @@ type InitializationInput struct {
 // steps — see LOGICAL_CONTRACT.md — without needing anything beyond
 // itself and the Program it belongs to.
 //
-// Snapshot does not yet record which Program it belongs to; that
-// identity, and the check that rejects a Snapshot used with the wrong
-// Program, is added once real execution (engineservice.Step) needs it.
+// Snapshot does not record which Program it belongs to as an explicit
+// identity — instead, engineservice.CheckSnapshotCompatibility and
+// Step's own internal checks verify compatibility structurally, by
+// confirming every workflow name anywhere in the Snapshot's instance
+// tree is actually compiled by the Program in hand.
 type Snapshot struct {
 	// GlobalState is this game instance's mutable global state,
 	// evaluated once by engineservice.NewSnapshot from

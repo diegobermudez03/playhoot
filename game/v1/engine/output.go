@@ -11,11 +11,6 @@ package engine
 // same way program's Expression, Operation, and similar concepts are
 // closed; callers outside the package are expected to eventually
 // type-switch over them exhaustively.
-//
-// This version defines the variants produced by single-user questions,
-// logical timers, client-facing effects, and presentations — see
-// engineservice's compile_operations.go and execute.go. Reporting
-// workflow completion is added once that concern compiles.
 type Output interface {
 	isOutput()
 }
@@ -114,3 +109,31 @@ type RemovePresentationOutput struct {
 }
 
 func (RemovePresentationOutput) isOutput() {}
+
+// WorkflowCompletedOutput reports that the workflow instance addressed
+// by Path — running the compiled Workflow named Workflow — reached
+// Outcome as the terminal result of the transition that just committed.
+//
+// Path is empty when the terminated instance is the root: per
+// WorkflowOutcome's documented "when it is the root, there is no parent
+// to notify", a WorkflowCompletedOutput is how a session layer observes
+// that directly, ending the game instance. A non-empty Path reports a
+// child, ask-group task, or task-group task instead — informational
+// only, since its owning parent already observes the same outcome
+// through its own ChildCompletedSignalSource, ChildFailedSignalSource,
+// ChildCancelledSignalSource, AskGroupCompletedSignalSource, or
+// TaskGroupCompletedSignalSource and reacts to it, if at all, through an
+// ordinary transition rather than through this Output.
+//
+// Exactly one WorkflowCompletedOutput is ever produced per Step call,
+// for the one instance Step's selected transition control terminated —
+// never for a descendant discarded along with it (see instance.go's
+// documented "disappears when the parent workflow terminates"), since
+// those were never separately observed to reach their own outcome.
+type WorkflowCompletedOutput struct {
+	Path     []PathStep
+	Workflow string
+	Outcome  WorkflowOutcome
+}
+
+func (WorkflowCompletedOutput) isOutput() {}

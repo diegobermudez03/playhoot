@@ -17,13 +17,14 @@
 //	engine.Program + InitializationInput  -> engineservice.NewSnapshot -> engine.Snapshot, error
 //	engine.Program + Snapshot + Signal    -> engineservice.Step        -> engine.Commit, error
 //
-// This file, and the package as a whole, currently only establish the
-// engine's public boundary. It intentionally does not yet implement real
-// language semantics — symbol resolution, type checking, control-flow
-// validation, expression evaluation, or workflow execution. Those are
-// added incrementally, inside engineservice and a future private
-// engine/internal package, without changing the shape of this boundary.
-// See LOGICAL_CONTRACT.md for the constraints that work must preserve.
+// This file, and the package as a whole, establish the engine's public
+// boundary: the plain data shapes above. Real language semantics —
+// symbol resolution, type checking, control-flow validation, expression
+// evaluation, workflow execution — live in engineservice's two private
+// implementation packages, engine/internal/compiler and
+// engine/internal/runtime, without changing the shape of this boundary.
+// See LOGICAL_CONTRACT.md for the constraints that work must preserve,
+// and engine/IMPLEMENTATION.md for where each piece of behavior lives.
 //
 // # Determinism and non-responsibilities
 //
@@ -36,8 +37,8 @@
 // # Dependency rules
 //
 // engine imports nothing but the standard library — the same rule
-// program follows. engineservice may import both engine and program (and,
-// once real compilation/execution logic exists, its own private
-// engine/internal package). engine and program must never import
+// program follows. engineservice may import both engine and program, and
+// its own private engine/internal/compiler, engine/internal/runtime, and
+// engine/internal/codec packages. engine and program must never import
 // engineservice, or each other.
 package engine

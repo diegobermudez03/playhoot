@@ -1,13 +1,9 @@
 package engine
 
 // Workflow is the compiled representation of one
-// program.WorkflowDeclaration.
-//
-// Workflow is intentionally incomplete: Transition does not yet carry
-// compiled operations (see Transition's doc comment), so a Workflow
-// cannot yet be executed — only resolved and semantically validated, per
-// this compiler step's expected result. Execution semantics are added
-// once operations are compiled.
+// program.WorkflowDeclaration, fully resolved, semantically validated,
+// and executable by engineservice.Step — see Transition's doc comment
+// for the compiled shape of one transition.
 type Workflow struct {
 	Name       string
 	Parameters []FieldType

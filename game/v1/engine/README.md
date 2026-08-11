@@ -1,421 +1,178 @@
 Wrote by AI, human dev notes added as `Dev note:`
 
-# game/engine
+# game/v1/engine
 
-The `engine` package compiles and executes game programs.
+`engine` compiles a `program.Definition` into an immutable, executable `Program`, then runs it: it turns one runtime `Signal` plus one `Snapshot` into a new `Snapshot`, as one atomic `Commit`. It is a pure, deterministic simulation core — no database, no network, no real clock, no OS randomness. Everything it needs comes in as an explicit argument; everything it produces comes out as plain data.
 
-It consumes a source-level `program.Definition`, validates its semantics, and produces an immutable executable `engine.Program`.
+If you just want to *use* the engine, this document is for you. If you're going to modify `engine` itself, read `IMPLEMENTATION.md` instead.
 
-The package also advances a game by applying one runtime signal to one snapshot and returning an atomic commit.
+`Dev note: this is one of the implementations of an engine — "program" defines a game-agnostic language, and there could be other engines built on top of it besides this one. engine only knows how to execute a program.Definition; it does not decide how you deliver that to players (HTTP, WebSockets, a CLI, tests, ...) — that's a session/application layer you build on top of engineservice.`
 
-The core execution model is:
+## Where to import from
 
-    Program + Snapshot + Signal -> Commit
+```go
+import (
+    "github.com/diegobermudez03/playhoot/game/v1/engine"
+    "github.com/diegobermudez03/playhoot/game/v1/engine/engineservice"
+    "github.com/diegobermudez03/playhoot/game/v1/program"
+)
+```
 
-The engine performs no external I/O.
+`engine` itself is a pure data package — `Program`, `Snapshot`, `Signal`, `Commit`, `Output`, `Value`, and everything else you read or construct. `engineservice` is where every actual operation lives: `Compile`, `NewSnapshot`, `Step`, `Evaluate`, plus `Snapshot` persistence. You will `import` both in any real caller, exactly the same relationship as `program`/`gameservice`.
 
-`Dev note: this is one of the implementations of an engine, there could be as many implementations of engines as we want, "program" pkg exports a way to define a game, there could be as many ways to implement an engine as we want, this is just one of them`
+The three internal packages behind `engineservice` (`internal/compiler`, `internal/runtime`, `internal/codec`) are not importable from outside `game/v1/engine` — Go's own `internal/` visibility rule enforces this. `engineservice` is the only supported way in.
 
-## Responsibilities
+## The three operations
 
-The package owns:
+```
+program.Definition                     -> engineservice.Compile        -> engine.Program, engineservice.Diagnostics
+engine.Program + InitializationInput   -> engineservice.NewSnapshot     -> engine.Snapshot, engine.Signal, error
+engine.Program + Snapshot + Signal     -> engineservice.Step            -> engine.Commit, error
+```
 
-- semantic compilation;
-- symbol collection and resolution;
-- type checking;
-- control-flow validation;
-- structured-concurrency validation;
-- executable program representation;
-- runtime values;
-- game snapshots;
-- workflow instances;
-- workflow-local state;
-- task groups;
-- ask groups;
-- pending questions;
-- pending logical timers;
-- signal dispatch;
-- transition selection;
-- expression evaluation;
-- operation execution;
-- workflow control;
-- deterministic randomness;
-- invariant evaluation;
-- projection evaluation;
-- declarative outputs;
-- execution limits;
-- transition traces;
-- atomic commit creation.
+A typical caller's lifecycle:
 
-## Source and executable programs
+```go
+p, diags := engineservice.Compile(def)
+if diags.HasErrors() {
+    // def has at least one SeverityError diagnostic — p must not be executed.
+    return diags
+}
 
-The package distinguishes between two concepts:
+snap, startSignal, err := engineservice.NewSnapshot(p, engine.InitializationInput{
+    RootParameters: map[string]engine.Value{ /* ... */ },
+    Seed:           mySessionSeed, // your own source of real unpredictability, drawn once
+})
+if err != nil {
+    return err
+}
 
-- `program.Definition`: the source-level authored representation;
-- `engine.Program`: the validated, immutable, executable representation.
+commit, err := engineservice.Step(p, snap, startSignal, engine.DefaultLimits())
+if err != nil {
+    // snap is untouched; no Commit was produced; nothing was published.
+    return err
+}
+snap = commit.Snapshot
+// persist snap, deliver commit.Outputs, and loop: Step again with the next Signal.
+```
 
-A source definition is not executed directly.
+### `Compile(def program.Definition) (engine.Program, engineservice.Diagnostics)`
 
-It must first be compiled:
+Validates `def` and produces its immutable, executable representation. `Compile` never panics and never stops at the first problem — it collects every `Diagnostic` it can find and returns them alongside the result.
 
-    program.Definition
-            |
-            v
-      engine.Compile
-            |
-            v
-       engine.Program
+- `Diagnostics` is an ordered `[]Diagnostic`; each has `Severity` (`SeverityError`, `SeverityWarning`, `SeverityInfo`), a `Path` (dotted/bracketed, like `"$.workflows[0].states[2].transitions[0]"`, matching `program/gameservice`'s own error format), and a `Message`.
+- `diags.HasErrors()` reports whether any entry is `SeverityError`. **If it returns true, the returned `Program` must not be executed** — treat it as unusable, not as "mostly fine."
+- `Compile` does **not** assume `def` already passed `gameservice.Validate` — it re-derives everything it needs (type registration, name resolution, duplicate detection) independently. Running `gameservice.Validate` first is still worthwhile for faster, narrower-scoped feedback during authoring, but it is never required before calling `Compile`.
+- A `Program` is immutable and safe to share — one compiled `Program` can back any number of concurrent `Snapshot`s:
 
-The compiled program may resolve names into internal identifiers, normalize operations, precompute lookup tables, and remove source-level information that is not required during execution.
+  ```
+  Parques Program v1
+  ├── Snapshot A  (table 1)
+  ├── Snapshot B  (table 2)
+  └── Snapshot C  (table 3)
+  ```
 
-## Public API
+### `NewSnapshot(p engine.Program, input engine.InitializationInput) (engine.Snapshot, engine.Signal, error)`
 
-The main exported entry points are:
+Creates the initial `Snapshot` for one new game instance of `p`: binds and validates `input.RootParameters` against the root workflow's declared parameters, evaluates its local state and declared slots (all empty), evaluates every global-state field, and checks every compiled invariant against the result — atomically. If anything fails (a bad parameter, a violated invariant), no `Snapshot` is returned at all.
 
-- `Compile`: compiles a `program.Definition`;
-- `Program`: an opaque and immutable executable program;
-- `Program.NewSnapshot`: creates the initial state for one game instance;
-- `Program.Step`: applies one signal to one snapshot;
-- `Diagnostics`: compilation diagnostics;
-- `CompileOptions`: compilation configuration;
-- `Limits`: compilation and execution limits;
-- `Snapshot`: an opaque snapshot of one game instance;
-- `Signal`: one runtime input;
-- `Commit`: the atomic result of one step;
-- `Output`: a declarative external action;
-- `Trace`: an explanation of one executed transition;
-- exported engine error types and sentinel errors.
+`input.Seed` seeds the instance's deterministic random state. The engine never reads OS randomness — if your game uses `DrawRandomOperation` anywhere, draw a real seed from your own legitimate entropy source once, when the session starts, and pass it here. Every random value the engine ever produces for that instance afterward is a deterministic function of that one seed plus every signal it's given.
 
-Where useful, the package may also export constructors for valid signals and runtime values.
+The returned `Signal` is the mandatory first input to `Step` — it is how the root workflow instance actually starts running (matching a `WorkflowStarted` transition, if the root workflow declares one). Don't discard it.
 
-## Program ownership
+### `Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal, limits engine.Limits) (engine.Commit, error)`
 
-`engine.Program` owns the compiled representation of one game version.
+Applies exactly one `Signal` to `snapshot` and returns the result as one atomic `Commit`. `Step` never mutates `snapshot` in place — on success, the new state is `commit.Snapshot`; on failure, `snapshot` is guaranteed unchanged, no `Commit` was produced, and nothing in it should be treated as published.
 
-A compiled program is:
+Internally, one successful `Step` call: resolves the target instance from `signal.Path`, selects one matching transition, evaluates its guard, runs its operations (bounded by `limits`), applies its control result, checks every invariant, recomputes affected presentations, and returns everything as one `Commit`. The engine never runs more than one transition per `Step` call — it does not recursively chain transitions internally, even when a transition's own operations produce further signals (see `Commit.InternalSignals` below).
 
-- immutable;
-- safe to share between game instances;
-- safe to read concurrently;
-- independent of any single session;
-- independent of persistence;
-- independent of network connections.
+`limits` bounds one `Step` call's work — `engine.DefaultLimits()` is generous enough for ordinary turn-based logic while still failing a runaway transition (an unbounded loop, an unbounded recursive spawn) deterministically instead of hanging. Pass your own `engine.Limits` if you need tighter or looser bounds.
 
-A single compiled program may be used by many snapshots:
+#### Reading a `Commit`
 
-    Parques Program v1
-    ├── Snapshot A
-    ├── Snapshot B
-    ├── Snapshot C
-    └── Snapshot D
+```go
+type Commit struct {
+    Snapshot        engine.Snapshot
+    Outputs         []engine.Output
+    InternalSignals []engine.Signal
+    Trace           engine.Trace
+    ConsumedSignal  engine.Signal
+}
+```
 
-The internal compiled representation is private to the package.
+- **`Snapshot`** — persist this; it's the new authoritative state.
+- **`Outputs`** — declarative, external actions to actually perform: open a question, schedule a timer, activate/update/remove a presentation, emit a client effect, report a workflow's completion. The engine never performs any of these itself (see "Outputs" below) — that's your job.
+- **`InternalSignals`** — signals the engine itself needs applied next, in a *separate* `Step` call (for example, the `WorkflowStarted` signal a freshly spawned child workflow needs). Feed each one back through `Step` yourself; the engine will never do this for you within the same call.
+- **`Trace`** — a debugging/explanation record of exactly what this one `Step` call did: which transition ran, its guard result, the state change, any terminal outcome, and how many operations it ran. Not consumed by anything downstream — it's for logs, replay verification, and tooling.
+- **`ConsumedSignal`** — the `signal` you passed in, echoed back for convenience.
 
-Other packages must not construct, mutate, or depend on internal workflow IDs, state IDs, opcodes, symbol tables, or instruction layouts.
+#### When `Step` returns an error instead
 
-## Snapshot ownership
+Two of `Step`'s possible errors are *expected, non-bug outcomes*, not something to alert on: a stale or unmatched signal simply produced no `Commit`.
 
-A `Snapshot` represents the complete logical position of one game instance.
+- **`engineservice.ErrSignalRejected`** — nothing in the target instance's compiled workflow was willing to react to this signal at all (no transition matched, or the one that did had a false guard) — including a `signal.Path` that no longer names a running instance.
+- **`engineservice.ErrInputRejected`** — something *was* willing to react to a signal of this shape, but its concrete payload failed authoritative validation (a stale/duplicate answer, an unauthorized respondent, an answer that doesn't satisfy the question's response type or `Validation` expression, an expired timer that was already cancelled, and so on).
 
-It includes the information required to continue execution, including:
+Use `errors.Is(err, engineservice.ErrSignalRejected)` / `errors.Is(err, engineservice.ErrInputRejected)` to distinguish these from a real problem. Anything else is an `*engineservice.ExecutionError`, with a stable `.Code` (`engineservice.ExecutionErrorCode`) you can switch on or log — invariant violations, budget/limit overruns, division by zero, an occupied slot, and so on. See `internal/runtime/step.go`'s `ExecutionErrorCode` constants for the full, documented set; new codes are only ever appended, never renumbered or reused for a different meaning.
 
-- global game state;
-- the root workflow instance;
-- child workflow instances;
-- workflow states;
-- workflow-local state;
-- task-group ownership;
-- ask-group progress;
-- pending questions;
-- logical timers;
-- deterministic random state;
-- the current engine sequence.
+### `Evaluate(p engine.Program, expr engine.Expression, scope engine.Scope) (engine.Value, error)`
 
-Snapshots are opaque outside the package.
-
-A step must not mutate the input snapshot in place. It produces a new snapshot inside the returned commit.
-
-## Execution contract
-
-`Program.Step` processes exactly one signal.
-
-A successful step:
-
-1. verifies that the snapshot belongs to the program;
-2. resolves the target workflow;
-3. selects one valid transition;
-4. evaluates its guard;
-5. executes its bounded operations;
-6. applies one control result;
-7. validates game invariants;
-8. recalculates affected projections;
-9. creates declarative outputs;
-10. returns a new snapshot and trace as one commit.
-
-The step is atomic from the caller's perspective.
-
-If execution fails before commit creation:
-
-- the original snapshot remains unchanged;
-- no output is considered published;
-- no partial state change is returned.
-
-## Determinism
-
-Given the same:
-
-- compiled program;
-- snapshot;
-- signal;
-- engine limits;
-
-the engine must return the same commit.
-
-The package must not read directly from:
-
-- the system clock;
-- the network;
-- environment variables;
-- databases;
-- operating-system randomness;
-- global mutable state.
-
-Time enters the engine through explicit signal data.
-
-Random behavior uses deterministic random state stored in the snapshot.
-
-This makes game execution reproducible and supports replay, simulation, and debugging.
-
-## Concurrency
-
-A compiled `Program` may be shared safely across concurrent calls.
-
-The engine does not serialize signals belonging to the same game instance.
-
-The caller must ensure that two signals are not committed concurrently against
-the same snapshot sequence.
-
-A future session or application layer will own:
-
-- per-session signal ordering;
-- optimistic concurrency;
-- retries;
-- idempotency;
-- persistence;
-- output publication.
-
-The engine only defines the deterministic result of one step.
-
-## Compiler responsibilities
-
-Compilation includes:
-
-- declaration indexing;
-- symbol resolution;
-- built-in resolution;
-- type checking;
-- expression validation;
-- operation validation;
-- workflow-state validation;
-- transition-target validation;
-- result-type validation;
-- signal compatibility validation;
-- structured-concurrency validation;
-- child-workflow ownership validation;
-- ask-group policy validation;
-- projection and UI binding validation;
-- invariant compilation;
-- execution-limit validation;
-- generation of the internal executable representation.
-
-Compilation returns diagnostics rather than failing on the first semantic problem whenever possible.
-
-## Structured concurrency
-
-Workflow instances form an ownership tree.
-
-Except for the root workflow, every workflow instance has exactly one parent.
-
-The engine enforces rules such as:
-
-- a child belongs to one parent;
-- child handles cannot be silently discarded;
-- a parent cannot complete while owning unresolved children;
-- children must be joined or cancelled;
-- detached workflows are not supported;
-- cancelling a parent cancels its owned descendants;
-- task groups use explicit completion policies;
-- workflow fan-out is bounded.
-
-These rules are compiled and enforced by the engine.
+Evaluates a single compiled `Expression` against an arbitrary `Scope`, using the exact same pure-expression semantics `Step` uses internally for guards, operation values, and workflow control. Ordinary game execution never needs this directly — it exists for tooling, diagnostics, or anything that needs to evaluate an expression pulled out of a `Program` outside of a `Step` call.
 
 ## Outputs
 
-The engine never performs external side effects.
+`engine.Output` is a closed set of declarative actions — the engine describes what *should* happen without ever doing it itself:
 
-Instead, it returns declarative outputs such as:
+| Output | Meaning |
+| --- | --- |
+| `OpenQuestionOutput` | a question was opened for one recipient in a named slot |
+| `CloseQuestionOutput` | a pending question in a named slot was closed |
+| `ScheduleTimerOutput` | a timer should fire after `DelayMilliseconds` — you own real scheduling and must deliver the matching `TimerExpiredSignalSource` signal back through `Step` when it fires |
+| `CancelTimerOutput` | a pending timer was cancelled |
+| `EmitEffectOutput` | a presentation-only client effect (animation, sound) fired for one or more recipients — losing this changes nothing about authoritative state |
+| `ActivatePresentationOutput` | a presentation was newly mounted for one recipient, with its view name and computed model |
+| `UpdatePresentationOutput` | an already-active presentation's computed model changed |
+| `RemovePresentationOutput` | an active presentation was unmounted |
+| `WorkflowCompletedOutput` | a workflow instance reached a terminal outcome (`Completed`/`Failed`/`Cancelled`) — for the root instance (`Path` empty), this is the only way to observe the whole game instance ending, since there's no parent to notify through a signal |
 
-- open a question;
-- close a question;
-- schedule a timer;
-- cancel a timer;
-- activate a presentation;
-- remove a presentation;
-- publish a projection update;
-- emit a UI effect;
-- report workflow completion.
+Type-switch over `engine.Output` exhaustively; the set is closed the same way `program.Expression`/`program.Operation` are — you can't add your own variant from outside the package.
 
-An external application layer will decide how to persist, schedule, or deliver those outputs.
+## Determinism
 
-Output variants form a closed set controlled by the engine package.
+Given the same compiled `Program`, `Snapshot`, `Signal`, and `Limits`, `Step` always returns the same `Commit` (or the same error). The engine never reads the system clock, the network, environment variables, or OS randomness — time enters only through explicit signal data (e.g. a `TimerExpiredSignalSource` you deliver), and randomness only through the deterministic `RandomState` carried inside `Snapshot`, seeded once via `InitializationInput.Seed`. This is what makes replay, simulation, and debugging possible: the same recorded sequence of signals against the same initial snapshot always reaches the same final state.
 
-## UI execution
+## Concurrency
 
-The engine owns the server-side semantics of UI declarations.
+A compiled `Program` is safe to share and read concurrently across any number of game instances. `engine`/`engineservice` do **not** serialize calls against the same `Snapshot` sequence for you — if two `Step` calls could race against the same game instance, your own session layer owns that ordering (locking, an actor per instance, optimistic concurrency, whatever fits). The engine only defines the deterministic result of one step in isolation.
 
-It may:
+## Persisting a `Snapshot`
 
-- determine active presentations;
-- evaluate per-user projections;
-- open typed questions;
-- validate typed answers;
-- produce projection changes;
-- produce UI effects.
+```go
+data, err := engineservice.EncodeSnapshot(snap)
+// ... persist data ...
+restored, err := engineservice.DecodeSnapshot(data)
+if err := engineservice.CheckSnapshotCompatibility(p, restored); err != nil {
+    // restored references a workflow p doesn't compile — e.g. resuming
+    // against a newer Program version that dropped or renamed one.
+}
+```
 
-It does not render pixels, execute browser code, or manage client connections.
+- **`EncodeSnapshot`/`DecodeSnapshot`** — compact JSON, structurally strict on decode (`*engineservice.DecodeError` carries a path to exactly where decoding failed, same style as `Diagnostic.Path`).
+- **`CheckSnapshotCompatibility`** — call this after `DecodeSnapshot` (or after recompiling a `program.Definition` to a newer `Program` version) before resuming a persisted `Snapshot` against it. It's the same check `Step` itself makes internally, exposed standalone so you can validate once, up front, instead of discovering the mismatch mid-step.
 
-Client-side rendering consumes the declarative data produced by the engine.
+There is deliberately no codec for `Program` itself. A compiled `Program` is a pure, deterministic function of the `program.Definition` `Compile` was given — persist (or version-reference) the `Definition` through `program/gameservice`'s own codec, and recompile on load. Recompiling is cheap, deterministic, and avoids maintaining a second wire format for the same information.
 
-## Private implementation
+## What you get back from a compiled `Program`
 
-The package keeps the following details private:
+`Program` (and the types reachable from it — `Workflow`, `Type`, `Value`, ...) is read-only, plain data — inspect it freely, but never construct or mutate the compiled forms of these by hand outside of tests. The fields you'll actually reach for:
 
-- compiler implementation structs;
-- symbol tables;
-- source-to-IR mappings;
-- internal type identifiers;
-- workflow and state identifiers;
-- executable instructions;
-- opcodes;
-- compiled expressions;
-- compiled operations;
-- mutable working snapshots;
-- the execution machine;
-- evaluation scopes;
-- execution budgets;
-- internal random-number generator state;
-- trace builders;
-- projection caches.
+- `Program.Metadata` — the game version's identity (carried over unchanged from `program.Definition.Metadata`).
+- `Program.Types`, `.Functions`, `.Resources`, `.Questions`, `.Effects`, `.Projections`, `.Views`, `.Workflows` — every one of `def`'s catalogs, compiled and keyed by declared name.
+- `Program.RootWorkflow` — the workflow name `NewSnapshot` starts.
+- `Snapshot.GlobalState`, `Snapshot.Root` (a `WorkflowInstance`, and through its `ChildSlots`/`TaskGroupSlots`, the whole child-workflow tree) — inspect these to build your own read models, admin tooling, or debugging views, using the exported `Value` variants (`BoolValue`, `NumberValue`, `RecordValue`, ...) and `Value.Equal`/`.Validate`.
 
-Only stable domain concepts are exported.
+You will not typically construct `engine.Program`/`engine.Workflow`/`engine.Expression`/... values by hand in real code — those come from `Compile`. Building them directly (as the engine's own tests do, to exercise runtime behavior independently of the compiler) is a testing technique, not the intended integration path.
 
-## Dependency rules
+## What this package does not do
 
-The intended dependency direction is:
-
-    program <- engine
-
-`engine` may import `program`.
-
-`program` must never import `engine`.
-
-The engine must not import:
-
-- transport packages;
-- database packages;
-- session packages;
-- HTTP or WebSocket handlers;
-- authentication packages;
-- application services;
-- infrastructure adapters.
-  `Dev note: So just as said before, this is just one implementation of the engine, engine will always depend on the program, but program doesnt care about the implementation of its consumer engines. Engine only cares about executing a program, but as explained before, it just provides an API to execute it, it doesnt actual handle the specific way in which we want to execute it (online with websockets, CMD, etc)`
-
-## Non-responsibilities
-
-The package does not own:
-
-- game-session identifiers;
-- user authentication;
-- room membership;
-- loading or saving snapshots;
-- database transactions;
-- signal ordering across requests;
-- same-session concurrency control;
-- retries after persistence conflicts;
-- real timer scheduling;
-- WebSocket delivery;
-- HTTP or gRPC protocols;
-- output outboxes;
-- operational monitoring.
-
-Those responsibilities belong to future application and infrastructure layers.
-
-## File organization
-
-`Dev note: this is initial organization given by AI, it might change after manual reviewing, so dont take it as source of truth, I might update organization and forget to update this doc`
-
-### Compilation
-
-- `compile.go` coordinates compilation.
-- `diagnostic.go` defines compiler diagnostics.
-- `compile_symbols.go` collects declarations and resolves names.
-- `compile_types.go` performs type checking.
-- `compile_control.go` validates workflows and structured concurrency.
-- `compile_ui.go` validates projections, questions, views, and bindings.
-
-### Executable representation
-
-- `program.go` defines the exported immutable executable program.
-- `ir.go` defines the private compiled representation.
-- `value.go` defines runtime values.
-
-### Runtime state and input/output
-
-- `snapshot.go` defines opaque game snapshots.
-- `signal.go` defines runtime signals.
-- `commit.go` defines atomic step results.
-- `output.go` defines declarative outputs.
-- `trace.go` defines execution traces.
-- `limits.go` defines compile-time and runtime limits.
-- `errors.go` defines engine errors.
-
-### Execution
-
-- `machine.go` coordinates one execution step.
-- `expression.go` evaluates compiled expressions.
-- `operation.go` executes compiled operations.
-- `workflow.go` manages workflow instances and control changes.
-- `interaction.go` manages questions, ask groups, and task groups.
-- `projection.go` evaluates visible models and presentation changes.
-- `invariant.go` evaluates post-transition invariants.
-- `random.go` provides deterministic random operations.
-
-## Testing
-
-Compiler tests should cover:
-
-- symbol resolution;
-- type errors;
-- invalid transition targets;
-- invalid workflow results;
-- orphaned child workflows;
-- invalid task-group policies;
-- incompatible questions and answers;
-- invalid UI bindings;
-- invalid invariants.
-
-Execution tests should cover:
-
-- deterministic steps;
-- atomic rollback on failure;
-- workflow transitions;
-- child completion and joins;
-- ask-group completion;
-- timeouts;
-- cancellations;
-- invariant failures;
-- projection updates;
-- execution-budget enforcement.
-
-Replay tests should verify that the same initial snapshot and ordered signals
-produce the same final snapshot, outputs, and traces.
+No database, no session/room management, no HTTP/WebSocket/gRPC delivery, no real timer scheduling, no output publication, no signal ordering across concurrent requests, no retries. Every one of those belongs to an application/session layer you build on top of `engineservice` — the engine only ever defines the deterministic result of one `Compile`, one `NewSnapshot`, or one `Step` call.

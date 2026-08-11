@@ -28,12 +28,6 @@ const (
 	// ExecutionError that has not been assigned a more specific code.
 	ExecutionErrorUnknown ExecutionErrorCode = iota
 
-	// ExecutionErrorNotImplemented marks a call into execution behavior
-	// this package has not implemented yet. It exists only while the
-	// engine's real language semantics are being built out and is
-	// expected to disappear once execution is complete.
-	ExecutionErrorNotImplemented
-
 	// ExecutionErrorUndefinedReference marks a ReferenceExpression whose
 	// name is missing from the engine.Scope Evaluate was given. The
 	// compiler already guarantees the name was declared somewhere in
@@ -214,8 +208,6 @@ func (c ExecutionErrorCode) String() string {
 	switch c {
 	case ExecutionErrorUnknown:
 		return "unknown"
-	case ExecutionErrorNotImplemented:
-		return "not_implemented"
 	case ExecutionErrorUndefinedReference:
 		return "undefined_reference"
 	case ExecutionErrorDivisionByZero:
@@ -292,8 +284,8 @@ func (e *ExecutionError) Error() string {
 	return fmt.Sprintf("%s: %s", e.Code, e.Message)
 }
 
-// Is lets errors.Is(err, ErrExecutionNotImplemented) and similar checks
-// match by Code rather than by pointer identity, so a future
+// Is lets errors.Is(err, ErrSignalRejected) and similar checks match by
+// Code rather than by pointer identity, so a future
 // ExecutionError constructed with additional context still satisfies
 // errors.Is against the matching sentinel below.
 func (e *ExecutionError) Is(target error) bool {
@@ -308,14 +300,6 @@ func (e *ExecutionError) Is(target error) bool {
 // formatted message.
 func newExecutionError(code ExecutionErrorCode, format string, args ...any) *ExecutionError {
 	return &ExecutionError{Code: code, Message: fmt.Sprintf(format, args...)}
-}
-
-// ErrExecutionNotImplemented is returned by any execution operation
-// whose real semantics have not been implemented yet. It is a temporary
-// marker, not a permanent part of the engine's contract.
-var ErrExecutionNotImplemented = &ExecutionError{
-	Code:    ExecutionErrorNotImplemented,
-	Message: "engineservice: execution semantics are not implemented yet",
 }
 
 // NewSnapshot creates the initial engine.Snapshot for one new game
@@ -742,6 +726,12 @@ func Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal, limi
 		newTarget.ChildSlots = clearedChildSlots(newTarget.ChildSlots)
 		newTarget.AskGroupSlots = clearedAskGroupSlots(newTarget.AskGroupSlots)
 		newTarget.TaskGroupSlots = clearedTaskGroupSlots(newTarget.TaskGroupSlots)
+
+		ctx.outputs = append(ctx.outputs, engine.WorkflowCompletedOutput{
+			Path:     signal.Path,
+			Workflow: workflow.Name,
+			Outcome:  *outcome.outcome,
+		})
 	}
 
 	newRoot, err := applyInstancePath(snapshot.Root, signal.Path, newTarget)

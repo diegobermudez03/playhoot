@@ -148,6 +148,13 @@ func TestExec_ChildCompletesAndParentJoins(t *testing.T) {
 	if child.Outcome.Result.(engine.NumberValue).Value != 42 {
 		t.Fatalf("got result %v, want 42", child.Outcome.Result)
 	}
+	if len(commit.Outputs) != 1 {
+		t.Fatalf("expected exactly one WorkflowCompletedOutput for the child's own completing step, got %+v", commit.Outputs)
+	}
+	completed, ok := commit.Outputs[0].(engine.WorkflowCompletedOutput)
+	if !ok || len(completed.Path) != 1 || completed.Path[0].Slot != "W" || completed.Workflow != "Worker" || completed.Outcome.Kind != engine.WorkflowOutcomeCompleted {
+		t.Fatalf("got %+v", commit.Outputs)
+	}
 
 	commit, err = runtime.Step(p, snap, engine.Signal{Kind: engine.SignalKindChildCompleted, Slot: "W"}, engine.DefaultLimits())
 	if err != nil {

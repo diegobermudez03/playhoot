@@ -12,7 +12,6 @@ type ExecutionErrorCode = runtime.ExecutionErrorCode
 
 const (
 	ExecutionErrorUnknown                  = runtime.ExecutionErrorUnknown
-	ExecutionErrorNotImplemented           = runtime.ExecutionErrorNotImplemented
 	ExecutionErrorUndefinedReference       = runtime.ExecutionErrorUndefinedReference
 	ExecutionErrorDivisionByZero           = runtime.ExecutionErrorDivisionByZero
 	ExecutionErrorIndexOutOfRange          = runtime.ExecutionErrorIndexOutOfRange
@@ -45,10 +44,6 @@ const (
 // See the underlying engine/internal/runtime.ExecutionError for its
 // documented atomicity guarantee.
 type ExecutionError = runtime.ExecutionError
-
-// ErrExecutionNotImplemented is returned by any execution operation
-// whose real semantics have not been implemented yet.
-var ErrExecutionNotImplemented = runtime.ErrExecutionNotImplemented
 
 // ErrSignalRejected and ErrInputRejected are the two "stale signal"
 // outcomes Step ever returns, for structurally different reasons — see
