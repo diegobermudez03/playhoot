@@ -1,0 +1,5 @@
+- The project attempts to be well documented, there will be a lot of .md files, some written by AI, some written by human devs, some written by both, any AI should always read these .md files first before any change.
+- However, if the AI needs some implementation information, it should read the .md file but verify the information written there, there could happen that a .md file is outdated in its implementation information
+- If some instruction is ambiguous then ask for verification
+- If AI finds contradiction between .md files and/or prompt given then the information should be verified and the contradiction should be explained
+- Every make sure to understand the business reason for any change, it can be inferred by the business explanation in .md files, but if not easily explained or inferred then ask for business reason confirmation

@@ -1,0 +1,1701 @@
+{
+  "metadata": {
+    "id": "parques",
+    "name": "Parqués",
+    "description": "Playable Colombian Parqués definition for two to four players. Each player has four pieces, uses two dice, needs doubles to leave jail, receives three attempts while all pieces are jailed, captures rivals outside safe squares, must reach heaven by exact count, and rolls again after doubles. A turn moves one piece by the sum of both dice; split-die movement and regional house rules are omitted.",
+    "version": "1.0.0",
+    "language_version": "1"
+  },
+  "types": [
+    {
+      "kind": "enum",
+      "name": "Color",
+      "values": [
+        { "name": "Red" },
+        { "name": "Blue" },
+        { "name": "Yellow" },
+        { "name": "Green" }
+      ]
+    },
+    {
+      "kind": "record",
+      "name": "PlayerState",
+      "fields": [
+        { "name": "player", "type": { "kind": "builtin", "type": "user" } },
+        { "name": "color", "type": { "kind": "named", "name": "Color" } },
+        {
+          "name": "pieces",
+          "type": {
+            "kind": "list",
+            "element": { "kind": "builtin", "type": "number" }
+          }
+        }
+      ]
+    }
+  ],
+  "resources": [
+    {
+      "name": "safe_squares",
+      "type": {
+        "kind": "list",
+        "element": { "kind": "builtin", "type": "number" }
+      },
+      "value": {
+        "kind": "list",
+        "element_type": { "kind": "builtin", "type": "number" },
+        "elements": [
+          { "kind": "number_literal", "value": "0" },
+          { "kind": "number_literal", "value": "8" },
+          { "kind": "number_literal", "value": "13" },
+          { "kind": "number_literal", "value": "17" },
+          { "kind": "number_literal", "value": "25" },
+          { "kind": "number_literal", "value": "30" },
+          { "kind": "number_literal", "value": "34" },
+          { "kind": "number_literal", "value": "42" },
+          { "kind": "number_literal", "value": "47" },
+          { "kind": "number_literal", "value": "51" },
+          { "kind": "number_literal", "value": "59" },
+          { "kind": "number_literal", "value": "64" }
+        ]
+      }
+    }
+  ],
+  "global_state": {
+    "fields": [
+      {
+        "name": "players",
+        "type": {
+          "kind": "list",
+          "element": { "kind": "named", "name": "PlayerState" }
+        },
+        "initializer": {
+          "kind": "list",
+          "element_type": { "kind": "named", "name": "PlayerState" },
+          "elements": []
+        }
+      },
+      {
+        "name": "current_player",
+        "type": { "kind": "builtin", "type": "number" },
+        "initializer": { "kind": "number_literal", "value": "0" }
+      },
+      {
+        "name": "die_one",
+        "type": { "kind": "builtin", "type": "number" },
+        "initializer": { "kind": "number_literal", "value": "0" }
+      },
+      {
+        "name": "die_two",
+        "type": { "kind": "builtin", "type": "number" },
+        "initializer": { "kind": "number_literal", "value": "0" }
+      },
+      {
+        "name": "jail_attempts",
+        "type": { "kind": "builtin", "type": "number" },
+        "initializer": { "kind": "number_literal", "value": "0" }
+      },
+      {
+        "name": "release_budget",
+        "type": { "kind": "builtin", "type": "number" },
+        "initializer": { "kind": "number_literal", "value": "0" }
+      }
+    ]
+  },
+  "functions": [
+    {
+      "name": "color_for_index",
+      "parameters": [
+        { "name": "index", "type": { "kind": "builtin", "type": "number" } }
+      ],
+      "result_type": { "kind": "named", "name": "Color" },
+      "body": {
+        "kind": "conditional",
+        "condition": {
+          "kind": "binary",
+          "operator": "equal",
+          "left": { "kind": "reference", "name": "index" },
+          "right": { "kind": "number_literal", "value": "0" }
+        },
+        "then": {
+          "kind": "enum_value",
+          "type_name": "Color",
+          "value_name": "Red"
+        },
+        "else": {
+          "kind": "conditional",
+          "condition": {
+            "kind": "binary",
+            "operator": "equal",
+            "left": { "kind": "reference", "name": "index" },
+            "right": { "kind": "number_literal", "value": "1" }
+          },
+          "then": {
+            "kind": "enum_value",
+            "type_name": "Color",
+            "value_name": "Blue"
+          },
+          "else": {
+            "kind": "conditional",
+            "condition": {
+              "kind": "binary",
+              "operator": "equal",
+              "left": { "kind": "reference", "name": "index" },
+              "right": { "kind": "number_literal", "value": "2" }
+            },
+            "then": {
+              "kind": "enum_value",
+              "type_name": "Color",
+              "value_name": "Yellow"
+            },
+            "else": {
+              "kind": "enum_value",
+              "type_name": "Color",
+              "value_name": "Green"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "absolute_square",
+      "parameters": [
+        {
+          "name": "player_index",
+          "type": { "kind": "builtin", "type": "number" }
+        },
+        { "name": "progress", "type": { "kind": "builtin", "type": "number" } }
+      ],
+      "result_type": { "kind": "builtin", "type": "number" },
+      "body": {
+        "kind": "binary",
+        "operator": "modulo",
+        "left": {
+          "kind": "binary",
+          "operator": "add",
+          "left": {
+            "kind": "binary",
+            "operator": "multiply",
+            "left": { "kind": "reference", "name": "player_index" },
+            "right": { "kind": "number_literal", "value": "17" }
+          },
+          "right": { "kind": "reference", "name": "progress" }
+        },
+        "right": { "kind": "number_literal", "value": "68" }
+      }
+    },
+    {
+      "name": "is_safe",
+      "parameters": [
+        { "name": "square", "type": { "kind": "builtin", "type": "number" } }
+      ],
+      "result_type": { "kind": "builtin", "type": "bool" },
+      "body": {
+        "kind": "binary",
+        "operator": "in",
+        "left": { "kind": "reference", "name": "square" },
+        "right": {
+          "kind": "field",
+          "target": { "kind": "reference", "name": "resources" },
+          "field": "safe_squares"
+        }
+      }
+    },
+    {
+      "name": "can_move",
+      "parameters": [
+        { "name": "progress", "type": { "kind": "builtin", "type": "number" } },
+        { "name": "steps", "type": { "kind": "builtin", "type": "number" } }
+      ],
+      "result_type": { "kind": "builtin", "type": "bool" },
+      "body": {
+        "kind": "binary",
+        "operator": "and",
+        "left": {
+          "kind": "binary",
+          "operator": "greater_or_equal",
+          "left": { "kind": "reference", "name": "progress" },
+          "right": { "kind": "number_literal", "value": "0" }
+        },
+        "right": {
+          "kind": "binary",
+          "operator": "less_or_equal",
+          "left": {
+            "kind": "binary",
+            "operator": "add",
+            "left": { "kind": "reference", "name": "progress" },
+            "right": { "kind": "reference", "name": "steps" }
+          },
+          "right": { "kind": "number_literal", "value": "76" }
+        }
+      }
+    },
+    {
+      "name": "no_move",
+      "parameters": [
+        {
+          "name": "pieces",
+          "type": {
+            "kind": "list",
+            "element": { "kind": "builtin", "type": "number" }
+          }
+        },
+        { "name": "steps", "type": { "kind": "builtin", "type": "number" } }
+      ],
+      "result_type": { "kind": "builtin", "type": "bool" },
+      "body": {
+        "kind": "list_all",
+        "collection": { "kind": "reference", "name": "pieces" },
+        "item_name": "piece",
+        "index_name": "",
+        "predicate": {
+          "kind": "unary",
+          "operator": "not",
+          "operand": {
+            "kind": "call",
+            "function": "can_move",
+            "arguments": [
+              {
+                "name": "progress",
+                "value": { "kind": "reference", "name": "piece" }
+              },
+              {
+                "name": "steps",
+                "value": { "kind": "reference", "name": "steps" }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "all_finished",
+      "parameters": [
+        {
+          "name": "pieces",
+          "type": {
+            "kind": "list",
+            "element": { "kind": "builtin", "type": "number" }
+          }
+        }
+      ],
+      "result_type": { "kind": "builtin", "type": "bool" },
+      "body": {
+        "kind": "list_all",
+        "collection": { "kind": "reference", "name": "pieces" },
+        "item_name": "piece",
+        "index_name": "",
+        "predicate": {
+          "kind": "binary",
+          "operator": "equal",
+          "left": { "kind": "reference", "name": "piece" },
+          "right": { "kind": "number_literal", "value": "76" }
+        }
+      }
+    }
+  ],
+  "invariants": [],
+  "projections": [],
+  "views": [],
+  "presentation_slots": [],
+  "user_intents": [
+    { "name": "RollDice", "parameters": [] },
+    {
+      "name": "MovePiece",
+      "parameters": [
+        {
+          "name": "piece_index",
+          "type": { "kind": "builtin", "type": "number" }
+        }
+      ]
+    },
+    { "name": "PassMove", "parameters": [] }
+  ],
+  "questions": [],
+  "effects": [
+    {
+      "name": "DiceRolled",
+      "parameters": [
+        { "name": "die_one", "type": { "kind": "builtin", "type": "number" } },
+        { "name": "die_two", "type": { "kind": "builtin", "type": "number" } }
+      ]
+    }
+  ],
+  "root_workflow": "ParquesGame",
+  "workflows": [
+    {
+      "name": "ParquesGame",
+      "parameters": [
+        {
+          "name": "participants",
+          "type": {
+            "kind": "list",
+            "element": { "kind": "builtin", "type": "user" }
+          }
+        }
+      ],
+      "result_type": { "kind": "builtin", "type": "user" },
+      "local_state": { "fields": [] },
+      "question_slots": [],
+      "ask_group_slots": [],
+      "timer_slots": [],
+      "child_slots": [],
+      "task_group_slots": [],
+      "presentations": [],
+      "initial_state": "Setup",
+      "global_transitions": [],
+      "states": [
+        {
+          "name": "Setup",
+          "presentations": [],
+          "transitions": [
+            {
+              "name": "setup_players",
+              "signal": {
+                "source": { "kind": "named", "name": "WorkflowStarted" },
+                "bindings": []
+              },
+              "guard": null,
+              "operations": {
+                "operations": [
+                  {
+                    "kind": "for_each",
+                    "collection": {
+                      "kind": "reference",
+                      "name": "participants"
+                    },
+                    "item_name": "participant",
+                    "index_name": "participant_index",
+                    "body": {
+                      "operations": [
+                        {
+                          "kind": "list_append",
+                          "target": {
+                            "kind": "field",
+                            "target": { "kind": "name", "name": "global" },
+                            "field": "players"
+                          },
+                          "value": {
+                            "kind": "record",
+                            "type_name": "PlayerState",
+                            "fields": [
+                              {
+                                "name": "player",
+                                "value": {
+                                  "kind": "reference",
+                                  "name": "participant"
+                                }
+                              },
+                              {
+                                "name": "color",
+                                "value": {
+                                  "kind": "call",
+                                  "function": "color_for_index",
+                                  "arguments": [
+                                    {
+                                      "name": "index",
+                                      "value": {
+                                        "kind": "reference",
+                                        "name": "participant_index"
+                                      }
+                                    }
+                                  ]
+                                }
+                              },
+                              {
+                                "name": "pieces",
+                                "value": {
+                                  "kind": "list",
+                                  "element_type": {
+                                    "kind": "builtin",
+                                    "type": "number"
+                                  },
+                                  "elements": [
+                                    { "kind": "number_literal", "value": "-1" },
+                                    { "kind": "number_literal", "value": "-1" },
+                                    { "kind": "number_literal", "value": "-1" },
+                                    { "kind": "number_literal", "value": "-1" }
+                                  ]
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              "control": {
+                "kind": "conditional",
+                "condition": {
+                  "kind": "binary",
+                  "operator": "and",
+                  "left": {
+                    "kind": "binary",
+                    "operator": "greater_or_equal",
+                    "left": {
+                      "kind": "list_count",
+                      "collection": {
+                        "kind": "reference",
+                        "name": "participants"
+                      },
+                      "item_name": "p",
+                      "index_name": "",
+                      "predicate": { "kind": "bool_literal", "value": true }
+                    },
+                    "right": { "kind": "number_literal", "value": "2" }
+                  },
+                  "right": {
+                    "kind": "binary",
+                    "operator": "less_or_equal",
+                    "left": {
+                      "kind": "list_count",
+                      "collection": {
+                        "kind": "reference",
+                        "name": "participants"
+                      },
+                      "item_name": "p",
+                      "index_name": "",
+                      "predicate": { "kind": "bool_literal", "value": true }
+                    },
+                    "right": { "kind": "number_literal", "value": "4" }
+                  }
+                },
+                "then": { "kind": "goto", "state": "AwaitRoll" },
+                "else": {
+                  "kind": "fail",
+                  "error": {
+                    "kind": "string_literal",
+                    "value": "Parqués requires two to four players."
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "AwaitRoll",
+          "presentations": [],
+          "transitions": [
+            {
+              "name": "roll_dice",
+              "signal": {
+                "source": { "kind": "user_intent", "intent": "RollDice" },
+                "bindings": [{ "field": "actor", "name": "actor" }]
+              },
+              "guard": {
+                "kind": "binary",
+                "operator": "equal",
+                "left": { "kind": "reference", "name": "actor" },
+                "right": {
+                  "kind": "field",
+                  "target": {
+                    "kind": "index",
+                    "target": {
+                      "kind": "field",
+                      "target": { "kind": "reference", "name": "global" },
+                      "field": "players"
+                    },
+                    "index": {
+                      "kind": "field",
+                      "target": { "kind": "reference", "name": "global" },
+                      "field": "current_player"
+                    }
+                  },
+                  "field": "player"
+                }
+              },
+              "operations": {
+                "operations": [
+                  {
+                    "kind": "draw_random",
+                    "name": "d1",
+                    "generator": {
+                      "kind": "random_integer",
+                      "minimum": { "kind": "number_literal", "value": "1" },
+                      "maximum": { "kind": "number_literal", "value": "6" }
+                    }
+                  },
+                  {
+                    "kind": "draw_random",
+                    "name": "d2",
+                    "generator": {
+                      "kind": "random_integer",
+                      "minimum": { "kind": "number_literal", "value": "1" },
+                      "maximum": { "kind": "number_literal", "value": "6" }
+                    }
+                  },
+                  {
+                    "kind": "set",
+                    "target": {
+                      "kind": "field",
+                      "target": { "kind": "name", "name": "global" },
+                      "field": "die_one"
+                    },
+                    "value": { "kind": "reference", "name": "d1" }
+                  },
+                  {
+                    "kind": "set",
+                    "target": {
+                      "kind": "field",
+                      "target": { "kind": "name", "name": "global" },
+                      "field": "die_two"
+                    },
+                    "value": { "kind": "reference", "name": "d2" }
+                  },
+                  {
+                    "kind": "emit_effect",
+                    "effect": "DiceRolled",
+                    "recipients": {
+                      "kind": "reference",
+                      "name": "participants"
+                    },
+                    "arguments": [
+                      {
+                        "name": "die_one",
+                        "value": { "kind": "reference", "name": "d1" }
+                      },
+                      {
+                        "name": "die_two",
+                        "value": { "kind": "reference", "name": "d2" }
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "let",
+                    "name": "doubles",
+                    "type": { "kind": "builtin", "type": "bool" },
+                    "value": {
+                      "kind": "binary",
+                      "operator": "equal",
+                      "left": { "kind": "reference", "name": "d1" },
+                      "right": { "kind": "reference", "name": "d2" }
+                    }
+                  },
+                  {
+                    "kind": "let",
+                    "name": "all_jailed",
+                    "type": { "kind": "builtin", "type": "bool" },
+                    "value": {
+                      "kind": "list_all",
+                      "collection": {
+                        "kind": "field",
+                        "target": {
+                          "kind": "index",
+                          "target": {
+                            "kind": "field",
+                            "target": { "kind": "reference", "name": "global" },
+                            "field": "players"
+                          },
+                          "index": {
+                            "kind": "field",
+                            "target": { "kind": "reference", "name": "global" },
+                            "field": "current_player"
+                          }
+                        },
+                        "field": "pieces"
+                      },
+                      "item_name": "piece",
+                      "index_name": "",
+                      "predicate": {
+                        "kind": "binary",
+                        "operator": "equal",
+                        "left": { "kind": "reference", "name": "piece" },
+                        "right": { "kind": "number_literal", "value": "-1" }
+                      }
+                    }
+                  },
+                  {
+                    "kind": "let",
+                    "name": "has_jailed",
+                    "type": { "kind": "builtin", "type": "bool" },
+                    "value": {
+                      "kind": "list_any",
+                      "collection": {
+                        "kind": "field",
+                        "target": {
+                          "kind": "index",
+                          "target": {
+                            "kind": "field",
+                            "target": { "kind": "reference", "name": "global" },
+                            "field": "players"
+                          },
+                          "index": {
+                            "kind": "field",
+                            "target": { "kind": "reference", "name": "global" },
+                            "field": "current_player"
+                          }
+                        },
+                        "field": "pieces"
+                      },
+                      "item_name": "piece",
+                      "index_name": "",
+                      "predicate": {
+                        "kind": "binary",
+                        "operator": "equal",
+                        "left": { "kind": "reference", "name": "piece" },
+                        "right": { "kind": "number_literal", "value": "-1" }
+                      }
+                    }
+                  },
+                  {
+                    "kind": "set",
+                    "target": {
+                      "kind": "field",
+                      "target": { "kind": "name", "name": "global" },
+                      "field": "release_budget"
+                    },
+                    "value": {
+                      "kind": "conditional",
+                      "condition": {
+                        "kind": "binary",
+                        "operator": "or",
+                        "left": {
+                          "kind": "binary",
+                          "operator": "equal",
+                          "left": { "kind": "reference", "name": "d1" },
+                          "right": { "kind": "number_literal", "value": "1" }
+                        },
+                        "right": {
+                          "kind": "binary",
+                          "operator": "equal",
+                          "left": { "kind": "reference", "name": "d1" },
+                          "right": { "kind": "number_literal", "value": "6" }
+                        }
+                      },
+                      "then": { "kind": "number_literal", "value": "4" },
+                      "else": { "kind": "number_literal", "value": "2" }
+                    }
+                  },
+                  {
+                    "kind": "if",
+                    "condition": {
+                      "kind": "binary",
+                      "operator": "and",
+                      "left": { "kind": "reference", "name": "doubles" },
+                      "right": { "kind": "reference", "name": "has_jailed" }
+                    },
+                    "then": {
+                      "operations": [
+                        {
+                          "kind": "for_each",
+                          "collection": {
+                            "kind": "field",
+                            "target": {
+                              "kind": "index",
+                              "target": {
+                                "kind": "field",
+                                "target": {
+                                  "kind": "reference",
+                                  "name": "global"
+                                },
+                                "field": "players"
+                              },
+                              "index": {
+                                "kind": "field",
+                                "target": {
+                                  "kind": "reference",
+                                  "name": "global"
+                                },
+                                "field": "current_player"
+                              }
+                            },
+                            "field": "pieces"
+                          },
+                          "item_name": "piece",
+                          "index_name": "piece_index",
+                          "body": {
+                            "operations": [
+                              {
+                                "kind": "if",
+                                "condition": {
+                                  "kind": "binary",
+                                  "operator": "and",
+                                  "left": {
+                                    "kind": "binary",
+                                    "operator": "equal",
+                                    "left": {
+                                      "kind": "reference",
+                                      "name": "piece"
+                                    },
+                                    "right": {
+                                      "kind": "number_literal",
+                                      "value": "-1"
+                                    }
+                                  },
+                                  "right": {
+                                    "kind": "binary",
+                                    "operator": "greater",
+                                    "left": {
+                                      "kind": "field",
+                                      "target": {
+                                        "kind": "reference",
+                                        "name": "global"
+                                      },
+                                      "field": "release_budget"
+                                    },
+                                    "right": {
+                                      "kind": "number_literal",
+                                      "value": "0"
+                                    }
+                                  }
+                                },
+                                "then": {
+                                  "operations": [
+                                    {
+                                      "kind": "set",
+                                      "target": {
+                                        "kind": "index",
+                                        "target": {
+                                          "kind": "field",
+                                          "target": {
+                                            "kind": "index",
+                                            "target": {
+                                              "kind": "field",
+                                              "target": {
+                                                "kind": "name",
+                                                "name": "global"
+                                              },
+                                              "field": "players"
+                                            },
+                                            "index": {
+                                              "kind": "field",
+                                              "target": {
+                                                "kind": "reference",
+                                                "name": "global"
+                                              },
+                                              "field": "current_player"
+                                            }
+                                          },
+                                          "field": "pieces"
+                                        },
+                                        "index": {
+                                          "kind": "reference",
+                                          "name": "piece_index"
+                                        }
+                                      },
+                                      "value": {
+                                        "kind": "number_literal",
+                                        "value": "0"
+                                      }
+                                    },
+                                    {
+                                      "kind": "set",
+                                      "target": {
+                                        "kind": "field",
+                                        "target": {
+                                          "kind": "name",
+                                          "name": "global"
+                                        },
+                                        "field": "release_budget"
+                                      },
+                                      "value": {
+                                        "kind": "binary",
+                                        "operator": "subtract",
+                                        "left": {
+                                          "kind": "field",
+                                          "target": {
+                                            "kind": "reference",
+                                            "name": "global"
+                                          },
+                                          "field": "release_budget"
+                                        },
+                                        "right": {
+                                          "kind": "number_literal",
+                                          "value": "1"
+                                        }
+                                      }
+                                    }
+                                  ]
+                                },
+                                "else": { "operations": [] }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    },
+                    "else": { "operations": [] }
+                  },
+                  {
+                    "kind": "if",
+                    "condition": { "kind": "reference", "name": "doubles" },
+                    "then": {
+                      "operations": [
+                        {
+                          "kind": "set",
+                          "target": {
+                            "kind": "field",
+                            "target": { "kind": "name", "name": "global" },
+                            "field": "jail_attempts"
+                          },
+                          "value": { "kind": "number_literal", "value": "0" }
+                        }
+                      ]
+                    },
+                    "else": {
+                      "operations": [
+                        {
+                          "kind": "if",
+                          "condition": {
+                            "kind": "reference",
+                            "name": "all_jailed"
+                          },
+                          "then": {
+                            "operations": [
+                              {
+                                "kind": "if",
+                                "condition": {
+                                  "kind": "binary",
+                                  "operator": "greater_or_equal",
+                                  "left": {
+                                    "kind": "field",
+                                    "target": {
+                                      "kind": "reference",
+                                      "name": "global"
+                                    },
+                                    "field": "jail_attempts"
+                                  },
+                                  "right": {
+                                    "kind": "number_literal",
+                                    "value": "2"
+                                  }
+                                },
+                                "then": {
+                                  "operations": [
+                                    {
+                                      "kind": "set",
+                                      "target": {
+                                        "kind": "field",
+                                        "target": {
+                                          "kind": "name",
+                                          "name": "global"
+                                        },
+                                        "field": "jail_attempts"
+                                      },
+                                      "value": {
+                                        "kind": "number_literal",
+                                        "value": "0"
+                                      }
+                                    },
+                                    {
+                                      "kind": "set",
+                                      "target": {
+                                        "kind": "field",
+                                        "target": {
+                                          "kind": "name",
+                                          "name": "global"
+                                        },
+                                        "field": "current_player"
+                                      },
+                                      "value": {
+                                        "kind": "binary",
+                                        "operator": "modulo",
+                                        "left": {
+                                          "kind": "binary",
+                                          "operator": "add",
+                                          "left": {
+                                            "kind": "field",
+                                            "target": {
+                                              "kind": "reference",
+                                              "name": "global"
+                                            },
+                                            "field": "current_player"
+                                          },
+                                          "right": {
+                                            "kind": "number_literal",
+                                            "value": "1"
+                                          }
+                                        },
+                                        "right": {
+                                          "kind": "list_count",
+                                          "collection": {
+                                            "kind": "field",
+                                            "target": {
+                                              "kind": "reference",
+                                              "name": "global"
+                                            },
+                                            "field": "players"
+                                          },
+                                          "item_name": "p",
+                                          "index_name": "",
+                                          "predicate": {
+                                            "kind": "bool_literal",
+                                            "value": true
+                                          }
+                                        }
+                                      }
+                                    }
+                                  ]
+                                },
+                                "else": {
+                                  "operations": [
+                                    {
+                                      "kind": "set",
+                                      "target": {
+                                        "kind": "field",
+                                        "target": {
+                                          "kind": "name",
+                                          "name": "global"
+                                        },
+                                        "field": "jail_attempts"
+                                      },
+                                      "value": {
+                                        "kind": "binary",
+                                        "operator": "add",
+                                        "left": {
+                                          "kind": "field",
+                                          "target": {
+                                            "kind": "reference",
+                                            "name": "global"
+                                          },
+                                          "field": "jail_attempts"
+                                        },
+                                        "right": {
+                                          "kind": "number_literal",
+                                          "value": "1"
+                                        }
+                                      }
+                                    }
+                                  ]
+                                }
+                              }
+                            ]
+                          },
+                          "else": {
+                            "operations": [
+                              {
+                                "kind": "set",
+                                "target": {
+                                  "kind": "field",
+                                  "target": {
+                                    "kind": "name",
+                                    "name": "global"
+                                  },
+                                  "field": "jail_attempts"
+                                },
+                                "value": {
+                                  "kind": "number_literal",
+                                  "value": "0"
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              "control": {
+                "kind": "conditional",
+                "condition": {
+                  "kind": "binary",
+                  "operator": "or",
+                  "left": {
+                    "kind": "binary",
+                    "operator": "and",
+                    "left": { "kind": "reference", "name": "doubles" },
+                    "right": { "kind": "reference", "name": "has_jailed" }
+                  },
+                  "right": {
+                    "kind": "binary",
+                    "operator": "and",
+                    "left": {
+                      "kind": "unary",
+                      "operator": "not",
+                      "operand": { "kind": "reference", "name": "doubles" }
+                    },
+                    "right": { "kind": "reference", "name": "all_jailed" }
+                  }
+                },
+                "then": { "kind": "goto", "state": "AwaitRoll" },
+                "else": { "kind": "goto", "state": "AwaitMove" }
+              }
+            }
+          ]
+        },
+        {
+          "name": "AwaitMove",
+          "presentations": [],
+          "transitions": [
+            {
+              "name": "move_piece",
+              "signal": {
+                "source": { "kind": "user_intent", "intent": "MovePiece" },
+                "bindings": [
+                  { "field": "actor", "name": "actor" },
+                  { "field": "piece_index", "name": "piece_index" }
+                ]
+              },
+              "guard": {
+                "kind": "binary",
+                "operator": "and",
+                "left": {
+                  "kind": "binary",
+                  "operator": "and",
+                  "left": {
+                    "kind": "binary",
+                    "operator": "equal",
+                    "left": { "kind": "reference", "name": "actor" },
+                    "right": {
+                      "kind": "field",
+                      "target": {
+                        "kind": "index",
+                        "target": {
+                          "kind": "field",
+                          "target": { "kind": "reference", "name": "global" },
+                          "field": "players"
+                        },
+                        "index": {
+                          "kind": "field",
+                          "target": { "kind": "reference", "name": "global" },
+                          "field": "current_player"
+                        }
+                      },
+                      "field": "player"
+                    }
+                  },
+                  "right": {
+                    "kind": "binary",
+                    "operator": "and",
+                    "left": {
+                      "kind": "binary",
+                      "operator": "greater_or_equal",
+                      "left": { "kind": "reference", "name": "piece_index" },
+                      "right": { "kind": "number_literal", "value": "0" }
+                    },
+                    "right": {
+                      "kind": "binary",
+                      "operator": "less_or_equal",
+                      "left": { "kind": "reference", "name": "piece_index" },
+                      "right": { "kind": "number_literal", "value": "3" }
+                    }
+                  }
+                },
+                "right": {
+                  "kind": "call",
+                  "function": "can_move",
+                  "arguments": [
+                    {
+                      "name": "progress",
+                      "value": {
+                        "kind": "index",
+                        "target": {
+                          "kind": "field",
+                          "target": {
+                            "kind": "index",
+                            "target": {
+                              "kind": "field",
+                              "target": {
+                                "kind": "reference",
+                                "name": "global"
+                              },
+                              "field": "players"
+                            },
+                            "index": {
+                              "kind": "field",
+                              "target": {
+                                "kind": "reference",
+                                "name": "global"
+                              },
+                              "field": "current_player"
+                            }
+                          },
+                          "field": "pieces"
+                        },
+                        "index": { "kind": "reference", "name": "piece_index" }
+                      }
+                    },
+                    {
+                      "name": "steps",
+                      "value": {
+                        "kind": "binary",
+                        "operator": "add",
+                        "left": {
+                          "kind": "field",
+                          "target": { "kind": "reference", "name": "global" },
+                          "field": "die_one"
+                        },
+                        "right": {
+                          "kind": "field",
+                          "target": { "kind": "reference", "name": "global" },
+                          "field": "die_two"
+                        }
+                      }
+                    }
+                  ]
+                }
+              },
+              "operations": {
+                "operations": [
+                  {
+                    "kind": "let",
+                    "name": "moving_player",
+                    "type": { "kind": "builtin", "type": "number" },
+                    "value": {
+                      "kind": "field",
+                      "target": { "kind": "reference", "name": "global" },
+                      "field": "current_player"
+                    }
+                  },
+                  {
+                    "kind": "let",
+                    "name": "new_progress",
+                    "type": { "kind": "builtin", "type": "number" },
+                    "value": {
+                      "kind": "binary",
+                      "operator": "add",
+                      "left": {
+                        "kind": "index",
+                        "target": {
+                          "kind": "field",
+                          "target": {
+                            "kind": "index",
+                            "target": {
+                              "kind": "field",
+                              "target": {
+                                "kind": "reference",
+                                "name": "global"
+                              },
+                              "field": "players"
+                            },
+                            "index": {
+                              "kind": "reference",
+                              "name": "moving_player"
+                            }
+                          },
+                          "field": "pieces"
+                        },
+                        "index": { "kind": "reference", "name": "piece_index" }
+                      },
+                      "right": {
+                        "kind": "binary",
+                        "operator": "add",
+                        "left": {
+                          "kind": "field",
+                          "target": { "kind": "reference", "name": "global" },
+                          "field": "die_one"
+                        },
+                        "right": {
+                          "kind": "field",
+                          "target": { "kind": "reference", "name": "global" },
+                          "field": "die_two"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "kind": "set",
+                    "target": {
+                      "kind": "index",
+                      "target": {
+                        "kind": "field",
+                        "target": {
+                          "kind": "index",
+                          "target": {
+                            "kind": "field",
+                            "target": { "kind": "name", "name": "global" },
+                            "field": "players"
+                          },
+                          "index": {
+                            "kind": "reference",
+                            "name": "moving_player"
+                          }
+                        },
+                        "field": "pieces"
+                      },
+                      "index": { "kind": "reference", "name": "piece_index" }
+                    },
+                    "value": { "kind": "reference", "name": "new_progress" }
+                  },
+                  {
+                    "kind": "for_each",
+                    "collection": {
+                      "kind": "field",
+                      "target": { "kind": "reference", "name": "global" },
+                      "field": "players"
+                    },
+                    "item_name": "opponent",
+                    "index_name": "opponent_index",
+                    "body": {
+                      "operations": [
+                        {
+                          "kind": "if",
+                          "condition": {
+                            "kind": "binary",
+                            "operator": "not_equal",
+                            "left": {
+                              "kind": "reference",
+                              "name": "opponent_index"
+                            },
+                            "right": {
+                              "kind": "reference",
+                              "name": "moving_player"
+                            }
+                          },
+                          "then": {
+                            "operations": [
+                              {
+                                "kind": "for_each",
+                                "collection": {
+                                  "kind": "field",
+                                  "target": {
+                                    "kind": "reference",
+                                    "name": "opponent"
+                                  },
+                                  "field": "pieces"
+                                },
+                                "item_name": "opponent_piece",
+                                "index_name": "opponent_piece_index",
+                                "body": {
+                                  "operations": [
+                                    {
+                                      "kind": "if",
+                                      "condition": {
+                                        "kind": "binary",
+                                        "operator": "and",
+                                        "left": {
+                                          "kind": "binary",
+                                          "operator": "and",
+                                          "left": {
+                                            "kind": "binary",
+                                            "operator": "and",
+                                            "left": {
+                                              "kind": "binary",
+                                              "operator": "greater_or_equal",
+                                              "left": {
+                                                "kind": "reference",
+                                                "name": "new_progress"
+                                              },
+                                              "right": {
+                                                "kind": "number_literal",
+                                                "value": "0"
+                                              }
+                                            },
+                                            "right": {
+                                              "kind": "binary",
+                                              "operator": "less",
+                                              "left": {
+                                                "kind": "reference",
+                                                "name": "new_progress"
+                                              },
+                                              "right": {
+                                                "kind": "number_literal",
+                                                "value": "68"
+                                              }
+                                            }
+                                          },
+                                          "right": {
+                                            "kind": "binary",
+                                            "operator": "and",
+                                            "left": {
+                                              "kind": "binary",
+                                              "operator": "greater_or_equal",
+                                              "left": {
+                                                "kind": "reference",
+                                                "name": "opponent_piece"
+                                              },
+                                              "right": {
+                                                "kind": "number_literal",
+                                                "value": "0"
+                                              }
+                                            },
+                                            "right": {
+                                              "kind": "binary",
+                                              "operator": "less",
+                                              "left": {
+                                                "kind": "reference",
+                                                "name": "opponent_piece"
+                                              },
+                                              "right": {
+                                                "kind": "number_literal",
+                                                "value": "68"
+                                              }
+                                            }
+                                          }
+                                        },
+                                        "right": {
+                                          "kind": "binary",
+                                          "operator": "and",
+                                          "left": {
+                                            "kind": "binary",
+                                            "operator": "equal",
+                                            "left": {
+                                              "kind": "call",
+                                              "function": "absolute_square",
+                                              "arguments": [
+                                                {
+                                                  "name": "player_index",
+                                                  "value": {
+                                                    "kind": "reference",
+                                                    "name": "moving_player"
+                                                  }
+                                                },
+                                                {
+                                                  "name": "progress",
+                                                  "value": {
+                                                    "kind": "reference",
+                                                    "name": "new_progress"
+                                                  }
+                                                }
+                                              ]
+                                            },
+                                            "right": {
+                                              "kind": "call",
+                                              "function": "absolute_square",
+                                              "arguments": [
+                                                {
+                                                  "name": "player_index",
+                                                  "value": {
+                                                    "kind": "reference",
+                                                    "name": "opponent_index"
+                                                  }
+                                                },
+                                                {
+                                                  "name": "progress",
+                                                  "value": {
+                                                    "kind": "reference",
+                                                    "name": "opponent_piece"
+                                                  }
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "right": {
+                                            "kind": "unary",
+                                            "operator": "not",
+                                            "operand": {
+                                              "kind": "call",
+                                              "function": "is_safe",
+                                              "arguments": [
+                                                {
+                                                  "name": "square",
+                                                  "value": {
+                                                    "kind": "call",
+                                                    "function": "absolute_square",
+                                                    "arguments": [
+                                                      {
+                                                        "name": "player_index",
+                                                        "value": {
+                                                          "kind": "reference",
+                                                          "name": "moving_player"
+                                                        }
+                                                      },
+                                                      {
+                                                        "name": "progress",
+                                                        "value": {
+                                                          "kind": "reference",
+                                                          "name": "new_progress"
+                                                        }
+                                                      }
+                                                    ]
+                                                  }
+                                                }
+                                              ]
+                                            }
+                                          }
+                                        }
+                                      },
+                                      "then": {
+                                        "operations": [
+                                          {
+                                            "kind": "set",
+                                            "target": {
+                                              "kind": "index",
+                                              "target": {
+                                                "kind": "field",
+                                                "target": {
+                                                  "kind": "index",
+                                                  "target": {
+                                                    "kind": "field",
+                                                    "target": {
+                                                      "kind": "name",
+                                                      "name": "global"
+                                                    },
+                                                    "field": "players"
+                                                  },
+                                                  "index": {
+                                                    "kind": "reference",
+                                                    "name": "opponent_index"
+                                                  }
+                                                },
+                                                "field": "pieces"
+                                              },
+                                              "index": {
+                                                "kind": "reference",
+                                                "name": "opponent_piece_index"
+                                              }
+                                            },
+                                            "value": {
+                                              "kind": "number_literal",
+                                              "value": "-1"
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "else": { "operations": [] }
+                                    }
+                                  ]
+                                }
+                              }
+                            ]
+                          },
+                          "else": { "operations": [] }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "kind": "if",
+                    "condition": {
+                      "kind": "binary",
+                      "operator": "not_equal",
+                      "left": {
+                        "kind": "field",
+                        "target": { "kind": "reference", "name": "global" },
+                        "field": "die_one"
+                      },
+                      "right": {
+                        "kind": "field",
+                        "target": { "kind": "reference", "name": "global" },
+                        "field": "die_two"
+                      }
+                    },
+                    "then": {
+                      "operations": [
+                        {
+                          "kind": "set",
+                          "target": {
+                            "kind": "field",
+                            "target": { "kind": "name", "name": "global" },
+                            "field": "current_player"
+                          },
+                          "value": {
+                            "kind": "binary",
+                            "operator": "modulo",
+                            "left": {
+                              "kind": "binary",
+                              "operator": "add",
+                              "left": {
+                                "kind": "reference",
+                                "name": "moving_player"
+                              },
+                              "right": {
+                                "kind": "number_literal",
+                                "value": "1"
+                              }
+                            },
+                            "right": {
+                              "kind": "list_count",
+                              "collection": {
+                                "kind": "field",
+                                "target": {
+                                  "kind": "reference",
+                                  "name": "global"
+                                },
+                                "field": "players"
+                              },
+                              "item_name": "p",
+                              "index_name": "",
+                              "predicate": {
+                                "kind": "bool_literal",
+                                "value": true
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    "else": { "operations": [] }
+                  }
+                ]
+              },
+              "control": {
+                "kind": "conditional",
+                "condition": {
+                  "kind": "call",
+                  "function": "all_finished",
+                  "arguments": [
+                    {
+                      "name": "pieces",
+                      "value": {
+                        "kind": "field",
+                        "target": {
+                          "kind": "index",
+                          "target": {
+                            "kind": "field",
+                            "target": { "kind": "reference", "name": "global" },
+                            "field": "players"
+                          },
+                          "index": {
+                            "kind": "reference",
+                            "name": "moving_player"
+                          }
+                        },
+                        "field": "pieces"
+                      }
+                    }
+                  ]
+                },
+                "then": {
+                  "kind": "complete",
+                  "result": { "kind": "reference", "name": "actor" }
+                },
+                "else": { "kind": "goto", "state": "AwaitRoll" }
+              }
+            },
+            {
+              "name": "pass_when_blocked",
+              "signal": {
+                "source": { "kind": "user_intent", "intent": "PassMove" },
+                "bindings": [{ "field": "actor", "name": "actor" }]
+              },
+              "guard": {
+                "kind": "binary",
+                "operator": "and",
+                "left": {
+                  "kind": "binary",
+                  "operator": "equal",
+                  "left": { "kind": "reference", "name": "actor" },
+                  "right": {
+                    "kind": "field",
+                    "target": {
+                      "kind": "index",
+                      "target": {
+                        "kind": "field",
+                        "target": { "kind": "reference", "name": "global" },
+                        "field": "players"
+                      },
+                      "index": {
+                        "kind": "field",
+                        "target": { "kind": "reference", "name": "global" },
+                        "field": "current_player"
+                      }
+                    },
+                    "field": "player"
+                  }
+                },
+                "right": {
+                  "kind": "call",
+                  "function": "no_move",
+                  "arguments": [
+                    {
+                      "name": "pieces",
+                      "value": {
+                        "kind": "field",
+                        "target": {
+                          "kind": "index",
+                          "target": {
+                            "kind": "field",
+                            "target": { "kind": "reference", "name": "global" },
+                            "field": "players"
+                          },
+                          "index": {
+                            "kind": "field",
+                            "target": { "kind": "reference", "name": "global" },
+                            "field": "current_player"
+                          }
+                        },
+                        "field": "pieces"
+                      }
+                    },
+                    {
+                      "name": "steps",
+                      "value": {
+                        "kind": "binary",
+                        "operator": "add",
+                        "left": {
+                          "kind": "field",
+                          "target": { "kind": "reference", "name": "global" },
+                          "field": "die_one"
+                        },
+                        "right": {
+                          "kind": "field",
+                          "target": { "kind": "reference", "name": "global" },
+                          "field": "die_two"
+                        }
+                      }
+                    }
+                  ]
+                }
+              },
+              "operations": {
+                "operations": [
+                  {
+                    "kind": "if",
+                    "condition": {
+                      "kind": "binary",
+                      "operator": "not_equal",
+                      "left": {
+                        "kind": "field",
+                        "target": { "kind": "reference", "name": "global" },
+                        "field": "die_one"
+                      },
+                      "right": {
+                        "kind": "field",
+                        "target": { "kind": "reference", "name": "global" },
+                        "field": "die_two"
+                      }
+                    },
+                    "then": {
+                      "operations": [
+                        {
+                          "kind": "set",
+                          "target": {
+                            "kind": "field",
+                            "target": { "kind": "name", "name": "global" },
+                            "field": "current_player"
+                          },
+                          "value": {
+                            "kind": "binary",
+                            "operator": "modulo",
+                            "left": {
+                              "kind": "binary",
+                              "operator": "add",
+                              "left": {
+                                "kind": "field",
+                                "target": {
+                                  "kind": "reference",
+                                  "name": "global"
+                                },
+                                "field": "current_player"
+                              },
+                              "right": {
+                                "kind": "number_literal",
+                                "value": "1"
+                              }
+                            },
+                            "right": {
+                              "kind": "list_count",
+                              "collection": {
+                                "kind": "field",
+                                "target": {
+                                  "kind": "reference",
+                                  "name": "global"
+                                },
+                                "field": "players"
+                              },
+                              "item_name": "p",
+                              "index_name": "",
+                              "predicate": {
+                                "kind": "bool_literal",
+                                "value": true
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    "else": { "operations": [] }
+                  }
+                ]
+              },
+              "control": { "kind": "goto", "state": "AwaitRoll" }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
