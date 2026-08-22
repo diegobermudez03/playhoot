@@ -1,3 +1,1 @@
-package session 
-
-type 
+package session

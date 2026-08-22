@@ -7,11 +7,12 @@ import (
 
 func MigrateTables(db *gorm.DB) error {
 	migrator := gormigrate.New(db, &gormigrate.Options{
-		TableName:                 "migrations",
-		IDColumnName:              "id",
-		IDColumnSize:              255,
-		UseTransaction:            true,
-		ValidateUnknownMigrations: true,
+		TableName:      "migrations",
+		IDColumnName:   "id",
+		IDColumnSize:   255,
+		UseTransaction: true,
+		// Other domain packages store their migration IDs in this same table.
+		ValidateUnknownMigrations: false,
 	}, []*gormigrate.Migration{
 		// sessions must exist before session_states can add its foreign key.
 		migration20260817000001Sessions(),
