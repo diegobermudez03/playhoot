@@ -1,4 +1,4 @@
-package service
+package sessionlifecycle
 
 import (
 	"context"
@@ -7,6 +7,6 @@ import (
 	"github.com/diegobermudez03/playhoot/game/session"
 )
 
-func (m *SessionManager) CreateRoom(ctx context.Context, program engine.Program, gameVersionUUID string, ownerUUID string) (session.Room, error) {
+func (m *Manager) CreateRoom(ctx context.Context, program engine.Program, gameVersionUUID string, ownerUUID string) (session.Room, error) {
 	return session.Room{}, nil
 }
