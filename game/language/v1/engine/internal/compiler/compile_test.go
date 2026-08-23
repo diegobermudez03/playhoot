@@ -49,6 +49,31 @@ func TestCompile_Metadata(t *testing.T) {
 	}
 }
 
+func TestCompile_PlayerPolicy(t *testing.T) {
+	def := program.Definition{
+		Players: program.PlayerPolicy{Min: 2, Max: 6},
+	}
+
+	p, diags := compiler.Compile(withMinimalRootWorkflow(def))
+	if diags.HasErrors() {
+		t.Fatalf("unexpected errors: %v", diags)
+	}
+	if p.Players != (engine.PlayerPolicy{Min: 2, Max: 6}) {
+		t.Fatalf("player policy not carried over: %+v", p.Players)
+	}
+}
+
+func TestCompile_PlayerPolicyMinGreaterThanMax(t *testing.T) {
+	def := program.Definition{
+		Players: program.PlayerPolicy{Min: 6, Max: 4},
+	}
+
+	_, diags := compiler.Compile(withMinimalRootWorkflow(def))
+	if !diags.HasErrors() {
+		t.Fatal("expected player policy compile error")
+	}
+}
+
 func TestCompile_EnumType(t *testing.T) {
 	def := program.Definition{
 		Types: []program.TypeDeclaration{

@@ -141,6 +141,7 @@ func Compile(def program.Definition) (engine.Program, Diagnostics) {
 	}
 
 	c.registerTypeNamespace()
+	c.validatePlayerPolicy()
 	types := c.compileTypeDeclarations()
 
 	c.registerResourceNamespace()
@@ -153,6 +154,7 @@ func Compile(def program.Definition) (engine.Program, Diagnostics) {
 
 	p := engine.Program{
 		Metadata:  compileMetadata(def.Metadata),
+		Players:   compilePlayerPolicy(def.Players),
 		Types:     types,
 		Functions: functions,
 		Resources: resourceValues,
@@ -186,6 +188,25 @@ func Compile(def program.Definition) (engine.Program, Diagnostics) {
 	p.RootWorkflow = def.RootWorkflow
 
 	return p, c.diagnostics
+}
+
+func (c *compiler) validatePlayerPolicy() {
+	if c.definition.Players.Min < 0 {
+		c.addf("$.players.min", "minimum player count cannot be negative")
+	}
+	if c.definition.Players.Max < 0 {
+		c.addf("$.players.max", "maximum player count cannot be negative")
+	}
+	if c.definition.Players.Min > 0 && c.definition.Players.Max > 0 && c.definition.Players.Min > c.definition.Players.Max {
+		c.addf("$.players", "minimum player count cannot be greater than maximum player count")
+	}
+}
+
+func compilePlayerPolicy(p program.PlayerPolicy) engine.PlayerPolicy {
+	return engine.PlayerPolicy{
+		Min: p.Min,
+		Max: p.Max,
+	}
 }
 
 func compileMetadata(m program.Metadata) engine.Metadata {

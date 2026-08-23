@@ -40,17 +40,18 @@ Everything else — types, state, workflows, questions, UI — is described in d
 Design (and it's fine to also *emit*) roughly in this order, since each layer only refers to names declared at or before it:
 
 1. **`types`** — every enum, record, union, and "new type" (nominal wrapper) you'll need. Built-in types (`unit`, `bool`, `number`, `string`, `user` — a connected player) never need declaring.
-2. **`resources`** — immutable, load-time constants (board layouts, card definitions, scoring tables, rule config, and asset-reference tables — see below). Not part of mutable state; evaluated once.
-3. **`global_state`** — the one mutable record every workflow instance can read/write, declared as a list of typed fields with initializer expressions.
-4. **`functions`** — pure, reusable, named computations (no side effects, no interaction with a live session).
-5. **`invariants`** — boolean conditions over global state (and resources) checked after every committed transition; a violated invariant rejects the whole step atomically. Use these for rules that must never be false ("score is never negative"), not for ordinary game logic.
-6. **`projections`** — pure, per-viewer transformations of state into whatever that viewer is allowed to see. This is the privacy boundary — design one whenever a UI or a question needs to show something to a specific user.
-7. **`views`** — declarative client UI trees, each a pure function of one projection's output plus the view's own client-local state.
-8. **`presentation_slots`** — named places on the client a view can be mounted into (e.g. `"hud"`, `"modal"`, `"board"`).
-9. **`user_intents`** — typed actions a player can submit unprompted (e.g. "Roll", "PlayCard").
-10. **`questions`** — reusable request contracts a workflow can open and later receive a validated answer to.
-11. **`effects`** — purely cosmetic, client-facing presentation events (an animation, a sound cue) — never authoritative.
-12. **`workflows`** (plus `root_workflow` naming which one starts the game) — the actual state machines: parameters, local state, slots (question/ask-group/timer/child-workflow/task-group), presentations, states, and transitions.
+2. **`players`** — the explicit player-count contract for lobbies using this definition: `{"min": number, "max": number}`. The session layer reads this before start/join, so never leave game-specific player counts implicit in workflow logic.
+3. **`resources`** — immutable, load-time constants (board layouts, card definitions, scoring tables, rule config, and asset-reference tables — see below). Not part of mutable state; evaluated once.
+4. **`global_state`** — the one mutable record every workflow instance can read/write, declared as a list of typed fields with initializer expressions.
+5. **`functions`** — pure, reusable, named computations (no side effects, no interaction with a live session).
+6. **`invariants`** — boolean conditions over global state (and resources) checked after every committed transition; a violated invariant rejects the whole step atomically. Use these for rules that must never be false ("score is never negative"), not for ordinary game logic.
+7. **`projections`** — pure, per-viewer transformations of state into whatever that viewer is allowed to see. This is the privacy boundary — design one whenever a UI or a question needs to show something to a specific user.
+8. **`views`** — declarative client UI trees, each a pure function of one projection's output plus the view's own client-local state.
+9. **`presentation_slots`** — named places on the client a view can be mounted into (e.g. `"hud"`, `"modal"`, `"board"`).
+10. **`user_intents`** — typed actions a player can submit unprompted (e.g. "Roll", "PlayCard").
+11. **`questions`** — reusable request contracts a workflow can open and later receive a validated answer to.
+12. **`effects`** — purely cosmetic, client-facing presentation events (an animation, a sound cue) — never authoritative.
+13. **`workflows`** (plus `root_workflow` naming which one starts the game) — the actual state machines: parameters, local state, slots (question/ask-group/timer/child-workflow/task-group), presentations, states, and transitions.
 
 ## 3. JSON encoding rules (read this before writing any JSON)
 
@@ -217,6 +218,7 @@ A `SignalPattern` (used as a transition's `signal`, never null) is `{"source": S
 Definition = {
   "metadata": Metadata,                            // never null
   "types": [TypeDeclaration],
+  "players": PlayerPolicy,
   "resources": [ResourceDeclaration],
   "global_state": StateDeclaration,                // never null
   "functions": [FunctionDeclaration],
@@ -233,6 +235,7 @@ Definition = {
 // this exact key order — matches what the codec itself emits.
 
 Metadata               = { "id", "name", "description", "version", "language_version": string }
+PlayerPolicy           = { "min": number, "max": number }                   // use max 0 only for no upper bound
 StateDeclaration       = { "fields": [StateFieldDeclaration] }               // never null
 StateFieldDeclaration  = { "name": string, "type": TypeReference, "initializer": Expression }
 ResourceDeclaration    = { "name": string, "type": TypeReference, "value": Expression }

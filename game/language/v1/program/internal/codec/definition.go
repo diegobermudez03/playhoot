@@ -44,6 +44,7 @@ func decodeTypeDeclarationSlice(path string, items []json.RawMessage) ([]program
 type wireDefinition struct {
 	Metadata          json.RawMessage   `json:"metadata"`
 	Types             []json.RawMessage `json:"types"`
+	Players           json.RawMessage   `json:"players"`
 	Resources         []json.RawMessage `json:"resources"`
 	GlobalState       json.RawMessage   `json:"global_state"`
 	Functions         []json.RawMessage `json:"functions"`
@@ -60,7 +61,7 @@ type wireDefinition struct {
 
 // encodeDefinition encodes value, an ordinary (non-interface) struct, as
 // its JSON wire representation, using the canonical field order metadata,
-// types, resources, global_state, functions, invariants, projections,
+// types, players, resources, global_state, functions, invariants, projections,
 // views, presentation_slots, user_intents, questions, effects,
 // root_workflow, workflows. program.Metadata and GlobalState always encode as
 // ordinary objects, never JSON null.
@@ -70,6 +71,10 @@ func EncodeDefinition(path string, value program.Definition) (json.RawMessage, e
 		return nil, err
 	}
 	types, err := encodeTypeDeclarationSlice(pathField(path, "types"), value.Types)
+	if err != nil {
+		return nil, err
+	}
+	players, err := encodePlayerPolicy(pathField(path, "players"), value.Players)
 	if err != nil {
 		return nil, err
 	}
@@ -120,6 +125,7 @@ func EncodeDefinition(path string, value program.Definition) (json.RawMessage, e
 	return json.Marshal(wireDefinition{
 		Metadata:          metadata,
 		Types:             types,
+		Players:           players,
 		Resources:         resources,
 		GlobalState:       globalState,
 		Functions:         functions,
@@ -149,6 +155,10 @@ func DecodeDefinition(path string, data json.RawMessage) (program.Definition, er
 		return program.Definition{}, err
 	}
 	types, err := decodeTypeDeclarationSlice(pathField(path, "types"), wire.Types)
+	if err != nil {
+		return program.Definition{}, err
+	}
+	players, err := decodePlayerPolicy(pathField(path, "players"), wire.Players)
 	if err != nil {
 		return program.Definition{}, err
 	}
@@ -199,6 +209,7 @@ func DecodeDefinition(path string, data json.RawMessage) (program.Definition, er
 	return program.Definition{
 		Metadata:          metadata,
 		Types:             types,
+		Players:           players,
 		Resources:         resources,
 		GlobalState:       globalState,
 		Functions:         functions,

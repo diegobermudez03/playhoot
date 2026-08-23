@@ -14,6 +14,24 @@ func TestValidate_EmptyDefinition_NoErrors(t *testing.T) {
 	}
 }
 
+func TestValidate_PlayerPolicyMinGreaterThanMax_IsReported(t *testing.T) {
+	errs := gameservice.Validate(program.Definition{
+		Players: program.PlayerPolicy{Min: 6, Max: 4},
+	})
+	if len(errs) == 0 {
+		t.Fatal("expected a player policy error")
+	}
+	found := false
+	for _, err := range errs {
+		if ve, ok := err.(*gameservice.ValidationError); ok && ve.Path == "$.players" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected an error at $.players, got %v", errs)
+	}
+}
+
 func TestValidate_ArithmeticOnBoolLiteral_IsReported(t *testing.T) {
 	def := program.Definition{
 		Invariants: []program.InvariantDeclaration{

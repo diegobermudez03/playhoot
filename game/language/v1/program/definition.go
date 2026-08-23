@@ -12,6 +12,12 @@ type Definition struct {
 	Metadata Metadata
 	Types    []TypeDeclaration
 
+	// Players declares the authored player-count contract for rooms using
+	// this definition. Session/lobby code should enforce this before
+	// creating a Snapshot, so the app and definition do not drift into
+	// separate ideas of how many users the game supports.
+	Players PlayerPolicy
+
 	// Resources declares the game's immutable, program-level data. See
 	// ResourceDeclaration for its semantics.
 	Resources []ResourceDeclaration

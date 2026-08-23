@@ -287,7 +287,7 @@ func TestExactJSON_RootShape(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	expected := []string{
-		"metadata", "types", "resources", "global_state", "functions", "invariants",
+		"metadata", "types", "players", "resources", "global_state", "functions", "invariants",
 		"projections", "views", "presentation_slots", "user_intents", "questions",
 		"effects", "root_workflow", "workflows",
 	}

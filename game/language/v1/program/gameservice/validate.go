@@ -58,6 +58,7 @@ func Validate(d program.Definition) []error {
 	v := &validator{definition: d}
 	v.collectNames()
 
+	v.validatePlayers()
 	v.validateTypeDeclarations()
 	v.validateNamespaces()
 	v.validateResources()
@@ -69,6 +70,18 @@ func Validate(d program.Definition) []error {
 	v.validateWorkflows()
 
 	return v.errors
+}
+
+func (v *validator) validatePlayers() {
+	if v.definition.Players.Min < 0 {
+		v.addf("$.players.min", "minimum player count cannot be negative")
+	}
+	if v.definition.Players.Max < 0 {
+		v.addf("$.players.max", "maximum player count cannot be negative")
+	}
+	if v.definition.Players.Min > 0 && v.definition.Players.Max > 0 && v.definition.Players.Min > v.definition.Players.Max {
+		v.addf("$.players", "minimum player count cannot be greater than maximum player count")
+	}
 }
 
 type validator struct {

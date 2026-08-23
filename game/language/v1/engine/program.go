@@ -21,6 +21,11 @@ type Program struct {
 	// program.Definition.Metadata.
 	Metadata Metadata
 
+	// Players is the authored player-count contract carried from
+	// program.Definition. The engine runtime does not admit or reject users
+	// itself; callers read this before NewSnapshot and enforce lobby capacity.
+	Players PlayerPolicy
+
 	// Types holds every named type declared by the compiled
 	// program.Definition — enums, records, unions, and new types —
 	// keyed by declared name and fully resolved: a field whose source
