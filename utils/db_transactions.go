@@ -14,9 +14,11 @@ type DBServicer interface {
 
 func RunInDBTransaction[T any](ctx context.Context, dbServicer DBServicer, callback func(ctx context.Context, tx *gorm.DB) (T, error)) (T, error) {
 	var resultZeroValue T
-	tx := dbServicer.GetDB().Begin(&sql.TxOptions{})
+	tx := dbServicer.GetDB().WithContext(ctx).Begin(&sql.TxOptions{
+		Isolation: sql.LevelRepeatableRead,
+	})
 	if tx.Error != nil {
-		return resultZeroValue, fmt.Errorf("openning DB transaction: %s", tx.Error)
+		return resultZeroValue, fmt.Errorf("opening DB transaction: %w", tx.Error)
 	}
 
 	defer tx.Rollback()
@@ -25,7 +27,7 @@ func RunInDBTransaction[T any](ctx context.Context, dbServicer DBServicer, callb
 		return resultZeroValue, err
 	}
 	if err := tx.Commit().Error; err != nil {
-		return resultZeroValue, fmt.Errorf("commiting transaction: %s", err)
+		return resultZeroValue, fmt.Errorf("committing transaction: %w", err)
 	}
 
 	return result, nil
