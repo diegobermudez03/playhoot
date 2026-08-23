@@ -11,7 +11,6 @@ type game struct {
 	CurrentVersionID *uint  // Reference to game_versions
 	LogoImageURL     string
 	Visibility       string // public, team, direct share only, private, etc...
-	IsPublished      bool   // if false then its draft
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 	DeletedAt        *time.Time

@@ -19,7 +19,6 @@ func migration20260822000000Games() *gormigrate.Migration {
 					current_version_id BIGINT NULL,
 					logo_image_url TEXT NOT NULL,
 					visibility TEXT NOT NULL,
-					is_published BOOLEAN NOT NULL DEFAULT FALSE,
 					created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 					updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 					deleted_at TIMESTAMPTZ NULL
