@@ -16,7 +16,9 @@ type repo struct {
 }
 
 func newRepo(db *gorm.DB) *repo {
-	return &repo{}
+	return &repo{
+		db: db,
+	}
 }
 
 type gameWithVersion struct {

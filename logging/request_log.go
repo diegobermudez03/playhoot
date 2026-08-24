@@ -1,4 +1,4 @@
-package utils
+package logging
 
 import (
 	"context"
@@ -32,16 +32,23 @@ type logAction struct {
 	action uint8
 }
 
-type StepLog struct {
+type stepLog struct {
 	ctx context.Context
 }
 
-type LogField struct {
+type logField struct {
 	Key   string
 	Value any
 }
 
-func StartRequestLog(ctx context.Context) context.Context {
+func Field(key string, value any) logField {
+	return logField{
+		Key:   key,
+		Value: value,
+	}
+}
+
+func Start(ctx context.Context) context.Context {
 	requestLog := &RequestLog{
 		started: time.Now(),
 	}
@@ -49,10 +56,10 @@ func StartRequestLog(ctx context.Context) context.Context {
 	return context.WithValue(ctx, requestLogContextKey{}, requestLog)
 }
 
-func LoggingStep(ctx context.Context, stepName string) StepLog {
+func Step(ctx context.Context, stepName string) stepLog {
 	requestLog, ok := requestLogFromContext(ctx)
 	if !ok {
-		return StepLog{}
+		return stepLog{}
 	}
 	requestLog.mu.Lock()
 	defer requestLog.mu.Unlock()
@@ -61,12 +68,12 @@ func LoggingStep(ctx context.Context, stepName string) StepLog {
 		key:    stepName,
 		action: stepCreated,
 	})
-	return StepLog{
+	return stepLog{
 		ctx: ctx,
 	}
 }
 
-func (s StepLog) CloseStep() {
+func (s stepLog) Close() {
 	requestLog, ok := requestLogFromContext(s.ctx)
 	if !ok {
 		return
@@ -79,7 +86,7 @@ func (s StepLog) CloseStep() {
 	})
 }
 
-func LogFields(ctx context.Context, fields ...LogField) {
+func LogFields(ctx context.Context, fields ...logField) {
 	requestLog, ok := requestLogFromContext(ctx)
 	if !ok {
 		return
@@ -114,7 +121,7 @@ func LogError(ctx context.Context, err error) {
 	})
 }
 
-func LogLoopFields(ctx context.Context, loopName string, fields ...LogField) {
+func LogLoopFields(ctx context.Context, loopName string, fields ...logField) {
 	requestLog, ok := requestLogFromContext(ctx)
 	if !ok {
 		return

@@ -1,4 +1,4 @@
-package utils
+package logging
 
 import (
 	"bytes"
@@ -12,17 +12,17 @@ import (
 )
 
 func TestRequestLogSlogArgsBuildsOrderedStructuredScopes(t *testing.T) {
-	ctx := StartRequestLog(context.Background())
+	ctx := Start(context.Background())
 
-	LogFields(ctx, LogField{Key: "game_uuid", Value: "game-1"})
-	step := LoggingStep(ctx, "decode")
+	LogFields(ctx, logField{Key: "game_uuid", Value: "game-1"})
+	step := Step(ctx, "decode")
 	LogFields(ctx,
-		LogField{Key: "status", Value: "started"},
-		LogField{Key: "status", Value: "finished"},
+		logField{Key: "status", Value: "started"},
+		logField{Key: "status", Value: "finished"},
 	)
 	LogError(ctx, errors.New("decode warning"))
-	step.CloseStep()
-	LogFields(ctx, LogField{Key: "game_uuid", Value: "game-2"})
+	step.Close()
+	LogFields(ctx, logField{Key: "game_uuid", Value: "game-2"})
 
 	args := requestLogFromContextForTest(t, ctx).SlogArgs()
 
@@ -52,17 +52,17 @@ func TestRequestLogSlogArgsBuildsOrderedStructuredScopes(t *testing.T) {
 }
 
 func TestRequestLogSlogArgsBuildsNestedStepsAndLoopLists(t *testing.T) {
-	ctx := StartRequestLog(context.Background())
+	ctx := Start(context.Background())
 
-	load := LoggingStep(ctx, "load")
-	LogFields(ctx, LogField{Key: "repo", Value: "games"})
-	decode := LoggingStep(ctx, "decode")
-	LogFields(ctx, LogField{Key: "format", Value: "json"})
-	decode.CloseStep()
-	load.CloseStep()
+	load := Step(ctx, "load")
+	LogFields(ctx, logField{Key: "repo", Value: "games"})
+	decode := Step(ctx, "decode")
+	LogFields(ctx, logField{Key: "format", Value: "json"})
+	decode.Close()
+	load.Close()
 
-	LogLoopFields(ctx, "versions", LogField{Key: "uuid", Value: "v1"}, LogField{Key: "index", Value: 1})
-	LogLoopFields(ctx, "versions", LogField{Key: "uuid", Value: "v2"}, LogField{Key: "index", Value: 2})
+	LogLoopFields(ctx, "versions", logField{Key: "uuid", Value: "v1"}, logField{Key: "index", Value: 1})
+	LogLoopFields(ctx, "versions", logField{Key: "uuid", Value: "v2"}, logField{Key: "index", Value: 2})
 
 	args := requestLogFromContextForTest(t, ctx).SlogArgs()
 	assertArgKeys(t, args, []string{
@@ -99,10 +99,10 @@ func TestRequestLogSlogArgsBuildsNestedStepsAndLoopLists(t *testing.T) {
 }
 
 func TestRequestLogSlogArgsReportsUnclosedSteps(t *testing.T) {
-	ctx := StartRequestLog(context.Background())
+	ctx := Start(context.Background())
 
-	LoggingStep(ctx, "decode")
-	LoggingStep(ctx, "validate")
+	Step(ctx, "decode")
+	Step(ctx, "validate")
 
 	args := requestLogFromContextForTest(t, ctx).SlogArgs()
 	logged := renderJSONLog(t, args)
@@ -116,9 +116,9 @@ func TestRequestLogSlogArgsReportsUnclosedSteps(t *testing.T) {
 func TestRequestLogHelpersNoopWhenContextHasNoRequestLog(t *testing.T) {
 	ctx := context.Background()
 
-	LogFields(ctx, LogField{Key: "ignored", Value: true})
+	LogFields(ctx, logField{Key: "ignored", Value: true})
 	LogError(ctx, errors.New("ignored"))
-	LogLoopFields(ctx, "ignored", LogField{Key: "ignored", Value: true})
+	LogLoopFields(ctx, "ignored", logField{Key: "ignored", Value: true})
 	FinishRequestLog(ctx, slog.Default(), "ignored")
 
 	if _, ok := requestLogFromContext(ctx); ok {
@@ -127,8 +127,8 @@ func TestRequestLogHelpersNoopWhenContextHasNoRequestLog(t *testing.T) {
 }
 
 func TestFinishRequestLogWritesSingleStructuredLog(t *testing.T) {
-	ctx := StartRequestLog(context.Background())
-	LogFields(ctx, LogField{Key: "game_uuid", Value: "game-1"})
+	ctx := Start(context.Background())
+	LogFields(ctx, logField{Key: "game_uuid", Value: "game-1"})
 
 	var output bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&output, &slog.HandlerOptions{}))
@@ -150,14 +150,14 @@ func TestFinishRequestLogWritesSingleStructuredLog(t *testing.T) {
 }
 
 func TestRequestLogSupportsConcurrentWrites(t *testing.T) {
-	ctx := StartRequestLog(context.Background())
+	ctx := Start(context.Background())
 
 	var wg sync.WaitGroup
 	for i := 0; i < 50; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			LogFields(ctx, LogField{Key: "request_id", Value: "request-1"})
+			LogFields(ctx, logField{Key: "request_id", Value: "request-1"})
 			LogError(ctx, errors.New("temporary failure"))
 		}()
 	}
