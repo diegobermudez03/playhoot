@@ -8,9 +8,9 @@ func ValidateVisibility(visibility string) (game.VisibilityType, bool) {
 	case game.Draft:
 		return game.Draft, true
 	case game.Private:
-		return game.Draft, true
+		return game.Private, true
 	case game.Hidden:
-		return game.Draft, true
+		return game.Hidden, true
 	case game.Public:
 		return game.Public, true
 	}

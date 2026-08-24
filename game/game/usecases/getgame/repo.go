@@ -35,14 +35,17 @@ type gameWithVersion struct {
 // getGameCurrentVersion returns the game's latest version
 func (r *repo) getGameCurrentVersion(ctx context.Context, gameUUID string) (*gameWithVersion, error) {
 	var g gameWithVersion
-	err := r.db.WithContext(ctx).Raw(`
-		SELECT g.uuid, g.name, g.description, g.owner_uuid, g.logo_image_url, g.visibility, v.version_uuid, v.script
+	tx := r.db.WithContext(ctx).Raw(`
+		SELECT g.uuid, g.name, g.description, g.owner_uuid, g.logo_image_url, g.visibility, v.uuid AS version_uuid, v.script
 		FROM games g 
-		INNER JOIN game_versions v ON v.game_id = d.id 
-		WHERE uuid=?
-	`, gameUUID).Scan(&g).Error
-	if err != nil {
-		return nil, fmt.Errorf("fetching game by UUID in repo: %s", err)
+		INNER JOIN game_versions v ON v.id = g.current_version_id
+		WHERE g.uuid = ?
+	`, gameUUID).Scan(&g)
+	if tx.Error != nil {
+		return nil, fmt.Errorf("fetching game by UUID in repo: %s", tx.Error)
+	}
+	if tx.RowsAffected == 0 {
+		return nil, nil
 	}
 
 	return &g, nil

@@ -146,6 +146,9 @@ func LogLoopFields(ctx context.Context, loopName string, fields ...logField) {
 }
 
 func requestLogFromContext(ctx context.Context) (*RequestLog, bool) {
+	if ctx == nil {
+		return nil, false
+	}
 	requestLog, ok := ctx.Value(requestLogContextKey{}).(*RequestLog)
 	return requestLog, ok
 }
