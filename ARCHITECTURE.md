@@ -36,3 +36,6 @@ However, this pkg doesnt handle transportation protocol, it just receives method
     - `orchestrator` handles write operations (workflows), either if approach is coreography or orchestration, its stateful as it needs to store request for the SAGA's
 
 - `api` pkg is the only user facing expose pkg, exposes the endpoints, and internally redirects to appropiate domain (or `composer`/`orchestrator`)
+
+- a domain exposed methods should only receive and return its own domain types:
+  - There are only exceptions to specific use cases, as `session` pkg which its input types have the program Definition's, the reason is that `program` is a behavior only pkg, so its fine coupling session with it, because essentially we're saying that the behavior exposed by session depends on `program` behavior, but there's an important nuance, and its that `program` is an isolated behavior pkg, I mean, it could be a third party, thats the logic, its just a pkg which will never import any of our domains, it just exposes behavior. Instead, if `session` were to import `game/game`, even if we can say that "they are coupled and session cannot work without a game", its not allowed as game is not a behavior only pkg, is a system service

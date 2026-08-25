@@ -18,13 +18,15 @@
 - Wrapping errors with `%w` should be the exception, not the default.
 - By default, add context with `%s` so logs contain the full traversed error message, but callers cannot assert lower-level errors across package/domain boundaries.
 - If a service intentionally exposes a specific error to callers, define a clear sentinel error for that contract and wrap that sentinel with `%w`.
-- When logging an error, log a contextual `fmt.Errorf(...)` value rather than the raw lower-level error. Each layer should add a message that makes the error path easy to read, even if that creates several wrapper messages.
+- Do not log every returned error by default. If an error is being returned, entry points are expected to log it, so intermediate layers can usually omit logging.
+- Log an error when it will be ignored locally, swallowed, converted into a non-error path, or otherwise not returned to a caller that is expected to log it.
+- When logging an error, log a contextual `fmt.Errorf(...)` value rather than the raw lower-level error if contextual logging is needed.
 
 ### Data Integrity Alerts
 
-- For the current project stage, use panics as alert triggers for data-integrity violations and impossible persisted states.
-- Server-layer panic recovery will be handled later so these alerts do not shut down the process.
-- Returning ordinary errors for integrity problems can be ignored by callers; panics should make those problems visible. For example, an invalid persisted business visibility value is a DB integrity issue and should panic.
+- Use panics only for inconsistencies severe enough that the process should end and callers must also abort.
+- If there is an inconsistency or unexpected value but the code can still return a logical error and let the caller continue safely, do not panic.
+- In those non-fatal inconsistency cases, use the `monitoring` package to alert and return the normal error.
 
 ### Unit Test Shape
 

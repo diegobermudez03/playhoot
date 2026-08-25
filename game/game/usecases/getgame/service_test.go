@@ -14,14 +14,13 @@ import (
 
 //go:generate mockgen -package=getgame -destination=repo_mock_test.go . repoAPI
 
-func TestGetGameWithCurrentVersion(t *testing.T) {
+func TestGetPlayableGameWithCurrentVersion(t *testing.T) {
 	type test struct {
 		ctx          context.Context
 		gameUUID     string
 		expectedGame *game.Game
 		expectErr    bool
 		errAssert    require.ErrorAssertionFunc
-		expectPanic  bool
 	}
 
 	type svcMocks struct {
@@ -35,14 +34,14 @@ func TestGetGameWithCurrentVersion(t *testing.T) {
 	repoErr := errors.New("repo failed")
 
 	tests := map[string]func(t *testing.T, mocks *svcMocks) test{
-		"returns_game": func(t *testing.T, mocks *svcMocks) test {
+		"returns_playable_game": func(t *testing.T, mocks *svcMocks) test {
 			mocks.repo.EXPECT().getGameCurrentVersion(gomock.Any(), "game-uuid").Return(&gameWithVersion{
 				UUID:         "game-uuid",
 				Name:         "Parques",
 				Description:  "Race game",
 				OwnerUUID:    "owner-uuid",
 				LogoImageURL: "https://example.com/logo.png",
-				Visibility:   string(game.Private),
+				Visibility:   string(game.Public),
 				VersionUUID:  "version-uuid",
 				Script:       script,
 			}, nil)
@@ -55,7 +54,7 @@ func TestGetGameWithCurrentVersion(t *testing.T) {
 					Description:  "Race game",
 					OwnerUUID:    "owner-uuid",
 					LogoImageURL: "https://example.com/logo.png",
-					Visibility:   game.Private,
+					Visibility:   game.Public,
 					VersionUUID:  "version-uuid",
 					Definition:   definition,
 				},
@@ -76,6 +75,21 @@ func TestGetGameWithCurrentVersion(t *testing.T) {
 				expectErr: true,
 			}
 		},
+		"returns_non_playable_game_error": func(t *testing.T, mocks *svcMocks) test {
+			mocks.repo.EXPECT().getGameCurrentVersion(gomock.Any(), "game-uuid").Return(&gameWithVersion{
+				Visibility:  string(game.Private),
+				VersionUUID: "version-uuid",
+				Script:      script,
+			}, nil)
+			return test{
+				ctx:       context.Background(),
+				gameUUID:  "game-uuid",
+				expectErr: true,
+				errAssert: func(tt require.TestingT, err error, _ ...interface{}) {
+					require.ErrorIs(tt, err, game.ErrNonPlayableGame)
+				},
+			}
+		},
 		"returns_invalid_script_error": func(t *testing.T, mocks *svcMocks) test {
 			mocks.repo.EXPECT().getGameCurrentVersion(gomock.Any(), "game-uuid").Return(&gameWithVersion{
 				Visibility:  string(game.Public),
@@ -86,18 +100,24 @@ func TestGetGameWithCurrentVersion(t *testing.T) {
 				ctx:       context.Background(),
 				gameUUID:  "game-uuid",
 				expectErr: true,
+				errAssert: func(tt require.TestingT, err error, _ ...interface{}) {
+					require.ErrorIs(tt, err, game.ErrBrokenGame)
+				},
 			}
 		},
-		"panics_on_invalid_visibility": func(t *testing.T, mocks *svcMocks) test {
+		"returns_broken_game_error_on_invalid_visibility": func(t *testing.T, mocks *svcMocks) test {
 			mocks.repo.EXPECT().getGameCurrentVersion(gomock.Any(), "game-uuid").Return(&gameWithVersion{
 				Visibility:  "bad-visibility",
 				VersionUUID: "version-uuid",
 				Script:      script,
 			}, nil)
 			return test{
-				ctx:         context.Background(),
-				gameUUID:    "game-uuid",
-				expectPanic: true,
+				ctx:       context.Background(),
+				gameUUID:  "game-uuid",
+				expectErr: true,
+				errAssert: func(tt require.TestingT, err error, _ ...interface{}) {
+					require.ErrorIs(tt, err, game.ErrBrokenGame)
+				},
 			}
 		},
 	}
@@ -109,14 +129,7 @@ func TestGetGameWithCurrentVersion(t *testing.T) {
 			tc := setup(t, mocks)
 			useCase := &UseCase{repo: mocks.repo}
 
-			if tc.expectPanic {
-				require.Panics(t, func() {
-					_, _ = useCase.GetGameWithCurrentVersion(tc.ctx, tc.gameUUID)
-				})
-				return
-			}
-
-			got, err := useCase.GetGameWithCurrentVersion(tc.ctx, tc.gameUUID)
+			got, err := useCase.GetPlayableGameWithCurrentVersion(tc.ctx, tc.gameUUID)
 			if tc.expectErr {
 				require.Error(t, err)
 				if tc.errAssert != nil {

@@ -8,6 +8,7 @@ import (
 	"github.com/diegobermudez03/playhoot/game/game/internal/businessservice"
 	"github.com/diegobermudez03/playhoot/game/language/v1/program/gameservice"
 	"github.com/diegobermudez03/playhoot/logging"
+	"github.com/diegobermudez03/playhoot/monitoring"
 	"gorm.io/gorm"
 )
 
@@ -41,9 +42,8 @@ func (c *UseCase) GetPlayableGameWithCurrentVersion(ctx context.Context, gameUUI
 	logging.LogFields(ctx, logging.Field("visibility", g.Visibility))
 	visbility, ok := businessservice.ValidateVisibility(g.Visibility)
 	if !ok {
-		err := fmt.Errorf("invalid visibility %s", g.Visibility)
-		logging.LogError(ctx, err)
-		panic(err.Error())
+		monitoring.Alert(ctx, fmt.Sprintf("invalid visibility %s", g.Visibility))
+		return nil, game.ErrBrokenGame
 	}
 
 	if !businessservice.IsPlayableVisibility(visbility) {
@@ -52,10 +52,8 @@ func (c *UseCase) GetPlayableGameWithCurrentVersion(ctx context.Context, gameUUI
 
 	programDefinition, err := gameservice.DecodeJSON([]byte(g.Script))
 	if err != nil {
-		// panic because we should only allow a game to hava  playable visibility if its script is correct
-		err := fmt.Errorf("playable game has invalid script %s", g.Visibility)
-		logging.LogError(ctx, err)
-		panic(err.Error())
+		monitoring.Alert(ctx, "playable game with invalid script")
+		return nil, game.ErrBrokenGame
 	}
 
 	return &game.Game{
