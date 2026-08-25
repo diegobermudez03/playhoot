@@ -13,7 +13,7 @@ func migration20260817000001Sessions() *gormigrate.Migration {
 				CREATE TABLE sessions (
 					id BIGSERIAL PRIMARY KEY,
 					uuid UUID NOT NULL UNIQUE,
-					game_version_uuid UUID NOT NULL,
+					game_definition_uuid UUID NOT NULL,
 					owner_uuid UUID NOT NULL,
 					started_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 					ended_at TIMESTAMPTZ NULL,
@@ -28,7 +28,7 @@ func migration20260817000001Sessions() *gormigrate.Migration {
 			if err := tx.Exec(`
 				CREATE TABLE session_players (
 					id BIGSERIAL PRIMARY KEY,
-					session_id UUID NOT NULL REFERENCES sessions (uuid),
+					session_id UUID NOT NULL,
 					player_uuid UUID NOT NULL,
 					joined_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 					left_at TIMESTAMPTZ NULL,
@@ -45,7 +45,7 @@ func migration20260817000001Sessions() *gormigrate.Migration {
 				CREATE TABLE join_codes (
 					id BIGSERIAL PRIMARY KEY,
 					code INTEGER NOT NULL,
-					session_id UUID NOT NULL REFERENCES sessions (uuid),
+					session_id UUID NOT NULL,
 					created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 					deleted_at TIMESTAMPTZ NULL,
 					CONSTRAINT join_codes_code_range

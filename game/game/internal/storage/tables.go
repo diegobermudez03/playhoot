@@ -3,22 +3,22 @@ package repo
 import "time"
 
 type game struct {
-	ID               uint   // PK, incremental
-	UUID             string // UUID, exported one
-	Name             string // string, max 32 chars
-	Description      string // string, max 255 chars
-	OwnerUUID        string // extenral reference
-	CurrentVersionID *uint  // Reference to game_versions
-	LogoImageURL     string
-	Visibility       string // public, team, direct share only, private, etc...
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
-	DeletedAt        *time.Time
+	ID                  uint   // PK, incremental
+	UUID                string // UUID, exported one, INDEX UNIQUE
+	Name                string // string, max 32 chars
+	Description         string // string, max 255 chars
+	OwnerUUID           string // extenral reference, INDEX
+	CurrentDefinitionID *uint  // Reference to game_definitions, INDEX UNIQUE
+	LogoImageURL        string
+	Visibility          string // public, team, direct share only, private, etc...
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+	DeletedAt           *time.Time
 }
 
 type gameImages struct {
 	ID        uint   // PK, incremental
-	GameID    uint   // Reference to games table
+	GameID    uint   // Reference to games table, INDEX
 	ImageURL  string // url string
 	CreatedAt time.Time
 	RemovedAt *time.Time
@@ -31,7 +31,7 @@ type gameImages struct {
 // then new record will store those columns new valuees
 type gameHistory struct {
 	ID           uint    // PK, incremental
-	GameID       uint    // reference to games table
+	GameID       uint    // reference to games table, INDEX
 	Name         *string // Name at the given time, nullable
 	Description  *string // description at that given time, nullable
 	LogoImageURL *string // url at that given time, nullable
@@ -40,10 +40,10 @@ type gameHistory struct {
 	CreatedAt    time.Time
 }
 
-type gameVersion struct {
+type gameDefinition struct {
 	ID            uint       // PK, incremental
-	UUID          string     // exported uuid
-	GameID        uint       // reference to the game ID
+	UUID          string     // exported uuid, INDEX UNIQUE
+	GameID        uint       // reference to the game ID, INDEX
 	VersionNumber uint       // incremental for each new version of the game
 	Script        string     // raw text with the script (as json)
 	PublishedAt   *time.Time // once the version is published then the version cannot be updated, new version must be created
@@ -56,12 +56,12 @@ type gameVersion struct {
 // so the first history record is created at the same time the original record is created, it contains all the values
 // then for each new change, we'll compare all new column values with the latest history non null value for those columns, if value changed
 // then new record will store those columns new valuees
-type gameVersionHistory struct {
-	ID            uint
-	GameVersionID uint
-	Script        *string    // nullable
-	PublishedAt   *time.Time // nullable
-	DisabledAt    *time.Time // nullable
+type gameDefinitionHistory struct {
+	ID               uint
+	GameDefinitionID uint       // INDEX
+	Script           *string    // nullable
+	PublishedAt      *time.Time // nullable
+	DisabledAt       *time.Time // nullable
 
 	CreatedAt time.Time
 }

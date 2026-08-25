@@ -14,10 +14,10 @@ func MigrateTables(db *gorm.DB) error {
 		ValidateUnknownMigrations: false,
 	}, []*gormigrate.Migration{
 		migration20260822000000Games(),
-		migration20260822000001GameVersions(),
+		migration20260822000001GameDefinitions(),
 		migration20260822000002GameImages(),
 		migration20260822000003GameHistories(),
-		migration20260822000004GameVersionHistories(),
+		migration20260822000004GameDefinitionHistories(),
 	})
 
 	return migrator.Migrate()

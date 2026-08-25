@@ -104,7 +104,7 @@ type testGameInsert struct {
 	Name             string `gorm:"column:name"`
 	Description      string `gorm:"column:description"`
 	OwnerUUID        string `gorm:"column:owner_uuid"`
-	CurrentVersionID *uint  `gorm:"column:current_version_id"`
+	CurrentDefinitionID *uint `gorm:"column:current_definition_id"`
 	LogoImageURL     string `gorm:"column:logo_image_url"`
 	Visibility       string `gorm:"column:visibility"`
 }
@@ -122,7 +122,7 @@ type testGameVersionInsert struct {
 }
 
 func (testGameVersionInsert) TableName() string {
-	return "game_versions"
+	return "game_definitions"
 }
 
 func seedGetGameCurrentVersion(t *testing.T, db *gorm.DB, seed getGameSeed) {
@@ -156,7 +156,7 @@ func seedGetGameCurrentVersion(t *testing.T, db *gorm.DB, seed getGameSeed) {
 
 	require.NoError(t, db.Exec(`
 		UPDATE games
-		SET current_version_id = ?
+		SET current_definition_id = ?
 		WHERE id = ?
 	`, currentVersionRow.ID, gameRow.ID).Error)
 }

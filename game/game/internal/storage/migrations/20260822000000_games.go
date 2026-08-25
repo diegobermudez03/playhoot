@@ -16,7 +16,7 @@ func migration20260822000000Games() *gormigrate.Migration {
 					name VARCHAR(32) NOT NULL,
 					description VARCHAR(255) NOT NULL,
 					owner_uuid UUID NOT NULL,
-					current_version_id BIGINT NULL,
+					current_definition_id BIGINT NULL,
 					logo_image_url TEXT NOT NULL,
 					visibility TEXT NOT NULL,
 					created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,

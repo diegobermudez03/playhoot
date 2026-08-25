@@ -13,7 +13,7 @@ func migration20260817000000SessionStates() *gormigrate.Migration {
 				CREATE TABLE session_states (
 					id BIGSERIAL PRIMARY KEY,
 					state_number BIGINT NOT NULL,
-					session_id BIGINT NOT NULL REFERENCES sessions (id),
+					session_id BIGINT NOT NULL,
 					json_state JSONB NOT NULL,
 					created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 					CONSTRAINT session_states_session_id_state_number_key
