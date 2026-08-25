@@ -21,32 +21,41 @@ func New(db *gorm.DB) *UseCase {
 	}
 }
 
-func (c *UseCase) GetGameWithCurrentVersion(ctx context.Context, gameUUID string) (*game.Game, error) {
+// GetPlayableGameWithCurrentVersion returns the playable game by its uuid
+// - Playable game means that its visibility is playable
+func (c *UseCase) GetPlayableGameWithCurrentVersion(ctx context.Context, gameUUID string) (*game.Game, error) {
 	defer logging.Step(ctx, "GetGameWithCurrentVersion").Close()
 	logging.LogFields(ctx, logging.Field("game_uuid", gameUUID))
+
 	g, err := c.repo.getGameCurrentVersion(ctx, gameUUID)
 	if err != nil {
-		err = fmt.Errorf("fetching game in service: %s", err)
-		logging.LogError(ctx, err)
-		return nil, err
+		return nil, fmt.Errorf("fetching game in service: %s", err)
 	}
+	logging.LogFields(ctx, logging.Field("found", g != nil))
+
 	// not found or non existent
 	if g == nil {
 		return nil, nil
 	}
 
-	programDefinition, err := gameservice.DecodeJSON([]byte(g.Script))
-	if err != nil {
-		err = fmt.Errorf("decoding current game version script: %s", err)
-		logging.LogError(ctx, err)
-		return nil, err
-	}
-
+	logging.LogFields(ctx, logging.Field("visibility", g.Visibility))
 	visbility, ok := businessservice.ValidateVisibility(g.Visibility)
 	if !ok {
 		err := fmt.Errorf("invalid visibility %s", g.Visibility)
 		logging.LogError(ctx, err)
-		panic(err)
+		panic(err.Error())
+	}
+
+	if !businessservice.IsPlayableVisibility(visbility) {
+		return nil, game.ErrNonPlayableGame
+	}
+
+	programDefinition, err := gameservice.DecodeJSON([]byte(g.Script))
+	if err != nil {
+		// panic because we should only allow a game to hava  playable visibility if its script is correct
+		err := fmt.Errorf("playable game has invalid script %s", g.Visibility)
+		logging.LogError(ctx, err)
+		panic(err.Error())
 	}
 
 	return &game.Game{

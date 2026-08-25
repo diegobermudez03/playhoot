@@ -17,3 +17,10 @@ func ValidateVisibility(visibility string) (game.VisibilityType, bool) {
 
 	return "", false
 }
+
+func IsPlayableVisibility(visbility game.VisibilityType) bool {
+	if visbility == game.Hidden || visbility == game.Public {
+		return true
+	}
+	return false
+}
