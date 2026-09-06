@@ -634,4 +634,4 @@ Many product decisions are still open, including:
 
 These open questions do not change the central product idea:
 
-> A creator describes a social multiplayer game, the platform turns that intent into a validated and playable experience, and players join a room to play it together.
+> A creator describes a social multiplayer game, the platform turns that intent into a validated and playable experience, and players join a room to play it together
