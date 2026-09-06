@@ -88,7 +88,4 @@ These questions are unresolved. They are not necessarily launch blockers.
 - Supported room-size limits.
 - Exact mobile/desktop requirements.
 - Remixing behavior.
-- Creator analytics.
-- Creator collaboration.
-- Persistent progression across sessions.
 - Monetization policy and mechanics.

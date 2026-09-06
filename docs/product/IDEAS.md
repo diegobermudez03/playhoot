@@ -27,4 +27,4 @@ This file preserves ideas and hypotheses. Nothing in this file is approved, plan
 - Community remixing.
 - Persistent progression across sessions.
 - Advanced import/inspection workflows.
-- Public discovery ranking or marketplace-style experiences.
+- Advanced discovery ranking, recommendations, and curation.
