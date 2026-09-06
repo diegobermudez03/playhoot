@@ -29,7 +29,9 @@ A top-level repository directory does not automatically establish an accepted bu
 
 ## Domain Boundaries
 
-A business domain must not directly coordinate operations with another Playhoot business domain.
+A Playhoot business domain must not directly invoke another Playhoot business domain's capabilities.
+
+Cross-domain read composition belongs to Composer. Cross-domain write/workflow coordination belongs to Orchestrator. The concrete communication mechanism remains workflow-specific; this rule does not require synchronous calls, events, queues, choreography, or any other universal mechanism.
 
 Domains expose operations that protect and operate on their own business responsibilities. A domain must not directly reach into another domain's persistence.
 
