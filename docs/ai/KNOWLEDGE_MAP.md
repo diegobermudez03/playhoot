@@ -29,7 +29,7 @@ This is a machine-facing routing document. It does not explain Playhoot. It tell
 | Domain DB schema | `<domain>/docs/DATA_MODEL.md` | DOMAIN-DEPENDENT | migrations plus persistence code |
 | Domain current flows | `<domain>/docs/FLOWS.md` | DOMAIN-DEPENDENT | implementation plus tests |
 | Domain documentation template | `docs/ai/templates/domain/` | AVAILABLE | |
-| Engineering standards | `docs/engineering/standards/INDEX.md` and referenced standards | PLANNED | `AGENTS.md` "Project Patterns" |
+| Engineering standards | `docs/engineering/standards/INDEX.md` and referenced standards | AVAILABLE | |
 | Engineering recommendations / future concerns | `docs/engineering/ENGINEERING_RADAR.md` | PLANNED / NON-AUTHORITATIVE | |
 | Architecture decision rationale | `docs/decisions/architecture/*` | PLANNED | |
 | Product decision rationale | `docs/decisions/product/*` | PLANNED | |

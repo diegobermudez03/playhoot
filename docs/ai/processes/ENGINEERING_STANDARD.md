@@ -13,6 +13,7 @@ Create or modify a reusable engineering, design, or coding standard.
 
 - The rule is only needed for one local implementation.
 - The real question is product or architecture.
+- The proposed rule is a global architecture rule. Use `ARCHITECTURE_DISCUSSION.md` instead.
 - You want to refactor the repository immediately. Use `FEATURE_DEVELOPMENT.md` after the standard and migration strategy are accepted.
 
 ## Starting Information
@@ -80,6 +81,8 @@ Choose one:
 
 Defining a standard must not automatically authorize refactoring the entire repository.
 
+If migration requires code changes, create or use a separate `FEATURE_DEVELOPMENT.md` work specification.
+
 ## Possible Outputs
 
 - No standard needed.
@@ -90,7 +93,13 @@ Defining a standard must not automatically authorize refactoring the entire repo
 
 ## Persistence / Documentation Rules
 
-Persist accepted standards in the canonical engineering standards location once available. Until then, use the current fallback identified by the Knowledge Map. Do not create planned engineering-standard documents unless that is explicitly approved.
+Persist accepted reusable standards under `docs/engineering/standards/`.
+
+Route accepted standards from `docs/engineering/standards/INDEX.md`. Update the index when standards are added, removed, or renamed.
+
+Do not duplicate global architecture rules as engineering standards. Route global architecture changes to `ARCHITECTURE_DISCUSSION.md`.
+
+Updating or accepting a standard does not authorize repository-wide migration.
 
 ## Completion Criteria
 
