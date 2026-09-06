@@ -200,3 +200,5 @@ Completed material implementation should be reviewed against:
 - failure modes;
 - tests;
 - documentation synchronization.
+
+The operational implementation and independent-review protocol lives at `docs/ai/protocols/IMPLEMENTATION_REVIEW.md`.

@@ -102,7 +102,7 @@ Current-state documentation must not be updated to future state before code is i
 - Approve the scope after the Scope Challenge Gate.
 - Accept important product, architecture, domain, persistence, consistency, security, infrastructure, or standard decisions.
 - Approve Definition of Ready before Codex handoff.
-- Decide whether review findings require fixes.
+- Decide material/decision-required review findings and any material changes to the approved WORK.
 
 ## Definition of Ready
 
@@ -117,21 +117,21 @@ Current-state documentation must not be updated to future state before code is i
 ## Codex Handoff Prompt
 
 ```text
-We are implementing an approved Feature Development specification for Playhoot.
+Implement the approved Playhoot work specification:
 
-Approved work specification:
 docs/work/active/WORK-NNNN-short-title.md
 
-Read AGENTS.md. Read docs/ai/OPERATING_MODEL.md. Use docs/ai/KNOWLEDGE_MAP.md to load only relevant context. Read the current READY work specification from the repository. Inspect the real implementation, tests, and migrations before changing code.
+It is READY.
 
-Follow the approved decisions. Retain autonomy for local implementation details within the specification. Escalate material discoveries using the DISCOVERY format from docs/ai/OPERATING_MODEL.md instead of silently redesigning product behavior, architecture, domain boundaries, persistence, consistency, security, infrastructure, or engineering standards.
+Follow:
+docs/ai/protocols/IMPLEMENTATION_REVIEW.md
 
-Implement the feature and relevant tests. Run relevant verification. After implementation, update only documentation explicitly required by the specification. Flag additional documentation impacts instead of silently rewriting canonical knowledge.
-
-Report implementation summary, local design decisions, deviations, discoveries, tests run, and documentation changes.
+Codex is responsible for loading AGENTS.md, the Operating Model, Knowledge Map, WORK spec, and relevant implementation context as defined by the protocol.
 ```
 
-## Codex Discovery / Escalation Loop
+## Implementation / Review Protocol
+
+The operational implementation, DISCOVERY, report, independent-review, fix, re-review, and closure protocol lives at `docs/ai/protocols/IMPLEMENTATION_REVIEW.md`.
 
 If Codex discovers material drift or an unapproved material decision, pause that part of the work and report DISCOVERY. Continue only work that remains valid without the decision.
 
@@ -139,23 +139,54 @@ When implementation begins, transition the work spec from READY to IMPLEMENTING.
 
 If a material approved change is required before or during implementation, return the work spec to DRAFT and require explicit human re-approval before returning it to READY.
 
-After implementation, independent review, required fixes, verification, and documentation synchronization are complete, mark the work spec DONE and move the file to `docs/work/completed/`.
+Implementation completion leaves the WORK in IMPLEMENTING. There is no REVIEWING, REVIEW_READY, or AWAITING_REVIEW WORK status; review verdicts are not WORK statuses.
+
+REQUIRED_FIX findings that fit the approved design return to Codex for fixes without requiring a new material human decision. DECISION_REQUIRED findings return to Design AI/human. NON_BLOCKING suggestions do not automatically expand scope.
+
+Required fixes receive independent re-review.
+
+After implementation, APPROVED independent review, required fixes, verification, and documentation synchronization are complete, mark the work spec DONE and move the file to `docs/work/completed/`.
 
 CANCELLED work also moves to `docs/work/completed/`.
 
 ## Independent Review Prompt
 
 ```text
-We are independently reviewing completed Playhoot implementation work.
+Independently review the implementation of:
 
-Read AGENTS.md. Read docs/ai/OPERATING_MODEL.md. Use docs/ai/KNOWLEDGE_MAP.md to load relevant context. Read the approved WORK specification and inspect the implementation, tests, migrations, and documentation changed by the work.
-
-Review without relying on the implementation agent's assumptions. Check specification compliance, architecture/domain boundaries, engineering standards, public contracts, persistence/data correctness, consistency/concurrency where applicable, security, observability/error handling, failure modes, tests, unnecessary complexity, and documentation drift.
-
-Prioritize findings by severity with file/line references where possible. Do not rewrite code unless asked. Distinguish EXISTING, PROPOSED, ACCEPTED, and IMPLEMENTED facts. Detect and report drift.
-
-Approved work specification:
 docs/work/active/WORK-NNNN-short-title.md
+
+Follow:
+docs/ai/protocols/IMPLEMENTATION_REVIEW.md
+
+Do not modify files.
+```
+
+## Fix Handoff Prompt
+
+```text
+Address the REQUIRED_FIX findings from the independent review for:
+
+docs/work/active/WORK-NNNN-short-title.md
+
+Follow:
+docs/ai/protocols/IMPLEMENTATION_REVIEW.md
+
+Review report:
+[paste review report]
+```
+
+## Closure Prompt
+
+```text
+Close the Playhoot work:
+
+docs/work/active/WORK-NNNN-short-title.md
+
+The independent review verdict is APPROVED.
+
+Follow the closure rules in:
+docs/ai/protocols/IMPLEMENTATION_REVIEW.md
 ```
 
 ## Possible Outputs
