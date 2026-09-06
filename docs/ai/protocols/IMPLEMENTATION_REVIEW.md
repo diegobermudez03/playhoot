@@ -402,6 +402,30 @@ Do not allow the reviewer or Codex to self-approve the revised design.
 
 The human must decide DECISION_REQUIRED findings, material changes to the approved WORK, and whether to consciously accept an exceptional unresolved risk/deviation that would otherwise block DONE.
 
+Human acceptance of an exceptional risk, limitation, or deviation does not bypass the review gate.
+
+Do not simply ignore/defer a blocking finding. Determine whether accepting it materially changes the approved WORK or an accepted product/architecture/domain/standard constraint.
+
+If acceptance is material:
+
+1. return WORK to DRAFT;
+2. route/update any canonical decision through its owning process;
+3. update the WORK;
+4. obtain explicit human re-approval;
+5. return to READY;
+6. resume IMPLEMENTING;
+7. perform independent review again.
+
+If acceptance is non-material and genuinely clarifies an accepted limitation inside the existing approved contract:
+
+1. record/communicate the human-approved resolution;
+2. perform re-review as necessary;
+3. the reviewer determines whether the original finding is resolved or no longer blocking.
+
+Do not create a new review disposition or verdict for accepted risk. APPROVED cannot coexist with unresolved REQUIRED_FIX or DECISION_REQUIRED findings.
+
+The final Completion Record may record approved limitations/deviations, but that is historical documentation of the resolved outcome, not a mechanism for bypassing review.
+
 A concrete REQUIRED_FIX that brings implementation into compliance with already-approved scope/design normally does not require a new human product or architecture decision.
 
 NON_BLOCKING suggestions do not become current scope automatically.
@@ -409,6 +433,8 @@ NON_BLOCKING suggestions do not become current scope automatically.
 ## Closure
 
 Only close the WORK after an independent review verdict of APPROVED and after Feature Development completion criteria are satisfied.
+
+At closure there must be no unresolved REQUIRED_FIX or DECISION_REQUIRED findings.
 
 Before closure verify:
 

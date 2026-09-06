@@ -216,7 +216,9 @@ Do not require human line-by-line review of all code. Recommend deeper human rev
 - Definition of Ready was met before implementation.
 - Implementation and tests are complete.
 - Relevant verification has run or limitations are reported.
-- Independent review is complete and required findings are fixed or consciously deferred.
+- Independent review verdict is APPROVED.
+- No REQUIRED_FIX or DECISION_REQUIRED finding remains unresolved.
+- Any human-accepted exceptional limitation/deviation has been resolved through the implementation/review protocol and recorded where appropriate.
 - Required documentation synchronization is complete.
 - No unresolved material drift was introduced by the task.
 - DONE or CANCELLED work specs are moved from `docs/work/active/` to `docs/work/completed/`.
