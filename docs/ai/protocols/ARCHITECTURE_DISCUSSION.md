@@ -25,6 +25,13 @@ For non-trivial or multi-session work, maintain `docs/ai/workspaces/active/<arch
 - Synchronize accepted architecture/domain documentation in the same change when practical.
 - Keep future or unimplemented designs out of current-state diagrams.
 - Route implementation impact to Feature Development and WORK.
+- For non-trivial or multi-session workspaces, maintain the paired
+  `docs/ai/workspaces/active/<architecture-topic>/AI_CONTEXT.md` alongside
+  `HUMAN_REVIEW.md` and follow `docs/ai/workspaces/README.md`.
+- Before asking for a material decision, ensure the workspace has enough
+  persisted state for a fresh agent to resume. When the human answers, update
+  the active process state and/or durable owner before future continuation
+  depends on it, keeping the human-facing checkpoint current where practical.
 
 No material architecture decision may exist only in `AI_CONTEXT.md`.
 

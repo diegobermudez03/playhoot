@@ -36,6 +36,13 @@ For editorial corrections, a direct concise explanation is enough.
 - Validate stale references, routing, lifecycle semantics, templates, protocols, and compatibility.
 - Append a material workflow entry to `docs/ai/CHANGELOG.md`.
 - Preserve existing active/historical artifact semantics unless the approved compatibility plan says otherwise.
+- For non-trivial or multi-session workspaces, maintain the paired
+  `docs/ai/workspaces/active/<workflow-topic>/AI_CONTEXT.md` alongside
+  `HUMAN_REVIEW.md` and follow `docs/ai/workspaces/README.md`.
+- Before asking for a material decision, ensure the workspace has enough
+  persisted state for a fresh agent to resume. When the human answers, update
+  the active process state and/or durable owner before future continuation
+  depends on it, keeping the human-facing checkpoint current where practical.
 
 No material workflow decision may exist only in `AI_CONTEXT.md`.
 

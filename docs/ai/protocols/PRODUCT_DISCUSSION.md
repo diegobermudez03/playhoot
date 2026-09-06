@@ -23,6 +23,13 @@ For non-trivial or multi-session work, maintain `docs/ai/workspaces/active/<prod
 - Synchronize accepted product decisions to canonical product owners.
 - Put deferred ideas in non-authoritative idea/radar locations only when useful.
 - Route accepted implementation work to Feature Development and WORK.
+- For non-trivial or multi-session workspaces, maintain the paired
+  `docs/ai/workspaces/active/<product-topic>/AI_CONTEXT.md` alongside
+  `HUMAN_REVIEW.md` and follow `docs/ai/workspaces/README.md`.
+- Before asking for a material decision, ensure the workspace has enough
+  persisted state for a fresh agent to resume. When the human answers, update
+  the active process state and/or durable owner before future continuation
+  depends on it, keeping the human-facing checkpoint current where practical.
 
 No material product decision may exist only in `AI_CONTEXT.md`.
 

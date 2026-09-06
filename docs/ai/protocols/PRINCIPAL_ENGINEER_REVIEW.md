@@ -23,6 +23,13 @@ For non-trivial or multi-session reviews, maintain `docs/ai/workspaces/active/<r
 - Synchronize meaningful current recommendations into the Radar.
 - Do not persist every observation, adequate area, transient note, or generic best practice.
 - Do not create work, decisions, or standards merely because a recommendation is NOW.
+- For non-trivial or multi-session workspaces, maintain the paired
+  `docs/ai/workspaces/active/<review-topic>/AI_CONTEXT.md` alongside
+  `HUMAN_REVIEW.md` and follow `docs/ai/workspaces/README.md`.
+- Before asking for a material decision, ensure the workspace has enough
+  persisted state for a fresh agent to resume. When the human answers, update
+  the active process state and/or durable owner before future continuation
+  depends on it, keeping the human-facing checkpoint current where practical.
 
 No material decision may exist only in `AI_CONTEXT.md`.
 

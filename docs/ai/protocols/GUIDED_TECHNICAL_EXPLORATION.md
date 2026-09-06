@@ -23,6 +23,13 @@ For non-trivial or multi-session work, maintain `docs/ai/workspaces/active/<expl
 - Persist meaningful non-authoritative recommendations to `docs/engineering/ENGINEERING_RADAR.md` when useful.
 - Route accepted outcomes to their proper canonical owner through the owning process.
 - Do not update current-state docs to describe future possibilities.
+- For non-trivial or multi-session workspaces, maintain the paired
+  `docs/ai/workspaces/active/<exploration-topic>/AI_CONTEXT.md` alongside
+  `HUMAN_REVIEW.md` and follow `docs/ai/workspaces/README.md`.
+- Before asking for a material decision, ensure the workspace has enough
+  persisted state for a fresh agent to resume. When the human answers, update
+  the active process state and/or durable owner before future continuation
+  depends on it, keeping the human-facing checkpoint current where practical.
 
 No material decision may exist only in `AI_CONTEXT.md`.
 
