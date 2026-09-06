@@ -10,6 +10,28 @@ Most of the time you only need:
 
 You normally do not need to read `docs/ai/protocols/`, `docs/ai/OPERATING_MODEL.md`, `docs/ai/KNOWLEDGE_MAP.md`, templates, or `AI_CONTEXT.md` unless you want to inspect how the workflow works internally.
 
+## Which AI do I use?
+
+Playhoot's workflow is organized around capability, not product. You should never have to guess whether to paste something into a chat tool or a coding tool.
+
+- CONVERSATIONAL AI -> discussion, reasoning, design, decisions.
+- CODEBASE AGENT -> repository inspection/mutation, implementation, tests.
+- FRESH CODEBASE AGENT / INDEPENDENT REVIEWER -> implementation review.
+
+Every process below labels which surface each step requires. You should never have to infer "do I paste this into a chat tool or a coding tool?" on your own.
+
+When you start or resume a process in a CONVERSATIONAL AI, include the repository identity so it knows what it can reason about:
+
+```text
+Repository:
+https://github.com/diegobermudez03/playhoot
+
+Repository ref:
+<branch or commit>
+```
+
+`main` is fine when current pushed `main` is what you want inspected. A Conversational AI can only reason about repository state it can actually access — if what matters is uncommitted or unpushed, push it first or route the step through a Codebase Agent instead.
+
 ## Process Menu
 
 - Product question: `docs/ai/processes/PRODUCT_DISCUSSION.md`

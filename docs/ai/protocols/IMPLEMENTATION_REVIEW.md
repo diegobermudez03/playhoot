@@ -16,13 +16,13 @@ Actor roles and material decision boundaries are owned by `docs/ai/OPERATING_MOD
 
 ## Preconditions For Implementation
 
-Before Codex changes implementation:
+Before a Codebase Agent changes implementation:
 
 1. The referenced WORK file must exist under `docs/work/active/`.
 2. Its status must be READY unless work is legitimately resuming from IMPLEMENTING.
 3. A DRAFT WORK has no implementation authority.
 4. A CANCELLED or DONE WORK must not be implemented.
-5. Codex must read `AGENTS.md`, `docs/ai/OPERATING_MODEL.md`, `docs/ai/KNOWLEDGE_MAP.md`, and the referenced WORK specification.
+5. The Codebase Agent must read `AGENTS.md`, `docs/ai/OPERATING_MODEL.md`, `docs/ai/KNOWLEDGE_MAP.md`, and the referenced WORK specification.
 6. Use the Knowledge Map to load only task-relevant canonical/domain/standard context.
 7. Inspect actual code, tests, migrations, and relevant current-state documentation before making implementation assumptions.
 8. Inspect the current Git/worktree state sufficiently to distinguish the work being implemented from unrelated pre-existing user changes.
@@ -38,11 +38,11 @@ When implementation actually begins, transition the WORK file from READY to IMPL
 
 This transition does not require a new human decision because READY already contains explicit implementation authorization.
 
-Codex must not modify the approved scope/design merely while performing this status transition.
+The Codebase Agent must not modify the approved scope/design merely while performing this status transition.
 
-## Implementation Agent Behavior
+## Codebase Agent Behavior
 
-Codex should:
+The Codebase Agent should:
 
 - implement the approved scope;
 - follow relevant canonical architecture/domain knowledge;
@@ -54,7 +54,7 @@ Codex should:
 - update implementation/current-state documentation explicitly required by the WORK when the implementation now makes that documentation true;
 - flag additional documentation implications rather than silently rewriting unrelated canonical knowledge.
 
-Codex should not:
+The Codebase Agent should not:
 
 - expand product scope;
 - change public behavior not authorized by the WORK;
@@ -72,7 +72,7 @@ Do not escalate normal local engineering choices already inside the approved aut
 
 Use the DISCOVERY format from `docs/ai/OPERATING_MODEL.md`. Do not define a competing escalation format.
 
-When Codex discovers a material issue:
+When the Codebase Agent discovers a material issue:
 
 - stop implementation of the affected portion;
 - report DISCOVERY;
@@ -86,14 +86,14 @@ If the discovery can be resolved without materially changing the approved contra
 
 If resolving it requires a material change to the approved WORK:
 
-1. route the underlying issue through the appropriate Design AI/human process;
+1. route the underlying issue through the appropriate Conversational AI/human process;
 2. update the WORK;
 3. return it to DRAFT;
 4. obtain explicit human re-approval;
 5. transition back to READY;
 6. resume implementation of the changed contract.
 
-When resuming after re-approval, Codex must re-read the current WORK rather than relying on conversation context.
+When resuming after re-approval, the Codebase Agent must re-read the current WORK rather than relying on conversation context.
 
 ## Reviewable Implementation
 
@@ -113,7 +113,7 @@ Documentation may require another final synchronization after review fixes.
 
 ## Implementation Report
 
-At the end of an implementation/fix pass, Codex should return:
+At the end of an implementation/fix pass, the Codebase Agent should return:
 
 ```text
 IMPLEMENTATION REPORT
@@ -162,7 +162,9 @@ Do not mark the WORK DONE.
 
 ## Minimal Handoffs
 
-Implementation:
+These prompts are for a CODEBASE AGENT (or, for review, an INDEPENDENT REVIEWER) operating on the Playhoot checkout. They do not need a repository URL since the agent already operates inside the checkout.
+
+Implementation - CODEBASE AGENT:
 
 ```text
 Implement the approved Playhoot work specification:
@@ -175,7 +177,7 @@ Follow:
 docs/ai/protocols/IMPLEMENTATION_REVIEW.md
 ```
 
-Independent review:
+Independent review - INDEPENDENT REVIEWER (normally a fresh Codebase Agent, read-only):
 
 ```text
 Independently review the implementation of:
@@ -188,7 +190,7 @@ docs/ai/protocols/IMPLEMENTATION_REVIEW.md
 Do not modify files.
 ```
 
-Required fixes:
+Required fixes - CODEBASE AGENT:
 
 ```text
 Address the REQUIRED_FIX findings from the independent review for:
@@ -202,7 +204,7 @@ Review report:
 [paste review report]
 ```
 
-Closure:
+Closure - CODEBASE AGENT:
 
 ```text
 Close the Playhoot work:
@@ -215,7 +217,7 @@ Follow the closure rules in:
 docs/ai/protocols/IMPLEMENTATION_REVIEW.md
 ```
 
-Codex/reviewer loads the relevant context independently. Do not paste the entire WORK specification into handoff prompts.
+The Codebase Agent/reviewer loads the relevant context independently. Do not paste the entire WORK specification into handoff prompts.
 
 ## Independent Review Protocol
 
@@ -231,7 +233,7 @@ The reviewer must reason from primary evidence:
 6. migrations;
 7. documentation.
 
-The implementation agent's summary may be useful supplementary context, but it is not authoritative evidence. Do not accept claims such as "tests pass", "this follows the architecture", or "there are no deviations" without inspecting/verifying them to a reasonable degree.
+The implementing Codebase Agent's summary may be useful supplementary context, but it is not authoritative evidence. Do not accept claims such as "tests pass", "this follows the architecture", or "there are no deviations" without inspecting/verifying them to a reasonable degree.
 
 The independent reviewer must not modify implementation or documentation during the review unless the human explicitly asks for a combined review-and-fix task.
 
@@ -240,7 +242,7 @@ The normal Playhoot review is:
 ```text
 review first
 -> report findings
--> implementation agent fixes
+-> Codebase Agent fixes
 -> independent re-review
 ```
 
@@ -282,7 +284,7 @@ DECISION_REQUIRED:
 
 - The issue cannot be responsibly fixed without a material human decision or a material change to the approved WORK.
 - Examples include unclear product behavior, domain ownership question, public API contract change, unapproved persistence semantics, concurrency/consistency guarantee requiring choice, material security/infrastructure/dependency choice, or conflict between READY WORK and canonical architecture.
-- Route this to Design AI/human. Do not tell Codex to choose arbitrarily.
+- Route this to Conversational AI/human. Do not tell the Codebase Agent to choose arbitrarily.
 
 NON_BLOCKING:
 
@@ -366,11 +368,11 @@ Keep findings concrete. Prefer file/line references where possible. Do not produ
 
 ## Fix And Re-Review Loop
 
-If the verdict is CHANGES_REQUIRED, send REQUIRED_FIX findings back to the implementation agent.
+If the verdict is CHANGES_REQUIRED, send REQUIRED_FIX findings back to the Codebase Agent.
 
 The WORK stays IMPLEMENTING.
 
-Codex:
+The Codebase Agent:
 
 - fixes REQUIRED_FIX findings;
 - does not automatically implement NON_BLOCKING suggestions;
@@ -383,7 +385,7 @@ Then perform independent review again. Re-review should verify the fixes and con
 
 ## Decision Required / Reapproval Loop
 
-If review or implementation reports DECISION_REQUIRED or DISCOVERY, route the material question to Design AI and the human decision maker.
+If review or implementation reports DECISION_REQUIRED or DISCOVERY, route the material question to Conversational AI and the human decision maker.
 
 If the resolution does not materially change the approved WORK, document/communicate the clarification and resume as appropriate.
 
@@ -398,7 +400,7 @@ If the resolution materially changes the approved WORK:
 7. resume implementation;
 8. transition it to IMPLEMENTING when implementation resumes.
 
-Do not allow the reviewer or Codex to self-approve the revised design.
+Do not allow the reviewer or Codebase Agent to self-approve the revised design.
 
 The human must decide DECISION_REQUIRED findings, material changes to the approved WORK, and whether to consciously accept an exceptional unresolved risk/deviation that would otherwise block DONE.
 
@@ -460,7 +462,7 @@ The closing agent must independently verify that closure preconditions appear sa
 
 ## Cancellation
 
-Codex/reviewer may recommend cancellation when work is no longer viable. They must not unilaterally decide that approved human work intent is CANCELLED.
+The Codebase Agent/reviewer may recommend cancellation when work is no longer viable. They must not unilaterally decide that approved human work intent is CANCELLED.
 
 Cancellation requires human authorization.
 

@@ -2,7 +2,7 @@
 
 Status: AGENT EXECUTION PROTOCOL
 
-Use with the human-facing guide at `docs/ai/processes/ENGINEERING_STANDARD.md`.
+Use with the human-facing guide at `docs/ai/processes/ENGINEERING_STANDARD.md`. This protocol is primarily executed by a CONVERSATIONAL AI; persisting an accepted standard, or executing approved migration work, is a CODEBASE AGENT step.
 
 ## Scope
 

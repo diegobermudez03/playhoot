@@ -2,7 +2,7 @@
 
 Status: AGENT EXECUTION PROTOCOL
 
-Use with the human-facing guide at `docs/ai/processes/AI_WORKFLOW_CHANGE.md`.
+Use with the human-facing guide at `docs/ai/processes/AI_WORKFLOW_CHANGE.md`. This protocol is primarily executed by a CONVERSATIONAL AI for the proposal/approval steps; applying an approved change to repository files is a CODEBASE AGENT step.
 
 ## Scope
 

@@ -2,18 +2,27 @@
 
 Use this when you want to decide what Playhoot should do.
 
+Surface flow: CONVERSATIONAL AI <-> HUMAN, with CODEBASE AGENT only when repository persistence/synchronization is needed.
+
 ## When to use it
 
 - You are considering product scope, user value, creator/player experience, launch target, or priority.
 - You want to accept, reject, defer, or reshape a product idea before implementation.
 - The main question is "should Playhoot do this?", not "how should the system be structured?"
 
-## Step 1 - Start
+## Step 1 - HUMAN
 
-Paste:
+Paste into a CONVERSATIONAL AI:
 
 ```text
-I want to use the Playhoot Product Discussion process.
+Repository:
+https://github.com/diegobermudez03/playhoot
+
+Repository ref:
+<branch or commit>
+
+Process:
+Playhoot Product Discussion
 
 Product question or idea:
 [describe it]
@@ -25,13 +34,13 @@ Known constraints or timing:
 [optional]
 ```
 
-## Step 2 - What the AI will give you
+## Step 2 - CONVERSATIONAL AI
 
 For simple questions, the AI may answer directly with a recommendation.
 
-For non-trivial decisions, the AI will prepare `docs/ai/workspaces/active/<product-topic>/HUMAN_REVIEW.md` with the product problem, options, tradeoffs, recommendation, and any material decision needed from you.
+For non-trivial decisions, the AI will prepare `docs/ai/workspaces/active/<product-topic>/HUMAN_REVIEW.md` with the product problem, options, tradeoffs, recommendation, and any material decision needed from you. If the workspace needs to be persisted and the Conversational AI cannot write to the repository, it will give you a CODEBASE AGENT HANDOFF.
 
-## Step 3 - What you need to do
+## Step 3 - HUMAN
 
 Review the recommendation and respond with one of:
 
@@ -42,15 +51,23 @@ Review the recommendation and respond with one of:
 - request modifications;
 - route it to another process.
 
-## Step 4 - What happens next
+## Step 4 - CONVERSATIONAL AI / CODEBASE AGENT
 
-If you approve a material product decision, the AI will route any durable decision record, canonical product documentation, or follow-up implementation work to the appropriate owner.
+If you approve a material product decision, the AI will route any durable decision record, canonical product documentation, or follow-up implementation work to the appropriate owner. Repository-side persistence of that outcome is a CODEBASE AGENT step, normally reached through a CODEBASE AGENT HANDOFF from the Conversational AI.
 
 Approval of product direction does not automatically implement anything.
 
-## Resume in a new session
+## Resume in a new session - CONVERSATIONAL AI
+
+Paste into a CONVERSATIONAL AI:
 
 ```text
+Repository:
+https://github.com/diegobermudez03/playhoot
+
+Repository ref:
+<branch or commit>
+
 Resume the Playhoot Product Discussion process from:
 docs/ai/workspaces/active/<process-topic>/
 ```

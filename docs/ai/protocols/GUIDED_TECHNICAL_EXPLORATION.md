@@ -2,7 +2,7 @@
 
 Status: AGENT EXECUTION PROTOCOL
 
-Use with the human-facing guide at `docs/ai/processes/GUIDED_TECHNICAL_EXPLORATION.md`.
+Use with the human-facing guide at `docs/ai/processes/GUIDED_TECHNICAL_EXPLORATION.md`. This protocol is primarily executed by a CONVERSATIONAL AI; inspecting or changing local repository evidence/persistent artifacts is a CODEBASE AGENT step.
 
 ## Scope
 

@@ -60,7 +60,7 @@ Acceptance criteria describe required behavior/outcome, not implementation progr
 
 ## Implementation Freedom
 
-<Local choices intentionally left to Codex, or reference the normal Operating Model autonomy boundary when no special clarification is needed.>
+<Local choices intentionally left to the Codebase Agent, or reference the normal Operating Model autonomy boundary when no special clarification is needed.>
 
 ## Verification
 
@@ -94,7 +94,7 @@ A DRAFT may list unresolved material blockers.
 
 A READY spec MUST have no unresolved material blocker.
 
-Questions that are genuinely inside Codex's implementation autonomy should not remain here as blockers.
+Questions that are genuinely inside the Codebase Agent's implementation autonomy should not remain here as blockers.
 
 ## Completion Record
 

@@ -2,7 +2,7 @@
 
 Status: AGENT EXECUTION PROTOCOL
 
-Use with the human-facing guide at `docs/ai/processes/PRINCIPAL_ENGINEER_REVIEW.md`.
+Use with the human-facing guide at `docs/ai/processes/PRINCIPAL_ENGINEER_REVIEW.md`. This protocol is primarily executed/coordinated by a CONVERSATIONAL AI; repository-local evidence and Radar persistence are CODEBASE AGENT steps when the Conversational AI lacks write access.
 
 ## Scope
 

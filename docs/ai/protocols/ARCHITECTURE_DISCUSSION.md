@@ -2,7 +2,7 @@
 
 Status: AGENT EXECUTION PROTOCOL
 
-Use with the human-facing guide at `docs/ai/processes/ARCHITECTURE_DISCUSSION.md`.
+Use with the human-facing guide at `docs/ai/processes/ARCHITECTURE_DISCUSSION.md`. This protocol is primarily executed by a CONVERSATIONAL AI; repository persistence/synchronization it requires may be delegated through a CODEBASE AGENT HANDOFF.
 
 ## Scope
 

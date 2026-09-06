@@ -4,7 +4,7 @@ Status: AGENT EXECUTION PROTOCOL
 
 Use with the human-facing guide at `docs/ai/processes/FEATURE_DEVELOPMENT.md`.
 
-This protocol owns design-to-READY execution. Concrete implementation and independent review are governed by `docs/ai/protocols/IMPLEMENTATION_REVIEW.md`.
+This protocol owns design-to-READY execution, primarily performed by a CONVERSATIONAL AI with repository persistence delegated through a CODEBASE AGENT HANDOFF when needed. Concrete implementation (CODEBASE AGENT) and independent review (INDEPENDENT REVIEWER) are governed by `docs/ai/protocols/IMPLEMENTATION_REVIEW.md`.
 
 ## Scope
 
@@ -65,7 +65,7 @@ Current-state documentation must not be updated to future state.
 
 DRAFT has no implementation authority.
 
-Only the human may authorize DRAFT -> READY. Codex must not self-approve it.
+Only the human may authorize DRAFT -> READY. A Codebase Agent must not self-approve it.
 
 READY means material uncertainty is resolved and local implementation choices are inside the Operating Model autonomy boundary.
 
@@ -73,7 +73,7 @@ READY means material uncertainty is resolved and local implementation choices ar
 
 After READY, use the minimal implementation handoff from `docs/ai/protocols/IMPLEMENTATION_REVIEW.md`.
 
-The implementation agent must independently load AGENTS, the Operating Model, Knowledge Map, WORK, and relevant implementation context.
+The Codebase Agent must independently load AGENTS, the Operating Model, Knowledge Map, WORK, and relevant implementation context.
 
 ## Completion
 

@@ -2,18 +2,27 @@
 
 Use this when you want to decide how Playhoot should be structured technically.
 
+Surface flow: CONVERSATIONAL AI <-> HUMAN, with CODEBASE AGENT for repository persistence/synchronization.
+
 ## When to use it
 
 - A question affects system structure, ownership, coupling, persistence, infrastructure, or public contracts.
 - You want help comparing architecture alternatives before implementation.
 - The issue is broader than a local code detail.
 
-## Step 1 - Start
+## Step 1 - HUMAN
 
-Paste:
+Paste into a CONVERSATIONAL AI:
 
 ```text
-I want to use the Playhoot Architecture Discussion process.
+Repository:
+https://github.com/diegobermudez03/playhoot
+
+Repository ref:
+<branch or commit>
+
+Process:
+Playhoot Architecture Discussion
 
 Architecture question:
 [describe it]
@@ -25,13 +34,13 @@ Options I am considering:
 [optional]
 ```
 
-## Step 2 - What the AI will give you
+## Step 2 - CONVERSATIONAL AI
 
 For small questions, the AI may answer directly with a recommendation.
 
-For material decisions, the AI will prepare `docs/ai/workspaces/active/<architecture-topic>/HUMAN_REVIEW.md` with the underlying problem, options, tradeoffs, recommendation, affected boundaries, and any decision needed from you.
+For material decisions, the AI will prepare `docs/ai/workspaces/active/<architecture-topic>/HUMAN_REVIEW.md` with the underlying problem, options, tradeoffs, recommendation, affected boundaries, and any decision needed from you. If the workspace needs to be persisted and the Conversational AI cannot write to the repository, it will give you a CODEBASE AGENT HANDOFF.
 
-## Step 3 - What you need to do
+## Step 3 - HUMAN
 
 Review the checkpoint and respond with one of:
 
@@ -42,15 +51,23 @@ Review the checkpoint and respond with one of:
 - request modifications;
 - route to domain design, technical exploration, standard-setting, or feature development.
 
-## Step 4 - What happens next
+## Step 4 - CONVERSATIONAL AI / CODEBASE AGENT
 
-If you approve a material architecture decision, the AI will route any decision record, canonical architecture/domain documentation, or follow-up implementation work to the appropriate owner.
+If you approve a material architecture decision, the AI will route any decision record, canonical architecture/domain documentation, or follow-up implementation work to the appropriate owner. Repository-side persistence of that outcome is a CODEBASE AGENT step, normally reached through a CODEBASE AGENT HANDOFF from the Conversational AI.
 
 Approval of architecture does not mean the implementation already exists.
 
-## Resume in a new session
+## Resume in a new session - CONVERSATIONAL AI
+
+Paste into a CONVERSATIONAL AI:
 
 ```text
+Repository:
+https://github.com/diegobermudez03/playhoot
+
+Repository ref:
+<branch or commit>
+
 Resume the Playhoot Architecture Discussion process from:
 docs/ai/workspaces/active/<process-topic>/
 ```

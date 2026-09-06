@@ -2,7 +2,7 @@
 
 Status: CANONICAL PROCESS REFERENCE
 
-A Playhoot work specification owns the approved concrete implementation change. It bridges accepted design and Codex implementation authority.
+A Playhoot work specification owns the approved concrete implementation change. It bridges accepted design and Codebase Agent implementation authority.
 
 ## Ownership
 
@@ -95,7 +95,7 @@ READY:
 - Definition of Ready is satisfied.
 - Material product/architecture/domain/design decisions required for the work are resolved.
 - Scope, constraints, acceptance criteria, verification, and documentation impact are sufficiently clear.
-- Codex may implement within the documented autonomy boundary.
+- A Codebase Agent may implement within the documented autonomy boundary.
 
 IMPLEMENTING:
 
@@ -144,9 +144,9 @@ A minor clarification or local implementation choice inside the already approved
 
 Only the human decision maker may authorize DRAFT -> READY.
 
-The Design AI may prepare/revise the specification and recommend READY.
+A Conversational AI may prepare/revise the specification and recommend READY.
 
-Codex must never self-approve a DRAFT specification.
+A Codebase Agent must never self-approve a DRAFT specification.
 
 Starting implementation may transition READY -> IMPLEMENTING according to the implementation workflow.
 
@@ -167,7 +167,7 @@ A work spec may become READY only when:
 9. Required verification is identified.
 10. Documentation impact is identified.
 11. No unresolved MATERIAL blocker remains.
-12. Local implementation choices intentionally left to Codex are distinguished from unresolved human decisions.
+12. Local implementation choices intentionally left to the Codebase Agent are distinguished from unresolved human decisions.
 
 READY means material uncertainty is resolved, not that the specification is pseudocode. Do not require every private implementation detail to be predetermined.
 
@@ -175,7 +175,7 @@ READY means material uncertainty is resolved, not that the specification is pseu
 
 Use the autonomy boundary defined by `docs/ai/OPERATING_MODEL.md`.
 
-A work spec should constrain material implementation decisions while leaving local engineering choices to Codex, including private helper decomposition, private types, local naming, test fixtures, mock organization, straightforward internal refactors, and detailed implementation choices already bounded by accepted design and standards.
+A work spec should constrain material implementation decisions while leaving local engineering choices to the Codebase Agent, including private helper decomposition, private types, local naming, test fixtures, mock organization, straightforward internal refactors, and detailed implementation choices already bounded by accepted design and standards.
 
 Do not duplicate the complete Operating Model decision-boundary list into every actual WORK file.
 

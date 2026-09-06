@@ -149,3 +149,37 @@ Current Git history plus this changelog is sufficient. If stable workflow-change
 - Existing canonical product, architecture, domain, decision, work, and radar artifacts require no semantic migration.
 - `docs/work/active/WORK-0001-create-game-draft.md` remains DRAFT and unchanged.
 - Future and resumed process execution uses the new workspace model.
+
+## 2026-09-06 - Introduced explicit AI execution surfaces
+
+**Change**
+- Replaced product-specific AI role names (ChatGPT, Design AI, Codex, Implementation Agent) with capability-based execution surfaces: HUMAN, CONVERSATIONAL AI, CODEBASE AGENT, and INDEPENDENT REVIEWER.
+- Made every human-facing process step under `docs/ai/processes/*` explicitly label which surface it requires.
+- Added a repository URL/ref block to Conversational AI starter and resume prompts so a fresh conversational session knows what repository state it can reason about.
+- Formalized the CODEBASE AGENT HANDOFF concept in `docs/ai/OPERATING_MODEL.md`: a temporary, human-visible prompt a Conversational AI produces when a repository-local action is needed that it cannot perform itself.
+- Defined independent implementation review as normally fulfilled by a fresh Codebase Agent operating read-only.
+- Preserved human material-decision authority; a Codebase Agent persisting a workspace or Radar update on behalf of a handoff does not gain authority over the decision being recorded.
+
+**Reason**
+- The workflow previously named roles after specific products (ChatGPT, Codex), which forced the human to guess which commercial tool a given step belonged to, and did not distinguish a tool's conversational capability from its repository-mutation capability.
+
+**Affected workflow artifacts**
+- `AGENTS.md`
+- `docs/ai/README.md`
+- `docs/ai/OPERATING_MODEL.md`
+- `docs/ai/KNOWLEDGE_MAP.md`
+- `docs/ai/CHANGELOG.md`
+- `docs/ai/processes/*`
+- `docs/ai/protocols/*`
+- `docs/ai/workspaces/README.md`
+- `docs/work/README.md`
+- `docs/work/templates/WORK_SPEC.template.md`
+- `docs/engineering/ENGINEERING_RADAR.md`
+
+**Compatibility / migration**
+- Existing canonical product, architecture, domain, decision, work, and radar artifacts require no semantic migration.
+- `docs/work/active/WORK-0001-create-game-draft.md` remains unchanged; its historical references to "Codex" are compatible historical wording interpreted under current terminology as Codebase Agent.
+- Current normative workflow documentation uses the new capability terminology going forward.
+
+**Notes**
+- A single product may still fulfill more than one surface when it genuinely has the capability; the abstraction is capability-based, not a mandate to switch tools.

@@ -4,23 +4,30 @@ This file is the entry point for AI agents working on Playhoot.
 
 Before performing non-trivial work:
 
-1. Read `docs/ai/OPERATING_MODEL.md`.
-2. Use `docs/ai/KNOWLEDGE_MAP.md` to identify and load only the context
+1. Determine your execution surface: CONVERSATIONAL AI, CODEBASE AGENT, or
+   INDEPENDENT REVIEWER. If you have effective access to this repository
+   checkout and can inspect/modify files, run commands, and persist workflow
+   artifacts, you are acting as a Codebase Agent (or, when reviewing
+   read-only, an Independent Reviewer). Role definitions and authority live in
+   `docs/ai/OPERATING_MODEL.md` — do not redefine them here.
+2. Read `docs/ai/OPERATING_MODEL.md`.
+3. Use `docs/ai/KNOWLEDGE_MAP.md` to identify and load only the context
    relevant to the task.
-3. Determine what type of work is being performed.
-4. If a process runbook exists for that type of work, use
+4. Determine what type of work is being performed.
+5. If a process runbook exists for that type of work, use
    `docs/ai/processes/*` as the human-facing guide and follow the matching
-   `docs/ai/protocols/*` execution protocol.
-5. Inspect actual code, tests, and migrations whenever current implementation
+   `docs/ai/protocols/*` execution protocol. Human process guides remain
+   human-facing; internal execution mechanics live in the protocols.
+6. Inspect actual code, tests, and migrations whenever current implementation
    behavior matters.
-6. Do not silently resolve contradictions between canonical documentation and implementation. Report them as drift.
-7. Do not treat ideas, proposals, examples, TODOs, or future-looking
+7. Do not silently resolve contradictions between canonical documentation and implementation. Report them as drift.
+8. Do not treat ideas, proposals, examples, TODOs, or future-looking
    documentation as accepted decisions.
-8. Understand the product/business reason for material changes before implementing them.
-9. Escalate material product, architecture, domain, persistence, consistency,
-   security, infrastructure, or engineering-standard decisions instead of
-   inventing them during implementation.
-10. Do not scan every Markdown document by default. Load context through the
+9. Understand the product/business reason for material changes before implementing them.
+10. Escalate material product, architecture, domain, persistence, consistency,
+    security, infrastructure, or engineering-standard decisions instead of
+    inventing them during implementation.
+11. Do not scan every Markdown document by default. Load context through the
     Knowledge Map.
 
 ## Engineering Standards

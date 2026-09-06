@@ -16,7 +16,7 @@ A radar item is:
 
 NOW != READY
 
-A NOW radar item does not authorize Codex to implement anything.
+A NOW radar item does not authorize a Codebase Agent to implement anything.
 
 ## Authority Boundaries
 
@@ -199,7 +199,7 @@ Choosing a Next process does not automatically start that process.
 
 ## AI and Human Authority
 
-Because Radar content is explicitly NON-AUTHORITATIVE, the Design AI may recommend, add, update, move, or remove radar items as part of a Principal Engineer Review without converting them into human-approved decisions.
+Because Radar content is explicitly NON-AUTHORITATIVE, a Conversational AI may recommend, add, update, move, or remove radar items as part of a Principal Engineer Review without converting them into human-approved decisions.
 
 This does not grant authority to:
 

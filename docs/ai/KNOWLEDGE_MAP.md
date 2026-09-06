@@ -36,6 +36,7 @@ This is a machine-facing routing document. It does not explain Playhoot. It tell
 | Completed implementation history | `docs/work/completed/` | AVAILABLE | |
 | Work specification process/template | `docs/work/README.md` and `docs/work/templates/` | AVAILABLE | |
 | AI development behavior | `docs/ai/OPERATING_MODEL.md` | AVAILABLE | |
+| Execution surface / actor authority | `docs/ai/OPERATING_MODEL.md` | AVAILABLE | |
 | AI workflow evolution history | `docs/ai/CHANGELOG.md` | AVAILABLE / HISTORICAL | |
 | Implementation / independent review protocol | `docs/ai/protocols/IMPLEMENTATION_REVIEW.md` | AVAILABLE | |
 | Agent execution protocol | `docs/ai/protocols/*` | AVAILABLE / AGENT-FACING | |

@@ -67,7 +67,13 @@ Do not include private chain-of-thought. Record conclusions, evidence, constrain
 
 Avoid duplicating canonical knowledge. Reference durable owners instead.
 
-`AI_CONTEXT.md` is not implementation authority and does not weaken Codex autonomy.
+`AI_CONTEXT.md` is not implementation authority and does not weaken Codebase Agent autonomy.
+
+## Surface Ownership
+
+A Conversational AI normally owns the design/conversation process and the content of `HUMAN_REVIEW.md`/`AI_CONTEXT.md`.
+
+When the current Conversational AI cannot write to the repository, it produces a Codebase Agent Handoff (see `docs/ai/OPERATING_MODEL.md`) asking a Codebase Agent to persist or update these workspace files. Performing that persistence step does not give the Codebase Agent authority over the material decision being recorded — it remains whatever the Conversational AI/human already decided.
 
 ## Cross-Session Rule
 
