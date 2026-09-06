@@ -156,6 +156,7 @@ Current Git history plus this changelog is sufficient. If stable workflow-change
 - Replaced product-specific AI role names (ChatGPT, Design AI, Codex, Implementation Agent) with capability-based execution surfaces: HUMAN, CONVERSATIONAL AI, CODEBASE AGENT, and INDEPENDENT REVIEWER.
 - Made every human-facing process step under `docs/ai/processes/*` explicitly label which surface it requires.
 - Added a repository URL/ref block to Conversational AI starter and resume prompts so a fresh conversational session knows what repository state it can reason about.
+- Added a repository bootstrap instruction to that same block: a fresh Conversational AI opens the supplied repository/ref and reads `/AGENTS.md` first, then follows its routing instructions rather than scanning documentation indiscriminately. Made explicit that a repository URL does not by itself imply browsing/repository access; the AI must report inaccessible repository/ref/file state instead of assuming its contents.
 - Formalized the CODEBASE AGENT HANDOFF concept in `docs/ai/OPERATING_MODEL.md`: a temporary, human-visible prompt a Conversational AI produces when a repository-local action is needed that it cannot perform itself.
 - Defined independent implementation review as normally fulfilled by a fresh Codebase Agent operating read-only.
 - Preserved human material-decision authority; a Codebase Agent persisting a workspace or Radar update on behalf of a handoff does not gain authority over the decision being recorded.

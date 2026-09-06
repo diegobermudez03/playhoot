@@ -21,6 +21,13 @@ https://github.com/diegobermudez03/playhoot
 Repository ref:
 <branch or commit>
 
+Repository bootstrap:
+Open the repository at the exact ref above and read `/AGENTS.md` first. Follow
+its routing instructions to load only the context relevant to this task. Do
+not scan repository documentation indiscriminately. If you cannot access the
+repository/ref or a required file, tell me before continuing instead of
+reasoning as if you had read it.
+
 Process:
 Playhoot Architecture Discussion
 
@@ -67,6 +74,11 @@ https://github.com/diegobermudez03/playhoot
 
 Repository ref:
 <branch or commit>
+
+Repository bootstrap:
+Open the repository at the exact ref above and read `/AGENTS.md` first. Follow
+its routing instructions before resuming. If you cannot access the
+repository/ref or a required file, tell me instead of assuming its contents.
 
 Resume the Playhoot Architecture Discussion process from:
 docs/ai/workspaces/active/<process-topic>/

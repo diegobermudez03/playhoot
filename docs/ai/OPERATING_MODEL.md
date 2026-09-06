@@ -32,6 +32,19 @@ Repository ref:
 
 A Conversational AI can only reason from repository state it can actually access. It must not pretend to see uncommitted local changes, an unpushed branch, or another inaccessible checkout. Appropriate options are to push/provide an accessible ref, use a Codebase Agent to inspect local state and persist the relevant temporary process context, or provide an accessible diff/artifact.
 
+A repository URL/ref does not by itself imply the Conversational AI has browsing/repository access. If it cannot access the supplied repository, ref, or a required file, it must say so rather than reasoning as if it had inspected them.
+
+### Conversational AI Repository Bootstrap
+
+When repository-grounded reasoning begins from a fresh conversation, the starter/resume prompt also carries a bootstrap instruction:
+
+- open the exact repository/ref supplied;
+- read `/AGENTS.md` first;
+- follow its routing instructions to load only context relevant to the requested process/task, rather than scanning repository documentation indiscriminately;
+- report inaccessible repository/ref/file state instead of assuming its contents.
+
+`/AGENTS.md` is the stable entry point. This bootstrap instruction is the only repository-internal path a human-facing starter/resume prompt normally needs to name; it must not be replaced by a hardcoded list of documents to read, since that duplicates knowledge the Knowledge Map already routes to and drifts as routing changes.
+
 ### Codebase Agent Handoff
 
 A CODEBASE AGENT HANDOFF is a temporary, human-visible prompt produced by a Conversational AI when a repository-local action is needed that the current Conversational AI cannot perform (repository mutation, or inspection of state it cannot access). It is not a durable project artifact.

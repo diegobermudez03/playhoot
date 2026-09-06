@@ -20,7 +20,7 @@ Playhoot's workflow is organized around capability, not product. You should neve
 
 Every process below labels which surface each step requires. You should never have to infer "do I paste this into a chat tool or a coding tool?" on your own.
 
-When you start or resume a process in a CONVERSATIONAL AI, include the repository identity so it knows what it can reason about:
+When you start or resume a process in a CONVERSATIONAL AI, include the repository identity plus a short bootstrap instruction so it knows what it can reason about and where to start reading:
 
 ```text
 Repository:
@@ -28,9 +28,15 @@ https://github.com/diegobermudez03/playhoot
 
 Repository ref:
 <branch or commit>
+
+Repository bootstrap:
+Open the repository at the exact ref above and read `/AGENTS.md` first.
+Follow its routing instructions to load only the context relevant to this task.
 ```
 
-`main` is fine when current pushed `main` is what you want inspected. A Conversational AI can only reason about repository state it can actually access — if what matters is uncommitted or unpushed, push it first or route the step through a Codebase Agent instead.
+`main` is fine when current pushed `main` is what you want inspected. A Conversational AI can only reason about repository state it can actually access — if what matters is uncommitted or unpushed, push it first or route the step through a Codebase Agent instead. A URL alone does not mean the AI has browsing/repository access; if it cannot actually open the repository/ref, it should tell you instead of continuing as if it had.
+
+You do not need to manually list every relevant Playhoot doc — `/AGENTS.md` and the repository's own routing decide what the AI loads for the task at hand. Every process prompt below already includes this bootstrap line, so you normally just fill in the process-specific fields.
 
 ## Process Menu
 
