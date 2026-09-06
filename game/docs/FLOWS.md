@@ -2,6 +2,43 @@
 
 Status: CURRENT IMPLEMENTATION
 
+## Create Draft Game With Initial Definition
+
+```mermaid
+sequenceDiagram
+    participant Caller
+    participant UseCase as creategame.UseCase
+    participant Repo as creategame.Repo
+    participant DB as Game tables
+    participant Language as gameservice
+
+    Caller->>UseCase: CreateGameDraft(params)
+    UseCase->>Language: EncodeJSON(params.Definition)
+    UseCase->>Repo: createGameDraft(generated UUIDs, authored data, script)
+    Repo->>DB: BEGIN
+    Repo->>DB: INSERT games as draft
+    Repo->>DB: INSERT game_definitions as version 1
+    Repo->>DB: UPDATE games.current_definition_id
+    Repo->>DB: COMMIT
+    Repo-->>UseCase: created game/version identifiers
+    UseCase-->>Caller: *game.Game
+```
+
+Implemented behavior:
+
+- Game and initial definition creation is atomic.
+- The created game is stored with `draft` visibility.
+- The initial definition is stored as version `1`, remains unpublished, and becomes the game's current definition.
+- Creation does not compile or execute the definition as an Engine playability check.
+- Creation does not write game or game-definition history rows.
+
+Evidence:
+
+- `game/game/usecases/creategame/service.go`
+- `game/game/usecases/creategame/repo.go`
+- `game/game/usecases/creategame/service_test.go`
+- `game/game/usecases/creategame/repo_test.go`
+
 ## Retrieve Playable Game With Current Version
 
 ```mermaid

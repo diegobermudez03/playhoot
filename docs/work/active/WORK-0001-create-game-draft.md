@@ -1,6 +1,6 @@
 # WORK-0001: Create Game Draft With Initial Definition
 
-Status: READY
+Status: IMPLEMENTING
 Created: 2026-09-06
 Last status change: 2026-09-06
 
@@ -218,4 +218,4 @@ If implementation later reveals a genuinely material new public-contract choice,
 
 ## Completion Record
 
-Unfilled while DRAFT.
+Unfilled while IMPLEMENTING.
