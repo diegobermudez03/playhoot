@@ -100,7 +100,15 @@ classDiagram
         created_at
     }
     class game_definitions {
+        id
         uuid
+        game_id
+        version_number
+        script
+        published_at
+        created_at
+        updated_at
+        disabled_at
     }
 
     sessions "1" --> "*" session_states : "logical: session_states.session_id -> sessions.id"

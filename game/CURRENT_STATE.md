@@ -14,7 +14,10 @@ Status: CURRENT IMPLEMENTATION
 
 - Game Management lifecycle operations beyond retrieving a playable game with its current version were not found implemented.
 - Session Runtime create/join/start/execution behavior was not found implemented beyond persistence schema and scaffolding.
-- Completed-session history/archive ownership remains unresolved and is not assigned here.
+
+## Known Drift
+
+- None currently identified.
 
 ## Evidence
 
