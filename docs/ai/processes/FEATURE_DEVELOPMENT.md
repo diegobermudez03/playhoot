@@ -84,8 +84,8 @@ The specification must explicitly distinguish:
 
 It must include Documentation Impact:
 
-- canonical docs expected to change after implementation;
-- current-state diagrams expected to change after implementation;
+- accepted/canonical knowledge affected by approved decisions;
+- current-state documentation expected to change after implementation;
 - docs that intentionally should NOT change when useful.
 
 Current-state documentation must not be updated to future state before code is implemented.
@@ -172,7 +172,11 @@ docs/work/active/WORK-NNNN-short-title.md
 
 Approved concrete implementation work is persisted as a WORK specification under `docs/work/active/`. See `docs/work/README.md`.
 
-Update required canonical documentation only after implementation changes actual state. Do not update current-state diagrams to future state. Flag additional likely impacts rather than redefining canonical knowledge silently.
+Accepted/canonical knowledge is synchronized when the corresponding product, architecture, domain, or standard decision becomes accepted, according to the owning process. Implementation does not need to exist before accepted knowledge can become canonical.
+
+Current-state documentation is updated only after implementation actually changes system state or behavior. Do not update current-state diagrams to future state.
+
+If implementation reveals additional canonical or documentation implications, flag them rather than silently redefining accepted knowledge.
 
 Do not require human line-by-line review of all code. Recommend deeper human review for critical areas such as concurrency, transactions, security, runtime/engine state, public contracts, and complex business invariants.
 
