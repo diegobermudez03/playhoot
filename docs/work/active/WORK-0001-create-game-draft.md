@@ -85,6 +85,55 @@ Existing Game code exposes `game.Draft`, `game.Private`, `game.Hidden`, and `gam
 - This work does not introduce creation-time writes to `game_histories` or `game_definition_histories` solely because those tables exist.
 - The operation may accept an owner identifier required by the existing Game model, but this does not resolve Identity/Profile ownership or authentication boundaries.
 
+### Public Create-Draft Contract
+
+The human-approved public Game Management contract is:
+
+```go
+package creategame
+
+import (
+    "context"
+
+    "github.com/diegobermudez03/playhoot/game/game"
+    "github.com/diegobermudez03/playhoot/game/language/v1/program"
+)
+
+type Params struct {
+    Name         string
+    Description  string
+    OwnerUUID    string
+    LogoImageURL string
+    Definition   program.Definition
+}
+
+func (c *UseCase) CreateGameDraft(
+    ctx context.Context,
+    params Params,
+) (*game.Game, error)
+```
+
+Caller-provided authored content:
+
+- `Name`
+- `Description`
+- `OwnerUUID`
+- `LogoImageURL`
+- initial `program.Definition`
+
+Game Management-generated or controlled values:
+
+- Game UUID
+- initial Definition UUID
+- visibility, always `game.Draft` / stored `draft`
+- initial definition version number, always `1`
+- publication state, with `published_at` unset/null
+- current-definition linkage from the created Game to the created initial definition
+
+The caller must not provide or control `Visibility`, `VersionNumber`, `PublishedAt`, or `CurrentDefinitionID`.
+
+Do not add new product validation rules for `Name`, `Description`, or `LogoImageURL` in this WORK unless an existing accepted contract already requires them.
+
 ## Constraints and Invariants
 
 - Use the existing Game Management schema and model naming where possible.
@@ -108,7 +157,7 @@ Existing Game code exposes `game.Draft`, `game.Private`, `game.Hidden`, and `gam
 - The persisted initial definition is linked to the created game by `game_id`.
 - The created game points to the initial definition through `current_definition_id`.
 - The persisted initial definition is not marked published under the current schema.
-- The created result exposes the created game identity and current definition/version identity according to the package's chosen Game Management contract.
+- The created result returns `*game.Game` and exposes the created game identity and current definition/version identity through that approved public contract.
 - The persisted definition can be read back as the authored definition representation expected by current Game Language v1 storage conventions.
 - If any required step in game creation, definition creation, or current-definition assignment fails, the operation returns an error and leaves no partially created game or initial definition for that request.
 - Repository/service error behavior follows the accepted error-handling standard, including intentional sentinel wrapping only for deliberate public error contracts.
@@ -119,9 +168,13 @@ Existing Game code exposes `game.Draft`, `game.Private`, `game.Hidden`, and `gam
 
 Codex retains the normal implementation autonomy defined by `docs/ai/OPERATING_MODEL.md`.
 
-Unless a material repository constraint is discovered during implementation, local choices remain open, including package/file placement under Game Management, private helper decomposition, private types, method names, test fixture organization, mock setup details, transaction helper use, and internal error-context wording consistent with accepted standards.
+Unless a material repository constraint is discovered during implementation, local choices remain open, including file placement within the approved `creategame` package, private helper decomposition, private types, private/local method and helper names, test fixture organization, mock setup details, transaction helper use, and internal error-context wording consistent with accepted standards.
 
-Any material public contract choice not already implied by current package conventions must be surfaced before implementation proceeds beyond the valid local design space.
+Codex may add straightforward package plumbing, such as a constructor following established Game Management conventions, when that does not materially change the approved public contract.
+
+Codex may not rename or materially change the approved public package contract, `Params` fields/types, `CreateGameDraft` method, or `*game.Game` return contract without a DISCOVERY and material reapproval.
+
+If implementation later reveals a genuinely material new public-contract choice, it must be surfaced before implementation proceeds beyond the valid local design space.
 
 ## Verification
 

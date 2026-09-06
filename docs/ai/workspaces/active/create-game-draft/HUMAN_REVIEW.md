@@ -1,24 +1,25 @@
-# Create Game Draft - Feature Design Review
+# Create Game Draft - READY Review
 
-Status: HUMAN DECISION REQUIRED
+Status: READY APPROVAL REQUIRED
 
 This workspace is temporary, non-canonical, and non-authoritative.
 
-## What is already agreed
+## Outcome
 
-- Game Management creates a new Game and its initial definition atomically.
-- The new Game starts as `game.Draft`.
-- The initial definition is version `1` and becomes the Game's current definition.
-- The initial definition is not published just because it exists.
+This WORK will add the Game Management operation that creates a newly authored game draft together with its initial definition, so the creation flow can persist its first durable Game record.
+
+## Approved Behavior
+
+- Game and initial definition creation is atomic.
+- The new Game is created as `game.Draft`.
+- The initial definition is version `1`.
+- The initial definition becomes the Game's current definition.
+- The initial definition remains unpublished.
 - Draft creation does not require Engine playability validation.
-- Scope ends at Game Management.
-- Creation does not write `game_histories` or `game_definition_histories` merely because those tables exist.
+- Creation does not write game or game-definition history records.
+- The public create-draft contract is approved.
 
-Out of scope: API/HTTP, authentication, Identity/Profile implementation, AI generation, creation wizard, templates, publishing, discovery, sessions/rooms, multiplayer, editing, later versions, billing, and analytics.
-
-## Proposed contract
-
-The proposed public Game Management contract is:
+## Approved Public Contract
 
 ```go
 package creategame
@@ -44,13 +45,22 @@ func (c *UseCase) CreateGameDraft(
 ) (*game.Game, error)
 ```
 
-The caller controls authored content: name, description, owner UUID, logo image URL, and the initial `program.Definition`.
+The caller provides authored content. Game Management generates the Game UUID and initial Definition UUID, sets Draft visibility, sets definition version `1`, keeps the definition unpublished, and links it as current.
 
-Game Management controls lifecycle and version state: Game UUID, initial Definition UUID, visibility, version number, publication state, and current-definition linkage.
+## Scope
 
-The caller does not provide `Visibility`, `VersionNumber`, `PublishedAt`, or `CurrentDefinitionID`.
+In scope:
 
-## How creation behaves
+- Game Management create-draft use case and repository behavior.
+- Persisting the Game row, initial Definition row, and current-definition linkage.
+- Returning `*game.Game`.
+- Focused service and repository tests.
+
+Out of scope:
+
+- API/HTTP, authentication, Identity/Profile implementation, AI generation, creation wizard, templates, publishing, discovery, sessions/rooms, multiplayer, editing, later versions, billing, analytics, schema changes, ADRs, and PDRs.
+
+## Behavior
 
 ```mermaid
 sequenceDiagram
@@ -69,37 +79,42 @@ sequenceDiagram
     UseCase-->>Caller: *game.Game
 ```
 
-## Why this contract
+## Observable Outcomes
 
-- `Params` avoids a growing positional public API.
-- `CreateGameDraft` makes draft semantics explicit.
-- The caller cannot inject internal lifecycle, publication, or version state.
-- Returning `*game.Game` reuses the current Game-domain result model instead of adding a new public DTO without a clear reason.
-- `program.Definition` matches the existing authored definition model; current storage already encodes definitions through the Game Language v1 JSON representation.
+- A successful request creates one draft Game and one initial Definition.
+- The created Definition is version `1`, unpublished, and current for the Game.
+- A failed multi-step creation leaves no partial Game or Definition behind.
+- Existing playable-game retrieval behavior remains unchanged.
 
-## Alternatives worth knowing
+## Verification
 
-- `CreateGame` instead of `CreateGameDraft`: shorter, but less explicit that this operation always creates a draft.
-- Positional arguments instead of `Params`: workable now, but brittle if the creation inputs grow.
-- Separate creation-result DTO: possible, but not currently justified because `game.Game` already carries the Game UUID, version UUID, metadata, visibility, and definition.
+Implementation will add service and repository tests covering successful creation, persisted state, atomic rollback behavior, error behavior, and the absence of Engine playability validation during draft creation.
 
-## Decision needed from you
+## Documentation Impact
 
-Please decide whether to:
+After implementation, current-state documentation should be updated:
 
-APPROVE the proposed public contract.
+- `game/CURRENT_STATE.md`
+- `game/docs/FLOWS.md`
 
-MODIFY the proposed public contract.
+Expected unchanged:
 
-REJECT the proposed public contract.
+- domain boundary
+- architecture
+- DB schema
 
-The public contract above is PROPOSED, NOT HUMAN-APPROVED.
+## Remaining Blockers
 
-No additional material decisions were discovered during this review.
+None.
 
-## What happens after approval
+## Decision Needed
 
-- The decision will be persisted into the DRAFT WORK.
-- The AI will run Definition-of-Ready validation.
-- You will receive a concise READY REVIEW.
-- Implementation still does not begin until you explicitly approve the WORK as READY.
+If this accurately represents what you want implemented, reply:
+
+READY
+
+Otherwise describe what you want changed.
+
+READY authorizes implementation of exactly the approved WORK. It does not authorize scope expansion or new material decisions.
+
+After READY, the AI will transition `WORK-0001` from DRAFT to READY, remove the temporary design workspace once the durable WORK is sufficient, and provide the minimal Codex implementation handoff.

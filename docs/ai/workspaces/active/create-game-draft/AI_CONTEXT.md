@@ -7,54 +7,19 @@ Status: TEMPORARY / NON-CANONICAL / NON-AUTHORITATIVE
 - Process: FEATURE_DEVELOPMENT
 - Topic: create-game-draft
 - Human review path: `docs/ai/workspaces/active/create-game-draft/HUMAN_REVIEW.md`
+- Human review status: READY REVIEW
 - Persistent WORK path: `docs/work/active/WORK-0001-create-game-draft.md`
 - Persistent WORK status: DRAFT
-- Current human checkpoint: decide whether to APPROVE, MODIFY, or REJECT the proposed public Game Management create-draft contract.
+- Current human checkpoint: READY approval.
+- Implementation has not begun.
 
-The public contract is PROPOSED, NOT HUMAN-APPROVED.
+## Human Decisions
 
-## Already-Approved Feature Constraints
+The public Game Management create-draft contract is HUMAN-APPROVED.
 
-- Game plus initial definition creation is atomic.
-- A new Game is created as Draft.
-- The initial definition is version `1` and becomes the Game's current definition.
-- The initial definition is not published merely because it exists.
-- Draft creation does not require proving Engine playability.
-- Scope ends at Game Management.
-- Excluded: API/HTTP, authentication, Identity/Profile implementation, AI generation, creation wizard, templates, publishing, discovery, sessions/rooms, multiplayer, editing, later versions, billing, analytics.
-- Do not create game/game-definition history records merely because history tables exist.
+The prior material decision checkpoint about the public create-draft contract is resolved.
 
-## Relevant Canonical Sources
-
-- `AGENTS.md`
-- `docs/ai/OPERATING_MODEL.md`
-- `docs/ai/KNOWLEDGE_MAP.md`
-- `docs/ai/processes/FEATURE_DEVELOPMENT.md`
-- `docs/ai/protocols/FEATURE_DEVELOPMENT.md`
-- `docs/ai/workspaces/README.md`
-- `docs/work/active/WORK-0001-create-game-draft.md`
-- `game/README.md`
-- `game/CURRENT_STATE.md`
-- `game/docs/DATA_MODEL.md`
-- `game/docs/FLOWS.md`
-- `docs/engineering/standards/repositories.md`
-- `docs/engineering/standards/error-handling.md`
-- `docs/engineering/standards/data-integrity.md`
-- `docs/engineering/standards/testing.md`
-
-## Repository Evidence Inspected
-
-- `game/game/models.go`: public `game.Game` model includes `UUID`, metadata, `OwnerUUID`, `LogoImageURL`, `Visibility`, `VersionUUID`, and `program.Definition`; visibility constants include `Draft`.
-- `game/game/usecases/getgame/service.go`: existing Game Management use case convention uses `package getgame`, `type UseCase`, `New(db *gorm.DB) *UseCase`, and public method returning `*game.Game`.
-- `game/game/usecases/getgame/repo.go`: repository reads current game plus current definition by joining `games.current_definition_id` to `game_definitions.id`.
-- `game/game/internal/storage/tables.go`: storage structs include `games.current_definition_id`, `game_definitions.uuid`, `game_definitions.game_id`, `game_definitions.version_number`, `game_definitions.script`, and nullable `published_at`.
-- `game/game/internal/storage/migrations/20260822000000_games.go`: `games` table has UUID, metadata, owner UUID, nullable current definition, logo URL, visibility.
-- `game/game/internal/storage/migrations/20260822000001_game_definitions.go`: `game_definitions` table has UUID, game ID, version number, JSONB script, nullable published time, and unique `(game_id, version_number)`.
-- `game/language/v1/program/definition.go`: `program.Definition` is the authored source-level game representation.
-- `game/language/v1/program/gameservice/codec.go`: `EncodeJSON` encodes `program.Definition` to the existing compact JSON representation without semantic validation; `DecodeJSON` decodes persisted JSON back to `program.Definition`.
-- `game/CURRENT_STATE.md` and `game/docs/FLOWS.md`: Game Management retrieval exists; create/edit/publish lifecycle operations were not found implemented.
-
-## Current Public-Contract Proposal
+Approved public contract:
 
 ```go
 package creategame
@@ -80,27 +45,81 @@ func (c *UseCase) CreateGameDraft(
 ) (*game.Game, error)
 ```
 
-Semantics:
+Approved semantics:
 
-- Caller provides authored content only: name, description, owner UUID, logo image URL, and initial definition.
-- Game Management generates Game UUID.
-- Game Management generates initial Definition UUID.
-- Caller does not provide visibility, version number, published time, or current-definition ID.
-- Game Management persists visibility as draft, definition version as `1`, `published_at` as null, and links the game's current definition to the created initial definition.
-- Returned result should reuse `*game.Game` unless implementation later reveals a material reason for a separate DTO.
-- Do not introduce new product validation rules for name, description, or logo URL unless an existing accepted contract already requires them.
+- Caller provides `Name`, `Description`, `OwnerUUID`, `LogoImageURL`, and the initial `program.Definition`.
+- Game Management generates the Game UUID and initial Definition UUID.
+- Caller does not control `Visibility`, `VersionNumber`, `PublishedAt`, or `CurrentDefinitionID`.
+- Game Management applies Draft visibility, definition version `1`, unpublished initial definition, and current-definition linkage.
+- The operation returns `*game.Game`.
+- Do not add new product validation rules for name, description, or logo URL unless an existing accepted contract already requires them.
 
-## Rationale And Conclusions
+## Already-Approved Feature Constraints
 
-- `Params` is the clearest public input shape for a multi-field creation operation and leaves room for future local expansion without positional churn.
-- `CreateGameDraft` makes the approved Draft-only behavior explicit in the public method name.
-- The contract prevents callers from injecting lifecycle/version/publication state owned by Game Management.
-- Reusing `game.Game` matches current Game Management retrieval conventions and avoids creating a new public DTO without a demonstrated need.
-- No repository evidence was found that requires changing the material proposal.
+- Game plus initial definition creation is atomic.
+- A new Game is created as Draft.
+- The initial definition is version `1` and becomes the Game's current definition.
+- The initial definition is not published merely because it exists.
+- Draft creation does not require proving Engine playability.
+- Scope ends at Game Management.
+- Excluded: API/HTTP, authentication, Identity/Profile implementation, AI generation, creation wizard, templates, publishing, discovery, sessions/rooms, multiplayer, editing, later versions, billing, analytics.
+- Do not create game/game-definition history records merely because history tables exist.
 
-## Unresolved Material Decision
+## Relevant Sources
 
-The public Game Management create-draft contract remains unresolved and must be decided by the human in `HUMAN_REVIEW.md`.
+- `AGENTS.md`
+- `docs/ai/OPERATING_MODEL.md`
+- `docs/ai/KNOWLEDGE_MAP.md`
+- `docs/ai/processes/FEATURE_DEVELOPMENT.md`
+- `docs/ai/protocols/FEATURE_DEVELOPMENT.md`
+- `docs/ai/workspaces/README.md`
+- `docs/work/README.md`
+- `docs/work/active/WORK-0001-create-game-draft.md`
+- `game/README.md`
+- `game/CURRENT_STATE.md`
+- `game/docs/DATA_MODEL.md`
+- `game/docs/FLOWS.md`
+- `docs/engineering/standards/repositories.md`
+- `docs/engineering/standards/error-handling.md`
+- `docs/engineering/standards/data-integrity.md`
+- `docs/engineering/standards/testing.md`
+
+## Repository Evidence Already Inspected
+
+- `game/game/models.go`: public `game.Game` model includes `UUID`, metadata, `OwnerUUID`, `LogoImageURL`, `Visibility`, `VersionUUID`, and `program.Definition`; visibility constants include `Draft`.
+- `game/game/usecases/getgame/service.go`: existing Game Management use case convention uses `package getgame`, `type UseCase`, `New(db *gorm.DB) *UseCase`, and a public method returning `*game.Game`.
+- `game/game/usecases/getgame/repo.go`: repository reads current game plus current definition by joining `games.current_definition_id` to `game_definitions.id`.
+- `game/game/internal/storage/tables.go`: storage structs include `games.current_definition_id`, `game_definitions.uuid`, `game_definitions.game_id`, `game_definitions.version_number`, `game_definitions.script`, and nullable `published_at`.
+- `game/game/internal/storage/migrations/20260822000000_games.go`: `games` table has UUID, metadata, owner UUID, nullable current definition, logo URL, visibility.
+- `game/game/internal/storage/migrations/20260822000001_game_definitions.go`: `game_definitions` table has UUID, game ID, version number, JSONB script, nullable published time, and unique `(game_id, version_number)`.
+- `game/language/v1/program/definition.go`: `program.Definition` is the authored source-level game representation.
+- `game/language/v1/program/gameservice/codec.go`: `EncodeJSON` encodes `program.Definition` to the existing compact JSON representation without semantic validation; `DecodeJSON` decodes persisted JSON back to `program.Definition`.
+- `game/CURRENT_STATE.md` and `game/docs/FLOWS.md`: Game Management retrieval exists; create/edit/publish lifecycle operations were not found implemented.
+
+## Definition Of Ready Result
+
+PASS.
+
+Validation against `docs/work/README.md`:
+
+- Outcome is clear.
+- In-scope and out-of-scope boundaries are clear.
+- Required product decisions are resolved.
+- Required architecture/domain decisions are resolved.
+- Required engineering-standard decisions are resolved.
+- Important task-specific material design decisions are approved.
+- Public contract is resolved.
+- Persistence and atomicity semantics are resolved.
+- Constraints and invariants are explicit.
+- Acceptance criteria are observable and testable.
+- Required verification is identified.
+- Documentation impact is identified.
+- No unresolved MATERIAL blocker remains.
+- Local implementation choices are distinguished from human decisions.
+
+## Remaining Blockers
+
+None.
 
 No hidden material decision exists only in this file.
 
@@ -124,16 +143,16 @@ No hidden material decision exists only in this file.
 
 ## Expected Documentation Synchronization
 
-- No canonical product, architecture, domain, data-model, or engineering-standard documentation should change during the current design checkpoint.
-- After implementation exists, expected current-state documentation updates are `game/CURRENT_STATE.md` and `game/docs/FLOWS.md`, as already listed in the DRAFT WORK.
+- No canonical product, architecture, domain, data-model, or engineering-standard documentation should change during this READY checkpoint.
+- After implementation exists, expected current-state documentation updates are `game/CURRENT_STATE.md` and `game/docs/FLOWS.md`, as listed in the DRAFT WORK.
 - `docs/work/active/WORK-0001-create-game-draft.md` must remain DRAFT until the human approves READY.
 
 ## Next Protocol Action
 
-After the human responds:
+If the human replies READY:
 
-- If APPROVE: persist the contract decision into the DRAFT WORK, validate Definition of Ready, and prepare a READY REVIEW for human approval.
-- If MODIFY: update the human review and DRAFT WORK only as authorized, then re-check for material decisions.
-- If REJECT: record the rejection path in the workspace and ask for the replacement direction needed to continue.
+- Persist `WORK-0001` status transition from DRAFT to READY.
+- Perform any workspace cleanup allowed by the Feature Development protocol once the durable WORK is sufficient.
+- Provide the minimal implementation handoff from `docs/ai/protocols/IMPLEMENTATION_REVIEW.md`.
 
 Implementation must not begin until the human explicitly approves the WORK as READY.
