@@ -85,7 +85,7 @@ An accepted ADR does not replace updating canonical architecture/domain document
 
 Canonical architecture should reflect accepted current architecture. Future or unimplemented designs must not be shown as implemented current-state diagrams.
 
-Implementation work remains a separate downstream process.
+Accepted architecture work requiring implementation should route to `FEATURE_DEVELOPMENT.md`, which persists concrete approved implementation work under `docs/work/active/`. Accepting an architecture decision does not automatically create or implement a work spec.
 
 ## Completion Criteria
 

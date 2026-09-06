@@ -71,6 +71,10 @@ Cover only relevant topics, such as behavior, public contracts, domain model, da
 
 Do not generate unnecessary sections when irrelevant.
 
+Early product or architecture exploration does not require creating a work spec.
+
+Concrete work is persisted using `docs/work/templates/WORK_SPEC.template.md`. The resulting file lives under `docs/work/active/`, starts as DRAFT, and becomes READY only after explicit human Definition of Ready approval.
+
 The specification must explicitly distinguish:
 
 - approved decisions;
@@ -106,41 +110,52 @@ Current-state documentation must not be updated to future state before code is i
 - Material design blockers are resolved or explicitly out of scope.
 - Approved decisions, local implementation freedom, and unresolved blockers are separated.
 - Required verification and documentation impact are specified.
+- READY is explicit implementation authority.
+- A DRAFT specification must not be handed to Codex for implementation.
+- READY means material uncertainty is resolved; private implementation details do not all need to be predetermined.
 
 ## Codex Handoff Prompt
 
 ```text
 We are implementing an approved Feature Development specification for Playhoot.
 
-Read AGENTS.md. Read docs/ai/OPERATING_MODEL.md. Use docs/ai/KNOWLEDGE_MAP.md to load only relevant context. Read the approved work specification below. Inspect the real implementation, tests, and migrations before changing code.
+Approved work specification:
+docs/work/active/WORK-NNNN-short-title.md
+
+Read AGENTS.md. Read docs/ai/OPERATING_MODEL.md. Use docs/ai/KNOWLEDGE_MAP.md to load only relevant context. Read the current READY work specification from the repository. Inspect the real implementation, tests, and migrations before changing code.
 
 Follow the approved decisions. Retain autonomy for local implementation details within the specification. Escalate material discoveries using the DISCOVERY format from docs/ai/OPERATING_MODEL.md instead of silently redesigning product behavior, architecture, domain boundaries, persistence, consistency, security, infrastructure, or engineering standards.
 
 Implement the feature and relevant tests. Run relevant verification. After implementation, update only documentation explicitly required by the specification. Flag additional documentation impacts instead of silently rewriting canonical knowledge.
 
 Report implementation summary, local design decisions, deviations, discoveries, tests run, and documentation changes.
-
-Approved specification:
-[paste specification]
 ```
 
 ## Codex Discovery / Escalation Loop
 
 If Codex discovers material drift or an unapproved material decision, pause that part of the work and report DISCOVERY. Continue only work that remains valid without the decision.
 
+When implementation begins, transition the work spec from READY to IMPLEMENTING.
+
+If a material approved change is required before or during implementation, return the work spec to DRAFT and require explicit human re-approval before returning it to READY.
+
+After implementation, independent review, required fixes, verification, and documentation synchronization are complete, mark the work spec DONE and move the file to `docs/work/completed/`.
+
+CANCELLED work also moves to `docs/work/completed/`.
+
 ## Independent Review Prompt
 
 ```text
 We are independently reviewing completed Playhoot implementation work.
 
-Read AGENTS.md. Read docs/ai/OPERATING_MODEL.md. Use docs/ai/KNOWLEDGE_MAP.md to load relevant context. Read the approved specification and inspect the implementation, tests, migrations, and documentation changed by the work.
+Read AGENTS.md. Read docs/ai/OPERATING_MODEL.md. Use docs/ai/KNOWLEDGE_MAP.md to load relevant context. Read the approved WORK specification and inspect the implementation, tests, migrations, and documentation changed by the work.
 
 Review without relying on the implementation agent's assumptions. Check specification compliance, architecture/domain boundaries, engineering standards, public contracts, persistence/data correctness, consistency/concurrency where applicable, security, observability/error handling, failure modes, tests, unnecessary complexity, and documentation drift.
 
 Prioritize findings by severity with file/line references where possible. Do not rewrite code unless asked. Distinguish EXISTING, PROPOSED, ACCEPTED, and IMPLEMENTED facts. Detect and report drift.
 
-Approved specification:
-[paste specification]
+Approved work specification:
+docs/work/active/WORK-NNNN-short-title.md
 ```
 
 ## Possible Outputs
@@ -155,6 +170,8 @@ Approved specification:
 
 ## Persistence / Documentation Rules
 
+Approved concrete implementation work is persisted as a WORK specification under `docs/work/active/`. See `docs/work/README.md`.
+
 Update required canonical documentation only after implementation changes actual state. Do not update current-state diagrams to future state. Flag additional likely impacts rather than redefining canonical knowledge silently.
 
 Do not require human line-by-line review of all code. Recommend deeper human review for critical areas such as concurrency, transactions, security, runtime/engine state, public contracts, and complex business invariants.
@@ -167,6 +184,7 @@ Do not require human line-by-line review of all code. Recommend deeper human rev
 - Independent review is complete and required findings are fixed or consciously deferred.
 - Required documentation synchronization is complete.
 - No unresolved material drift was introduced by the task.
+- DONE or CANCELLED work specs are moved from `docs/work/active/` to `docs/work/completed/`.
 
 ## Where To Go Next
 

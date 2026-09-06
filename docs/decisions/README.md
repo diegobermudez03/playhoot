@@ -169,7 +169,7 @@ When a decision becomes ACCEPTED:
 
 Acceptance does not mean implementation exists. Do not modify current-state diagrams to show unimplemented behavior as implemented.
 
-If implementation work is required, route it to `FEATURE_DEVELOPMENT.md` or the work specification system.
+If implementation work is required, route it to `docs/ai/processes/FEATURE_DEVELOPMENT.md` and the persistent work specification system in `docs/work/README.md`. Concrete approved work lives under `docs/work/active/`.
 
 ## Decision / Canonical Drift
 

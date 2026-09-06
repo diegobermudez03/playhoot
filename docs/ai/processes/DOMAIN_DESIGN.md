@@ -86,7 +86,7 @@ An ACCEPTED boundary decision must update canonical architecture/domain document
 
 When a new or changed accepted domain boundary requires canonical domain documentation to be created or normalized, use `docs/ai/templates/domain/`. Do not instantiate domain documentation before the boundary decision is accepted.
 
-Implementation and migration happen separately through `FEATURE_DEVELOPMENT.md` or an appropriate work specification.
+Implementation and migration happen separately through `FEATURE_DEVELOPMENT.md` and a persistent work specification under `docs/work/active/`. Accepting a domain decision does not automatically create or implement a work spec.
 
 ## Completion Criteria
 

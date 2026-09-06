@@ -87,7 +87,7 @@ ACCEPTED product decisions update the relevant canonical product knowledge. REJE
 
 Deferred ideas normally remain in `docs/product/IDEAS.md` or another appropriate non-authoritative location rather than introducing a new decision status.
 
-Implementation work remains separate.
+Accepted product behavior requiring implementation should route to `FEATURE_DEVELOPMENT.md` and the persistent work-specification system. Accepting a product decision does not automatically create or implement a work spec.
 
 ## Completion Criteria
 

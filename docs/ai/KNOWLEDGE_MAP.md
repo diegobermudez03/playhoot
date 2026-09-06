@@ -34,8 +34,9 @@ This is a machine-facing routing document. It does not explain Playhoot. It tell
 | Architecture decision rationale | `docs/decisions/architecture/INDEX.md` and referenced ADRs | AVAILABLE | |
 | Product decision rationale | `docs/decisions/product/INDEX.md` and referenced PDRs | AVAILABLE | |
 | Decision-record process/templates | `docs/decisions/README.md` and `docs/decisions/templates/` | AVAILABLE | |
-| Current implementation work | `docs/work/active/*` | PLANNED | |
-| Completed implementation history | `docs/work/completed/*` | PLANNED | |
+| Current implementation work | `docs/work/active/` | AVAILABLE | |
+| Completed implementation history | `docs/work/completed/` | AVAILABLE | |
+| Work specification process/template | `docs/work/README.md` and `docs/work/templates/` | AVAILABLE | |
 | AI development behavior | `docs/ai/OPERATING_MODEL.md` | AVAILABLE | |
 | Human AI workflow entry point | `docs/ai/README.md` | AVAILABLE | |
 | AI workflow/runbook | `docs/ai/processes/*` | AVAILABLE | |

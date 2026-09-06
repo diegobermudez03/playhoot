@@ -81,7 +81,7 @@ Choose one:
 
 Defining a standard must not automatically authorize refactoring the entire repository.
 
-If migration requires code changes, create or use a separate `FEATURE_DEVELOPMENT.md` work specification.
+If migration requires code changes, use `FEATURE_DEVELOPMENT.md` and a separate WORK specification. See `docs/work/README.md`.
 
 ## Possible Outputs
 
