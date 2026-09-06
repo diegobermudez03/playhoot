@@ -23,10 +23,18 @@ classDiagram
         created_at
     }
 
-    table_a "1" --> "*" table_b : "table_a.id -> table_b.table_a_id"
+    table_a "1" --> "*" table_b : "table_b.table_a_id -> table_a.id"
 ```
 
 ## Relationship Semantics
+
+Use this canonical relationship-label convention:
+
+```text
+referencing_column -> referenced_column
+```
+
+The left side is the column storing the reference / foreign key. The right side is the referenced target column. Use this convention consistently regardless of the visual direction chosen for the Mermaid relationship/cardinality arrow.
 
 When useful, distinguish:
 
