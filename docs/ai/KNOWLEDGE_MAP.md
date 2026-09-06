@@ -21,9 +21,9 @@ This is a machine-facing routing document. It does not explain Playhoot. It tell
 | Current release/product scope | `docs/product/PRODUCT_STATE.md` | AVAILABLE | |
 | Product roadmap | `docs/product/ROADMAP.md` | AVAILABLE | |
 | Non-authoritative product ideas | `docs/product/IDEAS.md` | AVAILABLE / NON-AUTHORITATIVE | |
-| Global architecture | `ARCHITECTURE.md` | AVAILABLE / NEEDS NORMALIZATION | |
-| Current system visualization | `docs/architecture/SYSTEM_MAP.md` | PLANNED | `ARCHITECTURE.md` plus repository inspection |
-| Current cross-domain flows | `docs/architecture/CROSS_DOMAIN_FLOWS.md` | PLANNED | architecture docs plus repository inspection |
+| Global architecture | `ARCHITECTURE.md` | AVAILABLE | |
+| Current system visualization | `docs/architecture/SYSTEM_MAP.md` | AVAILABLE | |
+| Current cross-domain flows | `docs/architecture/CROSS_DOMAIN_FLOWS.md` | AVAILABLE | |
 | Domain responsibility | `<domain>/README.md` | PARTIAL / DOMAIN-DEPENDENT | |
 | Domain implementation state | `<domain>/CURRENT_STATE.md` | PLANNED | |
 | Domain DB schema | `<domain>/docs/DATA_MODEL.md` | PLANNED | migrations plus persistence code |

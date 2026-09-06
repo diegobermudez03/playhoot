@@ -1,7 +1,18 @@
-This pkg is like the `gateway` for the entire system, this will be the only pkg exposing user facing endpoints:
+# API
 
-- Exposes user facing endpoints
-- Handles user authorization (JWT, etc)
-- Can perform BFF (Backend for frontend) operations, exposing dedicated endpoints for FE specific purposes
-- It contains NO STATE, it has NO DATABASE, it simply redirects calls to respective domains and can compose information for BFF
-- While the system is a monolith the calls will be direct in program method calls, once we start moving services away the communication will be through internal network communication with rest API or gRPC
+API is the external transport/application edge for Playhoot.
+
+- Exposes user-facing transport endpoints.
+- Translates transport requests and responses.
+- May handle transport-level concerns.
+- May perform BFF response shaping for frontend needs.
+- May call a single-domain capability.
+- May call Composer for cross-domain reads.
+- May initiate Orchestrator workflows for cross-domain writes.
+- Owns no business state.
+
+BFF response shaping is not the same as cross-domain read composition. If a request requires combining multiple domain reads, that composition belongs to Composer.
+
+This README does not define Identity or authorization ownership.
+
+See `../ARCHITECTURE.md` for global architecture rules.
