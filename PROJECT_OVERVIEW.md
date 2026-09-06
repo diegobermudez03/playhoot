@@ -612,26 +612,3 @@ The product vision is validated when a creator without programming knowledge can
 7. publish a stable revised version.
 
 Technical sophistication alone is not sufficient. The generated game must be understandable, usable, and enjoyable enough for real people to play.
-
-## Current Project Stage
-
-The project is currently defining the foundational product model required to represent flexible multiplayer games safely and consistently.
-
-Many product decisions are still open, including:
-
-- the exact creator editing experience;
-- asset generation and upload flows;
-- content moderation;
-- public discovery;
-- monetization;
-- marketplace behavior;
-- persistent progression across sessions;
-- supported room sizes;
-- mobile and desktop presentation requirements;
-- collaboration between multiple creators;
-- analytics and creator dashboards;
-- community remixing and sharing.
-
-These open questions do not change the central product idea:
-
-> A creator describes a social multiplayer game, the platform turns that intent into a validated and playable experience, and players join a room to play it together

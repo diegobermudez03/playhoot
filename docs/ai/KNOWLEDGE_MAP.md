@@ -18,9 +18,9 @@ This is a machine-facing routing document. It does not explain Playhoot. It tell
 | Need | Canonical | Status | Current fallback |
 | --- | --- | --- | --- |
 | Product vision | `PROJECT_OVERVIEW.md` | AVAILABLE | |
-| Current release/product scope | `docs/product/PRODUCT_STATE.md` | PLANNED | `PROJECT_OVERVIEW.md` plus current task context |
-| Product roadmap | `docs/product/ROADMAP.md` | PLANNED | |
-| Non-authoritative product ideas | `docs/product/IDEAS.md` | PLANNED | |
+| Current release/product scope | `docs/product/PRODUCT_STATE.md` | AVAILABLE | |
+| Product roadmap | `docs/product/ROADMAP.md` | AVAILABLE | |
+| Non-authoritative product ideas | `docs/product/IDEAS.md` | AVAILABLE / NON-AUTHORITATIVE | |
 | Global architecture | `ARCHITECTURE.md` | AVAILABLE / NEEDS NORMALIZATION | |
 | Current system visualization | `docs/architecture/SYSTEM_MAP.md` | PLANNED | `ARCHITECTURE.md` plus repository inspection |
 | Current cross-domain flows | `docs/architecture/CROSS_DOMAIN_FLOWS.md` | PLANNED | architecture docs plus repository inspection |
