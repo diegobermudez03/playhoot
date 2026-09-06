@@ -1,15 +1,15 @@
 Wrote by AI, human dev notes added as `Dev note:`
 
-# game/program
+# game/language/v1/program
 
-`program` defines the source-level language for describing a game: types, state, workflows, expressions, UI, and everything else an author writes down. It's a pure, in-memory data model — an AST, not a compiler or a runtime. It doesn't run games, doesn't talk to a database or the network, and doesn't know anything about any specific engine that will eventually consume it.
+`program` defines the source-level language for describing a game: types, state, workflows, expressions, UI, and everything else an author writes down. It's a pure, in-memory data model — an AST, not a compiler or a runtime. It doesn't run games, doesn't talk to a database or the network, and doesn't know anything about any specific engine that consumes it.
 
-Encoding, decoding, and validating a `Definition` are not part of `program` itself — that behavior lives in the sibling package `game/program/gameservice`, built on top of `program`'s types.
+Encoding, decoding, and validating a `Definition` are not part of `program` itself — that behavior lives in the sibling package `game/language/v1/program/gameservice`, built on top of `program`'s types.
 
 ```go
 import (
-    "github.com/diegobermudez03/playhoot/game/program"
-    "github.com/diegobermudez03/playhoot/game/program/gameservice"
+    "github.com/diegobermudez03/playhoot/game/language/v1/program"
+    "github.com/diegobermudez03/playhoot/game/language/v1/program/gameservice"
 )
 
 def, err := gameservice.DecodeJSON(data)
@@ -27,7 +27,7 @@ out, err := gameservice.EncodeJSON(*def)
 - **`DecodeError`** — the error type returned by `DecodeJSON` on malformed JSON. It carries a path (like `$.workflows[0].states[2].transitions[0]`) pointing at exactly where decoding failed.
 - **`Validate(program.Definition) []error`** — checks a `Definition` against the language's own rules: operator/operand type compatibility, named-type resolution, and duplicate names within a namespace (two types, two workflows, two questions with the same name, etc.). Returns `nil` if nothing is wrong. Each error is a `*gameservice.ValidationError` with a `Path` and `Message`.
 
-`Validate` is intentionally narrow. It does **not** resolve references, lexical scope, or anything that depends on where a name is used at runtime (e.g. whether `ReferenceExpression{Name: "foo"}` actually refers to something in scope). That's the job of a future _engine_ package that compiles a `Definition`. A `nil` result from `Validate` means the definition doesn't break any rule `program`/`gameservice` itself owns — it does not mean the definition will compile.
+`Validate` is intentionally narrow. It does **not** resolve references, lexical scope, or anything that depends on where a name is used at runtime (e.g. whether `ReferenceExpression{Name: "foo"}` actually refers to something in scope). That's the job of the engine package that compiles a `Definition`. A `nil` result from `Validate` means the definition doesn't break any rule `program`/`gameservice` itself owns — it does not mean the definition will compile.
 
 ## The core type: `Definition`
 
@@ -115,8 +115,8 @@ These are the three ways a workflow talks to players. `QuestionDeclaration` is a
 
 ## Mutability
 
-A `Definition` is an authoring value: build it, decode it, edit it, throw it away, whatever you need. There's no hidden shared state and no lifecycle to manage — it only becomes meaningful once something (a future compiler/engine) consumes it.
+A `Definition` is an authoring value: build it, decode it, edit it, throw it away, whatever you need. There's no hidden shared state and no lifecycle to manage — it only becomes meaningful once something (such as the current compiler/engine) consumes it.
 
 ## What this package is not
 
-`program` doesn't validate references or lexical scope, doesn't check that a workflow name in `RootWorkflow` actually exists, doesn't execute anything, and doesn't know about randomness streams, snapshots, sessions, or persistence at runtime. Those all belong to a future engine package built on top of this model.
+`program` doesn't validate references or lexical scope, doesn't check that a workflow name in `RootWorkflow` actually exists, doesn't execute anything, and doesn't know about randomness streams, snapshots, sessions, or persistence at runtime. Those belong to the engine package built on top of this model.

@@ -14,6 +14,7 @@ Status: CURRENT IMPLEMENTATION
 
 - Game Management lifecycle operations beyond retrieving a playable game with its current version were not found implemented.
 - Session Runtime create/join/start/execution behavior was not found implemented beyond persistence schema and scaffolding.
+- Session Runtime lifecycle packages currently do not build because `game/session/workflows/sessionlifecycle/internal/repo/step_create_room.go` declares `CreateRoom` without a function body.
 
 ## Known Drift
 

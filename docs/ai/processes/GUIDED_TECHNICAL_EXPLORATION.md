@@ -74,7 +74,7 @@ Technical area / concern:
 
 ## Persistence / Documentation Rules
 
-Exploration notes are not accepted decisions. Persist only accepted outcomes in the proper canonical destination once it exists. Do not update current-state docs to describe future possibilities.
+Exploration notes are not accepted decisions. Meaningful non-authoritative technical recommendations may be persisted to `docs/engineering/ENGINEERING_RADAR.md`. Accepted outcomes must be persisted in their proper canonical owner. Do not update current-state docs to describe future possibilities.
 
 ## Completion Criteria
 

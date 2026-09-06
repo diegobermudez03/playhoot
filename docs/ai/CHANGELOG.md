@@ -103,3 +103,21 @@ Current Git history plus this changelog is sufficient. If stable workflow-change
 
 **Compatibility / migration**
 - No existing WORK, ADR, PDR, Radar, domain-documentation, code, test, or migration artifact migration is required by this workflow mechanism.
+
+## 2026-09-06 - Graduated canonical knowledge routing
+
+**Change**
+- Completed the end-to-end knowledge/workflow consistency audit.
+- Removed transitional routing semantics from the Knowledge Map.
+- Graduated `docs/ai/KNOWLEDGE_MAP.md` to the stable canonical routing map.
+- Clarified that DOMAIN-DEPENDENT routing applies only to accepted domains.
+
+**Reason**
+- AI agents can reconstruct Playhoot's accepted knowledge, current implementation state, non-authoritative sources, historical rationale, engineering standards, work authority, review flow, Radar persistence, and workflow evolution from repository artifacts without relying on historical chat context.
+
+**Affected workflow artifacts**
+- `docs/ai/KNOWLEDGE_MAP.md`
+- `docs/ai/CHANGELOG.md`
+
+**Compatibility / migration**
+- No existing ADR, PDR, WORK, Radar, domain-documentation, code, test, or migration artifact migration is required. Unresolved business/domain questions remain unresolved rather than being implicitly accepted.

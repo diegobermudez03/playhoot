@@ -1,6 +1,6 @@
 # Knowledge Map
 
-Status: TRANSITIONAL
+Status: CANONICAL ROUTING MAP
 
 This is a machine-facing routing document. It does not explain Playhoot. It tells AI agents where to retrieve authoritative context.
 
@@ -10,8 +10,6 @@ This is a machine-facing routing document. It does not explain Playhoot. It tell
 - Load only task-relevant context.
 - Code, tests, and migrations are authoritative for actual implemented behavior.
 - Accepted canonical documents are authoritative for accepted design.
-- If a target canonical document is marked PLANNED and does not exist yet, use the listed current fallback and inspect code where appropriate.
-- Never interpret PLANNED documents as if they already existed.
 
 ## Routing Table
 
@@ -47,6 +45,8 @@ This is a machine-facing routing document. It does not explain Playhoot. It tell
 
 ## Accepted Domain Documentation
 
+DOMAIN-DEPENDENT entries apply only to accepted domains. They do not mean every top-level directory is an accepted domain.
+
 | Domain | Model | Current State | Data Model | Flows |
 | --- | --- | --- | --- | --- |
 | Game | `game/README.md` | `game/CURRENT_STATE.md` | `game/docs/DATA_MODEL.md` | `game/docs/FLOWS.md` |
@@ -77,7 +77,3 @@ When working in a domain, load:
 6. actual code, tests, and migrations needed for the question.
 
 Do not load unrelated domains unless the task crosses those boundaries.
-
-## Transitional State
-
-This map will be updated as later normalization steps create canonical documents. Missing planned documents are expected during migration and are not themselves errors.
