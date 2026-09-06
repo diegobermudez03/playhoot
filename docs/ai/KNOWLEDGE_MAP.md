@@ -38,8 +38,11 @@ This is a machine-facing routing document. It does not explain Playhoot. It tell
 | AI development behavior | `docs/ai/OPERATING_MODEL.md` | AVAILABLE | |
 | AI workflow evolution history | `docs/ai/CHANGELOG.md` | AVAILABLE / HISTORICAL | |
 | Implementation / independent review protocol | `docs/ai/protocols/IMPLEMENTATION_REVIEW.md` | AVAILABLE | |
+| Agent execution protocol | `docs/ai/protocols/*` | AVAILABLE / AGENT-FACING | |
 | Human AI workflow entry point | `docs/ai/README.md` | AVAILABLE | |
-| AI workflow/runbook | `docs/ai/processes/*` | AVAILABLE | |
+| Human process/runbook | `docs/ai/processes/*` | AVAILABLE / HUMAN-FACING | |
+| Workspace mechanics | `docs/ai/workspaces/README.md` | AVAILABLE | |
+| Temporary active process workspace | `docs/ai/workspaces/active/<process-topic>/` | TEMPORARY / NON-AUTHORITATIVE | |
 
 `DATA_MODEL.md` diagrams, once created, must represent current implementation, show all persisted columns, and show exact column-to-column relationships. Indexes and SQL types are not required.
 

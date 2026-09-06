@@ -1,101 +1,57 @@
 # Domain Design
 
-## Purpose
+Use this when you want to decide Playhoot business/domain ownership.
 
-Create, remove, split, merge, or materially redefine a business/domain boundary.
-
-## Use This When
+## When to use it
 
 - A new domain is proposed.
-- Two domains may actually be one.
-- One domain may contain unrelated responsibilities.
+- A responsibility may belong in a different domain.
+- Two domains may actually be one, or one domain may contain unrelated responsibilities.
 - Ownership is unclear.
-- Responsibility is moving between domains.
 
-## Do NOT Use This When
+## Step 1 - Start
 
-- A new package is needed but domain ownership is unchanged.
-- The issue is only local code organization.
-- The main question is product value. Use `PRODUCT_DISCUSSION.md`.
-- The implementation work is already approved. Use `FEATURE_DEVELOPMENT.md`.
-
-## Starting Information
-
-Provide the proposed domain question, current responsibility pressure, related product behavior, and any code or docs that triggered the concern.
-
-## Start This Process
+Paste:
 
 ```text
-We are using docs/ai/processes/DOMAIN_DESIGN.md.
-
-Read docs/ai/OPERATING_MODEL.md. Use docs/ai/KNOWLEDGE_MAP.md to retrieve relevant product, architecture, and domain context. Inspect code, tests, and migrations when current implementation matters.
-
-Act under the Principal Engineer Contract. Challenge whether this is truly a domain issue, propose alternative boundaries I did not mention, teach relevant domain-design tradeoffs, consider artificial separation costs, and make a recommendation.
-
-Distinguish EXISTING, PROPOSED, ACCEPTED, and IMPLEMENTED facts. Detect and report drift. Do not implement migration work in this process.
+I want to use the Playhoot Domain Design process.
 
 Domain question:
-[paste question]
+[describe it]
+
+Responsibility or behavior involved:
+[describe it]
+
+Files, docs, or code that triggered this:
+[optional]
 ```
 
-## Process Stages
+## Step 2 - What the AI will give you
 
-1. DOMAIN QUESTION: state the proposed boundary change.
-2. Product responsibility: identify the business responsibility.
-3. Ubiquitous/business concepts: name concepts used by the product.
-4. Owned state/data: identify what data would be owned.
-5. Invariants: identify rules the domain must protect.
-6. Lifecycle: compare creation, update, deletion, and versioning lifecycles.
-7. Public capabilities: define what the domain exposes.
-8. Explicit non-ownership: define what it must not own.
-9. Independent evolution: assess whether it changes independently.
-10. Dependency pressure: inspect coupling and dependency direction.
-11. Cross-domain coordination consequences: identify orchestrator/composer pressure.
-12. Alternative boundaries: include no domain change.
-13. Recommendation.
-14. Human decision.
-15. Architecture/documentation impact.
-16. Migration impact if existing code differs.
+For small boundary questions, the AI may answer directly with a recommendation.
 
-## Design AI Responsibilities
+For material boundary decisions, the AI will prepare `docs/ai/workspaces/active/<domain-topic>/HUMAN_REVIEW.md` with the business responsibility, ownership options, invariants, lifecycle concerns, tradeoffs, recommendation, and migration implications.
 
-- Make clear that domain != package, folder, deployment, or service.
-- Make clear that different lifecycle/process != automatically different domain.
-- Question artificial separation when almost every operation would require orchestration only to cross the boundary.
-- Also question oversized domains when responsibilities differ even if code volume is large or deployment is shared.
+## Step 3 - What you need to do
 
-## Human Decision Checkpoints
+Review the checkpoint and respond with one of:
 
-- Confirm the product responsibility being modeled.
-- Accept no-change, split, merge, remove, create, or redefine.
-- Decide whether rationale should be persisted.
+- accept a boundary;
+- reject the proposed boundary change;
+- defer the question;
+- ask questions;
+- request modifications;
+- route implementation or migration work to Feature Development.
 
-## Possible Outputs
+## Step 4 - What happens next
 
-- Do not create/change the domain.
-- Accepted domain boundary change.
-- Rejected proposal.
-- Deferred boundary concern.
-- Migration or implementation work to specify later.
+Accepted domain decisions update their canonical architecture/domain owners when appropriate.
 
-## Persistence / Documentation Rules
+Implementation and migration are separate; they require Feature Development and approved WORK before code changes.
 
-Material accepted/rejected domain-boundary decisions may use an ADR under `docs/decisions/architecture/` when their rationale meets the persistence threshold from `docs/decisions/README.md`.
+## Resume in a new session
 
-An ACCEPTED boundary decision must update canonical architecture/domain documentation.
-
-When a new or changed accepted domain boundary requires canonical domain documentation to be created or normalized, use `docs/ai/templates/domain/`. Do not instantiate domain documentation before the boundary decision is accepted.
-
-Implementation and migration happen separately through `FEATURE_DEVELOPMENT.md` and a persistent work specification under `docs/work/active/`. Accepting a domain decision does not automatically create or implement a work spec.
-
-## Completion Criteria
-
-- Domain ownership is accepted, rejected, or deferred.
-- Migration impact is identified if existing code differs.
-- Next documentation or implementation process is routed.
-
-## Where To Go Next
-
-- Migration or code change: `FEATURE_DEVELOPMENT.md`.
-- Broader system question: `ARCHITECTURE_DISCUSSION.md`.
-- Product uncertainty: `PRODUCT_DISCUSSION.md`.
+```text
+Resume the Playhoot Domain Design process from:
+docs/ai/workspaces/active/<process-topic>/
+```

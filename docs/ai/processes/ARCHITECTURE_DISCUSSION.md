@@ -1,101 +1,56 @@
 # Architecture Discussion
 
-## Purpose
+Use this when you want to decide how Playhoot should be structured technically.
 
-Discuss system-level technical decisions independently from a specific implementation task.
+## When to use it
 
-## Use This When
+- A question affects system structure, ownership, coupling, persistence, infrastructure, or public contracts.
+- You want help comparing architecture alternatives before implementation.
+- The issue is broader than a local code detail.
 
-- The question affects system structure, ownership, coupling, persistence, infrastructure, or public contracts.
-- Examples: one domain or two, orchestration or events, session state persistence, cross-domain concerns, subsystem boundaries, responsibility location, system-level technology fit.
+## Step 1 - Start
 
-## Do NOT Use This When
-
-- The question is only about local implementation detail.
-- The main concern is product value. Use `PRODUCT_DISCUSSION.md`.
-- The question is specifically about domain ownership. Use `DOMAIN_DESIGN.md`.
-- You need AI-guided teaching in an unfamiliar technical area before deciding. Use `GUIDED_TECHNICAL_EXPLORATION.md`.
-
-## Starting Information
-
-Provide the architecture question, the trigger for asking it, known constraints, and any options you are considering.
-
-## Start This Process
+Paste:
 
 ```text
-We are using docs/ai/processes/ARCHITECTURE_DISCUSSION.md.
-
-Read docs/ai/OPERATING_MODEL.md. Use docs/ai/KNOWLEDGE_MAP.md to retrieve relevant product and architecture context. Inspect code, tests, and migrations when current implementation matters.
-
-Act under the Principal Engineer Contract. Do not accept the boundary or solution implied by my question. Challenge the framing, look one level above the immediate question, propose alternatives I did not mention, teach relevant concepts and tradeoffs, apply anti-overengineering, and make a concrete recommendation.
-
-Distinguish EXISTING, PROPOSED, ACCEPTED, and IMPLEMENTED facts. Detect and report drift. Do not implement anything unless a later approved implementation process starts.
+I want to use the Playhoot Architecture Discussion process.
 
 Architecture question:
-[paste question]
+[describe it]
+
+Trigger or concern:
+[why this came up]
+
+Options I am considering:
+[optional]
 ```
 
-## Process Stages
+## Step 2 - What the AI will give you
 
-1. QUESTION / CONCERN: state the decision under discussion.
-2. Load current architecture: use the Knowledge Map, not a full Markdown scan.
-3. Establish current state: inspect implementation if actual behavior matters.
-4. Define underlying problem: identify the real pressure behind the question.
-5. Identify constraints/invariants: include product, domain, data, and operational constraints where relevant.
-6. Challenge framing/boundary: test whether the implied boundary, technology, or solution is correct.
-7. Explore alternatives: include no change and unmentioned options.
-8. System-wide impact analysis: discuss only relevant lenses.
-9. Tradeoffs: compare benefits, complexity, cost, and risks.
-10. Recommendation: make a concrete recommendation with confidence and caveats.
-11. Human decision: accept, reject, defer, or request more exploration.
-12. Determine whether ADR/canonical architecture changes are warranted.
-13. Determine downstream work.
+For small questions, the AI may answer directly with a recommendation.
 
-## Design AI Responsibilities
+For material decisions, the AI will prepare `docs/ai/workspaces/active/<architecture-topic>/HUMAN_REVIEW.md` with the underlying problem, options, tradeoffs, recommendation, affected boundaries, and any decision needed from you.
 
-- Challenge the stated boundary or solution.
-- Consider relevant lenses: product implications, domain ownership, dependencies, data ownership, consistency, concurrency, reliability, observability, security/privacy, performance, infrastructure, deployment/scaling, operational complexity, cost, and future evolution.
-- Avoid mechanically discussing every lens.
-- Apply the anti-overengineering contract.
+## Step 3 - What you need to do
 
-## Human Decision Checkpoints
+Review the checkpoint and respond with one of:
 
-- Confirm the underlying problem.
-- Choose among alternatives or request more exploration.
-- Decide whether the decision is important enough for persistent rationale.
+- approve an option;
+- reject the recommendation;
+- defer the decision;
+- ask questions;
+- request modifications;
+- route to domain design, technical exploration, standard-setting, or feature development.
 
-## Possible Outputs
+## Step 4 - What happens next
 
-- No change.
-- Accepted architecture decision.
-- Rejected proposal.
-- Deferred concern.
-- Route to `DOMAIN_DESIGN.md`, `GUIDED_TECHNICAL_EXPLORATION.md`, `ENGINEERING_STANDARD.md`, or `FEATURE_DEVELOPMENT.md`.
-- Future Engineering Radar item.
+If you approve a material architecture decision, the AI will route any decision record, canonical architecture/domain documentation, or follow-up implementation work to the appropriate owner.
 
-## Persistence / Documentation Rules
+Approval of architecture does not mean the implementation already exists.
 
-Significant human-decided architecture outcomes may be persisted as ADRs under `docs/decisions/architecture/`.
+## Resume in a new session
 
-Use the persistence threshold from `docs/decisions/README.md`. Do not create an ADR for every technical discussion.
-
-The runbook may create a decision directly as ACCEPTED or REJECTED if the human decision occurred during the discussion.
-
-An accepted ADR does not replace updating canonical architecture/domain documentation. A rejected ADR changes no canonical architecture.
-
-Canonical architecture should reflect accepted current architecture. Future or unimplemented designs must not be shown as implemented current-state diagrams.
-
-Accepted architecture work requiring implementation should route to `FEATURE_DEVELOPMENT.md`, which persists concrete approved implementation work under `docs/work/active/`. Accepting an architecture decision does not automatically create or implement a work spec.
-
-## Completion Criteria
-
-- The architecture question has a recommendation and human decision, or a clear reason to defer.
-- Accepted decisions are not confused with implementation state.
-- Downstream work is routed.
-
-## Where To Go Next
-
-- Domain boundary decision: `DOMAIN_DESIGN.md`.
-- Unfamiliar technical space: `GUIDED_TECHNICAL_EXPLORATION.md`.
-- New reusable rule: `ENGINEERING_STANDARD.md`.
-- Approved implementation work: `FEATURE_DEVELOPMENT.md`.
+```text
+Resume the Playhoot Architecture Discussion process from:
+docs/ai/workspaces/active/<process-topic>/
+```

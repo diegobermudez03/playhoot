@@ -1,102 +1,56 @@
 # Product Discussion
 
-## Purpose
+Use this when you want to decide what Playhoot should do.
 
-Discuss product questions without prematurely turning them into technical implementation work.
+## When to use it
 
-PRODUCT QUESTION: "What should Playhoot do?"
+- You are considering product scope, user value, creator/player experience, launch target, or priority.
+- You want to accept, reject, defer, or reshape a product idea before implementation.
+- The main question is "should Playhoot do this?", not "how should the system be structured?"
 
-TECHNICAL QUESTION: "How should Playhoot be structured to do it?"
+## Step 1 - Start
 
-## Use This When
-
-- You are deciding whether Playhoot should do something.
-- You are discussing user interaction, product scope, positioning, flows, or priorities.
-- Examples: remixing public games, templates vs free prompt, classrooms, first-release value, educator focus.
-
-## Do NOT Use This When
-
-- The product decision is already accepted and ready to implement. Use `FEATURE_DEVELOPMENT.md`.
-- The main question is a system boundary or technical structure. Use `ARCHITECTURE_DISCUSSION.md` or `DOMAIN_DESIGN.md`.
-- You want the AI to lead an unfamiliar technical exploration. Use `GUIDED_TECHNICAL_EXPLORATION.md`.
-
-## Starting Information
-
-Provide the product idea or question, the user or creator problem you think it addresses, any constraints, and whether this is for now, later, or open exploration.
-
-## Start This Process
+Paste:
 
 ```text
-We are using docs/ai/processes/PRODUCT_DISCUSSION.md.
+I want to use the Playhoot Product Discussion process.
 
-Read docs/ai/OPERATING_MODEL.md. Use docs/ai/KNOWLEDGE_MAP.md to retrieve only the relevant repository context. Inspect code, tests, and migrations only if current implementation matters.
+Product question or idea:
+[describe it]
 
-Act under the Principal Engineer Contract. Challenge my framing, consider whether the problem exists one level above the proposed scope, propose product approaches I did not mention, teach relevant concepts and tradeoffs, distinguish useful sophistication from unnecessary complexity, and make a recommendation.
+Why it matters:
+[user/business reason]
 
-Distinguish EXISTING, PROPOSED, ACCEPTED, and IMPLEMENTED facts. Detect and report drift if repository documentation and implementation conflict. Do not implement anything. Do not turn this product idea into architecture unless we explicitly decide to route there.
-
-Product question:
-[paste question]
+Known constraints or timing:
+[optional]
 ```
 
-## Process Stages
+## Step 2 - What the AI will give you
 
-1. IDEA / QUESTION: state the product question clearly.
-2. Problem clarification: identify the user problem and desired outcome.
-3. User/persona/use-case analysis: identify who benefits and in what situation.
-4. Challenge the proposed solution: test whether the stated solution is the right level.
-5. Alternative product approaches: include options the human did not mention.
-6. Value / complexity / risk discussion: compare expected value, cost, uncertainty, and risks.
-7. MVP vs future: separate first useful version from later expansion.
-8. Recommendation: recommend do it, do a different solution, defer it, reject it, or run an experiment first.
-9. Human decision: record what, if anything, is accepted.
-10. Impact classification: identify product docs, architecture questions, domain questions, or implementation readiness.
-11. Persistence / next process: decide whether any repository update or next runbook is needed.
+For simple questions, the AI may answer directly with a recommendation.
 
-## Design AI Responsibilities
+For non-trivial decisions, the AI will prepare `docs/ai/workspaces/active/<product-topic>/HUMAN_REVIEW.md` with the product problem, options, tradeoffs, recommendation, and any material decision needed from you.
 
-- Keep the discussion product-first.
-- Challenge assumptions about users, value, timing, and scope.
-- Explain tradeoffs without inflating process for small decisions.
-- Avoid converting proposals into accepted decisions.
+## Step 3 - What you need to do
 
-## Human Decision Checkpoints
+Review the recommendation and respond with one of:
 
-- Approve the problem statement before comparing solutions.
-- Accept, reject, defer, or request an experiment after recommendation.
-- Decide whether the outcome needs persistence.
+- approve the product direction;
+- reject it;
+- defer it;
+- ask questions;
+- request modifications;
+- route it to another process.
 
-## Possible Outputs
+## Step 4 - What happens next
 
-- No accepted change.
-- Accepted product decision.
-- Rejected proposal.
-- Deferred idea.
-- Experiment proposal.
-- Route to architecture, domain design, or feature development.
+If you approve a material product decision, the AI will route any durable decision record, canonical product documentation, or follow-up implementation work to the appropriate owner.
 
-## Persistence / Documentation Rules
+Approval of product direction does not automatically implement anything.
 
-A casual discussion that produces no accepted decision may require no repository change.
+## Resume in a new session
 
-Significant human-decided product outcomes may be persisted as PDRs under `docs/decisions/product/`.
-
-Use the persistence threshold from `docs/decisions/README.md`. Not every product discussion requires a PDR.
-
-ACCEPTED product decisions update the relevant canonical product knowledge. REJECTED product decisions do not change canonical product state.
-
-Deferred ideas normally remain in `docs/product/IDEAS.md` or another appropriate non-authoritative location rather than introducing a new decision status.
-
-Accepted product behavior requiring implementation should route to `FEATURE_DEVELOPMENT.md` and the persistent work-specification system. Accepting a product decision does not automatically create or implement a work spec.
-
-## Completion Criteria
-
-- The product question is answered or explicitly deferred.
-- Accepted decisions are clearly separated from proposals.
-- Next process, if any, is identified.
-
-## Where To Go Next
-
-- Product decision creates architecture questions: `ARCHITECTURE_DISCUSSION.md` or `DOMAIN_DESIGN.md`.
-- Implementation-ready without unresolved architecture: `FEATURE_DEVELOPMENT.md`.
-- Reusable engineering rule needed: `ENGINEERING_STANDARD.md`.
+```text
+Resume the Playhoot Product Discussion process from:
+docs/ai/workspaces/active/<process-topic>/
+```

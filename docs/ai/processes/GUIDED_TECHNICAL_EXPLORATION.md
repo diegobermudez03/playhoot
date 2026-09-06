@@ -1,91 +1,57 @@
 # Guided Technical Exploration
 
-## Purpose
+Use this when you want the AI to lead you through an unfamiliar technical area.
 
-Use AI-guided leadership when the human does not know the technical space well enough to frame all relevant questions.
+## When to use it
 
-This process explicitly switches to AI-GUIDED leadership.
+- You know the area matters but do not know the right questions yet.
+- You want the AI to map concerns, explain tradeoffs, and recommend next steps.
+- Examples include observability, caching, storage options, security, backups, tracing, or deployment infrastructure.
 
-## Use This When
+## Step 1 - Start
 
-- You want the AI to lead exploration of a technical area.
-- Examples: observability, caching, storage options, backups/disaster recovery, security, tracing, deployment infrastructure.
-
-## Do NOT Use This When
-
-- You already have a specific architecture decision to make. Use `ARCHITECTURE_DISCUSSION.md`.
-- You are defining a reusable standard. Use `ENGINEERING_STANDARD.md`.
-- You are ready to implement approved work. Use `FEATURE_DEVELOPMENT.md`.
-
-## Starting Information
-
-Provide the technical area, the current concern or goal, what you already know, and how deep you want the first pass to be.
-
-## Start This Process
+Paste:
 
 ```text
-We are using docs/ai/processes/GUIDED_TECHNICAL_EXPLORATION.md.
+I want to use the Playhoot Guided Technical Exploration process.
 
-I am intentionally asking you to lead this technical exploration. Do not limit the discussion to technologies or concepts I mention.
+Technical area or concern:
+[describe it]
 
-Read docs/ai/OPERATING_MODEL.md. Use docs/ai/KNOWLEDGE_MAP.md to retrieve relevant repository context. Inspect code, tests, and migrations when current implementation matters.
+What I already know:
+[optional]
 
-Act under the Principal Engineer Contract. Map the problem space, identify concerns I did not mention, teach the important concepts, challenge my framing, assess current implementation where relevant, apply anti-overengineering, present realistic alternatives, and make concrete recommendations.
-
-Distinguish EXISTING, PROPOSED, ACCEPTED, and IMPLEMENTED facts. Detect and report drift. Do not silently create an architecture decision or implementation task from your recommendation.
-
-Technical area / concern:
-[paste concern]
+How deep the first pass should be:
+[optional]
 ```
 
-## Process Stages
+## Step 2 - What the AI will give you
 
-1. Understand the actual Playhoot context and goal.
-2. Map the problem space.
-3. Identify relevant concerns the human did not mention.
-4. Teach the important concepts.
-5. Assess the current implementation if relevant.
-6. Identify gaps.
-7. Present realistic alternatives.
-8. Explain tradeoffs.
-9. Apply anti-overengineering.
-10. Make concrete recommendations.
-11. Classify recommendations where useful: NOW / SOON / LATER / NOT NEEDED.
-12. Route each resulting concern.
+The AI will lead the exploration, explain relevant concepts, identify gaps and adequate areas, compare options, and classify recommendations.
 
-## Design AI Responsibilities
+For non-trivial exploration, the AI may prepare `docs/ai/workspaces/active/<exploration-topic>/HUMAN_REVIEW.md` with a clear recommendation and suggested next process.
 
-- Lead the exploration proactively.
-- Teach enough for the human to make informed decisions.
-- Highlight adequate current areas, not only gaps.
-- Avoid recommending sophistication without a concrete present problem.
+## Step 3 - What you need to do
 
-## Human Decision Checkpoints
+Choose what deserves follow-up:
 
-- Confirm the exploration goal.
-- Decide which recommendations deserve a follow-up process.
-- Accept no material decision until routed through the appropriate process.
+- no action;
+- add or update a non-authoritative radar recommendation;
+- route to architecture discussion;
+- route to domain design;
+- route to engineering standard;
+- route to feature development;
+- ask for another exploration pass.
 
-## Possible Outputs
+## Step 4 - What happens next
 
-- No action.
-- Engineering Radar item.
-- Route to architecture discussion, engineering standard, feature development, domain design, or product discussion.
+Exploration does not itself approve architecture, standards, product behavior, or implementation.
 
-## Persistence / Documentation Rules
+Actionable recommendations move into the relevant decision or implementation process only if you choose to continue.
 
-Exploration notes are not accepted decisions. Meaningful non-authoritative technical recommendations may be persisted to `docs/engineering/ENGINEERING_RADAR.md`. Accepted outcomes must be persisted in their proper canonical owner. Do not update current-state docs to describe future possibilities.
+## Resume in a new session
 
-## Completion Criteria
-
-- The human understands the relevant space well enough to choose next steps.
-- Recommendations are classified.
-- Each actionable item has a next process.
-
-## Where To Go Next
-
-- System-level decision: `ARCHITECTURE_DISCUSSION.md`.
-- Reusable rule: `ENGINEERING_STANDARD.md`.
-- Concrete implementation: `FEATURE_DEVELOPMENT.md`.
-- Product implication: `PRODUCT_DISCUSSION.md`.
-- Domain boundary: `DOMAIN_DESIGN.md`.
+```text
+Resume the Playhoot Guided Technical Exploration process from:
+docs/ai/workspaces/active/<process-topic>/
+```

@@ -6,6 +6,15 @@ This operating model governs AI used to develop Playhoot. It does not govern AI 
 
 Human decides. Design AI reasons, challenges and teaches. Codex implements. The repository remembers.
 
+Human-facing process guides and agent-facing execution protocols are separate.
+Internal protocol mechanics must not become the default human response format.
+The human should see the information needed to understand and approve material
+decisions, usually through `HUMAN_REVIEW.md` for non-trivial checkpoints.
+
+Temporary `AI_CONTEXT.md` files are resumable agent working context only. They
+are not canonical knowledge, not implementation authority, and must not contain
+material decisions hidden from the human-facing review surface.
+
 ## Roles
 
 ### Human

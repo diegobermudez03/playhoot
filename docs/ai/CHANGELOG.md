@@ -121,3 +121,31 @@ Current Git history plus this changelog is sufficient. If stable workflow-change
 
 **Compatibility / migration**
 - No existing ADR, PDR, WORK, Radar, domain-documentation, code, test, or migration artifact migration is required. Unresolved business/domain questions remain unresolved rather than being implicitly accepted.
+
+## 2026-09-06 - Separated human workflow surfaces from agent execution
+
+**Change**
+- Made `docs/ai/processes/*` human-facing process guides.
+- Moved internal execution semantics into matching agent protocols under `docs/ai/protocols/*`.
+- Introduced temporary resumable process workspaces under `docs/ai/workspaces/active/<process-topic>/`.
+- Separated `HUMAN_REVIEW.md` from `AI_CONTEXT.md`.
+- Established that no material decision may be hidden only in agent context.
+- Made workspace promotion and cleanup explicit.
+
+**Reason**
+- Human process pages should explain how to start, review, and decide without exposing internal execution mechanics. Agents still need durable protocol instructions to preserve Playhoot's authority, routing, persistence, compatibility, and validation semantics across sessions.
+
+**Affected workflow artifacts**
+- `AGENTS.md`
+- `docs/ai/README.md`
+- `docs/ai/OPERATING_MODEL.md`
+- `docs/ai/KNOWLEDGE_MAP.md`
+- `docs/ai/CHANGELOG.md`
+- `docs/ai/processes/*`
+- `docs/ai/protocols/*`
+- `docs/ai/workspaces/README.md`
+
+**Compatibility / migration**
+- Existing canonical product, architecture, domain, decision, work, and radar artifacts require no semantic migration.
+- `docs/work/active/WORK-0001-create-game-draft.md` remains DRAFT and unchanged.
+- Future and resumed process execution uses the new workspace model.

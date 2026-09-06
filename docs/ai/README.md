@@ -1,24 +1,40 @@
 # Working with AI on Playhoot
 
-What do I want to do?
+This is the normal human entry point for AI-assisted Playhoot work.
 
-- Product question: open `docs/ai/processes/PRODUCT_DISCUSSION.md`.
-- System-level technical decision: open `docs/ai/processes/ARCHITECTURE_DISCUSSION.md`.
-- Unfamiliar technical area where AI should lead: open `docs/ai/processes/GUIDED_TECHNICAL_EXPLORATION.md`.
-- Domain or bounded-context ownership: open `docs/ai/processes/DOMAIN_DESIGN.md`.
-- Concrete feature from design to implementation: open `docs/ai/processes/FEATURE_DEVELOPMENT.md`.
-- Reusable coding, design, or engineering rule: open `docs/ai/processes/ENGINEERING_STANDARD.md`.
-- Broad proactive technical review: open `docs/ai/processes/PRINCIPAL_ENGINEER_REVIEW.md`.
-- Change this AI workflow itself: open `docs/ai/processes/AI_WORKFLOW_CHANGE.md`.
+Most of the time you only need:
 
-Decision tree:
+1. this file;
+2. the relevant human-facing process under `docs/ai/processes/`;
+3. `docs/ai/workspaces/active/<process-topic>/HUMAN_REVIEW.md` when the AI asks you to review a checkpoint.
 
-1. Is this about what Playhoot should do? Use Product Discussion.
-2. Is this about where responsibilities or system-level technical choices belong? Use Architecture Discussion or Domain Design.
-3. Do you want the AI to teach and lead through an unfamiliar technical area? Use Guided Technical Exploration.
-4. Is the decision already clear enough to build? Use Feature Development.
-5. Is the output a reusable rule for future work? Use Engineering Standard.
-6. Is the question "what are we missing technically?" Use Principal Engineer Review.
-7. Is the workflow itself changing? Use AI Workflow Change.
+You normally do not need to read `docs/ai/protocols/`, `docs/ai/OPERATING_MODEL.md`, `docs/ai/KNOWLEDGE_MAP.md`, templates, or `AI_CONTEXT.md` unless you want to inspect how the workflow works internally.
 
-Open the relevant process file and follow it from top to bottom. Each runbook contains the prompt or prompts needed. The repository, not chat history, is persistent memory.
+## Process Menu
+
+- Product question: `docs/ai/processes/PRODUCT_DISCUSSION.md`
+- System-level technical decision: `docs/ai/processes/ARCHITECTURE_DISCUSSION.md`
+- Unfamiliar technical area where AI should lead: `docs/ai/processes/GUIDED_TECHNICAL_EXPLORATION.md`
+- Domain or bounded-context ownership: `docs/ai/processes/DOMAIN_DESIGN.md`
+- Concrete feature from design to implementation: `docs/ai/processes/FEATURE_DEVELOPMENT.md`
+- Reusable coding, design, or engineering rule: `docs/ai/processes/ENGINEERING_STANDARD.md`
+- Broad proactive technical review: `docs/ai/processes/PRINCIPAL_ENGINEER_REVIEW.md`
+- Change this AI workflow itself: `docs/ai/processes/AI_WORKFLOW_CHANGE.md`
+
+## How Checkpoints Work
+
+For short discussions, the AI may answer directly in chat.
+
+For non-trivial or multi-session work, the AI will prepare a human checkpoint at:
+
+`docs/ai/workspaces/active/<process-topic>/HUMAN_REVIEW.md`
+
+That file is the one meant for you. It should explain the problem, recommendation, tradeoffs, material decisions, and what happens if you approve.
+
+The paired `AI_CONTEXT.md` file is for future AI sessions. It is temporary working memory, not hidden decision authority.
+
+## Human Authority
+
+You approve material product, architecture, domain, engineering-standard, workflow, and READY implementation decisions.
+
+The AI may recommend, challenge, draft, implement approved work, and maintain temporary workflow context, but it must not hide material decisions in agent-only notes.
