@@ -30,7 +30,7 @@ This is a machine-facing routing document. It does not explain Playhoot. It tell
 | Domain current flows | `<domain>/docs/FLOWS.md` | DOMAIN-DEPENDENT | implementation plus tests |
 | Domain documentation template | `docs/ai/templates/domain/` | AVAILABLE | |
 | Engineering standards | `docs/engineering/standards/INDEX.md` and referenced standards | AVAILABLE | |
-| Engineering recommendations / future concerns | `docs/engineering/ENGINEERING_RADAR.md` | PLANNED / NON-AUTHORITATIVE | |
+| Engineering recommendations / future concerns | `docs/engineering/ENGINEERING_RADAR.md` | AVAILABLE / NON-AUTHORITATIVE | |
 | Architecture decision rationale | `docs/decisions/architecture/INDEX.md` and referenced ADRs | AVAILABLE | |
 | Product decision rationale | `docs/decisions/product/INDEX.md` and referenced PDRs | AVAILABLE | |
 | Decision-record process/templates | `docs/decisions/README.md` and `docs/decisions/templates/` | AVAILABLE | |

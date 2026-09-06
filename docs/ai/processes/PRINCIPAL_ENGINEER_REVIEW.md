@@ -24,6 +24,8 @@ This process is explicitly AI-GUIDED.
 
 Provide the trigger for review, any recent changes or milestones, areas of concern, and desired depth.
 
+Load the existing `docs/engineering/ENGINEERING_RADAR.md` as previous AI recommendation context, not as canonical product/architecture truth. Challenge existing Radar items against current evidence.
+
 ## Start This Process
 
 ```text
@@ -31,7 +33,7 @@ We are using docs/ai/processes/PRINCIPAL_ENGINEER_REVIEW.md.
 
 This is AI-GUIDED. I want you to inspect Playhoot broadly and proactively identify technical gaps, risks, missing capabilities, adequate areas, and future concerns.
 
-Read docs/ai/OPERATING_MODEL.md. Use docs/ai/KNOWLEDGE_MAP.md to retrieve current canonical context. Inspect relevant code, tests, and migrations. Do not scan every Markdown file blindly.
+Read docs/ai/OPERATING_MODEL.md. Use docs/ai/KNOWLEDGE_MAP.md to retrieve current canonical context. Load docs/engineering/ENGINEERING_RADAR.md as non-authoritative previous recommendation context. Inspect relevant code, tests, and migrations. Do not scan every Markdown file blindly.
 
 Act under the Principal Engineer Contract. Look one level above obvious issues, teach relevant concepts, apply anti-overengineering, distinguish useful sophistication from unnecessary complexity, and make concrete recommendations.
 
@@ -43,15 +45,17 @@ Review trigger:
 
 ## Process Stages
 
-1. Establish review trigger and scope.
-2. Load canonical context through the Knowledge Map.
-3. Inspect relevant implementation, tests, and migrations.
-4. Review relevant areas without forcing every category.
-5. Identify current strengths and adequate areas.
-6. Identify gaps, risks, and missing capabilities.
-7. Apply anti-overengineering.
-8. Produce Engineering Radar style report.
-9. Route meaningful items to next processes.
+1. Establish review trigger, scope, and depth.
+2. Load relevant canonical and current implementation context through the Knowledge Map.
+3. Load relevant existing Engineering Radar recommendations.
+4. Inspect relevant implementation evidence.
+5. Identify adequate areas.
+6. Discover risks, gaps, opportunities, future concerns, and deliberately unnecessary sophistication.
+7. Reevaluate relevant existing Radar items.
+8. Apply anti-overengineering.
+9. Produce the human-facing Principal Engineer Review report.
+10. Synchronize meaningful current recommendations into `docs/engineering/ENGINEERING_RADAR.md`.
+11. Route follow-up candidates to appropriate processes.
 
 ## Design AI Responsibilities
 
@@ -60,6 +64,7 @@ Review trigger:
 - Avoid recommending something in every category.
 - Highlight where the current system is already adequate.
 - Keep recommendations as recommendations, not approved decisions.
+- Do not blindly trust existing Radar items.
 
 ## Review Areas
 
@@ -70,6 +75,8 @@ Consider relevant areas such as domain boundaries, architecture/coupling, data o
 - Confirm review scope and depth.
 - Decide which items deserve follow-up.
 - Approve no architecture or implementation solely from the review.
+- The human does not need to approve the existence of each non-authoritative Radar item before it can be persisted.
+- Material product, architecture, domain, standard, and work decisions still require the existing human approval boundaries.
 
 ## Possible Outputs
 
@@ -82,18 +89,35 @@ Engineering Radar style report:
 
 Each meaningful item should contain problem/risk, evidence/current state, why it matters, recommendation, why now / why not now, trigger for reevaluation where applicable, and suggested next process.
 
+Include a concise Adequate / No Action Needed section when meaningful, but do not mechanically list every reviewed category.
+
 ## Persistence / Documentation Rules
 
 The review itself does not approve architecture or implementation. Items must route through the appropriate process before becoming decisions or work.
 
-Persist radar items only when the canonical Engineering Radar mechanism exists or when a later task explicitly creates it.
+Synchronize meaningful persistent recommendations to `docs/engineering/ENGINEERING_RADAR.md`.
+
+This synchronization is allowed without turning recommendations into accepted decisions because the Radar is explicitly non-authoritative.
+
+Do not persist:
+
+- every observation;
+- every adequate area;
+- transient review commentary;
+- speculative generic best practice;
+- duplicate versions of an existing concern.
+
+Do not create work, decisions, or standards merely because an item is NOW.
 
 ## Completion Criteria
 
-- Meaningful risks and adequate areas are identified.
+- Relevant risks/opportunities and adequate areas were considered.
 - Recommendations are classified.
-- Each actionable item has a next process.
-- No material decision is silently approved.
+- Meaningful persisted recommendations have been synchronized with the Radar.
+- Stale/reconsidered Radar items in scope were updated/removed as needed.
+- Actionable recommendations have a suggested next process.
+- No material decision was silently accepted.
+- No implementation was silently authorized.
 
 ## Where To Go Next
 
