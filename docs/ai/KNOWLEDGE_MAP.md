@@ -28,6 +28,7 @@ This is a machine-facing routing document. It does not explain Playhoot. It tell
 | Domain implementation state | `<domain>/CURRENT_STATE.md` | PLANNED | |
 | Domain DB schema | `<domain>/docs/DATA_MODEL.md` | PLANNED | migrations plus persistence code |
 | Domain current flows | `<domain>/docs/FLOWS.md` | PLANNED | implementation plus tests |
+| Domain documentation template | `docs/ai/templates/domain/` | AVAILABLE | |
 | Engineering standards | `docs/engineering/standards/INDEX.md` and referenced standards | PLANNED | `AGENTS.md` "Project Patterns" |
 | Engineering recommendations / future concerns | `docs/engineering/ENGINEERING_RADAR.md` | PLANNED / NON-AUTHORITATIVE | |
 | Architecture decision rationale | `docs/decisions/architecture/*` | PLANNED | |
@@ -38,7 +39,7 @@ This is a machine-facing routing document. It does not explain Playhoot. It tell
 | Human AI workflow entry point | `docs/ai/README.md` | AVAILABLE | |
 | AI workflow/runbook | `docs/ai/processes/*` | AVAILABLE | |
 
-`DATA_MODEL.md` diagrams, once created, must show table columns and column-to-column relationships, but do not need indexes or SQL types.
+`DATA_MODEL.md` diagrams, once created, must represent current implementation, show all persisted columns, and show exact column-to-column relationships. Indexes and SQL types are not required.
 
 ## Specialized Documentation
 

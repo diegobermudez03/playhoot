@@ -82,6 +82,8 @@ Domain question:
 
 Important domain changes normally result in architecture decision rationale and canonical architecture/domain documentation changes once those destinations exist.
 
+When a new or changed domain boundary is accepted and canonical domain documentation needs to be created or normalized, use `docs/ai/templates/domain/`. Do not instantiate domain documentation before the boundary decision is accepted.
+
 Implementation and migration happen separately through `FEATURE_DEVELOPMENT.md` or an appropriate work specification.
 
 ## Completion Criteria
