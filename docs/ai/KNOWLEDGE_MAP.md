@@ -24,10 +24,10 @@ This is a machine-facing routing document. It does not explain Playhoot. It tell
 | Global architecture | `ARCHITECTURE.md` | AVAILABLE | |
 | Current system visualization | `docs/architecture/SYSTEM_MAP.md` | AVAILABLE | |
 | Current cross-domain flows | `docs/architecture/CROSS_DOMAIN_FLOWS.md` | AVAILABLE | |
-| Domain responsibility | `<domain>/README.md` | PARTIAL / DOMAIN-DEPENDENT | |
-| Domain implementation state | `<domain>/CURRENT_STATE.md` | PLANNED | |
-| Domain DB schema | `<domain>/docs/DATA_MODEL.md` | PLANNED | migrations plus persistence code |
-| Domain current flows | `<domain>/docs/FLOWS.md` | PLANNED | implementation plus tests |
+| Domain responsibility | `<domain>/README.md` | DOMAIN-DEPENDENT | |
+| Domain implementation state | `<domain>/CURRENT_STATE.md` | DOMAIN-DEPENDENT | |
+| Domain DB schema | `<domain>/docs/DATA_MODEL.md` | DOMAIN-DEPENDENT | migrations plus persistence code |
+| Domain current flows | `<domain>/docs/FLOWS.md` | DOMAIN-DEPENDENT | implementation plus tests |
 | Domain documentation template | `docs/ai/templates/domain/` | AVAILABLE | |
 | Engineering standards | `docs/engineering/standards/INDEX.md` and referenced standards | PLANNED | `AGENTS.md` "Project Patterns" |
 | Engineering recommendations / future concerns | `docs/engineering/ENGINEERING_RADAR.md` | PLANNED / NON-AUTHORITATIVE | |
@@ -40,6 +40,12 @@ This is a machine-facing routing document. It does not explain Playhoot. It tell
 | AI workflow/runbook | `docs/ai/processes/*` | AVAILABLE | |
 
 `DATA_MODEL.md` diagrams, once created, must represent current implementation, show all persisted columns, and show exact column-to-column relationships. Indexes and SQL types are not required.
+
+## Accepted Domain Documentation
+
+| Domain | Model | Current State | Data Model | Flows |
+| --- | --- | --- | --- | --- |
+| Game | `game/README.md` | `game/CURRENT_STATE.md` | `game/docs/DATA_MODEL.md` | `game/docs/FLOWS.md` |
 
 ## Specialized Documentation
 

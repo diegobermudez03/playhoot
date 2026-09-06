@@ -1,6 +1,6 @@
 Wrote by AI, human dev notes added as `Dev note:`
 
-# game/v1/engine
+# game/language/v1/engine
 
 `engine` compiles a `program.Definition` into an immutable, executable `Program`, then runs it: it turns one runtime `Signal` plus one `Snapshot` into a new `Snapshot`, as one atomic `Commit`. It is a pure, deterministic simulation core — no database, no network, no real clock, no OS randomness. Everything it needs comes in as an explicit argument; everything it produces comes out as plain data.
 
@@ -12,15 +12,15 @@ If you just want to *use* the engine, this document is for you. If you're going 
 
 ```go
 import (
-    "github.com/diegobermudez03/playhoot/game/v1/engine"
-    "github.com/diegobermudez03/playhoot/game/v1/engine/engineservice"
-    "github.com/diegobermudez03/playhoot/game/v1/program"
+    "github.com/diegobermudez03/playhoot/game/language/v1/engine"
+    "github.com/diegobermudez03/playhoot/game/language/v1/engine/engineservice"
+    "github.com/diegobermudez03/playhoot/game/language/v1/program"
 )
 ```
 
 `engine` itself is a pure data package — `Program`, `Snapshot`, `Signal`, `Commit`, `Output`, `Value`, and everything else you read or construct. `engineservice` is where every actual operation lives: `Compile`, `NewSnapshot`, `Step`, `Evaluate`, plus `Snapshot` persistence. You will `import` both in any real caller, exactly the same relationship as `program`/`gameservice`.
 
-The three internal packages behind `engineservice` (`internal/compiler`, `internal/runtime`, `internal/codec`) are not importable from outside `game/v1/engine` — Go's own `internal/` visibility rule enforces this. `engineservice` is the only supported way in.
+The three internal packages behind `engineservice` (`internal/compiler`, `internal/runtime`, `internal/codec`) are not importable from outside `game/language/v1/engine` — Go's own `internal/` visibility rule enforces this. `engineservice` is the only supported way in.
 
 ## The three operations
 

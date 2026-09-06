@@ -1,15 +1,18 @@
-## session pkg
+# Session Runtime
 
-This session pkg is one layer above the language pkg in logical terms (even though the actual pkg is at the same level of the language pkg).
+This package implements the Session Runtime capability inside the Game bounded context.
 
-What I mean by logically one layer above is that it depends on the `language` pkg for the compiled game, as it executes it, but it adds the stateful layer to that executable game.
+It provides the stateful execution layer around Game Language behavior.
 
-This pkg owns:
+This package owns:
 
-- Persiting the session state
-- Persisting the session history once session is completed (archive)
-- Receiving events and matching them to the persisted session and execute the events
+- Persisting session state.
+- Receiving events and matching them to persisted sessions for execution.
 
-This pkg doesnt own:
+This package does not own:
 
-- Communication layer (websocket, grpc, tcp, etc)
+- Transport/network protocol concerns such as WebSocket, gRPC, or TCP.
+
+Completed-session history/archive ownership remains unresolved and is not defined here.
+
+Canonical Game boundary documentation lives in `../README.md`.

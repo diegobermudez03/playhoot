@@ -1,20 +1,20 @@
 Wrote by AI, human dev notes added as `Dev note:`
 
-# Implementation notes: game/program
+# Implementation notes: game/language/v1/program
 
 This document is for people modifying `program`, `program/internal/codec`, or `program/gameservice`. If you're just consuming the language model, read `README.md` instead.
 
 ## Package layout and dependency rules
 
 ```
-game/program/                 pure AST types + Definition. Stdlib only. Imports nothing else in this repo.
-game/program/internal/codec/  private wire (JSON) format. Imports program.
-game/program/gameservice/     public behavior: EncodeJSON, DecodeJSON, Validate. Imports both program and internal/codec.
+game/language/v1/program/                 pure AST types + Definition. Stdlib only. Imports nothing else in this repo.
+game/language/v1/program/internal/codec/  private wire (JSON) format. Imports program.
+game/language/v1/program/gameservice/     public behavior: EncodeJSON, DecodeJSON, Validate. Imports both program and internal/codec.
 ```
 
 Dependency direction is one-way: `gameservice -> internal/codec -> program`. `program` never imports anything project-local — this is enforced by convention, not tooling, so don't add an import from `program` to `codec` or `gameservice` even for something that seems convenient (it would create a cycle, since `codec` already imports `program`).
 
-`internal/codec` being under `internal/` means only code rooted at `game/program/` can import it — that's what lets `gameservice` reach it while keeping it hidden from every other consumer.
+`internal/codec` being under `internal/` means only code rooted at `game/language/v1/program/` can import it — that's what lets `gameservice` reach it while keeping it hidden from every other consumer.
 
 If you ever need `program` itself to expose a helper that both `codec` and `gameservice` want, it has to live in `program` and be a pure function of `program` types — it can't call into either of the other two packages.
 
@@ -92,13 +92,13 @@ Plain structs that are never themselves a closed-interface member (`program.Defi
 
 ### Static type inference is intentionally shallow
 
-`inferType` only figures out a type when it's directly recoverable from the expression's own shape: literals, explicit constructors (`RecordExpression`, `EnumValueExpression`, `ListExpression`, ...), and operators applied to already-inferred operands. It deliberately returns "unknown" (skips the check rather than guessing) for `ReferenceExpression`, `FieldExpression`, `IndexExpression`, `CallExpression`, `ListMapExpression`, and `ListFlatMapExpression` — all of these require resolving a name or a function/projection signature, which needs the lexical-scope and symbol-table machinery that belongs to the future engine, not to this validator. If you're tempted to extend `inferType` to handle one of these, stop and check whether you're accidentally building reference resolution into `gameservice` — that's explicitly out of scope (see `ValidationError`'s doc comment).
+`inferType` only figures out a type when it's directly recoverable from the expression's own shape: literals, explicit constructors (`RecordExpression`, `EnumValueExpression`, `ListExpression`, ...), and operators applied to already-inferred operands. It deliberately returns "unknown" (skips the check rather than guessing) for `ReferenceExpression`, `FieldExpression`, `IndexExpression`, `CallExpression`, `ListMapExpression`, and `ListFlatMapExpression` — all of these require resolving a name or a function/projection signature, which needs the lexical-scope and symbol-table machinery that belongs to the engine compiler, not to this validator. If you're tempted to extend `inferType` to handle one of these, stop and check whether you're accidentally building reference resolution into `gameservice` — that's explicitly out of scope (see `ValidationError`'s doc comment).
 
 Because of this, `Validate` returning `nil` is a weaker guarantee than "this definition compiles." It only means: no rule _this package_ checks was violated. Don't let that guarantee get stronger by accident (e.g. by having `Validate` start reporting on something it can't fully verify) — under-reporting a real problem is fine here, over-claiming correctness is not.
 
 ### Where to add a new validation rule
 
-If a new rule is about type/operator compatibility or duplicate names and is fully decidable from the `Definition` alone (no scope/reference resolution needed), add it as another `validate*`/`infer*` method on `validator` in `gameservice/validate.go`, following the existing methods' shape: take a `path string` for error reporting, call `v.addf(path, "...", args...)` on failure, and recurse into children the same way the sibling methods do. If the rule needs to know what a name actually resolves to, it belongs in the future engine, not here.
+If a new rule is about type/operator compatibility or duplicate names and is fully decidable from the `Definition` alone (no scope/reference resolution needed), add it as another `validate*`/`infer*` method on `validator` in `gameservice/validate.go`, following the existing methods' shape: take a `path string` for error reporting, call `v.addf(path, "...", args...)` on failure, and recurse into children the same way the sibling methods do. If the rule needs to know what a name actually resolves to, it belongs in the engine compiler, not here.
 
 ## Testing conventions
 

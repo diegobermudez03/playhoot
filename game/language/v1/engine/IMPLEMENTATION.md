@@ -1,24 +1,24 @@
 Wrote by AI, human dev notes added as `Dev note:`
 
-# Implementation notes: game/v1/engine
+# Implementation notes: game/language/v1/engine
 
 This document is for people modifying `engine`, `engineservice`, or any of the three internal packages behind it. If you're just consuming the engine, read `README.md` instead.
 
 ## Package layout and dependency rules
 
 ```
-game/v1/engine/                    plain data: Program, Snapshot, Signal, Commit, Output, Value, Type, ... Stdlib only.
-game/v1/engine/engineservice/      public API: Compile, NewSnapshot, Step, Evaluate, snapshot codec. Imports engine + the three internal packages below.
-game/v1/engine/internal/compiler/  the whole Compile pipeline. Imports engine, program, and internal/runtime (for Evaluate).
-game/v1/engine/internal/runtime/   NewSnapshot, Step, Evaluate, and everything execution-time. Imports engine only.
-game/v1/engine/internal/codec/     Snapshot's JSON wire format. Imports engine only.
+game/language/v1/engine/                    plain data: Program, Snapshot, Signal, Commit, Output, Value, Type, ... Stdlib only.
+game/language/v1/engine/engineservice/      public API: Compile, NewSnapshot, Step, Evaluate, snapshot codec. Imports engine + the three internal packages below.
+game/language/v1/engine/internal/compiler/  the whole Compile pipeline. Imports engine, program, and internal/runtime (for Evaluate).
+game/language/v1/engine/internal/runtime/   NewSnapshot, Step, Evaluate, and everything execution-time. Imports engine only.
+game/language/v1/engine/internal/codec/     Snapshot's JSON wire format. Imports engine only.
 ```
 
 `engine` never imports `program` (see its own `doc.go`) — this is the same isolation `program` itself follows: a pure data package, stdlib only. `engineservice` is what actually depends on `program` (it has to, since `Compile` takes a `program.Definition`), plus `engine` and the three internal packages.
 
 `internal/compiler` is the only one of the three internal packages that imports another: it depends on `internal/runtime` for one reason — evaluating a compiled resource's initializer expression once, at compile time (`compile_resources.go`), needs the exact same expression-evaluation semantics `Step` uses at runtime. This is one-directional; `internal/runtime` never imports `internal/compiler`, so there's no cycle. `internal/codec` depends on neither.
 
-Being under `internal/` means only code rooted at `game/v1/engine/` can import `compiler`, `runtime`, or `codec` — that's what lets `engineservice` reach all three while keeping them invisible (and free to change shape) to every other consumer. This was a deliberate move: these three used to live directly inside `engineservice` itself (in an even earlier layout, before that, `engineservice` had no internal split at all), and they were relocated to `engine/internal/...` — not `engineservice/internal/...` — specifically so that `engineservice`'s own package boundary could become a thin façade with nothing behind it that isn't equally invisible to a caller.
+Being under `internal/` means only code rooted at `game/language/v1/engine/` can import `compiler`, `runtime`, or `codec` — that's what lets `engineservice` reach all three while keeping them invisible (and free to change shape) to every other consumer. This was a deliberate move: these three used to live directly inside `engineservice` itself (in an even earlier layout, before that, `engineservice` had no internal split at all), and they were relocated to `engine/internal/...` — not `engineservice/internal/...` — specifically so that `engineservice`'s own package boundary could become a thin façade with nothing behind it that isn't equally invisible to a caller.
 
 ## Why `engineservice` is almost entirely one-line wrappers
 
