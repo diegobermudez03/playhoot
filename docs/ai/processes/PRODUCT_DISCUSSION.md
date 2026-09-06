@@ -79,7 +79,15 @@ Product question:
 
 A casual discussion that produces no accepted decision may require no repository change.
 
-Once canonical destinations exist, persistent outputs may include product canonical documentation, product decision records, roadmap changes, or deferred ideas. Do not create planned documents before their process exists.
+Significant human-decided product outcomes may be persisted as PDRs under `docs/decisions/product/`.
+
+Use the persistence threshold from `docs/decisions/README.md`. Not every product discussion requires a PDR.
+
+ACCEPTED product decisions update the relevant canonical product knowledge. REJECTED product decisions do not change canonical product state.
+
+Deferred ideas normally remain in `docs/product/IDEAS.md` or another appropriate non-authoritative location rather than introducing a new decision status.
+
+Implementation work remains separate.
 
 ## Completion Criteria
 

@@ -31,8 +31,9 @@ This is a machine-facing routing document. It does not explain Playhoot. It tell
 | Domain documentation template | `docs/ai/templates/domain/` | AVAILABLE | |
 | Engineering standards | `docs/engineering/standards/INDEX.md` and referenced standards | AVAILABLE | |
 | Engineering recommendations / future concerns | `docs/engineering/ENGINEERING_RADAR.md` | PLANNED / NON-AUTHORITATIVE | |
-| Architecture decision rationale | `docs/decisions/architecture/*` | PLANNED | |
-| Product decision rationale | `docs/decisions/product/*` | PLANNED | |
+| Architecture decision rationale | `docs/decisions/architecture/INDEX.md` and referenced ADRs | AVAILABLE | |
+| Product decision rationale | `docs/decisions/product/INDEX.md` and referenced PDRs | AVAILABLE | |
+| Decision-record process/templates | `docs/decisions/README.md` and `docs/decisions/templates/` | AVAILABLE | |
 | Current implementation work | `docs/work/active/*` | PLANNED | |
 | Completed implementation history | `docs/work/completed/*` | PLANNED | |
 | AI development behavior | `docs/ai/OPERATING_MODEL.md` | AVAILABLE | |

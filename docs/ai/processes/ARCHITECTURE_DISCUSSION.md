@@ -75,9 +75,17 @@ Architecture question:
 
 ## Persistence / Documentation Rules
 
-Important architecture decisions should eventually have rationale persisted in an architecture decision record.
+Significant human-decided architecture outcomes may be persisted as ADRs under `docs/decisions/architecture/`.
+
+Use the persistence threshold from `docs/decisions/README.md`. Do not create an ADR for every technical discussion.
+
+The runbook may create a decision directly as ACCEPTED or REJECTED if the human decision occurred during the discussion.
+
+An accepted ADR does not replace updating canonical architecture/domain documentation. A rejected ADR changes no canonical architecture.
 
 Canonical architecture should reflect accepted current architecture. Future or unimplemented designs must not be shown as implemented current-state diagrams.
+
+Implementation work remains a separate downstream process.
 
 ## Completion Criteria
 

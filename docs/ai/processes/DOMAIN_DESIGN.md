@@ -80,9 +80,11 @@ Domain question:
 
 ## Persistence / Documentation Rules
 
-Important domain changes normally result in architecture decision rationale and canonical architecture/domain documentation changes once those destinations exist.
+Material accepted/rejected domain-boundary decisions may use an ADR under `docs/decisions/architecture/` when their rationale meets the persistence threshold from `docs/decisions/README.md`.
 
-When a new or changed domain boundary is accepted and canonical domain documentation needs to be created or normalized, use `docs/ai/templates/domain/`. Do not instantiate domain documentation before the boundary decision is accepted.
+An ACCEPTED boundary decision must update canonical architecture/domain documentation.
+
+When a new or changed accepted domain boundary requires canonical domain documentation to be created or normalized, use `docs/ai/templates/domain/`. Do not instantiate domain documentation before the boundary decision is accepted.
 
 Implementation and migration happen separately through `FEATURE_DEVELOPMENT.md` or an appropriate work specification.
 
