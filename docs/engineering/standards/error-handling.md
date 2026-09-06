@@ -6,7 +6,7 @@ Status: CANONICAL ENGINEERING STANDARD
 
 - Wrapping errors with `%w` is the exception rather than the default.
 - By default, add lower-level context using `%s`.
-- This preserves useful traversed error information without exposing lower-level errors as part of the caller-visible error contract.
+- This keeps useful lower-level message/context visible in the resulting error or log output while deliberately not exposing the lower-level error in the unwrap chain or caller-visible error contract.
 
 ## Intentional Error Contracts
 

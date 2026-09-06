@@ -28,10 +28,12 @@ Status: CANONICAL ENGINEERING STANDARD
 
 - Use a disposable real test database rather than a mocked SQL driver.
 - Repository tests within the same domain/package should use the shared disposable-domain test DB infrastructure rather than independently inventing DB setup.
+- Repository tests in the same domain should share one disposable test database, not create a fresh database for every `t.Run(...)`.
+- The shared disposable domain database should be created for the test process, migrated once, reused across repository tests/cases in that domain, and disposed when the test process is done.
 - Generic disposable DB infrastructure belongs in `utils` when possible; domain/package-specific wrappers remain thin.
 - Seed each repository test case with the data it requires.
 - Do not rely on empty-table assumptions.
-- Shared test DB data should be allowed to accumulate so queries operate against non-trivial existing state.
+- Shared test DB data should intentionally be allowed to accumulate from prior cases so later queries operate against non-trivial existing state.
 - Seed operations follow the repository SQL/Create convention: `Create()` for inserts; raw SQL for reads, updates, and deletes.
 - Read operations assert the returned value.
 - Write/update/delete operations assert both the operation result and actual persisted state by reading the DB.
