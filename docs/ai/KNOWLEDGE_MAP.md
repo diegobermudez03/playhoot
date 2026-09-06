@@ -35,7 +35,8 @@ This is a machine-facing routing document. It does not explain Playhoot. It tell
 | Current implementation work | `docs/work/active/*` | PLANNED | |
 | Completed implementation history | `docs/work/completed/*` | PLANNED | |
 | AI development behavior | `docs/ai/OPERATING_MODEL.md` | AVAILABLE | |
-| AI workflow/runbook | `docs/ai/processes/*` | PLANNED | |
+| Human AI workflow entry point | `docs/ai/README.md` | AVAILABLE | |
+| AI workflow/runbook | `docs/ai/processes/*` | AVAILABLE | |
 
 `DATA_MODEL.md` diagrams, once created, must show table columns and column-to-column relationships, but do not need indexes or SQL types.
 
