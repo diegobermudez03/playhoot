@@ -2,7 +2,7 @@
 
 Status: AGENT EXECUTION PROTOCOL
 
-Use with the human-facing guide at `docs/ai/processes/PRINCIPAL_ENGINEER_REVIEW.md`. This protocol is primarily executed/coordinated by a CONVERSATIONAL AI; repository-local evidence and Radar persistence are CODEBASE AGENT steps when the Conversational AI lacks write access.
+Use with the human-facing guide at `docs/ai/processes/PRINCIPAL_ENGINEER_REVIEW.md`. This protocol is primarily executed/coordinated by a CONVERSATIONAL AI; repository-local evidence and Radar persistence are always CODEBASE AGENT steps.
 
 ## Scope
 
@@ -12,7 +12,7 @@ This is AI-guided proactive technical review. It identifies risks, gaps, adequat
 
 Provide a Principal Engineer Review report with relevant findings and recommendations, usually grouped as NOW, SOON, LATER, and NOT NEEDED. Include adequate/no-action-needed areas when they are meaningful.
 
-For non-trivial or multi-session reviews, maintain `docs/ai/workspaces/active/<review-topic>/HUMAN_REVIEW.md`.
+For non-trivial or multi-session reviews, prepare `docs/ai/workspaces/active/<review-topic>/HUMAN_REVIEW.md` content and persist it via a CODEBASE AGENT HANDOFF.
 
 ## SYSTEM EFFECTS
 
@@ -23,9 +23,10 @@ For non-trivial or multi-session reviews, maintain `docs/ai/workspaces/active/<r
 - Synchronize meaningful current recommendations into the Radar.
 - Do not persist every observation, adequate area, transient note, or generic best practice.
 - Do not create work, decisions, or standards merely because a recommendation is NOW.
-- For non-trivial or multi-session workspaces, maintain the paired
-  `docs/ai/workspaces/active/<review-topic>/AI_CONTEXT.md` alongside
-  `HUMAN_REVIEW.md` and follow `docs/ai/workspaces/README.md`.
+- For non-trivial or multi-session workspaces, ensure the paired
+  `docs/ai/workspaces/active/<review-topic>/AI_CONTEXT.md` is persisted
+  alongside `HUMAN_REVIEW.md` via a CODEBASE AGENT HANDOFF, following
+  `docs/ai/workspaces/README.md`.
 - Before asking for a material decision, ensure the workspace has enough
   persisted state for a fresh agent to resume. When the human answers, update
   the active process state and/or durable owner before future continuation

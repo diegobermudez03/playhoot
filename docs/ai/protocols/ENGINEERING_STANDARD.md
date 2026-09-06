@@ -14,7 +14,7 @@ It must not use a standard change as implementation authority for repository-wid
 
 Show the human the problem, evidence/current patterns, whether standardization is worthwhile, alternative rules, recommended wording, enforcement options, and migration strategy.
 
-For non-trivial or multi-session work, maintain `docs/ai/workspaces/active/<standard-topic>/HUMAN_REVIEW.md`.
+For non-trivial or multi-session work, prepare `docs/ai/workspaces/active/<standard-topic>/HUMAN_REVIEW.md` content and persist it via a CODEBASE AGENT HANDOFF.
 
 ## SYSTEM EFFECTS
 
@@ -25,9 +25,10 @@ For non-trivial or multi-session work, maintain `docs/ai/workspaces/active/<stan
 - Persist accepted reusable standards under `docs/engineering/standards/`.
 - Update the standards index when standards are added, removed, or renamed.
 - Separate enforcement/migration work from the standard decision.
-- For non-trivial or multi-session workspaces, maintain the paired
-  `docs/ai/workspaces/active/<standard-topic>/AI_CONTEXT.md` alongside
-  `HUMAN_REVIEW.md` and follow `docs/ai/workspaces/README.md`.
+- For non-trivial or multi-session workspaces, ensure the paired
+  `docs/ai/workspaces/active/<standard-topic>/AI_CONTEXT.md` is persisted
+  alongside `HUMAN_REVIEW.md` via a CODEBASE AGENT HANDOFF, following
+  `docs/ai/workspaces/README.md`.
 - Before asking for a material decision, ensure the workspace has enough
   persisted state for a fresh agent to resume. When the human answers, update
   the active process state and/or durable owner before future continuation

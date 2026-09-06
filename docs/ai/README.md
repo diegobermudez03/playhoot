@@ -53,7 +53,7 @@ You do not need to manually list every relevant Playhoot doc — `/AGENTS.md` an
 
 For short discussions, the AI may answer directly in chat.
 
-For non-trivial or multi-session work, the AI will prepare a human checkpoint at:
+For non-trivial or multi-session work, the Conversational AI prepares a human checkpoint. When a repository workspace is required, a Codebase Agent persists it at:
 
 `docs/ai/workspaces/active/<process-topic>/HUMAN_REVIEW.md`
 
@@ -65,4 +65,4 @@ The paired `AI_CONTEXT.md` file is for future AI sessions. It is temporary worki
 
 You approve material product, architecture, domain, engineering-standard, workflow, and READY implementation decisions.
 
-The AI may recommend, challenge, draft, implement approved work, and maintain temporary workflow context, but it must not hide material decisions in agent-only notes.
+The AI may recommend, challenge, draft, implement approved work, and prepare temporary workflow context for a Codebase Agent to persist, but it must not hide material decisions in agent-only notes.

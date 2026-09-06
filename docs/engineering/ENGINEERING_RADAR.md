@@ -199,7 +199,7 @@ Choosing a Next process does not automatically start that process.
 
 ## AI and Human Authority
 
-Because Radar content is explicitly NON-AUTHORITATIVE, a Conversational AI may recommend, add, update, move, or remove radar items as part of a Principal Engineer Review without converting them into human-approved decisions.
+Because Radar content is explicitly NON-AUTHORITATIVE, a Conversational AI may recommend radar items to add, update, move, or remove as part of a Principal Engineer Review, without a human-approval ceremony and without converting them into human-approved decisions. Persisting those changes to this file is a CODEBASE AGENT step, via a CODEBASE AGENT HANDOFF from the Conversational AI.
 
 This does not grant authority to:
 

@@ -10,11 +10,17 @@ Human decides. Conversational AI reasons, challenges, teaches, and coordinates d
 
 Playhoot's AI workflow is capability-based, not product-based. A product name (ChatGPT, Gemini, Claude, Claude Code, Codex, or another tool) is never itself a canonical role. What matters is which capability a given interaction actually has.
 
-- CONVERSATIONAL AI: converses with the human, reasons about product/architecture/domain, teaches, challenges framing, proposes alternatives, produces human-facing reviews, identifies material decisions, and coordinates the design process. It may or may not have repository access.
+- CONVERSATIONAL AI: converses with the human, reasons about product/architecture/domain, teaches, challenges framing, proposes alternatives, produces human-facing reviews, identifies material decisions, and coordinates the design process. It may inspect remotely accessible repository state (the supplied repository/ref) when its tool capabilities allow, but it does not mutate repository state or execute checkout-local operations while acting in this surface, regardless of the underlying product's technical capability.
 - CODEBASE AGENT: has effective access to a Playhoot repository checkout and, when authorized, inspects/modifies repository files, inspects Git/worktree state, writes code/tests, runs tests/commands, persists workflow artifacts, applies approved documentation changes, and implements READY work.
 - INDEPENDENT REVIEWER: a review role, normally fulfilled by a fresh Codebase Agent operating read-only unless the workflow explicitly authorizes fixes. It remains logically separate even when the same product performs both implementation and review.
 
 A single product may support more than one surface (for example, a Codebase Agent that also converses well). The workflow still distinguishes the surface conceptually, and human process guides label which surface a step requires rather than naming a product.
+
+### Execution Surface Is Action-Scoped
+
+Execution surface is determined by the action being performed, not by which commercial product is being used. While acting as CONVERSATIONAL AI, an agent does not create, modify, or delete a repository file; does not persist or update a workspace; does not persist a decision/canonical document; does not change WORK state; does not update Radar; does not write code/tests; and does not run checkout-local commands or otherwise depend on local/unpushed checkout state. Any such action is a CODEBASE AGENT step for that action, even when the same commercial product is performing it.
+
+If a product being used conversationally also has repository-write capability, a repository mutation performed by that product does not become a CONVERSATIONAL AI action — for that action, the product is acting as CODEBASE AGENT.
 
 ### Repository Identity For Conversational AI
 
@@ -47,7 +53,7 @@ When repository-grounded reasoning begins from a fresh conversation, the starter
 
 ### Codebase Agent Handoff
 
-A CODEBASE AGENT HANDOFF is a temporary, human-visible prompt produced by a Conversational AI when a repository-local action is needed that the current Conversational AI cannot perform (repository mutation, or inspection of state it cannot access). It is not a durable project artifact.
+A CODEBASE AGENT HANDOFF is a temporary, human-visible prompt produced by a Conversational AI whenever a repository-local mutation or checkout-local execution is needed, or when required evidence is not remotely accessible. Repository mutation is always a Codebase Agent action, regardless of whether the underlying product could technically write to the repository — a Conversational AI does not perform it. It is not a durable project artifact.
 
 It should contain only enough information to execute the next repository-side step safely:
 
@@ -94,7 +100,7 @@ material decisions hidden from the human-facing review surface.
 - Identifies system-wide implications.
 - Makes concrete recommendations.
 - Does not silently convert its own proposals into accepted decisions.
-- When it lacks repository write access but a process needs repository persistence, produces a Codebase Agent Handoff instead of asking the human to hand-author workspace files.
+- Does not mutate repository state while acting in this surface. Whenever a process needs repository persistence or another repository-local mutation, produces a Codebase Agent Handoff instead of attempting the mutation itself or asking the human to hand-author workspace files.
 
 ### Codebase Agent
 

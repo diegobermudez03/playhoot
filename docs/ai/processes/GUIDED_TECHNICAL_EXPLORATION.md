@@ -45,7 +45,7 @@ How deep the first pass should be:
 
 The AI will lead the exploration, explain relevant concepts, identify gaps and adequate areas, compare options, and classify recommendations.
 
-For non-trivial exploration, the AI may prepare `docs/ai/workspaces/active/<exploration-topic>/HUMAN_REVIEW.md` with a clear recommendation and suggested next process. If local repository evidence must be inspected, or the workspace needs to be persisted and the Conversational AI cannot write to the repository, it will give you a CODEBASE AGENT HANDOFF.
+For non-trivial exploration, the Conversational AI prepares a clear recommendation and suggested next process as checkpoint content for `docs/ai/workspaces/active/<exploration-topic>/HUMAN_REVIEW.md`. If local repository evidence must be inspected, or the workspace needs to be persisted, it gives you a CODEBASE AGENT HANDOFF.
 
 ## Step 3 - HUMAN
 

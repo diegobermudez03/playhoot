@@ -12,7 +12,7 @@ This protocol decides product direction. It must not implement code, silently cr
 
 Show the human the product problem, user/persona/use case, options, tradeoffs, MVP vs future distinction, recommendation, material decisions needed, and next process.
 
-For non-trivial or multi-session work, maintain `docs/ai/workspaces/active/<product-topic>/HUMAN_REVIEW.md`.
+For non-trivial or multi-session work, prepare `docs/ai/workspaces/active/<product-topic>/HUMAN_REVIEW.md` content and persist it via a CODEBASE AGENT HANDOFF.
 
 ## SYSTEM EFFECTS
 
@@ -23,9 +23,10 @@ For non-trivial or multi-session work, maintain `docs/ai/workspaces/active/<prod
 - Synchronize accepted product decisions to canonical product owners.
 - Put deferred ideas in non-authoritative idea/radar locations only when useful.
 - Route accepted implementation work to Feature Development and WORK.
-- For non-trivial or multi-session workspaces, maintain the paired
-  `docs/ai/workspaces/active/<product-topic>/AI_CONTEXT.md` alongside
-  `HUMAN_REVIEW.md` and follow `docs/ai/workspaces/README.md`.
+- For non-trivial or multi-session workspaces, ensure the paired
+  `docs/ai/workspaces/active/<product-topic>/AI_CONTEXT.md` is persisted
+  alongside `HUMAN_REVIEW.md` via a CODEBASE AGENT HANDOFF, following
+  `docs/ai/workspaces/README.md`.
 - Before asking for a material decision, ensure the workspace has enough
   persisted state for a fresh agent to resume. When the human answers, update
   the active process state and/or durable owner before future continuation

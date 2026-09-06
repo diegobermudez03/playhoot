@@ -2,7 +2,7 @@
 
 Use this when you want the AI to proactively inspect Playhoot for risks, gaps, adequate areas, and next-step recommendations.
 
-Surface flow: CONVERSATIONAL AI performs/coordinates the human-facing review. A CODEBASE AGENT may be used for repository-local evidence when required, and to persist Radar updates when the Conversational AI lacks write access.
+Surface flow: CONVERSATIONAL AI performs/coordinates the human-facing review. A CODEBASE AGENT is used for repository-local evidence when required, and to persist Radar updates.
 
 ## When to use it
 
@@ -47,7 +47,7 @@ Desired depth:
 
 The AI will produce a Principal Engineer Review covering relevant risks, opportunities, adequate areas, and recommendations. Recommendations are usually classified as NOW, SOON, LATER, or NOT NEEDED.
 
-For non-trivial reviews, the AI may prepare `docs/ai/workspaces/active/<review-topic>/HUMAN_REVIEW.md` with the review summary and proposed Radar updates. If repository-local evidence must be inspected, or the workspace/Radar needs to be persisted and the Conversational AI cannot write to the repository, it will give you a CODEBASE AGENT HANDOFF.
+For non-trivial reviews, the Conversational AI prepares the review summary and proposed Radar updates as checkpoint content for `docs/ai/workspaces/active/<review-topic>/HUMAN_REVIEW.md`. If repository-local evidence must be inspected, or the workspace/Radar needs to be persisted, it gives you a CODEBASE AGENT HANDOFF.
 
 ## Step 3 - HUMAN
 
@@ -57,7 +57,7 @@ You do not need to approve every non-authoritative Radar update before it can be
 
 ## Step 4 - CODEBASE AGENT
 
-Meaningful recommendations may be synchronized into `docs/engineering/ENGINEERING_RADAR.md`, normally via a CODEBASE AGENT HANDOFF from the Conversational AI.
+Meaningful recommendations are persisted into `docs/engineering/ENGINEERING_RADAR.md` by a CODEBASE AGENT, via a CODEBASE AGENT HANDOFF from the Conversational AI.
 
 Radar items are not approved architecture, standards, product roadmap, or implementation authority.
 

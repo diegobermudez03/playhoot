@@ -112,6 +112,32 @@ A business domain's public operations should primarily expose that domain's own 
 
 Depending directly on another business domain's internal/entity types should be avoided. Supporting behavior-only libraries may expose types intentionally consumed by domains when that dependency does not reverse business-domain ownership.
 
+## Intra-Domain Responsibility Boundary
+
+Within a single Playhoot business domain, three responsibilities are distinct:
+
+- Application (use cases/workflows) coordinates execution: loading required state, calling repositories, managing transactions, invoking domain behavior, persisting results, translating relevant errors, and handling monitoring/operational concerns.
+- Domain code makes business decisions: rules, invariants, state transitions, calculations, and validations, independent from persistence, transport, monitoring, transactions, GORM, or other infrastructure concerns whenever practical.
+- Persistence/repository code retrieves and stores data; it does not own business policy.
+
+Use cases and workflows are allowed application control flow. The objective is not to remove every conditional or piece of logic from them; it is that reusable business decisions must not be owned by a use case/workflow merely because that is where they happen to be invoked.
+
+A dedicated abstraction is not required merely because business logic exists. A mandatory generic business-service layer is rejected. Domain behavior should be placed as close as possible to the concept that owns it, in this preferred order:
+
+1. A method on the domain type/value object that naturally owns the behavior (e.g. `Visibility.IsPlayable()`).
+2. A pure, package-level domain function when no single type owns the behavior — explicit inputs, explicit outputs, no persistence or external I/O.
+3. A capability-specific domain package (e.g. `playability`, `publishing`) only when a cohesive decision spans several domain concepts and does not naturally belong to one type/function.
+
+Package names should describe the business capability, not a generic technical bucket (`businessservice`) or an unqualified abstraction-kind name used as a catch-all (`policy/`).
+
+Types are owned by the concept they represent (domain, use case, workflow, repository, or transport); a capability package may consume an existing domain-owned type directly rather than duplicating it.
+
+Repository interfaces remain narrow and consumer-driven per the Dependency Principles above; they must not become owners of business policy. Several narrow contracts may still be satisfied by shared infrastructure.
+
+This is a responsibility/dependency boundary, not a requirement to introduce literal `/domain`, `/application`, `/infrastructure` top-level directories.
+
+Rationale and alternatives considered are recorded in `docs/decisions/architecture/ADR-0001-intra-domain-responsibility-boundary.md`. Concrete package-organization, naming, type-ownership, and migration conventions implementing this boundary are recorded in `docs/engineering/standards/domain-logic-placement.md`.
+
 ## Current Boundary Questions
 
 NON-CANONICAL / UNRESOLVED:

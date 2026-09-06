@@ -45,7 +45,7 @@ Options I am considering:
 
 For small questions, the AI may answer directly with a recommendation.
 
-For material decisions, the AI will prepare `docs/ai/workspaces/active/<architecture-topic>/HUMAN_REVIEW.md` with the underlying problem, options, tradeoffs, recommendation, affected boundaries, and any decision needed from you. If the workspace needs to be persisted and the Conversational AI cannot write to the repository, it will give you a CODEBASE AGENT HANDOFF.
+For material decisions, the Conversational AI prepares the checkpoint content — the underlying problem, options, tradeoffs, recommendation, affected boundaries, and any decision needed from you — for `docs/ai/workspaces/active/<architecture-topic>/HUMAN_REVIEW.md`. It gives you a CODEBASE AGENT HANDOFF to persist it.
 
 ## Step 3 - HUMAN
 

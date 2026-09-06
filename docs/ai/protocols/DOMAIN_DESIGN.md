@@ -2,7 +2,7 @@
 
 Status: AGENT EXECUTION PROTOCOL
 
-Use with the human-facing guide at `docs/ai/processes/DOMAIN_DESIGN.md`. This protocol is primarily executed by a CONVERSATIONAL AI; repository persistence/synchronization it requires may be delegated through a CODEBASE AGENT HANDOFF.
+Use with the human-facing guide at `docs/ai/processes/DOMAIN_DESIGN.md`. This protocol is primarily executed by a CONVERSATIONAL AI; repository persistence/synchronization it requires is delegated through a CODEBASE AGENT HANDOFF.
 
 ## Scope
 
@@ -14,7 +14,7 @@ Domain does not mean package, folder, deployment, or service.
 
 Show the human the business responsibility, ubiquitous concepts, owned state, invariants, lifecycle, public capabilities, explicit non-ownership, alternatives, recommendation, and migration impact.
 
-For non-trivial or multi-session work, maintain `docs/ai/workspaces/active/<domain-topic>/HUMAN_REVIEW.md`.
+For non-trivial or multi-session work, prepare `docs/ai/workspaces/active/<domain-topic>/HUMAN_REVIEW.md` content and persist it via a CODEBASE AGENT HANDOFF.
 
 ## SYSTEM EFFECTS
 
@@ -26,9 +26,10 @@ For non-trivial or multi-session work, maintain `docs/ai/workspaces/active/<doma
 - Synchronize accepted boundary decisions to canonical architecture/domain documentation.
 - Use `docs/ai/templates/domain/` only after the boundary decision is accepted.
 - Route implementation/migration to Feature Development and WORK.
-- For non-trivial or multi-session workspaces, maintain the paired
-  `docs/ai/workspaces/active/<domain-topic>/AI_CONTEXT.md` alongside
-  `HUMAN_REVIEW.md` and follow `docs/ai/workspaces/README.md`.
+- For non-trivial or multi-session workspaces, ensure the paired
+  `docs/ai/workspaces/active/<domain-topic>/AI_CONTEXT.md` is persisted
+  alongside `HUMAN_REVIEW.md` via a CODEBASE AGENT HANDOFF, following
+  `docs/ai/workspaces/README.md`.
 - Before asking for a material decision, ensure the workspace has enough
   persisted state for a fresh agent to resume. When the human answers, update
   the active process state and/or durable owner before future continuation

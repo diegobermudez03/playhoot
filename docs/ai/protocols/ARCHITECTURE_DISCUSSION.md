@@ -2,7 +2,7 @@
 
 Status: AGENT EXECUTION PROTOCOL
 
-Use with the human-facing guide at `docs/ai/processes/ARCHITECTURE_DISCUSSION.md`. This protocol is primarily executed by a CONVERSATIONAL AI; repository persistence/synchronization it requires may be delegated through a CODEBASE AGENT HANDOFF.
+Use with the human-facing guide at `docs/ai/processes/ARCHITECTURE_DISCUSSION.md`. This protocol is primarily executed by a CONVERSATIONAL AI; repository persistence/synchronization it requires is delegated through a CODEBASE AGENT HANDOFF.
 
 ## Scope
 
@@ -14,7 +14,7 @@ It must not implement code or treat an accepted architecture decision as impleme
 
 Show the human the underlying problem, current accepted constraints, relevant implementation facts, alternatives, tradeoffs, recommendation, confidence/caveats, and material decisions needed.
 
-For non-trivial or multi-session work, maintain `docs/ai/workspaces/active/<architecture-topic>/HUMAN_REVIEW.md`.
+For non-trivial or multi-session work, prepare `docs/ai/workspaces/active/<architecture-topic>/HUMAN_REVIEW.md` content and persist it via a CODEBASE AGENT HANDOFF.
 
 ## SYSTEM EFFECTS
 
@@ -25,9 +25,10 @@ For non-trivial or multi-session work, maintain `docs/ai/workspaces/active/<arch
 - Synchronize accepted architecture/domain documentation in the same change when practical.
 - Keep future or unimplemented designs out of current-state diagrams.
 - Route implementation impact to Feature Development and WORK.
-- For non-trivial or multi-session workspaces, maintain the paired
-  `docs/ai/workspaces/active/<architecture-topic>/AI_CONTEXT.md` alongside
-  `HUMAN_REVIEW.md` and follow `docs/ai/workspaces/README.md`.
+- For non-trivial or multi-session workspaces, ensure the paired
+  `docs/ai/workspaces/active/<architecture-topic>/AI_CONTEXT.md` is persisted
+  alongside `HUMAN_REVIEW.md` via a CODEBASE AGENT HANDOFF, following
+  `docs/ai/workspaces/README.md`.
 - Before asking for a material decision, ensure the workspace has enough
   persisted state for a fresh agent to resume. When the human answers, update
   the active process state and/or durable owner before future continuation

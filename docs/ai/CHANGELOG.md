@@ -184,3 +184,46 @@ Current Git history plus this changelog is sufficient. If stable workflow-change
 
 **Notes**
 - A single product may still fulfill more than one surface when it genuinely has the capability; the abstraction is capability-based, not a mandate to switch tools.
+
+## 2026-09-06 - Made repository mutation exclusively a Codebase Agent surface
+
+**Change**
+- Clarified that execution surface is action-scoped: while acting as CONVERSATIONAL AI, an agent may converse, reason, and inspect remotely accessible repository state, but does not create, modify, delete, or persist a repository file, does not persist/update/remove a workspace, does not persist a decision/canonical document, does not change WORK state, does not update Radar, does not write code/tests, and does not run checkout-local commands or otherwise depend on local/unpushed checkout state.
+- Made explicit that any such action is a CODEBASE AGENT step regardless of whether the underlying commercial product could technically perform it — the same product may switch surfaces between actions, but a repository mutation performed by a conversational product does not become a CONVERSATIONAL AI action.
+- Removed conditional phrasing across `docs/ai/OPERATING_MODEL.md`, `docs/ai/workspaces/README.md`, `docs/ai/README.md`, `docs/engineering/ENGINEERING_RADAR.md`, all `docs/ai/processes/*` guides, and all `docs/ai/protocols/*` that made repository persistence/mutation sound conditional on "the Conversational AI cannot write" or "lacks write access", or that described a Conversational AI as maintaining/persisting/synchronizing repository files itself.
+- Normalized the CODEBASE AGENT HANDOFF concept in `docs/ai/OPERATING_MODEL.md`: a Conversational AI produces a handoff whenever a repository-local mutation or checkout-local execution is needed, not only when it happens to lack write capability.
+- Clarified workspace ownership: the Conversational AI prepares the semantic content of `HUMAN_REVIEW.md`/`AI_CONTEXT.md`; persisting, updating, or removing those files is always a Codebase Agent action reached via a Codebase Agent Handoff.
+- Confirmed remote reading remains allowed: a Conversational AI may still inspect the supplied repository/ref, code, docs, tests, and migrations when its tool capabilities allow.
+
+**Reason**
+- Several human-facing process guides said a Conversational AI would prepare, maintain, persist, or synchronize repository/workspace files, "if it cannot write" to the repository — implying it might otherwise mutate the repository directly while remaining in the Conversational AI surface. That contradicted the capability-based execution-surface model, where the surface is determined by the action (repository mutation is always Codebase Agent), not by which product is being used or what it happens to be technically capable of.
+
+**Affected workflow artifacts**
+- `docs/ai/OPERATING_MODEL.md`
+- `docs/ai/README.md`
+- `docs/ai/workspaces/README.md`
+- `docs/ai/CHANGELOG.md`
+- `docs/ai/processes/PRODUCT_DISCUSSION.md`
+- `docs/ai/processes/ARCHITECTURE_DISCUSSION.md`
+- `docs/ai/processes/GUIDED_TECHNICAL_EXPLORATION.md`
+- `docs/ai/processes/DOMAIN_DESIGN.md`
+- `docs/ai/processes/FEATURE_DEVELOPMENT.md`
+- `docs/ai/processes/ENGINEERING_STANDARD.md`
+- `docs/ai/processes/PRINCIPAL_ENGINEER_REVIEW.md`
+- `docs/ai/processes/AI_WORKFLOW_CHANGE.md`
+- `docs/ai/protocols/PRODUCT_DISCUSSION.md`
+- `docs/ai/protocols/ARCHITECTURE_DISCUSSION.md`
+- `docs/ai/protocols/GUIDED_TECHNICAL_EXPLORATION.md`
+- `docs/ai/protocols/DOMAIN_DESIGN.md`
+- `docs/ai/protocols/FEATURE_DEVELOPMENT.md`
+- `docs/ai/protocols/ENGINEERING_STANDARD.md`
+- `docs/ai/protocols/PRINCIPAL_ENGINEER_REVIEW.md`
+- `docs/ai/protocols/AI_WORKFLOW_CHANGE.md`
+- `docs/engineering/ENGINEERING_RADAR.md`
+
+**Compatibility / migration**
+- Existing product, architecture, domain, standard, and decision-record artifacts are unchanged.
+- `docs/work/active/WORK-0001-create-game-draft.md` remains READY and unchanged; this is a wording/actor-consistency correction, not an implementation or lifecycle change.
+
+**Notes**
+- Human material-decision authority, Codebase Agent implementation autonomy, Independent Reviewer semantics, workspace persistence/durability requirements, decision thresholds, WORK lifecycle, and review verdict/finding semantics are unchanged by this correction.

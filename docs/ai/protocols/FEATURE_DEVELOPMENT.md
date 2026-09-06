@@ -25,7 +25,7 @@ The human should be able to authorize READY from the human review without readin
 
 - Load context through the Knowledge Map.
 - Inspect code, tests, migrations, and current-state docs when implementation reality matters.
-- Maintain `AI_CONTEXT.md` for fresh-session continuation, never as hidden implementation authority.
+- Ensure `AI_CONTEXT.md` is persisted, via a CODEBASE AGENT HANDOFF, for fresh-session continuation, never as hidden implementation authority.
 - Create DRAFT WORK under `docs/work/active/` only when concrete implementation work is being prepared.
 - Use `docs/work/templates/WORK_SPEC.template.md`.
 - Validate Definition of Ready from `docs/work/README.md`.

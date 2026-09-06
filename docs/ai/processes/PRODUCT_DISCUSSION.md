@@ -45,7 +45,7 @@ Known constraints or timing:
 
 For simple questions, the AI may answer directly with a recommendation.
 
-For non-trivial decisions, the AI will prepare `docs/ai/workspaces/active/<product-topic>/HUMAN_REVIEW.md` with the product problem, options, tradeoffs, recommendation, and any material decision needed from you. If the workspace needs to be persisted and the Conversational AI cannot write to the repository, it will give you a CODEBASE AGENT HANDOFF.
+For non-trivial decisions, the Conversational AI prepares the checkpoint content — the product problem, options, tradeoffs, recommendation, and any material decision needed from you — for `docs/ai/workspaces/active/<product-topic>/HUMAN_REVIEW.md`. It gives you a CODEBASE AGENT HANDOFF to persist it.
 
 ## Step 3 - HUMAN
 

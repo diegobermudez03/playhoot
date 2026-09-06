@@ -48,7 +48,7 @@ Files or prompts I think may be affected:
 
 For editorial fixes, the AI may make the correction directly.
 
-For material workflow changes, the AI will prepare `docs/ai/workspaces/active/<workflow-topic>/HUMAN_REVIEW.md` with the current workflow problem, impact map, minimal proposal, compatibility notes, validation plan, and decisions needed from you. If the workspace needs to be persisted and the Conversational AI cannot write to the repository, it will give you a CODEBASE AGENT HANDOFF.
+For material workflow changes, the Conversational AI prepares the checkpoint content — the current workflow problem, impact map, minimal proposal, compatibility notes, validation plan, and decisions needed from you — for `docs/ai/workspaces/active/<workflow-topic>/HUMAN_REVIEW.md`. It gives you a CODEBASE AGENT HANDOFF to persist it.
 
 ## Step 3 - HUMAN
 

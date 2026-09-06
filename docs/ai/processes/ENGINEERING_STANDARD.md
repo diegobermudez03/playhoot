@@ -45,7 +45,7 @@ Should this affect future code only or existing code too?
 
 For small clarifications, the AI may answer directly.
 
-For material standards, the AI will prepare `docs/ai/workspaces/active/<standard-topic>/HUMAN_REVIEW.md` with the problem, current pattern, options, recommended rule, enforcement options, and migration strategy. If the workspace needs to be persisted and the Conversational AI cannot write to the repository, it will give you a CODEBASE AGENT HANDOFF.
+The Conversational AI prepares the recommendation/checkpoint content — the problem, current pattern, options, recommended rule, enforcement options, and migration strategy — for `docs/ai/workspaces/active/<standard-topic>/HUMAN_REVIEW.md`. For a non-trivial persistent checkpoint, it gives you a CODEBASE AGENT HANDOFF to persist `HUMAN_REVIEW.md` and `AI_CONTEXT.md`.
 
 ## Step 3 - HUMAN
 
@@ -60,7 +60,7 @@ Review the recommendation and respond with one of:
 
 ## Step 4 - CODEBASE AGENT
 
-Accepted reusable standards are synchronized to `docs/engineering/standards/`, normally via a CODEBASE AGENT HANDOFF from the Conversational AI.
+Accepted reusable standards are always persisted to `docs/engineering/standards/` by a CODEBASE AGENT, via a CODEBASE AGENT HANDOFF from the Conversational AI.
 
 Accepting a standard does not automatically authorize repository-wide migration or refactoring; migration work goes through Feature Development and a separate CODEBASE AGENT implementation step.
 

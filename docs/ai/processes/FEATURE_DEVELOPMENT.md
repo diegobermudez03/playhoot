@@ -59,13 +59,13 @@ Known constraints, accepted decisions, or out-of-scope items:
 
 The AI will challenge scope and placement first. If the feature is not ready, it will recommend the right product, architecture, domain, or standard process before implementation.
 
-For non-trivial work, the AI will maintain `docs/ai/workspaces/active/<feature-topic>/HUMAN_REVIEW.md` as the human checkpoint surface. Expect:
+For non-trivial work, the Conversational AI prepares `docs/ai/workspaces/active/<feature-topic>/HUMAN_REVIEW.md` content as the human checkpoint surface. Expect:
 
 - a Feature Design Review for scope, behavior, tradeoffs, and material decisions;
 - a DRAFT WORK specification under `docs/work/active/` once the work is concrete enough;
 - a READY Review that summarizes what you are approving without requiring you to inspect machine-oriented WORK internals line by line.
 
-When the workspace or the DRAFT WORK file needs to be persisted and the Conversational AI cannot write to the repository, it will give you a CODEBASE AGENT HANDOFF.
+Persisting the workspace and creating/updating the DRAFT WORK file are CODEBASE AGENT steps; the Conversational AI gives you a CODEBASE AGENT HANDOFF for them.
 
 ## Step 3 - HUMAN
 
@@ -75,7 +75,7 @@ At the READY checkpoint, say explicitly whether the WORK is READY for implementa
 
 ## Step 4 - CODEBASE AGENT
 
-After you approve READY, the WORK is marked READY (persisted by a Codebase Agent when the Conversational AI cannot write to the repository). The temporary workspace may be removed once the WORK and relevant canonical context are sufficient durable handoff.
+After you approve READY, a CODEBASE AGENT marks the WORK READY. The temporary workspace may be removed once the WORK and relevant canonical context are sufficient durable handoff.
 
 Implementation then goes to a CODEBASE AGENT operating on the checkout, using the minimal handoff from `docs/ai/protocols/IMPLEMENTATION_REVIEW.md`:
 

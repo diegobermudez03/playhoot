@@ -71,9 +71,9 @@ Avoid duplicating canonical knowledge. Reference durable owners instead.
 
 ## Surface Ownership
 
-A Conversational AI normally owns the design/conversation process and the content of `HUMAN_REVIEW.md`/`AI_CONTEXT.md`.
+A Conversational AI owns/prepares the semantic content of `HUMAN_REVIEW.md`/`AI_CONTEXT.md` — the design/conversation process, checkpoint, and resumable context.
 
-When the current Conversational AI cannot write to the repository, it produces a Codebase Agent Handoff (see `docs/ai/OPERATING_MODEL.md`) asking a Codebase Agent to persist or update these workspace files. Performing that persistence step does not give the Codebase Agent authority over the material decision being recorded — it remains whatever the Conversational AI/human already decided.
+Persisting, updating, or removing these workspace files is always a Codebase Agent action. The Conversational AI produces a Codebase Agent Handoff (see `docs/ai/OPERATING_MODEL.md`) asking a Codebase Agent to persist or update them. Performing that persistence step does not give the Codebase Agent authority over the material decision being recorded — it remains whatever the Conversational AI/human already decided.
 
 ## Cross-Session Rule
 

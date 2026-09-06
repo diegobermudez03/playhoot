@@ -46,7 +46,7 @@ Files, docs, or code that triggered this:
 
 For small boundary questions, the AI may answer directly with a recommendation.
 
-For material boundary decisions, the AI will prepare `docs/ai/workspaces/active/<domain-topic>/HUMAN_REVIEW.md` with the business responsibility, ownership options, invariants, lifecycle concerns, tradeoffs, recommendation, and migration implications. If the workspace needs to be persisted and the Conversational AI cannot write to the repository, it will give you a CODEBASE AGENT HANDOFF.
+For material boundary decisions, the Conversational AI prepares the checkpoint content — the business responsibility, ownership options, invariants, lifecycle concerns, tradeoffs, recommendation, and migration implications — for `docs/ai/workspaces/active/<domain-topic>/HUMAN_REVIEW.md`. It gives you a CODEBASE AGENT HANDOFF to persist it.
 
 ## Step 3 - HUMAN
 
