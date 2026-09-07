@@ -2,27 +2,56 @@
 
 Process: Architecture Discussion
 
-Checkpoint: first architecture milestone before detailed lobby/runtime design.
+Status: first checkpoint approved; next checkpoint pending.
 
-Status: proposed, not accepted.
+## Approved First Checkpoint Decisions
 
-## Problem
+The human approved these architecture decisions for the Session Runtime initiative:
 
-Playable multiplayer sessions are a core initial product capability, but Session Runtime is currently scaffolding. The next design step should set the runtime ownership, state, failure, and concurrency boundaries before turning lobby or execution behavior into WORK.
+1. Session Runtime owns all durable authoritative state that determines the meaning of a session and must be reconstructible after loss or restart of the process.
+2. "Stateless" means process-stateless/reconstructible, not that Session Runtime has no durable domain state.
+3. `Live Session Coordinator` is a conceptual responsibility boundary outside Session Runtime.
+4. The Coordinator owns ephemeral/runtime mechanisms: live connection bindings, delivery/fan-out, physical disconnect detection, and physical timer/scheduling mechanisms.
+5. The Coordinator does not own authoritative session/game truth or business consequences.
+6. The Coordinator boundary does not require another deployed service. V1 may keep it in the same Go process.
+7. V1 should not introduce sticky-session correctness requirements, Redis, distributed session routing, distributed locks, or other multi-instance mechanisms.
+8. The initial single-process modular-monolith deployment may use local maps, channels, and Go timers for ephemeral mechanisms.
+9. Session correctness must not depend exclusively on ephemeral objects, so the architecture remains evolvable toward multiple processes or instances later.
+10. Timer obligations that can affect game semantics are durable Session Runtime state.
+11. The Coordinator owns the physical timer and notices elapsed wall-clock time; Session Runtime owns the durable timer obligation and decides the semantic consequence.
+12. On timer expiry, the Coordinator calls Session Runtime with the corresponding expiration signal/event. Session Runtime decides what happens, normally through its authoritative runtime/engine flow.
+13. A process crash may destroy physical timers but must not silently erase timer obligations or change game semantics. Pending or overdue obligations must be reconstructible/recoverable from durable state.
 
-The checkpoint should stay deliberately narrow: approve the architectural boundary and sequencing, then continue into detailed lobby/runtime design. It should not become a full implementation specification yet.
+## Canonical Promotion Note
 
-## Current Accepted Constraints
+These are material architecture decisions. This workspace records the approved checkpoint, but it is not canonical architecture documentation or implementation authority.
 
-- Game is one bounded context containing Game Management and Session Runtime as internal capabilities.
-- Game Management and Session Runtime have independent persistence and transaction ownership.
-- Session Runtime obtains immutable definition/version information through a narrow Game Management read capability.
-- Sessions are pinned to a stable execution definition/version.
-- Transport/network connections are outside Game ownership.
-- Identity/profile ownership is outside Game ownership.
-- Completed-session history/archive ownership is unresolved.
+Per the Architecture Discussion protocol, the next Conversational AI step should determine and route any required ADR/canonical documentation promotion before implementation WORK relies on these decisions.
 
-Source: `game/README.md` and `docs/decisions/architecture/ADR-0002-game-capability-persistence-transaction-boundary.md`.
+No canonical ADR, architecture, domain, engineering-standard, current-state, implementation, migration, or WORK files were updated by this checkpoint persistence step.
+
+## Deferred Design Topic
+
+Disconnect / reconnect semantics remain deferred. They are not an accepted feature design yet.
+
+Important distinction:
+
+```text
+physical connection state != logical session participation state
+```
+
+Future design must determine:
+
+- under what conditions a disconnected participant may reconnect;
+- whether there is a grace period;
+- when a participant is considered inactive, forfeited, or removed;
+- whether the game continues, waits, substitutes/removes the participant, or terminates;
+- what part of this behavior is generic Session Runtime policy versus authored Game Language behavior;
+- how reconnect is represented without making Session Runtime own TCP/WebSocket connections.
+
+Current human preference/intuition, not an accepted design: some reconnect/inactivity semantics may need to be expressible by the game itself because different games can require different behavior.
+
+Do not design the final reconnect contract yet. Preserve it for the later lifecycle-operational milestone.
 
 ## Current Implementation Facts
 
@@ -30,119 +59,36 @@ Source: `game/README.md` and `docs/decisions/architecture/ADR-0002-game-capabili
 - `CreateRoom` and `JoinRoom` are stubs.
 - Current `CreateRoom` still accepts an externally supplied `engine.Program`.
 
-DRIFT DETECTED: ADR-0002 says the externally supplied `engine.Program` is no longer the accepted Session Runtime contract. This should be fixed later through governed implementation work, not during this checkpoint.
+DRIFT DETECTED: ADR-0002 says the externally supplied `engine.Program` is no longer the accepted Session Runtime contract. This should be fixed later through governed implementation work, not during this architecture checkpoint persistence step.
 
-## Recommended Boundary
+## Next Architecture Milestone
 
-Treat Session Runtime as process-stateless/reconstructible but owner of durable authoritative session/runtime state.
+Define the durable Session/Participant model and lobby lifecycle foundations before designing detailed Create/Join/Leave/Start operations.
 
-Keep transport/network connections outside Session Runtime. Introduce a logical Live Session Coordinator between the WebSocket/application edge and Session Runtime:
+Focus especially on:
 
-- owns ephemeral connection bindings;
-- performs actual message delivery;
-- performs physical scheduling of timers or wakeups;
-- does not own authoritative business/session truth.
+- participant identity/ownership model;
+- creator/host relationship;
+- lifecycle phases and terminal reasons;
+- expiration semantics.
 
-Session Runtime should own durable facts that affect game semantics:
+## Questions For The Next Conversation
 
-- session lifecycle state;
-- participants;
-- pinned game definition/version;
-- persisted runtime snapshot/state;
-- durable timer obligations if timers affect game meaning;
-- ordering/concurrency guarantees for a session.
+1. What is the durable identity model for a session participant, given that Identity/Profile ownership stays outside Game?
+2. Is the creator/host always a participant, optionally a participant, or a separate role from participation?
+3. What lifecycle phases does Session Runtime need at the durable model level?
+4. Which terminal reasons are semantically meaningful enough to persist?
+5. How should lobby/session expiration be represented durably and enforced when cleanup has not run?
+6. Which player-count constraints come only from `program.Definition.Players`, and which session/lobby facts, if any, deserve their own durable fields?
 
-## Scaling Stance
-
-Do not make server/session affinity or sticky routing a correctness invariant.
-
-For the initial modular-monolith/single-process implementation, exploit the simple in-process shape. Defer distributed routing, Redis, separate process deployment, or similar machinery until there is an actual scaling or deployment requirement.
-
-This keeps the model honest: durable state and ordering rules provide correctness; process-local helpers provide convenience.
-
-## Participant Model
-
-Challenge a cross-session Player master entity inside Session Runtime.
-
-Preferred direction: session-scoped Participant records containing:
-
-- an opaque external actor/user UUID;
-- a display-name snapshot;
-- session participation/lifecycle fields.
-
-Identity/Profile ownership remains external. Do not assume the session creator/host is necessarily a playing participant.
-
-## Lifecycle Direction
-
-Explore a compact lifecycle:
-
-```text
-lobby -> running -> terminal
-```
-
-Use a terminal reason rather than expanding the top-level status into many finished/cancelled/expired/abandoned variants too early.
-
-Session expiration should be enforceable from durable timestamps even if asynchronous cleanup has not run.
-
-## Runtime Turn Direction
-
-Before implementing game execution, define the Runtime Turn contract:
-
-```text
-incoming external signal
--> session-level ordering/idempotency check
--> engine Step
--> internal signals handling
--> persisted Snapshot/state transition
--> ordered outputs for delivery
-```
-
-The Game Language engine intentionally defines one deterministic `Step` in isolation; it does not serialize concurrent calls for a live session. Session Runtime must own that ordering/concurrency model.
-
-## Alternatives
-
-Alternative: let WebSocket handlers own session state directly.
-
-Tradeoff: simple for a prototype, but it mixes transport concerns with authoritative session truth and makes crash recovery/reconnect/distributed routing harder to reason about.
-
-Alternative: add Redis/distributed routing now.
-
-Tradeoff: prepares for scale, but adds operational complexity before the deployment problem exists. It should remain deferred.
-
-Alternative: put a Player master entity inside Session Runtime.
-
-Tradeoff: tempting for queries and reuse, but it pulls identity/profile ownership into Game. Session-scoped participants keep the boundary cleaner.
-
-Alternative: persist authored min/max player limits onto the session.
-
-Tradeoff: may help historical/debug display later, but `program.Definition.Players` is already the authored source of truth. Avoid creating a second source of truth without a concrete reason.
-
-## Decisions Requested
-
-1. Approve or revise the boundary: Session Runtime owns durable authoritative session/runtime state; transport connections and ephemeral delivery/scheduling state live outside it.
-2. Decide whether to use the logical Live Session Coordinator concept now, while keeping implementation in-process initially.
-3. Approve or revise the scaling stance: no sticky routing, distributed routing, Redis, or independent Session Runtime deployment as a correctness requirement for the first implementation.
-4. Approve or revise the participant direction: session-scoped Participants with opaque external actor/user UUIDs and display-name snapshots; no cross-session Player master entity inside Session Runtime for now.
-5. Decide whether `lobby/running/terminal + terminal reason` is the lifecycle shape to explore in the next design step.
-6. Decide whether durable timer obligations belong to Session Runtime when timers affect game semantics.
-7. Confirm that session-level serialization/concurrency must be explicitly designed before runtime-turn implementation.
-
-## Proposed Sequence After This Checkpoint
-
-1. Fundamental runtime ownership/state/failure/concurrency model.
-2. Lobby lifecycle: create, join, leave, expiration, start, participants.
-3. Runtime-turn contract: incoming signals -> engine execution -> durable state -> outputs.
-4. Disconnect/reconnect, interruption/crash behavior, and abuse limits.
-5. Completed-session history/archive ownership and persistence strategy, routed to Domain Design when appropriate.
-6. Initiative-level implementation planning, then just-in-time Feature Development/WORK slices.
-
-## Out Of Scope For This Checkpoint
+## Still Out Of Scope
 
 - Creating WORK.
 - Implementation code changes.
 - Database migrations.
-- Canonical ADR/domain/current-state documentation updates.
-- Detailed endpoint/use-case contracts.
+- Canonical ADR/domain/current-state documentation updates in this handoff.
+- Detailed Create/Join/Leave/Start operation contracts.
 - Full runtime-turn persistence schema.
+- Final disconnect/reconnect contract.
 - Completed-session archive ownership.
 - Distributed deployment/routing design.
