@@ -87,7 +87,25 @@ A recurring pattern: several concepts are "one of a fixed set of variants," mode
 
 ### Types
 
-`BuiltinType` covers `unit`, `bool`, `number`, `string`, and `user` (the platform-provided "a connected player" type). Everything else is author-defined via `TypeDeclaration`: enums, records (all fields present), unions (exactly one variant, chosen by name), and "new types" (a nominal wrapper distinct from its underlying type, unlike an alias).
+`BuiltinType` covers `unit`, `bool`, `number`, `string`, and `user` (a platform-provided session-local runtime actor). Everything else is author-defined via `TypeDeclaration`: enums, records (all fields present), unions (exactly one variant, chosen by name), and "new types" (a nominal wrapper distinct from its underlying type, unlike an alias).
+
+## Accepted Session Runtime Root Roster Contract
+
+Status: ACCEPTED DESIGN, NOT YET IMPLEMENTED AS A COMPLETE VALIDATED CONTRACT.
+
+When Session Runtime starts a game from a lobby, it provides the root workflow with the standardized platform-provided roster input:
+
+```text
+players: list<user>
+```
+
+Authored games should use `players` for the participant roster rather than inventing arbitrary custom root parameter names for that purpose.
+
+Each `user` value represents a Session-local runtime actor derived from Session Runtime's `SessionActorID`; it is not `Identity.UserUUID` and must not expose global identity to authored Game Language.
+
+For V1, arbitrary externally supplied game-specific root parameters are deferred until a Session Configuration capability is explicitly designed.
+
+Rationale and alternatives are recorded in `docs/decisions/architecture/ADR-0009-game-language-root-player-roster-contract.md`.
 
 ### Resources vs. global state
 

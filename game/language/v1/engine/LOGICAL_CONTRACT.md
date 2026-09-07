@@ -20,6 +20,17 @@ Program + Snapshot + Signal
     → Commit
 ```
 
+Accepted Session Runtime root initialization contract, not yet implemented as a
+complete validated contract:
+
+```text
+players: list<user>
+```
+
+Session Runtime supplies `players` from active Participants at Start. Each
+`user` represents the Session-local runtime identity derived from
+SessionActorID, not Identity.UserUUID.
+
 A Commit represents, as a single unit:
 
 - the new snapshot;

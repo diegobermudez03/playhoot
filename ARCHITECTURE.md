@@ -37,6 +37,8 @@ Domains expose operations that protect and operate on their own business respons
 
 Only explicitly accepted boundaries in canonical architecture or domain documentation are authoritative. Repository folder existence alone is not architectural authority.
 
+A trusted authentication/application layer may establish which `Identity.User` is calling a domain operation. The receiving domain still owns its own business authorization: Identity/Auth proves who the caller is, while the receiving domain decides what that User may do inside that domain's business state.
+
 ## Accepted Business Boundaries
 
 The accepted business bounded contexts currently normalized here are Game and Identity.
@@ -133,7 +135,7 @@ API is the external transport/application edge.
 
 API may perform BFF response shaping. BFF response shaping is not the same as cross-domain business/data composition; cross-domain read composition belongs to Composer.
 
-Stable User identity is owned by Identity. This document does not otherwise define where authentication, authorization policy, account, or mutable profile/display responsibilities are owned.
+Stable User identity is owned by Identity. Identity/Auth proves who a caller is; the receiving domain owns its own business authorization decisions. This document does not otherwise define where authentication, authorization policy, account, or mutable profile/display responsibilities are owned.
 
 ## State and Transaction Boundaries
 

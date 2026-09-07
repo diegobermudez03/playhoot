@@ -12,5 +12,8 @@ ADRs preserve architecture decision rationale. Current architecture remains owne
 | [ADR-0004](ADR-0004-session-runtime-actor-and-lifecycle-foundations.md) | Session Runtime Actor and Lifecycle Foundations | ACCEPTED | 2026-09-06 | `game/README.md` |
 | [ADR-0005](ADR-0005-cross-domain-public-entity-references.md) | Cross-Domain Public Entity References | ACCEPTED | 2026-09-06 | `ARCHITECTURE.md`, `docs/engineering/standards/cross-domain-reference-naming.md` |
 | [ADR-0006](ADR-0006-identity-user-public-identity-boundary.md) | Identity User Public Identity Boundary | ACCEPTED | 2026-09-06 | `ARCHITECTURE.md`, `identity/README.md`, `identity/CURRENT_STATE.md`, `game/README.md`, `docs/ai/KNOWLEDGE_MAP.md`, `docs/engineering/standards/cross-domain-reference-naming.md` |
+| [ADR-0007](ADR-0007-session-lobby-lifecycle-contract.md) | Session Lobby Lifecycle Contract | ACCEPTED | 2026-09-06 | `game/README.md` |
+| [ADR-0008](ADR-0008-session-public-and-internal-identity-boundary.md) | Session Public and Internal Identity Boundary | ACCEPTED | 2026-09-06 | `game/README.md`, `ARCHITECTURE.md` |
+| [ADR-0009](ADR-0009-game-language-root-player-roster-contract.md) | Game Language Root Player Roster Contract | ACCEPTED | 2026-09-06 | `game/language/v1/program/README.md`, `game/language/v1/engine/README.md`, `game/language/v1/engine/LOGICAL_CONTRACT.md`, `game/README.md` |
 
 Whenever an ADR is created or its lifecycle status changes, update this index.

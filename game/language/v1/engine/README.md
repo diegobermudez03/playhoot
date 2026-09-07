@@ -80,6 +80,22 @@ Creates the initial `Snapshot` for one new game instance of `p`: binds and valid
 
 The returned `Signal` is the mandatory first input to `Step` — it is how the root workflow instance actually starts running (matching a `WorkflowStarted` transition, if the root workflow declares one). Don't discard it.
 
+### Accepted Session Runtime Root Roster Contract
+
+Status: ACCEPTED DESIGN, NOT YET IMPLEMENTED AS A COMPLETE VALIDATED CONTRACT.
+
+When Session Runtime starts a lobby, it supplies the root workflow with:
+
+```text
+players: list<user>
+```
+
+Session Runtime builds this value from active Participants at Start. Each `user` is the Session-local runtime identity derived from `SessionActorID`, not `Identity.UserUUID`.
+
+Session Runtime must initialize/load the pinned immutable Game definition/version, call `NewSnapshot`, process the mandatory first signal through `Step`, and persist the initial authoritative runtime state and durable consequences before delivering outputs outside its transaction.
+
+Rationale and alternatives are recorded in `docs/decisions/architecture/ADR-0009-game-language-root-player-roster-contract.md`.
+
 ### `Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal, limits engine.Limits) (engine.Commit, error)`
 
 Applies exactly one `Signal` to `snapshot` and returns the result as one atomic `Commit`. `Step` never mutates `snapshot` in place — on success, the new state is `commit.Snapshot`; on failure, `snapshot` is guaranteed unchanged, no `Commit` was produced, and nothing in it should be treated as published.
