@@ -1,94 +1,89 @@
-# Session Runtime V1 Architecture Checkpoint
+# Minimum Identity Concept For Session Runtime
 
-Process: Architecture Discussion
+Process: Domain Design
 
-Status: first checkpoint approved; next checkpoint pending.
+Parent process: Session Runtime Architecture Discussion
 
-## Approved First Checkpoint Decisions
+Status: next checkpoint pending.
 
-The human approved these architecture decisions for the Session Runtime initiative:
+## Why This Is The Next Question
 
-1. Session Runtime owns all durable authoritative state that determines the meaning of a session and must be reconstructible after loss or restart of the process.
-2. "Stateless" means process-stateless/reconstructible, not that Session Runtime has no durable domain state.
-3. `Live Session Coordinator` is a conceptual responsibility boundary outside Session Runtime.
-4. The Coordinator owns ephemeral/runtime mechanisms: live connection bindings, delivery/fan-out, physical disconnect detection, and physical timer/scheduling mechanisms.
-5. The Coordinator does not own authoritative session/game truth or business consequences.
-6. The Coordinator boundary does not require another deployed service. V1 may keep it in the same Go process.
-7. V1 should not introduce sticky-session correctness requirements, Redis, distributed session routing, distributed locks, or other multi-instance mechanisms.
-8. The initial single-process modular-monolith deployment may use local maps, channels, and Go timers for ephemeral mechanisms.
-9. Session correctness must not depend exclusively on ephemeral objects, so the architecture remains evolvable toward multiple processes or instances later.
-10. Timer obligations that can affect game semantics are durable Session Runtime state.
-11. The Coordinator owns the physical timer and notices elapsed wall-clock time; Session Runtime owns the durable timer obligation and decides the semantic consequence.
-12. On timer expiry, the Coordinator calls Session Runtime with the corresponding expiration signal/event. Session Runtime decides what happens, normally through its authoritative runtime/engine flow.
-13. A process crash may destroy physical timers but must not silently erase timer obligations or change game semantics. Pending or overdue obligations must be reconstructible/recoverable from durable state.
+Session Runtime now has accepted architecture foundations for durable state, the Live Session Coordinator boundary, timer durability, V1 scaling, SessionActor identity, Participant scoping, and lobby lifecycle foundations.
 
-## Canonical Promotion Note
+The remaining blocker before detailed Session Runtime operation design is the minimum Identity-domain concept that a SessionActor may reference. Session Runtime must not freeze a persisted field such as `user_uuid` until the producing Identity domain has accepted what public entity it exports.
 
-These are material architecture decisions. This workspace records the approved checkpoint, but it is not canonical architecture documentation or implementation authority.
+Keep this discussion deliberately small: define only what Session Runtime needs in order to correlate a session-local actor to an external public identity.
 
-Per the Architecture Discussion protocol, the next Conversational AI step should determine and route any required ADR/canonical documentation promotion before implementation WORK relies on these decisions.
+## Accepted Architecture Context
 
-No canonical ADR, architecture, domain, engineering-standard, current-state, implementation, migration, or WORK files were updated by this checkpoint persistence step.
+- Session Runtime owns durable authoritative session/runtime state.
+- `Live Session Coordinator` owns ephemeral connection, delivery/fan-out, disconnect detection, and physical scheduling mechanisms.
+- Host and Participant are independent relationships to a Session-owned actor.
+- Participant is session-scoped and is not a cross-session Player/Profile entity.
+- Session Runtime conceptually owns a local `SessionActorID`.
+- A SessionActor may persist a cross-domain reference to a stable public identity entity exported by the future Identity domain.
+- Cross-domain public entity references use stable public UUIDs that identify logical entities, not storage rows.
+- Consumers of public UUID references must not create cross-domain database foreign keys or depend on producer table layout.
+
+Canonical references:
+
+- `game/README.md`
+- `ARCHITECTURE.md`
+- `docs/decisions/architecture/ADR-0003-session-runtime-durable-boundary.md`
+- `docs/decisions/architecture/ADR-0004-session-runtime-actor-and-lifecycle-foundations.md`
+- `docs/decisions/architecture/ADR-0005-cross-domain-public-entity-references.md`
+- `docs/engineering/standards/cross-domain-reference-naming.md`
+
+## Boundary Question
+
+Define the minimum public Identity-domain concept needed by Session Runtime.
+
+The next discussion should determine:
+
+1. What is the stable public Identity entity: `User`, `Principal`, or another concept?
+2. What business thing does that entity represent?
+3. Does the same public identity exist for guests and registered people?
+4. If a guest later registers, does the same public UUID survive that transition?
+5. Which state belongs to that public entity versus Account/Profile/Auth details?
+6. What public capabilities are necessary to create/resolve it?
+7. What does Identity explicitly not own?
+8. Is `display_name` Identity-owned mutable profile data while Session keeps its own participation-time snapshot?
+
+## Current Direction To Preserve
+
+Session Runtime should continue to own:
+
+- session-local `SessionActorID`;
+- Host and Participant relationships to that local actor;
+- session-owned participation/lifecycle state;
+- display-name snapshot captured for session participation;
+- durable session/runtime state and semantic consequences.
+
+Identity, if accepted, should own only the public identity concept and capabilities needed for correlation/resolution. The discussion should not assume the public concept is `User` until Domain Design accepts that name and meaning.
+
+## Out Of Scope
+
+- Login providers.
+- OAuth/social sign-in.
+- Profile pages.
+- Account settings.
+- Full authentication architecture.
+- Identity persistence schema.
+- Session Runtime implementation.
+- Database migrations.
+- WORK creation.
+- Final disconnect/reconnect semantics.
 
 ## Deferred Design Topic
 
-Disconnect / reconnect semantics remain deferred. They are not an accepted feature design yet.
+Disconnect/reconnect semantics remain deferred and are not an accepted feature design.
 
-Important distinction:
+Physical connection state is not logical session participation state.
 
-```text
-physical connection state != logical session participation state
-```
-
-Future design must determine:
-
-- under what conditions a disconnected participant may reconnect;
-- whether there is a grace period;
-- when a participant is considered inactive, forfeited, or removed;
-- whether the game continues, waits, substitutes/removes the participant, or terminates;
-- what part of this behavior is generic Session Runtime policy versus authored Game Language behavior;
-- how reconnect is represented without making Session Runtime own TCP/WebSocket connections.
+Future design must decide reconnect conditions, grace periods, inactive/forfeited/removed semantics, whether games wait or continue, what is generic Session Runtime policy versus authored Game Language behavior, and how reconnect is represented without making Session Runtime own TCP/WebSocket connections.
 
 Current human preference/intuition, not an accepted design: some reconnect/inactivity semantics may need to be expressible by the game itself because different games can require different behavior.
 
-Do not design the final reconnect contract yet. Preserve it for the later lifecycle-operational milestone.
+## Explicit Non-Implementation Note
 
-## Current Implementation Facts
-
-- Session Runtime has persisted schema and lifecycle scaffolding, but no implemented create/join/start/execution flow.
-- `CreateRoom` and `JoinRoom` are stubs.
-- Current `CreateRoom` still accepts an externally supplied `engine.Program`.
-
-DRIFT DETECTED: ADR-0002 says the externally supplied `engine.Program` is no longer the accepted Session Runtime contract. This should be fixed later through governed implementation work, not during this architecture checkpoint persistence step.
-
-## Next Architecture Milestone
-
-Define the durable Session/Participant model and lobby lifecycle foundations before designing detailed Create/Join/Leave/Start operations.
-
-Focus especially on:
-
-- participant identity/ownership model;
-- creator/host relationship;
-- lifecycle phases and terminal reasons;
-- expiration semantics.
-
-## Questions For The Next Conversation
-
-1. What is the durable identity model for a session participant, given that Identity/Profile ownership stays outside Game?
-2. Is the creator/host always a participant, optionally a participant, or a separate role from participation?
-3. What lifecycle phases does Session Runtime need at the durable model level?
-4. Which terminal reasons are semantically meaningful enough to persist?
-5. How should lobby/session expiration be represented durably and enforced when cleanup has not run?
-6. Which player-count constraints come only from `program.Definition.Players`, and which session/lobby facts, if any, deserve their own durable fields?
-
-## Still Out Of Scope
-
-- Creating WORK.
-- Implementation code changes.
-- Database migrations.
-- Canonical ADR/domain/current-state documentation updates in this handoff.
-- Detailed Create/Join/Leave/Start operation contracts.
-- Full runtime-turn persistence schema.
-- Final disconnect/reconnect contract.
-- Completed-session archive ownership.
-- Distributed deployment/routing design.
+No implementation exists for these newly accepted architecture decisions yet. Current Session Runtime remains scaffolding, and `CreateRoom`/`JoinRoom` are still stubs.

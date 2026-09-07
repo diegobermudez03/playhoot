@@ -84,6 +84,33 @@ Orchestrator is the coordination layer for cross-domain write workflows.
 
 No universal communication mechanism is accepted globally. Synchronous calls, asynchronous messaging, events, choreography, queues, and other mechanisms are workflow-specific decisions.
 
+Orchestrator may persist workflow/saga state, idempotency, retries, and intermediate results required to coordinate a cross-domain workflow. It must not become the permanent business source of truth for mappings between domain entities merely because it has a database. Durable business correlations belong with the responsible business/domain state.
+
+## Cross-Domain Public Entity References
+
+A domain may explicitly publish certain logical entities as cross-domain referenceable entities.
+
+For such an entity:
+
+- it has a stable public UUID;
+- the UUID identifies the logical entity, not a physical database row/table contract;
+- the UUID is immutable/non-reusable as an identity;
+- internal persistence may change without changing the public identity;
+- consumers may persist that public UUID as a logical reference;
+- consumers must not create cross-domain database foreign keys or directly access the producer's persistence as part of their domain behavior;
+- consumers must not depend on the producer's internal table layout;
+- the producer remains responsible for resolving the public identity to whatever internal representation it uses.
+
+Cross-domain coupling to a published business concept is intentional and acceptable. Coupling to another domain's storage representation is not.
+
+Public logical entity identifier and storage/table primary key contract are distinct. The fact that an implementation happens to store the public UUID in a table column does not make that table part of the public contract.
+
+A cross-domain referenceable/public entity must have a stable public UUID. Internal-only entities should normally use local IDs unless they have another explicit reason to require globally stable identity.
+
+Do not infer the inverse rule: a UUID does not by itself mean the entity is public/exported. Public/referenceable status is an explicit domain contract, not something inferred solely from identifier type.
+
+Persisted field/column naming for cross-domain references is governed by `docs/engineering/standards/cross-domain-reference-naming.md`. Rationale and alternatives are recorded in `docs/decisions/architecture/ADR-0005-cross-domain-public-entity-references.md`.
+
 ## Application Edge
 
 API is the external transport/application edge.

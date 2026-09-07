@@ -17,5 +17,6 @@ This index routes engineers and AI agents to accepted reusable engineering stand
 | Unexpected data/state integrity failures, alerts, and panic semantics | `data-integrity.md` |
 | Unit/service/repository testing | `testing.md` |
 | Domain logic placement, package organization, and type ownership within a business domain | `domain-logic-placement.md` |
+| Persisted cross-domain entity-reference naming | `cross-domain-reference-naming.md` |
 
 This initial set was extracted from the previously canonical `AGENTS.md -> Project Patterns`.
