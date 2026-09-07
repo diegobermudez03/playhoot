@@ -13,7 +13,12 @@ Before performing non-trivial work:
 2. Read `docs/ai/OPERATING_MODEL.md`.
 3. Use `docs/ai/KNOWLEDGE_MAP.md` to identify and load only the context
    relevant to the task.
-4. Determine what type of work is being performed.
+4. For a normal natural-language request, use
+   `docs/ai/protocols/CONVERSATIONAL_ORCHESTRATOR.md` before forcing the
+   human to choose a process: search for a matching open initiative or WORK
+   first, then select the internal process that owns the concern. Skip
+   straight to the matching process/protocol only when clearly resuming a
+   known persisted process.
 5. If a process runbook exists for that type of work, use
    `docs/ai/processes/*` as the human-facing guide and follow the matching
    `docs/ai/protocols/*` execution protocol. Human process guides remain
@@ -50,3 +55,9 @@ review surface.
 `AI_CONTEXT.md` is temporary resumable agent context only. It is not canonical
 truth, not implementation authority, and must not contain hidden material
 decisions.
+
+When acting as CODEBASE AGENT or INDEPENDENT REVIEWER, respect an existing
+active workspace under `docs/ai/workspaces/active/`: do not overwrite its
+design authority, and keep its `AI_CONTEXT.md` resume state current at
+meaningful repository-side checkpoints so an interrupted execution can be
+resumed. See `docs/ai/workspaces/README.md`.

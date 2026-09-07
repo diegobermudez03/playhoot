@@ -4,6 +4,8 @@ Use this when you want the AI to lead you through an unfamiliar technical area.
 
 Surface flow: CONVERSATIONAL AI <-> HUMAN, with CODEBASE AGENT when local repository evidence or persistent artifacts must be inspected/changed.
 
+Normally the Conversational Orchestrator selects and enters this process automatically from a natural request (see `docs/ai/README.md`). Use this guide directly only for manual/advanced entry, debugging, or when you already know exactly which process you want.
+
 ## When to use it
 
 - You know the area matters but do not know the right questions yet.

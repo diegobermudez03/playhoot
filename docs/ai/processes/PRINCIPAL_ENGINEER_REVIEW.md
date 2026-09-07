@@ -4,6 +4,8 @@ Use this when you want the AI to proactively inspect Playhoot for risks, gaps, a
 
 Surface flow: CONVERSATIONAL AI performs/coordinates the human-facing review. A CODEBASE AGENT is used for repository-local evidence when required, and to persist Radar updates.
 
+Normally the Conversational Orchestrator selects and enters this process automatically from a natural request (see `docs/ai/README.md`). Use this guide directly only for manual/advanced entry, debugging, or when you already know exactly which process you want.
+
 ## When to use it
 
 - After a meaningful milestone.

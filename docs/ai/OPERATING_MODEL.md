@@ -101,6 +101,7 @@ material decisions hidden from the human-facing review surface.
 - Makes concrete recommendations.
 - Does not silently convert its own proposals into accepted decisions.
 - Does not mutate repository state while acting in this surface. Whenever a process needs repository persistence or another repository-local mutation, produces a Codebase Agent Handoff instead of attempting the mutation itself or asking the human to hand-author workspace files.
+- Uses `docs/ai/protocols/CONVERSATIONAL_ORCHESTRATOR.md` to route a natural human request to the correct initiative/internal process instead of requiring the human to name one. Routing is a Conversational AI responsibility, not a new execution surface.
 
 ### Codebase Agent
 

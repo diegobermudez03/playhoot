@@ -49,6 +49,8 @@ Game contains:
 
 Game Management and Session Runtime are capabilities inside the Game bounded context, not separate business domains. Game Language is not a separate business bounded context.
 
+Sharing one bounded context does not imply Game Management and Session Runtime share one persistence or transaction boundary; their independent persistence/transaction ownership is recorded in `game/README.md` and `docs/decisions/architecture/ADR-0002-game-capability-persistence-transaction-boundary.md`.
+
 The current physical package layout may remain:
 
 ```text

@@ -4,6 +4,8 @@ Use this when you want to change Playhoot's AI-assisted development workflow.
 
 Surface flow: CONVERSATIONAL AI <-> HUMAN for proposal/approval. CODEBASE AGENT applies the approved workflow mutation. CONVERSATIONAL AI/HUMAN perform the final human-facing result acceptance.
 
+Normally the Conversational Orchestrator selects and enters this process automatically from a natural request (see `docs/ai/README.md`). Use this guide directly only for manual/advanced entry, debugging, or when you already know exactly which process you want.
+
 ## When to use it
 
 - You want to change AI execution surfaces, roles, authority, review gates, process routing, handoff prompts, workflow artifacts, templates, lifecycle semantics, or documentation synchronization behavior.

@@ -4,6 +4,8 @@ Use this when you want to decide what Playhoot should do.
 
 Surface flow: CONVERSATIONAL AI <-> HUMAN, with CODEBASE AGENT only when repository persistence/synchronization is needed.
 
+Normally the Conversational Orchestrator selects and enters this process automatically from a natural request (see `docs/ai/README.md`). Use this guide directly only for manual/advanced entry, debugging, or when you already know exactly which process you want.
+
 ## When to use it
 
 - You are considering product scope, user value, creator/player experience, launch target, or priority.

@@ -40,6 +40,26 @@ This transition does not require a new human decision because READY already cont
 
 The Codebase Agent must not modify the approved scope/design merely while performing this status transition.
 
+## Interruption Resilience
+
+Before substantive implementation/mutation:
+
+1. ensure the initiative's active workspace exists
+   (`docs/ai/workspaces/active/<initiative>/`);
+2. refresh `AI_CONTEXT.md`'s resume header with the phase about to begin;
+3. perform the authorized mutation.
+
+Refresh `AI_CONTEXT.md` at meaningful checkpoints, including when relevant: a
+substantial phase completes, a DISCOVERY occurs, work blocks, an
+implementation pass completes, review is requested, review returns findings,
+fixes complete, or closure becomes possible. Do not require updates after
+every source edit.
+
+If execution stops unexpectedly, a fresh Codebase Agent should be able to
+recover from the active `AI_CONTEXT.md`, the related WORK/canonical
+artifacts, and the actual Git/worktree/diff. Do not claim the workflow can
+persist tokens/actions that were never written.
+
 ## Codebase Agent Behavior
 
 The Codebase Agent should:
@@ -453,6 +473,12 @@ Then:
 2. Change `Status:` to DONE.
 3. Update `Last status change`.
 4. Move the same file from `docs/work/active/` to `docs/work/completed/`.
+
+This closure alone does not resolve the surrounding initiative or make its
+workspace removable. Return to the Conversational Orchestrator's initiative
+loop (`docs/ai/protocols/CONVERSATIONAL_ORCHESTRATOR.md`) to determine
+whether further slices remain before treating the workspace as removable
+(`docs/ai/workspaces/README.md`).
 
 The Completion Record should include implementation summary, actual verification performed and limitations, independent review result, required documentation synchronized, approved material deviations if any, and relevant explicitly-out-of-scope follow-up when useful.
 

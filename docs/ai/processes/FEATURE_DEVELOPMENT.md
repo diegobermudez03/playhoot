@@ -18,6 +18,8 @@ CONVERSATIONAL AI
 
 If implementation or review discovers a DECISION_REQUIRED issue, it returns to CONVERSATIONAL AI + HUMAN before implementation continues.
 
+Normally the Conversational Orchestrator selects and enters this process automatically from a natural request, usually as the graduation step of a broader initiative (see `docs/ai/README.md` and `docs/ai/protocols/CONVERSATIONAL_ORCHESTRATOR.md`). Use this guide directly only for manual/advanced entry, debugging, or when you already know exactly which process you want.
+
 ## When to use it
 
 - A concrete feature, migration, refactor, or technical capability needs design and implementation.
@@ -75,7 +77,7 @@ At the READY checkpoint, say explicitly whether the WORK is READY for implementa
 
 ## Step 4 - CODEBASE AGENT
 
-After you approve READY, a CODEBASE AGENT marks the WORK READY. The temporary workspace may be removed once the WORK and relevant canonical context are sufficient durable handoff.
+After you approve READY, a CODEBASE AGENT marks the WORK READY. The workspace stays active through implementation and independent review — it is not removed merely because the WORK reached READY, implementation began, or review is pending. It is removed only once the WORK reaches DONE/CANCELLED and the surrounding initiative has no remaining tracked work (see `docs/ai/workspaces/README.md`).
 
 Implementation then goes to a CODEBASE AGENT operating on the checkout, using the minimal handoff from `docs/ai/protocols/IMPLEMENTATION_REVIEW.md`:
 

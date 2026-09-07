@@ -4,6 +4,8 @@ Use this when you want to create or change a reusable Playhoot engineering rule.
 
 Surface flow: CONVERSATIONAL AI <-> HUMAN, then CODEBASE AGENT to persist an accepted standard or separately execute approved migration work.
 
+Normally the Conversational Orchestrator selects and enters this process automatically from a natural request (see `docs/ai/README.md`). Use this guide directly only for manual/advanced entry, debugging, or when you already know exactly which process you want.
+
 ## When to use it
 
 - A repeatable coding, testing, documentation, error-handling, or design rule is needed across future work.

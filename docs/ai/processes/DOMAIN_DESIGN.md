@@ -4,6 +4,8 @@ Use this when you want to decide Playhoot business/domain ownership.
 
 Surface flow: CONVERSATIONAL AI <-> HUMAN, with CODEBASE AGENT for repository evidence/persistence when needed.
 
+Normally the Conversational Orchestrator selects and enters this process automatically from a natural request (see `docs/ai/README.md`). Use this guide directly only for manual/advanced entry, debugging, or when you already know exactly which process you want.
+
 ## When to use it
 
 - A new domain is proposed.

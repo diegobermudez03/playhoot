@@ -227,3 +227,36 @@ Current Git history plus this changelog is sufficient. If stable workflow-change
 
 **Notes**
 - Human material-decision authority, Codebase Agent implementation autonomy, Independent Reviewer semantics, workspace persistence/durability requirements, decision thresholds, WORK lifecycle, and review verdict/finding semantics are unchanged by this correction.
+
+## 2026-09-06 - Added automatic request routing and durable active-process continuity
+
+**Change**
+- Made `docs/ai/README.md` the universal human entry point: describe your request naturally and the Conversational AI selects/transitions internal processes for you; the human no longer normally chooses a Playhoot process up front.
+- Added `docs/ai/protocols/CONVERSATIONAL_ORCHESTRATOR.md`, an internal agent-facing protocol owning request routing, existing-initiative/WORK detection, process selection and transitions, downstream-consequence checks after material milestones, initiative-level implementation planning (including an optional `PLAN.md`), just-in-time WORK materialization, and open-initiative discovery.
+- Introduced the Durable Active Process Invariant in `docs/ai/workspaces/README.md`: once a process performs substantive repository mutation or otherwise needs cross-session continuity, it must persist active-process state and remain discoverable/resumable until resolved. A genuinely trivial, single-session, no-repository-effect conversation still requires no workspace.
+- Made the workspace unit an INITIATIVE rather than a single internal process. `docs/ai/workspaces/active/<initiative>/` now normally survives the whole active process, including a Feature Development slice's full DRAFT -> READY -> IMPLEMENTING -> review -> DONE/CANCELLED lifecycle. It is no longer removed merely because a WORK reaches READY, implementation begins, or review is pending; removal happens only once the initiative itself is resolved.
+- Standardized an `AI_CONTEXT.md` resume header (process, topic, stage, execution surface, parent process, return-to, related artifacts, blocked by, next action, last durable checkpoint, last updated) so continuation is never ambiguous to a fresh agent.
+- Updated `docs/ai/protocols/IMPLEMENTATION_REVIEW.md` with interruption resilience: ensure/refresh the active workspace before substantive mutation and at meaningful checkpoints (phase start, DISCOVERY, blocked, review requested/returned, fixes complete, closure) so a fresh Codebase Agent can recover from `AI_CONTEXT.md` plus Git/worktree/diff, and pointed closure back to the Orchestrator's initiative loop instead of assuming the workspace is finished.
+- Marked all `docs/ai/processes/*` guides as normally entered automatically by the Orchestrator, retained as manual/advanced entry points and human-facing reference; corrected `docs/ai/processes/FEATURE_DEVELOPMENT.md` and `docs/ai/protocols/FEATURE_DEVELOPMENT.md` to match the new workspace-lifetime rule.
+- Added Knowledge Map routes for the Orchestrator and for open-initiative discovery, and updated `AGENTS.md`/`docs/ai/OPERATING_MODEL.md` to reference the Orchestrator without duplicating its routing matrix.
+
+**Reason**
+- The human should not have to choose a Playhoot process, know which internal process comes next, manually orchestrate transitions, or remember where unfinished work stopped. The repository remains the durable memory and governance system beneath that abstraction.
+
+**Affected workflow artifacts**
+- `docs/ai/README.md`
+- `docs/ai/OPERATING_MODEL.md`
+- `docs/ai/KNOWLEDGE_MAP.md`
+- `AGENTS.md`
+- `docs/ai/protocols/CONVERSATIONAL_ORCHESTRATOR.md` (new)
+- `docs/ai/workspaces/README.md`
+- `docs/ai/protocols/IMPLEMENTATION_REVIEW.md`
+- `docs/ai/processes/*`
+- `docs/ai/protocols/FEATURE_DEVELOPMENT.md`
+
+**Compatibility / migration**
+- No existing WORK, ADR, PDR, Radar, domain-documentation, code, test, or migration artifact required migration: at the time of this change, `docs/work/active/` contained no non-terminal WORK and `docs/ai/workspaces/active/` contained no active workspace.
+- Existing process/protocol governance (READY, independent review, escalation, decision boundaries, WORK lifecycle, One Fact One Owner) is unchanged beneath this routing/continuity layer.
+
+**Notes**
+- Human material-decision authority, execution-surface boundaries, the Codebase Agent Handoff mechanic, and the Principal Engineer Contract are unchanged by this change.

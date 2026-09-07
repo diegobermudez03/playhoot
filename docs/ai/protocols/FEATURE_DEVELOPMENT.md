@@ -31,7 +31,8 @@ The human should be able to authorize READY from the human review without readin
 - Validate Definition of Ready from `docs/work/README.md`.
 - Synchronize accepted/canonical knowledge only through the owning product, architecture, domain, or standard process.
 - Update current-state documentation only after implementation actually changes system state or behavior.
-- Remove the temporary workspace once WORK and relevant canonical context are durable enough for handoff.
+- Ensure the initiative workspace exists and its `AI_CONTEXT.md` resume header is current before DRAFT WORK creation/update and again before the READY transition, so an interrupted Codebase Agent can resume (see `docs/ai/workspaces/README.md`).
+- Do not remove the workspace merely because WORK reached READY or implementation began; see Workspace Lifetime in `docs/ai/workspaces/README.md`.
 
 No material decision may exist only in `AI_CONTEXT.md`.
 
@@ -88,3 +89,5 @@ Feature Development is complete only after the implementation/review protocol re
 - Required documentation synchronization is complete.
 - No unresolved material drift was introduced.
 - DONE or CANCELLED WORK has moved from `docs/work/active/` to `docs/work/completed/`.
+
+After closure, return to the initiative plan (`docs/ai/protocols/CONVERSATIONAL_ORCHESTRATOR.md`) rather than assuming the surrounding initiative or its workspace is finished; remove the workspace only when the initiative itself is resolved (see `docs/ai/workspaces/README.md`).
