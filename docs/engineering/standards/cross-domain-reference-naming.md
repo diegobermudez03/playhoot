@@ -33,7 +33,9 @@ when the value actually references a published `User` entity.
 
 Do not prescribe a specific public entity name before the producing domain has accepted and documented that public entity.
 
-For example, do not prescribe `user_uuid` for Session Runtime until Domain Design has accepted the public Identity entity name and semantics. If the public Identity entity is accepted as `Principal`, then a persisted cross-domain reference to it should be named from that public entity instead.
+Identity has accepted `User` as its public cross-domain referenceable entity. Therefore `user_uuid` is the correct persisted reference name when a field/column references `Identity.User`.
+
+For future domains, if a public entity name has not been accepted yet, do not freeze a persisted reference name. Name the reference from the accepted public entity once the producing domain documents it.
 
 ## Identifier Direction
 

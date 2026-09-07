@@ -80,9 +80,11 @@ V1 does not include a generic persisted `role` field merely to anticipate specta
 
 Session-local uniqueness is the accepted invariant: an actor may occupy at most one active logical participation for the same Session. Game does not establish a platform-wide invariant that one User may belong to only one active Session.
 
-Session Runtime conceptually owns a session-scoped identity such as `SessionActorID`. Host and Participant relationships refer to this local identity. Runtime/domain operations should primarily operate using Session-owned identity rather than propagating external Identity-domain UUIDs throughout engine/runtime behavior.
+Session Runtime conceptually owns a session-scoped identity such as `SessionActorID`. Host and Participant relationships refer to this local identity. Runtime/domain operations should primarily operate using Session-owned identity rather than propagating `UserUUID` throughout engine/runtime behavior.
 
-A SessionActor may persist a cross-domain reference to the stable public identity entity exported by the future Identity domain. This is a logical domain reference, not ownership and not permission to read Identity persistence. The exact public Identity entity name/semantics are unresolved; Domain Design must decide whether the public concept is `User`, `Principal`, or another accepted term before Session canonical documentation freezes a persisted field name such as `user_uuid`.
+A SessionActor may persist `user_uuid` as a cross-domain reference to `Identity.User`. This is a logical domain reference, not ownership of User/Profile, not permission to read Identity persistence, not dependency on Identity table layout, and not a cross-domain database foreign key.
+
+Session Runtime owns its participation-time display-name snapshot associated with SessionActor/Participant representation. Mutable global display/profile ownership remains unresolved outside Game.
 
 Use the conceptual Session lifecycle:
 

@@ -39,7 +39,7 @@ Only explicitly accepted boundaries in canonical architecture or domain document
 
 ## Accepted Business Boundaries
 
-The accepted business bounded context currently normalized here is Game.
+The accepted business bounded contexts currently normalized here are Game and Identity.
 
 Game contains:
 
@@ -59,6 +59,14 @@ game/
   session/
   language/
 ```
+
+Identity owns stable Playhoot identity for people interacting with the platform. Its public cross-domain referenceable entity is `User`, identified by stable public `UserUUID` under the Cross-Domain Public Entity References rule below.
+
+`User` is distinct from authentication/account concerns and profile/presentation concerns. Authentication/account/provider systems, authorization policy, mutable global display/profile ownership, and Identity persistence details remain intentionally unresolved beyond the accepted User boundary. Profile is not an accepted separate bounded context merely because mutable profile/display ownership remains unresolved.
+
+Cross-domain consumers may persist `UserUUID` as a logical reference to `Identity.User` without accessing Identity storage, depending on Identity table layout, or creating cross-domain database foreign keys.
+
+Rationale and alternatives for the Identity boundary are recorded in `docs/decisions/architecture/ADR-0006-identity-user-public-identity-boundary.md`.
 
 ## Cross-Domain Reads
 
@@ -125,7 +133,7 @@ API is the external transport/application edge.
 
 API may perform BFF response shaping. BFF response shaping is not the same as cross-domain business/data composition; cross-domain read composition belongs to Composer.
 
-This document does not define where identity or authorization policy is owned.
+Stable User identity is owned by Identity. This document does not otherwise define where authentication, authorization policy, account, or mutable profile/display responsibilities are owned.
 
 ## State and Transaction Boundaries
 
@@ -171,7 +179,7 @@ Rationale and alternatives considered are recorded in `docs/decisions/architectu
 
 NON-CANONICAL / UNRESOLVED:
 
-- Identity vs Profile responsibility.
+- Mutable global profile/display ownership; stable User identity is owned by Identity.
 - Session history ownership.
 - Discovery responsibility/boundary.
 - Community responsibility/boundary.
