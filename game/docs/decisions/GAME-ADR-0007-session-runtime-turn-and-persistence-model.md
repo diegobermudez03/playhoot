@@ -1,14 +1,15 @@
-# ADR-0010: Session Runtime Turn Architecture and Persistence Model
+# GAME-ADR-0007: Session Runtime Turn Architecture and Persistence Model
 
 Status: ACCEPTED
 Created: 2026-09-07
 Last status change: 2026-09-07
 Supersedes: None
 Superseded by: None
+Legacy ID: ADR-0010
 
 ## Context
 
-ADR-0007 accepted the LOBBY lifecycle contract. Start transitions a Session to `RUNNING` and processes the engine's required initial signal. The engine contract (`game/language/v1/engine/README.md`) already establishes that one `Step` call applies exactly one `Signal` and returns one atomic `Commit`, and that a transition's own operations may produce further `InternalSignals` that require additional `Step` calls without the engine internally chaining them.
+GAME-ADR-0004 accepted the LOBBY lifecycle contract. Start transitions a Session to `RUNNING` and processes the engine's required initial signal. The engine contract (`game/language/v1/engine/README.md`) already establishes that one `Step` call applies exactly one `Signal` and returns one atomic `Commit`, and that a transition's own operations may produce further `InternalSignals` that require additional `Step` calls without the engine internally chaining them.
 
 RUNNING-phase design needs an accepted answer to what one externally triggered runtime transaction actually is, what gets persisted as historical/observable Session state, and how pending interactions (questions) and timer obligations relate to that history. Without this, Session Runtime cannot durably persist runtime execution, recover after a crash, or expose a coherent Session-state sequence to callers.
 
@@ -33,7 +34,7 @@ Session Runtime persists the following conceptual tables. Column names, relation
 - `session_runtime_steps` - technical history inside one RuntimeTurn: `runtime_turn_id`, `step_index` (unique per turn), `commit_payload`, `created_at`. Carries no Session-state sequence.
 - `session_runtime_state` - only the current authoritative runtime position: `session_id`, `current_turn_id`, `updated_at`. It does not duplicate the Snapshot payload; current Session runtime state is defined as the snapshot stored on `current_turn_id`. When Turn N+1 commits, Session Runtime atomically inserts Turn N+1 and its Snapshot, persists its Steps and other mutations, and moves `current_turn_id` to Turn N+1.
 - `session_interactions` - durable externally-visible/current interaction state for stale-message safety and recovery/reconnection support: interaction UUID as the public handle, `interaction_payload` (the exposed question), `response_payload` (nullable, the accepted response), `state`, `engine_path`/`engine_slot` (internal Session/engine integration metadata, not public transport identifiers - `engine_path` identifies the nested engine/runtime instance owning the interaction, `engine_slot` identifies the specific pending slot inside it), `opened_by_turn_id`, and `closed_by_turn_id` (nullable). Historical relationships are Turn-level, not sequence/step-level.
-- `session_timer_obligations` - durable logical timer obligations: a crossing-boundary `uuid`, `engine_path`/`engine_slot` with the same internal meaning as for interactions, `delay_ms`, `state` (`ACTIVE`/`CANCELLED`/`CONSUMED`), `created_by_turn_id`, and `closed_by_turn_id` (nullable). No absolute `due_at`/deadline is owned by Session Runtime (see ADR-0011).
+- `session_timer_obligations` - durable logical timer obligations: a crossing-boundary `uuid`, `engine_path`/`engine_slot` with the same internal meaning as for interactions, `delay_ms`, `state` (`ACTIVE`/`CANCELLED`/`CONSUMED`), `created_by_turn_id`, and `closed_by_turn_id` (nullable). No absolute `due_at`/deadline is owned by Session Runtime (see GAME-ADR-0008).
 
 ### Turn / Interaction / Timer relationships
 

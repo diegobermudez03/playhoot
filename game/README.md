@@ -45,7 +45,7 @@ Session Runtime may require Game Management information — in particular, the g
 
 A session must be pinned to a concrete execution definition/version, and the definition observed by an existing session must remain semantically stable for that session's lifetime; version immutability for existing sessions is the preferred model. Changing a game's current definition affects only newly created sessions.
 
-This boundary is Game-specific and preserves an inexpensive future path toward independently deploying Session Runtime; it is not a general rule that every pair of internal capabilities must have independent transaction boundaries. Rationale and alternatives are recorded in `docs/decisions/architecture/ADR-0002-game-capability-persistence-transaction-boundary.md`.
+This boundary is Game-specific and preserves an inexpensive future path toward independently deploying Session Runtime; it is not a general rule that every pair of internal capabilities must have independent transaction boundaries. Rationale and alternatives are recorded in `game/docs/decisions/GAME-ADR-0001-game-capability-persistence-transaction-boundary.md`.
 
 ## Session Runtime Durable Boundary
 
@@ -64,9 +64,9 @@ The Coordinator does not own authoritative session/game truth or business conseq
 
 V1 does not introduce sticky-session correctness requirements, Redis, distributed session routing, distributed locks, or other multi-instance mechanisms. The initial single-process modular-monolith deployment may use local maps, channels, and Go timers for ephemeral mechanisms, but session correctness must not depend exclusively on those ephemeral objects.
 
-Timer obligations that can affect game semantics are durable Session Runtime state. The Coordinator owns the physical timer and detects elapsed wall-clock time; Session Runtime owns the durable timer obligation and decides the semantic consequence, normally through its authoritative runtime/engine flow. A process crash may destroy physical timers but must not silently erase timer obligations or change game semantics. Pending or overdue obligations must be reconstructible/recoverable from durable state - recoverable means the obligation and its configured delay survive, not that the exact original overdue/elapsed wall-clock position is reconstructed. V1 persists only the obligation and its `delay_ms`, not an absolute deadline; on recovery, active obligations may be rescheduled using their full configured delay from the new scheduling moment, per the accepted `docs/decisions/architecture/ADR-0011-session-runtime-v1-timer-recovery-simplification.md` tradeoff.
+Timer obligations that can affect game semantics are durable Session Runtime state. The Coordinator owns the physical timer and detects elapsed wall-clock time; Session Runtime owns the durable timer obligation and decides the semantic consequence, normally through its authoritative runtime/engine flow. A process crash may destroy physical timers but must not silently erase timer obligations or change game semantics. Pending or overdue obligations must be reconstructible/recoverable from durable state - recoverable means the obligation and its configured delay survive, not that the exact original overdue/elapsed wall-clock position is reconstructed. V1 persists only the obligation and its `delay_ms`, not an absolute deadline; on recovery, active obligations may be rescheduled using their full configured delay from the new scheduling moment, per the accepted `game/docs/decisions/GAME-ADR-0008-session-runtime-v1-timer-recovery-simplification.md` tradeoff.
 
-Rationale and alternatives are recorded in `docs/decisions/architecture/ADR-0003-session-runtime-durable-boundary.md`.
+Rationale and alternatives are recorded in `game/docs/decisions/GAME-ADR-0002-session-runtime-durable-boundary.md`.
 
 ## Session Runtime Actor and Lifecycle Model
 
@@ -106,9 +106,9 @@ Connection state is not Participant state. Logical participation is durable Sess
 
 The disconnect/reconnect transport-and-platform boundary is now accepted; see Session Runtime Disconnect, Reconnect, and Resynchronization Boundary below. What remains deferred is authored Game Language disconnect/reconnect policy itself: whether play waits or continues, inactive/forfeited/removed semantics, and how a game opts into or reacts to these events.
 
-Rationale and alternatives are recorded in `docs/decisions/architecture/ADR-0004-session-runtime-actor-and-lifecycle-foundations.md`.
+Rationale and alternatives are recorded in `game/docs/decisions/GAME-ADR-0003-session-runtime-actor-and-lifecycle-foundations.md`.
 
-The public/internal identity boundary is refined by `docs/decisions/architecture/ADR-0008-session-public-and-internal-identity-boundary.md`.
+The public/internal identity boundary is refined by `game/docs/decisions/GAME-ADR-0005-session-public-and-internal-identity-boundary.md`.
 
 ## Session Runtime Lobby Lifecycle Contract
 
@@ -136,7 +136,7 @@ Mutating external Session commands in this lobby lifecycle accept an opaque idem
 
 Start uses the accepted Game Language root roster contract `players: list<user>`, where each `user` is the Session-local runtime identity derived from `SessionActorID`; `Identity.UserUUID` is never exposed to authored Game Language.
 
-Rationale and alternatives are recorded in `docs/decisions/architecture/ADR-0007-session-lobby-lifecycle-contract.md`, `docs/decisions/architecture/ADR-0008-session-public-and-internal-identity-boundary.md`, and `docs/decisions/architecture/ADR-0009-game-language-root-player-roster-contract.md`.
+Rationale and alternatives are recorded in `game/docs/decisions/GAME-ADR-0004-session-lobby-lifecycle-contract.md`, `game/docs/decisions/GAME-ADR-0005-session-public-and-internal-identity-boundary.md`, and `game/docs/decisions/GAME-ADR-0006-game-language-root-player-roster-contract.md`.
 
 ## Session Runtime Turn And Persistence Model
 
@@ -148,7 +148,7 @@ Session Runtime does not persist an absolute due-at/deadline for Game Language t
 
 The accepted lobby/lifecycle idempotency table for Create/Join/Leave/Start is `session_requests`, storing the request payload rather than a hash, so a retry with the same idempotency key can be checked for semantic equivalence against the originally stored request.
 
-The full accepted table/column/relationship diagram is recorded in `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md`. Rationale and alternatives are recorded in `docs/decisions/architecture/ADR-0010-session-runtime-turn-and-persistence-model.md` and `docs/decisions/architecture/ADR-0011-session-runtime-v1-timer-recovery-simplification.md`.
+The full accepted table/column/relationship diagram is recorded in `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md`. Rationale and alternatives are recorded in `game/docs/decisions/GAME-ADR-0007-session-runtime-turn-and-persistence-model.md` and `game/docs/decisions/GAME-ADR-0008-session-runtime-v1-timer-recovery-simplification.md`.
 
 ## Session Runtime History Archival Direction
 
@@ -156,7 +156,7 @@ PostgreSQL remains the hot/runtime store. After a Session reaches an appropriate
 
 Heavy runtime/history tables (`session_runtime_state`, `session_runtime_turns`, `session_runtime_steps`, `session_interactions`, `session_timer_obligations`) may become an explicit hard-delete exception, but only after the long-term archive is successfully written and verified. `session_actors` and `session_participants` are excluded from this deletion policy and remain relationally stored indefinitely, since they support ongoing product queries such as which Sessions a User participated in.
 
-Rationale and alternatives are recorded in `docs/decisions/architecture/ADR-0012-session-runtime-history-archival-and-hard-delete.md`.
+Rationale and alternatives are recorded in `game/docs/decisions/GAME-ADR-0009-session-runtime-history-archival-and-hard-delete.md`.
 
 ## Session Runtime Disconnect, Reconnect, and Resynchronization Boundary
 
@@ -178,8 +178,8 @@ Reconnect during transport grace creates no RuntimeTurn: the Coordinator rebinds
 
 Different games may reasonably require different disconnect/reconnect behavior (continue, wait, start a timer, forfeit, remove, pause, end), but these are illustrative examples only. The exact mechanism by which authored Game Language observes and reacts to disconnect/reconnect - including signal names, opt-in/handler shape, and default behavior when a game defines none - remains deferred to the next architecture milestone.
 
-Rationale and alternatives are recorded in `docs/decisions/architecture/ADR-0013-session-disconnect-reconnect-resync-boundary.md`.
+Rationale and alternatives are recorded in `game/docs/decisions/GAME-ADR-0010-session-disconnect-reconnect-resync-boundary.md`.
 
 ## Boundary Notes
 
-Completed-session history archival direction is accepted (see above and ADR-0012); the concrete JSON archive schema and object-storage implementation remain deferred.
+Completed-session history archival direction is accepted (see above and GAME-ADR-0009); the concrete JSON archive schema and object-storage implementation remain deferred.

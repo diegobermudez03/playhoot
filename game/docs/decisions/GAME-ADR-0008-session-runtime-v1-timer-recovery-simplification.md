@@ -1,26 +1,27 @@
-# ADR-0011: V1 Game Language Timer Schedule Recovery Simplification
+# GAME-ADR-0008: V1 Game Language Timer Schedule Recovery Simplification
 
 Status: ACCEPTED
 Created: 2026-09-07
 Last status change: 2026-09-07
 Supersedes: None
 Superseded by: None
+Legacy ID: ADR-0011
 
 ## Context
 
-ADR-0003 established that timer obligations affecting game semantics are durable Session Runtime state, while the Coordinator owns the physical timer and detects elapsed wall-clock time. ADR-0010 introduces `session_timer_obligations` with `delay_ms` and `state`, created and closed by RuntimeTurns.
+GAME-ADR-0002 established that timer obligations affecting game semantics are durable Session Runtime state, while the Coordinator owns the physical timer and detects elapsed wall-clock time. GAME-ADR-0007 introduces `session_timer_obligations` with `delay_ms` and `state`, created and closed by RuntimeTurns.
 
 A pressure remained: should Session Runtime also persist an absolute deadline (`due_at`) so that, after a process crash, the exact remaining wall-clock time can be restored? Doing so would make Session Runtime itself time-aware and would need to reconcile stored deadlines against real elapsed downtime, which is a materially larger correctness surface than durably recording that a timer obligation exists.
 
 ## Decision
 
-Session Runtime persists only the timer obligation and its configured `delay_ms`; it does not calculate or persist an absolute deadline for Game Language timers. The Coordinator remains the time-aware layer and owns physical timers in memory, consistent with ADR-0003.
+Session Runtime persists only the timer obligation and its configured `delay_ms`; it does not calculate or persist an absolute deadline for Game Language timers. The Coordinator remains the time-aware layer and owns physical timers in memory, consistent with GAME-ADR-0002.
 
 The previously proposed Coordinator-owned `live_timer_schedules` table is rejected for V1 and is not part of the accepted schema.
 
 If the process/system dies, physical schedules may be lost. On recovery, active timer obligations may be rescheduled using their full configured `delay_ms` from the new scheduling moment. Preserving elapsed wall-clock time across a full process restart is explicitly not required for V1. This is an accepted simplicity/failure-tolerance tradeoff.
 
-`lobby_expires_at` is not affected by this decision. It is a previously accepted Session lifecycle deadline (ADR-0004, ADR-0007) and is a separate concern from Game Language timer scheduling.
+`lobby_expires_at` is not affected by this decision. It is a previously accepted Session lifecycle deadline (GAME-ADR-0003, GAME-ADR-0004) and is a separate concern from Game Language timer scheduling.
 
 ## Rationale
 

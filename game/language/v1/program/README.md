@@ -105,7 +105,7 @@ Each `user` value represents a Session-local runtime actor derived from Session 
 
 For V1, arbitrary externally supplied game-specific root parameters are deferred until a Session Configuration capability is explicitly designed.
 
-Rationale and alternatives are recorded in `docs/decisions/architecture/ADR-0009-game-language-root-player-roster-contract.md`.
+Rationale and alternatives are recorded in `game/docs/decisions/GAME-ADR-0006-game-language-root-player-roster-contract.md`.
 
 ### Resources vs. global state
 

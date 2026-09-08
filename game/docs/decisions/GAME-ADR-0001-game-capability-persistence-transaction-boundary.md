@@ -1,10 +1,11 @@
-# ADR-0002: Game Capability Persistence and Transaction Boundary (Game Management / Session Runtime)
+# GAME-ADR-0001: Game Capability Persistence and Transaction Boundary (Game Management / Session Runtime)
 
 Status: ACCEPTED
 Created: 2026-09-06
 Last status change: 2026-09-06
 Supersedes: None
 Superseded by: None
+Legacy ID: ADR-0002
 
 ## Context
 

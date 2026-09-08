@@ -94,7 +94,7 @@ Session Runtime builds this value from active Participants at Start. Each `user`
 
 Session Runtime must initialize/load the pinned immutable Game definition/version, call `NewSnapshot`, process the mandatory first signal through `Step`, and persist the initial authoritative runtime state and durable consequences before delivering outputs outside its transaction.
 
-Rationale and alternatives are recorded in `docs/decisions/architecture/ADR-0009-game-language-root-player-roster-contract.md`.
+Rationale and alternatives are recorded in `game/docs/decisions/GAME-ADR-0006-game-language-root-player-roster-contract.md`.
 
 ### `Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal, limits engine.Limits) (engine.Commit, error)`
 

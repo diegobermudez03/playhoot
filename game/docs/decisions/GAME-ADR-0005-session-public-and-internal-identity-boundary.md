@@ -1,14 +1,15 @@
-# ADR-0008: Session Public and Internal Identity Boundary
+# GAME-ADR-0005: Session Public and Internal Identity Boundary
 
 Status: ACCEPTED
 Created: 2026-09-06
 Last status change: 2026-09-06
 Supersedes: None
 Superseded by: None
+Legacy ID: ADR-0008
 
 ## Context
 
-ADR-0004 introduced the Session-owned `SessionActorID` concept and left the external Identity entity unresolved. ADR-0006 accepted `Identity.User` and `UserUUID`. The lobby operation design then clarified how caller identity should cross Session Runtime's public/application boundary and how engine/runtime identity should remain session-local.
+GAME-ADR-0003 introduced the Session-owned `SessionActorID` concept and left the external Identity entity unresolved. IDENTITY-ADR-0001 accepted `Identity.User` and `UserUUID`. The lobby operation design then clarified how caller identity should cross Session Runtime's public/application boundary and how engine/runtime identity should remain session-local.
 
 The design must avoid two leaks: exposing internal SessionActor IDs to clients/adapters as if they were public contract, and leaking `Identity.UserUUID` into Game Language semantics where authored games should only know session-local runtime actors.
 

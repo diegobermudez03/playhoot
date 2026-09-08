@@ -22,7 +22,7 @@ For non-trivial or multi-session work, prepare `docs/ai/workspaces/active/<domai
 - Inspect code, tests, migrations, and current-state documentation when actual ownership or data matters.
 - Challenge artificial separation when almost every operation would require orchestration only to cross the boundary.
 - Challenge oversized domains when responsibilities differ even if deployment is shared.
-- Persist material accepted/rejected boundary rationale as an ADR when it meets `docs/decisions/README.md` thresholds.
+- Persist material accepted/rejected boundary rationale as an ADR when it meets `docs/decisions/README.md` thresholds. A domain-boundary decision about one bounded context's own responsibility is normally that domain's `<DOMAIN>-ADR-NNNN` in `<domain>/docs/decisions/`; use the global `ADR-NNNN` family only when the decision's authority genuinely spans bounded contexts (for example, defining the cross-domain reference rule itself, not one domain's use of it). See `docs/decisions/README.md` and `docs/decisions/INDEX.md`.
 - Synchronize accepted boundary decisions to canonical architecture/domain documentation.
 - Use `docs/ai/templates/domain/` only after the boundary decision is accepted.
 - Route implementation/migration to Feature Development and WORK.

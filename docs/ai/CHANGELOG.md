@@ -84,6 +84,43 @@ Do not introduce Workflow v1/v2, semantic version numbers, WFC IDs, workflow dec
 
 Current Git history plus this changelog is sufficient. If stable workflow-change identity becomes useful later, propose it through `AI_WORKFLOW_CHANGE.md`.
 
+## 2026-09-07 - Moved ADR ownership/routing from centralized to scope-based decision families
+
+**Change**
+- Replaced the single centralized architecture-decision family (`docs/decisions/architecture/`, all `ADR-NNNN`) with a scope-based model: global/cross-domain ADRs stay centralized under `docs/decisions/architecture/`; bounded-context/domain-scoped ADRs move to `<domain>/docs/decisions/` with a namespaced `<DOMAIN>-ADR-NNNN` identifier and their own independent numbering sequence and `INDEX.md`.
+- Added an explicit scope-resolution rule (domain-local vs global/cross-domain, with an ambiguous-scope tiebreaker) that agents must apply before allocating an ADR ID, in `docs/decisions/README.md` and referenced from `docs/ai/protocols/ARCHITECTURE_DISCUSSION.md` / `docs/ai/protocols/DOMAIN_DESIGN.md`.
+- Added a lightweight root decision-family registry, `docs/decisions/INDEX.md`, that routes to each family's index without duplicating individual records.
+- Migrated all 11 existing domain-scoped ADRs now (MIGRATE EXISTING ADR ARTIFACTS, not FUTURE ARTIFACTS ONLY): ADR-0002, ADR-0003, ADR-0004, ADR-0007, ADR-0008, ADR-0009, ADR-0010, ADR-0011, ADR-0012, and ADR-0013 became `GAME-ADR-0001` through `GAME-ADR-0010` in `game/docs/decisions/`; ADR-0006 became `IDENTITY-ADR-0001` in `identity/docs/decisions/`. ADR-0001 and ADR-0005 stayed global (genuinely cross-domain rules). Each migrated record keeps a `Legacy ID:` metadata line; status, rationale, alternatives, consequences, and created dates were preserved unchanged, and internal cross-references between ADRs were rewired to the new canonical IDs.
+- Added `docs/decisions/LEGACY_ADR_ID_MAP.md`, a durable old-ID -> new-ID -> new-location mapping, and preserved the global family's historical high-water mark: the next newly allocated global ADR must be `ADR-0014` or later, never reusing a migrated legacy number.
+- Updated `docs/decisions/architecture/INDEX.md` to list only the remaining global ADRs (ADR-0001, ADR-0005), created `game/docs/decisions/INDEX.md` and `identity/docs/decisions/INDEX.md` for the new domain families, and updated `docs/decisions/README.md` and `docs/decisions/templates/ARCHITECTURE_DECISION.template.md` to describe/support both `ADR-NNNN` and `<DOMAIN>-ADR-NNNN` under one shared template and process.
+- Updated repository-wide references to migrated ADRs (`ARCHITECTURE.md`, `game/README.md`, `identity/README.md`, `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md`, `game/language/v1/engine/README.md`, `game/language/v1/program/README.md`, `docs/ai/KNOWLEDGE_MAP.md`, and the active `session-runtime-v1` workspace files) to the new canonical IDs/paths.
+- Updated `docs/ai/KNOWLEDGE_MAP.md` routing so global, Game, and Identity decision rationale route to their own family index, and clarified that normal domain work does not require loading that domain's decision history by default.
+
+**Reason**
+- The centralized ADR directory mixed genuinely global/cross-domain rules with decisions whose authority was really contained within one bounded context (mostly Game/Session Runtime), making it harder to discover a domain's own architectural evolution without reading unrelated records, and harder to keep the directory meaningful as the accepted decision set grows. The repository is still young enough that migrating the existing small ADR set now is cheaper than migrating a much larger set later.
+
+**Affected workflow artifacts**
+- `docs/decisions/README.md`
+- `docs/decisions/INDEX.md` (new)
+- `docs/decisions/LEGACY_ADR_ID_MAP.md` (new)
+- `docs/decisions/architecture/INDEX.md`
+- `docs/decisions/templates/ARCHITECTURE_DECISION.template.md`
+- `game/docs/decisions/*` (new)
+- `identity/docs/decisions/*` (new)
+- `docs/ai/KNOWLEDGE_MAP.md`
+- `docs/ai/protocols/ARCHITECTURE_DISCUSSION.md`
+- `docs/ai/protocols/DOMAIN_DESIGN.md`
+- `docs/ai/workspaces/active/domain-scoped-adrs/` (new)
+- `docs/ai/CHANGELOG.md`
+
+**Compatibility / migration**
+- MIGRATE EXISTING ADR ARTIFACTS: all 11 domain-scoped legacy ADRs were moved/renamed; ADR-0001 and ADR-0005 stayed in place. No ADR status, rationale, alternatives, consequences, or created date changed. No duplicate authoritative ADR bodies remain under the old locations. Product Decision Record (PDR) routing/location is unchanged.
+- `docs/ai/workspaces/active/session-runtime-v1/` (an unrelated active initiative) had only its ADR path/identifier references updated; its accepted Session Runtime architecture content was not altered.
+
+**Notes**
+- Historical bare `ADR-000X` references in old chat logs, commits, or prose remain resolvable through `docs/decisions/LEGACY_ADR_ID_MAP.md`.
+- Future bounded contexts get their own decision family only when their first local ADR is actually needed; empty decision directories are not pre-created for hypothetical domains.
+
 ## 2026-09-06 - Established governed workflow evolution
 
 **Change**

@@ -1,10 +1,11 @@
-# ADR-0009: Game Language Root Player Roster Contract
+# GAME-ADR-0006: Game Language Root Player Roster Contract
 
 Status: ACCEPTED
 Created: 2026-09-06
 Last status change: 2026-09-06
 Supersedes: None
 Superseded by: None
+Legacy ID: ADR-0009
 
 ## Context
 

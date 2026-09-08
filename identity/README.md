@@ -51,4 +51,4 @@ A trusted authentication/application layer may resolve credentials into an authe
 
 Identity reconciliation is deferred. If a person later proves that an authenticated User and a separately-created guest User correspond to the same person, reconciliation, merge, or alias semantics are an Identity concern to design later. This does not weaken consumers' contract: other domains persist the `UserUUID` they were given under the accepted workflow at the time.
 
-Rationale and alternatives are recorded in `docs/decisions/architecture/ADR-0006-identity-user-public-identity-boundary.md`.
+Rationale and alternatives are recorded in `identity/docs/decisions/IDENTITY-ADR-0001-identity-user-public-identity-boundary.md`.

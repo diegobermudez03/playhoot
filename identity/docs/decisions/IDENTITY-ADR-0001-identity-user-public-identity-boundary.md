@@ -1,14 +1,15 @@
-# ADR-0006: Identity User Public Identity Boundary
+# IDENTITY-ADR-0001: Identity User Public Identity Boundary
 
 Status: ACCEPTED
 Created: 2026-09-06
 Last status change: 2026-09-06
 Supersedes: None
 Superseded by: None
+Legacy ID: ADR-0006
 
 ## Context
 
-ADR-0004 established that Session Runtime owns a session-scoped `SessionActorID`, and that a SessionActor may persist a cross-domain reference to the stable public identity entity exported by the future Identity domain. It deliberately did not decide whether that public Identity concept was `User`, `Principal`, or another term.
+GAME-ADR-0003 established that Session Runtime owns a session-scoped `SessionActorID`, and that a SessionActor may persist a cross-domain reference to the stable public identity entity exported by the future Identity domain. It deliberately did not decide whether that public Identity concept was `User`, `Principal`, or another term.
 
 ADR-0005 then established the global rule for cross-domain public entity references: a producer domain may publish logical entities with stable public UUIDs, and consumers may persist those UUIDs as logical references without coupling to producer storage.
 

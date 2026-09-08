@@ -1,14 +1,15 @@
-# ADR-0012: Session Runtime History Archival Direction and Verified Hard-Delete
+# GAME-ADR-0009: Session Runtime History Archival Direction and Verified Hard-Delete
 
 Status: ACCEPTED
 Created: 2026-09-07
 Last status change: 2026-09-07
 Supersedes: None
 Superseded by: None
+Legacy ID: ADR-0012
 
 ## Context
 
-ADR-0010 introduces heavy runtime-history tables (`session_runtime_turns`, `session_runtime_steps`, `session_interactions`, `session_timer_obligations`) plus the thin `session_runtime_state` pointer. Left in PostgreSQL indefinitely, this history grows without bound for every completed Session, even though most of it stops being operationally relevant once a Session reaches a terminal/archiveable condition.
+GAME-ADR-0007 introduces heavy runtime-history tables (`session_runtime_turns`, `session_runtime_steps`, `session_interactions`, `session_timer_obligations`) plus the thin `session_runtime_state` pointer. Left in PostgreSQL indefinitely, this history grows without bound for every completed Session, even though most of it stops being operationally relevant once a Session reaches a terminal/archiveable condition.
 
 A direction is needed for long-term retention that does not require keeping all runtime history hot forever, without freezing the exact archive artifact schema or a concrete object-storage integration now.
 

@@ -29,7 +29,11 @@ This is a machine-facing routing document. It does not explain Playhoot. It tell
 | Domain documentation template | `docs/ai/templates/domain/` | AVAILABLE | |
 | Engineering standards | `docs/engineering/standards/INDEX.md` and referenced standards | AVAILABLE | |
 | Engineering recommendations / future concerns | `docs/engineering/ENGINEERING_RADAR.md` | AVAILABLE / NON-AUTHORITATIVE | |
-| Architecture decision rationale | `docs/decisions/architecture/INDEX.md` and referenced ADRs | AVAILABLE | |
+| Decision-family routing (which ADR family owns a question) | `docs/decisions/INDEX.md` | AVAILABLE | |
+| Global/cross-domain architecture decision rationale | `docs/decisions/architecture/INDEX.md` and referenced ADRs | AVAILABLE | |
+| Game architecture decision rationale/history | `game/docs/decisions/INDEX.md` and referenced GAME-ADRs | AVAILABLE | |
+| Identity architecture decision rationale/history | `identity/docs/decisions/INDEX.md` and referenced IDENTITY-ADRs | AVAILABLE | |
+| Legacy pre-migration ADR identifier lookup | `docs/decisions/LEGACY_ADR_ID_MAP.md` | AVAILABLE / HISTORICAL | |
 | Product decision rationale | `docs/decisions/product/INDEX.md` and referenced PDRs | AVAILABLE | |
 | Decision-record process/templates | `docs/decisions/README.md` and `docs/decisions/templates/` | AVAILABLE | |
 | Current implementation work | `docs/work/active/` | AVAILABLE | |
@@ -84,3 +88,5 @@ When working in a domain, load:
 6. actual code, tests, and migrations needed for the question.
 
 Do not load unrelated domains unless the task crosses those boundaries.
+
+Normal domain work does not require loading that domain's decision history by default. Load a domain's `docs/decisions/INDEX.md` and a specific `<DOMAIN>-ADR-NNNN` only when the task is actually about why/how a current rule came to be (evolution, rationale, "why does X work this way"), not when it is about what X currently is. Global/cross-domain rationale routes to `docs/decisions/architecture/INDEX.md` the same way. Do not indiscriminately scan every decision family for a domain-local or global question.

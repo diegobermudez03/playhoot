@@ -1,10 +1,11 @@
-# ADR-0004: Session Runtime Actor and Lifecycle Foundations
+# GAME-ADR-0003: Session Runtime Actor and Lifecycle Foundations
 
 Status: ACCEPTED
 Created: 2026-09-06
 Last status change: 2026-09-06
 Supersedes: None
 Superseded by: None
+Legacy ID: ADR-0004
 
 ## Context
 

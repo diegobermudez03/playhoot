@@ -1,23 +1,22 @@
-# Architecture Decisions
+# Global Architecture Decisions
 
-Status: DECISION INDEX
+Status: DECISION INDEX (GLOBAL / CROSS-DOMAIN)
 
 ADRs preserve architecture decision rationale. Current architecture remains owned by canonical architecture/domain docs.
+
+This directory holds only global/cross-domain architecture decisions: decisions whose authority spans bounded contexts or the whole system. Bounded-context/domain-scoped decisions live in that domain's own decision family — see the root registry at `docs/decisions/INDEX.md` (Game: `game/docs/decisions/INDEX.md`; Identity: `identity/docs/decisions/INDEX.md`).
 
 | ID | Title | Status | Created | Canonical Impact |
 | --- | --- | --- | --- | --- |
 | [ADR-0001](ADR-0001-intra-domain-responsibility-boundary.md) | Intra-Domain Responsibility Boundary (Application Coordinates, Domain Decides, Persistence Stores) | ACCEPTED | 2026-09-06 | `ARCHITECTURE.md`, `docs/engineering/standards/domain-logic-placement.md` |
-| [ADR-0002](ADR-0002-game-capability-persistence-transaction-boundary.md) | Game Capability Persistence and Transaction Boundary (Game Management / Session Runtime) | ACCEPTED | 2026-09-06 | `game/README.md`, `ARCHITECTURE.md` |
-| [ADR-0003](ADR-0003-session-runtime-durable-boundary.md) | Session Runtime Durable Boundary, Live Coordinator, and V1 Scaling | ACCEPTED | 2026-09-06 | `game/README.md` |
-| [ADR-0004](ADR-0004-session-runtime-actor-and-lifecycle-foundations.md) | Session Runtime Actor and Lifecycle Foundations | ACCEPTED | 2026-09-06 | `game/README.md` |
 | [ADR-0005](ADR-0005-cross-domain-public-entity-references.md) | Cross-Domain Public Entity References | ACCEPTED | 2026-09-06 | `ARCHITECTURE.md`, `docs/engineering/standards/cross-domain-reference-naming.md` |
-| [ADR-0006](ADR-0006-identity-user-public-identity-boundary.md) | Identity User Public Identity Boundary | ACCEPTED | 2026-09-06 | `ARCHITECTURE.md`, `identity/README.md`, `identity/CURRENT_STATE.md`, `game/README.md`, `docs/ai/KNOWLEDGE_MAP.md`, `docs/engineering/standards/cross-domain-reference-naming.md` |
-| [ADR-0007](ADR-0007-session-lobby-lifecycle-contract.md) | Session Lobby Lifecycle Contract | ACCEPTED | 2026-09-06 | `game/README.md` |
-| [ADR-0008](ADR-0008-session-public-and-internal-identity-boundary.md) | Session Public and Internal Identity Boundary | ACCEPTED | 2026-09-06 | `game/README.md`, `ARCHITECTURE.md` |
-| [ADR-0009](ADR-0009-game-language-root-player-roster-contract.md) | Game Language Root Player Roster Contract | ACCEPTED | 2026-09-06 | `game/language/v1/program/README.md`, `game/language/v1/engine/README.md`, `game/language/v1/engine/LOGICAL_CONTRACT.md`, `game/README.md` |
-| [ADR-0010](ADR-0010-session-runtime-turn-and-persistence-model.md) | Session Runtime Turn Architecture and Persistence Model | ACCEPTED | 2026-09-07 | `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md`, `game/README.md`, `docs/ai/KNOWLEDGE_MAP.md` |
-| [ADR-0011](ADR-0011-session-runtime-v1-timer-recovery-simplification.md) | V1 Game Language Timer Schedule Recovery Simplification | ACCEPTED | 2026-09-07 | `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md`, `game/README.md` |
-| [ADR-0012](ADR-0012-session-runtime-history-archival-and-hard-delete.md) | Session Runtime History Archival Direction and Verified Hard-Delete | ACCEPTED | 2026-09-07 | `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md`, `game/README.md` |
-| [ADR-0013](ADR-0013-session-disconnect-reconnect-resync-boundary.md) | Session Disconnect, Reconnect, and Resynchronization Boundary | ACCEPTED | 2026-09-07 | `game/README.md` |
 
-Whenever an ADR is created or its lifecycle status changes, update this index.
+## Migrated Records
+
+ADR-0002, ADR-0003, ADR-0004, ADR-0006, ADR-0007, ADR-0008, ADR-0009, ADR-0010, ADR-0011, ADR-0012, and ADR-0013 previously lived in this directory. On 2026-09-07 they were migrated to their owning domain's decision family (Game or Identity) under the scope-based ADR ownership model, because their decision authority was contained within one bounded context. See `docs/decisions/LEGACY_ADR_ID_MAP.md` for the full old-ID -> new-ID -> new-location mapping, and `docs/decisions/README.md` for the routing rule.
+
+## Next Global ID
+
+Legacy global-style IDs existed through at least `ADR-0013` before migration (see `docs/decisions/LEGACY_ADR_ID_MAP.md`). The next newly allocated global ADR must be at least `ADR-0014` — never reuse a legacy ID, including one that migrated to a domain family. Gaps in this directory's numbering (ADR-0002 through ADR-0004, ADR-0006 through ADR-0013) are intentional and expected; they are not missing records.
+
+Whenever a global ADR is created or its lifecycle status changes, update this index.

@@ -1,14 +1,15 @@
-# ADR-0003: Session Runtime Durable Boundary, Live Coordinator, and V1 Scaling
+# GAME-ADR-0002: Session Runtime Durable Boundary, Live Coordinator, and V1 Scaling
 
 Status: ACCEPTED
 Created: 2026-09-06
 Last status change: 2026-09-06
 Supersedes: None
 Superseded by: None
+Legacy ID: ADR-0003
 
 ## Context
 
-Session Runtime is an accepted internal capability of the Game bounded context, and ADR-0002 already gives it independent persistence and transaction ownership from Game Management. The next design pressure is what Session Runtime must own durably versus what can remain process-local while Playhoot starts as a modular monolith.
+Session Runtime is an accepted internal capability of the Game bounded context, and GAME-ADR-0001 already gives it independent persistence and transaction ownership from Game Management. The next design pressure is what Session Runtime must own durably versus what can remain process-local while Playhoot starts as a modular monolith.
 
 Live multiplayer sessions need connection delivery, fan-out, disconnect detection, timer scheduling, recovery behavior, and eventually a path toward more than one process or instance. Adding distributed machinery now would overfit a future deployment problem, but treating local maps, channels, or timers as the only source of session truth would make crash recovery and later scaling unsafe.
 

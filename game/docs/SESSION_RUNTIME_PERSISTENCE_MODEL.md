@@ -6,9 +6,9 @@ This document preserves the HUMAN-APPROVED Session Runtime persistence and runti
 
 Rationale and alternatives are recorded in:
 
-- `docs/decisions/architecture/ADR-0010-session-runtime-turn-and-persistence-model.md` (RuntimeTurn as the historical unit, RuntimeStep as technical trace, the core tables, Turn/Interaction/Timer relationships).
-- `docs/decisions/architecture/ADR-0011-session-runtime-v1-timer-recovery-simplification.md` (no durable `live_timer_schedules`, V1 recovery tradeoff).
-- `docs/decisions/architecture/ADR-0012-session-runtime-history-archival-and-hard-delete.md` (long-term archive metadata and verified hard-delete policy).
+- `game/docs/decisions/GAME-ADR-0007-session-runtime-turn-and-persistence-model.md` (RuntimeTurn as the historical unit, RuntimeStep as technical trace, the core tables, Turn/Interaction/Timer relationships).
+- `game/docs/decisions/GAME-ADR-0008-session-runtime-v1-timer-recovery-simplification.md` (no durable `live_timer_schedules`, V1 recovery tradeoff).
+- `game/docs/decisions/GAME-ADR-0009-session-runtime-history-archival-and-hard-delete.md` (long-term archive metadata and verified hard-delete policy).
 
 ## Central Concept: RuntimeTurn vs RuntimeStep
 
@@ -194,7 +194,7 @@ A Turn may instead close a timer with `state = CANCELLED` without that timer eve
 
 ## No Durable `live_timer_schedules` In V1
 
-`live_timer_schedules` (a previously proposed Coordinator-owned durable physical-schedule table) is rejected for V1 and is not part of this schema. Session Runtime persists only the timer obligation and its `delay_ms`; it does not calculate or persist an absolute deadline. The Coordinator owns physical timers in memory. On recovery, active obligations may be rescheduled using their full configured `delay_ms` from the new scheduling moment; preserving elapsed wall-clock time across a full process restart is not required for V1. See ADR-0011.
+`live_timer_schedules` (a previously proposed Coordinator-owned durable physical-schedule table) is rejected for V1 and is not part of this schema. Session Runtime persists only the timer obligation and its `delay_ms`; it does not calculate or persist an absolute deadline. The Coordinator owns physical timers in memory. On recovery, active obligations may be rescheduled using their full configured `delay_ms` from the new scheduling moment; preserving elapsed wall-clock time across a full process restart is not required for V1. See GAME-ADR-0008.
 
 `lobby_expires_at` on `sessions` is unrelated to this rule - it is an existing accepted Session lifecycle deadline, not a Game Language timer schedule.
 
@@ -231,7 +231,7 @@ classDiagram
     sessions "1" --> "0..1" session_history_archives : "session_history_archives.session_id -> sessions.id"
 ```
 
-`status` is `PENDING | READY | FAILED` or an equivalent enum. `storage_provider`/`storage_key` identify the archive object; an expiring/public URL is not persisted. The final JSON archive schema and GCS implementation are deferred (see ADR-0012).
+`status` is `PENDING | READY | FAILED` or an equivalent enum. `storage_provider`/`storage_key` identify the archive object; an expiring/public URL is not persisted. The final JSON archive schema and GCS implementation are deferred (see GAME-ADR-0009).
 
 ## Archival And Hard-Delete Policy
 

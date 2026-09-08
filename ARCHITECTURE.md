@@ -51,7 +51,7 @@ Game contains:
 
 Game Management and Session Runtime are capabilities inside the Game bounded context, not separate business domains. Game Language is not a separate business bounded context.
 
-Sharing one bounded context does not imply Game Management and Session Runtime share one persistence or transaction boundary; their independent persistence/transaction ownership is recorded in `game/README.md` and `docs/decisions/architecture/ADR-0002-game-capability-persistence-transaction-boundary.md`.
+Sharing one bounded context does not imply Game Management and Session Runtime share one persistence or transaction boundary; their independent persistence/transaction ownership is recorded in `game/README.md` and `game/docs/decisions/GAME-ADR-0001-game-capability-persistence-transaction-boundary.md`.
 
 The current physical package layout may remain:
 
@@ -68,7 +68,7 @@ Identity owns stable Playhoot identity for people interacting with the platform.
 
 Cross-domain consumers may persist `UserUUID` as a logical reference to `Identity.User` without accessing Identity storage, depending on Identity table layout, or creating cross-domain database foreign keys.
 
-Rationale and alternatives for the Identity boundary are recorded in `docs/decisions/architecture/ADR-0006-identity-user-public-identity-boundary.md`.
+Rationale and alternatives for the Identity boundary are recorded in `identity/docs/decisions/IDENTITY-ADR-0001-identity-user-public-identity-boundary.md`.
 
 ## Cross-Domain Reads
 

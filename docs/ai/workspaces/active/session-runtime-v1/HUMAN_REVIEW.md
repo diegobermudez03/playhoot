@@ -21,10 +21,10 @@ The disconnect/reconnect transport-and-platform boundary and the Session resynch
 
 ## Where This Was Persisted
 
-- `docs/decisions/architecture/ADR-0013-session-disconnect-reconnect-resync-boundary.md`
+- `game/docs/decisions/GAME-ADR-0010-session-disconnect-reconnect-resync-boundary.md` (originally persisted as `docs/decisions/architecture/ADR-0013-session-disconnect-reconnect-resync-boundary.md`; migrated to the Game decision family on 2026-09-07 under the scope-based ADR ownership model - see `docs/decisions/LEGACY_ADR_ID_MAP.md`)
 - `game/README.md` (new "Session Runtime Disconnect, Reconnect, and Resynchronization Boundary" section; the previously stale fully-deferred disconnect/reconnect paragraph in "Session Runtime Actor and Lifecycle Model" was updated to point at the newly accepted boundary and narrow what remains deferred to authored Game Language policy)
-- `game/README.md` (the ADR-0003-derived timer-recovery paragraph in "Session Runtime Durable Boundary" was clarified to reference the ADR-0011 V1 tradeoff, so "reconstructible/recoverable" is not misread as requiring exact overdue wall-clock reconstruction)
-- `docs/decisions/architecture/INDEX.md` (ADR-0013 row)
+- `game/README.md` (the GAME-ADR-0002-derived timer-recovery paragraph in "Session Runtime Durable Boundary" was clarified to reference the GAME-ADR-0008 V1 tradeoff, so "reconstructible/recoverable" is not misread as requiring exact overdue wall-clock reconstruction)
+- `game/docs/decisions/INDEX.md` (GAME-ADR-0010 row)
 
 ## Explicitly Not Authorized By This Checkpoint
 

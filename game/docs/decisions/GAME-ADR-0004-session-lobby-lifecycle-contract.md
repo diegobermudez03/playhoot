@@ -1,14 +1,15 @@
-# ADR-0007: Session Lobby Lifecycle Contract
+# GAME-ADR-0004: Session Lobby Lifecycle Contract
 
 Status: ACCEPTED
 Created: 2026-09-06
 Last status change: 2026-09-06
 Supersedes: None
 Superseded by: None
+Legacy ID: ADR-0007
 
 ## Context
 
-ADR-0002 established that Session Runtime obtains and pins immutable Game definition/version data through a narrow Game Management read capability. ADR-0003 established Session Runtime as the owner of durable authoritative session/runtime state. ADR-0004 established Host/Participant separation, SessionActor identity, `LOBBY -> RUNNING -> TERMINAL`, and `lobby_expires_at`. ADR-0006 established `Identity.User` and `UserUUID`.
+GAME-ADR-0001 established that Session Runtime obtains and pins immutable Game definition/version data through a narrow Game Management read capability. GAME-ADR-0002 established Session Runtime as the owner of durable authoritative session/runtime state. GAME-ADR-0003 established Host/Participant separation, SessionActor identity, `LOBBY -> RUNNING -> TERMINAL`, and `lobby_expires_at`. IDENTITY-ADR-0001 established `Identity.User` and `UserUUID`.
 
 The lobby lifecycle now needs accepted operation semantics before implementation work can be planned. The main pressures are preventing stale concurrent roster/lifecycle decisions, pinning the correct Game definition, treating JoinCode as durable Session Runtime state, and making retries safe.
 
@@ -111,7 +112,7 @@ Mutating external Session commands in this lobby lifecycle accept an opaque idem
 
 Lobby operations are low-frequency but correctness-sensitive. Serializing per-Session lobby mutations prevents last-slot races, Join/Start races, Leave/Start races, duplicate Start exposure, and stale expiration decisions without deciding the later RUNNING runtime strategy.
 
-Pinning the immutable Game definition at create time preserves the ADR-0002 boundary and ensures Join/Start evaluate constraints against the Session's execution definition, not a newer Game version. Keeping `players.min/max` in the Game definition avoids a second correctness source.
+Pinning the immutable Game definition at create time preserves the GAME-ADR-0001 boundary and ensures Join/Start evaluate constraints against the Session's execution definition, not a newer Game version. Keeping `players.min/max` in the Game definition avoids a second correctness source.
 
 Treating JoinCode as durable Session Runtime state preserves recovery and prevents cache from becoming authoritative. Keeping QR and URL values as derived projections avoids confusing presentation with domain identity.
 

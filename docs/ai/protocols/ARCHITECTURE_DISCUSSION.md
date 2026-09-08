@@ -21,7 +21,7 @@ For non-trivial or multi-session work, prepare `docs/ai/workspaces/active/<archi
 - Load relevant product, architecture, domain, decision, and current-state context through the Knowledge Map.
 - Inspect code, tests, migrations, and current-state documentation when actual behavior matters.
 - Apply the Principal Engineer Contract and anti-overengineering questions.
-- Persist significant human-decided architecture rationale as an ADR when it meets `docs/decisions/README.md` thresholds.
+- Persist significant human-decided architecture rationale as an ADR when it meets `docs/decisions/README.md` thresholds. Before allocating an ID, resolve scope: if the decision's authority is contained within one bounded context (even when another domain consumes the resulting public contract), it is that domain's `<DOMAIN>-ADR-NNNN` in `<domain>/docs/decisions/`; only allocate the global `ADR-NNNN` in `docs/decisions/architecture/` when the decision's own authority spans bounded contexts or the whole system. Do not default every Architecture Discussion output to the global ADR directory merely because the discussion happened in this protocol. See `docs/decisions/README.md` and `docs/decisions/INDEX.md` for the scope-resolution rule and family routing.
 - Synchronize accepted architecture/domain documentation in the same change when practical.
 - Keep future or unimplemented designs out of current-state diagrams.
 - Route implementation impact to Feature Development and WORK.

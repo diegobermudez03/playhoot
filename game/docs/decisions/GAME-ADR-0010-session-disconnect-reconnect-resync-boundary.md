@@ -1,14 +1,15 @@
-# ADR-0013: Session Disconnect, Reconnect, and Resynchronization Boundary
+# GAME-ADR-0010: Session Disconnect, Reconnect, and Resynchronization Boundary
 
 Status: ACCEPTED
 Created: 2026-09-07
 Last status change: 2026-09-07
 Supersedes: None
 Superseded by: None
+Legacy ID: ADR-0013
 
 ## Context
 
-ADR-0003 already assigns detection of physical disconnects and physical timer/scheduling mechanisms to the Live Session Coordinator, while Session Runtime owns durable authoritative session/runtime state. ADR-0004 and `game/README.md` left disconnect/reconnect semantics explicitly deferred: physical connection presence is not Participant state, but no accepted design existed for what happens when a connection is lost, when that loss becomes meaningful to the game, how a returning User resumes their Session identity, or how a client resynchronizes after reconnecting.
+GAME-ADR-0002 already assigns detection of physical disconnects and physical timer/scheduling mechanisms to the Live Session Coordinator, while Session Runtime owns durable authoritative session/runtime state. GAME-ADR-0003 and `game/README.md` left disconnect/reconnect semantics explicitly deferred: physical connection presence is not Participant state, but no accepted design existed for what happens when a connection is lost, when that loss becomes meaningful to the game, how a returning User resumes their Session identity, or how a client resynchronizes after reconnecting.
 
 Without an accepted boundary, disconnect handling risks collapsing three distinct responsibilities into one place: the transport fact that a socket disappeared, the platform-level decision that a User is now considered disconnected/reconnected, and the gameplay consequence of that event. This ADR accepts the transport/platform boundary and the resynchronization contract shape. It does not design how authored Game Language observes or reacts to these events - that remains the next architecture milestone.
 
@@ -44,7 +45,7 @@ Physical connectivity and gameplay eligibility are separate. If the game had alr
 
 ### No new durable connection-state table for V1
 
-The accepted Session Runtime persistence model (ADR-0010) does not gain a connection-presence table solely for disconnect/reconnect. Live physical connection bindings and transport-grace state remain ephemeral Coordinator state; no table is introduced merely for grace expiration, socket binding, last-connection timestamp, or temporary disconnect detection, and a full process restart may lose an in-flight grace period. This is acceptable for V1 unless a later accepted requirement says otherwise. Existing durable state - SessionActor, Participant, the current RuntimeTurn/Snapshot, active SessionInteractions, and active TimerObligations - remains sufficient for Session Runtime's authoritative business/runtime state.
+The accepted Session Runtime persistence model (GAME-ADR-0007) does not gain a connection-presence table solely for disconnect/reconnect. Live physical connection bindings and transport-grace state remain ephemeral Coordinator state; no table is introduced merely for grace expiration, socket binding, last-connection timestamp, or temporary disconnect detection, and a full process restart may lose an in-flight grace period. This is acceptable for V1 unless a later accepted requirement says otherwise. Existing durable state - SessionActor, Participant, the current RuntimeTurn/Snapshot, active SessionInteractions, and active TimerObligations - remains sufficient for Session Runtime's authoritative business/runtime state.
 
 ### Session Runtime provides a resync capability
 
@@ -74,11 +75,11 @@ Different games may reasonably require different behavior (for example: continue
 
 Keeping the transport fact, the platform semantic event, and the gameplay consequence as three distinct responsibilities prevents the Coordinator from silently becoming a gameplay-policy owner and prevents Session Runtime from having to reimplement transport-failure absorption. A short Coordinator-local grace period is standard practice for absorbing transient network blips without paying the cost of a full semantic disconnect/reconnect cycle for every brief hiccup.
 
-Treating reconnect as identity resumption rather than Join preserves the accepted SessionActor/Participant model (ADR-0004, ADR-0007) and avoids creating parallel or duplicate participation records for the same User. Separating transport reconnection from gameplay reinstatement is necessary because a game may have already reacted to the semantic disconnect (forfeiting a slot, for example) before the socket physically returns; pretending otherwise would let a lucky/fast reconnect silently bypass game-defined consequences.
+Treating reconnect as identity resumption rather than Join preserves the accepted SessionActor/Participant model (GAME-ADR-0003, GAME-ADR-0004) and avoids creating parallel or duplicate participation records for the same User. Separating transport reconnection from gameplay reinstatement is necessary because a game may have already reacted to the semantic disconnect (forfeiting a slot, for example) before the socket physically returns; pretending otherwise would let a lucky/fast reconnect silently bypass game-defined consequences.
 
-Not persisting a connection-state table keeps ephemeral transport concerns out of Session Runtime's durable model, consistent with the ADR-0003 Coordinator/Session Runtime boundary, and avoids adding durability guarantees (crash recovery of grace timers) that V1 does not need.
+Not persisting a connection-state table keeps ephemeral transport concerns out of Session Runtime's durable model, consistent with the GAME-ADR-0002 Coordinator/Session Runtime boundary, and avoids adding durability guarantees (crash recovery of grace timers) that V1 does not need.
 
-A dedicated resync capability that returns a player-facing projection - rather than the raw engine Snapshot - preserves the same internal/public boundary already accepted for SessionActorID and engine paths/slots (ADR-0008, ADR-0010): a client should never need to understand engine-internal representation merely to resynchronize. Reusing RuntimeTurn `sequence` as the resync version avoids inventing a second, redundant version concept.
+A dedicated resync capability that returns a player-facing projection - rather than the raw engine Snapshot - preserves the same internal/public boundary already accepted for SessionActorID and engine paths/slots (GAME-ADR-0005, GAME-ADR-0007): a client should never need to understand engine-internal representation merely to resynchronize. Reusing RuntimeTurn `sequence` as the resync version avoids inventing a second, redundant version concept.
 
 ## Alternatives Considered
 
@@ -88,7 +89,7 @@ Rejected. It would make normal transient network blips (a phone switching from W
 
 ### Let the Coordinator decide gameplay consequences of a disconnect
 
-Rejected. It would make a transport/ephemeral component own business/game decisions, violating the Coordinator/Session Runtime boundary already accepted in ADR-0003.
+Rejected. It would make a transport/ephemeral component own business/game decisions, violating the Coordinator/Session Runtime boundary already accepted in GAME-ADR-0002.
 
 ### Treat reconnect as a normal Join
 
@@ -104,7 +105,7 @@ Rejected for V1. Ephemeral transport/grace bookkeeping does not need crash-recov
 
 ### Return the raw `engine.Snapshot` as the resync payload
 
-Rejected. It would leak internal engine identities, paths, and slots to the client/Coordinator boundary, violating the internal/public identity boundary already accepted in ADR-0008 and ADR-0010.
+Rejected. It would leak internal engine identities, paths, and slots to the client/Coordinator boundary, violating the internal/public identity boundary already accepted in GAME-ADR-0005 and GAME-ADR-0007.
 
 ### Introduce a second resync-specific version counter
 
@@ -122,7 +123,7 @@ Rejected. The Game Language disconnect/reconnect contract - including whether it
 - Reconnect implementation must resolve `(SessionUUID, UserUUID) -> existing SessionActor` and must not reuse or extend the Join code path.
 - Whether reconnect after semantic disconnect produces a RuntimeTurn depends on the not-yet-designed Game Language disconnect/reconnect contract; this record only establishes that gameplay/runtime semantics are processed before resync in that case.
 - Game Language disconnect/reconnect semantics, default behavior when a game defines no handler, and any resulting timer/interaction interactions remain the next architecture milestone and are not decided here.
-- Process crash/interruption semantics and runaway/abuse protections beyond what is already covered by ADR-0003/ADR-0011 remain deferred.
+- Process crash/interruption semantics and runaway/abuse protections beyond what is already covered by GAME-ADR-0002/GAME-ADR-0008 remain deferred.
 
 ## Canonical Knowledge Impact
 
