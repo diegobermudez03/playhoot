@@ -18,5 +18,6 @@ ADRs preserve architecture decision rationale. Current architecture remains owne
 | [ADR-0010](ADR-0010-session-runtime-turn-and-persistence-model.md) | Session Runtime Turn Architecture and Persistence Model | ACCEPTED | 2026-09-07 | `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md`, `game/README.md`, `docs/ai/KNOWLEDGE_MAP.md` |
 | [ADR-0011](ADR-0011-session-runtime-v1-timer-recovery-simplification.md) | V1 Game Language Timer Schedule Recovery Simplification | ACCEPTED | 2026-09-07 | `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md`, `game/README.md` |
 | [ADR-0012](ADR-0012-session-runtime-history-archival-and-hard-delete.md) | Session Runtime History Archival Direction and Verified Hard-Delete | ACCEPTED | 2026-09-07 | `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md`, `game/README.md` |
+| [ADR-0013](ADR-0013-session-disconnect-reconnect-resync-boundary.md) | Session Disconnect, Reconnect, and Resynchronization Boundary | ACCEPTED | 2026-09-07 | `game/README.md` |
 
 Whenever an ADR is created or its lifecycle status changes, update this index.
