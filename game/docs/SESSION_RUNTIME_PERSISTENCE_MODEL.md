@@ -10,6 +10,8 @@ Rationale and alternatives are recorded in:
 - `game/docs/decisions/GAME-ADR-0008-session-runtime-v1-timer-recovery-simplification.md` (no durable `live_timer_schedules`, V1 recovery tradeoff).
 - `game/docs/decisions/GAME-ADR-0009-session-runtime-history-archival-and-hard-delete.md` (long-term archive metadata and verified hard-delete policy).
 - `game/docs/decisions/GAME-ADR-0012-game-language-keyed-timer-slots.md` (keyed timer slot capability and the `session_timer_obligations.engine_key` persistence consequence below).
+- `game/docs/decisions/GAME-ADR-0013-session-runtime-process-agnostic-recovery.md` (process-agnostic recovery, RuntimeTurn crash/commit semantics, reconstruction from current checkpoint rather than event replay).
+- `game/docs/decisions/GAME-ADR-0014-session-runtime-durable-inactivity-expiration.md` (`activity_expires_at` as the RUNNING-phase inactivity deadline and source of truth, renewal, lazy materialization, Reaper role, and the Archive Worker boundary below).
 
 ## Central Concept: RuntimeTurn vs RuntimeStep
 
@@ -28,6 +30,7 @@ classDiagram
         host_actor_id
         phase
         lobby_expires_at
+        activity_expires_at
         started_at
         terminal_at
         terminal_reason
@@ -91,6 +94,7 @@ classDiagram
         host_actor_id
         phase
         lobby_expires_at
+        activity_expires_at
         started_at
         terminal_at
         terminal_reason
@@ -209,6 +213,25 @@ A Turn may instead close a timer with `state = CANCELLED` without that timer eve
 
 `engine_key` is internal Session/engine routing metadata only - it exists so Session Runtime can reconstruct the correct `KeyedTimerExpired(slot)` signal (carrying the authored `key`) on recovery. It must never be exposed directly to Coordinator/frontend merely because it is persisted. The concrete serialized/typed representation of `engine_key` is not frozen by this document; it depends on the not-yet-designed keyed-timer-slot compiler/engine implementation.
 
+## Process-Agnostic Recovery
+
+Session Runtime does not persist any process/instance ownership state (no `owner_process_id`, no heartbeat, no fencing/takeover generation, no durable `RECOVERING` phase). Recovery of a `RUNNING` Session reconstructs current state from `sessions`, `session_runtime_state.current_turn_id`, the final Snapshot stored on that RuntimeTurn, active `session_interactions`, and active `session_timer_obligations` - not by replaying `session_runtime_turns`/`session_runtime_steps` history. An uncommitted RuntimeTurn transaction at the moment of process death rolls back entirely via ordinary database transaction atomicity; a committed RuntimeTurn remains authoritative regardless of which process executed it or what happened immediately after commit. See GAME-ADR-0013.
+
+## RUNNING Inactivity Deadline: `activity_expires_at`
+
+`sessions.activity_expires_at` is a durable inactivity deadline for `RUNNING` Sessions, distinct from `lobby_expires_at`. It is not a process ownership lease.
+
+- **Source of truth**: expiration is true because `now >= activity_expires_at`, independent of whether/when a Reaper observes it.
+- **Renewal**: meaningful Session operations (RuntimeTurn-producing gameplay, accepted interaction processing, timer expiration processing, meaningful lifecycle/runtime events, justified reconnect/resume activity) extend `activity_expires_at = now + inactivity_ttl`. `inactivity_ttl` is configurable operational/product policy (V1 illustrative value around 10 minutes), not a Game Language constant. Passive reads/polling must not renew it.
+- **Validation**: any active-dependent operation must, under the same per-Session serialization used for other mutations, load/lock the Session, validate lifecycle, and compare `now` against `activity_expires_at` before processing; an operation arriving after the deadline must not revive a Session merely because persisted `phase` still reads `RUNNING`.
+- **Lazy materialization**: such an operation may instead atomically materialize `phase = TERMINAL`, `terminal_reason = RUNTIME_INACTIVITY_EXPIRED`, `terminal_at = activity_expires_at` in the same transaction, then reject the original action - never renewing, reopening, fabricating gameplay, or creating a RuntimeTurn merely to represent expiration.
+- **Reaper**: a background job proactively finds `phase = RUNNING AND activity_expires_at <= now` and, under the same serialization/revalidation rules, materializes `TERMINAL`/`RUNTIME_INACTIVITY_EXPIRED` if still expired; it does not determine expiration, only surfaces an already-true condition. If a legitimate operation already renewed the deadline first, the Reaper rechecks and does nothing.
+- **`terminal_at` rule**: always equals `activity_expires_at`, never the Reaper's or a lazy operation's current wall-clock time - preserving the correct semantic terminal instant even across a long platform outage.
+- **`terminal_reason = RUNTIME_INACTIVITY_EXPIRED`**: means only that the `RUNNING` Session exceeded its allowed inactivity period; it does not assert a process crash, pod kill, host disconnect, or that every participant left.
+- **Archive Worker boundary**: the Archive Worker (see Archival And Hard-Delete Policy below) consumes only already-materialized `TERMINAL` Sessions per retention policy; it must not inspect process ownership, detect crashes, determine RUNNING inactivity, or interpret `activity_expires_at`.
+
+Interaction/timer closure semantics for still-open `session_interactions`/`session_timer_obligations` at inactivity termination remain a later implementation/design detail; materializing expiration must never fabricate engine responses or RuntimeTurns to close gameplay. See GAME-ADR-0014.
+
 ## Archive Metadata
 
 ```mermaid
@@ -220,6 +243,7 @@ classDiagram
         host_actor_id
         phase
         lobby_expires_at
+        activity_expires_at
         started_at
         terminal_at
         terminal_reason
@@ -280,3 +304,5 @@ Logical cross-domain references (no database FK, different domain):
 - The idempotency JSON canonicalization/comparison algorithm for `session_requests`.
 - The exhaustive `source_kind` and interaction/terminal-reason enums.
 - The concrete `KeyedTimerSlot<Key>` declaration/operation/signal-source design and the serialized/typed representation of `engine_key` (see GAME-ADR-0012).
+- The exact enumeration of renewal-triggering operations for `activity_expires_at` and the concrete `inactivity_ttl` configuration surface (see GAME-ADR-0014).
+- The persistence-state transitions/closure reasons for still-open `session_interactions`/`session_timer_obligations` at inactivity termination (see GAME-ADR-0014).
