@@ -13,6 +13,7 @@ Rationale and alternatives are recorded in:
 - `game/docs/decisions/GAME-ADR-0013-session-runtime-process-agnostic-recovery.md` (process-agnostic recovery, RuntimeTurn crash/commit semantics, reconstruction from current checkpoint rather than event replay).
 - `game/docs/decisions/GAME-ADR-0014-session-runtime-durable-inactivity-expiration.md` (`activity_expires_at` as the RUNNING-phase inactivity deadline and source of truth, renewal, lazy materialization, Reaper role, and the Archive Worker boundary below).
 - `game/docs/decisions/GAME-ADR-0015-session-actor-semantic-presence-and-lobby-membership.md` (`session_actors.semantic_presence`, its distinction from `session_participants.active`, and phase-dependent LOBBY/RUNNING disconnect consequences below).
+- `game/docs/decisions/GAME-ADR-0016-session-semantic-presence-recovery-after-total-coordinator-state-loss.md` (recovery-grace behavior after total Coordinator/process loss and the RUNNING atomic semantic-presence/Game-Language-processing rule in the Process-Agnostic Recovery section below; introduces no new durable field/table).
 
 ## Central Concept: RuntimeTurn vs RuntimeStep
 
@@ -227,6 +228,8 @@ A Turn may instead close a timer with `state = CANCELLED` without that timer eve
 ## Process-Agnostic Recovery
 
 Session Runtime does not persist any process/instance ownership state (no `owner_process_id`, no heartbeat, no fencing/takeover generation, no durable `RECOVERING` phase). Recovery of a `RUNNING` Session reconstructs current state from `sessions`, `session_runtime_state.current_turn_id`, the final Snapshot stored on that RuntimeTurn, active `session_interactions`, and active `session_timer_obligations` - not by replaying `session_runtime_turns`/`session_runtime_steps` history. An uncommitted RuntimeTurn transaction at the moment of process death rolls back entirely via ordinary database transaction atomicity; a committed RuntimeTurn remains authoritative regardless of which process executed it or what happened immediately after commit. See GAME-ADR-0013.
+
+Total process loss does not itself mutate `session_actors.semantic_presence` (GAME-ADR-0015); durable `CONNECTED`/`DISCONNECTED` values are ordinary rows unaffected by ephemeral Coordinator state loss, requiring no recovery-specific persistence. For a RUNNING runtime member, the `semantic_presence` transition (`CONNECTED <-> DISCONNECTED`) and its corresponding `UserDisconnected`/`UserReconnected` Game Language processing commit within one Session transaction, extending the same RuntimeTurn atomicity guarantee above to the presence mutation itself: if the transaction does not commit, the presence edge did not occur authoritatively and durable state remains at its prior value; if it commits, presence and any resulting RuntimeTurn/consequences are already authoritative together. No new column/table is introduced for this - `session_actors.semantic_presence` already exists (GAME-ADR-0015), and Coordinator's post-crash recovery-grace mechanism remains entirely ephemeral, non-durable state. See GAME-ADR-0016.
 
 ## RUNNING Inactivity Deadline: `activity_expires_at`
 

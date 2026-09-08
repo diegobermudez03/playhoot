@@ -25,8 +25,9 @@ This index is the Game decision family under the repository-wide routing model d
 | [GAME-ADR-0013](GAME-ADR-0013-session-runtime-process-agnostic-recovery.md) | Session Runtime Process-Agnostic Recovery And RuntimeTurn Crash Semantics | ACCEPTED | 2026-09-07 | None | `game/README.md` |
 | [GAME-ADR-0014](GAME-ADR-0014-session-runtime-durable-inactivity-expiration.md) | Session Runtime Durable Inactivity Expiration | ACCEPTED | 2026-09-07 | None | `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md`, `game/README.md` |
 | [GAME-ADR-0015](GAME-ADR-0015-session-actor-semantic-presence-and-lobby-membership.md) | Session Actor Semantic Presence and Phase-Dependent Participation Consequences | ACCEPTED | 2026-09-07 | None | `game/README.md`, `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md` |
+| [GAME-ADR-0016](GAME-ADR-0016-session-semantic-presence-recovery-after-total-coordinator-state-loss.md) | Session Semantic Presence Recovery After Total Coordinator State Loss | ACCEPTED | 2026-09-07 | None | `game/README.md`, `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md` |
 
-Next Game ADR: `GAME-ADR-0016`.
+Next Game ADR: `GAME-ADR-0017`.
 
 These IDs were migrated from the previously centralized global architecture family (`docs/decisions/architecture/`) on 2026-09-07. Historical status, rationale, alternatives, consequences, and created dates were preserved unchanged; only the identifier/location/cross-reference wiring changed. See `docs/decisions/LEGACY_ADR_ID_MAP.md` for the full old-ID -> new-ID mapping.
 

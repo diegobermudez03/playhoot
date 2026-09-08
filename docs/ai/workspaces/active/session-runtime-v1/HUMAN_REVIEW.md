@@ -1,48 +1,57 @@
-# Session Actor Semantic Presence And Lobby-To-Runtime Membership Checkpoint
+# Session Semantic Presence Recovery After Total Coordinator State Loss Checkpoint
 
 Process: Architecture Discussion
 
-Status: RESOLVED - accepted 2026-09-07. No checkpoint is currently pending; this file is retained as the human-facing record of the resolved checkpoint until the next milestone (durable semantic presence recovery after total process loss) produces its own checkpoint.
+Status: RESOLVED - accepted 2026-09-07. No checkpoint is currently pending; this file is retained as the human-facing record of the resolved checkpoint until the next milestone (runtime/internal failure semantics) produces its own checkpoint.
 
 ## What Was Approved
 
-Semantic presence and lobby-to-runtime membership - the Operational Lifecycle milestone opened after process-crash/recovery and durable inactivity expiration closed - were reviewed and accepted as GAME-ADR-0015.
+Semantic presence recovery after total Coordinator/process loss - the previously explicit open question left by GAME-ADR-0015 - was reviewed and accepted as GAME-ADR-0016.
 
-### Durable SessionActor semantic presence (GAME-ADR-0015)
+### Process loss does not mutate semantic presence
 
-- `session_actors` gains a durable `semantic_presence` field (`CONNECTED | DISCONNECTED`) - conceptually owned by `session_actors`, not `session_participants` - answering only "has this SessionActor crossed the Coordinator -> Session semantic connected/disconnected boundary?" Named `semantic_presence` rather than `is_connected` to avoid implying physical socket presence.
-- This is distinct from `session_participants.active` ("does this actor currently occupy/admit a participant position?"); the two may legitimately diverge, for example a reconnecting actor that is semantically `CONNECTED` while locked out of a full lobby.
-- Physical connection state remains entirely ephemeral Coordinator state: no socket IDs, connection IDs, live WebSocket presence, Coordinator bindings, grace timers, or process IDs are persisted. GAME-ADR-0010's rejection of `is_connected`/`connection_id`/`websocket_id` persistence is unchanged - this is an additive refinement, not a reversal.
-- After Coordinator grace expires, Session Runtime serializes the SessionActor `CONNECTED -> DISCONNECTED` transition per Session; repeated disconnect reports while already `DISCONNECTED` are idempotent and must not duplicate Game Language disconnect effects.
+- Total loss of ephemeral Coordinator/process state does not itself change `session_actors.semantic_presence`. Durable `CONNECTED`/`DISCONNECTED` values survive a crash, lost sockets, and lost Coordinator maps/timers/graces unchanged. Session Runtime remains process-agnostic (GAME-ADR-0013): no process ownership, process IDs, heartbeat state, `RECOVERING`/`UNKNOWN` presence value, or durable socket state was introduced.
+- Durable `CONNECTED` means only "no semantic disconnect edge processed yet," never "a live socket exists right now." Physical connectivity remains entirely Coordinator-owned ephemeral state.
 
-### LOBBY disconnect/reconnect semantics
+### Fresh recovery grace, reusing the ordinary mechanism
 
-- In `LOBBY`, semantic disconnect deactivates the active Participant and releases its slot immediately - the user no longer counts toward lobby capacity, and no `UserDisconnected` exists yet (no game runtime has started). This is intentionally stronger than RUNNING: a player still inside Coordinator transport grace never reaches Session Runtime as a disconnect and keeps their active lobby slot.
-- Reconnect reuses the same SessionActor/existing Participant record (not a new Join identity). If the prior disconnect deactivated the Participant, re-admission is revalidated against *current* lobby constraints (still `LOBBY`, not expired, current capacity against `players.max`, other applicable constraints) exactly as Join would validate.
-- Reconnect does not guarantee recovery of a previously released slot: if another actor occupied it while the first was disconnected, the reconnecting actor may remain semantically `CONNECTED` with an inactive Participant and no reserved slot.
+- When Coordinator reconstructs a still-semantically-active Session and finds a durably `CONNECTED` actor with no current physical binding, it starts a fresh transport/recovery grace for that actor - the same mechanism already accepted for ordinary transient disconnects (GAME-ADR-0010), not a distinct process-crash-disconnect event or API.
+- Rebinding within that fresh grace preserves `CONNECTED`, emits no `UserDisconnected`/`UserReconnected`, and proceeds to ordinary resync - this is what keeps an ordinary process restart/deployment from producing artificial disconnect/reconnect pairs for every still-connected player.
+- Grace expiry uses the ordinary semantic-disconnect path; the already-accepted phase-dependent LOBBY/RUNNING rules (GAME-ADR-0015) apply unchanged, with no special process-crash Session event.
+- A durably `DISCONNECTED` actor gets no recovery grace (no semantic uncertainty to absorb); a later connection follows the ordinary semantic-reconnect path.
 
-### Start roster and permanent exclusion
+### V1 precision tradeoff
 
-- Start (already serialized per Session, GAME-ADR-0004) builds the `players: list<user>` roster strictly from Participants active at that serialized moment. A `DISCONNECTED` actor, or a `CONNECTED` actor not currently re-admitted as active, is excluded.
-- The Coordinator-grace-vs-Start race is resolved entirely by the existing per-Session serialization, with no special-casing outside Session: whichever operation wins serialization determines inclusion.
-- An actor excluded from the Start-time roster does not join the running game merely by reconnecting afterward - Session Runtime must not deliver `UserReconnected` toward the engine, or dynamically add, a SessionActor absent from that execution's roster. Post-Start late admission remains a distinct, separately deferred capability, not designed here.
+- V1 does not persist a physical-disconnect-start timestamp or remaining grace duration. A restarted Coordinator may restart the full configured grace duration for a durably `CONNECTED` actor with no binding - the same simplicity tradeoff already accepted for Game Language timer obligations (GAME-ADR-0008), as a distinct mechanism. No `physical_disconnected_at`, durable grace deadline, or remaining-grace persistence was added.
 
-### RUNNING disconnect semantics remain unchanged and are reaffirmed
+### Lifecycle deadlines and activity renewal stay authoritative
 
-- Once a Participant was included in the Start-time roster, `RUNNING` semantic disconnect does not deactivate/remove it from the runtime roster. Session Runtime may emit the already-accepted root `UserDisconnected(user)` (GAME-ADR-0011); authored Game Language - not Session Runtime - determines gameplay consequences. No auto-forfeit, auto-skip, or freed slot. Reconnect of such a member may produce `UserReconnected(user)` before resync.
+- Recovery grace must never revive a Session whose `lobby_expires_at`/`activity_expires_at` deadline already passed; authoritative lifecycle deadlines take precedence over ephemeral recovery grace.
+- Merely reconstructing infrastructure mechanisms after restart (Snapshot loads, timer-obligation discovery, discovering durably `CONNECTED` actors, starting recovery graces, rebuilding Coordinator maps) does not by itself renew `activity_expires_at` - only a later real operation (for example an authenticated reconnect) can qualify as meaningful activity under the already-accepted renewal policy (GAME-ADR-0014).
+
+### No process-specific Session APIs
+
+- Session Runtime gains no APIs such as `RecoverFromProcessCrash`, `TransferSessionOwnership`, `ClaimSession`, `ProcessDied`, or `CoordinatorRestarted`. It continues to expose only ordinary domain/runtime operations regardless of which process invokes them; Coordinator reconstruction remains an upper-layer concern.
+
+### Atomic semantic-presence/Game-Language commit for RUNNING (critical correctness rule)
+
+- For a RUNNING runtime member, the durable `semantic_presence` transition and its corresponding Game Language lifecycle processing (`UserDisconnected`/`UserReconnected`) commit as one Session transaction - extending the already-accepted RuntimeTurn transactional model (GAME-ADR-0007) to the presence mutation itself.
+- If the process crashes before that transaction commits, the presence edge did not occur authoritatively; durable state remains at its prior value, and Coordinator may later report the disconnect again.
+- If the transaction commits, presence and any Game Language effect are already authoritative together - a crash can never durably record the presence edge while silently losing the corresponding authored lifecycle effect, or the reverse.
+- An unhandled signal still commits the presence transition alone, with no RuntimeTurn created merely to represent an identical Snapshot (GAME-ADR-0011 unchanged).
 
 ## Where This Was Persisted
 
-- `game/docs/decisions/GAME-ADR-0015-session-actor-semantic-presence-and-lobby-membership.md`
-- `game/docs/decisions/INDEX.md` (GAME-ADR-0015 row added; next Game ADR is now `GAME-ADR-0016`)
-- `game/README.md` (SessionActor lifecycle paragraph updated to introduce `semantic_presence` alongside the unchanged physical-connection-state rejection; Session Runtime Lobby Lifecycle Contract section updated with LOBBY disconnect/reconnect admission semantics and the Start active-Participants-only roster/permanent-exclusion rule; Session Runtime Disconnect, Reconnect, and Resynchronization Boundary section updated with the phase-dependent LOBBY-vs-RUNNING consequence)
-- `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md` (`session_actors.semantic_presence` added to both ER diagrams; new "SessionActor Semantic Presence vs Participant Admission" section)
-- `docs/ai/workspaces/active/session-runtime-v1/AI_CONTEXT.md` (new accepted-decision section, updated deferred topics, updated next-milestone question, updated drift/explicitly-not-done notes)
+- `game/docs/decisions/GAME-ADR-0016-session-semantic-presence-recovery-after-total-coordinator-state-loss.md`
+- `game/docs/decisions/INDEX.md` (GAME-ADR-0016 row added; next Game ADR is now `GAME-ADR-0017`)
+- `game/README.md` (Session Runtime Process-Agnostic Recovery section gains the recovery-grace/atomic-commit behavior; Session Runtime Durable Inactivity Expiration section gains the "mechanism reconstruction is not activity" clarification; Session Runtime Disconnect, Reconnect, and Resynchronization Boundary section gains the fresh-recovery-grace-after-total-process-loss behavior and the RUNNING atomic-commit rule)
+- `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md` (clarifying prose added to the Process-Agnostic Recovery section and the rationale-links list; no schema/ER diagram change, since `session_actors.semantic_presence` already exists and no new durable field/table was introduced)
+- `docs/ai/workspaces/active/session-runtime-v1/AI_CONTEXT.md` (new accepted-decision section, updated deferred topics, updated next-milestone questions, updated drift/explicitly-not-done notes)
 
 ## Explicitly Not Authorized By This Checkpoint
 
-No production code, migrations, lobby reconnect implementation, Coordinator grace implementation, compiler/engine/program Game Language changes, tests, or WORK were created or changed. No process ownership model was introduced. No dynamic runtime membership / post-Start late admission was designed - the roster remains immutable after Start under this checkpoint. No physical connection/socket/process-ID persistence was introduced anywhere; GAME-ADR-0010's rejection of physical connection-state fields stands unchanged.
+No production code, migrations, Coordinator recovery-grace implementation, timer implementation, compiler/engine/program Game Language changes, tests, or WORK were created or changed. No process ownership/heartbeat/fencing model was introduced. No new persistence schema was introduced - `session_actors.semantic_presence` already existed from GAME-ADR-0015, and no recovery/grace/process field was added anywhere. GAME-ADR-0010, GAME-ADR-0011, GAME-ADR-0013, GAME-ADR-0014, and GAME-ADR-0015's historical rationale were not rewritten; this checkpoint closes the open question they each left, as an additive/refining new record.
 
 ## Next Milestone (Not Designed Here)
 
-Durable semantic presence recovery after total process loss: a `RUNNING` Session may durably contain actors whose `semantic_presence` is `CONNECTED`, while a new Coordinator process has no physical socket bindings because all ephemeral state was lost after a crash/restart. Open questions: whether Coordinator gives those actors a fresh transport/recovery grace after restart; when absence of a new binding becomes a new semantic disconnect; whether actors already durably `DISCONNECTED` require no such grace; and how this interacts with process-agnostic Session Runtime (GAME-ADR-0013) and durable inactivity expiration (GAME-ADR-0014). Do not introduce process ownership to solve it. A new checkpoint should be opened here once that design work produces a proposal for human review.
+Runtime/internal failure semantics. Process crash/recovery and semantic presence recovery are now considered CLOSED enough at architecture level. Conversational AI should next determine: (1) which engine/runtime failures are expected operation rejections versus Session failures; (2) which failures roll back only the current RuntimeTurn while the Session remains RUNNING; (3) which invariant/corruption failures make continued execution unsafe; (4) when a Session should become TERMINAL because of an internal execution failure; (5) what terminal reasons/categories are needed; (6) what clients/Coordinator should observe after such a failure; (7) how retryable infrastructure/database failures differ from deterministic Game/engine failures; (8) how max-step/runaway/execution-budget failures behave; (9) which errors are visible to authored games versus platform/operator telemetry; (10) how archival preserves failed-session history. A new checkpoint should be opened here once that design work produces a proposal for human review.
