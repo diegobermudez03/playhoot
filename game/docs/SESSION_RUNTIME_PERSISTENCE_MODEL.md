@@ -12,12 +12,21 @@ Rationale and alternatives are recorded in:
 - `game/docs/decisions/GAME-ADR-0012-game-language-keyed-timer-slots.md` (keyed timer slot capability and the `session_timer_obligations.engine_key` persistence consequence below).
 - `game/docs/decisions/GAME-ADR-0013-session-runtime-process-agnostic-recovery.md` (process-agnostic recovery, RuntimeTurn crash/commit semantics, reconstruction from current checkpoint rather than event replay).
 - `game/docs/decisions/GAME-ADR-0014-session-runtime-durable-inactivity-expiration.md` (`activity_expires_at` as the RUNNING-phase inactivity deadline and source of truth, renewal, lazy materialization, Reaper role, and the Archive Worker boundary below).
+- `game/docs/decisions/GAME-ADR-0015-session-actor-semantic-presence-and-lobby-membership.md` (`session_actors.semantic_presence`, its distinction from `session_participants.active`, and phase-dependent LOBBY/RUNNING disconnect consequences below).
 
 ## Central Concept: RuntimeTurn vs RuntimeStep
 
 One `RuntimeTurn` begins from one external/runtime cause and may execute 1..N internal `engine.Step` calls, all within the same transaction. Only the final Snapshot after the whole Turn is an observable/authoritative Session state; one committed Turn corresponds to one Session runtime `sequence` and one historical Snapshot.
 
 `RuntimeStep` is technical execution history only (engine debugging/audit). It does not own a Session-state sequence.
+
+## SessionActor Semantic Presence vs Participant Admission
+
+`session_actors.semantic_presence` (`CONNECTED | DISCONNECTED`) is a durable platform/runtime fact: has this SessionActor crossed the Coordinator -> Session semantic connected/disconnected boundary? It is not physical connection state - socket IDs, connection IDs, live WebSocket bindings, Coordinator grace timers, and process IDs remain ephemeral Coordinator-owned state and are never persisted here. `semantic_presence` only changes after the Coordinator's transport grace has already been applied and has already expired (see GAME-ADR-0010, GAME-ADR-0015).
+
+`session_participants.active` answers a different, phase-dependent question: does this actor currently occupy/admit a participant position? During `LOBBY`, `active` means currently admitted / currently occupying a Start-eligible lobby slot, and a semantic disconnect deactivates it (releasing the slot) exactly as a `Leave` would. After `Start`, the Game runtime roster is the immutable initial set of active Participants selected at the serialized Start moment; a later semantic disconnect during `RUNNING` does **not** deactivate `session_participants.active` or free that roster position - RUNNING disconnect consequences are delegated to authored Game Language (`UserDisconnected`/`UserReconnected`, GAME-ADR-0011), not decided by `active`.
+
+These two fields may legitimately diverge - for example, a SessionActor reconnects successfully (`semantic_presence = CONNECTED`) while the lobby is already full, so its Participant remains inactive (`active = false`) and no slot is reserved. See GAME-ADR-0015 for the full accepted phase-dependent rule set (LOBBY disconnect/reconnect admission, the Start active-Participants-only roster, and RUNNING disconnect preserving runtime membership).
 
 ## Lobby And Identity Tables
 
@@ -41,6 +50,7 @@ classDiagram
         id
         session_id
         user_uuid
+        semantic_presence
         created_at
     }
     class session_participants {
@@ -105,6 +115,7 @@ classDiagram
         id
         session_id
         user_uuid
+        semantic_presence
         created_at
     }
     class session_runtime_turns {
