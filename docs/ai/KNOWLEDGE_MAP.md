@@ -65,6 +65,7 @@ Package-local contracts and implementation documentation may remain near the imp
 - `game/language/v1/engine/README.md` -> engine usage.
 - `game/language/v1/engine/IMPLEMENTATION.md` -> engine implementation/maintenance context.
 - `game/language/v1/program/*` -> game-language/program-specific context.
+- `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md` -> accepted (not yet implemented) Session Runtime RuntimeTurn/persistence/runtime-history-archive design and ER diagram; `game/docs/DATA_MODEL.md` remains the current-implementation schema.
 
 The following files are game-generation product AI artifacts, not instructions for AI agents developing Playhoot:
 

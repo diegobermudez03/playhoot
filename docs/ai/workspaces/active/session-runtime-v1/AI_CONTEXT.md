@@ -1,12 +1,12 @@
 Process: Architecture Discussion
 Topic: Session Runtime lifecycle/runtime design
-Current stage: lobby lifecycle architecture accepted; ready for Runtime Turn architecture
+Current stage: RuntimeTurn architecture, persistence model, V1 timer recovery tradeoff, and runtime-history archival direction accepted; ready for Operational Lifecycle (disconnect/reconnect) design
 Current execution surface: CONVERSATIONAL AI
-Related durable artifacts: `ARCHITECTURE.md`, `game/README.md`, `identity/README.md`, `docs/ai/KNOWLEDGE_MAP.md`, `docs/decisions/architecture/ADR-0002-game-capability-persistence-transaction-boundary.md`, `docs/decisions/architecture/ADR-0003-session-runtime-durable-boundary.md`, `docs/decisions/architecture/ADR-0004-session-runtime-actor-and-lifecycle-foundations.md`, `docs/decisions/architecture/ADR-0005-cross-domain-public-entity-references.md`, `docs/decisions/architecture/ADR-0006-identity-user-public-identity-boundary.md`, `docs/decisions/architecture/ADR-0007-session-lobby-lifecycle-contract.md`, `docs/decisions/architecture/ADR-0008-session-public-and-internal-identity-boundary.md`, `docs/decisions/architecture/ADR-0009-game-language-root-player-roster-contract.md`, `game/language/v1/program/README.md`, `game/language/v1/engine/README.md`, `game/language/v1/engine/LOGICAL_CONTRACT.md`, `docs/engineering/standards/cross-domain-reference-naming.md`
-Blocked by: Runtime Turn architecture decisions
-Next action: Conversational AI should design Runtime Turn architecture; do not enter implementation planning or create WORK yet
-Last durable checkpoint: accepted detailed Session lobby lifecycle, public/internal identity boundary, and Game Language root roster contract were promoted to ADR-0007 through ADR-0009 and canonical docs; no WORK created
-Last updated: 2026-09-06
+Related durable artifacts: `ARCHITECTURE.md`, `game/README.md`, `identity/README.md`, `docs/ai/KNOWLEDGE_MAP.md`, `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md`, `docs/decisions/architecture/ADR-0002-game-capability-persistence-transaction-boundary.md`, `docs/decisions/architecture/ADR-0003-session-runtime-durable-boundary.md`, `docs/decisions/architecture/ADR-0004-session-runtime-actor-and-lifecycle-foundations.md`, `docs/decisions/architecture/ADR-0005-cross-domain-public-entity-references.md`, `docs/decisions/architecture/ADR-0006-identity-user-public-identity-boundary.md`, `docs/decisions/architecture/ADR-0007-session-lobby-lifecycle-contract.md`, `docs/decisions/architecture/ADR-0008-session-public-and-internal-identity-boundary.md`, `docs/decisions/architecture/ADR-0009-game-language-root-player-roster-contract.md`, `docs/decisions/architecture/ADR-0010-session-runtime-turn-and-persistence-model.md`, `docs/decisions/architecture/ADR-0011-session-runtime-v1-timer-recovery-simplification.md`, `docs/decisions/architecture/ADR-0012-session-runtime-history-archival-and-hard-delete.md`, `game/language/v1/program/README.md`, `game/language/v1/engine/README.md`, `game/language/v1/engine/LOGICAL_CONTRACT.md`, `docs/engineering/standards/cross-domain-reference-naming.md`
+Blocked by: Operational Lifecycle (disconnect/reconnect/inactivity/crash/runaway-abuse) design decisions
+Next action: Conversational AI should design the Operational Lifecycle milestone (disconnect, reconnect, connection-loss-vs-participation, Session Runtime-vs-Coordinator knowledge split, whether/how Game Language defines disconnect behavior, crash/interruption semantics, runaway/abuse protections); do not enter implementation planning or create WORK yet
+Last durable checkpoint: accepted RuntimeTurn/RuntimeStep historical model, the full Session Runtime persistence schema (sessions, session_actors, session_participants, join_codes, session_requests, session_runtime_turns, session_runtime_steps, session_runtime_state, session_interactions, session_timer_obligations), the V1 no-durable-`live_timer_schedules` timer recovery tradeoff, and the runtime-history archival/verified-hard-delete direction were promoted to ADR-0010 through ADR-0012, `game/README.md`, `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md`, and `docs/ai/KNOWLEDGE_MAP.md`; no WORK created
+Last updated: 2026-09-07
 
 # Resume Context
 
@@ -78,6 +78,20 @@ For V1, arbitrary external game-specific root parameters are deferred until Sess
 
 Canonical references: ADR-0009, `game/language/v1/program/README.md`, `game/language/v1/engine/README.md`, and `game/language/v1/engine/LOGICAL_CONTRACT.md`.
 
+## Accepted Runtime Turn, Persistence Model, Timer Recovery, And Archival Direction
+
+Status: HUMAN-APPROVED and canonically promoted.
+
+`RuntimeTurn` is the historical/transactional unit for RUNNING-phase execution: one external/runtime cause, 1..N internal `engine.Step` calls in one transaction, one resulting Session-state `sequence`, and one authoritative final Snapshot. `RuntimeStep` is technical-only execution history beneath a Turn and does not own a Session-state sequence.
+
+The accepted persistence model adds `session_requests` (idempotency, replacing the earlier proposed `session_command_receipts` name, storing `request_payload` rather than a `request_hash`), `session_runtime_turns`, `session_runtime_steps`, `session_runtime_state` (a thin pointer to `current_turn_id`, no duplicated Snapshot), `session_interactions`, and `session_timer_obligations`. Interaction and Timer durability/recovery is modeled through Turn-level references (`opened_by_turn_id`/`created_by_turn_id`, `closed_by_turn_id`, `source_interaction_id`/`source_timer_obligation_id`), not Step-level or sequence-range bookkeeping.
+
+V1 does not persist an absolute due-at/deadline for Game Language timers and does not include a durable Coordinator-owned `live_timer_schedules` table. Session Runtime persists only the timer obligation and its configured delay; on recovery, active obligations may be rescheduled using their full configured delay from the new scheduling moment, and preserving elapsed wall-clock time across a full process restart is not required for V1. `lobby_expires_at` is unaffected and remains a separate, already-accepted Session lifecycle deadline.
+
+Long-term runtime-history archival direction is accepted: PostgreSQL remains the hot/runtime store; a versioned JSON artifact may eventually be written to long-term object storage (for example GCS); `session_history_archives` tracks this per Session with a provider/key identifier (not an expiring URL). Heavy runtime/history tables (`session_runtime_state`, `session_runtime_turns`, `session_runtime_steps`, `session_interactions`, `session_timer_obligations`) may become an explicit hard-delete exception, but only after the archive is successfully written and verified (`READY` status, checksum). `session_actors` and `session_participants` are excluded from this deletion policy and remain relationally stored indefinitely for product queries. The concrete JSON archive schema and GCS implementation remain DEFERRED.
+
+Canonical references: ADR-0010, ADR-0011, ADR-0012, `game/README.md`, and `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md` (full accepted table/column/relationship diagram).
+
 ## Deferred Design Topics
 
 Disconnect/reconnect semantics remain DEFERRED, not a decided feature.
@@ -86,26 +100,21 @@ Physical connection state is not logical session participation state. Future des
 
 Current human preference/intuition, not an accepted design: some reconnect/inactivity semantics may need to be expressible by the game itself because different games can require different behavior.
 
-Other deferred topics: RUNNING-phase concurrency/turn processing, exhaustive terminal reasons, host transfer, max-runtime/runaway-session policy, completed-session history/archive ownership, mutable global display/profile ownership, Identity reconciliation/merge/alias semantics, Session Configuration/arbitrary external game-specific root params, and final idempotency storage schema/algorithm.
+Other deferred topics: RUNNING-phase concurrent-input serialization strategy, bounded-loop protection while draining InternalSignals, post-commit Coordinator-delivery-failure handling, exhaustive `source_kind`/terminal-reason/interaction-kind enums, host transfer, max-runtime/runaway-session policy, the final JSON archive schema and GCS implementation, mutable global display/profile ownership, Identity reconciliation/merge/alias semantics, Session Configuration/arbitrary external game-specific root params, and the final idempotency JSON canonicalization/comparison algorithm.
 
 ## Next Architecture Milestone
 
-Design Runtime Turn architecture before implementation planning.
+Design the Operational Lifecycle milestone before implementation planning:
 
-The next Conversational AI should decide:
+1. Disconnect.
+2. Reconnect.
+3. Temporary loss of connection versus logical Participant membership.
+4. What Session Runtime knows versus what Coordinator knows.
+5. Whether/how Game Language can define disconnect/reconnect/inactivity behavior.
+6. Process crash/session interruption semantics.
+7. Eventual runaway/abuse protections.
 
-1. What exactly is one externally triggered runtime transaction/turn?
-2. How is concurrent input for the same RUNNING Session serialized?
-3. How are external signals distinguished from engine InternalSignals?
-4. Are InternalSignals drained in one domain transaction, and what bounded-loop protection applies?
-5. What Snapshot/history records are persisted per turn?
-6. How are engine outputs transformed into durable obligations versus post-commit delivery effects?
-7. How are timer obligations created, cancelled, and consumed atomically?
-8. What idempotency/versioning prevents duplicate or stale runtime inputs?
-9. What happens if database commit succeeds but Coordinator delivery fails?
-10. What recoverable state exists after process crash at each boundary?
-
-Do not enter Feature Development, create WORK, or implement production code until the Runtime Turn contract is accepted and the repository workflow authorizes implementation.
+Do not enter Feature Development, create WORK, or implement production code until Operational Lifecycle is accepted and the repository workflow authorizes implementation.
 
 ## Current Implementation Facts And Drift To Carry Forward
 
@@ -114,12 +123,13 @@ Do not enter Feature Development, create WORK, or implement production code unti
 - Current Session Runtime scaffolding accepts externally supplied `engine.Program`, which conflicts with accepted architecture requiring Session Runtime to resolve/pin the playable immutable Game definition through the narrow Game Management read capability.
 - Existing owner/player UUID fields are not aligned with the accepted `UserUUID` public boundary and internal `SessionActorID` runtime boundary.
 - Join, Leave, Start, idempotency, and the standardized `players: list<user>` root roster contract are not implemented.
+- None of the accepted RuntimeTurn/persistence-model tables (`session_requests`, `session_runtime_turns`, `session_runtime_steps`, `session_runtime_state`, `session_interactions`, `session_timer_obligations`, `session_history_archives`) exist in current migrations/schema; `game/docs/DATA_MODEL.md` still reflects only the pre-existing `sessions`/`session_players`/`session_states`/`join_codes` current-implementation shape.
 - `game/CURRENT_STATE.md` previously reported no known drift. This workspace records drift but does not update current-state documentation because current-state docs were excluded from this checkpoint.
 
 ## Explicitly Not Done
 
 - No WORK was created.
 - No production code, tests, migrations, authentication code, or Session Runtime implementation were changed.
-- No current-state docs were modified to pretend implementation exists.
-- No final reconnect contract was designed.
-- No Runtime Turn contract was designed.
+- No current-state docs (`game/CURRENT_STATE.md`, `game/docs/DATA_MODEL.md`) were modified to pretend implementation exists.
+- No final reconnect/Operational Lifecycle contract was designed.
+- No GCS integration, archival worker, or final JSON archive schema was designed or implemented.

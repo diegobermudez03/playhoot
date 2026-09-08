@@ -138,6 +138,26 @@ Start uses the accepted Game Language root roster contract `players: list<user>`
 
 Rationale and alternatives are recorded in `docs/decisions/architecture/ADR-0007-session-lobby-lifecycle-contract.md`, `docs/decisions/architecture/ADR-0008-session-public-and-internal-identity-boundary.md`, and `docs/decisions/architecture/ADR-0009-game-language-root-player-roster-contract.md`.
 
+## Session Runtime Turn And Persistence Model
+
+`RuntimeTurn` is the historical/transactional unit for RUNNING-phase execution. One RuntimeTurn begins from one external/runtime cause (an accepted interaction response, a timer expiration, or a future platform signal) and may execute 1..N internal `engine.Step` calls within the same transaction; only the final Snapshot after the whole Turn becomes an observable/authoritative Session state, and one committed Turn corresponds to exactly one Session runtime sequence. `RuntimeStep` is technical execution history only (engine debugging/audit) and does not own a Session-state sequence.
+
+Session Runtime durably persists Interaction (a pending or resolved externally-visible question) and Timer Obligation (a durable logical timer) as entities referenced by the RuntimeTurns that open/create and close them (`opened_by_turn_id`/`created_by_turn_id`, `closed_by_turn_id`), and by the RuntimeTurns they in turn cause (`source_interaction_id`/`source_timer_obligation_id`). `session_runtime_state` is a thin pointer to the current authoritative `current_turn_id`; it does not duplicate the Snapshot payload.
+
+Session Runtime does not persist an absolute due-at/deadline for Game Language timers in V1; it persists only the timer obligation and its configured delay. The Coordinator remains the time-aware layer and owns physical timers in memory. A durable Coordinator-owned `live_timer_schedules` table is rejected for V1. On recovery, active timer obligations may be rescheduled using their full configured delay from the new scheduling moment; preserving elapsed wall-clock time across a full process restart is not required for V1. This does not affect `lobby_expires_at`, which remains a separate, already-accepted Session lifecycle deadline.
+
+The accepted lobby/lifecycle idempotency table for Create/Join/Leave/Start is `session_requests`, storing the request payload rather than a hash, so a retry with the same idempotency key can be checked for semantic equivalence against the originally stored request.
+
+The full accepted table/column/relationship diagram is recorded in `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md`. Rationale and alternatives are recorded in `docs/decisions/architecture/ADR-0010-session-runtime-turn-and-persistence-model.md` and `docs/decisions/architecture/ADR-0011-session-runtime-v1-timer-recovery-simplification.md`.
+
+## Session Runtime History Archival Direction
+
+PostgreSQL remains the hot/runtime store. After a Session reaches an appropriate terminal/archiveable condition, heavy runtime history may eventually be serialized into a versioned JSON artifact written to long-term object storage such as Google Cloud Storage; the exact archive schema and storage implementation are deferred. Archive metadata (`session_history_archives`) tracks this per Session with a provider/key identifier rather than an expiring URL.
+
+Heavy runtime/history tables (`session_runtime_state`, `session_runtime_turns`, `session_runtime_steps`, `session_interactions`, `session_timer_obligations`) may become an explicit hard-delete exception, but only after the long-term archive is successfully written and verified. `session_actors` and `session_participants` are excluded from this deletion policy and remain relationally stored indefinitely, since they support ongoing product queries such as which Sessions a User participated in.
+
+Rationale and alternatives are recorded in `docs/decisions/architecture/ADR-0012-session-runtime-history-archival-and-hard-delete.md`.
+
 ## Boundary Notes
 
-Completed-session history/archive ownership remains unresolved and is not defined by this document.
+Completed-session history archival direction is accepted (see above and ADR-0012); the concrete JSON archive schema and object-storage implementation remain deferred.

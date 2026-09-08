@@ -15,5 +15,8 @@ ADRs preserve architecture decision rationale. Current architecture remains owne
 | [ADR-0007](ADR-0007-session-lobby-lifecycle-contract.md) | Session Lobby Lifecycle Contract | ACCEPTED | 2026-09-06 | `game/README.md` |
 | [ADR-0008](ADR-0008-session-public-and-internal-identity-boundary.md) | Session Public and Internal Identity Boundary | ACCEPTED | 2026-09-06 | `game/README.md`, `ARCHITECTURE.md` |
 | [ADR-0009](ADR-0009-game-language-root-player-roster-contract.md) | Game Language Root Player Roster Contract | ACCEPTED | 2026-09-06 | `game/language/v1/program/README.md`, `game/language/v1/engine/README.md`, `game/language/v1/engine/LOGICAL_CONTRACT.md`, `game/README.md` |
+| [ADR-0010](ADR-0010-session-runtime-turn-and-persistence-model.md) | Session Runtime Turn Architecture and Persistence Model | ACCEPTED | 2026-09-07 | `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md`, `game/README.md`, `docs/ai/KNOWLEDGE_MAP.md` |
+| [ADR-0011](ADR-0011-session-runtime-v1-timer-recovery-simplification.md) | V1 Game Language Timer Schedule Recovery Simplification | ACCEPTED | 2026-09-07 | `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md`, `game/README.md` |
+| [ADR-0012](ADR-0012-session-runtime-history-archival-and-hard-delete.md) | Session Runtime History Archival Direction and Verified Hard-Delete | ACCEPTED | 2026-09-07 | `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md`, `game/README.md` |
 
 Whenever an ADR is created or its lifecycle status changes, update this index.
