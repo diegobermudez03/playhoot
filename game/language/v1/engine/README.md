@@ -96,6 +96,20 @@ Session Runtime must initialize/load the pinned immutable Game definition/versio
 
 Rationale and alternatives are recorded in `game/docs/decisions/GAME-ADR-0006-game-language-root-player-roster-contract.md`.
 
+### Accepted Disconnect/Reconnect Delivery And Offline-Interaction Invariants
+
+Status: ACCEPTED DESIGN, NOT YET IMPLEMENTED. `UserDisconnected`/`UserReconnected` are accepted as standard `NamedSignalSource` platform/lifecycle signals exposing only `user: user`; nothing in this package's current `Step`/`Signal` handling implements them today. Session Runtime is accepted to address delivery of both exclusively to the root workflow instance path — never as an implicit broadcast to nested instances — consistent with `Step` already resolving and applying exactly one signal against one instance path per call, with no internal chaining/fan-out to other instances. An authored game may declare no matching transition for either signal; that is an ordinary `ErrSignalRejected` outcome, not an error condition, and Session Runtime must not create a `RuntimeTurn` or infer any gameplay consequence from it.
+
+Independently, Session Runtime opening an interaction/question for a SessionActor with no live transport connection must still produce the engine's normal `OpenQuestionOutput`/interaction behavior unconditionally — engine execution itself has no notion of connectivity, and this accepted invariant constrains the Session Runtime caller, not this package.
+
+Rationale and alternatives are recorded in `game/docs/decisions/GAME-ADR-0011-game-language-disconnect-reconnect-authored-semantics.md`.
+
+### Accepted Keyed Timer Slot Capability
+
+Status: ACCEPTED DESIGN, NOT YET IMPLEMENTED. Today this package only executes the ordinary single-pending-timer `TimerSlotDeclaration` via `ScheduleTimerOutput`/`CancelTimerOutput`/`TimerExpiredSignalSource`; no keyed-timer declaration, output, or signal source exists. Game Language is accepted to gain a general `KeyedTimerSlot<Key>` concept — independent pending timers per `(workflow instance/path, slot, key)`, with expiration exposing the authored key (conceptually `KeyedTimerExpired(slot)` carrying `key: KeyType`) — as a general primitive, not a disconnect-specific one. Naming/API/Go type names are not frozen by that decision.
+
+Rationale and alternatives are recorded in `game/docs/decisions/GAME-ADR-0012-game-language-keyed-timer-slots.md`.
+
 ### `Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal, limits engine.Limits) (engine.Commit, error)`
 
 Applies exactly one `Signal` to `snapshot` and returns the result as one atomic `Commit`. `Step` never mutates `snapshot` in place — on success, the new state is `commit.Snapshot`; on failure, `snapshot` is guaranteed unchanged, no `Commit` was produced, and nothing in it should be treated as published.

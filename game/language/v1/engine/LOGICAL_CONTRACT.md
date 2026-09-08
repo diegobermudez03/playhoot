@@ -31,6 +31,19 @@ Session Runtime supplies `players` from active Participants at Start. Each
 `user` represents the Session-local runtime identity derived from
 SessionActorID, not Identity.UserUUID.
 
+Accepted, not yet implemented, Operational Lifecycle contracts to preserve:
+
+- `UserDisconnected`/`UserReconnected` are standard `NamedSignalSource`
+  signals exposing only `user: user`, delivered to the root workflow
+  instance only (no implicit broadcast to nested instances); handling is
+  optional and an unhandled delivery has no automatic gameplay consequence
+  and produces no RuntimeTurn (see
+  `game/docs/decisions/GAME-ADR-0011-game-language-disconnect-reconnect-authored-semantics.md`).
+- A `KeyedTimerSlot<Key>` capability generalizes `TimerSlotDeclaration` to
+  independently addressable pending timers per `(workflow instance/path,
+  slot, key)`, exposing the authored key on expiration (see
+  `game/docs/decisions/GAME-ADR-0012-game-language-keyed-timer-slots.md`).
+
 A Commit represents, as a single unit:
 
 - the new snapshot;

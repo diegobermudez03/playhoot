@@ -1,11 +1,11 @@
 Process: Architecture Discussion
 Topic: Session Runtime lifecycle/runtime design
-Current stage: Operational Lifecycle transport/platform boundary accepted (disconnect, reconnect, resync); ready for Game Language disconnect/reconnect semantics design
+Current stage: Operational Lifecycle disconnect/reconnect fully closed at architecture level (transport/platform boundary, and now authored Game Language semantics plus the keyed-timer capability it exposed a need for); ready for the process crash / Session interruption semantics milestone
 Current execution surface: CONVERSATIONAL AI
-Related durable artifacts: `ARCHITECTURE.md`, `game/README.md`, `identity/README.md`, `docs/ai/KNOWLEDGE_MAP.md`, `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md`, `game/docs/decisions/GAME-ADR-0001-game-capability-persistence-transaction-boundary.md`, `game/docs/decisions/GAME-ADR-0002-session-runtime-durable-boundary.md`, `game/docs/decisions/GAME-ADR-0003-session-runtime-actor-and-lifecycle-foundations.md`, `docs/decisions/architecture/ADR-0005-cross-domain-public-entity-references.md`, `identity/docs/decisions/IDENTITY-ADR-0001-identity-user-public-identity-boundary.md`, `game/docs/decisions/GAME-ADR-0004-session-lobby-lifecycle-contract.md`, `game/docs/decisions/GAME-ADR-0005-session-public-and-internal-identity-boundary.md`, `game/docs/decisions/GAME-ADR-0006-game-language-root-player-roster-contract.md`, `game/docs/decisions/GAME-ADR-0007-session-runtime-turn-and-persistence-model.md`, `game/docs/decisions/GAME-ADR-0008-session-runtime-v1-timer-recovery-simplification.md`, `game/docs/decisions/GAME-ADR-0009-session-runtime-history-archival-and-hard-delete.md`, `game/docs/decisions/GAME-ADR-0010-session-disconnect-reconnect-resync-boundary.md`, `game/language/v1/program/README.md`, `game/language/v1/engine/README.md`, `game/language/v1/engine/LOGICAL_CONTRACT.md`, `docs/engineering/standards/cross-domain-reference-naming.md`
-Blocked by: Game Language disconnect/reconnect semantics decisions
-Next action: Conversational AI should design Game Language disconnect/reconnect semantics (see Next Architecture Milestone questions below); do not enter implementation planning or create WORK yet
-Last durable checkpoint: accepted the disconnect/reconnect transport-and-platform boundary and the resynchronization architecture (AX-BH: physical disconnect does not change logical participation, Coordinator transport grace, semantic-disconnect escalation, reconnect reuses SessionActor/Participant, transport reconnect does not imply gameplay reinstatement, no new durable connection-state table, resync capability with a player-facing projection versioned by RuntimeTurn sequence, and the transport-grace-vs-semantic-disconnect RuntimeTurn rules); promoted to GAME-ADR-0010 and `game/README.md`; no WORK created
+Related durable artifacts: `ARCHITECTURE.md`, `game/README.md`, `identity/README.md`, `docs/ai/KNOWLEDGE_MAP.md`, `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md`, `game/docs/decisions/GAME-ADR-0001-game-capability-persistence-transaction-boundary.md`, `game/docs/decisions/GAME-ADR-0002-session-runtime-durable-boundary.md`, `game/docs/decisions/GAME-ADR-0003-session-runtime-actor-and-lifecycle-foundations.md`, `docs/decisions/architecture/ADR-0005-cross-domain-public-entity-references.md`, `identity/docs/decisions/IDENTITY-ADR-0001-identity-user-public-identity-boundary.md`, `game/docs/decisions/GAME-ADR-0004-session-lobby-lifecycle-contract.md`, `game/docs/decisions/GAME-ADR-0005-session-public-and-internal-identity-boundary.md`, `game/docs/decisions/GAME-ADR-0006-game-language-root-player-roster-contract.md`, `game/docs/decisions/GAME-ADR-0007-session-runtime-turn-and-persistence-model.md`, `game/docs/decisions/GAME-ADR-0008-session-runtime-v1-timer-recovery-simplification.md`, `game/docs/decisions/GAME-ADR-0009-session-runtime-history-archival-and-hard-delete.md`, `game/docs/decisions/GAME-ADR-0010-session-disconnect-reconnect-resync-boundary.md`, `game/docs/decisions/GAME-ADR-0011-game-language-disconnect-reconnect-authored-semantics.md`, `game/docs/decisions/GAME-ADR-0012-game-language-keyed-timer-slots.md`, `game/language/v1/program/README.md`, `game/language/v1/engine/README.md`, `game/language/v1/engine/LOGICAL_CONTRACT.md`, `docs/engineering/standards/cross-domain-reference-naming.md`
+Blocked by: nothing at architecture level for disconnect/reconnect; process crash / Session interruption semantics design is the next open topic
+Next action: Conversational AI should design process crash / Session interruption semantics (see Next Architecture Milestone questions below); do not enter implementation planning or create WORK yet
+Last durable checkpoint: accepted authored Game Language disconnect/reconnect semantics (BI-BP: `UserDisconnected`/`UserReconnected` as standard `NamedSignalSource` signals exposing only `user: user`, root-only delivery with no implicit broadcast, optional handling with no automatic gameplay consequence and no no-op RuntimeTurn, offline interactions remain durable/ACTIVE, no Session-invented progress) and the keyed timer slot capability (BQ-BU: `KeyedTimerSlot<Key>` identified by `(path, slot, key)`, schedule/cancel/expiration semantics mirroring ordinary TimerSlot, and the `session_timer_obligations.engine_key` persistence consequence); promoted to GAME-ADR-0011, GAME-ADR-0012, `game/README.md`, `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md`, and the Game Language package READMEs/LOGICAL_CONTRACT.md as accepted-but-unimplemented; no WORK created
 Last updated: 2026-09-07
 
 # Resume Context
@@ -110,28 +110,51 @@ Game-defined disconnect/reconnect policy (continue/wait/timer/forfeit/remove/pau
 
 Canonical references: GAME-ADR-0010, `game/README.md` (Session Runtime Disconnect, Reconnect, and Resynchronization Boundary section).
 
+## Accepted Game Language Disconnect/Reconnect Authored Semantics
+
+Status: HUMAN-APPROVED and canonically promoted; not yet implemented.
+
+`UserDisconnected` and `UserReconnected` are standard `NamedSignalSource` platform/lifecycle signals (not new `SignalKind` variants), each exposing exactly one authored field `user: user` - Session-local runtime identity derived from `SessionActorID`, never `Identity.UserUUID`, connection/socket IDs, IP, timestamps, transport-grace information, or Coordinator internals. The pre-existing empty-schema `UserDisconnected` placeholder in `program/signal.go`/`compile_signals.go` is compatible scaffolding whose intended schema is now `user: user`; `UserReconnected` is newly accepted conceptually and does not exist in current code.
+
+Session Runtime delivers both signals to the root workflow only - no implicit broadcast to nested child/task-group/ask-group instances, since the engine's `Step` contract addresses one instance path per call with no hidden multi-instance fan-out; nested workflows may later be coordinated explicitly by authored logic or a future language capability.
+
+Handling either signal is optional. An unhandled signal is an ordinary rejected/unmatched signal (`ErrSignalRejected`) with no automatic gameplay consequence - Session Runtime must not infer remove/forfeit/pause/skip/end - and does not create a RuntimeTurn solely to record a no-op. "The game ignores disconnect" means only that disconnect itself does not mutate gameplay; it does not guarantee continued gameplay progress.
+
+An interaction targeted at a SessionActor with no live transport connection is still created as a normal durable SessionInteraction and remains logically ACTIVE; Session Runtime must never suppress, auto-answer, skip, or redirect it, or deactivate the Participant, merely because the actor is offline (`logical interaction existence != successful live delivery`). Progress while an actor is offline is ordinary authored Game Language policy (e.g., an authored timer/timeout), not a Session Runtime inference; if no timeout applies and the player never reconnects, execution may legitimately remain waiting, and Session Runtime must not "intelligently" invent progress. A future max-runtime/inactivity/runaway protection may eventually terminate an abandoned Session but must never fabricate gameplay responses or silently perform authored actions - that topic remains deferred.
+
+Canonical references: GAME-ADR-0011, `game/README.md` (Authored Game Language Disconnect/Reconnect Contract subsection), `game/language/v1/program/README.md`, `game/language/v1/engine/README.md`, `game/language/v1/engine/LOGICAL_CONTRACT.md`.
+
+## Accepted Game Language Keyed Timer Slot Capability
+
+Status: HUMAN-APPROVED and canonically promoted; not yet implemented.
+
+The existing ordinary `TimerSlotDeclaration` holds at most one pending timer per statically named slot per workflow instance, which was found insufficient for a root-level policy needing multiple simultaneous independent timers (for example, a per-player disconnect timeout for P1 and P2 at once). This is not solved as a Session Runtime special case; Game Language instead gains a general `KeyedTimerSlot<Key>` capability - independently addressable pending timers identified by `(workflow instance/path, slot, key)`, at most one timer per exact tuple, with different keys fully independent. Scheduling into an already-occupied `(slot, key)` is an execution error with no implicit reset/replace/coalesce, mirroring the existing `TimerSlot` occupied-slot rule; cancellation affects only the selected key and is idempotent when none is pending; expiration exposes the authored key (conceptually `KeyedTimerExpired(slot)` carrying `key: KeyType`) without ever exposing internal timer-obligation UUIDs, wall-clock scheduling data, or database identifiers. This is a general primitive - also usable for cooldowns, team timers, per-object timers, keyed negotiations - explicitly not a `DisconnectTimer` special case; disconnect motivated but does not own the capability. Naming/API/Go type names are not frozen.
+
+The accepted Session Runtime persistence model gains a nullable `session_timer_obligations.engine_key` discriminator (null for ordinary timers, populated for keyed timers) so a keyed timer's expiration can be reconstructed with the correct authored key on recovery; this is internal Session/engine routing metadata, never exposed to Coordinator/frontend merely because it is persisted. The long-term archive must eventually preserve whatever key metadata is necessary to replay archived keyed-timer history; the concrete archive JSON format remains deferred.
+
+Canonical references: GAME-ADR-0012, `game/README.md` (Keyed Timer Slots subsection, and the Session Runtime Turn And Persistence Model section), `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md` (Keyed Timer Discriminator section), `game/language/v1/program/README.md`, `game/language/v1/engine/README.md`, `game/language/v1/engine/LOGICAL_CONTRACT.md`.
+
 ## Deferred Design Topics
 
-Authored Game Language disconnect/reconnect policy remains DEFERRED - see Next Architecture Milestone. This is narrower than before: the transport-and-platform boundary itself (grace, semantic escalation, reconnect identity, resync) is now accepted; what remains open is how authored games observe and react to these platform events.
+Authored Game Language disconnect/reconnect semantics are now CLOSED at architecture level (see the two sections above) - this milestone is done, not deferred.
 
-Current human preference/intuition, not an accepted design: some reconnect/inactivity semantics may need to be expressible by the game itself because different games can require different behavior.
-
-Other deferred topics: RUNNING-phase concurrent-input serialization strategy, bounded-loop protection while draining InternalSignals, post-commit Coordinator-delivery-failure handling, exhaustive `source_kind`/terminal-reason/interaction-kind enums, host transfer, max-runtime/runaway-session policy, the final JSON archive schema and GCS implementation, mutable global display/profile ownership, Identity reconciliation/merge/alias semantics, Session Configuration/arbitrary external game-specific root params, the final idempotency JSON canonicalization/comparison algorithm, process crash/session-interruption semantics, and runaway/abuse protections (deferred unless they turn out to be a direct consequence of the Game Language disconnect contract).
+Other deferred topics: RUNNING-phase concurrent-input serialization strategy, bounded-loop protection while draining InternalSignals, post-commit Coordinator-delivery-failure handling, exhaustive `source_kind`/terminal-reason/interaction-kind enums, host transfer, max-runtime/runaway-session policy, the final JSON archive schema and GCS implementation, mutable global display/profile ownership, Identity reconciliation/merge/alias semantics, Session Configuration/arbitrary external game-specific root params, the final idempotency JSON canonicalization/comparison algorithm, the concrete `KeyedTimerSlot<Key>` compiler/engine design and `engine_key` serialized representation, process crash/session-interruption semantics (now the next milestone - see below), and runaway/abuse protections (deferred unless they turn out to be a direct consequence of that next milestone).
 
 ## Next Architecture Milestone
 
-Design Game Language disconnect/reconnect semantics before implementation planning:
+Authored Game Language disconnect/reconnect semantics are CLOSED at architecture level. The next Operational Lifecycle topic is process crash / Session interruption semantics:
 
-1. How does Session Runtime represent disconnect/reconnect to the engine?
-2. Are they standardized platform signals?
-3. How does an authored game opt in/handle them?
-4. What happens if a game defines no disconnect handler?
-5. Can disconnect behavior create normal Game Language timers/interactions?
-6. How does a reconnect interact with a timer previously started because of disconnect?
-7. Which policies are universal Session invariants versus authored game behavior?
-8. What minimum safe/default behavior exists if a game ignores these events?
+1. What happens to RUNNING Sessions when the process dies and restarts?
+2. What durable state is sufficient to reconstruct the Session?
+3. How does Coordinator rediscover/rebuild active timer obligations?
+4. How do live clients reconnect to a restarted process?
+5. Does Session need any explicit `INTERRUPTED`/`RECOVERING` lifecycle state?
+6. What happens if a RuntimeTurn transaction was in-flight when the process died?
+7. How do we distinguish recoverable process loss from a permanently invalid/corrupted Session?
+8. Which failures terminalize a Session versus simply require reconstruction?
+9. How does the accepted "restart full timer delay" tradeoff (GAME-ADR-0008) fit recovery?
 
-Do not yet design process crash/interruption behavior or runaway/abuse limits unless needed as a direct consequence of the Game Language disconnect contract. Do not enter Feature Development, create WORK, or implement production code until this milestone is accepted and the repository workflow authorizes implementation.
+Do not yet mix this with general abuse/runaway limits unless directly required. Do not enter Feature Development, create WORK, or implement production code until this milestone is accepted and the repository workflow authorizes implementation.
 
 ## Current Implementation Facts And Drift To Carry Forward
 
@@ -141,14 +164,14 @@ Do not yet design process crash/interruption behavior or runaway/abuse limits un
 - Existing owner/player UUID fields are not aligned with the accepted `UserUUID` public boundary and internal `SessionActorID` runtime boundary.
 - Join, Leave, Start, idempotency, and the standardized `players: list<user>` root roster contract are not implemented.
 - None of the accepted RuntimeTurn/persistence-model tables (`session_requests`, `session_runtime_turns`, `session_runtime_steps`, `session_runtime_state`, `session_interactions`, `session_timer_obligations`, `session_history_archives`) exist in current migrations/schema; `game/docs/DATA_MODEL.md` still reflects only the pre-existing `sessions`/`session_players`/`session_states`/`join_codes` current-implementation shape.
-- `game/language/v1/program/signal.go`'s `NamedSignalSource` doc comment and `game/language/v1/engine/internal/compiler/compile_signals.go`'s `namedLifecycleSignals` catalog already contain a placeholder named signal `UserDisconnected` with an empty/unvalidated schema, predating this checkpoint. This is existing implementation scaffolding, not an accepted Game Language disconnect contract - GAME-ADR-0010 explicitly declines to freeze any name (including `PlayerDisconnected` or `UserDisconnected`) before that contract is designed. The next milestone (Game Language disconnect/reconnect semantics) must explicitly reconcile whether this placeholder is kept, renamed, or replaced.
+- `game/language/v1/program/signal.go`'s `NamedSignalSource` doc comment and `game/language/v1/engine/internal/compiler/compile_signals.go`'s `namedLifecycleSignals` catalog still contain only a placeholder named signal `UserDisconnected` with an empty/unvalidated schema; `UserReconnected` does not exist anywhere in current code, and no `KeyedTimerSlot`/keyed-timer declaration, operation, or signal source exists anywhere in `program`/`engine`. GAME-ADR-0011 and GAME-ADR-0012 now accept the intended schema/capability (`UserDisconnected`/`UserReconnected` as `{user: user}`; a general keyed-timer-slot capability) but implementing them - extending the compiler's named-signal catalog, adding the keyed-timer declaration/operation/signal-source, and the `session_timer_obligations.engine_key` migration - remains unimplemented future work, not done by this checkpoint.
 - `game/CURRENT_STATE.md` previously reported no known drift. This workspace records drift but does not update current-state documentation because current-state docs were excluded from this checkpoint.
 
 ## Explicitly Not Done
 
 - No WORK was created.
 - No production code, tests, migrations, authentication code, WebSocket handlers, Coordinator code, timers, or Session Runtime implementation were changed.
+- No compiler/engine/program Go code was changed; the pre-existing empty-schema `UserDisconnected` placeholder in the compiler catalog was left untouched, `UserReconnected` was not added to it, and no keyed-timer declaration/operation/signal source was added anywhere.
 - No current-state docs (`game/CURRENT_STATE.md`, `game/docs/DATA_MODEL.md`) were modified to pretend implementation exists.
-- No Game Language disconnect/reconnect contract (signal names, syntax, handlers, default policy) was designed; the pre-existing `UserDisconnected` placeholder in the compiler catalog was not changed.
-- No final reconnect/Operational Lifecycle contract beyond the accepted transport/platform boundary was designed.
 - No GCS integration, archival worker, or final JSON archive schema was designed or implemented.
+- No process crash / Session interruption semantics were designed - that is the next milestone.

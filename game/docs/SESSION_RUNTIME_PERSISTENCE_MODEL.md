@@ -9,6 +9,7 @@ Rationale and alternatives are recorded in:
 - `game/docs/decisions/GAME-ADR-0007-session-runtime-turn-and-persistence-model.md` (RuntimeTurn as the historical unit, RuntimeStep as technical trace, the core tables, Turn/Interaction/Timer relationships).
 - `game/docs/decisions/GAME-ADR-0008-session-runtime-v1-timer-recovery-simplification.md` (no durable `live_timer_schedules`, V1 recovery tradeoff).
 - `game/docs/decisions/GAME-ADR-0009-session-runtime-history-archival-and-hard-delete.md` (long-term archive metadata and verified hard-delete policy).
+- `game/docs/decisions/GAME-ADR-0012-game-language-keyed-timer-slots.md` (keyed timer slot capability and the `session_timer_obligations.engine_key` persistence consequence below).
 
 ## Central Concept: RuntimeTurn vs RuntimeStep
 
@@ -147,6 +148,7 @@ classDiagram
         session_id
         engine_path
         engine_slot
+        engine_key
         delay_ms
         state
         created_by_turn_id
@@ -198,6 +200,15 @@ A Turn may instead close a timer with `state = CANCELLED` without that timer eve
 
 `lobby_expires_at` on `sessions` is unrelated to this rule - it is an existing accepted Session lifecycle deadline, not a Game Language timer schedule.
 
+## Keyed Timer Discriminator
+
+`session_timer_obligations.engine_key` is a nullable internal Session/engine routing field accepted alongside `engine_path`/`engine_slot`/`delay_ms`/`state`/Turn relationships, to support the accepted Game Language keyed-timer-slot capability (GAME-ADR-0012):
+
+- Ordinary `TimerSlot` timer: `engine_path = ...`, `engine_slot = ...`, `engine_key = NULL`.
+- Keyed timer: `engine_path = ...`, `engine_slot = ...`, `engine_key = <serialized authored key>`.
+
+`engine_key` is internal Session/engine routing metadata only - it exists so Session Runtime can reconstruct the correct `KeyedTimerExpired(slot)` signal (carrying the authored `key`) on recovery. It must never be exposed directly to Coordinator/frontend merely because it is persisted. The concrete serialized/typed representation of `engine_key` is not frozen by this document; it depends on the not-yet-designed keyed-timer-slot compiler/engine implementation.
+
 ## Archive Metadata
 
 ```mermaid
@@ -231,7 +242,7 @@ classDiagram
     sessions "1" --> "0..1" session_history_archives : "session_history_archives.session_id -> sessions.id"
 ```
 
-`status` is `PENDING | READY | FAILED` or an equivalent enum. `storage_provider`/`storage_key` identify the archive object; an expiring/public URL is not persisted. The final JSON archive schema and GCS implementation are deferred (see GAME-ADR-0009).
+`status` is `PENDING | READY | FAILED` or an equivalent enum. `storage_provider`/`storage_key` identify the archive object; an expiring/public URL is not persisted. The final JSON archive schema and GCS implementation are deferred (see GAME-ADR-0009). The archive must eventually preserve whatever `engine_key`/keyed-timer metadata is necessary to understand/replay archived keyed-timer history (see GAME-ADR-0012); the concrete archive JSON format remains deferred here regardless.
 
 ## Archival And Hard-Delete Policy
 
@@ -268,3 +279,4 @@ Logical cross-domain references (no database FK, different domain):
 - The GCS (or other object storage) integration and archival/verification worker implementation.
 - The idempotency JSON canonicalization/comparison algorithm for `session_requests`.
 - The exhaustive `source_kind` and interaction/terminal-reason enums.
+- The concrete `KeyedTimerSlot<Key>` declaration/operation/signal-source design and the serialized/typed representation of `engine_key` (see GAME-ADR-0012).

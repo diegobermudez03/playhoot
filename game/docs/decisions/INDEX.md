@@ -20,8 +20,10 @@ This index is the Game decision family under the repository-wide routing model d
 | [GAME-ADR-0008](GAME-ADR-0008-session-runtime-v1-timer-recovery-simplification.md) | V1 Game Language Timer Schedule Recovery Simplification | ACCEPTED | 2026-09-07 | ADR-0011 | `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md`, `game/README.md` |
 | [GAME-ADR-0009](GAME-ADR-0009-session-runtime-history-archival-and-hard-delete.md) | Session Runtime History Archival Direction and Verified Hard-Delete | ACCEPTED | 2026-09-07 | ADR-0012 | `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md`, `game/README.md` |
 | [GAME-ADR-0010](GAME-ADR-0010-session-disconnect-reconnect-resync-boundary.md) | Session Disconnect, Reconnect, and Resynchronization Boundary | ACCEPTED | 2026-09-07 | ADR-0013 | `game/README.md` |
+| [GAME-ADR-0011](GAME-ADR-0011-game-language-disconnect-reconnect-authored-semantics.md) | Game Language Disconnect/Reconnect Authored Semantics | ACCEPTED | 2026-09-07 | None | `game/README.md`, `game/language/v1/program/README.md`, `game/language/v1/engine/README.md`, `game/language/v1/engine/LOGICAL_CONTRACT.md` |
+| [GAME-ADR-0012](GAME-ADR-0012-game-language-keyed-timer-slots.md) | Game Language Keyed Timer Slots | ACCEPTED | 2026-09-07 | None | `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md`, `game/README.md`, `game/language/v1/program/README.md`, `game/language/v1/engine/README.md`, `game/language/v1/engine/LOGICAL_CONTRACT.md` |
 
-Next Game ADR: `GAME-ADR-0011`.
+Next Game ADR: `GAME-ADR-0013`.
 
 These IDs were migrated from the previously centralized global architecture family (`docs/decisions/architecture/`) on 2026-09-07. Historical status, rationale, alternatives, consequences, and created dates were preserved unchanged; only the identifier/location/cross-reference wiring changed. See `docs/decisions/LEGACY_ADR_ID_MAP.md` for the full old-ID -> new-ID mapping.
 

@@ -107,6 +107,22 @@ For V1, arbitrary externally supplied game-specific root parameters are deferred
 
 Rationale and alternatives are recorded in `game/docs/decisions/GAME-ADR-0006-game-language-root-player-roster-contract.md`.
 
+## Accepted Disconnect/Reconnect Lifecycle Signal Contract
+
+Status: ACCEPTED DESIGN, NOT YET IMPLEMENTED. This package's `NamedSignalSource` doc comment and the compiler's `namedLifecycleSignals` catalog (`game/language/v1/engine/internal/compiler/compile_signals.go`) currently list `UserDisconnected` with an empty, unvalidated schema, and do not list `UserReconnected` at all — this is pre-existing scaffolding, not this accepted contract.
+
+`UserDisconnected` and `UserReconnected` are accepted as standard `NamedSignalSource` platform/lifecycle signals — the same mechanism as `WorkflowStarted`/`SessionCancelled`/`ParentCancelled` — each exposing exactly one authored field, `user: user` (the Session-local runtime identity derived from `SessionActorID`, never `Identity.UserUUID` or any Coordinator/transport internal). Session Runtime delivers both only to the root workflow instance, never as an implicit broadcast to nested instances. Handling either signal is optional; an authored game with no matching transition experiences an ordinary rejected/unmatched signal with no automatic gameplay consequence.
+
+Rationale and alternatives are recorded in `game/docs/decisions/GAME-ADR-0011-game-language-disconnect-reconnect-authored-semantics.md`.
+
+## Accepted Keyed Timer Slot Capability
+
+Status: ACCEPTED DESIGN, NOT YET IMPLEMENTED. No keyed-timer declaration, operation, or signal source exists in this package today — only the ordinary single-pending-timer `TimerSlotDeclaration` (see `timer.go`) exists.
+
+Game Language is accepted to gain a general `KeyedTimerSlot<Key>` concept: independently addressable pending timers identified by `(workflow instance/path, slot, key)`, where at most one timer may be pending per exact tuple but different keys are fully independent (for example `disconnect_timeout[P1]` and `disconnect_timeout[P2]` pending simultaneously). Scheduling into an already-occupied `(slot, key)` is an execution error with no implicit reset/replace/coalesce, mirroring the existing `TimerSlot` occupied-slot rule; cancellation affects only the selected key and is idempotent; expiration exposes the authored key without exposing internal timer-obligation UUIDs or scheduling data. This is a general primitive (also usable for cooldowns, team timers, per-object timers), not a disconnect-specific mechanism. Naming/API/Go type names are not frozen.
+
+Rationale and alternatives are recorded in `game/docs/decisions/GAME-ADR-0012-game-language-keyed-timer-slots.md`.
+
 ### Resources vs. global state
 
 `ResourceDeclaration` is immutable, load-time data — constants, not something that changes during a game. `Definition.GlobalState` is the mutable state that exists once per game session and can be read/written by workflow transitions.
