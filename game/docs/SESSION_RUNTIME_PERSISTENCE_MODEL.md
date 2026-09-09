@@ -14,6 +14,7 @@ Rationale and alternatives are recorded in:
 - `game/docs/decisions/GAME-ADR-0014-session-runtime-durable-inactivity-expiration.md` (`activity_expires_at` as the RUNNING-phase inactivity deadline and source of truth, renewal, lazy materialization, Reaper role, and the Archive Worker boundary below).
 - `game/docs/decisions/GAME-ADR-0015-session-actor-semantic-presence-and-lobby-membership.md` (`session_actors.semantic_presence`, its distinction from `session_participants.active`, and phase-dependent LOBBY/RUNNING disconnect consequences below).
 - `game/docs/decisions/GAME-ADR-0016-session-semantic-presence-recovery-after-total-coordinator-state-loss.md` (recovery-grace behavior after total Coordinator/process loss and the RUNNING atomic semantic-presence/Game-Language-processing rule in the Process-Agnostic Recovery section below; introduces no new durable field/table).
+- `game/docs/decisions/GAME-ADR-0017-session-runtime-failure-classification-and-diagnostic-persistence.md` (the four-class failure taxonomy, the `session_runtime_failures` diagnostic entity introduced below, the RuntimeTurn failure boundary, atomic fatal materialization, and the archival/queryability exception below).
 
 ## Central Concept: RuntimeTurn vs RuntimeStep
 
@@ -210,6 +211,68 @@ Turn 25  -> closes T1                   (T1.closed_by_turn_id = 25, T1.state = C
 
 A Turn may instead close a timer with `state = CANCELLED` without that timer ever being the Turn's `source`.
 
+## Session Runtime Failure Diagnostics
+
+`session_runtime_failures` is a conceptual future entity, separate from `session_runtime_turns` and not owning an authoritative Snapshot, that durably records a fatal (`RUNTIME_EXECUTION`/`RUNTIME_STATE_INVALID`) runtime failure - the technical diagnosis of *why* a Session became `TERMINAL` from an internal execution/state failure, not an authoritative gameplay record. See GAME-ADR-0017 for the full four-class failure taxonomy (expected rejection, deterministic execution failure, durable state invalidity, transient infrastructure failure) and the reasoning behind this entity.
+
+```mermaid
+classDiagram
+    class sessions {
+        id
+        uuid
+        phase
+        terminal_at
+        terminal_reason
+    }
+    class session_runtime_turns {
+        id
+        session_id
+        sequence
+    }
+    class session_interactions {
+        id
+        session_id
+    }
+    class session_timer_obligations {
+        id
+        session_id
+    }
+    class session_actors {
+        id
+        session_id
+    }
+    class session_runtime_failures {
+        id
+        session_id
+        failure_kind
+        error_code
+        error_message
+        base_turn_id
+        attempted_sequence
+        failed_step_index
+        source_kind
+        source_interaction_id
+        source_timer_obligation_id
+        actor_id
+        diagnostic_payload
+        created_at
+    }
+
+    sessions "1" --> "0..*" session_runtime_failures : "session_runtime_failures.session_id -> sessions.id"
+    session_runtime_turns "1 base" --> "*" session_runtime_failures : "session_runtime_failures.base_turn_id -> session_runtime_turns.id"
+    session_interactions "0..1 source" --> "*" session_runtime_failures : "session_runtime_failures.source_interaction_id -> session_interactions.id"
+    session_timer_obligations "0..1 source" --> "*" session_runtime_failures : "session_runtime_failures.source_timer_obligation_id -> session_timer_obligations.id"
+    session_actors "0..1" --> "*" session_runtime_failures : "session_runtime_failures.actor_id -> session_actors.id"
+```
+
+Cardinality notes:
+
+- A Session normally has zero fatal `session_runtime_failures` records for its entire lifetime (the common case), or exactly one, since a fatal execution/state-invalidity failure terminalizes the Session (GAME-ADR-0017) and a `TERMINAL` Session does not resume executing to fail again. This document does not freeze a database uniqueness constraint on `(session_id)` unless a later repository-convention review clearly warrants one; the relationship above is drawn as `0..*` to avoid over-constraining an unimplemented design.
+- `base_turn_id` is required (a fatal attempt always executes from some last-valid committed Turn, even if that Turn is only the Start-produced initial Turn).
+- `source_interaction_id`/`source_timer_obligation_id`/`actor_id` are nullable, mirroring the equivalent nullable `source_*` fields already accepted on `session_runtime_turns`.
+- `attempted_sequence` and `failed_step_index` are plain diagnostic integers, not foreign keys - they do not reference any row in `session_runtime_turns`/`session_runtime_steps`, since the attempted Turn/Step never committed and therefore never existed as a persisted row (see GAME-ADR-0017's RuntimeTurn failure boundary).
+- `SessionRuntimeFailure` is not a RuntimeTurn: it owns no Snapshot, does not advance `session_runtime_state.current_turn_id`, and is never itself the `base_turn_id`/`source_*` target of another Turn or failure record.
+
 ## No Durable `live_timer_schedules` In V1
 
 `live_timer_schedules` (a previously proposed Coordinator-owned durable physical-schedule table) is rejected for V1 and is not part of this schema. Session Runtime persists only the timer obligation and its `delay_ms`; it does not calculate or persist an absolute deadline. The Coordinator owns physical timers in memory. On recovery, active obligations may be rescheduled using their full configured `delay_ms` from the new scheduling moment; preserving elapsed wall-clock time across a full process restart is not required for V1. See GAME-ADR-0008.
@@ -299,6 +362,8 @@ Explicitly excluded from this deletion policy, and retained indefinitely for pro
 - `session_actors`
 - `session_participants`
 
+`session_runtime_failures` (see Session Runtime Failure Diagnostics above) is likewise excluded from this automatic hard-delete policy. Lightweight fatal-runtime-failure metadata remains relationally queryable in PostgreSQL after heavy runtime-history archival, supporting operational/product queries such as failure counts by error code or by game definition (see GAME-ADR-0017). This is unlike the heavy per-Turn/per-Step tables above because failure records are low-volume by construction - a Session normally produces at most one. A separate retention/compaction strategy for large `diagnostic_payload` content may be designed later if payload volume ever warrants it; it is not designed here.
+
 Retention of `session_requests`, `join_codes`, and other lightweight lifecycle metadata is unchanged by this decision.
 
 ## Relationship Types
@@ -320,3 +385,4 @@ Logical cross-domain references (no database FK, different domain):
 - The concrete `KeyedTimerSlot<Key>` declaration/operation/signal-source design and the serialized/typed representation of `engine_key` (see GAME-ADR-0012).
 - The exact enumeration of renewal-triggering operations for `activity_expires_at` and the concrete `inactivity_ttl` configuration surface (see GAME-ADR-0014).
 - The persistence-state transitions/closure reasons for still-open `session_interactions`/`session_timer_obligations` at inactivity termination (see GAME-ADR-0014).
+- The exact SQL types/column names, indexing, and any uniqueness constraint for `session_runtime_failures`; the concrete `diagnostic_payload` JSON schema/version; the exhaustive `failure_kind`/`source_kind` enums; and the large-diagnostic-payload retention/compaction strategy (see GAME-ADR-0017).
