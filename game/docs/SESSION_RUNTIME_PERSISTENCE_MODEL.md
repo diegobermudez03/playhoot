@@ -15,12 +15,18 @@ Rationale and alternatives are recorded in:
 - `game/docs/decisions/GAME-ADR-0015-session-actor-semantic-presence-and-lobby-membership.md` (`session_actors.semantic_presence`, its distinction from `session_participants.active`, and phase-dependent LOBBY/RUNNING disconnect consequences below).
 - `game/docs/decisions/GAME-ADR-0016-session-semantic-presence-recovery-after-total-coordinator-state-loss.md` (recovery-grace behavior after total Coordinator/process loss and the RUNNING atomic semantic-presence/Game-Language-processing rule in the Process-Agnostic Recovery section below; introduces no new durable field/table).
 - `game/docs/decisions/GAME-ADR-0017-session-runtime-failure-classification-and-diagnostic-persistence.md` (the four-class failure taxonomy, the `session_runtime_failures` diagnostic entity introduced below, the RuntimeTurn failure boundary, atomic fatal materialization, and the archival/queryability exception below).
+- `game/docs/decisions/GAME-ADR-0018-session-running-mutation-serialization.md` (RUNNING mutations serialize per Session using the same DB-locking mechanism as LOBBY; a RuntimeTurn reloads current state after obtaining serialization; authoritative ordering is defined by serialization/Turn sequence, not arrival timestamps).
+- `game/docs/decisions/GAME-ADR-0019-runtimeturn-execution-bound-and-terminal-cleanup.md` (the `MAX_STEPS_PER_RUNTIME_TURN` bound and its fatal-overflow diagnostic below; the no-ACTIVE-obligations-after-terminalization invariant and closure-provenance fields introduced below; `session_runtime_failures.base_turn_id` nullability and pre-first-Turn fatal Start semantics).
 
 ## Central Concept: RuntimeTurn vs RuntimeStep
 
 One `RuntimeTurn` begins from one external/runtime cause and may execute 1..N internal `engine.Step` calls, all within the same transaction. Only the final Snapshot after the whole Turn is an observable/authoritative Session state; one committed Turn corresponds to one Session runtime `sequence` and one historical Snapshot.
 
 `RuntimeStep` is technical execution history only (engine debugging/audit). It does not own a Session-state sequence.
+
+A RuntimeTurn's internal `engine.Step` chain is bounded by a Session-level `MAX_STEPS_PER_RUNTIME_TURN = 20` (V1 value, code/configuration-defined, not durably persisted per Session), counting every `Step` call in the Turn - the initial externally-caused `Step` plus every subsequent `Step` caused by draining a prior `Step`'s `InternalSignals` - distinct from `engine.Limits`, which bounds work inside one `Step` call only. Exceeding this bound is a deterministic fatal failure recorded through `session_runtime_failures` below (`failure_kind = RUNTIME_EXECUTION`, a stable `runtime_turn_step_limit_exceeded`-equivalent `error_code`); no partial RuntimeTurn is persisted. See GAME-ADR-0019.
+
+RUNNING-phase RuntimeTurn creation participates in the same per-Session serialization boundary already used for LOBBY mutations (database-backed pessimistic locking within Session Runtime's transaction boundary); a RuntimeTurn always executes against `session_runtime_state.current_turn_id`/Snapshot reloaded after that serialization is acquired, never against a pre-lock read. See GAME-ADR-0018.
 
 ## SessionActor Semantic Presence vs Participant Admission
 
@@ -157,6 +163,7 @@ classDiagram
         state
         opened_by_turn_id
         closed_by_turn_id
+        closure_reason
         created_at
     }
     class session_timer_obligations {
@@ -170,6 +177,7 @@ classDiagram
         state
         created_by_turn_id
         closed_by_turn_id
+        closure_reason
         created_at
     }
 
@@ -210,6 +218,10 @@ Turn 25  -> closes T1                   (T1.closed_by_turn_id = 25, T1.state = C
 ```
 
 A Turn may instead close a timer with `state = CANCELLED` without that timer ever being the Turn's `source`.
+
+### Terminal Cleanup: Closure Provenance
+
+`closed_by_turn_id` on both `session_interactions` and `session_timer_obligations` is nullable. A non-null value means a committed RuntimeTurn closed the obligation (gameplay/runtime closure, per the worked example above). Once a Session becomes `TERMINAL` for any reason, every still-`ACTIVE` interaction/timer obligation is closed/cancelled atomically in the same transaction that materializes `TERMINAL` - this is Session lifecycle cleanup, not gameplay: no RuntimeTurn is created, no engine `Step` runs, and no interaction response/timer expiration is fabricated. For this termination-caused closure, `closed_by_turn_id = NULL` and `closure_reason` (or an equivalent persisted value) records a value equivalent to `SESSION_TERMINATED`, distinguishing it from ordinary Turn-produced closure. `closure_reason` only explains why this specific row stopped being active - it does not duplicate the Session's own `terminal_reason`; investigating why the Session terminated follows the Session lifecycle/failure metadata instead. A `TERMINAL` Session must never retain an `ACTIVE` interaction/timer obligation. See GAME-ADR-0019.
 
 ## Session Runtime Failure Diagnostics
 
@@ -259,7 +271,7 @@ classDiagram
     }
 
     sessions "1" --> "0..*" session_runtime_failures : "session_runtime_failures.session_id -> sessions.id"
-    session_runtime_turns "1 base" --> "*" session_runtime_failures : "session_runtime_failures.base_turn_id -> session_runtime_turns.id"
+    session_runtime_turns "0..1 base" --> "*" session_runtime_failures : "session_runtime_failures.base_turn_id -> session_runtime_turns.id (nullable - null means no RuntimeTurn ever committed before this fatal failure)"
     session_interactions "0..1 source" --> "*" session_runtime_failures : "session_runtime_failures.source_interaction_id -> session_interactions.id"
     session_timer_obligations "0..1 source" --> "*" session_runtime_failures : "session_runtime_failures.source_timer_obligation_id -> session_timer_obligations.id"
     session_actors "0..1" --> "*" session_runtime_failures : "session_runtime_failures.actor_id -> session_actors.id"
@@ -268,7 +280,8 @@ classDiagram
 Cardinality notes:
 
 - A Session normally has zero fatal `session_runtime_failures` records for its entire lifetime (the common case), or exactly one, since a fatal execution/state-invalidity failure terminalizes the Session (GAME-ADR-0017) and a `TERMINAL` Session does not resume executing to fail again. This document does not freeze a database uniqueness constraint on `(session_id)` unless a later repository-convention review clearly warrants one; the relationship above is drawn as `0..*` to avoid over-constraining an unimplemented design.
-- `base_turn_id` is required (a fatal attempt always executes from some last-valid committed Turn, even if that Turn is only the Start-produced initial Turn).
+- `base_turn_id` is nullable (GAME-ADR-0019, refining GAME-ADR-0017's original "always required" description). A non-null value means a last-valid committed Turn existed before the fatal attempt, including a Turn as early as the Start-produced initial Turn. A null value means the fatal failure occurred before any RuntimeTurn ever committed for this Session - for example, a deterministic failure during Start's own initialization/internal-signal chain (which is itself subject to `MAX_STEPS_PER_RUNTIME_TURN`, see above). `attempted_sequence = 1` remains valid diagnostic annotation even when `base_turn_id` is null.
+- `error_code` may hold either the engine's existing `ExecutionErrorCode` or a Session-owned stable code such as `runtime_turn_step_limit_exceeded` for the RuntimeTurn Step-chain-overflow case (GAME-ADR-0019), so operators can distinguish it from every other `RUNTIME_EXECUTION` cause.
 - `source_interaction_id`/`source_timer_obligation_id`/`actor_id` are nullable, mirroring the equivalent nullable `source_*` fields already accepted on `session_runtime_turns`.
 - `attempted_sequence` and `failed_step_index` are plain diagnostic integers, not foreign keys - they do not reference any row in `session_runtime_turns`/`session_runtime_steps`, since the attempted Turn/Step never committed and therefore never existed as a persisted row (see GAME-ADR-0017's RuntimeTurn failure boundary).
 - `SessionRuntimeFailure` is not a RuntimeTurn: it owns no Snapshot, does not advance `session_runtime_state.current_turn_id`, and is never itself the `base_turn_id`/`source_*` target of another Turn or failure record.
@@ -386,3 +399,5 @@ Logical cross-domain references (no database FK, different domain):
 - The exact enumeration of renewal-triggering operations for `activity_expires_at` and the concrete `inactivity_ttl` configuration surface (see GAME-ADR-0014).
 - The persistence-state transitions/closure reasons for still-open `session_interactions`/`session_timer_obligations` at inactivity termination (see GAME-ADR-0014).
 - The exact SQL types/column names, indexing, and any uniqueness constraint for `session_runtime_failures`; the concrete `diagnostic_payload` JSON schema/version; the exhaustive `failure_kind`/`source_kind` enums; and the large-diagnostic-payload retention/compaction strategy (see GAME-ADR-0017).
+- The exact SQL lock anchor/statement used to implement RUNNING (and LOBBY) per-Session serialization (see GAME-ADR-0018).
+- The concrete constant/configuration surface for `MAX_STEPS_PER_RUNTIME_TURN`, the exact `closure_reason`/equivalent enum values for `session_interactions`/`session_timer_obligations`, and the exact `runtime_turn_step_limit_exceeded`-equivalent stable error-code string (see GAME-ADR-0019).
