@@ -1,64 +1,29 @@
-# Slice 1 — Session Lobby Foundation: DRAFT WORK Review
+# Slice 1 — Session Lobby Foundation: APPROVED, READY For Implementation
 
 Process: Feature Development (Slice 1 of `session-runtime-v1`; architecture is CLOSED, the broader initiative remains governed by `PLAN.md`)
 
-Status: awaiting your READY decision on `docs/work/active/WORK-0001-session-lobby-foundation.md`. It is currently DRAFT and has no implementation authority - nothing will be built until you approve it.
+Status: **RESOLVED**. There is no pending checkpoint or open question. `docs/work/active/WORK-0001-session-lobby-foundation.md` is **READY** for implementation. This file is retained as the record of what was approved, until the next checkpoint (implementation completion / independent review) produces its own.
 
-## What This Checkpoint Did
+## What Was Approved
 
-1. Recorded your approved implementation sequence into `PLAN.md` (see below).
-2. Repaired three stale, contradictory sentences left over from early Architecture Discussion checkpoints in `AI_CONTEXT.md` (labeled as historical, not deleted).
-3. Graduated Slice 1 into Feature Development: created `WORK-0001-session-lobby-foundation.md` as DRAFT.
+You approved WORK-0001 subject to the following implementation-design corrections, all of which have been applied to the WORK specification:
 
-No code, tests, or migrations were touched. Nothing is READY.
+1. **Pinned Game Definition is immutable for the Session.** `sessions.game_definition_uuid` is resolved exactly once, at Create, and never re-resolved against the game's "current version" by any later operation. A later publication of a new version must never change lobby capacity, Start behavior, or any other semantics of an already-created Session.
+2. **A minimum new Game Management read capability is required** - loading an immutable Game Definition by its own Definition/Version UUID (not by Game UUID + "current"). The existing `getgame.GetPlayableGameWithCurrentVersion` stays Create-only; Join (and later Start) uses the new capability instead.
+3. **Idempotency identity is `(user_uuid, operation, idempotency_key)`**, not `(operation, idempotency_key)` - two different users can never collide on the same opaque key.
+4. **Per-operation idempotency payload fields are spelled out explicitly** (no generic JSON-diffing): CREATE compares GameUUID (+ the host identity already implied); JOIN compares JoinCode + UserUUID + display name; LEAVE compares SessionUUID + UserUUID.
+5. **Concurrent Create is now explicitly correct**: the WORK requires claiming the idempotency identity (inserting the `session_requests` row) before any Session-creation effect happens, so two concurrent Creates with the same identity can never both create separate Sessions.
+6. **Transient failures can't become permanent cached results**: a new `status` field on `session_requests` and explicit wording make clear that a rollback or infrastructure failure before commit leaves nothing behind to replay - a retry just runs fresh.
+7. **The Session/HostActor circular-reference insertion is fully specified**: insert Session with `host_actor_id = NULL` → insert host actor → update Session's `host_actor_id` → commit, all in one transaction, with a strict invariant that no successfully committed Session is ever missing its host actor.
+8. **New/updated acceptance criteria** cover all of the above: pinned-definition enforcement across a version change, cross-domain read correctness (pinned vs. "current"), idempotency-namespace non-collision across users, concurrent-Create producing exactly one Session, conflicting-payload rejection, and transient-failure non-replayability.
 
-## Approved Sequencing (Recorded In PLAN.md)
+Everything else from the original DRAFT stands unchanged: the `sessions`-row DB lock with `FOR UPDATE`, reuse of the existing `utils.RunInDBTransaction` helper, a locking primitive shaped for reuse in Slice 2's RUNNING serialization, trusted `UserUUID` input with no Identity/Auth implementation, no externally-supplied `engine.Program`, Create/Join/Leave only (no Start, no RuntimeTurn, no WebSocket, no disconnect/reconnect, no inactivity expiration, no archival), and the pre-launch destructive-migration approach.
 
-1. Session Lobby Foundation *(this WORK)*
-2. Start + First RuntimeTurn
-3. Interaction Response Processing
-4. **Thin Live Coordinator / WebSocket** *(moved earlier - see below)*
-5. Timer Obligations
-6. Failure Diagnostics + Terminal Cleanup
-7. Disconnect / Reconnect + Resync
-8. Inactivity Expiration / Reaper
-9. Keyed Timers
-10. Archival
+## No Remaining Review Questions
 
-The Coordinator/WebSocket slice moving to position 4 is intentional: after Slices 1-3, Session Runtime can create/join/start a session and answer one interaction, but nobody has proven that works from a real connected client. A thin Coordinator there validates the live path early instead of building nearly the whole backend first. It's kept deliberately narrow - no disconnect grace, no semantic-presence recovery, no timer scheduling, no inactivity reaper, no advanced reconnect - all of that is explicitly pushed to Slice 7, where it belongs.
+There is nothing further to approve. `WORK-0001-session-lobby-foundation.md` is READY. The next step is implementation - a Codebase Agent session following `docs/ai/protocols/IMPLEMENTATION_REVIEW.md` against the READY WORK. No code, tests, or migrations have been written yet.
 
-Slice 2 now explicitly must enforce the 20-Step RuntimeTurn limit from day one (no window where Start can run unboundedly); the richer failure-diagnostics persistence layer is deferred to Slice 6, but the guard itself is not.
+## Also Synchronized This Checkpoint
 
-## WORK-0001: What You're Approving
-
-**Scope.** A Session can be created, joined, left, and reconstructed from durable storage. No game execution, no WebSocket - just a correct, durable LOBBY. This replaces the current `game/session/...` code, which **does not currently compile** (`step_create_room.go` declares a function with no body) and contradicts the accepted design in two concrete ways: it accepts an already-compiled `engine.Program` from the caller (Session Runtime is supposed to resolve/compile it itself), and it uses raw owner/player UUID strings instead of the accepted SessionActor/Participant model.
-
-**Identity boundary.** Per your instruction, this WORK does **not** touch Identity/Auth. Every operation just takes an already-trusted `UserUUID` as a parameter - test code and internal callers supply it directly. When a real auth/transport layer exists later (Slice 4+), it plugs in without anything here needing to change.
-
-**Locking design.** The proposed mechanism locks the `sessions` row itself (`SELECT ... FOR UPDATE`) inside a transaction, reusing an existing repository-wide helper (`utils.RunInDBTransaction`) that's already used elsewhere in the codebase but not yet in Session Runtime. One repository method does the locking; Join, Leave, and lazy lobby-expiration all go through it - and it's shaped so Slice 2 can reuse the exact same mechanism for RUNNING serialization instead of needing a second one later.
-
-**Idempotency.** `session_requests` stores each CREATE/JOIN/LEAVE by `(operation, idempotency_key)`. A retry with the same key and the same meaningful fields (e.g., for Join: code + user + display name) replays the stored result; a retry with the same key but different fields is rejected as conflicting. This is deliberately narrow - no generic JSON-diffing framework, just explicit per-operation field comparison.
-
-**Game Management dependency.** Already satisfied - no change needed there. `getgame.GetPlayableGameWithCurrentVersion` already returns the decoded game definition, and `engineservice.Compile` already validates it. WORK-0001 just wires these in.
-
-**Migration approach.** The current session tables have never held real data (Create/Join are no-op stubs), so discarding them is safe. Proposed approach: add *new* migrations that drop the old tables and create the new ones, rather than editing the two existing migration files in place (safer regardless of whether any environment has ever actually run them). This assumes no production data-preservation requirement exists yet for this schema - flag me if that assumption is wrong.
-
-**Tests required.** Repository tests against a real disposable test database (same pattern already used for Game Management), service-level tests with mocks, and at least one concurrency test that actually proves two competing Joins for the last slot resolve correctly via the DB lock rather than by lucky timing.
-
-## Codebase Discoveries Worth Knowing
-
-- The `game/session` package tree currently fails to compile - this isn't a design choice being second-guessed, it's a pre-existing bug this WORK fixes as a side effect of replacing the scaffolding.
-- No Coordinator/WebSocket code exists anywhere in the repository - not even a placeholder file. The directory that would most plausibly host it (`play/`) is completely empty. This doesn't affect Slice 1 but is worth knowing heading into Slice 4.
-- A generic transaction helper (`utils.RunInDBTransaction`) already exists in the codebase and has never been used yet - Slice 1 becomes its first real consumer.
-
-## Open Questions Left To Implementation (Not Architecture)
-
-These are flagged in WORK-0001 as implementation-time choices, not blockers - listed here only so you know they exist and aren't hiding a bigger decision:
-
-- Exact lobby-expiration TTL value (a simple constant, no existing config convention to reuse).
-- Whether `players.max` is re-checked against Game Management on every Join, or snapshotted once at Create (recommendation: re-check, simpler).
-- Exact package layout - recommendation is to match Game Management's `usecases/<name>` convention instead of the current `workflows/sessionlifecycle` shape.
-
-## Next Human Action
-
-Read `docs/work/active/WORK-0001-session-lobby-foundation.md` if you want the full detail, or approve/question based on the summary above. Say explicitly whether it's **READY** for implementation, or tell me what needs to change first. Nothing is built until then.
+- `PLAN.md` - Slice 1 now shows WORK-0001 as READY; the approved 10-slice sequence (Lobby Foundation → Start+First RuntimeTurn → Interaction Response Processing → Thin Live Coordinator/WebSocket → Timer Obligations → Failure Diagnostics+Terminal Cleanup → Disconnect/Reconnect+Resync → Inactivity Expiration/Reaper → Keyed Timers → Archival) is unchanged and preserved, including Slice 2's mandatory immediate 20-Step enforcement and Slice 4's intentionally thin scope.
+- `AI_CONTEXT.md` - resume header and body updated to reflect READY status; no stale "awaiting review"/"DRAFT" language remains for WORK-0001.

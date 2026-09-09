@@ -28,7 +28,7 @@ Status: APPROVED SEQUENCE, human-approved 2026-09-08. The most important change 
 
 ### Slice 1 — Session Lobby Foundation
 
-Status: graduated to DRAFT WORK. See `docs/work/active/WORK-0001-session-lobby-foundation.md`.
+Status: READY for implementation. See `docs/work/active/WORK-0001-session-lobby-foundation.md` (human-approved, corrected per the human's implementation-design review, and marked READY - not yet implemented).
 
 **Delivers**: Create/Join/Leave working correctly under the accepted persistence model and LOBBY per-Session DB-locking serialization (GAME-ADR-0004): `session_requests` idempotency, `session_actors`/`session_participants` replacing raw owner/player UUID fields, `lobby_expires_at`, JoinCode issuance/revocation, and Session Runtime itself resolving/pinning/compiling the Game definition through the existing `getgame` read capability instead of accepting an external `engine.Program`. A Session can be created, joined, left, and reconstructed from durable storage. No Game execution and no WebSocket/runtime execution happen in this slice.
 
@@ -158,14 +158,12 @@ This slice intentionally EXCLUDES the later operational complexity that belongs 
 
 ## WORK References
 
-- **WORK-0001** - `docs/work/active/WORK-0001-session-lobby-foundation.md` - Slice 1, Session Lobby Foundation. Status: DRAFT (not READY; no implementation authority yet).
+- **WORK-0001** - `docs/work/active/WORK-0001-session-lobby-foundation.md` - Slice 1, Session Lobby Foundation. Status: **READY**. Implementation may begin in the next agent handoff/session.
 
 Per the just-in-time WORK model, no other slice has been materialized into Feature Development yet. Slice 2 (Start + First RuntimeTurn) is the next candidate once WORK-0001 reaches DONE.
 
 ## Recommended First Slice
 
-**Slice 1 — Session Lobby Foundation**, now graduated into `WORK-0001-session-lobby-foundation.md` (DRAFT, not READY).
+**Slice 1 — Session Lobby Foundation**, materialized as `WORK-0001-session-lobby-foundation.md`, now **READY** for implementation after the human's implementation-design review added corrections around pinned-Game-Definition immutability, a minimum new Game Management read capability, the `(user_uuid, operation, idempotency_key)` idempotency namespace, concurrent-Create correctness, and the Session/HostActor insertion cycle - see WORK-0001 for the full corrected design.
 
-Rationale: (a) dependency order - every other slice needs a correctly modeled, serialized Session; (b) current repository state - the existing scaffolding does not compile (`step_create_room.go`'s `CreateRoom` has no function body) and actively contradicts accepted architecture (external `engine.Program` parameter, raw owner/player UUID fields, an entirely superseded schema), so this is an urgent correctness gap, not a nice-to-have; (c) useful vertical progress - delivers an actually working Create/Join/Leave flow; (d) risk reduction - proves out the DB-locking per-Session serialization mechanism (which GAME-ADR-0018 later extends to RUNNING) at the lowest-risk point, before any engine execution is layered on top; (e) validates architecture early - exercises the "Session Runtime resolves/pins/compiles the Game definition itself" pattern this whole initiative depends on.
-
-The human must still explicitly approve WORK-0001 as READY before any implementation begins.
+Rationale (unchanged): (a) dependency order - every other slice needs a correctly modeled, serialized Session; (b) current repository state - the existing scaffolding does not compile (`step_create_room.go`'s `CreateRoom` has no function body) and actively contradicts accepted architecture (external `engine.Program` parameter, raw owner/player UUID fields, an entirely superseded schema), so this is an urgent correctness gap, not a nice-to-have; (c) useful vertical progress - delivers an actually working Create/Join/Leave flow; (d) risk reduction - proves out the DB-locking per-Session serialization mechanism (which GAME-ADR-0018 later extends to RUNNING) at the lowest-risk point, before any engine execution is layered on top; (e) validates architecture early - exercises the "Session Runtime resolves/pins/compiles the Game definition itself" pattern this whole initiative depends on.
