@@ -60,7 +60,7 @@ Session Runtime owns all durable authoritative state that determines the meaning
 - detection of physical disconnects;
 - physical timer/scheduling mechanisms.
 
-The Coordinator does not own authoritative session/game truth or business consequences. This boundary does not require another deployed service; V1 may keep the Coordinator in the same Go process.
+The Coordinator does not own authoritative session/game truth or business consequences. This boundary does not require another deployed service; V1 may keep the Coordinator in the same Go process. Coordinator/client delivery is best-effort against already-durable Session Runtime truth, never the other way around - see Session Runtime Post-Commit Client Delivery Semantics below.
 
 V1 does not introduce sticky-session correctness requirements, Redis, distributed session routing, distributed locks, or other multi-instance mechanisms. The initial single-process modular-monolith deployment may use local maps, channels, and Go timers for ephemeral mechanisms, but session correctness must not depend exclusively on those ephemeral objects.
 
@@ -295,6 +295,26 @@ Rationale and alternatives are recorded in `game/docs/decisions/GAME-ADR-0011-ga
 The existing accepted `TimerSlotDeclaration` holds at most one pending timer per statically named slot per workflow instance, which makes an authored policy such as an independent disconnect timeout per player awkward with a single static slot. Game Language will support a general `KeyedTimerSlot<Key>` capability - distinct pending timers addressed by `(workflow instance/path, slot, key)`, so different keys (for example `disconnect_timeout[P1]` and `disconnect_timeout[P2]`) may have independent timers pending simultaneously, while at most one timer may be pending per exact tuple. Scheduling into an already-occupied `(slot, key)` is an execution error with no implicit reset/replace/coalesce, mirroring the existing ordinary `TimerSlot` rule; cancellation affects only the selected key and is idempotent; expiration exposes the authored key (conceptually `KeyedTimerExpired(slot)` carrying `key: KeyType`) without exposing internal timer-obligation UUIDs or wall-clock scheduling data. This is a general language primitive - not a disconnect-specific `DisconnectTimer` - also intended for player cooldowns, team timers, per-object timers, and similar keyed processes. Naming/API/Go types are not frozen; only the semantic capability is accepted. See Session Runtime Turn And Persistence Model below for the resulting `session_timer_obligations` persistence consequence.
 
 Rationale and alternatives are recorded in `game/docs/decisions/GAME-ADR-0012-game-language-keyed-timer-slots.md`.
+
+## Session Runtime Post-Commit Client Delivery Semantics
+
+Status: HUMAN-APPROVED and canonically promoted; not yet implemented.
+
+Once a Session Runtime transaction commits successfully, the resulting Session state is authoritative. A later failure to deliver Coordinator/WebSocket/client outputs must never roll back the RuntimeTurn, undo the Snapshot, reopen a closed interaction, undo a timer obligation, undo terminalization, or otherwise reinterpret the committed Session state. Conceptually: `runtime execution -> durable Session commit -> best-effort live delivery`. The commit is the correctness boundary; everything after it is delivery, not truth.
+
+V1 does not introduce a generic durable outbox solely for WebSocket messages, Coordinator fan-out, client delivery, per-client acknowledgements, replay of every emitted live message, or replay of every intermediate presentation transition. No `session_delivery_outbox`, `delivery_attempts`, persistent connection delivery offset, or per-client ACK table is part of the accepted persistence model, unless a future, separately-approved requirement introduces one.
+
+Anything required for authoritative gameplay correctness or client recovery must already be durable before live delivery is attempted - current RuntimeTurn/Snapshot, Session lifecycle state, SessionInteractions, SessionTimerObligations, semantic presence, terminal state, and fatal runtime diagnostic state where applicable are all already covered by prior accepted decisions. Live delivery communicates durable truth; it does not create that truth.
+
+If live delivery fails, or the process dies after commit, a reconnecting client uses the already-accepted Session resync capability (see Session Runtime Disconnect, Reconnect, and Resynchronization Boundary above) to reconstruct the *current* player-facing truth - not a promise to reproduce every live message that was missed. Worked example: Turn 42 commits and opens interaction Q17; the process dies before Q17 is sent over WebSocket; after reconnect, Q17 is still an `ACTIVE` durable `SessionInteraction` and appears in the player's current resync projection - no generic delivery outbox is required for this to be correct. Client recovery in V1 is "recover current truth," not "replay every event/message since sequence N"; the current RuntimeTurn `sequence` may still identify the version a resync projection represents, but no guaranteed client event log/replay protocol is introduced.
+
+Physical timer scheduling remains Coordinator-owned and ephemeral. If a Turn commits a durable, active SessionTimerObligation but the process dies before the in-memory physical timer is successfully established, the durable obligation remains authoritative; Coordinator recovery/reconciliation may rediscover and physically (re)schedule it under the already-accepted timer-recovery semantics (see Session Runtime Turn And Persistence Model and Session Runtime Process-Agnostic Recovery above). The Turn is never rolled back because physical scheduling failed after commit.
+
+Purely ephemeral/presentation-oriented effects whose loss does not alter authoritative gameplay - animation, sound, confetti, and other presentation-only effects - may be lost if delivery fails, the socket disappears, the Coordinator crashes, or the process dies immediately after commit; V1 does not guarantee their replay after resync.
+
+This best-effort delivery rule covers Coordinator/client/presentation delivery only. It must not silently become the reliability contract for a future Game Language output capable of causing an external irreversible side effect (payment, an external API mutation, a durable notification requiring delivery guarantees, a cross-domain command, or another irreversible external effect); such a capability must explicitly design its own delivery/idempotency/retry semantics as a separate decision.
+
+Rationale and alternatives are recorded in `game/docs/decisions/GAME-ADR-0020-session-runtime-post-commit-client-delivery-semantics.md`.
 
 ## Boundary Notes
 

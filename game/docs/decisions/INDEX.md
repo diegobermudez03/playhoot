@@ -29,8 +29,9 @@ This index is the Game decision family under the repository-wide routing model d
 | [GAME-ADR-0017](GAME-ADR-0017-session-runtime-failure-classification-and-diagnostic-persistence.md) | Session Runtime Failure Classification and Fatal Diagnostic Persistence | ACCEPTED | 2026-09-08 | None | `game/README.md`, `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md` |
 | [GAME-ADR-0018](GAME-ADR-0018-session-running-mutation-serialization.md) | Session RUNNING Mutation Serialization | ACCEPTED | 2026-09-08 | None | `game/README.md`, `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md` |
 | [GAME-ADR-0019](GAME-ADR-0019-runtimeturn-execution-bound-and-terminal-cleanup.md) | RuntimeTurn Execution Bound and Terminal Cleanup | ACCEPTED | 2026-09-08 | None | `game/README.md`, `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md` |
+| [GAME-ADR-0020](GAME-ADR-0020-session-runtime-post-commit-client-delivery-semantics.md) | Session Runtime Post-Commit Client Delivery Semantics | ACCEPTED | 2026-09-08 | None | `game/README.md`, `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md` |
 
-Next Game ADR: `GAME-ADR-0020`.
+Next Game ADR: `GAME-ADR-0021`.
 
 These IDs were migrated from the previously centralized global architecture family (`docs/decisions/architecture/`) on 2026-09-07. Historical status, rationale, alternatives, consequences, and created dates were preserved unchanged; only the identifier/location/cross-reference wiring changed. See `docs/decisions/LEGACY_ADR_ID_MAP.md` for the full old-ID -> new-ID mapping.
 

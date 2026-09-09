@@ -1,45 +1,73 @@
-# Session RUNNING Serialization And RuntimeTurn Execution Bound Checkpoint
+# Session Runtime V1 — Architecture Closure And Implementation Plan Review
 
-Process: Architecture Discussion
+Process: Initiative Implementation Planning (Architecture Discussion CLOSED)
 
-Status: RESOLVED - accepted 2026-09-08. No checkpoint is currently pending; this file is retained as the human-facing record of the resolved checkpoint until the next milestone (the final Operational Lifecycle completeness review, see below) produces its own checkpoint.
+Status: awaiting your review of `PLAN.md`'s slice decomposition before Slice 1 is materialized into Feature Development.
 
 ## What Was Approved
 
-Two related Operational Lifecycle concerns - the previously explicit next milestone left open after GAME-ADR-0017 - were reviewed and accepted as GAME-ADR-0018 and GAME-ADR-0019.
+Two things in this checkpoint:
 
-### GAME-ADR-0018: Session RUNNING Mutation Serialization
+1. **The final Operational Lifecycle architecture concern - post-commit client delivery - accepted as GAME-ADR-0020.**
+2. **Your explicit approval that Session Runtime V1 Architecture Discussion is COMPLETE**, closing Architecture Discussion and moving this initiative into Implementation Planning.
 
-- **RUNNING mutations serialize per Session.** The LOBBY serialization guarantee (GAME-ADR-0004) is extended to RUNNING: every mutation capable of changing authoritative RUNNING-phase state (interaction responses, timer expirations, `UserDisconnected`/`UserReconnected`, future platform signals, anything capable of creating a RuntimeTurn) executes serially per Session. There must never be two RuntimeTurns concurrently executing against the same authoritative Session state.
-- **V1 mechanism: database-backed pessimistic locking.** Correctness is imposed through DB locking inside Session Runtime's own transaction boundary, exactly as already assumed for LOBBY. Process A (`AnswerInteraction`) and Process B (`TimerExpired`) targeting the same Session S contend on the same serialization boundary; one proceeds first; only after it commits/rolls back may the other continue. The exact SQL lock anchor/statement is left to implementation planning. This explicitly rejects process ownership, sticky routing, an in-memory actor, Redis/distributed locks, and Coordinator ownership of correctness.
-- **Reload current state after obtaining serialization.** A mutation must not execute against a Snapshot read before the lock was obtained; once serialization is acquired, it reloads `session_runtime_state.current_turn_id`/Snapshot.
-- **Authoritative ordering is defined by serialization, not arrival.** Worked example: Turn 40 current; Q5 (interaction response) and T1 (timer expiration) concurrently target the same Session. If Q5 wins serialization, it processes from Turn 40 and commits Turn 41; T1 then wins, processes from Turn 41, commits Turn 42. Wall-clock/arrival timestamps, process identity, and socket timing are never consulted to reconstruct a different order.
-- **Reads are not RUNNING mutations.** Resync and other read-only operations do not themselves create RuntimeTurns and are not required to participate in this specific serialization boundary; exact read-isolation implementation is not frozen.
+### GAME-ADR-0020: Post-Commit Client Delivery Semantics
 
-### GAME-ADR-0019: RuntimeTurn Execution Bound and Terminal Cleanup
+- **Durable commit is the correctness boundary.** Once a Session Runtime transaction commits, that state is authoritative. A later failure to deliver to Coordinator/WebSocket/clients never rolls back the RuntimeTurn, Snapshot, a closed interaction, a timer obligation, or terminalization.
+- **No generic delivery outbox in V1.** No `session_delivery_outbox`, per-client ACK table, or delivery-attempt tracking.
+- **Resync recovers current truth, not history.** If delivery fails or the process dies, a reconnecting client gets the current state through the already-accepted resync capability - not a replay of every missed message. Example: Turn 42 opens interaction Q17; the process dies before Q17 reaches the client; after reconnect, Q17 is simply still an active interaction in the resync projection.
+- **Presentation effects (animation/sound) may be lost** with no guaranteed replay - they don't affect gameplay correctness.
+- **This does not cover future irreversible external effects.** If Game Language later gains a payment/external-API/notification output, that needs its own separately designed delivery guarantee - this decision explicitly does not extend "best effort" to that case.
 
-- **`MAX_STEPS_PER_RUNTIME_TURN = 20`.** A Session-level limit, distinct from `engine.Limits` (which bounds work inside one `Step` call), bounds the total `engine.Step` invocations one RuntimeTurn may execute while draining `InternalSignals` to quiescence. Counts the initial externally-caused `Step` plus every subsequent internal-signal-triggered `Step` in the same Turn - not 20 RuntimeTurns, not 20 operations inside one `Step`, not 20 user interactions. Code/configuration-defined, adjustable, not authored per game, not a durable per-Session setting. Applies equally to Start's own initial signal/internal-signal chain.
-- **Exceeding the limit is fatal deterministic execution failure.** Stops execution; persists no partial RuntimeTurn/gameplay consequence; `current_turn_id` stays at the last committed Turn; terminalizes the Session via the already-accepted `RUNTIME_EXECUTION_FAILED` class (GAME-ADR-0017) and its atomic fatal-materialization transaction. Not expected-input rejection, not an infrastructure-retry situation, not a reason to continue processing later.
-- **Diagnostic observability.** A stable, queryable diagnostic code equivalent to `runtime_turn_step_limit_exceeded` (persisted via `session_runtime_failures.error_code`) lets operators/developers identify Sessions terminalized specifically for this cause, distinct from every other `RUNTIME_EXECUTION_FAILED` cause. Never exposed to players.
-- **No ACTIVE runtime obligations after terminalization.** Once a Session becomes `TERMINAL`, for any terminal cause (authored completion, lobby expiration, inactivity expiration, runtime execution/state failure, any future reason), it must not retain `ACTIVE` `session_interactions`/`session_timer_obligations`. Terminalization atomically closes/cancels them in the same transaction: Session -> `TERMINAL`; ACTIVE interactions -> terminally closed/cancelled; ACTIVE timers -> `CANCELLED`; terminal (and failure) metadata persisted; commit. This is Session lifecycle cleanup, not gameplay - no Game Language execution, no RuntimeTurn, no fabricated response, no Snapshot mutation.
-- **Closure provenance.** `closed_by_turn_id = NULL` is valid for termination-caused closure, paired with a closure reason equivalent to `SESSION_TERMINATED`, distinguishing it from ordinary Turn-produced closure (non-null `closed_by_turn_id`). The closure reason only explains "this obligation stopped being active because the Session terminated" - not why the Session terminated (that stays on Session lifecycle/failure metadata, not duplicated per-obligation).
-- **`session_runtime_failures.base_turn_id` is nullable**, refining (not superseding) GAME-ADR-0017's original "always required" description: non-null means a last valid committed Turn existed; null means the fatal failure occurred before any RuntimeTurn ever committed for the Session.
-- **Start can fail fatally before Turn 1.** If deterministic engine execution fails during Start's initialization/internal-signal chain (including a Step-limit overflow), the Session terminalizes directly from `LOBBY` to `TERMINAL` (`RUNTIME_EXECUTION_FAILED`, `base_turn_id = NULL`, `attempted_sequence = 1` diagnostic-only, `started_at` left at its canonical null value). No Turn 1, no fabricated Turn 0, no dummy Snapshot.
-- **RUNNING only exists after a successful first RuntimeTurn commit.** Strengthens the existing Start atomicity rule: `LOBBY -> RUNNING` only when Start commits Turn 1/`current_turn_id`/`phase = RUNNING`/`started_at`/JoinCode revocation together. Infrastructure failure before that commit leaves the Session durably `LOBBY` and retryable; a deterministic initialization failure does not - it terminalizes instead, since retrying a definition that will deterministically fail again would be misleading.
+### Architecture Discussion Closure
 
-## Where This Was Persisted
+You approved: *"Session Runtime V1 Architecture Discussion: COMPLETE."* No known unresolved issue blocks moving into implementation planning across domain ownership, the Session/Coordinator boundary, lifecycle, lobby admission, Start, RuntimeTurn, concurrency/DB locking, persistence, interactions, timers, disconnect/reconnect, semantic presence, resync, recovery, inactivity expiration, archival direction, the failure taxonomy, terminal cleanup, the RuntimeTurn execution bound, and post-commit delivery. Remaining specifics (exact TTLs, grace durations, rate limits, SQL types, HTTP statuses, WebSocket DTO shapes, archive JSON layout) are implementation-planning details, not architecture blockers.
 
-- `game/docs/decisions/GAME-ADR-0018-session-running-mutation-serialization.md`
-- `game/docs/decisions/GAME-ADR-0019-runtimeturn-execution-bound-and-terminal-cleanup.md`
-- `game/docs/decisions/INDEX.md` (GAME-ADR-0018/0019 rows added; next Game ADR is now `GAME-ADR-0020`)
-- `game/README.md` (new "Session Runtime RUNNING Mutation Serialization" section between Lobby Lifecycle Contract and Turn And Persistence Model; Turn And Persistence Model gains the `MAX_STEPS_PER_RUNTIME_TURN` paragraph; Failure Classification gains the Step-limit-exceeded case and a new "Terminal Cleanup: No ACTIVE Obligations After Terminalization" subsection; Lobby Lifecycle Contract's Start description gains the pre-first-Turn-fatal and RUNNING-only-after-commit statements; the stale "RUNNING runtime concurrency remains a later architecture topic" sentence was removed)
-- `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md` (Step-bound and RUNNING-serialization notes added near the RuntimeTurn/RuntimeStep concept; new "Terminal Cleanup: Closure Provenance" subsection; a `closure_reason` field added to both `session_interactions`/`session_timer_obligations` in the Runtime History Tables diagram; `session_runtime_failures.base_turn_id` documented as nullable with updated cardinality/ER-relationship notes and `error_code` guidance; two new Not-Yet-Decided entries)
-- `docs/ai/workspaces/active/session-runtime-v1/AI_CONTEXT.md` (two new accepted-decision sections, updated deferred topics, updated next-milestone questions, updated drift/explicitly-not-done notes)
+### Drift Repaired
 
-## Explicitly Not Authorized By This Checkpoint
+Two sentences in `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md` still said interaction/timer closure at inactivity termination was "a later implementation/design detail" - stale, since GAME-ADR-0019 already resolved this generally (no `ACTIVE` obligations survive any terminalization). Both were updated to state the now-accepted rule. The other two drift areas you flagged (RUNNING serialization scope, disconnect/participation phase distinction) were checked and found already synchronized from the prior checkpoint - no further changes were needed there.
 
-No production code, migrations, DB locking implementation, engine/compiler changes, Coordinator behavior, tests, terminal-cleanup transaction code, observability pipelines, or WORK were created or changed. No `MAX_STEPS_PER_RUNTIME_TURN` constant, `closure_reason` column/migration, or `runtime_turn_step_limit_exceeded`-equivalent error code was implemented anywhere in Go code. The exact SQL lock anchor/statement, the concrete constant/configuration surface for `MAX_STEPS_PER_RUNTIME_TURN`, and the exact closure-reason/error-code strings remain deferred to implementation planning. GAME-ADR-0004, GAME-ADR-0007, GAME-ADR-0013, and GAME-ADR-0017's historical rationale were not rewritten; GAME-ADR-0019 explicitly refines (narrows) GAME-ADR-0017's `base_turn_id` description without invalidating the rest of that record, consistent with the decision-records historical-immutability rule.
+## Implementation Plan Review
 
-## Next Milestone (Not Designed Here)
+The initiative now has a persisted decomposition in `PLAN.md` (temporary, non-canonical - it doesn't replace the ADRs/README as the source of truth, it only sequences the work).
 
-A final Operational Lifecycle completeness review before Session Runtime V1 architecture can be declared closed. The next Conversational AI should inspect the already-accepted design and identify only materially unresolved V1 architecture topics, in particular: (1) platform abuse/resource limits; (2) maximum Session runtime/inactivity (already addressed by GAME-ADR-0014) and whether anything about it still needs architecture-level attention; (3) maximum pending interactions/timers per Session; (4) per-user/session request abuse/rate boundaries where architecture ownership matters; (5) corrupted/invalid Game Definition handling before Start; (6) any terminal reasons still missing. Treat exact grace duration, exact inactivity TTL, exact engine operation budgets, exact HTTP status codes, exact WebSocket DTOs, rate-limit numbers, exact table/index definitions, and exact archival JSON layout as implementation/configuration-level unless inspection reveals a true architecture gap. The goal is to determine whether any remaining architecture decision must be made before Session Runtime V1 moves from Architecture Discussion into Implementation Planning; if no material gap remains, recommend closing Architecture Discussion and moving this workspace into Initiative Implementation Planning. Do not automatically introduce solutions in that review, do not enter Feature Development, and do not create WORK.
+### Proposed Slices (in order)
+
+1. **Session Lobby Foundation** - Create/Join/Leave under the accepted persistence model, replacing the current broken/misaligned scaffolding.
+2. **Start & First RuntimeTurn** - engine wiring: `NewSnapshot`, draining internal signals up to the 20-Step bound, persisting Turn 1, RUNNING transition.
+3. **RUNNING Interaction Response Processing** - answering an open interaction, first real exercise of RUNNING serialization.
+4. **Timer Obligations & Expiration Processing** - ordinary timers, first real Coordinator-owned physical-timer piece.
+5. **RuntimeTurn Execution Bound & Runtime Failure Diagnostics** - Step-limit enforcement, `session_runtime_failures`, terminal cleanup atomicity (tightly coupled with slices 2-4 in practice).
+6. **Disconnect, Reconnect, Semantic Presence & Resync** - needs a Game Language prerequisite first (giving `UserDisconnected`/`UserReconnected` their accepted schema in the compiler).
+7. **Durable Inactivity Expiration & Reaper.**
+8. **Keyed Timer Slots** - Game Language capability, only needed once a game wants simultaneous independent timers.
+9. **Live Session Coordinator & Post-Commit Delivery** - the actual WebSocket/transport edge; mostly infrastructure wiring once domain logic (1-6) is proven, but could be pulled forward earlier for a thin demo if useful.
+10. **Long-Term Runtime History Archival** - lowest risk, purely additive, last.
+
+### Sequencing Rationale (highlights)
+
+- Slice 1 first because the *existing* scaffolding doesn't even compile and actively contradicts the accepted architecture (it takes an externally-compiled `engine.Program`, uses raw owner/player UUID fields instead of the accepted identity boundary, and has none of the accepted tables) - this is a correctness gap to fix, not new ground to break.
+- Slice 2 comes right after because RuntimeTurn is the highest-risk, most novel mechanism in the whole design - proving it early avoids building more surface area on an unproven foundation.
+- Slice 6 has a genuine Game Language dependency: the compiler needs `UserReconnected` added and `UserDisconnected` given its real schema before Session Runtime can deliver either signal - that's Game Language work with its own lead time, so it's sequenced after the core loop rather than blocking it.
+- Slice 9 (Coordinator/WebSocket) is pushed later because it's mostly wiring, not a domain-correctness risk - but it's flagged as the thing actually needed before a human can play a real game end-to-end, so it shouldn't be indefinitely deferred.
+
+### Material Choices Worth Your Attention
+
+- **Identity has no implementation yet**, but Session Runtime's public contract requires an authenticated `UserUUID`. Slice 1 will need to decide how early development obtains a `UserUUID` before real authentication exists - most likely a temporary trusted-caller assumption for internal testing. This is flagged as a question for Slice 1's Feature Development pass, not decided here.
+- **Slice 5 is called out separately from Slices 2-4 but is tightly coupled to them** - the Step-limit counting itself is really part of "any RuntimeTurn execution" (so naturally lands in Slice 2), while the fuller diagnostic-persistence/terminal-cleanup surface is what's distinctly its own slice. Feel free to push back if you'd rather see this folded directly into Slice 2.
+- **Slice 9 could be pulled forward** for a thin end-to-end demo (create a room, start it, answer one question, see it over a real WebSocket) if that's more valuable early than deferring all transport work - this is a sequencing preference, not an architecture question, and easy to revisit.
+
+### Recommended First Slice
+
+**Slice 1 - Session Lobby Foundation.** It's the most urgent correctness gap (current code doesn't build), everything else depends on it, and it proves out the per-Session DB-locking mechanism at the lowest-risk point before any engine execution is involved.
+
+### Out Of Scope (confirmed, not pulled into this plan)
+
+- Post-launch "Session re-entry after complete client-state loss" (still just a `docs/product/IDEAS.md` idea).
+- Post-Start dynamic player admission.
+- Full archival JSON/GCS design beyond what Slice 10 minimally needs.
+- Future external irreversible Game Language side effects (payment, etc.) - explicitly excluded from GAME-ADR-0020 and would need its own decision later.
+
+## Next Human Action
+
+Review the slice ordering and the two flagged choices above (Identity/`UserUUID` for Slice 1, and whether Slice 5/9 sequencing matches your preference). Once you're comfortable with the plan, say so and the next step is materializing Slice 1 into a DRAFT Feature Development WORK specification - nothing has been implemented yet, and no WORK exists.

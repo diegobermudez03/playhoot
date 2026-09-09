@@ -17,6 +17,7 @@ Rationale and alternatives are recorded in:
 - `game/docs/decisions/GAME-ADR-0017-session-runtime-failure-classification-and-diagnostic-persistence.md` (the four-class failure taxonomy, the `session_runtime_failures` diagnostic entity introduced below, the RuntimeTurn failure boundary, atomic fatal materialization, and the archival/queryability exception below).
 - `game/docs/decisions/GAME-ADR-0018-session-running-mutation-serialization.md` (RUNNING mutations serialize per Session using the same DB-locking mechanism as LOBBY; a RuntimeTurn reloads current state after obtaining serialization; authoritative ordering is defined by serialization/Turn sequence, not arrival timestamps).
 - `game/docs/decisions/GAME-ADR-0019-runtimeturn-execution-bound-and-terminal-cleanup.md` (the `MAX_STEPS_PER_RUNTIME_TURN` bound and its fatal-overflow diagnostic below; the no-ACTIVE-obligations-after-terminalization invariant and closure-provenance fields introduced below; `session_runtime_failures.base_turn_id` nullability and pre-first-Turn fatal Start semantics).
+- `game/docs/decisions/GAME-ADR-0020-session-runtime-post-commit-client-delivery-semantics.md` (durable commit is the correctness boundary; no generic durable client-delivery outbox in V1; resync recovers current truth rather than replaying missed messages; presentation-only effects may be lost).
 
 ## Central Concept: RuntimeTurn vs RuntimeStep
 
@@ -320,7 +321,7 @@ Total process loss does not itself mutate `session_actors.semantic_presence` (GA
 - **`terminal_reason = RUNTIME_INACTIVITY_EXPIRED`**: means only that the `RUNNING` Session exceeded its allowed inactivity period; it does not assert a process crash, pod kill, host disconnect, or that every participant left.
 - **Archive Worker boundary**: the Archive Worker (see Archival And Hard-Delete Policy below) consumes only already-materialized `TERMINAL` Sessions per retention policy; it must not inspect process ownership, detect crashes, determine RUNNING inactivity, or interpret `activity_expires_at`.
 
-Interaction/timer closure semantics for still-open `session_interactions`/`session_timer_obligations` at inactivity termination remain a later implementation/design detail; materializing expiration must never fabricate engine responses or RuntimeTurns to close gameplay. See GAME-ADR-0014.
+Still-open `session_interactions`/`session_timer_obligations` at inactivity termination are closed/cancelled atomically as part of the same terminal-materialization transaction, under the general no-ACTIVE-obligations-after-terminalization invariant (see Terminal Cleanup: Closure Provenance above); materializing expiration must never fabricate engine responses or RuntimeTurns to close gameplay. See GAME-ADR-0014, GAME-ADR-0019.
 
 ## Archive Metadata
 
@@ -379,6 +380,10 @@ Explicitly excluded from this deletion policy, and retained indefinitely for pro
 
 Retention of `session_requests`, `join_codes`, and other lightweight lifecycle metadata is unchanged by this decision.
 
+## No Durable Client-Delivery Outbox
+
+This accepted persistence model does not include a generic durable outbox for Coordinator/WebSocket/client delivery - no `session_delivery_outbox`, `delivery_attempts`, persistent connection delivery offset, or per-client ACK table. Durable commit (all tables above) is the correctness boundary; live delivery is best-effort against that already-durable state and never the reverse. A reconnecting client recovers current truth through the existing resync capability (see SessionActor Semantic Presence vs Participant Admission above and GAME-ADR-0010), not through replaying a delivery log. See GAME-ADR-0020 for the full rationale, including why this does not extend to a future Game Language output with an externally irreversible side effect.
+
 ## Relationship Types
 
 No database-enforced foreign key constraints are assumed by this accepted design, consistent with current Game migrations. All relationships above are logical persisted references unless a future implementation decision introduces enforced FKs.
@@ -397,7 +402,6 @@ Logical cross-domain references (no database FK, different domain):
 - The exhaustive `source_kind` and interaction/terminal-reason enums.
 - The concrete `KeyedTimerSlot<Key>` declaration/operation/signal-source design and the serialized/typed representation of `engine_key` (see GAME-ADR-0012).
 - The exact enumeration of renewal-triggering operations for `activity_expires_at` and the concrete `inactivity_ttl` configuration surface (see GAME-ADR-0014).
-- The persistence-state transitions/closure reasons for still-open `session_interactions`/`session_timer_obligations` at inactivity termination (see GAME-ADR-0014).
 - The exact SQL types/column names, indexing, and any uniqueness constraint for `session_runtime_failures`; the concrete `diagnostic_payload` JSON schema/version; the exhaustive `failure_kind`/`source_kind` enums; and the large-diagnostic-payload retention/compaction strategy (see GAME-ADR-0017).
 - The exact SQL lock anchor/statement used to implement RUNNING (and LOBBY) per-Session serialization (see GAME-ADR-0018).
 - The concrete constant/configuration surface for `MAX_STEPS_PER_RUNTIME_TURN`, the exact `closure_reason`/equivalent enum values for `session_interactions`/`session_timer_obligations`, and the exact `runtime_turn_step_limit_exceeded`-equivalent stable error-code string (see GAME-ADR-0019).
