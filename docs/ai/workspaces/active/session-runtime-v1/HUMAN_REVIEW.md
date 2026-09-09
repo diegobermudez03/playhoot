@@ -1,73 +1,64 @@
-# Session Runtime V1 — Architecture Closure And Implementation Plan Review
+# Slice 1 — Session Lobby Foundation: DRAFT WORK Review
 
-Process: Initiative Implementation Planning (Architecture Discussion CLOSED)
+Process: Feature Development (Slice 1 of `session-runtime-v1`; architecture is CLOSED, the broader initiative remains governed by `PLAN.md`)
 
-Status: awaiting your review of `PLAN.md`'s slice decomposition before Slice 1 is materialized into Feature Development.
+Status: awaiting your READY decision on `docs/work/active/WORK-0001-session-lobby-foundation.md`. It is currently DRAFT and has no implementation authority - nothing will be built until you approve it.
 
-## What Was Approved
+## What This Checkpoint Did
 
-Two things in this checkpoint:
+1. Recorded your approved implementation sequence into `PLAN.md` (see below).
+2. Repaired three stale, contradictory sentences left over from early Architecture Discussion checkpoints in `AI_CONTEXT.md` (labeled as historical, not deleted).
+3. Graduated Slice 1 into Feature Development: created `WORK-0001-session-lobby-foundation.md` as DRAFT.
 
-1. **The final Operational Lifecycle architecture concern - post-commit client delivery - accepted as GAME-ADR-0020.**
-2. **Your explicit approval that Session Runtime V1 Architecture Discussion is COMPLETE**, closing Architecture Discussion and moving this initiative into Implementation Planning.
+No code, tests, or migrations were touched. Nothing is READY.
 
-### GAME-ADR-0020: Post-Commit Client Delivery Semantics
+## Approved Sequencing (Recorded In PLAN.md)
 
-- **Durable commit is the correctness boundary.** Once a Session Runtime transaction commits, that state is authoritative. A later failure to deliver to Coordinator/WebSocket/clients never rolls back the RuntimeTurn, Snapshot, a closed interaction, a timer obligation, or terminalization.
-- **No generic delivery outbox in V1.** No `session_delivery_outbox`, per-client ACK table, or delivery-attempt tracking.
-- **Resync recovers current truth, not history.** If delivery fails or the process dies, a reconnecting client gets the current state through the already-accepted resync capability - not a replay of every missed message. Example: Turn 42 opens interaction Q17; the process dies before Q17 reaches the client; after reconnect, Q17 is simply still an active interaction in the resync projection.
-- **Presentation effects (animation/sound) may be lost** with no guaranteed replay - they don't affect gameplay correctness.
-- **This does not cover future irreversible external effects.** If Game Language later gains a payment/external-API/notification output, that needs its own separately designed delivery guarantee - this decision explicitly does not extend "best effort" to that case.
+1. Session Lobby Foundation *(this WORK)*
+2. Start + First RuntimeTurn
+3. Interaction Response Processing
+4. **Thin Live Coordinator / WebSocket** *(moved earlier - see below)*
+5. Timer Obligations
+6. Failure Diagnostics + Terminal Cleanup
+7. Disconnect / Reconnect + Resync
+8. Inactivity Expiration / Reaper
+9. Keyed Timers
+10. Archival
 
-### Architecture Discussion Closure
+The Coordinator/WebSocket slice moving to position 4 is intentional: after Slices 1-3, Session Runtime can create/join/start a session and answer one interaction, but nobody has proven that works from a real connected client. A thin Coordinator there validates the live path early instead of building nearly the whole backend first. It's kept deliberately narrow - no disconnect grace, no semantic-presence recovery, no timer scheduling, no inactivity reaper, no advanced reconnect - all of that is explicitly pushed to Slice 7, where it belongs.
 
-You approved: *"Session Runtime V1 Architecture Discussion: COMPLETE."* No known unresolved issue blocks moving into implementation planning across domain ownership, the Session/Coordinator boundary, lifecycle, lobby admission, Start, RuntimeTurn, concurrency/DB locking, persistence, interactions, timers, disconnect/reconnect, semantic presence, resync, recovery, inactivity expiration, archival direction, the failure taxonomy, terminal cleanup, the RuntimeTurn execution bound, and post-commit delivery. Remaining specifics (exact TTLs, grace durations, rate limits, SQL types, HTTP statuses, WebSocket DTO shapes, archive JSON layout) are implementation-planning details, not architecture blockers.
+Slice 2 now explicitly must enforce the 20-Step RuntimeTurn limit from day one (no window where Start can run unboundedly); the richer failure-diagnostics persistence layer is deferred to Slice 6, but the guard itself is not.
 
-### Drift Repaired
+## WORK-0001: What You're Approving
 
-Two sentences in `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md` still said interaction/timer closure at inactivity termination was "a later implementation/design detail" - stale, since GAME-ADR-0019 already resolved this generally (no `ACTIVE` obligations survive any terminalization). Both were updated to state the now-accepted rule. The other two drift areas you flagged (RUNNING serialization scope, disconnect/participation phase distinction) were checked and found already synchronized from the prior checkpoint - no further changes were needed there.
+**Scope.** A Session can be created, joined, left, and reconstructed from durable storage. No game execution, no WebSocket - just a correct, durable LOBBY. This replaces the current `game/session/...` code, which **does not currently compile** (`step_create_room.go` declares a function with no body) and contradicts the accepted design in two concrete ways: it accepts an already-compiled `engine.Program` from the caller (Session Runtime is supposed to resolve/compile it itself), and it uses raw owner/player UUID strings instead of the accepted SessionActor/Participant model.
 
-## Implementation Plan Review
+**Identity boundary.** Per your instruction, this WORK does **not** touch Identity/Auth. Every operation just takes an already-trusted `UserUUID` as a parameter - test code and internal callers supply it directly. When a real auth/transport layer exists later (Slice 4+), it plugs in without anything here needing to change.
 
-The initiative now has a persisted decomposition in `PLAN.md` (temporary, non-canonical - it doesn't replace the ADRs/README as the source of truth, it only sequences the work).
+**Locking design.** The proposed mechanism locks the `sessions` row itself (`SELECT ... FOR UPDATE`) inside a transaction, reusing an existing repository-wide helper (`utils.RunInDBTransaction`) that's already used elsewhere in the codebase but not yet in Session Runtime. One repository method does the locking; Join, Leave, and lazy lobby-expiration all go through it - and it's shaped so Slice 2 can reuse the exact same mechanism for RUNNING serialization instead of needing a second one later.
 
-### Proposed Slices (in order)
+**Idempotency.** `session_requests` stores each CREATE/JOIN/LEAVE by `(operation, idempotency_key)`. A retry with the same key and the same meaningful fields (e.g., for Join: code + user + display name) replays the stored result; a retry with the same key but different fields is rejected as conflicting. This is deliberately narrow - no generic JSON-diffing framework, just explicit per-operation field comparison.
 
-1. **Session Lobby Foundation** - Create/Join/Leave under the accepted persistence model, replacing the current broken/misaligned scaffolding.
-2. **Start & First RuntimeTurn** - engine wiring: `NewSnapshot`, draining internal signals up to the 20-Step bound, persisting Turn 1, RUNNING transition.
-3. **RUNNING Interaction Response Processing** - answering an open interaction, first real exercise of RUNNING serialization.
-4. **Timer Obligations & Expiration Processing** - ordinary timers, first real Coordinator-owned physical-timer piece.
-5. **RuntimeTurn Execution Bound & Runtime Failure Diagnostics** - Step-limit enforcement, `session_runtime_failures`, terminal cleanup atomicity (tightly coupled with slices 2-4 in practice).
-6. **Disconnect, Reconnect, Semantic Presence & Resync** - needs a Game Language prerequisite first (giving `UserDisconnected`/`UserReconnected` their accepted schema in the compiler).
-7. **Durable Inactivity Expiration & Reaper.**
-8. **Keyed Timer Slots** - Game Language capability, only needed once a game wants simultaneous independent timers.
-9. **Live Session Coordinator & Post-Commit Delivery** - the actual WebSocket/transport edge; mostly infrastructure wiring once domain logic (1-6) is proven, but could be pulled forward earlier for a thin demo if useful.
-10. **Long-Term Runtime History Archival** - lowest risk, purely additive, last.
+**Game Management dependency.** Already satisfied - no change needed there. `getgame.GetPlayableGameWithCurrentVersion` already returns the decoded game definition, and `engineservice.Compile` already validates it. WORK-0001 just wires these in.
 
-### Sequencing Rationale (highlights)
+**Migration approach.** The current session tables have never held real data (Create/Join are no-op stubs), so discarding them is safe. Proposed approach: add *new* migrations that drop the old tables and create the new ones, rather than editing the two existing migration files in place (safer regardless of whether any environment has ever actually run them). This assumes no production data-preservation requirement exists yet for this schema - flag me if that assumption is wrong.
 
-- Slice 1 first because the *existing* scaffolding doesn't even compile and actively contradicts the accepted architecture (it takes an externally-compiled `engine.Program`, uses raw owner/player UUID fields instead of the accepted identity boundary, and has none of the accepted tables) - this is a correctness gap to fix, not new ground to break.
-- Slice 2 comes right after because RuntimeTurn is the highest-risk, most novel mechanism in the whole design - proving it early avoids building more surface area on an unproven foundation.
-- Slice 6 has a genuine Game Language dependency: the compiler needs `UserReconnected` added and `UserDisconnected` given its real schema before Session Runtime can deliver either signal - that's Game Language work with its own lead time, so it's sequenced after the core loop rather than blocking it.
-- Slice 9 (Coordinator/WebSocket) is pushed later because it's mostly wiring, not a domain-correctness risk - but it's flagged as the thing actually needed before a human can play a real game end-to-end, so it shouldn't be indefinitely deferred.
+**Tests required.** Repository tests against a real disposable test database (same pattern already used for Game Management), service-level tests with mocks, and at least one concurrency test that actually proves two competing Joins for the last slot resolve correctly via the DB lock rather than by lucky timing.
 
-### Material Choices Worth Your Attention
+## Codebase Discoveries Worth Knowing
 
-- **Identity has no implementation yet**, but Session Runtime's public contract requires an authenticated `UserUUID`. Slice 1 will need to decide how early development obtains a `UserUUID` before real authentication exists - most likely a temporary trusted-caller assumption for internal testing. This is flagged as a question for Slice 1's Feature Development pass, not decided here.
-- **Slice 5 is called out separately from Slices 2-4 but is tightly coupled to them** - the Step-limit counting itself is really part of "any RuntimeTurn execution" (so naturally lands in Slice 2), while the fuller diagnostic-persistence/terminal-cleanup surface is what's distinctly its own slice. Feel free to push back if you'd rather see this folded directly into Slice 2.
-- **Slice 9 could be pulled forward** for a thin end-to-end demo (create a room, start it, answer one question, see it over a real WebSocket) if that's more valuable early than deferring all transport work - this is a sequencing preference, not an architecture question, and easy to revisit.
+- The `game/session` package tree currently fails to compile - this isn't a design choice being second-guessed, it's a pre-existing bug this WORK fixes as a side effect of replacing the scaffolding.
+- No Coordinator/WebSocket code exists anywhere in the repository - not even a placeholder file. The directory that would most plausibly host it (`play/`) is completely empty. This doesn't affect Slice 1 but is worth knowing heading into Slice 4.
+- A generic transaction helper (`utils.RunInDBTransaction`) already exists in the codebase and has never been used yet - Slice 1 becomes its first real consumer.
 
-### Recommended First Slice
+## Open Questions Left To Implementation (Not Architecture)
 
-**Slice 1 - Session Lobby Foundation.** It's the most urgent correctness gap (current code doesn't build), everything else depends on it, and it proves out the per-Session DB-locking mechanism at the lowest-risk point before any engine execution is involved.
+These are flagged in WORK-0001 as implementation-time choices, not blockers - listed here only so you know they exist and aren't hiding a bigger decision:
 
-### Out Of Scope (confirmed, not pulled into this plan)
-
-- Post-launch "Session re-entry after complete client-state loss" (still just a `docs/product/IDEAS.md` idea).
-- Post-Start dynamic player admission.
-- Full archival JSON/GCS design beyond what Slice 10 minimally needs.
-- Future external irreversible Game Language side effects (payment, etc.) - explicitly excluded from GAME-ADR-0020 and would need its own decision later.
+- Exact lobby-expiration TTL value (a simple constant, no existing config convention to reuse).
+- Whether `players.max` is re-checked against Game Management on every Join, or snapshotted once at Create (recommendation: re-check, simpler).
+- Exact package layout - recommendation is to match Game Management's `usecases/<name>` convention instead of the current `workflows/sessionlifecycle` shape.
 
 ## Next Human Action
 
-Review the slice ordering and the two flagged choices above (Identity/`UserUUID` for Slice 1, and whether Slice 5/9 sequencing matches your preference). Once you're comfortable with the plan, say so and the next step is materializing Slice 1 into a DRAFT Feature Development WORK specification - nothing has been implemented yet, and no WORK exists.
+Read `docs/work/active/WORK-0001-session-lobby-foundation.md` if you want the full detail, or approve/question based on the summary above. Say explicitly whether it's **READY** for implementation, or tell me what needs to change first. Nothing is built until then.
