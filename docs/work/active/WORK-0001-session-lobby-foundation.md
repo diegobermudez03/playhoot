@@ -1,6 +1,6 @@
 # WORK-0001: Session Lobby Foundation
 
-Status: READY
+Status: IMPLEMENTING
 Created: 2026-09-08
 Last status change: 2026-09-08
 

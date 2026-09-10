@@ -65,57 +65,66 @@ classDiagram
 
 ## Session Runtime Tables
 
+Status: this replaces the pre-Slice-1 `sessions`/`session_players`/`session_states`/`join_codes` shape - see WORK-0001's Data/Migration Impact. The full accepted design (including the not-yet-implemented RUNNING-phase tables) remains recorded in `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md`.
+
 ```mermaid
 classDiagram
     class sessions {
         id
         uuid
         game_definition_uuid
-        owner_uuid
+        host_actor_id
+        phase
+        lobby_expires_at
         started_at
-        ended_at
-        created_at
-    }
-    class session_players {
-        id
-        session_id
-        player_uuid
-        joined_at
-        left_at
+        terminal_at
+        terminal_reason
         created_at
         updated_at
+    }
+    class session_actors {
+        id
+        session_id
+        user_uuid
+        semantic_presence
+        created_at
+    }
+    class session_participants {
+        id
+        session_actor_id
+        display_name
+        active
+        joined_at
+        left_at
     }
     class join_codes {
         id
+        session_id
         code
-        session_id
         created_at
-        deleted_at
+        revoked_at
     }
-    class session_states {
+    class session_requests {
         id
-        state_number
+        operation
+        idempotency_key
+        user_uuid
         session_id
-        json_state
+        request_payload
+        outcome
+        response_payload
+        status
         created_at
-    }
-    class game_definitions {
-        id
-        uuid
-        game_id
-        version_number
-        script
-        published_at
-        created_at
-        updated_at
-        disabled_at
     }
 
-    sessions "1" --> "*" session_states : "logical: session_states.session_id -> sessions.id"
-    sessions "1" --> "*" session_players : "logical: session_players.session_id -> sessions.uuid"
-    sessions "1" --> "*" join_codes : "logical: join_codes.session_id -> sessions.uuid"
-    sessions "*" --> "1" game_definitions : "logical: sessions.game_definition_uuid -> game_definitions.uuid"
+    sessions "1" --> "*" session_actors : "session_actors.session_id -> sessions.id"
+    sessions "0..1 host" --> "1" session_actors : "sessions.host_actor_id -> session_actors.id"
+    session_actors "1" --> "0..1" session_participants : "session_participants.session_actor_id -> session_actors.id"
+    sessions "1" --> "*" join_codes : "join_codes.session_id -> sessions.id"
+    sessions "0..1" --> "*" session_requests : "session_requests.session_id -> sessions.id"
 ```
+
+`phase` is `LOBBY | TERMINAL` in the currently implemented behavior (Create/Join/Leave); `RUNNING` is not yet reachable. `started_at` is always `NULL` in the currently implemented behavior.
 
 ## Relationship Types
 
@@ -128,13 +137,18 @@ Logical persisted references:
 - `game_histories.game_id -> games.id`
 - `game_definition_histories.game_definition_id -> game_definitions.id`
 - `games.current_definition_id -> game_definitions.id`
-- `session_states.session_id -> sessions.id`
-- `session_players.session_id -> sessions.uuid`
-- `join_codes.session_id -> sessions.uuid`
-- `sessions.game_definition_uuid -> game_definitions.uuid`
+- `session_actors.session_id -> sessions.id`
+- `sessions.host_actor_id -> session_actors.id`
+- `session_participants.session_actor_id -> session_actors.id`
+- `join_codes.session_id -> sessions.id`
+- `session_requests.session_id -> sessions.id`
+
+Logical cross-domain references (no database FK, different domain):
+
+- `sessions.game_definition_uuid -> game_definitions.uuid` (Game Management)
+- `session_actors.user_uuid -> Identity.User` (Identity)
+- `session_requests.user_uuid -> Identity.User` (Identity)
 
 External logical identifiers:
 
 - `games.owner_uuid`
-- `sessions.owner_uuid`
-- `session_players.player_uuid`
