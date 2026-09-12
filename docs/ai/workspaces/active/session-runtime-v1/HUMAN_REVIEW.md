@@ -23,6 +23,8 @@ Everything else from the original DRAFT stands unchanged: the `sessions`-row DB 
 
 There is nothing further to approve. `WORK-0001-session-lobby-foundation.md` is READY. The next step is implementation - a Codebase Agent session following `docs/ai/protocols/IMPLEMENTATION_REVIEW.md` against the READY WORK. No code, tests, or migrations have been written yet.
 
+**Historical note (added 2026-09-11, does not change the approval recorded above)**: this checkpoint predates implementation. A first implementation pass has since happened (see `AI_CONTEXT.md`'s 2026-09-08 and 2026-09-11 checkpoints and `docs/work/active/WORK-0001-session-lobby-foundation.md`'s Implementation Status Note) - WORK-0001 is now IMPLEMENTING, not READY-with-nothing-written. This file remains the historical record of the READY approval decision itself and is retained per this workspace's rules until the next human-facing checkpoint (independent review / closure) produces its own.
+
 ## Also Synchronized This Checkpoint
 
 - `PLAN.md` - Slice 1 now shows WORK-0001 as READY; the approved 10-slice sequence (Lobby Foundation → Start+First RuntimeTurn → Interaction Response Processing → Thin Live Coordinator/WebSocket → Timer Obligations → Failure Diagnostics+Terminal Cleanup → Disconnect/Reconnect+Resync → Inactivity Expiration/Reaper → Keyed Timers → Archival) is unchanged and preserved, including Slice 2's mandatory immediate 20-Step enforcement and Slice 4's intentionally thin scope.

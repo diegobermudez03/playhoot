@@ -96,9 +96,12 @@ classDiagram
     sessions "0..1" --> "*" session_requests : "session_requests.session_id -> sessions.id"
 ```
 
-Logical cross-domain references (no database FK):
+Logical cross-capability reference within Game (no database FK, same bounded context - GAME-ADR-0001):
 
 - `sessions.game_definition_uuid` -> Game Management `game_definitions.uuid`.
+
+Logical cross-domain references (no database FK, different bounded context):
+
 - `session_actors.user_uuid` -> Identity `User.user_uuid`.
 - `session_requests.user_uuid` -> Identity `User.user_uuid`.
 
@@ -388,9 +391,12 @@ This accepted persistence model does not include a generic durable outbox for Co
 
 No database-enforced foreign key constraints are assumed by this accepted design, consistent with current Game migrations. All relationships above are logical persisted references unless a future implementation decision introduces enforced FKs.
 
-Logical cross-domain references (no database FK, different domain):
+Logical cross-capability reference within Game (no database FK, same bounded context, independent persistence/transaction ownership - GAME-ADR-0001):
 
-- `sessions.game_definition_uuid -> game_definitions.uuid` (Game Management)
+- `sessions.game_definition_uuid -> game_definitions.uuid` (Game Management capability)
+
+Logical cross-domain references (no database FK, different bounded context):
+
 - `session_actors.user_uuid -> Identity.User` (Identity)
 - `session_requests.user_uuid -> Identity.User` (Identity)
 

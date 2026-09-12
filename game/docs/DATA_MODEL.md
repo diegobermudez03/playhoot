@@ -143,9 +143,12 @@ Logical persisted references:
 - `join_codes.session_id -> sessions.id`
 - `session_requests.session_id -> sessions.id`
 
-Logical cross-domain references (no database FK, different domain):
+Logical cross-capability references within Game (no database FK, same bounded context, independent persistence/transaction ownership per GAME-ADR-0001):
 
-- `sessions.game_definition_uuid -> game_definitions.uuid` (Game Management)
+- `sessions.game_definition_uuid -> game_definitions.uuid` (Game Management capability, read via the narrow `getgamedefinition`/`getgame` read capabilities, never queried directly from Session Runtime persistence)
+
+Logical cross-domain references (no database FK, different bounded context):
+
 - `session_actors.user_uuid -> Identity.User` (Identity)
 - `session_requests.user_uuid -> Identity.User` (Identity)
 

@@ -21,6 +21,12 @@ Canonical context:
 - `docs/engineering/standards/cross-domain-reference-naming.md`, `repositories.md`, `error-handling.md`, `data-integrity.md`, `testing.md`, `domain-logic-placement.md`
 - `docs/ai/workspaces/active/session-runtime-v1/PLAN.md` (Slice 1 of the approved initiative sequence)
 
+## Implementation Status Note (Current, 2026-09-11)
+
+This note is a factual pointer to current reality; it does not change the approved scope/design below. Status remains **IMPLEMENTING** (unchanged by this note). Create/Join/Leave are implemented per the Approved Design below and pass their service-level (mocked-collaborator) tests; `go build ./...` and `go vet ./...` succeed repository-wide. Repository integration tests and the required concurrency tests exist (`repo_test.go`/`lobby_race_test.go` files under each use case) but remain unexecuted against a real Postgres in this sandbox (no reachable Docker/Postgres engine here - `TEST_DATABASE_*` env vars unset, tests self-report `SKIP`). Independent review per `docs/ai/protocols/IMPLEMENTATION_REVIEW.md` has not yet been performed. Additionally, a human-approved engineering-standard clarification (`docs/engineering/standards/domain-logic-placement.md`/`repositories.md`, 2026-09-09) now requires a targeted migration of this implementation before Slice 2 continues - see `docs/ai/workspaces/active/session-runtime-v1/AI_CONTEXT.md` -> "Mandatory Standard-Compliance Migration" for the specifics (move Create/Join/Leave into a discoverable workflow package; remove/refactor the horizontal `game/session/internal/actors` package). See `game/CURRENT_STATE.md` and `game/docs/FLOWS.md` for the current authoritative implementation-reality description.
+
+The "Context" section immediately below describes the codebase as it was found before this WORK's own implementation pass (2026-09-08) and is preserved as historical evidence for why the work was scoped this way - it is not current state.
+
 ## Outcome
 
 A Session can be created, joined, left, and reconstructed from durable storage using the accepted Session/Actor/Participant/lobby identity model and per-Session DB-locking transactional rules. This replaces the current scaffolding, which does not compile and directly contradicts accepted architecture. It is the durable lobby foundation every later Session Runtime capability (Start/RuntimeTurn, interaction processing, timers, disconnect/reconnect, the live Coordinator) depends on.
@@ -31,9 +37,9 @@ No Game execution begins in this work. No WebSocket/runtime execution is impleme
 
 `session-runtime-v1`'s Architecture Discussion is CLOSED (human-approved); the initiative is in Implementation Planning with an approved 10-slice sequence (`PLAN.md`). This is Slice 1.
 
-Actual codebase inspection (2026-09-08) confirms the drift already tracked in `PLAN.md`:
+Actual codebase inspection (2026-09-08, before this WORK's own implementation pass) confirmed the drift already tracked in `PLAN.md`. **Historical evidence, superseded by this WORK's own implementation - see the Implementation Status Note above for current reality:**
 
-- `game/session/workflows/sessionlifecycle/internal/repo/step_create_room.go` declares `func (r *Repo) CreateRoom(ctx context.Context)` with **no function body** - the `game/session/...` tree does not currently compile.
+- `game/session/workflows/sessionlifecycle/internal/repo/step_create_room.go` declared `func (r *Repo) CreateRoom(ctx context.Context)` with **no function body** - the `game/session/...` tree did not compile at that time. This package tree no longer exists.
 - `game/session/workflows/sessionlifecycle/step_create_room.go`'s public `CreateRoom(ctx, program engine.Program, gameVersionUUID string, ownerUUID string)` accepts an externally-supplied, already-compiled `engine.Program` - GAME-ADR-0004 requires Session Runtime itself to resolve/pin/compile the definition instead.
 - `game/session/workflows/sessionlifecycle/step_join_room.go`'s `JoinRoom(ctx, playerUUID string, sessionCode uint) error` is a no-op stub.
 - The current schema (`game/session/internal/storage/tables.go`, migrated by `game/session/internal/storage/migrations/20260817000000_session_states.go` and `20260817000001_sessions.go`) models `sessions` (with raw `OwnerUUID string`), `sessionState`, `sessionPlayer` (raw `PlayerUUID string`), and `joinCode` - none of the accepted `session_actors`/`session_participants`/`session_requests` tables exist, and `sessions` has none of the accepted `phase`/`lobby_expires_at`/`host_actor_id` columns.
@@ -251,11 +257,17 @@ The accepted model is intentionally cyclic at the logical level: `sessions.host_
 
 ## Verification
 
-- `go build ./...` must succeed, including `game/session/...` (currently broken).
+- `go build ./...` must succeed, including `game/session/...` (was broken before this WORK's implementation; succeeds as of 2026-09-11).
 - `go test ./game/session/...` must pass: repository integration tests against a disposable real Postgres database (requiring `TEST_DATABASE_HOST`/`TEST_DATABASE_PORT`/`TEST_DATABASE_USERNAME`/`TEST_DATABASE_PASSWORD`/`TEST_DATABASE_NAME`/`TEST_DATABASE_SSL_MODE`, consistent with `game/game/internal/testdb`'s existing pattern) plus service/use-case tests using generated mocks (`mockgen`, consistent with `getgame`'s `//go:generate mockgen` convention).
 - At least one concurrency-specific test proving the DB-locking mechanism actually serializes concurrent Joins/Leaves rather than relying on incidental timing.
 - At least one concurrency-specific test proving concurrent `CreateSession` calls sharing the same `(user_uuid, CREATE, idempotency_key)` produce exactly one Session and a consistent replayed result - not merely a test that happens to pass under low contention.
 - Exact test-invocation commands follow whatever convention is already used for `game/game`'s equivalent tests - do not invent a new one.
+
+### Verification Performed So Far (2026-09-11 reconciliation)
+
+- `go build ./...` - succeeds repository-wide.
+- `go vet ./...` - clean.
+- `go test ./game/session/... ./game/game/...` - all service-level (mocked-collaborator) tests pass; every repository-integration and concurrency test (`TestRepoCreateSession*`, `TestRepoJoinSession*`, `TestRepoLeaveSession*`, `TestJoinSession_Concurrent*`, and the equivalent `getgame`/`getgamedefinition` repo tests) self-reports `SKIP` because `TEST_DATABASE_*` is unset - this sandbox has no reachable Postgres (Docker Desktop's engine is not running here). These tests exist and compile but have not actually been executed end-to-end against a real database in any environment used so far. Running them (`docker compose up -d postgres` with `DATABASE_USERNAME`/`DATABASE_PASSWORD`/`DATABASE_NAME`/`DATABASE_PORT` set, then the matching `TEST_DATABASE_*` vars, then `go test ./game/...`) remains required before independent review can treat the concurrency/integration acceptance criteria as verified.
 
 ## Documentation Impact
 
@@ -265,8 +277,8 @@ The accepted model is intentionally cyclic at the logical level: `sessions.host_
 
 ### Current-State Documentation After Implementation
 
-- `game/CURRENT_STATE.md` - the Session Runtime capability-status row should be updated, once this work reaches DONE, from "PARTIAL... `CreateRoom` and `JoinRoom` are stubs" to reflect working Create/Join/Leave; the "Known Gaps"/"Known Drift" sections should be revised to remove now-resolved items.
-- `game/docs/DATA_MODEL.md` - the Session Runtime Tables section should be updated, once DONE, to show the new `sessions`/`session_actors`/`session_participants`/`join_codes`/`session_requests` schema, replacing the old `sessions`/`session_players`/`session_states`/`join_codes` shape.
+- `game/CURRENT_STATE.md` - the Session Runtime capability-status row should be updated, once this work reaches DONE, from "PARTIAL... `CreateRoom` and `JoinRoom` are stubs" to reflect working Create/Join/Leave; the "Known Gaps"/"Known Drift" sections should be revised to remove now-resolved items. **Already done ahead of formal closure**: as of 2026-09-11, `game/CURRENT_STATE.md` already reflects working Create/Join/Leave and lists no known drift.
+- `game/docs/DATA_MODEL.md` - the Session Runtime Tables section should be updated, once DONE, to show the new `sessions`/`session_actors`/`session_participants`/`join_codes`/`session_requests` schema, replacing the old `sessions`/`session_players`/`session_states`/`join_codes` shape. **Already done ahead of formal closure**: as of 2026-09-11, `game/docs/DATA_MODEL.md` already shows the new schema.
 
 ### Intentionally Unchanged
 
@@ -275,11 +287,13 @@ The accepted model is intentionally cyclic at the logical level: `sessions.host_
 
 ## Data / Migration Impact
 
-The current `game/session` schema (`sessions`, `session_states`, `session_players`, `join_codes`, migrated by `20260817000000_session_states.go`/`20260817000001_sessions.go`) has never held real data: `CreateRoom`/`JoinRoom` are no-op stubs that never persist anything, and the `game/session/...` package tree does not even compile today. Discarding this data is safe - there is nothing to preserve.
+**Historical (as approved before implementation) - already executed as described below; preserved as the rationale for the chosen approach, not as an open task.** The `game/session` schema that existed before this WORK (`sessions`, `session_states`, `session_players`, `join_codes`, migrated by `20260817000000_session_states.go`/`20260817000001_sessions.go`) had never held real data: `CreateRoom`/`JoinRoom` were no-op stubs that never persisted anything, and the `game/session/...` package tree did not compile. Discarding that data was judged safe - there was nothing to preserve.
 
 Proposed approach: add **new** migration files (do not edit or delete the two existing historical migration files) that:
 1. Drop the old `session_states`, `session_players`, `sessions`, and `join_codes` tables (in dependency order).
 2. Create the new `sessions`, `session_actors`, `session_participants`, `join_codes`, and `session_requests` tables per the Approved Design above, each with a `Rollback` that reverses it, following the existing `gormigrate` convention (`game/session/internal/storage/migrations/migration.go`'s registration list) exactly as already used for the current two migrations.
+
+**Executed as of 2026-09-08**: `game/session/internal/storage/migrations/20260908000000_drop_legacy_session_schema.go` through `20260908000005_session_requests.go` implement exactly this plan (drop-then-recreate as new migrations, old historical migration files untouched).
 
 Rationale for adding new migrations rather than editing the existing files in place: preserves `gormigrate`'s migration-tracking integrity (the `migrations` table records applied migration IDs) regardless of whether any environment has ever actually run the old migrations, which is a safer default than assuming no environment has. No repository-wide migration-safety rule beyond `gormigrate`'s own `Migrate`/`Rollback` mechanism was found during inspection, so this is a proposed convention for this work, not an existing mandate - the Codebase Agent may deviate if implementation-time inspection shows a stronger reason to, without that constituting a material scope change.
 
@@ -305,4 +319,4 @@ The constraint/index plan for the new tables must include at minimum:
 
 ## Completion Record
 
-Not applicable - Status is READY (implementation has not started).
+Not applicable yet - Status is IMPLEMENTING, not DONE (see the Implementation Status Note near the top of this file for current reality). Remaining before this can be filled in and the WORK closed per `docs/ai/protocols/IMPLEMENTATION_REVIEW.md`: run the repository integration/concurrency tests against a real Postgres (not yet executed in any environment used so far), complete independent review, and perform the mandatory engineering-standard-compliance migration recorded in `docs/ai/workspaces/active/session-runtime-v1/AI_CONTEXT.md`. This section intentionally stays unfilled until closure.
