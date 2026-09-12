@@ -92,7 +92,7 @@ Session application/domain APIs receive an already-trusted `UserUUID`, per GAME-
 - **`join_codes`**: `id`, `session_id`, `code`, `created_at`, `revoked_at` (nullable) - authoritative Session persistence, not cache-only; one active code per lobby; revoked (not deleted) when the lobby is no longer admissible; historical/revoked codes retained.
 - **`session_requests`**: `id`, `operation`, `idempotency_key`, `user_uuid`, `session_id` (nullable - a `CREATE` request may not yet have a resulting session at the moment of dedup lookup for a rejected/failed attempt, though a successful `CREATE` should populate it), `request_payload`, `outcome`, `response_payload`, `status` (distinguishes a completed logical outcome from an in-progress claim - see Concurrent Create Correctness and Completed-Outcome-vs-Transient-Failure below; exact value set is implementation freedom, e.g. `PENDING`/`COMPLETED`, or an equivalent that the DB-level uniqueness/claim mechanism can key off of), `created_at`. Unique `(user_uuid, operation, idempotency_key)` - **not** `(operation, idempotency_key)` alone, since two different users may independently produce the same opaque idempotency key with no collision; the same `(user_uuid, operation, idempotency_key)` identifies one logical operation. Only `CREATE`/`JOIN`/`LEAVE` operations are handled here; `START` support is explicitly deferred to Slice 2.
 
-Cross-domain references (`game_definition_uuid`, `user_uuid`) remain logical only - no database foreign keys into another bounded context, no direct queries against Game Management or Identity tables from Session persistence code (GAME-ADR-0001, `cross-domain-reference-naming.md`).
+`game_definition_uuid` is a logical cross-capability reference to Game Management, within the same Game bounded context (GAME-ADR-0001) - not a cross-domain reference. `user_uuid` is a logical cross-domain reference to Identity, a different bounded context (`cross-domain-reference-naming.md`). Both remain logical references only - no database foreign keys crossing either boundary, and no direct queries against Game Management or Identity tables from Session persistence code.
 
 ### Pinned Game Definition Is Immutable For The Session
 
@@ -158,10 +158,10 @@ Do not turn a temporary infrastructure outage into a permanently cached Session 
 - returns the immutable definition needed for Session-side validation (at minimum, whatever the Definition exposes for `players.max`/`players.min`);
 - does **not** resolve through `games.current_definition_id` - it must return the exact pinned version regardless of what is currently published as "current";
 - Session persistence code never queries Game Management tables directly - it calls this capability;
-- no cross-domain database foreign key is introduced;
+- no database foreign key crossing into Game Management's persistence is introduced (`game_definition_uuid` is a cross-capability reference within the same Game bounded context, not a cross-domain one - GAME-ADR-0001);
 - this is the minimum addition needed to make Join (and later Start) correct - it does not redesign Game Management's existing ownership, publish/lifecycle behavior, or storage.
 
-Implementation may place the Game Management read immediately before or during the Join transaction, whichever keeps correctness clear and transaction duration reasonable - since the pinned `game_definition_uuid` is immutable, the definition itself cannot change underneath the Session regardless of exactly when it's read relative to the lock, so there is no race to worry about here the way there would be if "current version" were being re-resolved.
+Per GAME-ADR-0001, Game Management capability calls required for a Session mutation must complete **before** opening the Session write/locking transaction; Session Runtime must not hold its mutation transaction/row lock while invoking Game Management. Join therefore performs this Game Management read before opening its mutation transaction, not during it. (The pinned `game_definition_uuid` is immutable, so the definition itself cannot change underneath the Session regardless of exactly when it's read relative to the lock - that immutability is why sequencing the read first is always safe, not a justification for reading it while the lock is held.)
 
 ### Host/SessionActor Creation Cycle
 
@@ -188,7 +188,8 @@ The accepted model is intentionally cyclic at the logical level: `sessions.host_
 ## Constraints and Invariants
 
 - Session-local uniqueness: at most one active logical participation per `(session, user_uuid)` (GAME-ADR-0003).
-- No database foreign keys and no direct table queries across bounded contexts (GAME-ADR-0001, `cross-domain-reference-naming.md`).
+- No database foreign keys and no direct table queries across persistence-ownership boundaries: Game Management vs. Session Runtime, a cross-capability boundary within the same Game bounded context (GAME-ADR-0001), and Session Runtime vs. Identity, a cross-domain boundary (`cross-domain-reference-naming.md`).
+- Game Management reads required by a Session mutation (Join's pinned-definition lookup; later Start's) complete before Session Runtime opens its write/locking transaction - Session Runtime never holds its mutation transaction/row lock while calling into Game Management (GAME-ADR-0001).
 - `CreateSession` never accepts an externally-supplied `engine.Program` (GAME-ADR-0004).
 - Host is never automatically an active Participant (GAME-ADR-0004).
 - `lobby_expires_at` is authoritative; no operation may revive an already-expired lobby merely because persisted `phase` still reads `LOBBY` (GAME-ADR-0004).
@@ -220,7 +221,7 @@ The accepted model is intentionally cyclic at the logical level: `sessions.host_
 - A revoked/invalid `JoinCode` is rejected.
 - The participant's display name is persisted as a Session-scoped snapshot.
 - **Pinned definition**: Create a Session against Game version V1; publish/change the Game's current version to V2 with a different `players.max`; Join the existing Session; Join's `players.max` enforcement is still governed by pinned V1, not V2. (Test fixtures may simulate the "current version changed" condition directly in Game Management test data rather than literally invoking a publication workflow, if simpler.)
-- **Cross-domain read correctness**: Join loads the Game Definition by the Session's pinned `game_definition_uuid`, not by re-resolving the Game's current version; a test should fail if the implementation accidentally substitutes a "current version" lookup for the pinned-definition lookup.
+- **Cross-capability read correctness**: Join loads the Game Definition by the Session's pinned `game_definition_uuid`, not by re-resolving the Game's current version; a test should fail if the implementation accidentally substitutes a "current version" lookup for the pinned-definition lookup.
 
 **Leave**
 - An active Participant can leave the lobby; their slot becomes available to others.
@@ -239,10 +240,11 @@ The accepted model is intentionally cyclic at the logical level: `sessions.host_
 - The same `(user_uuid, operation, idempotency_key)` with a different, conflicting semantic payload (e.g. a different `JoinCode` or `GameUUID`) is rejected as a conflict, not silently replayed or silently applied.
 - A transient infrastructure failure or transaction rollback before commit does not leave behind a completed, replayable logical outcome; a subsequent retry of the same identity executes as a fresh attempt rather than replaying a cached failure.
 
-**Cross-domain / architecture guardrails**
+**Capability/domain-boundary and architecture guardrails**
 - No test or production code path accepts an externally-supplied `engine.Program` into `CreateSession`.
 - No test or production code path uses `Identity.UserUUID` as engine/runtime identity in this slice (there is no engine/runtime identity yet - this guards against prematurely introducing one).
-- No repository code issues a direct SQL query against a Game Management or Identity table, and no database foreign key crosses into another bounded context's tables.
+- No repository code issues a direct SQL query against a Game Management or Identity table, and no database foreign key crosses into Game Management's persistence (cross-capability, same Game bounded context) or Identity's persistence (cross-domain, a different bounded context).
+- No Session mutation opens its write/locking transaction before its required Game Management read(s) complete, and Session Runtime never holds that transaction/row lock while calling into Game Management (GAME-ADR-0001).
 - No test or production code path calls `getgame.GetPlayableGameWithCurrentVersion` (or any "current version" resolution) for anything other than `CreateSession`.
 
 ## Implementation Freedom
@@ -250,7 +252,6 @@ The accepted model is intentionally cyclic at the logical level: `sessions.host_
 - Exact package/file layout. Recommended: adopt the `usecases/<verb+noun>/` pattern already established by `game/game/usecases/getgame` (e.g. `game/session/usecases/createsession`, `.../joinsession`, `.../leavesession`) instead of extending the existing `workflows/sessionlifecycle` structure, for consistency with the rest of the repository - but this is a local structural choice, not a material constraint.
 - The exact `lobby_expires_at` TTL value/source (a package-level constant is acceptable; no existing repository-wide configuration convention was found to reuse).
 - The exact naming/shape of the new Game Management pinned-definition read capability (`GetGameDefinition` or equivalent) and its placement (new file in `getgame`, a new sibling usecase, etc.) - the required semantics are fixed (see Game Management Dependency above), the exact Go naming/package placement is not.
-- Whether Join's pinned-definition read happens strictly before opening the Session transaction or during it - either is acceptable since the pinned definition cannot change underneath the Session either way.
 - Exact Go sentinel/error type names, including the idempotency-conflict and concurrent-Create-claim-collision errors.
 - Exact SQL column types/lengths/indexes beyond what's specified above, following `repositories.md`.
 - Exact `session_requests.status` value set/type (e.g. a small string enum vs. a boolean "completed" flag) as long as it can distinguish a completed outcome from anything else.

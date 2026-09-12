@@ -30,7 +30,7 @@ Status: APPROVED SEQUENCE, human-approved 2026-09-08. The most important change 
 
 ### Slice 1 — Session Lobby Foundation
 
-Status: READY for implementation. See `docs/work/active/WORK-0001-session-lobby-foundation.md` (human-approved, corrected per the human's implementation-design review, and marked READY - not yet implemented).
+Status: IMPLEMENTED (Create/Join/Leave). See `docs/work/active/WORK-0001-session-lobby-foundation.md`, currently **IMPLEMENTING** (not DONE): a first implementation pass is complete and its service-level tests pass, but repository integration/concurrency tests have not yet been executed against a real PostgreSQL in the current environment, independent implementation review per `docs/ai/protocols/IMPLEMENTATION_REVIEW.md` is still pending, and the mandatory engineering-standard-compliance migration recorded in `AI_CONTEXT.md` still gates Slice 2. See `game/CURRENT_STATE.md` and `game/docs/FLOWS.md` for current implementation reality.
 
 **Delivers**: Create/Join/Leave working correctly under the accepted persistence model and LOBBY per-Session DB-locking serialization (GAME-ADR-0004): `session_requests` idempotency, `session_actors`/`session_participants` replacing raw owner/player UUID fields, `lobby_expires_at`, JoinCode issuance/revocation, and Session Runtime itself resolving/pinning/compiling the Game definition through the existing `getgame` read capability instead of accepting an external `engine.Program`. A Session can be created, joined, left, and reconstructed from durable storage. No Game execution and no WebSocket/runtime execution happen in this slice.
 
@@ -162,12 +162,12 @@ This slice intentionally EXCLUDES the later operational complexity that belongs 
 
 ## WORK References
 
-- **WORK-0001** - `docs/work/active/WORK-0001-session-lobby-foundation.md` - Slice 1, Session Lobby Foundation. Status: **READY**. Implementation may begin in the next agent handoff/session.
+- **WORK-0001** - `docs/work/active/WORK-0001-session-lobby-foundation.md` - Slice 1, Session Lobby Foundation. Status: **IMPLEMENTING**. A first implementation pass (Create/Join/Leave) is complete; remaining before DONE: real-Postgres integration/concurrency test verification, independent implementation review, and the mandatory engineering-standard-compliance migration recorded in `AI_CONTEXT.md`.
 
-Per the just-in-time WORK model, no other slice has been materialized into Feature Development yet. Slice 2 (Start + First RuntimeTurn) is the next candidate once WORK-0001 reaches DONE.
+Per the just-in-time WORK model, no other slice has been materialized into Feature Development yet. Slice 2 (Start + First RuntimeTurn) is the next candidate once WORK-0001 reaches DONE - which requires the outstanding items above, not merely further design.
 
 ## Recommended First Slice
 
-**Slice 1 — Session Lobby Foundation**, materialized as `WORK-0001-session-lobby-foundation.md`, now **READY** for implementation after the human's implementation-design review added corrections around pinned-Game-Definition immutability, a minimum new Game Management read capability, the `(user_uuid, operation, idempotency_key)` idempotency namespace, concurrent-Create correctness, and the Session/HostActor insertion cycle - see WORK-0001 for the full corrected design.
+**Slice 1 — Session Lobby Foundation** was correctly recommended and sequenced first; it is now **implemented** (Create/Join/Leave) as `WORK-0001-session-lobby-foundation.md`, currently **IMPLEMENTING** rather than DONE pending real-Postgres verification, independent review, and the mandatory standard-compliance migration (see WORK References above and `AI_CONTEXT.md`). The human's implementation-design review that produced the approved design added corrections around pinned-Game-Definition immutability, a minimum new Game Management read capability, the `(user_uuid, operation, idempotency_key)` idempotency namespace, concurrent-Create correctness, and the Session/HostActor insertion cycle - see WORK-0001 for the full corrected design.
 
 Rationale (unchanged): (a) dependency order - every other slice needs a correctly modeled, serialized Session; (b) current repository state - the existing scaffolding does not compile (`step_create_room.go`'s `CreateRoom` has no function body) and actively contradicts accepted architecture (external `engine.Program` parameter, raw owner/player UUID fields, an entirely superseded schema), so this is an urgent correctness gap, not a nice-to-have; (c) useful vertical progress - delivers an actually working Create/Join/Leave flow; (d) risk reduction - proves out the DB-locking per-Session serialization mechanism (which GAME-ADR-0018 later extends to RUNNING) at the lowest-risk point, before any engine execution is layered on top; (e) validates architecture early - exercises the "Session Runtime resolves/pins/compiles the Game definition itself" pattern this whole initiative depends on.
