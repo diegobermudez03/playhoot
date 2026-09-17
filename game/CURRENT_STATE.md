@@ -25,6 +25,6 @@ Status: CURRENT IMPLEMENTATION
 - Game Management playable-game retrieval: `game/game/usecases/getgame/`.
 - Game Management pinned-definition retrieval: `game/game/usecases/getgamedefinition/`.
 - Session Runtime storage and migrations: `game/session/internal/storage/`.
-- Session Runtime Create/Join/Leave use cases: `game/session/usecases/createsession/`, `game/session/usecases/joinsession/`, `game/session/usecases/leavesession/`.
-- Session Runtime shared lobby mechanics: `game/session/internal/sessionlock/`, `game/session/internal/idempotency/`, `game/session/internal/actors/`.
+- Session Runtime Create/Join/Leave lifecycle operations: `game/session/workflows/sessionlifecycle/createsession/`, `game/session/workflows/sessionlifecycle/joinsession/`, `game/session/workflows/sessionlifecycle/leavesession/`.
+- Session Runtime shared lobby mechanics: `game/session/internal/sessionlock/`, `game/session/internal/idempotency/`. Actor/Participant persistence is behavior-local to each of Join/Leave (no shared horizontal package).
 - Game Language v1 implementation and tests: `game/language/v1/program/` and `game/language/v1/engine/`.

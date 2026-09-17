@@ -1,7 +1,7 @@
 // Package session is the Session Runtime capability's public domain
 // vocabulary: the lobby lifecycle phase/presence/terminal-reason values and
 // the sentinel errors shared by its CreateSession/JoinSession/LeaveSession
-// use cases (game/session/usecases/...).
+// lifecycle operations (game/session/workflows/sessionlifecycle/...).
 package session
 
 import "errors"

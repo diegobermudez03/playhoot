@@ -82,8 +82,8 @@ Implemented behavior:
 
 Evidence:
 
-- `game/session/usecases/createsession/`, `game/session/usecases/joinsession/`, `game/session/usecases/leavesession/`
-- `game/session/internal/sessionlock/`, `game/session/internal/idempotency/`, `game/session/internal/actors/`
+- `game/session/workflows/sessionlifecycle/createsession/`, `game/session/workflows/sessionlifecycle/joinsession/`, `game/session/workflows/sessionlifecycle/leavesession/`
+- `game/session/internal/sessionlock/`, `game/session/internal/idempotency/` (shared cross-cutting mechanics); SessionActor/Participant persistence is behavior-local inside each of `joinsession`/`leavesession` (no shared horizontal package)
 - `game/game/usecases/getgamedefinition/`
 
 ## Not Documented As Implemented

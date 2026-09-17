@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/diegobermudez03/playhoot/game/session"
-	"github.com/diegobermudez03/playhoot/game/session/internal/actors"
 	"github.com/diegobermudez03/playhoot/game/session/internal/idempotency"
 	"github.com/diegobermudez03/playhoot/game/session/internal/sessionlock"
 	"github.com/diegobermudez03/playhoot/utils"
@@ -91,7 +90,7 @@ func (r *repo) leaveSession(ctx context.Context, params leaveParams) (Result, er
 			return interpretExistingLeaveClaim(existing, incomingPayload)
 		}
 
-		actor, err := actors.Find(ctx, tx, row.ID, params.UserUUID)
+		actor, err := findActor(ctx, tx, row.ID, params.UserUUID)
 		if err != nil {
 			return Result{}, err
 		}
@@ -99,12 +98,12 @@ func (r *repo) leaveSession(ctx context.Context, params leaveParams) (Result, er
 			return Result{}, session.ErrActorNotFound
 		}
 
-		participant, err := actors.FindParticipant(ctx, tx, actor.ID)
+		participant, err := findParticipant(ctx, tx, actor.ID)
 		if err != nil {
 			return Result{}, err
 		}
 		if participant != nil && participant.Active {
-			if err := actors.DeactivateParticipant(ctx, tx, participant.ID, now); err != nil {
+			if err := deactivateParticipant(ctx, tx, participant.ID, now); err != nil {
 				return Result{}, err
 			}
 		}
@@ -122,6 +121,75 @@ func (r *repo) leaveSession(ctx context.Context, params leaveParams) (Result, er
 
 		return result, nil
 	})
+}
+
+// actorRow is Leave's local view of a persisted session_actors record - a
+// small persistence-code duplication with joinsession's own actorRow is
+// preferred here over a shared horizontal actors package, since Join and
+// Leave are separate behavior-local consumers whose query/locking needs may
+// evolve independently (see repositories.md's Sharing Rule). Leave never
+// creates/admits an actor, so it only needs the read side.
+type actorRow struct {
+	ID        uint
+	SessionID uint
+	UserUUID  string
+}
+
+// findActor returns the SessionActor for (sessionID, userUUID), or nil, nil
+// if none exists yet.
+func findActor(ctx context.Context, tx *gorm.DB, sessionID uint, userUUID string) (*actorRow, error) {
+	var row actorRow
+	result := tx.WithContext(ctx).Raw(`
+		SELECT id, session_id, user_uuid
+		FROM session_actors
+		WHERE session_id = ? AND user_uuid = ?
+	`, sessionID, userUUID).Scan(&row)
+	if result.Error != nil {
+		return nil, fmt.Errorf("finding session actor: %s", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return nil, nil
+	}
+	return &row, nil
+}
+
+// participantRow is Leave's local view of a persisted session_participants
+// record.
+type participantRow struct {
+	ID             uint
+	SessionActorID uint
+	DisplayName    string
+	Active         bool
+}
+
+// findParticipant returns the Participant owned by actorID, or nil, nil if
+// none has ever been created for it.
+func findParticipant(ctx context.Context, tx *gorm.DB, actorID uint) (*participantRow, error) {
+	var row participantRow
+	result := tx.WithContext(ctx).Raw(`
+		SELECT id, session_actor_id, display_name, active
+		FROM session_participants
+		WHERE session_actor_id = ?
+	`, actorID).Scan(&row)
+	if result.Error != nil {
+		return nil, fmt.Errorf("finding participant: %s", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return nil, nil
+	}
+	return &row, nil
+}
+
+// deactivateParticipant releases participantID's lobby slot.
+func deactivateParticipant(ctx context.Context, tx *gorm.DB, participantID uint, now time.Time) error {
+	if err := tx.WithContext(ctx).Exec(`
+		UPDATE session_participants
+		SET active = FALSE, left_at = ?
+		WHERE id = ?
+	`, now, participantID).Error; err != nil {
+		return fmt.Errorf("deactivating participant: %s", err)
+	}
+	return nil
 }
 
 func interpretExistingLeaveClaim(existing *idempotency.Row, incoming leaveRequestPayload) (Result, error) {

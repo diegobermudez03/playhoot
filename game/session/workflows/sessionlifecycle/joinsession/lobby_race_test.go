@@ -10,8 +10,8 @@ import (
 	"github.com/diegobermudez03/playhoot/game/session"
 	"github.com/diegobermudez03/playhoot/game/session/internal/testdb"
 	"github.com/diegobermudez03/playhoot/game/session/internal/testfixtures"
-	"github.com/diegobermudez03/playhoot/game/session/usecases/joinsession"
-	"github.com/diegobermudez03/playhoot/game/session/usecases/leavesession"
+	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/joinsession"
+	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/leavesession"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
