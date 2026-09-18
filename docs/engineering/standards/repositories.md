@@ -27,6 +27,24 @@ However, repositories MUST NOT become owners of business policy. The application
 
 Repository implementations use `repositories.md`'s conventions directly (raw SQL / GORM as described above). Do not introduce a mandatory `Service -> Repository -> Datastore -> GORM` layering, or any other ceremonial extra persistence layer, merely to claim storage independence. Introduce another persistence layer only when it has a concrete responsibility that independently justifies it.
 
+## Transaction Ownership
+
+The workflow/service layer decides which operations constitute one logical atomic transaction — which repository calls, domain checks, and outcome recording must all commit or fail together. Persistence/infrastructure code performs the mechanical BEGIN/COMMIT/ROLLBACK; it does not decide transaction scope.
+
+Concretely: the workflow should not manually call `db.Begin()`/`tx.Commit()`/`tx.Rollback()`, and should instead use an infrastructure/transactor abstraction conceptually equivalent to `WithinTransaction(ctx, func(txRepo Repository) error { ... })`, or an equivalent callback that supplies a transaction-scoped DB/repository handle. The exact API shape is implementation-local; the important split is that the workflow decides *what* belongs inside the transaction and infrastructure performs BEGIN/COMMIT/ROLLBACK.
+
+Repository methods consumed as part of a workflow transaction must operate using the caller-supplied transaction-scoped handle. They must not independently open and commit their own transaction — otherwise `operation A commits; operation B commits; operation C fails` could violate the workflow's intended logical atomicity. Read operations outside a transaction may use the ordinary DB handle. Do not introduce nested, autonomous repository-owned transactions as the normal mutation model.
+
+A business rejection inside a transaction is not automatically "the callback returned an error, so roll everything back." Some workflows require a durable outcome (an idempotency-request completion, a lazily-materialized expiration) to commit *together with* an otherwise-rejecting business decision, then return the business error to the caller. The transaction/transactor design the workflow uses must support committing an intended durable outcome while still surfacing a business-level rejection, rather than forcing every non-nil business error to imply automatic rollback of state the workflow intended to keep.
+
+## Repository Naming: Persistence Operations, Not Business Commands
+
+Repository method names describe persistence/data operations; workflow/use-case method names describe business/lifecycle actions. Avoid repository methods named after the business command itself, such as `JoinSession`, `LeaveSession`, `ExpireLobby`, or `AdmitParticipant` — those names encode a business decision inside what should be a persistence-oriented name.
+
+Prefer persistence-oriented names describing the data operation instead, for example (illustrative, not a fixed vocabulary): `FindSession...`, `LockSession...`, `CreateSessionWithHost`, `CreateJoinCode`, `FindActor`, `GetOrCreateActor`, `FindParticipant`, `CountActiveParticipants`, `CreateParticipant`, `ActivateParticipant`, `DeactivateParticipant`, `SetSessionTerminal`, `RevokeActiveJoinCode`, `ClaimSessionRequest`, `CompleteSessionRequest`. Exact names are implementation-local; the invariant is the naming *axis* — workflow methods name business/lifecycle actions, repository methods name persistence/data operations — not any specific vocabulary list.
+
+This does not require CRUD-minimal repositories (see Multi-Table Persistence Encapsulation above): a persistence-oriented name may still encapsulate several statements, as long as the name describes what is persisted/mutated rather than the business decision that led to it.
+
 ## Sharing Rule: Protocols/Mechanics, Not Horizontal Entity APIs
 
 Shared internal persistence infrastructure is appropriate when it represents a genuinely common technical/correctness mechanism where divergent implementations would be a bug or create significant risk — a *protocol*, not an entity's CRUD surface. Legitimate examples: per-Session locking (e.g. `internal/sessionlock`), idempotency-claim/replay mechanics (e.g. `internal/idempotency`), transaction mechanics, and database error classification (e.g. `internal/pgerrs`). These may live under shared internal packages, named for the invariant/mechanism they provide.
@@ -51,4 +69,6 @@ During code review, flag in particular:
 
 - a new entity-centric shared repository package (e.g. a horizontal `actors`/`sessions`/`participants`/`timers`-style package) created only to deduplicate CRUD/query code across otherwise-unrelated behaviors;
 - a shared "common/general-purpose" persistence bucket introduced without a specific invariant/mechanism it exists to protect;
-- a mandatory extra persistence layer (e.g. a ceremonial Datastore layer) added without a concrete responsibility that justifies it.
+- a mandatory extra persistence layer (e.g. a ceremonial Datastore layer) added without a concrete responsibility that justifies it;
+- a workflow manually calling `Begin`/`Commit`/`Rollback` instead of using a transactor abstraction, or a repository method opening/committing its own transaction while also being called as part of a workflow transaction (see Transaction Ownership above);
+- a repository method named after a business command (`JoinSession`, `AdmitParticipant`, `ExpireLobby`) instead of the persistence operation it performs (see Repository Naming above).

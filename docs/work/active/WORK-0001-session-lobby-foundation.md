@@ -1,8 +1,8 @@
 # WORK-0001: Session Lobby Foundation
 
-Status: IMPLEMENTING
+Status: READY
 Created: 2026-09-08
-Last status change: 2026-09-08
+Last status change: 2026-09-16
 
 Related decisions:
 - `game/docs/decisions/GAME-ADR-0001-game-capability-persistence-transaction-boundary.md`
@@ -11,21 +11,36 @@ Related decisions:
 - `game/docs/decisions/GAME-ADR-0004-session-lobby-lifecycle-contract.md`
 - `game/docs/decisions/GAME-ADR-0005-session-public-and-internal-identity-boundary.md`
 - `game/docs/decisions/GAME-ADR-0018-session-running-mutation-serialization.md` (reused design for the locking primitive; RUNNING itself is out of scope here)
+- `game/docs/decisions/GAME-ADR-0021-session-lobby-command-idempotency-token-semantics.md` (Join idempotency token-replay-vs-new-command semantics)
 - `docs/decisions/architecture/ADR-0005-cross-domain-public-entity-references.md`
 - `identity/docs/decisions/IDENTITY-ADR-0001-identity-user-public-identity-boundary.md`
 
 Canonical context:
 - `game/README.md` (Session Runtime Lobby Lifecycle Contract, Session Runtime Actor and Lifecycle Model, Capability Persistence and Transaction Boundary sections)
 - `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md` (Lobby And Identity Tables)
-- `game/docs/DATA_MODEL.md` and `game/CURRENT_STATE.md` (current implementation reality, superseded by this work)
-- `docs/engineering/standards/cross-domain-reference-naming.md`, `repositories.md`, `error-handling.md`, `data-integrity.md`, `testing.md`, `domain-logic-placement.md`
+- `game/docs/DATA_MODEL.md` and `game/CURRENT_STATE.md` (current implementation reality; the implementation boundary this WORK approves is now materially ahead of what these describe - see "2026-09-16 Design Revision" below)
+- `docs/engineering/standards/cross-domain-reference-naming.md`, `repositories.md`, `error-handling.md`, `data-integrity.md`, `testing.md`, `domain-logic-placement.md`, `function-signatures.md`, `idempotency.md`
 - `docs/ai/workspaces/active/session-runtime-v1/PLAN.md` (Slice 1 of the approved initiative sequence)
 
-## Implementation Status Note (Current, 2026-09-11)
+## 2026-09-16 Design Revision (Material, HUMAN-APPROVED)
 
-This note is a factual pointer to current reality; it does not change the approved scope/design below. Status remains **IMPLEMENTING** (unchanged by this note). Create/Join/Leave are implemented per the Approved Design below and pass their service-level (mocked-collaborator) tests; `go build ./...` and `go vet ./...` succeed repository-wide. Repository integration tests and the required concurrency tests exist (`repo_test.go`/`lobby_race_test.go` files under each use case) but remain unexecuted against a real Postgres in this sandbox (no reachable Docker/Postgres engine here - `TEST_DATABASE_*` env vars unset, tests self-report `SKIP`). Independent review per `docs/ai/protocols/IMPLEMENTATION_REVIEW.md` has not yet been performed. See `game/CURRENT_STATE.md` and `game/docs/FLOWS.md` for the current authoritative implementation-reality description.
+The first implementation pass (2026-09-08, standard-compliance-migrated 2026-09-11) exposed a further service/repository/workflow-organization mismatch beyond what the 2026-09-09/09-11 migration already fixed: three sibling packages (`createsession`/`joinsession`/`leavesession`), each with its own `Input`-style params struct (e.g. `leaveParams`) and its own `repo.leaveSession(...)`-style method that performs the entire business operation (lock, expiration decision, idempotency decision, persistence) inside the repository layer, and a shared `sessionlock.MaterializeExpirationIfDue` that decides lifecycle-expiration policy from inside a locking primitive. This handoff clarifies and persists the reusable engineering standards this implementation must actually follow (`docs/engineering/standards/function-signatures.md` (new), `docs/engineering/standards/idempotency.md` (new), and refined sections of `domain-logic-placement.md`/`repositories.md`), clarifies Session Join idempotency token semantics (`game/docs/decisions/GAME-ADR-0021-session-lobby-command-idempotency-token-semantics.md`, refining GAME-ADR-0004's Join wording), and revises this WORK's approved design accordingly. This WORK was returned to DRAFT for this revision and is now re-approved and READY again; the human explicitly approved the material decisions in this handoff. **No Go source, tests, or migrations were changed by this revision** - only this specification. The next implementation pass must bring the existing Create/Join/Leave implementation into compliance with the revised Approved Design below before Slice 2 begins.
 
-**Standard-compliance migration gate: CLOSED as of 2026-09-11** - see "Standard-Compliance Migration Record" below. The two remaining gates before WORK-0001 can reach DONE are real-Postgres integration/concurrency verification and independent implementation review.
+Material changes from the previously-approved design (see revised subsections below for full detail):
+
+1. **One `SessionLifecycle` workflow controller** (`Manager`) exposing `Create`/`Join`/`Leave` (and later `Start`) as its methods, replacing the three independent sibling packages - see Workflow Package Structure below.
+2. **Explicit method parameters**, not ceremonial `Input`/`Params` structs, per `function-signatures.md` - `leaveParams`-style bundling structs are removed from the target design.
+3. **Explicit transaction ownership**: the Manager decides transaction scope via a transactor abstraction; no repository method independently opens/commits its own transaction; a business rejection can still commit an intended durable outcome (e.g. lazy expiration materialization, idempotency-request completion) - see Transaction Ownership below.
+4. **Repository methods are renamed to persistence-oriented names** and stop deciding business/lifecycle policy - `repo.leaveSession(...)`-style methods that decide admission/expiration/idempotency-replay meaning move that decision into the Manager/workflow layer; the repository exposes narrow persistence-oriented operations instead - see Repository Responsibility below.
+5. **Expiration policy moves out of the shared locking primitive.** `sessionlock` may continue to expose the Session's current locked-row facts (phase, `lobby_expires_at`), but the decision "phase is LOBBY and now is at or after the deadline, therefore materialize TERMINAL" is Manager/workflow policy, not something the shared lock package decides on the workflow's behalf - see Expiration Ownership below.
+6. **Admission (capacity/phase/expiration) is explicit workflow policy**, not something inferred by a repository method that also happens to do the persistence.
+7. **Join idempotency is now token-aware** per GAME-ADR-0021: a differently-tokened Join while already an active Participant is a new command evaluated against current state, rejected as `AlreadyJoined`-equivalent - not silently treated as success merely because the desired state already holds. The previous wording ("repeated active Join is idempotent") under-specified this; the corrected acceptance criteria are below.
+
+## Implementation Status Note (Current, 2026-09-16)
+
+This note is a factual pointer to current reality. **Superseded by the 2026-09-16 Design Revision above**: Status is now **READY** again, not IMPLEMENTING - the Create/Join/Leave implementation this note originally described (2026-09-08 pass, 2026-09-11 standard-compliance migration) still exists unchanged in the working tree, still builds, and still passes its service-level (mocked-collaborator) tests, but it now predates the 2026-09-16 revision above and does not yet reflect the revised Approved Design (one `Manager` workflow controller, explicit-parameter methods, explicit transaction ownership, persistence-oriented repository naming, expiration/admission decided in the Manager, token-aware Join idempotency). The next implementation pass must migrate it to the revised design before independent review is requested. Repository integration tests and the required concurrency tests exist (`repo_test.go`/`lobby_race_test.go` files under each existing sibling package) but remain unexecuted against a real Postgres in every sandbox used so far (no reachable Docker/Postgres engine - `TEST_DATABASE_*` env vars unset, tests self-report `SKIP`). Independent review per `docs/ai/protocols/IMPLEMENTATION_REVIEW.md` has still not been performed - it should follow the revised implementation, not the pre-revision one. See `game/CURRENT_STATE.md` and `game/docs/FLOWS.md` for the current actual-code-reality description (unaffected by this documentation-only revision).
+
+**Standard-compliance migration gate (2026-09-11 scope): CLOSED** - see "Standard-Compliance Migration Record" below; that migration remains valid and is not undone by this revision. **A further migration is now required** (2026-09-16 Design Revision above) before Slice 2/DONE: real-Postgres integration/concurrency verification, the 2026-09-16 design migration, and independent implementation review.
 
 The "Context" section immediately below describes the codebase as it was found before this WORK's own implementation pass (2026-09-08) and is preserved as historical evidence for why the work was scoped this way - it is not current state.
 
@@ -97,6 +112,48 @@ Explicitly not part of this work (later slices in `PLAN.md`):
 
 Session application/domain APIs receive an already-trusted `UserUUID`, per GAME-ADR-0005. Credential-to-`UserUUID` resolution belongs outside Session Runtime and is integrated later when a real transport/auth boundary exists (a later slice). This work does not implement Identity/Auth and does not add a temporary fake-auth mechanism that would later need removal; test and internal callers supply `UserUUID` directly, exactly as the accepted public contract already expects.
 
+### Workflow Package Structure (2026-09-16 revision)
+
+Create/Join/Leave (and later Start) are steps of one Session lifecycle workflow and are organized as one workflow package exposing one discoverable controller, per `domain-logic-placement.md -> Preferred Workflow Package Shape`, superseding the previously-approved three-sibling-package layout:
+
+```text
+game/session/workflows/sessionlifecycle/
+    manager.go
+    step_create.go
+    step_join.go
+    step_leave.go
+    expiration.go
+    idempotency.go
+    internal/
+        repo/
+            repo.go
+            session.go
+            actor.go
+            participant.go
+            join_code.go
+            request.go
+```
+
+Exact filenames are implementation freedom; the invariants are: one `sessionlifecycle` package, one `Manager` type exposing `Create`/`Join`/`Leave` (and later `Start`) as its methods, implementation split by step into separate files, and a narrow `internal/repo` persistence layer the Manager calls into - not three independently-discoverable sibling packages, and not a giant `Manager` accreting unrelated non-lifecycle capabilities (see `domain-logic-placement.md -> Workflow Controller vs Domain-Wide God Service`). `step_start.go` is added when Slice 2 begins; it is not part of this WORK's scope.
+
+`Manager` may depend on: its own `internal/repo` persistence repository/repositories; a transaction runner/transactor; the Game Management pinned-definition read capability; a clock; a JoinCode generator; and other already-approved collaborators. It must not depend on a generically-named `GeneralPurposeAPI`/`CommonRepository`/`BaseRepository`.
+
+### Function Contract Convention (2026-09-16 revision)
+
+`Manager` methods use explicit parameters per `function-signatures.md`, not a ceremonial `Input`/`Params` bundling struct:
+
+```go
+func (m *Manager) Join(
+    ctx context.Context,
+    joinCode JoinCode,
+    userUUID UserUUID,
+    displayName DisplayName,
+    idempotencyKey IdempotencyKey,
+) (JoinResult, error)
+```
+
+This supersedes the previously-implemented `leaveParams`-style structs (and any equivalent Join/Create params struct), which exist only to bundle method arguments and are removed from the target design. A struct remains appropriate only when it represents a genuine, cohesive concept (e.g. a `CreatedSession` result), not merely to reduce a parameter count - see `function-signatures.md`.
+
 ### Persistence Model (Slice 1 subset of `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md`)
 
 - **`sessions`**: `id`, `uuid`, `game_definition_uuid` (logical reference, no FK - the *pinned, immutable* Version/Definition UUID resolved exactly once at Create; see Pinned Game Definition below), `host_actor_id` (references `session_actors.id`; **nullable at storage level only** - see Host/SessionActor Creation Cycle below), `phase`, `lobby_expires_at`, `started_at` (nullable, always `NULL` after this work - no Session created here ever reaches `RUNNING`), `terminal_at` (nullable), `terminal_reason` (nullable), `created_at`, `updated_at`. `phase` needs only `LOBBY`/`TERMINAL` values for this work, but its representation should not hard-code an exhaustive enum that later slices (`RUNNING`) would have to migrate around.
@@ -118,10 +175,31 @@ This is why a second Game Management read capability is required (see Game Manag
 ### Database Locking / Serialization Design
 
 - **Lock anchor**: the `sessions` row itself, selected `FOR UPDATE` by `id` inside the mutation's transaction.
-- **Transaction boundary**: reuse `utils.RunInDBTransaction` (existing generic helper; `sql.LevelRepeatableRead`), the same mechanism already used elsewhere in the repository, rather than inventing a second transaction helper.
-- **Responsible method**: a single narrow repository operation (naming left to implementation, e.g. `lockSessionForMutation(ctx, tx, sessionUUID) (sessionRow, error)`) that selects-for-update the `sessions` row and returns its current `phase`/`lobby_expires_at`. `Join`, `Leave`, and lazy-expiration materialization all call this same operation before mutating - they must not each invent their own locking query. `Create` does not use this operation, because it has no existing `sessions` row to contend on - its own concurrency correctness comes from the idempotency-identity claim described in Concurrent Create Correctness below, not from row locking.
+- **Transaction boundary**: the Manager decides transaction scope; a transactor abstraction performs BEGIN/COMMIT/ROLLBACK - see Transaction Ownership below. Reuse `utils.RunInDBTransaction` (existing generic helper; `sql.LevelRepeatableRead`) as that transactor, the same mechanism already used elsewhere in the repository, rather than inventing a second transaction helper.
+- **Responsible method**: a single narrow repository operation (naming left to implementation, e.g. `LockSession(ctx, tx, sessionUUID) (sessionRow, error)`) that selects-for-update the `sessions` row and returns its current `phase`/`lobby_expires_at` as facts. `Join`, `Leave`, and lazy-expiration materialization all call this same operation before mutating - they must not each invent their own locking query. `Create` does not use this operation, because it has no existing `sessions` row to contend on - its own concurrency correctness comes from the idempotency-identity claim described in Concurrent Create Correctness below, not from row locking.
+- **This primitive owns locking only, not the expiration decision.** `LockSession` (and any shared session-lock package it lives in) returns the locked row's current facts; it must not itself decide "phase is LOBBY and now is at or after `lobby_expires_at`, therefore materialize TERMINAL" - that decision belongs to the Manager, per Expiration Ownership below. This narrows the previously-implemented `sessionlock.MaterializeExpirationIfDue`, which decided lifecycle-expiration policy from inside the shared locking primitive.
 - This primitive must be shaped so Slice 2+ can reuse it unchanged for RUNNING serialization (GAME-ADR-0018) - it must not become a lobby-only abstraction that later work has to replace.
 - Rejected for V1 (per GAME-ADR-0004/GAME-ADR-0018, reaffirmed here): Redis or another distributed lock, process ownership, sticky routing, in-memory actor correctness.
+
+### Transaction Ownership (2026-09-16 revision)
+
+Per `repositories.md -> Transaction Ownership`: the Manager decides which operations constitute one logical atomic transaction (e.g. for Join: lock, lazy-expiration materialization if due, idempotency claim/replay, admission decision, Actor/Participant persistence, idempotency completion). The transactor (`utils.RunInDBTransaction` or an equivalent callback-based abstraction) performs BEGIN/COMMIT/ROLLBACK; the Manager does not call `db.Begin()`/`tx.Commit()`/`tx.Rollback()` directly. Repository methods consumed inside that transaction use the caller-supplied transaction-scoped handle and never independently open/commit their own transaction.
+
+A deterministic business rejection (e.g. `AlreadyJoined`, capacity exceeded, non-`LOBBY` Leave) must not automatically discard an already-decided durable outcome that belongs in the same transaction - specifically, lazy lobby-expiration materialization and idempotency-request completion (including a deterministic-rejection outcome, per `idempotency.md`) must still commit even when the overall operation returns a business error to the caller. The transactor/Manager design must support "commit this durable outcome, then return this business error" as a normal path, not only "callback returns non-nil error implies rollback everything."
+
+### Repository Responsibility (2026-09-16 revision)
+
+Per `repositories.md -> Repository Naming`: repository methods are named for the persistence/data operation they perform, not the business command (`JoinSession`/`LeaveSession`-style names are removed from the target design). The Manager/workflow layer decides business/lifecycle policy (admission, expiration, idempotency-replay meaning); the repository reports facts (locked row state, existing idempotency row, existing Actor/Participant rows) and performs the mutations the Manager requests (e.g., conceptually: `LockSession`, `SetSessionTerminal`, `RevokeActiveJoinCode`, `FindActor`, `GetOrCreateActor`, `FindParticipant`, `CountActiveParticipants`, `CreateParticipant`, `ActivateParticipant`, `ClaimSessionRequest`, `CompleteSessionRequest`). Exact naming is implementation freedom; the invariant is the naming axis (business action vs. persistence operation), not this specific vocabulary. This supersedes the previously-implemented `repo.leaveSession(...)`/`repo.joinSession(...)`-style single methods that performed the entire business decision and persistence together inside the repository.
+
+This does not require CRUD-minimal repository methods - a persistence-oriented method may still encapsulate several statements (e.g. `CreateSessionWithHost` inserting the Session, host Actor, and connecting them) per `repositories.md -> Multi-Table Persistence Encapsulation`.
+
+### Expiration Ownership (2026-09-16 revision)
+
+The Manager decides lazy lobby-expiration materialization: after obtaining the locked row's facts (`phase`, `lobby_expires_at`) from `LockSession`, the Manager itself evaluates `phase == LOBBY && now >= lobby_expires_at` and, if true, requests the repository perform the resulting mutations (set terminal state, revoke the active JoinCode) within the same transaction, then rejects the originally attempted action. The repository/lock primitive must not make this decision on the Manager's behalf (see Database Locking above).
+
+### Admission Ownership (2026-09-16 revision)
+
+The Manager decides Join admission: current lifecycle phase validity, expiration, `players.max` capacity from the pinned Game definition, and whether an already-admitted Participant means the current command should replay, succeed as a no-op-equivalent, or be rejected as `AlreadyJoined` (see Idempotency Design below and GAME-ADR-0021). The repository only supplies the facts (current active-Participant count, existing Actor/Participant rows) and performs the requested persistence (create/reactivate Participant). The repository must not itself decide whether admission is currently allowed.
 
 ### Idempotency Design
 
@@ -134,12 +212,13 @@ This is why a second Game Management read capability is required (see Game Manag
 
 Exact struct/field naming is implementation-local.
 
-**Replay vs. conflict.** On a mutating call, look up an existing `session_requests` row by `(user_uuid, operation, idempotency_key)`:
+**Replay vs. conflict vs. new command** (per `docs/engineering/standards/idempotency.md`). On a mutating call, look up an existing `session_requests` row by `(user_uuid, operation, idempotency_key)`:
 - if found, `status = COMPLETED` (or equivalent), and the incoming request's meaningful fields match the stored ones - return the stored `outcome`/`response_payload` as an idempotent replay;
 - if found, completed, but the meaningful fields differ - reject with a dedicated conflict sentinel error; do not silently apply the new request or silently return the old result;
-- if found but not yet completed (see Completed Outcomes vs. Transient Failures below) - see that section for how this is resolved rather than treated as an immediate conflict or an immediate replay.
+- if found but not yet completed (see Completed Outcomes vs. Transient Failures below) - see that section for how this is resolved rather than treated as an immediate conflict or an immediate replay;
+- **if not found (a token not previously used by this user for this operation) - this is always a new logical command, evaluated against current business state, never inferred to be a retry merely because the resulting state already holds.** For `JOIN` specifically (GAME-ADR-0021): a new token while the caller is already an active Participant is rejected with the `AlreadyJoined`-equivalent business error - it is not silently treated as success, and it is not treated as a replay of whichever token originally admitted the Participant.
 
-Do not build a generic JSON-canonicalization framework; model comparison narrowly per operation.
+Do not build a generic JSON-canonicalization framework; model comparison narrowly per operation. Repository/persistence code stores the claim/request row, payload, and outcome; it must not decide what a replay/conflict/new-command means - that decision belongs to the Manager (`domain-logic-placement.md -> Responsibility Categories`, `idempotency.md -> Idempotency Policy Ownership`).
 
 ### Concurrent Create Correctness
 
@@ -191,12 +270,14 @@ The accepted model is intentionally cyclic at the logical level: `sessions.host_
 
 `host_actor_id` is nullable **at storage level only**, purely to make step 2 possible before step 6 runs. The domain/commit invariant is stricter: a successfully committed, non-corrupt Session must have a valid `host_actor_id` by the time the transaction commits - no caller or subsequent normal operation should ever observe a successfully committed Session with a missing host actor. If the transaction fails at any step, nothing commits and no partially-created Session survives.
 
-### Session/Actor/Participant Operation Behavior
+### Manager Operation Behavior
 
-- **CreateSession**: claim the idempotency identity first (see Concurrent Create Correctness above), resolve/compile/pin the current playable Game Definition (see Pinned Game Definition and Game Management Dependency above), then within the **same** transaction run the Host/SessionActor Creation Cycle above and create an active `JoinCode` with `lobby_expires_at = now + <lobby TTL>`. Do **not** create a `session_participants` row for the host - the host is never automatically a Participant. The successful logical result is atomic across all of: the `sessions` row, the host `SessionActor`, `sessions.host_actor_id` being set, the active `JoinCode`, `lobby_expires_at`, and the completed `session_requests` outcome - all in one transaction, all-or-nothing.
-- **JoinSession**: resolve the `JoinCode` to its Session; obtain the Session's DB mutation lock (`FOR UPDATE`); validate `phase == LOBBY` and `now < lobby_expires_at` (otherwise lazily materialize `TERMINAL` in the same transaction and reject - see below); read `sessions.game_definition_uuid`; load that **pinned** immutable definition through the new Game Management capability (never "current version" - see Pinned Game Definition above) to obtain `players.max`; find-or-create the `SessionActor` for `(session, user_uuid)`; enforce `players.max` from the pinned definition; create or reactivate the `Participant` (`active = true`, snapshot `display_name`); commit. Repeated identical active Join is the same logical admission, not a new slot.
-- **LeaveSession**: resolve `(session, user_uuid)` to `SessionActor`; lock the Session; if the Session is not `LOBBY` (for this work, the only other reachable phase is `TERMINAL`), reject with a dedicated sentinel rather than silently no-op-ing; otherwise deactivate the `Participant` (`active = false`, `left_at = now`), keep the `SessionActor` row, and never touch `host_actor_id` - a leaving host keeps host authority even though they stop participating.
-- **Lazy lobby-expiration materialization**: any of the three operations above that finds `phase == LOBBY && now >= lobby_expires_at` while holding the Session lock may, in the same transaction, set `phase = TERMINAL`, `terminal_at = lobby_expires_at` (the semantic deadline, not the current operation's wall-clock time), a terminal reason denoting lobby expiration, and revoke the active `JoinCode` - then reject the originally attempted action. No sweeper/background worker is implemented by this work; operation-level correctness is the whole mechanism, per GAME-ADR-0004.
+Each bullet below is `Manager` orchestration (explicit parameters, per Function Contract Convention above): it decides business/lifecycle policy and transaction scope, and calls the narrow persistence-oriented repository methods described in Repository Responsibility above to read facts and perform mutations. None of this orchestration lives inside a single repository method.
+
+- **Create**: claim the idempotency identity first (see Concurrent Create Correctness above), resolve/compile/pin the current playable Game Definition (see Pinned Game Definition and Game Management Dependency above), then within the **same** transaction run the Host/SessionActor Creation Cycle above and create an active `JoinCode` with `lobby_expires_at = now + <lobby TTL>`. Do **not** create a `session_participants` row for the host - the host is never automatically a Participant. The successful logical result is atomic across all of: the `sessions` row, the host `SessionActor`, `sessions.host_actor_id` being set, the active `JoinCode`, `lobby_expires_at`, and the completed `session_requests` outcome - all in one transaction, all-or-nothing.
+- **Join**: resolve the `JoinCode` to its Session; obtain the Session's DB mutation lock (`FOR UPDATE`) via the shared lock primitive; evaluate lazy lobby-expiration itself (Expiration Ownership above) - if due, materialize `TERMINAL` in the same transaction and reject; claim/inspect the idempotency request (Idempotency Design above) - same token + same fields replays; same token + different fields conflicts; a **new token evaluates current state**, and if the caller is already an active Participant, rejects `AlreadyJoined`-equivalent (GAME-ADR-0021) rather than replaying or silently succeeding; otherwise read `sessions.game_definition_uuid`, load the **pinned** immutable definition through the new Game Management capability (never "current version" - see Pinned Game Definition above) to obtain `players.max`, find-or-create the `SessionActor` for `(session, user_uuid)`, enforce `players.max` from the pinned definition, create or reactivate the `Participant` (`active = true`, snapshot `display_name`), complete the idempotency outcome, and commit.
+- **Leave**: resolve `(session, user_uuid)` to `SessionActor`; lock the Session; evaluate lazy lobby-expiration itself; if the Session is not `LOBBY` (for this work, the only other reachable phase is `TERMINAL`), reject with a dedicated sentinel rather than silently no-op-ing; otherwise deactivate the `Participant` (`active = false`, `left_at = now`), keep the `SessionActor` row, and never touch `host_actor_id` - a leaving host keeps host authority even though they stop participating.
+- **Lazy lobby-expiration materialization**: the Manager, for any of the three operations above, that finds `phase == LOBBY && now >= lobby_expires_at` (from the facts `LockSession` returned - see Expiration Ownership above) may, in the same transaction, request the repository set `phase = TERMINAL`, `terminal_at = lobby_expires_at` (the semantic deadline, not the current operation's wall-clock time), a terminal reason denoting lobby expiration, and revoke the active `JoinCode` - then reject the originally attempted action. No sweeper/background worker is implemented by this work; operation-level correctness is the whole mechanism, per GAME-ADR-0004. This materialization must commit even when the overall operation goes on to return a business rejection (Transaction Ownership above).
 
 ## Constraints and Invariants
 
@@ -208,13 +289,36 @@ The accepted model is intentionally cyclic at the logical level: `sessions.host_
 - `lobby_expires_at` is authoritative; no operation may revive an already-expired lobby merely because persisted `phase` still reads `LOBBY` (GAME-ADR-0004).
 - `sessions.game_definition_uuid` is resolved exactly once, at Create, and is immutable for the Session's lifetime; no later operation (Join in this work; Start/RuntimeTurn in later slices) may re-resolve "current version" - see Pinned Game Definition Is Immutable For The Session above.
 - Idempotency identity is `(user_uuid, operation, idempotency_key)`, not `(operation, idempotency_key)` - different users never collide on the same opaque key.
+- A Join with a different idempotency token than any previously used is always a new logical command evaluated against current state; it is never inferred to be a retry merely because the resulting "already joined" state already holds (GAME-ADR-0021, `idempotency.md`).
 - A committed Session must have a valid, non-null `host_actor_id`; `host_actor_id` is nullable only as a transient storage-level artifact of the Host/SessionActor Creation Cycle within one still-open transaction.
+- Create/Join/Leave reject a missing/empty idempotency token as invalid input (`idempotency.md -> Required Token`).
+- The Manager, not the repository, decides transaction scope, admission policy, and expiration policy (Transaction Ownership, Admission Ownership, Expiration Ownership above). No repository method independently opens/commits its own transaction.
+- Repository methods are named for the persistence operation they perform, not the business command (`repositories.md -> Repository Naming`); no `JoinSession`/`LeaveSession`-style repository method decides business policy internally.
+- Manager methods use explicit parameters, not ceremonial `Input`/`Params` structs (`function-signatures.md`).
 - Repository queries follow `repositories.md`: raw SQL for reads/updates/deletes; `Create()` for inserts.
 - Errors follow `error-handling.md`: dedicated sentinel errors for intentional contracts (e.g. invalid/expired JoinCode, lobby full, conflicting idempotency key, non-`LOBBY` Leave), `%s` context by default rather than `%w` for incidental lower-level errors, logging at the appropriate boundary rather than every layer.
 - Unexpected persisted-state inconsistency follows `data-integrity.md`: alert via `monitoring.Alert` and return a normal error; do not panic unless continuing would be genuinely unsafe.
 - Tests follow `testing.md`: table-driven with underscore-separated case names, a shared disposable domain test database for repository tests (mirroring `game/game/internal/testdb`), mocked collaborator interfaces for service/use-case tests.
 
 ## Acceptance Criteria
+
+**Method contracts (2026-09-16 addition)**
+- Lifecycle application methods (`Manager.Create`/`.Join`/`.Leave`) use explicit parameters and do not use a ceremonial `Input`/`Params` struct solely to bundle required parameters (`function-signatures.md`).
+
+**Transaction ownership (2026-09-16 addition)**
+- The Manager, not the repository, defines the transaction containing each logical operation; repository calls do not independently commit.
+- A failed logical operation (business rejection) never leaves a partial repository mutation from the same attempted operation surviving outside an intended durable outcome (lazy expiration materialization, idempotency completion).
+- A deterministic business rejection (e.g. `AlreadyJoined`, capacity exceeded) can still commit a required lazy-expiration materialization or idempotency-completion outcome in the same transaction before returning the business error.
+
+**Missing token (2026-09-16 addition)**
+- Create/Join/Leave reject a missing/empty idempotency token as invalid input.
+
+**Admission and expiration ownership (2026-09-16 addition)**
+- Capacity (`players.max`) and lifecycle admission (phase/expiration validity) are decided in Manager code, not inside a repository method.
+- The shared session-lock primitive returns locked-row facts only; it does not itself decide lobby-expiration policy.
+
+**Repository naming/boundary (2026-09-16 addition)**
+- No repository method named after a business command (e.g. `JoinSession`/`LeaveSession`) internally decides admission/expiration/idempotency-replay meaning; repository methods represent persistence/data operations.
 
 **Create**
 - Creates a `LOBBY` Session pinned to the correct resolved Game Definition/version.
@@ -224,10 +328,14 @@ The accepted model is intentionally cyclic at the logical level: `sessions.host_
 - The same idempotency identity with a conflicting request is rejected.
 - A Game Definition that fails to compile is rejected with a clear domain error, not a created-but-unusable Session.
 - A successful Create commits with a valid, non-null `host_actor_id`, and the host `SessionActor` references that same Session; no partially-created Session (e.g. missing its host actor) survives a failed Create transaction.
+- JoinCode creation is Manager-orchestrated (an explicit step after the host/actor persistence step) but part of the same atomic transaction as the rest of Create - not hidden inside the repository operation that creates the Session/host relationship.
 
 **Join**
 - A normal Join creates/reuses the `SessionActor` and activates a `Participant`.
-- A repeated identical active Join is idempotent (no duplicate Participant/slot consumed).
+- A repeated Join using the same idempotency token and the same semantic request (JoinCode, UserUUID, display name) replays the original outcome (no duplicate Participant/slot consumed).
+- The same token with a different semantic request is rejected as an idempotency conflict.
+- A Join using a **different** idempotency token while the caller is already an active Participant is rejected with the `AlreadyJoined`-equivalent business error - it is a new command evaluated against current state, not silently replayed or silently treated as success (GAME-ADR-0021).
+- User A and User B may each independently reuse the same opaque idempotency-key value for their own Join without colliding (different `user_uuid`, different identity).
 - The same `User` never ends up with two `SessionActor` rows for the same Session.
 - `players.max` is enforced correctly under concurrent Joins racing for the final slot.
 - Lobby expiration is enforced even though no sweeper exists.
@@ -246,7 +354,7 @@ The accepted model is intentionally cyclic at the logical level: `sessions.host_
 - Concurrent Joins competing for the final slot resolve correctly (exactly one succeeds when only one slot remains) via the DB-locking mechanism, not application-level check-then-act races.
 - A Join racing a Leave around capacity resolves correctly under the same locking mechanism.
 - An operation racing lobby-expiration materialization resolves without ever reviving an expired lobby.
-- **Concurrent Create**: two equivalent concurrent `CreateSession` calls sharing the same `(user_uuid, CREATE, idempotency_key)` produce exactly one logical Session and both observe/replay the identical result - never two Sessions, and never a window where the duplicate is only discovered after both Session-creation effects already happened.
+- **Concurrent Create**: two equivalent concurrent `Manager.Create` calls sharing the same `(user_uuid, CREATE, idempotency_key)` produce exactly one logical Session and both observe/replay the identical result - never two Sessions, and never a window where the duplicate is only discovered after both Session-creation effects already happened.
 
 **Idempotency namespace and failure semantics**
 - User A and User B independently using the same `operation`/`idempotency_key` value do not collide (different `user_uuid`, so different identity).
@@ -254,7 +362,7 @@ The accepted model is intentionally cyclic at the logical level: `sessions.host_
 - A transient infrastructure failure or transaction rollback before commit does not leave behind a completed, replayable logical outcome; a subsequent retry of the same identity executes as a fresh attempt rather than replaying a cached failure.
 
 **Capability/domain-boundary and architecture guardrails**
-- No test or production code path accepts an externally-supplied `engine.Program` into `CreateSession`.
+- No test or production code path accepts an externally-supplied `engine.Program` into `Manager.Create`.
 - No test or production code path uses `Identity.UserUUID` as engine/runtime identity in this slice (there is no engine/runtime identity yet - this guards against prematurely introducing one).
 - No repository code issues a direct SQL query against a Game Management or Identity table, and no database foreign key crosses into Game Management's persistence (cross-capability, same Game bounded context) or Identity's persistence (cross-domain, a different bounded context).
 - No Session mutation opens its write/locking transaction before its required Game Management read(s) complete, and Session Runtime never holds that transaction/row lock while calling into Game Management (GAME-ADR-0001).
@@ -262,7 +370,7 @@ The accepted model is intentionally cyclic at the logical level: `sessions.host_
 
 ## Implementation Freedom
 
-- Exact package/file layout below the workflow root. **Historical**: this originally recommended the `usecases/<verb+noun>/` pattern (e.g. `game/session/usecases/createsession`) instead of a `workflows/sessionlifecycle` structure, for initial consistency with `game/game/usecases/getgame`. **Superseded 2026-09-11** by the mandatory standard-compliance migration (see "Standard-Compliance Migration Record" above): Create/Join/Leave now live under `game/session/workflows/sessionlifecycle/{createsession,joinsession,leavesession}/`, per `domain-logic-placement.md`'s Workflow vs. Use Case guidance - this is the current structure, not merely a local option.
+- Exact filenames below the workflow root, beyond the invariants stated in Workflow Package Structure above. **Historical**: this originally recommended the `usecases/<verb+noun>/` pattern (e.g. `game/session/usecases/createsession`), then (2026-09-11) three sibling packages under `workflows/sessionlifecycle/{createsession,joinsession,leavesession}/`. **Superseded 2026-09-16**: the current-implementation three-sibling-package layout is itself now superseded by the one-package-one-`Manager` structure in Workflow Package Structure above - this is required target structure for the next implementation pass, not merely a local option.
 - The exact `lobby_expires_at` TTL value/source (a package-level constant is acceptable; no existing repository-wide configuration convention was found to reuse).
 - The exact naming/shape of the new Game Management pinned-definition read capability (`GetGameDefinition` or equivalent) and its placement (new file in `getgame`, a new sibling usecase, etc.) - the required semantics are fixed (see Game Management Dependency above), the exact Go naming/package placement is not.
 - Exact Go sentinel/error type names, including the idempotency-conflict and concurrent-Create-claim-collision errors.
@@ -328,9 +436,8 @@ The constraint/index plan for the new tables must include at minimum:
 
 - The exact `lobby_expires_at` TTL value and where it's defined (constant vs. a config surface) - implementation-level, not decided here.
 - The exact naming/package placement of the new Game Management pinned-definition read capability - required semantics are fixed (see Game Management Dependency above); naming is not.
-- Exact package layout (`usecases/<name>` vs. extending `workflows/sessionlifecycle`) - recommendation given above.
 - Exact `session_requests.status` representation (string enum vs. boolean) - any type distinguishing completed from non-completed is acceptable.
 
 ## Completion Record
 
-Not applicable yet - Status is IMPLEMENTING, not DONE (see the Implementation Status Note near the top of this file for current reality). Remaining before this can be filled in and the WORK closed per `docs/ai/protocols/IMPLEMENTATION_REVIEW.md`: run the repository integration/concurrency tests against a real Postgres (not yet executed in any environment used so far), complete independent review, and perform the mandatory engineering-standard-compliance migration recorded in `docs/ai/workspaces/active/session-runtime-v1/AI_CONTEXT.md`. This section intentionally stays unfilled until closure.
+Not applicable yet - Status is READY, not DONE (see the Implementation Status Note near the top of this file for current reality: an existing pre-revision implementation exists but does not yet reflect the revised Approved Design). Remaining before this can be filled in and the WORK closed per `docs/ai/protocols/IMPLEMENTATION_REVIEW.md`: migrate the implementation to the 2026-09-16 revised design above, run the repository integration/concurrency tests against a real Postgres (not yet executed in any environment used so far), and complete independent review. This section intentionally stays unfilled until closure.

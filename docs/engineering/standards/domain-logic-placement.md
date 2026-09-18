@@ -35,7 +35,7 @@ For application-layer organization specifically:
 - Prefer `workflows/<workflow-name>/...` (for example `workflows/sessionlifecycle/...`) for operations belonging to an identifiable lifecycle/process.
 - Prefer `usecases/<independent-capability>/...` for independent application capabilities that are not primarily a lifecycle transition.
 
-No single exact nesting depth is required — either `workflows/sessionlifecycle/joinsession/...` or another repository-consistent focused arrangement may be valid. The invariant is that a developer navigating the tree can recognize which operations belong to the same lifecycle without opening every implementation file. A flat, undifferentiated `usecases/` directory containing every unrelated and lifecycle-related operation in a bounded context defeats this invariant just as much as a large domain Service would; package hierarchy itself should help communicate which operations belong together.
+See Preferred Workflow Package Shape below for the required shape of a `workflows/<workflow-name>/...` package specifically (one package, one controller, steps split by file - not one sibling package per step). The invariant for application-layer organization generally is that a developer navigating the tree can recognize which operations belong to the same lifecycle without opening every implementation file. A flat, undifferentiated `usecases/` directory containing every unrelated and lifecycle-related operation in a bounded context defeats this invariant just as much as a large domain Service would; package hierarchy itself should help communicate which operations belong together.
 
 ## Type Ownership
 
@@ -65,12 +65,12 @@ A workflow groups operations that are steps/transitions/actions within the same 
 
 Illustrative examples (not new product requirements): a Session lifecycle's Create/Join/Leave/Start/later transitions; an Order's authorization/capture/release-refund sequence.
 
-Grouping operations under a workflow package (conceptually `<domain>/workflows/<workflow-name>/...`) is a navigation/ownership boundary. It does NOT require:
+Grouping operations under a workflow package (conceptually `<domain>/workflows/<workflow-name>/...`) is a navigation/ownership boundary. See Preferred Workflow Package Shape below for the preferred shape: one cohesive controller (`Manager`) exposing the workflow's steps as methods, with each step's implementation kept in its own file. This does not require:
 
-- one giant Manager/Service struct exposing every operation (see No Domain-Wide God Service below);
+- a `Manager` that accretes unrelated non-lifecycle capabilities (see Workflow Controller vs Domain-Wide God Service below);
 - a shared repository contract across every step (see Workflow Grouping Does Not Imply A Shared Repository Contract below).
 
-Individual operations/steps may still own their own focused service/handler, their own input/output types, their own narrow persistence contract, and their own tests.
+Each step's implementation, tests, and narrow persistence contract remain independently owned even though they are exposed through the same `Manager` and package.
 
 ### Use Case
 
@@ -82,17 +82,53 @@ Illustrative examples: a read/query capability (e.g. listing current Sessions fo
 
 The important question is conceptual ownership: does this operation exist as part of an identifiable lifecycle/process, or is it an independently meaningful capability applied to the domain? Do not attempt an exhaustive classification test. When classification is materially ambiguous, prefer the structure that makes the actual domain behavior easiest to discover, and escalate through the Engineering Standard process if the choice establishes a new reusable pattern.
 
-## No Domain-Wide God Service
+## Workflow Controller vs Domain-Wide God Service
 
-Do not create a single large domain Service/Manager merely because operations belong to the same domain or workflow. For example, grouping operations under `workflows/sessionlifecycle/` does not imply that `SessionLifecycleService.Create`, `.Join`, `.Leave`, `.Start`, etc. must all live on one ever-growing struct. Workflow directories are primarily an ownership/navigation boundary; individual workflow steps may remain independent focused components.
+REFINED: an earlier version of this section discouraged any single Manager/Service exposing a workflow's operations. That wording is superseded by this section — see the Engineering Standard history if the prior wording is needed for context.
 
-Likewise, do not replace a big service with an equally opaque flat `usecases/` directory containing every unrelated and lifecycle-related operation in the bounded context (see Package Naming above). Neither a god service nor an undifferentiated flat package directory satisfies behavior locality.
+A single cohesive workflow controller (conceptually `Manager`) exposing a workflow's lifecycle steps as its methods is the preferred shape when every exposed method is a genuine step/action of that same workflow. For example, `SessionLifecycle`'s `Manager` exposing `Create`, `Join`, `Leave`, `Start`, and later lifecycle transitions on one struct is desirable, not merely tolerated — see Preferred Workflow Package Shape below for the recommended file layout underneath it.
+
+The prohibited pattern is a broad domain service that mixes genuine lifecycle steps with independent use cases, queries, configuration, or other unrelated capabilities onto the same struct merely because they touch the same domain or aggregate. A state precondition on an otherwise-independent capability does not make it a lifecycle step (see Classifying Ambiguous Cases above) — such capabilities belong under `usecases/`, not bolted onto the workflow controller.
+
+Likewise, do not replace a big service with an equally opaque flat `usecases/` directory containing every unrelated and lifecycle-related operation in the bounded context (see Package Naming above). Neither an unfocused domain-wide service nor an undifferentiated flat package directory satisfies behavior locality — but a workflow controller whose methods are all genuine steps of one identifiable lifecycle is not the god-service pattern this section prohibits.
+
+## Preferred Workflow Package Shape
+
+For a workflow package (`workflows/<workflow-name>/...`), prefer one package exposing one discoverable controller/manager, with implementation split by step into separate files rather than split into one subpackage per verb:
+
+```text
+workflows/sessionlifecycle/
+    manager.go
+    step_create.go
+    step_join.go
+    step_leave.go
+    step_start.go
+    internal/
+        repo/
+            ...
+```
+
+not a flat sibling package per operation (`workflows/sessionlifecycle/{createsession,joinsession,leavesession}/`) that hides the fact all three are steps of the same lifecycle behind separate, independently-discoverable packages. Exact filenames may vary; the invariant is: one workflow capability, one discoverable controller, steps separated by file, not by sibling package.
+
+This does not mean every Session/aggregate-touching operation belongs on the Manager — see Workflow Controller vs Domain-Wide God Service above and Classifying Ambiguous Cases. Manager methods should follow `function-signatures.md` (explicit parameters over ceremonial `Input` structs).
 
 ## Use Cases And Workflows Remain Responsible For
 
 Use cases/workflows remain responsible for: loading required state, repository calls, transactions, coordinating several operations, calling domain behavior, persisting resulting state, translating relevant errors, monitoring/operational handling, and workflow progression/retries/compensation/persisted workflow state where applicable.
 
 They must not become the canonical owner of reusable business policy merely because they invoke it. Reusable domain behavior should not live under a specific use-case/workflow-step package unless it genuinely exists only as an implementation detail of that one operation.
+
+## Responsibility Categories: Business/Lifecycle Policy, Data Integrity, Persistence Mechanics
+
+Three distinct questions must not collapse into one owner. This taxonomy is more precise than the ambiguous shorthand "business vs. data" and should be used instead of it.
+
+**Business/lifecycle policy** — "What should happen?" Examples: may this participant be admitted; is a time-bound window expired; what result should a repeated command produce; is a transition currently allowed; what does capacity/admission require. Owner: the workflow/use-case/domain layer.
+
+**Data integrity** — "What persisted shapes must never be invalid?" Examples: a child row must always belong to its parent; a uniqueness constraint over a tuple of columns; an idempotency-identity uniqueness constraint. Owner: repository/schema/database constraints, as appropriate.
+
+**Persistence mechanics** — "How is an already-decided, valid intent/state represented in storage?" Example: creating an aggregate with a mandatory child relationship may require multiple inserts/updates in one transaction. Owner: repository, per `repositories.md`'s Multi-Table Persistence Encapsulation.
+
+A workflow/use case owns business/lifecycle policy — including deciding whether a state precondition permits an action, whether a time-bound window has elapsed, and what a repeated/idempotent command should return. A repository must not decide these merely to make a workflow method shorter; it may only report the facts (current state, elapsed time, existing rows) the workflow needs to decide them, and perform the resulting mutations the workflow requests. See `repositories.md -> Multi-Table Persistence Encapsulation` for the corresponding repository-side statement of this same boundary, and `repositories.md -> Transaction Ownership` and `-> Repository Naming` for two concrete consequences of it.
 
 ## Repository Contracts
 
@@ -117,5 +153,7 @@ Code review, this standard, `ARCHITECTURE.md`, and focused domain unit tests (se
 During code review, flag in particular:
 
 - lifecycle steps placed as unrelated/flat use cases when their lifecycle ownership is clear;
-- a giant Service/Manager structure accumulating unrelated operations merely because they share a domain or workflow;
-- a broad domain/workflow repository interface, or a `Common`/`General`/`Base` repository dumping ground, created to avoid repeating similar methods (see `repositories.md -> Sharing Rule` for the corresponding entity-CRUD-package version of this same concern).
+- a workflow controller accumulating an independent use case, query, or configuration capability merely because it touches the same aggregate — as opposed to a controller whose methods are all genuine lifecycle steps, which is the preferred shape (see Workflow Controller vs Domain-Wide God Service above);
+- a workflow split into one sibling package per verb instead of one package with per-step files (see Preferred Workflow Package Shape above);
+- a broad domain/workflow repository interface, or a `Common`/`General`/`Base` repository dumping ground, created to avoid repeating similar methods (see `repositories.md -> Sharing Rule` for the corresponding entity-CRUD-package version of this same concern);
+- a repository method deciding business/lifecycle policy (admission, expiration, idempotency replay meaning) instead of reporting facts and performing requested mutations (see Responsibility Categories above).
