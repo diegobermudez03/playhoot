@@ -1,6 +1,7 @@
 // Package testfixtures provides shared repository-test seeding helpers for
-// game/session's usecases packages, so createsession/joinsession/leavesession
-// repo tests (and cross-usecase concurrency tests) do not each reinvent
+// game/session's workflows/sessionlifecycle package (its internal/repo
+// persistence tests and its Manager repository-integration/concurrency
+// tests), so they do not each reinvent
 // sessions/session_actors/session_participants/join_codes seeding.
 package testfixtures
 

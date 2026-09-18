@@ -25,6 +25,6 @@ Status: CURRENT IMPLEMENTATION
 - Game Management playable-game retrieval: `game/game/usecases/getgame/`.
 - Game Management pinned-definition retrieval: `game/game/usecases/getgamedefinition/`.
 - Session Runtime storage and migrations: `game/session/internal/storage/`.
-- Session Runtime Create/Join/Leave lifecycle operations: `game/session/workflows/sessionlifecycle/createsession/`, `game/session/workflows/sessionlifecycle/joinsession/`, `game/session/workflows/sessionlifecycle/leavesession/`.
-- Session Runtime shared lobby mechanics: `game/session/internal/sessionlock/`, `game/session/internal/idempotency/`. Actor/Participant persistence is behavior-local to each of Join/Leave (no shared horizontal package).
+- Session Runtime Create/Join/Leave lifecycle operations: `game/session/workflows/sessionlifecycle/` - one `Manager` workflow controller (`manager.go`) exposing `Create`/`Join`/`Leave` as its steps (`step_create.go`/`step_join.go`/`step_leave.go`), with a narrow `internal/repo/` persistence layer.
+- Session Runtime shared lobby mechanics: `game/session/internal/sessionlock/` (locked-row fact reporting only - expiration policy itself is Manager-owned, see `expiration.go`), `game/session/internal/idempotency/` (claim/replay mechanics - replay/conflict/new-command policy itself is Manager-owned, see `idempotency.go`). Actor/Participant persistence lives in `internal/repo/` and is consumed by all three steps through step-local narrow interfaces (not a shared horizontal entity package).
 - Game Language v1 implementation and tests: `game/language/v1/program/` and `game/language/v1/engine/`.

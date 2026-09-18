@@ -75,4 +75,16 @@ var (
 	// ErrActorNotFound is returned by Leave when the calling user never
 	// joined the Session.
 	ErrActorNotFound = errors.New("session actor not found")
+
+	// ErrIdempotencyKeyRequired is returned by Create/Join/Leave when the
+	// caller supplies a missing/empty idempotency token (idempotency.md's
+	// Required Token rule).
+	ErrIdempotencyKeyRequired = errors.New("idempotency key is required")
+
+	// ErrAlreadyJoined is returned by Join when a *different* idempotency
+	// token than any previously used for this user's admission is evaluated
+	// as a new command while the caller is already an active Participant
+	// (GAME-ADR-0021) - it is never inferred to be a retry merely because
+	// the desired end state already holds.
+	ErrAlreadyJoined = errors.New("user is already an active participant")
 )

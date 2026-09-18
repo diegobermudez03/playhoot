@@ -4,6 +4,12 @@
 // query, per the Session Runtime Lobby Lifecycle Contract's serialization
 // rule. It is intentionally shaped so a later RUNNING-phase slice can reuse
 // it unchanged (GAME-ADR-0018).
+//
+// This package owns locking only. It reports the locked row's current facts
+// (phase, lobby_expires_at, ...); it does not decide lobby-expiration policy
+// itself - that decision (and the resulting mutations) belongs to the
+// workflow/Manager layer that calls it (see
+// `game/session/workflows/sessionlifecycle`'s expiration ownership).
 package sessionlock
 
 import (
@@ -11,7 +17,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/diegobermudez03/playhoot/game/session"
 	"gorm.io/gorm"
 )
 
@@ -65,36 +70,4 @@ func LockByUUID(ctx context.Context, tx *gorm.DB, sessionUUID string) (*Row, err
 		return nil, nil
 	}
 	return &row, nil
-}
-
-// MaterializeExpirationIfDue lazily terminalizes a LOBBY session whose
-// lobby_expires_at deadline has already passed and revokes its active
-// JoinCode atomically, reporting whether it did so. row is mutated in place
-// to reflect the new state so callers do not need to re-read it.
-func MaterializeExpirationIfDue(ctx context.Context, tx *gorm.DB, row *Row, now time.Time) (bool, error) {
-	if row.Phase != session.PhaseLobby || now.Before(row.LobbyExpiresAt) {
-		return false, nil
-	}
-
-	reason := session.TerminalReasonLobbyExpired
-	terminalAt := row.LobbyExpiresAt
-	if err := tx.WithContext(ctx).Exec(`
-		UPDATE sessions
-		SET phase = ?, terminal_at = ?, terminal_reason = ?, updated_at = ?
-		WHERE id = ?
-	`, session.PhaseTerminal, terminalAt, reason, now, row.ID).Error; err != nil {
-		return false, fmt.Errorf("materializing lobby expiration: %s", err)
-	}
-	if err := tx.WithContext(ctx).Exec(`
-		UPDATE join_codes
-		SET revoked_at = ?
-		WHERE session_id = ? AND revoked_at IS NULL
-	`, now, row.ID).Error; err != nil {
-		return false, fmt.Errorf("revoking join code on lobby expiration: %s", err)
-	}
-
-	row.Phase = session.PhaseTerminal
-	row.TerminalAt = &terminalAt
-	row.TerminalReason = &reason
-	return true, nil
 }

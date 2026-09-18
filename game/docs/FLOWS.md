@@ -42,48 +42,55 @@ Evidence:
 ```mermaid
 sequenceDiagram
     participant Caller
-    participant Create as createsession.UseCase
-    participant Join as joinsession.UseCase
-    participant Leave as leavesession.UseCase
+    participant Mgr as sessionlifecycle.Manager
     participant GetGame as getgame.UseCase
     participant GetDef as getgamedefinition.UseCase
     participant Lock as sessionlock
-    participant Idem as idempotency
+    participant Repo as internal/repo
     participant DB as Session tables
 
-    Caller->>Create: CreateSession(gameUUID, hostUserUUID, idempotencyKey)
-    Create->>GetGame: GetPlayableGameWithCurrentVersion(gameUUID)
-    Create->>Create: engineservice.Compile(definition)
-    Create->>Idem: Claim(CREATE, ...)
-    Create->>DB: insert sessions/session_actors, set host_actor_id, insert join_codes
-    Create->>Idem: Complete(...)
+    Caller->>Mgr: Create(gameUUID, hostUserUUID, idempotencyKey)
+    Mgr->>GetGame: GetPlayableGameWithCurrentVersion(gameUUID)
+    Mgr->>Mgr: engineservice.Compile(definition)
+    Mgr->>Repo: ClaimSessionRequest(CREATE, ...)
+    Mgr->>Repo: CreateSessionWithHost(...) / CreateJoinCode(...)
+    Repo->>DB: insert sessions/session_actors, set host_actor_id, insert join_codes
+    Mgr->>Repo: CompleteSessionRequest(...)
 
-    Caller->>Join: JoinSession(joinCode, userUUID, displayName, idempotencyKey)
-    Join->>DB: resolve active JoinCode -> session_id, game_definition_uuid
-    Join->>GetDef: GetGameDefinition(pinned game_definition_uuid)
-    Join->>Lock: LockByID / MaterializeExpirationIfDue
-    Join->>Idem: Claim(JOIN, ...)
-    Join->>DB: find-or-create session_actor, activate/reactivate participant
-    Join->>Idem: Complete(...)
+    Caller->>Mgr: Join(joinCode, userUUID, displayName, idempotencyKey)
+    Mgr->>Repo: ResolveActiveSessionForJoinCode(joinCode)
+    Mgr->>GetDef: GetGameDefinition(pinned game_definition_uuid)
+    Mgr->>Repo: LockSessionByID(sessionID)
+    Repo->>Lock: LockByID
+    Mgr->>Mgr: materializeExpirationIfDue(row, now)
+    Mgr->>Repo: ClaimSessionRequest(JOIN, ...)
+    Mgr->>Repo: FindActor/CreateActor, FindParticipant, CountActiveParticipants
+    Mgr->>Mgr: admission decision (AlreadyJoined / players.max)
+    Mgr->>Repo: CreateParticipant/ActivateParticipant
+    Mgr->>Repo: CompleteSessionRequest(...)
 
-    Caller->>Leave: LeaveSession(sessionUUID, userUUID, idempotencyKey)
-    Leave->>Lock: LockByUUID / MaterializeExpirationIfDue
-    Leave->>Idem: Claim(LEAVE, ...)
-    Leave->>DB: deactivate participant (session_actor retained, host_actor_id untouched)
-    Leave->>Idem: Complete(...)
+    Caller->>Mgr: Leave(sessionUUID, userUUID, idempotencyKey)
+    Mgr->>Repo: LockSessionByUUID(sessionUUID)
+    Repo->>Lock: LockByUUID
+    Mgr->>Mgr: materializeExpirationIfDue(row, now)
+    Mgr->>Repo: ClaimSessionRequest(LEAVE, ...) / FindActor / FindParticipant
+    Mgr->>Repo: DeactivateParticipant(...)
+    Mgr->>Repo: CompleteSessionRequest(...)
 ```
 
 Implemented behavior:
 
-- CreateSession resolves/compiles/pins the Game's current playable Definition and never accepts an externally-supplied `engine.Program`; the host is never created as an active Participant.
-- JoinSession loads the Session's pinned Definition/Version directly (never the Game's current version) to enforce `players.max`, and lazily materializes an expired lobby before rejecting.
-- LeaveSession deactivates a Participant's slot while keeping the SessionActor durable and host authority unaffected.
-- All three mutations reuse the same per-Session DB-locking primitive (`sessionlock`) and the same `(user_uuid, operation, idempotency_key)` claim mechanism (`idempotency`).
+- One `sessionlifecycle.Manager` workflow controller exposes `Create`/`Join`/`Leave` as its steps; it decides all business/lifecycle policy (admission, lazy lobby-expiration, idempotency-replay meaning) and owns transaction scope via a `transactor` abstraction. Its narrow `internal/repo` persistence layer reports facts and performs the mutations the Manager requests - it decides no policy itself.
+- `Create` resolves/compiles/pins the Game's current playable Definition and never accepts an externally-supplied `engine.Program`; the host is never created as an active Participant.
+- `Join` loads the Session's pinned Definition/Version directly (never the Game's current version) to enforce `players.max`, lazily materializes an expired lobby before rejecting, and rejects a *differently*-tokened Join while already an active Participant as `AlreadyJoined` (GAME-ADR-0021) rather than replaying or silently succeeding.
+- `Leave` deactivates a Participant's slot while keeping the SessionActor durable and host authority unaffected.
+- A deterministic business rejection discovered after an idempotency claim already succeeded (`AlreadyJoined`, lobby-full, actor-not-found) still commits that claim's completion (with the rejection as its outcome) in the same transaction, rather than rolling it back - so a same-token retry replays the rejection consistently. Lazy lobby-expiration materialization commits the same way.
+- All three steps reuse the same per-Session DB-locking primitive (`sessionlock`, locked-row facts only) and the same `(user_uuid, operation, idempotency_key)` claim mechanism (`idempotency`, claim/replay mechanics only) - both invoked through `internal/repo`, never deciding policy themselves.
 
 Evidence:
 
-- `game/session/workflows/sessionlifecycle/createsession/`, `game/session/workflows/sessionlifecycle/joinsession/`, `game/session/workflows/sessionlifecycle/leavesession/`
-- `game/session/internal/sessionlock/`, `game/session/internal/idempotency/` (shared cross-cutting mechanics); SessionActor/Participant persistence is behavior-local inside each of `joinsession`/`leavesession` (no shared horizontal package)
+- `game/session/workflows/sessionlifecycle/` (`manager.go`, `step_create.go`, `step_join.go`, `step_leave.go`, `expiration.go`, `idempotency.go`, `internal/repo/`)
+- `game/session/internal/sessionlock/`, `game/session/internal/idempotency/` (shared cross-cutting mechanics, consumed by `internal/repo`)
 - `game/game/usecases/getgamedefinition/`
 
 ## Not Documented As Implemented
