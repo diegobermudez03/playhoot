@@ -40,7 +40,6 @@ type Manager struct {
 	pinnedGameReader  gamePinnedDefinitionReader
 
 	lobbyTTL time.Duration
-	now      func() time.Time
 }
 
 // GetDB satisfies utils.DBServicer, letting Manager itself be passed
@@ -65,6 +64,5 @@ func New(db *gorm.DB, currentGameReader gameCurrentVersionReader, pinnedGameRead
 		currentGameReader: currentGameReader,
 		pinnedGameReader:  pinnedGameReader,
 		lobbyTTL:          defaultLobbyTTL,
-		now:               func() time.Time { return time.Now().UTC() },
 	}
 }

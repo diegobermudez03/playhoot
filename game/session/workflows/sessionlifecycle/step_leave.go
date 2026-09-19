@@ -44,38 +44,6 @@ type leaveRequestPayload struct {
 	UserUUID    string `json:"user_uuid"`
 }
 
-// interpretExistingLeaveClaim decides what an already-claimed LEAVE identity
-// means for the incoming request: replay or conflict
-// (`docs/engineering/standards/idempotency.md`'s Token Semantics). A
-// replayed decline is returned as the same outcome value it was originally
-// recorded as (GAME-ADR-0022), never reconstructed as an error.
-func interpretExistingLeaveClaim(existing *idempotency.Request, incoming leaveRequestPayload) (LeaveResult, error) {
-	if existing.Status != idempotency.StatusCompleted {
-		return LeaveResult{}, session.ErrIdempotencyInFlight
-	}
-
-	var stored leaveRequestPayload
-	if err := json.Unmarshal([]byte(existing.RequestPayload), &stored); err != nil {
-		return LeaveResult{}, fmt.Errorf("decoding stored leave request payload: %s", err)
-	}
-	if stored != incoming {
-		return LeaveResult{}, session.ErrIdempotencyConflict
-	}
-
-	if existing.Outcome == outcomeActorNotFound {
-		return LeaveResult{Outcome: LeaveOutcomeActorNotFound}, nil
-	}
-
-	if existing.ResponsePayload == nil {
-		return LeaveResult{}, fmt.Errorf("completed leave idempotency record missing response payload")
-	}
-	var result LeaveResult
-	if err := json.Unmarshal([]byte(*existing.ResponsePayload), &result); err != nil {
-		return LeaveResult{}, fmt.Errorf("decoding stored leave response payload: %s", err)
-	}
-	return result, nil
-}
-
 // Leave deactivates the caller's Participant, releasing their lobby slot
 // while keeping the underlying SessionActor durable and host authority
 // unaffected. See WORK-0001's Manager Operation Behavior - Leave.
@@ -91,23 +59,19 @@ func (m *Manager) Leave(ctx context.Context, sessionUUID SessionUUID, userUUID U
 	}
 
 	incomingPayload := leaveRequestPayload{SessionUUID: string(sessionUUID), UserUUID: string(userUUID)}
-	payloadBytes, err := marshalPayload(incomingPayload)
-	if err != nil {
-		return LeaveResult{}, err
-	}
 
 	return utils.RunInDBTransaction(ctx, m, func(ctx context.Context, tx *gorm.DB) (LeaveResult, error) {
-		return m.leaveInTx(ctx, tx, sessionUUID, userUUID, idempotencyKey, incomingPayload, payloadBytes)
+		return m.leaveSessionInTx(ctx, tx, sessionUUID, userUUID, idempotencyKey, incomingPayload)
 	})
 }
 
-// leaveInTx is Leave's per-transaction business logic, split out from the
-// public Leave so it can be exercised directly by mocked-collaborator unit
-// tests without needing a real DB transaction - sessionlock/idempotency
+// leaveSessionInTx is Leave's per-transaction business logic, split out from
+// the public Leave so it can be exercised directly by mocked-collaborator
+// unit tests without needing a real DB transaction - sessionlock/idempotency
 // mechanism calls further down this same path require a real Postgres
 // connection to run their SQL, which is instead proven by this package's
 // repository-integration/concurrency tests.
-func (m *Manager) leaveInTx(ctx context.Context, tx *gorm.DB, sessionUUID SessionUUID, userUUID UserUUID, idempotencyKey IdempotencyKey, incomingPayload leaveRequestPayload, payloadBytes string) (LeaveResult, error) {
+func (m *Manager) leaveSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID SessionUUID, userUUID UserUUID, idempotencyKey IdempotencyKey, incomingPayload leaveRequestPayload) (LeaveResult, error) {
 	lockedSession, err := sessionlock.LockByUUID(ctx, tx, string(sessionUUID))
 	if err != nil {
 		return LeaveResult{}, err
@@ -116,7 +80,7 @@ func (m *Manager) leaveInTx(ctx context.Context, tx *gorm.DB, sessionUUID Sessio
 		return LeaveResult{}, session.ErrSessionNotFound
 	}
 
-	now := m.now()
+	now := time.Now().UTC()
 	if _, err := materializeExpirationIfDue(ctx, tx, m.leaveRepo, lockedSession, now); err != nil {
 		return LeaveResult{}, err
 	}
@@ -129,6 +93,10 @@ func (m *Manager) leaveInTx(ctx context.Context, tx *gorm.DB, sessionUUID Sessio
 		return LeaveResult{Outcome: LeaveOutcomeNotInLobby}, nil
 	}
 
+	payloadBytes, err := marshalPayload(incomingPayload)
+	if err != nil {
+		return LeaveResult{}, err
+	}
 	requestID, existing, err := idempotency.Claim(ctx, tx, idempotency.ClaimInput{
 		Operation:      operationLeave,
 		UserUUID:       string(userUUID),
@@ -173,6 +141,38 @@ func (m *Manager) leaveInTx(ctx context.Context, tx *gorm.DB, sessionUUID Sessio
 	}
 	if err := idempotency.Complete(ctx, tx, requestID, &lockedSession.ID, outcomeLeft, responseBytes); err != nil {
 		return LeaveResult{}, fmt.Errorf("completing leave session request: %s", err)
+	}
+	return result, nil
+}
+
+// interpretExistingLeaveClaim decides what an already-claimed LEAVE identity
+// means for the incoming request: replay or conflict
+// (`docs/engineering/standards/idempotency.md`'s Token Semantics). A
+// replayed decline is returned as the same outcome value it was originally
+// recorded as (GAME-ADR-0022), never reconstructed as an error.
+func interpretExistingLeaveClaim(existing *idempotency.Request, incoming leaveRequestPayload) (LeaveResult, error) {
+	if existing.Status != idempotency.StatusCompleted {
+		return LeaveResult{}, session.ErrIdempotencyInFlight
+	}
+
+	var stored leaveRequestPayload
+	if err := json.Unmarshal([]byte(existing.RequestPayload), &stored); err != nil {
+		return LeaveResult{}, fmt.Errorf("decoding stored leave request payload: %s", err)
+	}
+	if stored != incoming {
+		return LeaveResult{}, session.ErrIdempotencyConflict
+	}
+
+	if existing.Outcome == outcomeActorNotFound {
+		return LeaveResult{Outcome: LeaveOutcomeActorNotFound}, nil
+	}
+
+	if existing.ResponsePayload == nil {
+		return LeaveResult{}, fmt.Errorf("completed leave idempotency record missing response payload")
+	}
+	var result LeaveResult
+	if err := json.Unmarshal([]byte(*existing.ResponsePayload), &result); err != nil {
+		return LeaveResult{}, fmt.Errorf("decoding stored leave response payload: %s", err)
 	}
 	return result, nil
 }

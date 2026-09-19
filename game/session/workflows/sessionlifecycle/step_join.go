@@ -61,41 +61,6 @@ type joinRequestPayload struct {
 	DisplayName string `json:"display_name"`
 }
 
-// interpretExistingJoinClaim decides what an already-claimed JOIN identity
-// means for the incoming request: replay or conflict
-// (`docs/engineering/standards/idempotency.md`'s Token Semantics). A
-// replayed decline is returned as the same outcome value it was originally
-// recorded as (GAME-ADR-0022), never reconstructed as an error.
-func interpretExistingJoinClaim(existing *idempotency.Request, incoming joinRequestPayload) (JoinResult, error) {
-	if existing.Status != idempotency.StatusCompleted {
-		return JoinResult{}, session.ErrIdempotencyInFlight
-	}
-
-	var stored joinRequestPayload
-	if err := json.Unmarshal([]byte(existing.RequestPayload), &stored); err != nil {
-		return JoinResult{}, fmt.Errorf("decoding stored join request payload: %s", err)
-	}
-	if stored != incoming {
-		return JoinResult{}, session.ErrIdempotencyConflict
-	}
-
-	switch existing.Outcome {
-	case outcomeAlreadyJoined:
-		return JoinResult{Outcome: JoinOutcomeAlreadyJoined}, nil
-	case outcomeLobbyFull:
-		return JoinResult{Outcome: JoinOutcomeLobbyFull}, nil
-	}
-
-	if existing.ResponsePayload == nil {
-		return JoinResult{}, fmt.Errorf("completed join idempotency record missing response payload")
-	}
-	var result JoinResult
-	if err := json.Unmarshal([]byte(*existing.ResponsePayload), &result); err != nil {
-		return JoinResult{}, fmt.Errorf("decoding stored join response payload: %s", err)
-	}
-	return result, nil
-}
-
 // Join resolves an active JoinCode to its Session, loads that Session's
 // pinned immutable Game Definition, and admits the caller as an active
 // Participant under the Session's per-Session DB mutation lock. See
@@ -134,23 +99,19 @@ func (m *Manager) Join(ctx context.Context, joinCode JoinCode, userUUID UserUUID
 	playersMax := definition.Players.Max
 
 	incomingPayload := joinRequestPayload{JoinCode: uint(joinCode), UserUUID: string(userUUID), DisplayName: string(displayName)}
-	payloadBytes, err := marshalPayload(incomingPayload)
-	if err != nil {
-		return JoinResult{}, err
-	}
 
 	return utils.RunInDBTransaction(ctx, m, func(ctx context.Context, tx *gorm.DB) (JoinResult, error) {
-		return m.joinInTx(ctx, tx, resolution.SessionID, playersMax, userUUID, displayName, idempotencyKey, incomingPayload, payloadBytes)
+		return m.joinSessionInTx(ctx, tx, resolution.SessionID, playersMax, userUUID, displayName, idempotencyKey, incomingPayload)
 	})
 }
 
-// joinInTx is Join's per-transaction business logic, split out from the
-// public Join so it can be exercised directly by mocked-collaborator unit
-// tests without needing a real DB transaction - sessionlock/idempotency
+// joinSessionInTx is Join's per-transaction business logic, split out from
+// the public Join so it can be exercised directly by mocked-collaborator
+// unit tests without needing a real DB transaction - sessionlock/idempotency
 // mechanism calls further down this same path require a real Postgres
 // connection to run their SQL, which is instead proven by this package's
 // repository-integration/concurrency tests.
-func (m *Manager) joinInTx(ctx context.Context, tx *gorm.DB, sessionID uint, playersMax int, userUUID UserUUID, displayName DisplayName, idempotencyKey IdempotencyKey, incomingPayload joinRequestPayload, payloadBytes string) (JoinResult, error) {
+func (m *Manager) joinSessionInTx(ctx context.Context, tx *gorm.DB, sessionID uint, playersMax int, userUUID UserUUID, displayName DisplayName, idempotencyKey IdempotencyKey, incomingPayload joinRequestPayload) (JoinResult, error) {
 	lockedSession, err := sessionlock.LockByID(ctx, tx, sessionID)
 	if err != nil {
 		return JoinResult{}, err
@@ -159,7 +120,7 @@ func (m *Manager) joinInTx(ctx context.Context, tx *gorm.DB, sessionID uint, pla
 		return JoinResult{}, session.ErrSessionNotFound
 	}
 
-	now := m.now()
+	now := time.Now().UTC()
 	if _, err := materializeExpirationIfDue(ctx, tx, m.joinRepo, lockedSession, now); err != nil {
 		return JoinResult{}, err
 	}
@@ -173,6 +134,10 @@ func (m *Manager) joinInTx(ctx context.Context, tx *gorm.DB, sessionID uint, pla
 		return JoinResult{Outcome: JoinOutcomeLobbyExpired}, nil
 	}
 
+	payloadBytes, err := marshalPayload(incomingPayload)
+	if err != nil {
+		return JoinResult{}, err
+	}
 	requestID, existing, err := idempotency.Claim(ctx, tx, idempotency.ClaimInput{
 		Operation:      operationJoin,
 		UserUUID:       string(userUUID),
@@ -248,6 +213,41 @@ func (m *Manager) joinInTx(ctx context.Context, tx *gorm.DB, sessionID uint, pla
 	}
 	if err := idempotency.Complete(ctx, tx, requestID, &lockedSession.ID, outcomeJoined, responseBytes); err != nil {
 		return JoinResult{}, fmt.Errorf("completing join session request: %s", err)
+	}
+	return result, nil
+}
+
+// interpretExistingJoinClaim decides what an already-claimed JOIN identity
+// means for the incoming request: replay or conflict
+// (`docs/engineering/standards/idempotency.md`'s Token Semantics). A
+// replayed decline is returned as the same outcome value it was originally
+// recorded as (GAME-ADR-0022), never reconstructed as an error.
+func interpretExistingJoinClaim(existing *idempotency.Request, incoming joinRequestPayload) (JoinResult, error) {
+	if existing.Status != idempotency.StatusCompleted {
+		return JoinResult{}, session.ErrIdempotencyInFlight
+	}
+
+	var stored joinRequestPayload
+	if err := json.Unmarshal([]byte(existing.RequestPayload), &stored); err != nil {
+		return JoinResult{}, fmt.Errorf("decoding stored join request payload: %s", err)
+	}
+	if stored != incoming {
+		return JoinResult{}, session.ErrIdempotencyConflict
+	}
+
+	switch existing.Outcome {
+	case outcomeAlreadyJoined:
+		return JoinResult{Outcome: JoinOutcomeAlreadyJoined}, nil
+	case outcomeLobbyFull:
+		return JoinResult{Outcome: JoinOutcomeLobbyFull}, nil
+	}
+
+	if existing.ResponsePayload == nil {
+		return JoinResult{}, fmt.Errorf("completed join idempotency record missing response payload")
+	}
+	var result JoinResult
+	if err := json.Unmarshal([]byte(*existing.ResponsePayload), &result); err != nil {
+		return JoinResult{}, fmt.Errorf("decoding stored join response payload: %s", err)
 	}
 	return result, nil
 }

@@ -43,33 +43,9 @@ type createRequestPayload struct {
 	GameUUID string `json:"game_uuid"`
 }
 
-// interpretExistingCreateClaim decides what an already-claimed CREATE
-// identity means for the incoming request: replay or conflict
-// (`docs/engineering/standards/idempotency.md`'s Token Semantics). This is
-// Manager policy - the shared idempotency mechanism only reports the
-// existing request.
-func interpretExistingCreateClaim(existing *idempotency.Request, incoming createRequestPayload) (CreatedSession, error) {
-	if existing.Status != idempotency.StatusCompleted {
-		return CreatedSession{}, session.ErrIdempotencyInFlight
-	}
-
-	var stored createRequestPayload
-	if err := json.Unmarshal([]byte(existing.RequestPayload), &stored); err != nil {
-		return CreatedSession{}, fmt.Errorf("decoding stored create request payload: %s", err)
-	}
-	if stored != incoming {
-		return CreatedSession{}, session.ErrIdempotencyConflict
-	}
-
-	if existing.ResponsePayload == nil {
-		return CreatedSession{}, fmt.Errorf("completed create idempotency record missing response payload")
-	}
-	var result CreatedSession
-	if err := json.Unmarshal([]byte(*existing.ResponsePayload), &result); err != nil {
-		return CreatedSession{}, fmt.Errorf("decoding stored create response payload: %s", err)
-	}
-	return result, nil
-}
+// outcomeCreated is CREATE's only recorded logical outcome label (Create has
+// no deterministic decline outcome in this WORK's scope).
+const outcomeCreated = "CREATED"
 
 // Create resolves/compiles/pins the Game's current playable Definition, then
 // creates a LOBBY Session with a host SessionActor and an active JoinCode.
@@ -102,23 +78,24 @@ func (m *Manager) Create(ctx context.Context, gameUUID GameUUID, hostUserUUID Us
 	}
 
 	incomingPayload := createRequestPayload{GameUUID: string(gameUUID)}
+
+	return utils.RunInDBTransaction(ctx, m, func(ctx context.Context, tx *gorm.DB) (CreatedSession, error) {
+		return m.createSessionInTx(ctx, tx, playableGame.VersionUUID, hostUserUUID, idempotencyKey, incomingPayload)
+	})
+}
+
+// createSessionInTx is Create's per-transaction business logic, split out
+// from the public Create so it can be exercised directly by
+// mocked-collaborator unit tests without needing a real DB transaction -
+// sessionlock/idempotency mechanism calls further down this same path
+// require a real Postgres connection to run their SQL, which is instead
+// proven by this package's repository-integration/concurrency tests.
+func (m *Manager) createSessionInTx(ctx context.Context, tx *gorm.DB, gameDefinitionUUID string, hostUserUUID UserUUID, idempotencyKey IdempotencyKey, incomingPayload createRequestPayload) (CreatedSession, error) {
 	payloadBytes, err := marshalPayload(incomingPayload)
 	if err != nil {
 		return CreatedSession{}, err
 	}
 
-	return utils.RunInDBTransaction(ctx, m, func(ctx context.Context, tx *gorm.DB) (CreatedSession, error) {
-		return m.createInTx(ctx, tx, playableGame.VersionUUID, hostUserUUID, idempotencyKey, incomingPayload, payloadBytes)
-	})
-}
-
-// createInTx is Create's per-transaction business logic, split out from the
-// public Create so it can be exercised directly by mocked-collaborator unit
-// tests without needing a real DB transaction - sessionlock/idempotency
-// mechanism calls further down this same path require a real Postgres
-// connection to run their SQL, which is instead proven by this package's
-// repository-integration/concurrency tests.
-func (m *Manager) createInTx(ctx context.Context, tx *gorm.DB, gameDefinitionUUID string, hostUserUUID UserUUID, idempotencyKey IdempotencyKey, incomingPayload createRequestPayload, payloadBytes string) (CreatedSession, error) {
 	requestID, existing, err := idempotency.Claim(ctx, tx, idempotency.ClaimInput{
 		Operation:      operationCreate,
 		UserUUID:       string(hostUserUUID),
@@ -132,7 +109,7 @@ func (m *Manager) createInTx(ctx context.Context, tx *gorm.DB, gameDefinitionUUI
 		return interpretExistingCreateClaim(existing, incomingPayload)
 	}
 
-	now := m.now()
+	now := time.Now().UTC()
 	created, err := m.createRepo.CreateSessionWithHost(ctx, tx, gameDefinitionUUID, string(hostUserUUID), now.Add(m.lobbyTTL))
 	if err != nil {
 		return CreatedSession{}, err
@@ -160,6 +137,30 @@ func (m *Manager) createInTx(ctx context.Context, tx *gorm.DB, gameDefinitionUUI
 	return result, nil
 }
 
-// outcomeCreated is CREATE's only recorded logical outcome label (Create has
-// no deterministic decline outcome in this WORK's scope).
-const outcomeCreated = "CREATED"
+// interpretExistingCreateClaim decides what an already-claimed CREATE
+// identity means for the incoming request: replay or conflict
+// (`docs/engineering/standards/idempotency.md`'s Token Semantics). This is
+// Manager policy - the shared idempotency mechanism only reports the
+// existing request.
+func interpretExistingCreateClaim(existing *idempotency.Request, incoming createRequestPayload) (CreatedSession, error) {
+	if existing.Status != idempotency.StatusCompleted {
+		return CreatedSession{}, session.ErrIdempotencyInFlight
+	}
+
+	var stored createRequestPayload
+	if err := json.Unmarshal([]byte(existing.RequestPayload), &stored); err != nil {
+		return CreatedSession{}, fmt.Errorf("decoding stored create request payload: %s", err)
+	}
+	if stored != incoming {
+		return CreatedSession{}, session.ErrIdempotencyConflict
+	}
+
+	if existing.ResponsePayload == nil {
+		return CreatedSession{}, fmt.Errorf("completed create idempotency record missing response payload")
+	}
+	var result CreatedSession
+	if err := json.Unmarshal([]byte(*existing.ResponsePayload), &result); err != nil {
+		return CreatedSession{}, fmt.Errorf("decoding stored create response payload: %s", err)
+	}
+	return result, nil
+}
