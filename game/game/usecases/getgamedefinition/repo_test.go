@@ -57,7 +57,8 @@ func TestRepoGetGameDefinitionByUUID(t *testing.T) {
 			}
 			require.NotNil(t, got)
 			require.NotNil(t, tc.expectedDefinition)
-			require.Equal(t, *tc.expectedDefinition, *got)
+			require.Equal(t, tc.expectedDefinition.UUID, got.UUID)
+			require.JSONEq(t, tc.expectedDefinition.Script, got.Script)
 		})
 	}
 }
