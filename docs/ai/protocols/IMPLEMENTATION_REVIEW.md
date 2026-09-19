@@ -88,6 +88,81 @@ The Codebase Agent should not:
 
 Do not escalate normal local engineering choices already inside the approved autonomy boundary. The goal is to escalate material decisions and implement local decisions.
 
+## Human Code-Review Feedback During Implementation
+
+While a WORK is IMPLEMENTING or under review, a human may give ad hoc code-review feedback directly to the Codebase Agent, outside a formal Independent Review report ("I don't like this abstraction, simplify it", "rename this", "this responsibility should live somewhere else", "why is this implemented this way", "this should work differently").
+
+The human is not required to know or state whether the current implementation came from the active WORK, an accepted ADR, an engineering standard, canonical/current-truth domain documentation, initiative planning, or an unconstrained choice made by a prior agent. The Codebase Agent determines that before applying or refusing the feedback.
+
+The default is to apply local implementation feedback immediately unless doing so would materially contradict an already-approved decision.
+
+Before applying substantive feedback, inspect the sources that could plausibly constrain the requested change — at minimum, as relevant: the active WORK, applicable engineering standards, accepted ADRs, canonical/current-truth domain documentation, and the active initiative workspace/PLAN. Do not mechanically reread the whole repository for trivial feedback; use judgment about what could plausibly be implicated.
+
+Classify each piece of substantive feedback as one of:
+
+- LOCAL FIX
+- DECISION REQUIRED
+
+This is the same escalation boundary as this protocol's REQUIRED_FIX/DECISION_REQUIRED dispositions and `docs/ai/OPERATING_MODEL.md` DISCOVERY, applied to direct human review comments rather than to formal review findings or agent-discovered issues.
+
+### LOCAL FIX
+
+Classify as LOCAL FIX when the requested change stays inside the existing Codebase Agent autonomy boundary (`docs/ai/OPERATING_MODEL.md` Decision Boundaries): it remains consistent with the active WORK, does not contradict an accepted ADR or a canonical engineering standard, and does not materially change domain behavior, architecture/ownership, persistence/transactional semantics, approved WORK scope, or an already-approved public/application contract.
+
+This normally covers naming, helper/function ordering, removing unnecessary wrappers or indirection, eliminating redundant derived parameters, simplifying implementation, readability/locality improvements, and implementation bugs where the approved behavior is already clear.
+
+It also covers implementation drift: when the code does not actually follow an approved WORK/standard/ADR and the human's feedback is asking the implementation to comply with what was already approved, that is a LOCAL FIX even though the underlying rule is documented. Do not escalate merely because the relevant behavior happens to be written down somewhere.
+
+For a LOCAL FIX:
+
+1. apply the change immediately;
+2. update tests where appropriate;
+3. run relevant verification;
+4. do not create/update an ADR;
+5. do not change an engineering standard;
+6. do not send the WORK back through DRAFT/reapproval solely because of the fix;
+7. do not require the human to consult Conversational AI first.
+
+### DECISION REQUIRED
+
+Classify as DECISION REQUIRED when implementing the requested change would materially contradict, supersede, or reopen something already approved in the active WORK, an engineering standard, an accepted ADR, canonical domain/current-truth documentation, or another authoritative project artifact.
+
+This includes the case where the code correctly implements an approved decision and the human is now questioning that decision itself (not its implementation). A previously accepted decision is not superseded merely because a human expressed dislike for it during review.
+
+For that item: do not implement the conflicting change. Do not silently update canonical documents to make the requested code change legal.
+
+Report:
+
+```text
+DECISION REQUIRED
+
+Requested: <what the human asked for>
+Conflicts with: <WORK / ADR / standard / canonical doc, with path and section>
+Why material: <what would materially change>
+Decision type: WORK revision | Engineering Standard | domain/architecture decision | initiative planning
+Open question: <the smallest unresolved question that needs a decision>
+```
+
+Make this self-contained enough that the human can take it to a fresh Conversational AI session and say "the Codebase Agent found this DECISION REQUIRED during implementation review, I want to reconsider it" without reconstructing the conflict from this conversation.
+
+### Mixed Feedback Batches
+
+A single review pass may contain several comments. Classify and handle each independently: apply every LOCAL FIX, and report DECISION REQUIRED only for the specific item(s) that require it. Do not block or defer the LOCAL FIX items because one unrelated item needs a decision.
+
+### Reporting
+
+When an implementation/fix pass included human review feedback, add a compact section to the Implementation Report:
+
+```text
+Human review feedback:
+- <comment> -> LOCAL FIX — applied.
+- <comment> -> DECISION REQUIRED — see above.
+```
+
+Keep this concise. Do not add process narration for ordinary fixes; a single line is sufficient when every comment was a LOCAL FIX.
+
+This classification is a Codebase Agent responsibility. The human does not need to pre-classify feedback as a local fix or a decision. It applies to feedback given while a WORK is IMPLEMENTING or under review; it does not require reopening or retroactively reclassifying feedback on already-closed WORK.
+
 ## Discovery
 
 Use the DISCOVERY format from `docs/ai/OPERATING_MODEL.md`. Do not define a competing escalation format.

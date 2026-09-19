@@ -84,6 +84,26 @@ Do not introduce Workflow v1/v2, semantic version numbers, WFC IDs, workflow dec
 
 Current Git history plus this changelog is sufficient. If stable workflow-change identity becomes useful later, propose it through `AI_WORKFLOW_CHANGE.md`.
 
+## 2026-09-18 - Added human code-review feedback classification to implementation review
+
+**Change**
+- Added a "Human Code-Review Feedback During Implementation" section to `docs/ai/protocols/IMPLEMENTATION_REVIEW.md`, governing ad hoc human code-review comments given directly to a Codebase Agent while a WORK is IMPLEMENTING or under review (distinct from a formal Independent Review report).
+- Requires the Codebase Agent, not the human, to classify each piece of substantive feedback as LOCAL FIX (apply immediately; stays inside the existing autonomy boundary, including correcting implementation drift from an already-approved WORK/standard/ADR) or DECISION REQUIRED (do not implement; the change would contradict, supersede, or reopen an already-approved WORK/ADR/standard/canonical decision, including when the human is now questioning a decision the code correctly implements).
+- Defines a compact DECISION REQUIRED report shape (requested / conflicts with / why material / decision type / open question) self-contained enough to route to a fresh Conversational AI session, and requires mixed feedback batches to be handled item-by-item so unrelated LOCAL FIX items are not blocked by one DECISION REQUIRED item.
+
+**Reason**
+- Reviewing humans should not need to remember whether current code came from the active WORK, an ADR, an engineering standard, canonical domain documentation, or an unconstrained prior-agent choice before giving feedback, and ordinary local review feedback should not trigger unnecessary planning/architecture ceremony.
+
+**Affected workflow artifacts**
+- `docs/ai/protocols/IMPLEMENTATION_REVIEW.md`
+- `docs/ai/CHANGELOG.md`
+
+**Compatibility / migration**
+- None. No existing WORK status, review verdict, or finding disposition was renamed or removed; this only adds handling for feedback given outside the formal Independent Review report. Does not require reopening or retroactively reclassifying feedback on already-closed WORK.
+
+**Notes**
+- This reuses the protocol's existing REQUIRED_FIX/DECISION_REQUIRED escalation boundary and `docs/ai/OPERATING_MODEL.md` DISCOVERY concept rather than introducing a competing review lifecycle.
+
 ## 2026-09-07 - Moved ADR ownership/routing from centralized to scope-based decision families
 
 **Change**
