@@ -91,16 +91,16 @@ func (m *Manager) Create(ctx context.Context, gameUUID GameUUID, hostUserUUID Us
 // require a real Postgres connection to run their SQL, which is instead
 // proven by this package's repository-integration/concurrency tests.
 func (m *Manager) createSessionInTx(ctx context.Context, tx *gorm.DB, gameDefinitionUUID string, hostUserUUID UserUUID, idempotencyKey IdempotencyKey, incomingPayload createRequestPayload) (CreatedSession, error) {
-	payloadBytes, err := marshalPayload(incomingPayload)
+	payloadBytes, err := json.Marshal(incomingPayload)
 	if err != nil {
-		return CreatedSession{}, err
+		return CreatedSession{}, fmt.Errorf("marshaling create request payload: %s", err)
 	}
 
 	requestID, existing, err := idempotency.Claim(ctx, tx, idempotency.ClaimInput{
 		Operation:      operationCreate,
 		UserUUID:       string(hostUserUUID),
 		IdempotencyKey: string(idempotencyKey),
-		RequestPayload: payloadBytes,
+		RequestPayload: string(payloadBytes),
 	})
 	if err != nil {
 		return CreatedSession{}, fmt.Errorf("claiming create session request: %s", err)
@@ -125,13 +125,13 @@ func (m *Manager) createSessionInTx(ctx context.Context, tx *gorm.DB, gameDefini
 		JoinCode:       JoinCode(joinCode),
 		LobbyExpiresAt: created.LobbyExpiresAt,
 	}
-	responseBytes, err := marshalPayload(result)
+	responseBytes, err := json.Marshal(result)
 	if err != nil {
-		return CreatedSession{}, err
+		return CreatedSession{}, fmt.Errorf("marshaling create response payload: %s", err)
 	}
 
 	sessionID := created.SessionID
-	if err := idempotency.Complete(ctx, tx, requestID, &sessionID, outcomeCreated, responseBytes); err != nil {
+	if err := idempotency.Complete(ctx, tx, requestID, &sessionID, outcomeCreated, string(responseBytes)); err != nil {
 		return CreatedSession{}, fmt.Errorf("completing create session request: %s", err)
 	}
 	return result, nil

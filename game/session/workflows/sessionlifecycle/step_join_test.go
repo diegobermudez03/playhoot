@@ -44,7 +44,7 @@ func TestManagerJoin(t *testing.T) {
 			}
 		},
 		"rejects_invalid_join_code": func(t *testing.T, repo *MockjoinRepoAPI, gameReader *MockgamePinnedDefinitionReader) test {
-			repo.EXPECT().ResolveActiveSessionForJoinCode(gomock.Any(), uint(9999)).Return(nil, nil)
+			repo.EXPECT().ResolveSessionForJoinCode(gomock.Any(), uint(9999)).Return(nil, nil)
 			return test{
 				ctx: context.Background(), joinCode: 9999, userUUID: "user-uuid", displayName: "Alice", idempotencyKey: "key-1",
 				errAssert: func(tt require.TestingT, err error, _ ...interface{}) {
@@ -53,7 +53,7 @@ func TestManagerJoin(t *testing.T) {
 			}
 		},
 		"alerts_and_rejects_when_pinned_definition_is_missing": func(t *testing.T, repo *MockjoinRepoAPI, gameReader *MockgamePinnedDefinitionReader) test {
-			repo.EXPECT().ResolveActiveSessionForJoinCode(gomock.Any(), uint(1234)).Return(&internalrepo.JoinCodeResolution{
+			repo.EXPECT().ResolveSessionForJoinCode(gomock.Any(), uint(1234)).Return(&internalrepo.JoinCodeResolution{
 				SessionID: 7, GameDefinitionUUID: "pinned-version-uuid",
 			}, nil)
 			gameReader.EXPECT().GetGameDefinition(gomock.Any(), "pinned-version-uuid").Return(nil, nil)
@@ -65,7 +65,7 @@ func TestManagerJoin(t *testing.T) {
 			}
 		},
 		"propagates_resolve_error": func(t *testing.T, repo *MockjoinRepoAPI, gameReader *MockgamePinnedDefinitionReader) test {
-			repo.EXPECT().ResolveActiveSessionForJoinCode(gomock.Any(), uint(1234)).Return(nil, repoErr)
+			repo.EXPECT().ResolveSessionForJoinCode(gomock.Any(), uint(1234)).Return(nil, repoErr)
 			return test{
 				ctx: context.Background(), joinCode: 1234, userUUID: "user-uuid", displayName: "Alice", idempotencyKey: "key-1",
 				errAssert: func(tt require.TestingT, err error, _ ...interface{}) {
@@ -74,7 +74,7 @@ func TestManagerJoin(t *testing.T) {
 			}
 		},
 		"propagates_pinned_definition_read_error": func(t *testing.T, repo *MockjoinRepoAPI, gameReader *MockgamePinnedDefinitionReader) test {
-			repo.EXPECT().ResolveActiveSessionForJoinCode(gomock.Any(), uint(1234)).Return(&internalrepo.JoinCodeResolution{
+			repo.EXPECT().ResolveSessionForJoinCode(gomock.Any(), uint(1234)).Return(&internalrepo.JoinCodeResolution{
 				SessionID: 7, GameDefinitionUUID: "pinned-version-uuid",
 			}, nil)
 			gameReader.EXPECT().GetGameDefinition(gomock.Any(), "pinned-version-uuid").Return(nil, repoErr)

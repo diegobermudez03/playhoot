@@ -44,7 +44,7 @@ type gamePinnedDefinitionReader interface {
 // (`docs/engineering/standards/repositories.md`'s Sharing Rule).
 type joinRepoAPI interface {
 	expirationStore
-	ResolveActiveSessionForJoinCode(ctx context.Context, joinCode uint) (*internalrepo.JoinCodeResolution, error)
+	ResolveSessionForJoinCode(ctx context.Context, joinCode uint) (*internalrepo.JoinCodeResolution, error)
 	FindActor(ctx context.Context, tx *gorm.DB, sessionID uint, userUUID string) (*internalrepo.Actor, error)
 	CreateActor(ctx context.Context, tx *gorm.DB, sessionID uint, userUUID string) (uint, error)
 	FindParticipant(ctx context.Context, tx *gorm.DB, actorID uint) (*internalrepo.Participant, error)
@@ -76,7 +76,17 @@ func (m *Manager) Join(ctx context.Context, joinCode JoinCode, userUUID UserUUID
 		return JoinResult{}, session.ErrIdempotencyKeyRequired
 	}
 
-	resolution, err := m.joinRepo.ResolveActiveSessionForJoinCode(ctx, uint(joinCode))
+	// ResolveSessionForJoinCode resolves the most recent join_codes row for
+	// this code number regardless of revocation status (never filtered to
+	// revoked_at IS NULL): a code that was active a moment ago can be
+	// concurrently revoked by another operation's lazy lobby-expiration
+	// materialization before this call reaches the lock below, and that race
+	// must still surface as the ordinary LobbyExpired outcome value once
+	// locked, not as a hard "invalid code" error discovered here and never
+	// re-validated under lock. A code already revoked independently of the
+	// Session it names remaining LOBBY (resolution.RevokedAt set) is instead
+	// rejected once locked, immediately below - see joinSessionInTx.
+	resolution, err := m.joinRepo.ResolveSessionForJoinCode(ctx, uint(joinCode))
 	if err != nil {
 		return JoinResult{}, err
 	}
@@ -99,9 +109,10 @@ func (m *Manager) Join(ctx context.Context, joinCode JoinCode, userUUID UserUUID
 	playersMax := definition.Players.Max
 
 	incomingPayload := joinRequestPayload{JoinCode: uint(joinCode), UserUUID: string(userUUID), DisplayName: string(displayName)}
+	codeWasRevokedAtResolution := resolution.RevokedAt != nil
 
 	return utils.RunInDBTransaction(ctx, m, func(ctx context.Context, tx *gorm.DB) (JoinResult, error) {
-		return m.joinSessionInTx(ctx, tx, resolution.SessionID, playersMax, userUUID, displayName, idempotencyKey, incomingPayload)
+		return m.joinSessionInTx(ctx, tx, resolution.SessionID, codeWasRevokedAtResolution, playersMax, userUUID, displayName, idempotencyKey, incomingPayload)
 	})
 }
 
@@ -111,7 +122,7 @@ func (m *Manager) Join(ctx context.Context, joinCode JoinCode, userUUID UserUUID
 // mechanism calls further down this same path require a real Postgres
 // connection to run their SQL, which is instead proven by this package's
 // repository-integration/concurrency tests.
-func (m *Manager) joinSessionInTx(ctx context.Context, tx *gorm.DB, sessionID uint, playersMax int, userUUID UserUUID, displayName DisplayName, idempotencyKey IdempotencyKey, incomingPayload joinRequestPayload) (JoinResult, error) {
+func (m *Manager) joinSessionInTx(ctx context.Context, tx *gorm.DB, sessionID uint, codeWasRevokedAtResolution bool, playersMax int, userUUID UserUUID, displayName DisplayName, idempotencyKey IdempotencyKey, incomingPayload joinRequestPayload) (JoinResult, error) {
 	lockedSession, err := sessionlock.LockByID(ctx, tx, sessionID)
 	if err != nil {
 		return JoinResult{}, err
@@ -133,17 +144,26 @@ func (m *Manager) joinSessionInTx(ctx context.Context, tx *gorm.DB, sessionID ui
 		// eventual successful return.
 		return JoinResult{Outcome: JoinOutcomeLobbyExpired}, nil
 	}
+	if codeWasRevokedAtResolution {
+		// The Session itself is still LOBBY (the check above already ruled
+		// out expiration), so this JoinCode's revocation cannot be this
+		// call's own lazy-expiration materialization - it was already
+		// revoked independently of the Session it names still being open,
+		// a genuinely invalid code rather than a race with a concurrent
+		// expiration.
+		return JoinResult{}, session.ErrJoinCodeInvalid
+	}
 
-	payloadBytes, err := marshalPayload(incomingPayload)
+	payloadBytes, err := json.Marshal(incomingPayload)
 	if err != nil {
-		return JoinResult{}, err
+		return JoinResult{}, fmt.Errorf("marshaling join request payload: %s", err)
 	}
 	requestID, existing, err := idempotency.Claim(ctx, tx, idempotency.ClaimInput{
 		Operation:      operationJoin,
 		UserUUID:       string(userUUID),
 		IdempotencyKey: string(idempotencyKey),
 		SessionID:      &lockedSession.ID,
-		RequestPayload: payloadBytes,
+		RequestPayload: string(payloadBytes),
 	})
 	if err != nil {
 		return JoinResult{}, fmt.Errorf("claiming join session request: %s", err)
@@ -207,11 +227,11 @@ func (m *Manager) joinSessionInTx(ctx context.Context, tx *gorm.DB, sessionID ui
 	}
 
 	result := JoinResult{Outcome: JoinOutcomeJoined, SessionUUID: SessionUUID(lockedSession.UUID), DisplayName: displayName}
-	responseBytes, err := marshalPayload(result)
+	responseBytes, err := json.Marshal(result)
 	if err != nil {
-		return JoinResult{}, err
+		return JoinResult{}, fmt.Errorf("marshaling join response payload: %s", err)
 	}
-	if err := idempotency.Complete(ctx, tx, requestID, &lockedSession.ID, outcomeJoined, responseBytes); err != nil {
+	if err := idempotency.Complete(ctx, tx, requestID, &lockedSession.ID, outcomeJoined, string(responseBytes)); err != nil {
 		return JoinResult{}, fmt.Errorf("completing join session request: %s", err)
 	}
 	return result, nil

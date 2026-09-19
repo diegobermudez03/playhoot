@@ -93,16 +93,16 @@ func (m *Manager) leaveSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 		return LeaveResult{Outcome: LeaveOutcomeNotInLobby}, nil
 	}
 
-	payloadBytes, err := marshalPayload(incomingPayload)
+	payloadBytes, err := json.Marshal(incomingPayload)
 	if err != nil {
-		return LeaveResult{}, err
+		return LeaveResult{}, fmt.Errorf("marshaling leave request payload: %s", err)
 	}
 	requestID, existing, err := idempotency.Claim(ctx, tx, idempotency.ClaimInput{
 		Operation:      operationLeave,
 		UserUUID:       string(userUUID),
 		IdempotencyKey: string(idempotencyKey),
 		SessionID:      &lockedSession.ID,
-		RequestPayload: payloadBytes,
+		RequestPayload: string(payloadBytes),
 	})
 	if err != nil {
 		return LeaveResult{}, fmt.Errorf("claiming leave session request: %s", err)
@@ -135,11 +135,11 @@ func (m *Manager) leaveSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 	// no-op: there is no active slot left to release.
 
 	result := LeaveResult{Outcome: LeaveOutcomeLeft, SessionUUID: SessionUUID(lockedSession.UUID)}
-	responseBytes, err := marshalPayload(result)
+	responseBytes, err := json.Marshal(result)
 	if err != nil {
-		return LeaveResult{}, err
+		return LeaveResult{}, fmt.Errorf("marshaling leave response payload: %s", err)
 	}
-	if err := idempotency.Complete(ctx, tx, requestID, &lockedSession.ID, outcomeLeft, responseBytes); err != nil {
+	if err := idempotency.Complete(ctx, tx, requestID, &lockedSession.ID, outcomeLeft, string(responseBytes)); err != nil {
 		return LeaveResult{}, fmt.Errorf("completing leave session request: %s", err)
 	}
 	return result, nil

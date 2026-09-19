@@ -187,19 +187,19 @@ func (mr *MockjoinRepoAPIMockRecorder) FindParticipant(ctx, tx, actorID any) *go
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindParticipant", reflect.TypeOf((*MockjoinRepoAPI)(nil).FindParticipant), ctx, tx, actorID)
 }
 
-// ResolveActiveSessionForJoinCode mocks base method.
-func (m *MockjoinRepoAPI) ResolveActiveSessionForJoinCode(ctx context.Context, joinCode uint) (*repo.JoinCodeResolution, error) {
+// ResolveSessionForJoinCode mocks base method.
+func (m *MockjoinRepoAPI) ResolveSessionForJoinCode(ctx context.Context, joinCode uint) (*repo.JoinCodeResolution, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ResolveActiveSessionForJoinCode", ctx, joinCode)
+	ret := m.ctrl.Call(m, "ResolveSessionForJoinCode", ctx, joinCode)
 	ret0, _ := ret[0].(*repo.JoinCodeResolution)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// ResolveActiveSessionForJoinCode indicates an expected call of ResolveActiveSessionForJoinCode.
-func (mr *MockjoinRepoAPIMockRecorder) ResolveActiveSessionForJoinCode(ctx, joinCode any) *gomock.Call {
+// ResolveSessionForJoinCode indicates an expected call of ResolveSessionForJoinCode.
+func (mr *MockjoinRepoAPIMockRecorder) ResolveSessionForJoinCode(ctx, joinCode any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResolveActiveSessionForJoinCode", reflect.TypeOf((*MockjoinRepoAPI)(nil).ResolveActiveSessionForJoinCode), ctx, joinCode)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResolveSessionForJoinCode", reflect.TypeOf((*MockjoinRepoAPI)(nil).ResolveSessionForJoinCode), ctx, joinCode)
 }
 
 // RevokeActiveJoinCode mocks base method.

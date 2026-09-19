@@ -14,6 +14,14 @@ import (
 // reuse for this).
 const defaultLobbyTTL = 10 * time.Minute
 
+// Session lifecycle idempotency operation labels
+// (`docs/engineering/standards/idempotency.md`).
+const (
+	operationCreate = "CREATE"
+	operationJoin   = "JOIN"
+	operationLeave  = "LEAVE"
+)
+
 // Manager is the Session lifecycle workflow controller, exposing
 // Create/Join/Leave (see step_create.go/step_join.go/step_leave.go) as its
 // steps. Each step depends on its own narrow persistence contract

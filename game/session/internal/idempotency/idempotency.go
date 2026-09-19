@@ -10,7 +10,6 @@ package idempotency
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"gorm.io/gorm"
@@ -45,20 +44,23 @@ type ClaimInput struct {
 	RequestPayload string
 }
 
-// claimRow is the physical row shape returned by the claim upsert, including
-// the xmax-derived Inserted flag distinguishing a fresh claim from an
-// already-existing identity (see Claim's doc comment).
-type claimRow struct {
-	ID              uint    `gorm:"column:id"`
-	Operation       string  `gorm:"column:operation"`
-	UserUUID        string  `gorm:"column:user_uuid"`
-	IdempotencyKey  string  `gorm:"column:idempotency_key"`
-	SessionID       *uint   `gorm:"column:session_id"`
-	RequestPayload  string  `gorm:"column:request_payload"`
-	Outcome         string  `gorm:"column:outcome"`
-	ResponsePayload *string `gorm:"column:response_payload"`
-	Status          string  `gorm:"column:status"`
-	Inserted        bool    `gorm:"column:inserted"`
+// fetchExisting returns the session_requests row already owning input's
+// (user_uuid, operation, idempotency_key) identity, or nil if none exists
+// yet.
+func fetchExisting(ctx context.Context, tx *gorm.DB, input ClaimInput) (*Request, error) {
+	var row Request
+	result := tx.WithContext(ctx).Raw(`
+		SELECT id, operation, user_uuid, idempotency_key, session_id, request_payload, outcome, response_payload, status
+		FROM session_requests
+		WHERE user_uuid = ? AND operation = ? AND idempotency_key = ?
+	`, input.UserUUID, input.Operation, input.IdempotencyKey).Scan(&row)
+	if result.Error != nil {
+		return nil, fmt.Errorf("fetching idempotency request: %s", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return nil, nil
+	}
+	return &row, nil
 }
 
 // Claim attempts to atomically own (user_uuid, operation, idempotency_key).
@@ -69,61 +71,54 @@ type claimRow struct {
 // or a conflict. These two outcomes are mutually exclusive
 // (`docs/engineering/standards/idempotency.md`'s Claim Mechanism Contract).
 //
-// The claim is performed as a single INSERT ... ON CONFLICT DO UPDATE
-// upsert, using Postgres's xmax system column to tell an insert from a
-// conflict-resolution update, rather than INSERT ... ON CONFLICT DO NOTHING
-// followed by a separate SELECT for the existing row. A separate
-// snapshot-bound SELECT after a DO NOTHING no-op can fail to observe a
-// concurrently committed row for the remainder of a REPEATABLE READ
-// transaction (the isolation level `utils.RunInDBTransaction` runs under),
-// even though the row now exists - the DO UPDATE variant instead always
-// returns exactly one row, computed from current data by the same statement
-// that resolved the conflict, so the caller reliably observes the winning
-// claim regardless of when it committed relative to this transaction's
-// snapshot.
+// Claim first fetches by identity; only if nothing is found does it insert a
+// fresh row. Claim does not itself resolve a race between its own fetch and
+// its own insert: it relies on its callers to already serialize concurrent
+// claims for the same identity before ever reaching Claim - Join/Leave do
+// this by locking the owning Session's row first. A caller with no such
+// serialization (Create has no pre-existing Session row to lock) can, under
+// real concurrent load, have its insert lose a race against another
+// concurrent claim of the same identity; that surfaces as an ordinary
+// unique-constraint-violation error from the INSERT below, not a graceful
+// replay.
 func Claim(ctx context.Context, tx *gorm.DB, input ClaimInput) (requestID uint, existing *Request, err error) {
-	var row claimRow
+	existingRequest, err := fetchExisting(ctx, tx, input)
+	if err != nil {
+		return 0, nil, err
+	}
+	if existingRequest != nil {
+		return 0, existingRequest, nil
+	}
+
+	var row Request
 	result := tx.WithContext(ctx).Raw(`
 		INSERT INTO session_requests (operation, idempotency_key, user_uuid, session_id, request_payload, outcome, status)
 		VALUES (?, ?, ?, ?, ?, '', ?)
-		ON CONFLICT (user_uuid, operation, idempotency_key)
-		DO UPDATE SET operation = session_requests.operation
-		RETURNING
-			id, operation, user_uuid, idempotency_key, session_id, request_payload, outcome, response_payload, status,
-			(xmax = 0) AS inserted
+		RETURNING id, operation, user_uuid, idempotency_key, session_id, request_payload, outcome, response_payload, status
 	`, input.Operation, input.IdempotencyKey, input.UserUUID, input.SessionID, input.RequestPayload, StatusPending).Scan(&row)
 	if result.Error != nil {
 		return 0, nil, fmt.Errorf("claiming idempotency identity: %s", result.Error)
 	}
-	if result.RowsAffected == 0 {
-		return 0, nil, errors.New("idempotency claim upsert returned no row")
-	}
-
-	if row.Inserted {
-		return row.ID, nil, nil
-	}
-	return 0, &Request{
-		ID:              row.ID,
-		Operation:       row.Operation,
-		UserUUID:        row.UserUUID,
-		IdempotencyKey:  row.IdempotencyKey,
-		SessionID:       row.SessionID,
-		RequestPayload:  row.RequestPayload,
-		Outcome:         row.Outcome,
-		ResponsePayload: row.ResponsePayload,
-		Status:          row.Status,
-	}, nil
+	return row.ID, nil, nil
 }
 
 // Complete marks a previously claimed request row as COMPLETED with its
 // resulting outcome/response payload, and records the Session it ended up
-// associated with (nil if none, e.g. a rejected Create).
+// associated with (nil if none, e.g. a rejected Create). responsePayload is
+// empty for a decline outcome that has nothing to replay (e.g. AlreadyJoined,
+// LobbyFull, ActorNotFound) - response_payload is a nullable JSONB column, so
+// an empty Go string (not valid JSON) is stored as SQL NULL rather than bound
+// literally, which Postgres would otherwise reject.
 func Complete(ctx context.Context, tx *gorm.DB, requestID uint, sessionID *uint, outcome string, responsePayload string) error {
+	var responsePayloadArg any
+	if responsePayload != "" {
+		responsePayloadArg = responsePayload
+	}
 	if err := tx.WithContext(ctx).Exec(`
 		UPDATE session_requests
 		SET status = ?, outcome = ?, response_payload = ?, session_id = ?
 		WHERE id = ?
-	`, StatusCompleted, outcome, responsePayload, sessionID, requestID).Error; err != nil {
+	`, StatusCompleted, outcome, responsePayloadArg, sessionID, requestID).Error; err != nil {
 		return fmt.Errorf("completing idempotency claim: %s", err)
 	}
 	return nil
