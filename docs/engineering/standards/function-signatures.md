@@ -66,6 +66,29 @@ type CreatedSession struct {
 
 Do not introduce an `Output`/`Result` struct merely because every method is expected to have one.
 
+## Callback-Based Helpers Return Values, Not Mutate Closures
+
+The same preference for explicit return values over ceremony applies to callback/closure-based helpers, not only to ordinary functions. A generic callback-based helper (for example, a transaction-running helper `RunInTransaction[T](ctx, ..., func(ctx, tx) (T, error))`) should let the callback return its own result directly:
+
+```go
+result, err := RunInTransaction(ctx, repo, func(ctx context.Context, tx *gorm.DB) (T, error) {
+    ...
+    return value, nil
+})
+```
+
+not
+
+```go
+var result T
+err := RunInTransaction(ctx, repo, func(ctx context.Context, tx *gorm.DB) error {
+    result = value
+    return nil
+})
+```
+
+Declaring an outer-scoped result (or error) variable and mutating it from inside the callback adds a layer of indirection the callback's own return value already provides for free, and invites a second, informal contract (which fields were actually set before returning) that the type signature does not describe. Prefer the generic parameterized return whenever the helper can express it. See `repositories.md -> Transaction Ownership -> Callback Contract: Generic Result, No Outer-Variable Mutation` for the concrete transaction-helper consequence of this rule.
+
 ## Enforcement
 
 Code review and this standard. No architecture linter or other automated enforcement tool is introduced by this standard.
@@ -74,5 +97,6 @@ During code review, flag in particular:
 
 - an `Input`/`Request`/`Params` struct introduced only to bundle method arguments, with no independent domain meaning;
 - a rule that switches to a struct purely once a parameter count is exceeded;
+- a callback-based helper whose caller mutates an outer-scoped result/error variable instead of using the callback's own return value (see Callback-Based Helpers Return Values, Not Mutate Closures above);
 - a wrapper type introduced for every primitive regardless of whether it clarifies a contract;
 - an `Output`/`Result` struct created by convention rather than because the result is a genuine cohesive concept.

@@ -33,11 +33,32 @@ Repository implementations use `repositories.md`'s conventions directly (raw SQL
 
 The workflow/service layer decides which operations constitute one logical atomic transaction — which repository calls, domain checks, and outcome recording must all commit or fail together. Persistence/infrastructure code performs the mechanical BEGIN/COMMIT/ROLLBACK; it does not decide transaction scope.
 
-Concretely: the workflow should not manually call `db.Begin()`/`tx.Commit()`/`tx.Rollback()`, and should instead use an infrastructure/transactor abstraction conceptually equivalent to `WithinTransaction(ctx, func(txRepo Repository) error { ... })`, or an equivalent callback that supplies a transaction-scoped DB/repository handle. The exact API shape is implementation-local; the important split is that the workflow decides *what* belongs inside the transaction and infrastructure performs BEGIN/COMMIT/ROLLBACK.
+Concretely: the workflow should not manually call `db.Begin()`/`tx.Commit()`/`tx.Rollback()`, and should instead use a transaction helper conceptually equivalent to `WithinTransaction(ctx, func(txRepo Repository) error { ... })`, or an equivalent callback that supplies a transaction-scoped DB/repository handle. The exact API shape is implementation-local; the important split is that the workflow decides *what* belongs inside the transaction and infrastructure performs BEGIN/COMMIT/ROLLBACK.
+
+This transaction helper is a function/mechanism the workflow calls, not necessarily an object the workflow controller must hold as an injected dependency. When a generic transaction helper already exists (for example a persistence-package `RunInDBTransaction[T](ctx, dbServicer, callback)`), a workflow controller should call it directly rather than introducing an additional interface/field (a `transactor`-style dependency) whose only purpose is to indirect into that already-generic helper. Introduce a dedicated transactor dependency only when it earns its place for an independent reason (for example, a test seam that a direct call cannot otherwise provide); do not add one merely as ceremony around an existing generic helper.
 
 Repository methods consumed as part of a workflow transaction must operate using the caller-supplied transaction-scoped handle. They must not independently open and commit their own transaction — otherwise `operation A commits; operation B commits; operation C fails` could violate the workflow's intended logical atomicity. Read operations outside a transaction may use the ordinary DB handle. Do not introduce nested, autonomous repository-owned transactions as the normal mutation model.
 
-A business rejection inside a transaction is not automatically "the callback returned an error, so roll everything back." Some workflows require a durable outcome (an idempotency-request completion, a lazily-materialized expiration) to commit *together with* an otherwise-rejecting business decision, then return the business error to the caller. The transaction/transactor design the workflow uses must support committing an intended durable outcome while still surfacing a business-level rejection, rather than forcing every non-nil business error to imply automatic rollback of state the workflow intended to keep.
+### Callback Contract: Generic Result, No Outer-Variable Mutation
+
+The transaction callback returns its result explicitly, the same way any other function should per `function-signatures.md -> Return Values`:
+
+```go
+result, err := RunInTransaction(
+    ctx,
+    repo,
+    func(ctx context.Context, tx *gorm.DB) (T, error) {
+        ...
+        return value, nil
+    },
+)
+```
+
+Do not declare an outer-scoped result/error variable and mutate it from inside the callback (`var result T; RunInTransaction(func(...) error { result = ...; return nil })`) when the callback's own return value can express the same flow. The generic helper's `(T, error)` shape already carries the result out; closure mutation adds indirection without adding meaning.
+
+The commit/rollback rule stays simple: the callback returning `(result, nil)` commits; returning `(zeroValue, err)` rolls back. If commit itself then fails, the transaction helper returns that commit error to the caller. There is no second, parallel error channel (a closure-captured `bizErr` variable, a `CommitWithError`-style method, or any other mechanism to let a business rejection escape separately from the callback's own return).
+
+A business rejection inside a transaction is not automatically "the callback returned an error, so roll everything back." Some workflows require a durable outcome (an idempotency-request completion, a lazily-materialized expiration) to commit *together with* an otherwise-declining business decision. Per `error-handling.md -> Expected Business Outcome vs. Error`, an expected business decline is a normal result value, not necessarily an `error` — so the callback decides and persists the declined outcome, then returns it as an ordinary successful `(result, nil)` (where `result` carries the declined outcome, e.g. `JoinResult{Outcome: LobbyFull}`), letting the transaction commit normally. Reserve a non-nil callback error for cases the operation genuinely could not execute/evaluate (infrastructure failure, a violated invariant) — see `error-handling.md`.
 
 ## Repository Naming: Persistence Operations, Not Business Commands
 
@@ -54,6 +75,34 @@ Shared internal persistence infrastructure is appropriate when it represents a g
 By contrast, do NOT create a horizontal entity-centric persistence package merely because several behaviors happen to perform similar CRUD/query operations against the same table(s) — for example a shared `internal/actors`, `internal/participants`, `internal/sessions`, or `internal/timers` package exposing Find/Create/Update-style methods consumed directly by multiple unrelated behaviors. That recreates entity-centric repository architecture beneath behavior-oriented application packages and defeats `domain-logic-placement.md`'s behavior-locality principle, even when introduced only to deduplicate code.
 
 Heuristic: if divergence between two implementations would be legitimate (the behaviors may reasonably evolve independent query/locking/projection needs), sharing is optional and locality may be more valuable — keep the persistence code local to each behavior. If divergence would violate a shared protocol/invariant (for example, two different per-Session locking implementations), centralize the mechanism.
+
+A shared protocol/mechanism package is meant to be called directly by the workflow that needs it — the same way a workflow calls a domain type's method — not indirected through a repository method that only forwards to it. Do not add a repository method whose entire body is a call to the shared package with no additional persistence responsibility of its own (for example, a `LockSessionByID` that only calls `sessionlock.LockByID`, or a `ClaimSessionRequest` that only calls `idempotency.Claim`); such a wrapper adds a layer of indirection without adding meaning. Call the shared mechanism package directly from the workflow step instead, and remove the forwarding method. A repository method remains justified when it does real persistence work beyond forwarding — for example, translating a shared package's result into a further mutation, or combining the shared call with other statements in the same operation.
+
+## Naming Exposed To Workflow Code: Entities, Not Rows
+
+A repository method's return type, as seen by workflow/application code, should be named for the concept the workflow reasons about, not for the storage mechanism that produced it. Prefer `session`, `lockedSession`, `actor`, `participant`, `request` over `row`-suffixed names such as `sessionRow`, `actorRow`, `participantRow`, `requestRow` in the workflow-facing contract and in the variables a workflow assigns from it:
+
+```go
+session, err := sessionlock.LockByID(ctx, tx, sessionID)
+```
+
+not
+
+```go
+row, err := sessionlock.LockByID(ctx, tx, sessionID)
+```
+
+This does not prohibit a private persistence struct named `sessionRow`/`participantRow`/`requestRow` *inside* a repository/storage package implementation — that naming is fine for a type that never crosses into workflow code. The rule concerns the contract exposed upward: workflow code should read as reasoning about entities/facts, not storage rows.
+
+## Timestamp Ownership
+
+Two different kinds of timestamp appear in persisted rows, and they have different owners.
+
+**Audit/storage timestamps** — fields whose only purpose is persistence bookkeeping, such as `created_at`/`updated_at` — are populated by the repository, the ORM, or a DB default, not supplied by the workflow as an explicit `now` argument. A repository method whose only use for a caller-supplied `now` is to stamp `created_at`/`updated_at` should not take that parameter at all; the repository/ORM/DB decides that value. Workflow-facing repository return types should not expose audit timestamps upward by default, unless a real behavior genuinely needs to read one back.
+
+**Semantic timestamps** remain explicit workflow input — do not generalize the rule above into "the repository owns all time." A timestamp that represents domain/lifecycle meaning (for example `lobby_expires_at`, `started_at`, `terminal_at`, `joined_at`, `left_at`, or `revoked_at` when it represents the logical revocation event) is workflow/domain policy and must be passed explicitly, with a parameter name that communicates its meaning (`joinedAt`, `leftAt`, `terminalAt`) rather than a generic `now` — even when the underlying value happens to come from the same clock reading as an audit timestamp elsewhere in the same call.
+
+A single method may need to distinguish the two in the same call: a repository operation that both stamps `created_at` (audit — repository/DB-owned) and sets `terminal_at`/`revoked_at` (semantic — explicit workflow input) should accept the semantic timestamp as a named parameter and let the audit timestamp be handled internally, not accept one generic `now` that quietly serves both purposes.
 
 ## Prefer Semantic Independence Over Premature DRY
 
@@ -72,5 +121,9 @@ During code review, flag in particular:
 - a new entity-centric shared repository package (e.g. a horizontal `actors`/`sessions`/`participants`/`timers`-style package) created only to deduplicate CRUD/query code across otherwise-unrelated behaviors;
 - a shared "common/general-purpose" persistence bucket introduced without a specific invariant/mechanism it exists to protect;
 - a mandatory extra persistence layer (e.g. a ceremonial Datastore layer) added without a concrete responsibility that justifies it;
-- a workflow manually calling `Begin`/`Commit`/`Rollback` instead of using a transactor abstraction, or a repository method opening/committing its own transaction while also being called as part of a workflow transaction (see Transaction Ownership above);
-- a repository method named after a business command (`JoinSession`, `AdmitParticipant`, `ExpireLobby`) instead of the persistence operation it performs (see Repository Naming above).
+- a workflow manually calling `Begin`/`Commit`/`Rollback`, or introducing an injected `transactor`-style dependency purely to indirect into an already-generic transaction helper, or a repository method opening/committing its own transaction while also being called as part of a workflow transaction (see Transaction Ownership above);
+- a transaction callback that mutates an outer-scoped result/error variable instead of returning its result directly, or a separate `bizErr`/`CommitWithError`-style channel used to carry a business rejection out alongside the callback's own return (see Callback Contract above);
+- a repository method named after a business command (`JoinSession`, `AdmitParticipant`, `ExpireLobby`) instead of the persistence operation it performs (see Repository Naming above);
+- a repository method that only forwards to a shared protocol/mechanism package with no persistence responsibility of its own (see Sharing Rule above);
+- a workflow-facing repository return type/variable named with a `Row` suffix instead of the entity/fact it represents (see Naming Exposed To Workflow Code above);
+- a repository method parameter named `now` that is used only to populate an audit timestamp (`created_at`/`updated_at`) instead of being removed, or a semantic lifecycle timestamp passed as an unlabeled `now` instead of a meaningfully named parameter (see Timestamp Ownership above).

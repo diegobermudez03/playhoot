@@ -24,7 +24,7 @@ For a given idempotency identity:
 - same token + different semantic request parameters => idempotency conflict; reject, do not silently apply the new request or silently return the old result.
 - different token => a new logical command; evaluate the domain's current business state normally, as an ordinary new request.
 
-Do not treat "the desired state already exists" as evidence that a differently-tokened command was a retry. A new token while the desired end state already holds must be evaluated as a genuinely new command against current state (which may legitimately reject it, e.g. as an already-satisfied-precondition business error), not silently treated as success merely because the end state happens to already be true.
+Do not treat "the desired state already exists" as evidence that a differently-tokened command was a retry. A new token while the desired end state already holds must be evaluated as a genuinely new command against current state (which may legitimately reject it, e.g. as an already-satisfied-precondition business outcome), not silently treated as success merely because the end state happens to already be true. A deterministic rejection reached this way is itself the command's completed logical outcome; whether it is surfaced as a declined result value or as an `error` is governed by `error-handling.md -> Expected Business Outcome vs. Error`, not by this standard.
 
 ## Idempotency Policy Ownership
 
@@ -40,9 +40,30 @@ The ability to atomically claim an idempotency identity must not be removed. A d
 
 A completed, deterministic logical outcome may be recorded and replayed. An infrastructure failure or a rolled-back transaction is not a completed logical command and must never become a permanently replayable outcome. If a command is rejected deterministically and that rejection is itself considered the command's completed logical outcome, a same-token retry should replay that rejection consistently — it must not be reinterpreted as a fresh attempt against a different business-state snapshot.
 
+Replaying a stored outcome means returning it as a normal result value, not necessarily recreating a Go `error`. A completed logical outcome that was itself a business decline (per `error-handling.md -> Expected Business Outcome vs. Error`) is persisted and replayed as that decline's outcome value; the workflow does not need a separate mechanism to "recreate" an error merely because the original decision was negative. Only genuinely invalid idempotency usage (a missing/empty token, a same-token conflicting request, corrupt/unreadable persisted idempotency state, a persistence failure) remains an `error`.
+
+## Claim Mechanism Contract
+
+The shared claim/replay mechanism's contract should avoid a redundant boolean alongside a nullable existing-request value. Prefer a two-outcome shape:
+
+```text
+(requestID, existingRequest, error)
+
+requestID != 0 && existingRequest == nil  => caller acquired a fresh claim
+requestID == 0 && existingRequest != nil  => the request identity already existed
+```
+
+Both non-zero or both zero/nil (outside of an `error` return) is an internal invariant failure, not a third normal case. Do not expose a separate `claimed bool` alongside `existingRequest` when the two values are already mutually exclusive.
+
+Name the persisted claim/request shape returned to workflow/application code for what it is to that caller - a request/claim, not a storage row (e.g. `idempotency.Request`, not `idempotency.Row` - see `repositories.md -> Naming Exposed To Workflow Code`). A private GORM model type used only inside the persistence implementation may still be named as a row/model.
+
+On PostgreSQL, prefer a non-error conflict path for the claim insert - conceptually `INSERT ... ON CONFLICT (user_uuid, operation, idempotency_key) DO NOTHING RETURNING id` - over deliberately provoking a unique-constraint error and then continuing to query through the same transaction afterward. If a row is returned, the claim is fresh; if no row is returned, read the existing request. An equivalent PostgreSQL-safe mechanism providing the same guarantee is acceptable; the constraint is not causing an expected, normal conflict path to look like an unhandled error inside the claiming transaction.
+
 ## Organizational Guidance
 
 Idempotency claim/replay mechanics are a shared cross-cutting protocol under `repositories.md -> Sharing Rule` when more than one behavior needs the same claim/replay mechanism, in the same sense as per-aggregate locking. This does not require a large, general-purpose idempotency subsystem: the mechanism can remain small and can live locally within the owning workflow's package when only that workflow uses it. Do not build a generic canonical-JSON-diffing framework for request-equivalence comparison; model comparison narrowly per operation, using each operation's own explicit meaningful-fields struct.
+
+The shared mechanism (claim/read/complete) may be consumed directly by the workflow step that needs it, the same way a workflow calls a domain type's method - see `repositories.md -> Sharing Rule`'s guidance against adding a repository forwarding method with no persistence responsibility of its own. What must stay local to the owning step, even though the mechanism itself is shared, is the command-specific interpretation: the meaningful-fields payload struct, semantic-equality comparison, and replay/conflict/rejection-outcome mapping for that one command. Do not centralize every operation's payload struct and interpretation function inside one generic workflow-level file (e.g. a catch-all `idempotency.go` holding every step's payload/interpretation together) merely because they all call the same shared mechanism - place each operation's payload type and interpretation function next to the step that owns that command (e.g. inside `step_join.go`), per `domain-logic-placement.md`'s behavior-locality principle. A small, genuinely mechanical helper (for example, JSON-marshaling a payload) may remain shared only when it has no command-specific interpretation of its own.
 
 ## Enforcement
 
@@ -54,4 +75,8 @@ During code review, flag in particular:
 - a repository/persistence layer deciding what a replay/conflict means instead of the workflow/application layer;
 - a claim mechanism removed in favor of relying solely on an aggregate lock, for an operation with no pre-existing row to lock;
 - a transient infrastructure failure that leaves behind a permanently replayable "completed" outcome;
-- a generic canonical-JSON-diffing idempotency-comparison framework introduced where a narrow per-operation comparison would do.
+- a generic canonical-JSON-diffing idempotency-comparison framework introduced where a narrow per-operation comparison would do;
+- a redundant `claimed bool` alongside an already-mutually-exclusive `existingRequest` value (see Claim Mechanism Contract above);
+- a PostgreSQL claim implementation that deliberately provokes a unique-constraint violation and then continues querying through the same transaction, instead of a non-error conflict path (e.g. `ON CONFLICT ... DO NOTHING RETURNING id`);
+- a repository method that only forwards to the shared claim/complete mechanism with no persistence responsibility of its own;
+- per-operation payload/interpretation code centralized in one generic workflow-level bucket file instead of living next to the step that owns that command (see Organizational Guidance above).

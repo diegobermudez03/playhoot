@@ -2,6 +2,20 @@
 
 Status: CANONICAL ENGINEERING STANDARD
 
+## Expected Business Outcome vs. Error
+
+A workflow/application operation that runs to completion and is able to evaluate its business rules produces one of two materially different kinds of result. They must not both collapse into the same Go `error` return.
+
+**Expected business outcome**: the operation executed correctly and reached a definite, expected decision - positive or negative. A deterministic decline (for example: a lobby is already full; a lobby has already expired; a caller is already an active participant) is not an execution failure merely because the decision was "no". Model this as a value the caller receives alongside a `nil` error - for example, a result struct with an `Outcome` field (`docs/engineering/standards/function-signatures.md -> Return Values` already permits a result struct exactly when the result is a genuine cohesive concept). Do not force every anticipated business decision through the `error` return merely because it is not the happy path.
+
+**Error**: the operation could not be correctly executed or evaluated at all. Use `error` for cases such as: an invalid command/protocol contract (a malformed required identifier, a required field missing); a missing/empty required idempotency token; the same idempotency token reused with a conflicting semantic request; an infrastructure failure (DB read/write, transaction BEGIN/COMMIT); a dependency failure; a corrupt/impossible persisted state; a violated internal invariant.
+
+Whether declined outcomes share one Go type with the success outcome, or are represented as a small set of outcome-specific values, is a local implementation choice - the standard's constraint is only that the method contract must not route every anticipated business decision through `error`.
+
+A later transport layer (HTTP status, WebSocket response, API error envelope) may still choose to map a declined outcome onto something that looks like an error at that boundary. That transport-level mapping decision is separate from, and must not distort, the workflow/application contract itself - the workflow returns its outcome as a value regardless of how a future transport chooses to represent it externally.
+
+This interacts with idempotent replay: a completed logical command's outcome - including a deterministic decline - is exactly what a same-token retry replays. See `docs/engineering/standards/idempotency.md -> Completed Outcomes vs. Transient Failures`.
+
 ## Error Exposure
 
 - Wrapping errors with `%w` is the exception rather than the default.

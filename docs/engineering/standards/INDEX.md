@@ -13,12 +13,12 @@ This index routes engineers and AI agents to accepted reusable engineering stand
 | Concern | Standard |
 | --- | --- |
 | Repository/query implementation, schema-aware repositories, multi-table persistence, shared-vs-local persistence extraction, transaction ownership, repository naming | `repositories.md` |
-| Error propagation and error logging boundaries | `error-handling.md` |
+| Error propagation and error logging boundaries; expected business outcome vs. error classification | `error-handling.md` |
 | Unexpected data/state integrity failures, alerts, and panic semantics | `data-integrity.md` |
 | Unit/service/repository testing | `testing.md` |
 | Domain logic placement, package organization, type ownership, workflow vs. use case, behavior locality, workflow controller shape, business/lifecycle-policy vs. data-integrity vs. persistence-mechanics responsibility split | `domain-logic-placement.md` |
 | Persisted cross-domain entity-reference naming | `cross-domain-reference-naming.md` |
 | Method/function contract conventions: explicit parameters vs. input structs, semantic primitive types, return-value shape | `function-signatures.md` |
-| Natural vs. request/command idempotency, required tokens, replay/conflict semantics, idempotency responsibility ownership | `idempotency.md` |
+| Natural vs. request/command idempotency, required tokens, replay/conflict semantics, replayed-outcome-vs-error distinction, claim mechanism contract, idempotency responsibility ownership | `idempotency.md` |
 
 This initial set was extracted from the previously canonical `AGENTS.md -> Project Patterns`.
