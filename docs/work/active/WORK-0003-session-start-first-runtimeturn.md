@@ -1,6 +1,6 @@
 # WORK-0003: Session Start + First RuntimeTurn
 
-Status: DRAFT
+Status: READY
 Created: 2026-09-19
 Last status change: 2026-09-19
 
@@ -25,7 +25,7 @@ Canonical context:
 
 ## Outcome
 
-A host can start a `LOBBY` Session: Session Runtime resolves/pins/compiles the Session's already-pinned Game Definition, initializes the Game Language engine with the root `players: list<user>` roster built from active Participants, executes the first `RuntimeTurn` (draining `Commit.InternalSignals` to quiescence under a hard `MAX_STEPS_PER_RUNTIME_TURN = 20` bound), and atomically persists Turn 1 / `session_runtime_state` / `session_runtime_steps` together with `phase = RUNNING`, `started_at`, and JoinCode revocation. This is the first slice that ever executes the Game Language engine against a real Session, and it introduces the shared `RuntimeTurn` execution mechanism (Step-draining + the 20-Step bound + Turn/Step/State persistence) that Slice 3 (interaction responses) and Slice 5 (timer expirations) will reuse unchanged, per the initiative's approved sequencing (`docs/ai/workspaces/active/session-runtime-v1/PLAN.md`).
+A host can start a `LOBBY` Session: Session Runtime resolves/pins/compiles the Session's already-pinned Game Definition, initializes the Game Language engine with the root `players: list<user>` roster built from active Participants, executes the first `RuntimeTurn` (draining `Commit.InternalSignals` to quiescence under a hard `MAX_STEPS_PER_RUNTIME_TURN = 20` bound), and atomically persists Turn 1 / `session_runtime_state` / `session_runtime_steps` together with `phase = RUNNING`, `started_at`, and JoinCode revocation. This is the first slice that ever executes the Game Language engine against a real Session. Per explicit human direction (2026-09-19), its Step-draining/20-Step-bound/Turn-Step-State persistence logic lives directly inside `step_start.go` rather than a new shared package, since this is workflow execution logic no other use case calls independently, not a horizontal capability - see Approved Design's RuntimeTurn Execution Logic subsection. Slice 3 (interaction responses) and Slice 5 (timer expirations) will each decide independently, when they materialize, whether extracting shared logic is warranted at that point.
 
 A deterministic failure anywhere in this initialization chain (including exceeding the Step bound) must terminalize the Session directly from `LOBBY` to `TERMINAL` - never leave it partially `RUNNING`, and never return it to `LOBBY` for a retry that would deterministically fail again the same way. A transient infrastructure failure must leave the Session unchanged and retryable.
 
@@ -42,7 +42,7 @@ The Game Management pinned-definition read capability (`getgamedefinition.GetGam
 ### In Scope
 
 - A `Start` step on the existing `sessionlifecycle.Manager` (`game/session/workflows/sessionlifecycle/step_start.go`), following the same Manager/step/narrow-repo-contract/idempotency pattern as Create/Join/Leave.
-- A new shared internal mechanism package, `game/session/internal/runtimeturn`, implementing the common RuntimeTurn executor: given a compiled `engine.Program`, a `engine.Snapshot`, an initiating `engine.Signal`, and a `Cause` (source metadata), it drains `Commit.InternalSignals` to quiescence, enforces `MAX_STEPS_PER_RUNTIME_TURN = 20` across the whole Turn, and - only when the Turn is not fatal - persists one `session_runtime_turns` row (the final Snapshot only), the Turn's `session_runtime_steps` rows, and creates/advances `session_runtime_state.current_turn_id`, all against the caller-supplied transaction. This is the mechanism Slice 3/5 will call unchanged for their own causes.
+- Start's own RuntimeTurn execution logic, implemented directly inside `step_start.go` (not a new shared package - per explicit human direction, 2026-09-19; see Approved Design's RuntimeTurn Execution Logic subsection): given the compiled `engine.Program`, the initial `engine.Snapshot`, and the initial `engine.Signal`, it drains `Commit.InternalSignals` to quiescence, enforces `MAX_STEPS_PER_RUNTIME_TURN = 20` across the whole Turn, and - only when the Turn is not fatal - persists one `session_runtime_turns` row (the final Snapshot only), the Turn's `session_runtime_steps` rows, and creates `session_runtime_state.current_turn_id`, all against the caller-supplied transaction. Extraction into a shared package is deferred until Slice 3 actually needs to reuse it.
 - New migrations for `session_runtime_state`, `session_runtime_turns`, `session_runtime_steps`, using the full accepted column shape from `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md`'s Runtime History Tables diagram (including `source_interaction_id`/`source_timer_obligation_id`, left unused/NULL until Slices 3/5 populate them) - creating the complete accepted shape once, the same way Slice 1 created the complete `session_requests` shape even though it only used the CREATE/JOIN/LEAVE operation subset.
 - Start's own business/lifecycle policy: resolving `(SessionUUID, UserUUID) -> SessionActorID` and verifying host authority; validating `LOBBY` phase and `lobby_expires_at` (reusing Slice 1's existing lazy-expiration materialization); loading the pinned Definition and validating active-Participant count against `players.min` (and defensively `players.max`); building the `players: list<user>` root roster from active Participants; compiling the pinned Definition; calling `engineservice.NewSnapshot`; invoking the shared RuntimeTurn executor; and, only on a successful (non-fatal) Turn, atomically transitioning `phase = RUNNING`, setting `started_at`, and revoking the active JoinCode (`RevokeActiveJoinCode`, already implemented, unused until now) - all in the one transaction the executor's persistence also participates in.
 - The pre-first-Turn deterministic fatal-failure path (GAME-ADR-0019): on a deterministic failure (a non-rejection `ExecutionError`, a rejection of Start's own initial/internal signal chain, or the Step-bound overflow) reported by the executor, Start's same transaction instead sets `phase = TERMINAL`, `terminal_at = now`, an internal terminal reason (`RUNTIME_EXECUTION_FAILED`, or `RUNTIME_STATE_INVALID` for the one narrow pinned-Definition-recompile-failure case - see Approved Design), leaves `started_at` at its canonical `NULL`, and writes no Turn/Step/State row - reusing the existing `SetSessionTerminal` repository method built for lobby expiration in Slice 1. No `session_runtime_failures` row is created (that diagnostic entity is Slice 6's scope, per the initiative plan).
@@ -69,22 +69,21 @@ The Game Management pinned-definition read capability (`getgamedefinition.GetGam
 
 Identical shape to Join/Leave: an unlocked pre-transaction read resolves the Session's pinned `game_definition_uuid` and `host_actor_id` are not safely readable before the lock (unlike Join's JoinCode resolution, Start's `SessionUUID` already identifies the Session directly, so there is no unlocked pre-lookup step other than loading the pinned Definition once the Session row is known to exist). `Manager.Start` calls `utils.RunInDBTransaction(ctx, m, callback)`; inside, `sessionlock.LockByID`/`LockByUUID` acquires the same per-Session `FOR UPDATE` lock GAME-ADR-0018 requires RUNNING mutations to reuse. `materializeExpirationIfDue` (already shared by Join/Leave) runs first, exactly as today. Everything else - host/roster/min-max validation, engine initialization, the RuntimeTurn executor call, the RUNNING transition, JoinCode revocation, and the idempotency claim's completion - happens inside this same single transaction and commits or rolls back together.
 
-### The Shared RuntimeTurn Executor (`game/session/internal/runtimeturn`)
+### RuntimeTurn Execution Logic (Inline In `step_start.go`)
 
-This is a new shared internal mechanism package, justified under `repositories.md -> Sharing Rule`: the Step-draining/20-Step-bound/Turn-Step-State persistence invariant is exactly the kind of "protocol where divergent implementations would be a bug" the Sharing Rule centralizes (parallel to `sessionlock`/`idempotency`), not a horizontal entity-CRUD package.
+Per explicit human direction (2026-09-19), this logic is NOT extracted into a new shared `internal/runtimeturn` (or equivalent) package at this slice. The Step-draining/20-Step-bound/Turn-Step-State persistence invariant is workflow execution logic belonging to the step that actually performs it - no other current use case calls it independently - so it lives directly inside `step_start.go`, alongside Start's other business/lifecycle policy, the same way Create/Join/Leave's own step-local logic already lives in their respective files. Extraction into a shared package is deferred until Slice 3 (interaction responses) actually needs to reuse it; at that point, Slice 3's own WORK evaluates whether shared extraction is warranted, rather than this slice committing to that shape in advance.
 
-Conceptual contract (exact Go shape is implementation freedom):
+Conceptual contract (exact Go shape is implementation freedom, entirely local to `step_start.go`):
 
 ```text
-Execute(ctx, tx, sessionID, program, snapshot, initialSignal, cause, limits) -> Result
+executeFirstRuntimeTurn(ctx, tx, sessionID, program, snapshot, initialSignal) -> result
 ```
 
-- `cause` carries `SourceKind` (a short string label - Start's call always passes a value meaning "session start"; the exhaustive `source_kind` enum remains undecided repository-wide, consistent with `SESSION_RUNTIME_PERSISTENCE_MODEL.md`'s "Not Yet Decided" list) and the optional `actor_id`/`source_interaction_id`/`source_timer_obligation_id` fields Slices 3/5 will populate (all left unset by this WORK's own call).
-- `Execute` loads `session_runtime_state.current_turn_id` for `sessionID` (nullable - absent for Start, since this is the Session's first Turn) under the already-held per-Session lock, and computes the new Turn's `sequence` as `previous + 1` (or `1` when none exists).
-- `Execute` calls `engineservice.Step` once with `initialSignal`, then repeatedly with each subsequently queued `InternalSignal` (FIFO) until the queue is empty (quiescence), counting every `Step` call (the initial one plus every internal-signal-triggered one) toward the 20-call bound - exactly GAME-ADR-0019's definition, applying equally to this initialization chain.
-- On quiescence within the bound: persists exactly one `session_runtime_turns` row (only the final Snapshot, per GAME-ADR-0007 - intermediate Snapshots are never separately authoritative), one `session_runtime_steps` row per actual `Step` call (technical trace only), and creates (Start's case) or updates `session_runtime_state.current_turn_id`. Returns the committed Turn's id/sequence/final Snapshot/aggregated `Output`s to the caller.
-- On a non-rejection `ExecutionError` from any `Step` call, or on needing a `Step` call beyond the 20th to reach quiescence: persists nothing (no Turn/Step/State row), and returns a typed fatal result (`StepLimitExceeded` or `ExecutionFailed{underlying *engineservice.ExecutionError}`) for the caller to decide the Session-lifecycle consequence - the executor itself never mutates `sessions.phase`/`terminal_reason`, since that consequence differs by caller/phase (Start's is LOBBY-direct-to-TERMINAL with `base_turn_id = NULL`; a later RUNNING-phase caller's is different) per `domain-logic-placement.md`'s Responsibility Categories.
-- A rejection (`ErrSignalRejected`/`ErrInputRejected`) of the *initial* signal is also reported as a fatal result to Start specifically (see next subsection for why); a later RUNNING-phase caller (Slice 3+) may interpret the same executor-reported rejection differently for its own initial signal, since GAME-ADR-0017's "expected rejection, Session stays RUNNING" class applies once a Session has an established RuntimeTurn history to remain on - that interpretation is out of this WORK's scope to build, only to leave room for.
+- Loads `session_runtime_state.current_turn_id` for `sessionID` under the already-held per-Session lock; absent for Start, since this is always the Session's first Turn, so the new Turn's `sequence` is always `1`.
+- Calls `engineservice.Step` once with `initialSignal`, then repeatedly with each subsequently queued `InternalSignal` (FIFO) until the queue is empty (quiescence), counting every `Step` call (the initial one plus every internal-signal-triggered one) toward the 20-call bound - exactly GAME-ADR-0019's definition, applying equally to this initialization chain.
+- On quiescence within the bound: persists exactly one `session_runtime_turns` row (only the final Snapshot, per GAME-ADR-0007 - intermediate Snapshots are never separately authoritative), one `session_runtime_steps` row per actual `Step` call (technical trace only), and creates `session_runtime_state.current_turn_id` pointing at Turn 1. Returns the committed Turn's id/sequence/final Snapshot/aggregated `Output`s to the rest of `Start`'s in-transaction logic.
+- On a non-rejection `ExecutionError` from any `Step` call, or on needing a `Step` call beyond the 20th to reach quiescence: persists nothing (no Turn/Step/State row); Start's own fatal-path handling (next subsection) decides the Session-lifecycle consequence directly, in the same function/file, rather than through a separate mechanism-package boundary.
+- A rejection (`ErrSignalRejected`/`ErrInputRejected`) of the *initial* signal is also treated as fatal by this same logic (see next subsection for why). Since this logic is not yet a shared package, there is no separate caller to interpret the same rejection differently - if/when Slice 3 extracts a shared package, that extraction will need to decide how a later RUNNING-phase caller's rejection handling differs from Start's, per GAME-ADR-0017's "expected rejection, Session stays RUNNING" class; that decision is deferred to Slice 3, not made here.
 
 ### Root Roster And Engine Initialization
 
@@ -139,7 +138,7 @@ A defensive `players.max` re-check (mirroring Join's) is included for robustness
 
 ## Implementation Freedom
 
-- Exact Go type/method names inside `game/session/internal/runtimeturn`, `step_start.go`, and any new `internal/repo` methods, subject to `repositories.md`/`domain-logic-placement.md`.
+- Exact Go type/method/function names inside `step_start.go` for the inline RuntimeTurn execution logic, and any new `internal/repo` methods, subject to `repositories.md`/`domain-logic-placement.md`.
 - Exact serialized shape of `session_runtime_steps.commit_payload` (technical trace only, never authoritative) and `session_runtime_turns.snapshot_format_version`'s starting value.
 - Exact SQL lock/query statements, migration IDs/filenames, and column types, consistent with the existing migration style (`game/session/internal/storage/migrations/`) and the accepted column list in `SESSION_RUNTIME_PERSISTENCE_MODEL.md`.
 - `players` roster ordering implementation detail (ascending `joined_at`, tie-broken by id, per Approved Design) unless the human directs otherwise (see Blockers).
@@ -150,9 +149,9 @@ A defensive `players.max` re-check (mirroring Join's) is included for robustness
 ## Verification
 
 - `go build ./...`, `go vet ./...`, `gofmt -l` on changed files.
-- `go test ./... -count=1` against a real PostgreSQL instance (`TEST_DATABASE_*`), per this repository's existing verification practice for Session Runtime work - including new repository-integration tests for the `runtimeturn` package and Start's own concurrency tests (two concurrent Starts against the same Session; Start racing Join/Leave/lazy-expiration under the existing shared lock).
+- `go test ./... -count=1` against a real PostgreSQL instance (`TEST_DATABASE_*`), per this repository's existing verification practice for Session Runtime work - including new repository-integration tests for Start's inline RuntimeTurn execution logic (in `step_start.go`) and Start's own concurrency tests (two concurrent Starts against the same Session; Start racing Join/Leave/lazy-expiration under the existing shared lock).
 - Mocked-collaborator unit tests for `Start`'s pre-transaction and in-transaction business logic (host/roster/min-max decisions, outcome selection), mirroring Create/Join/Leave's existing `manager_*_test.go` pattern.
-- Engine-level tests proving the executor's Step-bound enforcement and atomicity (a pinned Definition authored specifically to require >20 Steps; a Definition whose root workflow deterministically fails on its first transition) without needing a real Postgres connection, mirroring `engineservice`'s own existing test style.
+- Engine-level tests proving this logic's Step-bound enforcement and atomicity (a pinned Definition authored specifically to require >20 Steps; a Definition whose root workflow deterministically fails on its first transition) without needing a real Postgres connection, mirroring `engineservice`'s own existing test style.
 
 ## Documentation Impact
 
@@ -162,9 +161,9 @@ A defensive `players.max` re-check (mirroring Join's) is included for robustness
 
 ### Current-State Documentation After Implementation
 
-- `game/CURRENT_STATE.md` - describe Start's implementation and the new `runtimeturn` mechanism, and update any "RUNNING phase never reached" language left over from Slice 1.
+- `game/CURRENT_STATE.md` - describe Start's implementation, including its inline RuntimeTurn execution logic in `step_start.go` (no new shared package at this slice), and update any "RUNNING phase never reached" language left over from Slice 1.
 - `game/docs/DATA_MODEL.md` - add `session_runtime_state`, `session_runtime_turns`, `session_runtime_steps` as now-implemented tables (the accepted shape already lives in `SESSION_RUNTIME_PERSISTENCE_MODEL.md`; this file tracks actually-persisted schema).
-- `game/docs/FLOWS.md` - add Start's sequence, including the RuntimeTurn executor call and the fatal-path branch.
+- `game/docs/FLOWS.md` - add Start's sequence, including the inline RuntimeTurn execution logic and the fatal-path branch.
 
 ### Intentionally Unchanged
 
@@ -173,15 +172,15 @@ A defensive `players.max` re-check (mirroring Join's) is included for robustness
 
 ## Blockers
 
-The following are implementation-planning gaps this DRAFT resolves with a specific proposed reading, called out explicitly per this session's instructions rather than silently decided, because each shapes either this WORK's own durable schema/behavior or a pattern Slices 3/5/6 will inherit unchanged. None require new architecture - each is a direct, narrow extension of already-ACCEPTED GAME-ADRs. Pending explicit human confirmation before READY:
+Status: **RESOLVED (2026-09-19, HUMAN-APPROVED)**. The following were implementation-planning gaps this WORK originally raised for explicit human confirmation rather than silently deciding, because each shapes either this WORK's own durable schema/behavior or a pattern later slices might inherit. None required new architecture - each is a direct, narrow extension of already-ACCEPTED GAME-ADRs. All four are now resolved and this WORK is READY.
 
-1. **Shared `runtimeturn` package placement** - introducing `game/session/internal/runtimeturn` now (rather than inlining the Step-loop into `step_start.go` and extracting a shared package only when Slice 3 needs it) commits Slices 3/5/6 to this shape. Confirm this is the right moment/place to introduce it.
-2. **Fatal-path classification split** - a pinned-Definition recompile failure at Start classified as `RUNTIME_STATE_INVALID`, while every other Start-chain failure (including an outright rejection of Start's own initial signal) is classified as `RUNTIME_EXECUTION_FAILED`. Neither GAME-ADR-0017 nor GAME-ADR-0019 spells this split out explicitly for the rejection case.
-3. **Replaying a fatal `StartOutcomeRuntimeInitFailed` via idempotency** - treating a Start that already fatally terminalized the Session as a normal replayable completed outcome (never re-attempted on retry), the same way `LOBBY_FULL`/`ALREADY_JOINED` already replay for Join.
-4. **`players` roster ordering** - defaulting to ascending `joined_at` (a product-visible choice, e.g. "who is Player 1") with no existing ADR/product decision on record specifying it.
+1. **Shared `runtimeturn` package placement** - Proposed: introduce `game/session/internal/runtimeturn` now. **Resolution: REJECTED as proposed, resolved with the stated alternative instead** - this is workflow execution logic, not logic any other current use case would call independently, so it stays inline inside `step_start.go` (see Approved Design's RuntimeTurn Execution Logic subsection). A shared package is deferred until Slice 3 actually needs to reuse this logic; Slice 3's own WORK decides then whether/how to extract it.
+2. **Fatal-path classification split** - a pinned-Definition recompile failure at Start classified as `RUNTIME_STATE_INVALID`, while every other Start-chain failure (including an outright rejection of Start's own initial signal) is classified as `RUNTIME_EXECUTION_FAILED`. **Resolution: APPROVED as proposed.**
+3. **Replaying a fatal `StartOutcomeRuntimeInitFailed` via idempotency** - treating a Start that already fatally terminalized the Session as a normal replayable completed outcome (never re-attempted on retry), the same way `LOBBY_FULL`/`ALREADY_JOINED` already replay for Join. **Resolution: APPROVED as proposed.**
+4. **`players` roster ordering** - defaulting to ascending `joined_at` (a product-visible choice, e.g. "who is Player 1") with no existing ADR/product decision on record specifying it. **Resolution: APPROVED as proposed** (ascending `joined_at`, tie-broken by internal id).
 
-Local implementation choices (engine `UserID` representation, exact serialized `commit_payload`/`snapshot_format_version`, defensive `players.max` outcome naming, migration filenames) are Implementation Freedom and are not blockers.
+Local implementation choices (engine `UserID` representation, exact serialized `commit_payload`/`snapshot_format_version`, defensive `players.max` outcome naming, migration filenames) remain Implementation Freedom and were never blockers.
 
 ## Completion Record
 
-Not yet started.
+Not yet started. Status transitioned DRAFT -> READY on 2026-09-19 per the human's resolution of all four Blockers above (see this file's Blockers section and `docs/ai/workspaces/active/session-runtime-v1/HUMAN_REVIEW.md`). Implementation has not begun.
