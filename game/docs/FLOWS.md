@@ -32,10 +32,10 @@ Implemented behavior:
 
 Evidence:
 
-- `game/game/usecases/getgame/service.go`
-- `game/game/usecases/getgame/repo.go`
-- `game/game/usecases/getgame/service_test.go`
-- `game/game/usecases/getgame/repo_test.go`
+- `game/management/usecases/getgame/service.go`
+- `game/management/usecases/getgame/repo.go`
+- `game/management/usecases/getgame/service_test.go`
+- `game/management/usecases/getgame/repo_test.go`
 
 ## Create / Join / Leave Session
 
@@ -90,7 +90,7 @@ Evidence:
 
 - `game/session/workflows/sessionlifecycle/` (`manager.go`, `step_create.go`, `step_join.go`, `step_leave.go`, `expiration.go`, `payload.go`, `internal/repo/`)
 - `game/session/internal/sessionlock/`, `game/session/internal/idempotency/` (shared cross-cutting mechanics, called directly by the Manager's steps)
-- `game/game/usecases/getgamedefinition/`
+- `game/management/usecases/getgamedefinition/`
 
 ## Not Documented As Implemented
 

@@ -8,7 +8,7 @@ flowchart TB
     Migrations["migrations.go\nRuns Game Management and Session Runtime migrations"]
 
     subgraph GameBC["Accepted Game bounded context"]
-        GM["game/game\nGame Management capability\nimplemented model, storage, migrations, get-game use case"]
+        GM["game/management\nGame Management capability\nimplemented model, storage, migrations, get-game use case"]
         SR["game/session\nSession Runtime capability\nstorage/migrations and session lifecycle scaffolding"]
         GL["game/language/v1\nGame Language supporting subsystem\nprogram definitions, codec, compiler, runtime engine"]
     end

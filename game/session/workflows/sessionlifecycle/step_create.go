@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/diegobermudez03/playhoot/game/game"
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine/engineservice"
+	"github.com/diegobermudez03/playhoot/game/management"
 	"github.com/diegobermudez03/playhoot/game/session"
 	"github.com/diegobermudez03/playhoot/game/session/internal/idempotency"
 	internalrepo "github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/repo"
@@ -21,7 +21,7 @@ import (
 // Create depends on to resolve the Game's current playable
 // Definition/Version to pin (GAME-ADR-0001, GAME-ADR-0004).
 type gameCurrentVersionReader interface {
-	GetPlayableGameWithCurrentVersion(ctx context.Context, gameUUID string) (*game.Game, error)
+	GetPlayableGameWithCurrentVersion(ctx context.Context, gameUUID string) (*management.Game, error)
 }
 
 // createRepoAPI is Create's own narrow persistence contract. Even though one

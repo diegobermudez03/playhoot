@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/diegobermudez03/playhoot/game/game"
 	"github.com/diegobermudez03/playhoot/game/language/v1/program"
+	"github.com/diegobermudez03/playhoot/game/management"
 	"github.com/diegobermudez03/playhoot/game/session"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -52,16 +52,16 @@ func TestManagerCreate(t *testing.T) {
 			}
 		},
 		"propagates_non_playable_game_error": func(t *testing.T, gameReader *MockgameCurrentVersionReader) test {
-			gameReader.EXPECT().GetPlayableGameWithCurrentVersion(gomock.Any(), "game-uuid").Return(nil, game.ErrNonPlayableGame)
+			gameReader.EXPECT().GetPlayableGameWithCurrentVersion(gomock.Any(), "game-uuid").Return(nil, management.ErrNonPlayableGame)
 			return test{
 				ctx: context.Background(), gameUUID: "game-uuid", hostUserUUID: "host-uuid", idempotencyKey: "key-1",
 				errAssert: func(tt require.TestingT, err error, _ ...interface{}) {
-					require.ErrorIs(tt, err, game.ErrNonPlayableGame)
+					require.ErrorIs(tt, err, management.ErrNonPlayableGame)
 				},
 			}
 		},
 		"rejects_definition_that_does_not_compile": func(t *testing.T, gameReader *MockgameCurrentVersionReader) test {
-			gameReader.EXPECT().GetPlayableGameWithCurrentVersion(gomock.Any(), "game-uuid").Return(&game.Game{
+			gameReader.EXPECT().GetPlayableGameWithCurrentVersion(gomock.Any(), "game-uuid").Return(&management.Game{
 				UUID: "game-uuid", VersionUUID: "version-uuid", Definition: uncompilableDefinition,
 			}, nil)
 			return test{

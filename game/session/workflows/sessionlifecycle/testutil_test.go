@@ -3,8 +3,8 @@ package sessionlifecycle
 import (
 	"context"
 
-	"github.com/diegobermudez03/playhoot/game/game"
 	"github.com/diegobermudez03/playhoot/game/language/v1/program"
+	"github.com/diegobermudez03/playhoot/game/management"
 )
 
 // compilableDefinitionForTest is a minimal Game Language definition that
@@ -45,8 +45,8 @@ type stubCurrentGameReader struct {
 	definition  program.Definition
 }
 
-func (s stubCurrentGameReader) GetPlayableGameWithCurrentVersion(ctx context.Context, gameUUID string) (*game.Game, error) {
-	return &game.Game{UUID: gameUUID, VersionUUID: s.versionUUID, Definition: s.definition}, nil
+func (s stubCurrentGameReader) GetPlayableGameWithCurrentVersion(ctx context.Context, gameUUID string) (*management.Game, error) {
+	return &management.Game{UUID: gameUUID, VersionUUID: s.versionUUID, Definition: s.definition}, nil
 }
 
 // stubPinnedGameReader satisfies gamePinnedDefinitionReader with a fixed

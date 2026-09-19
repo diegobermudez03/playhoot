@@ -21,9 +21,9 @@ Status: CURRENT IMPLEMENTATION
 
 ## Evidence
 
-- Game Management storage and migrations: `game/game/internal/storage/`.
-- Game Management playable-game retrieval: `game/game/usecases/getgame/`.
-- Game Management pinned-definition retrieval: `game/game/usecases/getgamedefinition/`.
+- Game Management storage and migrations: `game/management/internal/storage/`.
+- Game Management playable-game retrieval: `game/management/usecases/getgame/`.
+- Game Management pinned-definition retrieval: `game/management/usecases/getgamedefinition/`.
 - Session Runtime storage and migrations: `game/session/internal/storage/`.
 - Session Runtime Create/Join/Leave lifecycle operations: `game/session/workflows/sessionlifecycle/` - one `Manager` workflow controller (`manager.go`) exposing `Create`/`Join`/`Leave` as its steps (`step_create.go`/`step_join.go`/`step_leave.go`), with a narrow `internal/repo/` persistence layer.
 - Session Runtime shared lobby mechanics: `game/session/internal/sessionlock/` (locked-row fact reporting only - expiration policy itself is Manager-owned, see `expiration.go`), `game/session/internal/idempotency/` (claim/replay mechanics - replay/conflict/new-command policy itself is Manager-owned, see each step's own `step_create.go`/`step_join.go`/`step_leave.go`). Both mechanism packages are called directly by the Manager's steps, not through repository forwarding methods. Actor/Participant persistence lives in `internal/repo/` and is consumed by all three steps through step-local narrow interfaces (not a shared horizontal entity package).

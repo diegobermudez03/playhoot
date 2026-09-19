@@ -1,4 +1,4 @@
-package game
+package management
 
 import "github.com/diegobermudez03/playhoot/game/language/v1/program"
 

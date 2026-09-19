@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/diegobermudez03/playhoot/game/game"
+	"github.com/diegobermudez03/playhoot/game/management"
 	"github.com/diegobermudez03/playhoot/game/language/v1/program"
 	"github.com/diegobermudez03/playhoot/game/language/v1/program/gameservice"
 	"github.com/stretchr/testify/require"
@@ -18,7 +18,7 @@ func TestGetPlayableGameWithCurrentVersion(t *testing.T) {
 	type test struct {
 		ctx          context.Context
 		gameUUID     string
-		expectedGame *game.Game
+		expectedGame *management.Game
 		expectErr    bool
 		errAssert    require.ErrorAssertionFunc
 	}
@@ -41,20 +41,20 @@ func TestGetPlayableGameWithCurrentVersion(t *testing.T) {
 				Description:  "Race game",
 				OwnerUUID:    "owner-uuid",
 				LogoImageURL: "https://example.com/logo.png",
-				Visibility:   string(game.Public),
+				Visibility:   string(management.Public),
 				VersionUUID:  "version-uuid",
 				Script:       script,
 			}, nil)
 			return test{
 				ctx:      context.Background(),
 				gameUUID: "game-uuid",
-				expectedGame: &game.Game{
+				expectedGame: &management.Game{
 					UUID:         "game-uuid",
 					Name:         "Parques",
 					Description:  "Race game",
 					OwnerUUID:    "owner-uuid",
 					LogoImageURL: "https://example.com/logo.png",
-					Visibility:   game.Public,
+					Visibility:   management.Public,
 					VersionUUID:  "version-uuid",
 					Definition:   definition,
 				},
@@ -77,7 +77,7 @@ func TestGetPlayableGameWithCurrentVersion(t *testing.T) {
 		},
 		"returns_non_playable_game_error": func(t *testing.T, mocks *svcMocks) test {
 			mocks.repo.EXPECT().getGameCurrentVersion(gomock.Any(), "game-uuid").Return(&gameWithVersion{
-				Visibility:  string(game.Private),
+				Visibility:  string(management.Private),
 				VersionUUID: "version-uuid",
 				Script:      script,
 			}, nil)
@@ -86,13 +86,13 @@ func TestGetPlayableGameWithCurrentVersion(t *testing.T) {
 				gameUUID:  "game-uuid",
 				expectErr: true,
 				errAssert: func(tt require.TestingT, err error, _ ...interface{}) {
-					require.ErrorIs(tt, err, game.ErrNonPlayableGame)
+					require.ErrorIs(tt, err, management.ErrNonPlayableGame)
 				},
 			}
 		},
 		"returns_invalid_script_error": func(t *testing.T, mocks *svcMocks) test {
 			mocks.repo.EXPECT().getGameCurrentVersion(gomock.Any(), "game-uuid").Return(&gameWithVersion{
-				Visibility:  string(game.Public),
+				Visibility:  string(management.Public),
 				VersionUUID: "version-uuid",
 				Script:      `{"metadata":`,
 			}, nil)
@@ -101,7 +101,7 @@ func TestGetPlayableGameWithCurrentVersion(t *testing.T) {
 				gameUUID:  "game-uuid",
 				expectErr: true,
 				errAssert: func(tt require.TestingT, err error, _ ...interface{}) {
-					require.ErrorIs(tt, err, game.ErrBrokenGame)
+					require.ErrorIs(tt, err, management.ErrBrokenGame)
 				},
 			}
 		},
@@ -116,7 +116,7 @@ func TestGetPlayableGameWithCurrentVersion(t *testing.T) {
 				gameUUID:  "game-uuid",
 				expectErr: true,
 				errAssert: func(tt require.TestingT, err error, _ ...interface{}) {
-					require.ErrorIs(tt, err, game.ErrBrokenGame)
+					require.ErrorIs(tt, err, management.ErrBrokenGame)
 				},
 			}
 		},

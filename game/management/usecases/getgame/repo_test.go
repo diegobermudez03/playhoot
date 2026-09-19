@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/diegobermudez03/playhoot/game/game/internal/testdb"
+	"github.com/diegobermudez03/playhoot/game/management/internal/testdb"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )

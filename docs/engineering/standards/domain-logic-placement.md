@@ -142,7 +142,7 @@ Even operations belonging to the same workflow may define separate narrow persis
 
 ## Existing `businessservice`
 
-`game/game/internal/businessservice` predates this standard and is an early implementation experiment, not the canonical pattern.
+`game/management/internal/businessservice` predates this standard and is an early implementation experiment, not the canonical pattern.
 
 Migration strategy: OPPORTUNISTIC MIGRATION. Migrate its contents to the placements above when the relevant code is touched, or when a focused change makes migration worthwhile. This standard does not authorize a repository-wide refactor to remove it.
 

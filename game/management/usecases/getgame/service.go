@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/diegobermudez03/playhoot/game/game"
-	"github.com/diegobermudez03/playhoot/game/game/internal/businessservice"
+	"github.com/diegobermudez03/playhoot/game/management"
+	"github.com/diegobermudez03/playhoot/game/management/internal/businessservice"
 	"github.com/diegobermudez03/playhoot/game/language/v1/program/gameservice"
 	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/monitoring"
@@ -24,7 +24,7 @@ func New(db *gorm.DB) *UseCase {
 
 // GetPlayableGameWithCurrentVersion returns the playable game by its uuid
 // - Playable game means that its visibility is playable
-func (c *UseCase) GetPlayableGameWithCurrentVersion(ctx context.Context, gameUUID string) (*game.Game, error) {
+func (c *UseCase) GetPlayableGameWithCurrentVersion(ctx context.Context, gameUUID string) (*management.Game, error) {
 	defer logging.Step(ctx, "GetGameWithCurrentVersion").Close()
 	logging.LogFields(ctx, logging.Field("game_uuid", gameUUID))
 
@@ -43,20 +43,20 @@ func (c *UseCase) GetPlayableGameWithCurrentVersion(ctx context.Context, gameUUI
 	visbility, ok := businessservice.ValidateVisibility(g.Visibility)
 	if !ok {
 		monitoring.Alert(ctx, fmt.Sprintf("invalid visibility %s", g.Visibility))
-		return nil, game.ErrBrokenGame
+		return nil, management.ErrBrokenGame
 	}
 
 	if !businessservice.IsPlayableVisibility(visbility) {
-		return nil, game.ErrNonPlayableGame
+		return nil, management.ErrNonPlayableGame
 	}
 
 	programDefinition, err := gameservice.DecodeJSON([]byte(g.Script))
 	if err != nil {
 		monitoring.Alert(ctx, "playable game with invalid script")
-		return nil, game.ErrBrokenGame
+		return nil, management.ErrBrokenGame
 	}
 
-	return &game.Game{
+	return &management.Game{
 		UUID:         g.UUID,
 		Definition:   *programDefinition,
 		Name:         g.Name,

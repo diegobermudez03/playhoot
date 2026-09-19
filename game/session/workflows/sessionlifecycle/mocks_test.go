@@ -14,8 +14,8 @@ import (
 	reflect "reflect"
 	time "time"
 
-	game "github.com/diegobermudez03/playhoot/game/game"
 	program "github.com/diegobermudez03/playhoot/game/language/v1/program"
+	management "github.com/diegobermudez03/playhoot/game/management"
 	repo "github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/repo"
 	gomock "go.uber.org/mock/gomock"
 	gorm "gorm.io/gorm"
@@ -351,10 +351,10 @@ func (m *MockgameCurrentVersionReader) EXPECT() *MockgameCurrentVersionReaderMoc
 }
 
 // GetPlayableGameWithCurrentVersion mocks base method.
-func (m *MockgameCurrentVersionReader) GetPlayableGameWithCurrentVersion(ctx context.Context, gameUUID string) (*game.Game, error) {
+func (m *MockgameCurrentVersionReader) GetPlayableGameWithCurrentVersion(ctx context.Context, gameUUID string) (*management.Game, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetPlayableGameWithCurrentVersion", ctx, gameUUID)
-	ret0, _ := ret[0].(*game.Game)
+	ret0, _ := ret[0].(*management.Game)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
