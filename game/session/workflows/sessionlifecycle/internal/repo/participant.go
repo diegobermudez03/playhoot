@@ -51,8 +51,7 @@ func (r *Repo) CountActiveParticipants(ctx context.Context, tx *gorm.DB, session
 }
 
 // RosterParticipant is one active Participant selected for Start's
-// `players` root roster (see WORK-0003's Root Roster And Engine
-// Initialization) - only the internal SessionActor id Start needs to
+// `players` root roster - only the internal SessionActor id Start needs to
 // derive an opaque `engine.UserID`, never a display name or UserUUID.
 type RosterParticipant struct {
 	ActorID uint `gorm:"column:actor_id"`
@@ -60,10 +59,9 @@ type RosterParticipant struct {
 
 // ListActiveParticipantsForRoster returns sessionID's currently active
 // Participants ordered by joined_at ascending (ties broken by internal
-// actor id) - Start's accepted default `players` roster ordering (WORK-0003
-// Blocker 4, human-approved 2026-09-19). This is the same active-Participant
-// set CountActiveParticipants counts, just projected/ordered for roster
-// construction instead of counted.
+// actor id) - Start's `players` roster ordering. This is the same
+// active-Participant set CountActiveParticipants counts, just
+// projected/ordered for roster construction instead of counted.
 func (r *Repo) ListActiveParticipantsForRoster(ctx context.Context, tx *gorm.DB, sessionID uint) ([]RosterParticipant, error) {
 	var rows []RosterParticipant
 	if err := tx.WithContext(ctx).Raw(`

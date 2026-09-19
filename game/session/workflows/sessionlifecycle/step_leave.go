@@ -17,9 +17,8 @@ import (
 
 // outcomeActorNotFound is the outcome label persisted to
 // session_requests.outcome for a deterministic post-claim decline that must
-// survive as a replayable outcome (WORK-0001's Transaction Ownership).
-// outcomeLeft is likewise recorded so a same-token replay can tell success
-// from a decline.
+// survive as a replayable outcome. outcomeLeft is likewise recorded so a
+// same-token replay can tell success from a decline.
 const (
 	outcomeLeft          = "LEFT"
 	outcomeActorNotFound = "ACTOR_NOT_FOUND"
@@ -46,7 +45,7 @@ type leaveRequestPayload struct {
 
 // Leave deactivates the caller's Participant, releasing their lobby slot
 // while keeping the underlying SessionActor durable and host authority
-// unaffected. See WORK-0001's Manager Operation Behavior - Leave.
+// unaffected.
 func (m *Manager) Leave(ctx context.Context, sessionUUID SessionUUID, userUUID UserUUID, idempotencyKey IdempotencyKey) (LeaveResult, error) {
 	defer logging.Step(ctx, "SessionLifecycle.Leave").Close()
 	logging.LogFields(ctx,
@@ -87,9 +86,9 @@ func (m *Manager) leaveSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 	if lockedSession.Phase != session.PhaseLobby {
 		// Any materialization above must still commit even though this
 		// attempted Leave is rejected - it already has, via this same
-		// callback's eventual successful return (WORK-0001's Transaction
-		// Ownership). This rejection is discovered before any idempotency
-		// claim, so there is no token-scoped outcome to record.
+		// callback's eventual successful return. This rejection is
+		// discovered before any idempotency claim, so there is no
+		// token-scoped outcome to record.
 		return LeaveResult{Outcome: LeaveOutcomeNotInLobby}, nil
 	}
 

@@ -28,7 +28,7 @@ func (r *Repo) SetSessionTerminal(ctx context.Context, tx *gorm.DB, sessionID ui
 
 // CreatedSession is the persisted shape of a freshly created Session and its
 // mandatory host relationship - the Host/SessionActor Creation Cycle's
-// result (WORK-0001's Host/SessionActor Creation Cycle).
+// result.
 type CreatedSession struct {
 	SessionID      uint
 	SessionUUID    string
@@ -70,8 +70,8 @@ func (r *Repo) SetSessionRunning(ctx context.Context, tx *gorm.DB, sessionID uin
 // (GAME-ADR-0023, refining GAME-ADR-0007): every caller that needs it
 // already holds the locked sessions row for per-Session serialization.
 // Start calls this once, creating the pointer for the Session's first Turn;
-// a later RUNNING-phase caller (Slice 3+) advances the same column for its
-// own committed Turn.
+// a later RUNNING-phase caller advances the same column for its own
+// committed Turn.
 func (r *Repo) SetCurrentTurn(ctx context.Context, tx *gorm.DB, sessionID uint, currentTurnID uint) error {
 	if err := tx.WithContext(ctx).Exec(`
 		UPDATE sessions
@@ -83,9 +83,9 @@ func (r *Repo) SetCurrentTurn(ctx context.Context, tx *gorm.DB, sessionID uint, 
 	return nil
 }
 
-// CreateSessionWithHost persists the Host/SessionActor Creation Cycle
-// (WORK-0001): inserts the sessions row with host_actor_id NULL, inserts the
-// host session_actors row, then assigns host_actor_id - one cohesive
+// CreateSessionWithHost persists the Host/SessionActor Creation Cycle:
+// inserts the sessions row with host_actor_id NULL, inserts the host
+// session_actors row, then assigns host_actor_id - one cohesive
 // structural invariant (a validly persisted Session always has its mandatory
 // host relationship), not application-level orchestration (see
 // `docs/engineering/standards/repositories.md`'s Multi-Table Persistence

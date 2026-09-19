@@ -19,8 +19,8 @@ import (
 
 // Join outcome labels persisted to session_requests.outcome for a
 // deterministic post-claim decline that must survive as a replayable
-// outcome (WORK-0001's Transaction Ownership). JOINED itself is also
-// recorded so a same-token replay can tell success from a decline.
+// outcome. JOINED itself is also recorded so a same-token replay can tell
+// success from a decline.
 const (
 	outcomeJoined        = "JOINED"
 	outcomeAlreadyJoined = "ALREADY_JOINED"
@@ -30,8 +30,7 @@ const (
 // gamePinnedDefinitionReader is the narrow Game Management read capability
 // Join depends on to load an already-pinned immutable Game Definition by its
 // own Definition/Version UUID - never by re-resolving the Game's current
-// version. See WORK-0001's Game Management Dependency / Pinned Game
-// Definition Is Immutable For The Session.
+// version.
 type gamePinnedDefinitionReader interface {
 	GetGameDefinition(ctx context.Context, gameDefinitionUUID string) (*program.Definition, error)
 }
@@ -63,8 +62,8 @@ type joinRequestPayload struct {
 
 // Join resolves an active JoinCode to its Session, loads that Session's
 // pinned immutable Game Definition, and admits the caller as an active
-// Participant under the Session's per-Session DB mutation lock. See
-// WORK-0001's Manager Operation Behavior - Join and GAME-ADR-0021.
+// Participant under the Session's per-Session DB mutation lock
+// (GAME-ADR-0021).
 func (m *Manager) Join(ctx context.Context, joinCode JoinCode, userUUID UserUUID, displayName DisplayName, idempotencyKey IdempotencyKey) (JoinResult, error) {
 	defer logging.Step(ctx, "SessionLifecycle.Join").Close()
 	logging.LogFields(ctx,
@@ -140,9 +139,8 @@ func (m *Manager) joinSessionInTx(ctx context.Context, tx *gorm.DB, sessionID ui
 		// A rejection discovered before any idempotency claim is attempted
 		// never reaches session_requests at all - there is no token-scoped
 		// outcome to record. Any materialization above must still commit
-		// even though this attempted Join is rejected (WORK-0001's
-		// Transaction Ownership) - it already has, via this same callback's
-		// eventual successful return.
+		// even though this attempted Join is rejected - it already has, via
+		// this same callback's eventual successful return.
 		return JoinResult{Outcome: JoinOutcomeLobbyExpired}, nil
 	}
 	if codeWasRevokedAtResolution {

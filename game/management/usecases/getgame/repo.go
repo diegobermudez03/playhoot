@@ -32,7 +32,8 @@ type gameWithVersion struct {
 	Script       string
 }
 
-// getGameCurrentVersion returns the game's latest version
+// getGameCurrentVersion returns the game merged with its current definition,
+// or (nil, nil) if no game matches gameUUID.
 func (r *repo) getGameCurrentVersion(ctx context.Context, gameUUID string) (*gameWithVersion, error) {
 	var g gameWithVersion
 	tx := r.db.WithContext(ctx).Raw(`

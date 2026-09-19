@@ -12,9 +12,9 @@ type session struct {
 	UUID               string     // Exposed PK, uuid, INDEX UNIQUE
 	GameDefinitionUUID string     // Pinned Game Definition/Version UUID (external domain reference, no FK), resolved exactly once at Create
 	HostActorID        *uint      // References session_actors.id; nullable at storage level only during the Host/SessionActor Creation Cycle
-	Phase              string     // LOBBY | TERMINAL (this work never reaches RUNNING)
+	Phase              string     // LOBBY | TERMINAL
 	LobbyExpiresAt     time.Time  // Authoritative LOBBY deadline
-	StartedAt          *time.Time // Always NULL in this work; a later slice sets it on Start
+	StartedAt          *time.Time // NULL until the Session leaves LOBBY
 	TerminalAt         *time.Time // NULL until phase = TERMINAL
 	TerminalReason     *string    // NULL until phase = TERMINAL
 	CreatedAt          time.Time
@@ -25,7 +25,7 @@ type sessionActor struct {
 	ID               uint   // PK, incremental
 	SessionID        uint   // References sessions.id, INDEX
 	UserUUID         string // References Identity.User.user_uuid (external domain reference, no FK)
-	SemanticPresence string // CONNECTED | DISCONNECTED (GAME-ADR-0015); this work only ever produces CONNECTED
+	SemanticPresence string // CONNECTED | DISCONNECTED (GAME-ADR-0015)
 	CreatedAt        time.Time
 	// UNIQUE INDEX(session_id, user_uuid)
 }
@@ -49,7 +49,7 @@ type joinCode struct {
 
 type sessionRequest struct {
 	ID              uint    // PK, incremental
-	Operation       string  // CREATE | JOIN | LEAVE (Slice 1 subset)
+	Operation       string  // CREATE | JOIN | LEAVE
 	IdempotencyKey  string  // Caller-supplied opaque key
 	UserUUID        string  // References Identity.User.user_uuid (external domain reference, no FK)
 	SessionID       *uint   // References sessions.id; NULL for a CREATE request with no resulting Session

@@ -25,9 +25,9 @@ type Workflow struct {
 	InitialState string
 
 	// GlobalTransitions are workflow-level fallback transitions that
-	// may apply from any current state. A future execution step, not
-	// this compiler, resolves the priority between a state-local
-	// transition and a global transition for the same signal.
+	// may apply from any current state. engineservice.Step gives a
+	// state-local transition priority over a global one for the same
+	// signal.
 	GlobalTransitions []Transition
 
 	States []WorkflowState

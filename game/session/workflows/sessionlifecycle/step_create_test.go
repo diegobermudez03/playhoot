@@ -14,8 +14,7 @@ import (
 // TestManagerCreate covers Create's pre-transaction validation, the only
 // part of Create mockable without a real DB transaction: the idempotency
 // claim and Host/SessionActor Creation Cycle further down this path call
-// the shared sessionlock/idempotency mechanism packages directly (per
-// WORK-0001's Repository Responsibility - Direct mechanism usage), which
+// the shared sessionlock/idempotency mechanism packages directly, which
 // require a real Postgres connection to run their SQL. That business logic
 // is proven instead by this package's TestManagerCreate_Integration* tests
 // against a real disposable database.

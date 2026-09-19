@@ -30,8 +30,7 @@ import (
 const maxStepsPerRuntimeTurn = 20
 
 // runtimeTurnSnapshotFormatVersion is session_runtime_turns.
-// snapshot_format_version's starting value (WORK-0003's Implementation
-// Freedom).
+// snapshot_format_version's starting value.
 const runtimeTurnSnapshotFormatVersion = 1
 
 // startSourceKind is the source_kind label persisted on Start's own
@@ -42,9 +41,8 @@ const startSourceKind = "SESSION_START"
 
 // Start outcome labels persisted to session_requests.outcome for a
 // deterministic post-claim decline that must survive as a replayable
-// outcome (WORK-0001's Transaction Ownership; WORK-0003's Blocker 3 for
-// outcomeRuntimeInitFailed specifically). outcomeStarted is also recorded
-// so a same-token replay can tell success from a decline.
+// outcome. outcomeStarted is also recorded so a same-token replay can tell
+// success from a decline.
 const (
 	outcomeStarted           = "STARTED"
 	outcomeNotHost           = "NOT_HOST"
@@ -79,7 +77,6 @@ type startRequestPayload struct {
 // and executes the Game Language engine's first RuntimeTurn against the
 // Session's pinned immutable Game Definition, and atomically commits
 // phase=RUNNING together with the committed Turn and JoinCode revocation.
-// See WORK-0003's Outcome/Approved Design.
 func (m *Manager) Start(ctx context.Context, sessionUUID SessionUUID, userUUID UserUUID, idempotencyKey IdempotencyKey) (StartResult, error) {
 	defer logging.Step(ctx, "SessionLifecycle.Start").Close()
 	logging.LogFields(ctx,
@@ -119,22 +116,18 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 	}
 	if lockedSession.Phase == session.PhaseRunning {
 		// A concurrent Start (a different idempotency token racing this
-		// same call for lock acquisition - see this package's
-		// TestManagerStart_Integration's concurrency case) already won and
-		// committed Turn 1: this is not a lobby-expiration decline, it is
-		// simply already-true current state, accurately reported as the
-		// same outcome a caller who actually won the race would see
-		// (StartOutcome's own documented meaning: "the Session is now
-		// RUNNING", true regardless of who committed it).
+		// same call for lock acquisition) already won and committed Turn 1:
+		// this is not a lobby-expiration decline, it is simply already-true
+		// current state, accurately reported as the same outcome a caller
+		// who actually won the race would see.
 		return StartResult{Outcome: StartOutcomeStarted, SessionUUID: SessionUUID(lockedSession.UUID)}, nil
 	}
 	if lockedSession.Phase != session.PhaseLobby {
 		// A rejection discovered before any idempotency claim is attempted
 		// never reaches session_requests at all - there is no token-scoped
 		// outcome to record. Any materialization above must still commit
-		// even though this attempted Start is rejected (WORK-0001's
-		// Transaction Ownership) - it already has, via this same
-		// callback's eventual successful return.
+		// even though this attempted Start is rejected - it already has,
+		// via this same callback's eventual successful return.
 		return StartResult{Outcome: StartOutcomeLobbyExpired}, nil
 	}
 
@@ -156,10 +149,9 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 		return interpretExistingStartClaim(existing, incomingPayload)
 	}
 
-	// Resolves (SessionUUID, UserUUID) -> SessionActorID and verifies host
-	// authority (GAME-ADR-0004/0005) - a missing actor is indistinguishable
-	// from "not the host" for this purpose, since only sessions.host_actor_id
-	// grants Start authority.
+	// A missing actor is indistinguishable from "not the host" for this
+	// purpose (GAME-ADR-0004/0005), since only sessions.host_actor_id grants
+	// Start authority.
 	actor, err := m.startRepo.FindActor(ctx, tx, lockedSession.ID, string(userUUID))
 	if err != nil {
 		return StartResult{}, err
@@ -171,11 +163,11 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 		return StartResult{Outcome: StartOutcomeNotHost}, nil
 	}
 
-	// Loads the Session's pinned Definition/Version UUID directly - never
-	// the Game's current version (GAME-ADR-0001/0004). Unlike Join, Start's
-	// SessionUUID already identifies the Session directly, so there is no
-	// unlocked pre-lookup step other than this read, made once the Session
-	// row is known to exist under lock.
+	// The pinned Definition/Version UUID is read directly, never the Game's
+	// current version (GAME-ADR-0001/0004). Unlike Join, Start's SessionUUID
+	// already identifies the Session directly, so this read has no unlocked
+	// pre-lookup step - it happens once the Session row is known to exist
+	// under lock.
 	definition, err := m.pinnedGameReader.GetGameDefinition(ctx, lockedSession.GameDefinitionUUID)
 	if err != nil {
 		return StartResult{}, err
@@ -190,7 +182,7 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 		// The pinned Definition already compiled successfully at Create -
 		// an unexpected recompile failure now is durable-state invalidity
 		// (GAME-ADR-0017's third class), not a deterministic authored-game
-		// failure (WORK-0003's Fatal-Path Classification).
+		// failure.
 		monitoring.Alert(ctx, fmt.Sprintf(
 			"pinned game definition failed to recompile at session start: session_uuid=%s game_definition_uuid=%s",
 			sessionUUID, lockedSession.GameDefinitionUUID,
@@ -201,7 +193,7 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 	// The roster is built strictly from Participants active at the
 	// serialized Start moment (game/README.md's Session Runtime Lobby
 	// Lifecycle Contract), ordered by joined_at ascending, ties broken by
-	// internal actor id (WORK-0003 Blocker 4, human-approved 2026-09-19).
+	// internal actor id.
 	roster, err := m.startRepo.ListActiveParticipantsForRoster(ctx, tx, lockedSession.ID)
 	if err != nil {
 		return StartResult{}, err
@@ -209,8 +201,7 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 	if len(roster) < definition.Players.Min || (definition.Players.Max > 0 && len(roster) > definition.Players.Max) {
 		// The players.max case is defensive - Join already enforces it and
 		// is not expected to ever trigger here in practice - grouped under
-		// the same ordinary LOBBY-phase decline as players.min (WORK-0003's
-		// Approved Design).
+		// the same ordinary LOBBY-phase decline as players.min.
 		if err := idempotency.Complete(ctx, tx, requestID, &lockedSession.ID, outcomeNotEnoughPlayers, ""); err != nil {
 			return StartResult{}, fmt.Errorf("completing start session request: %s", err)
 		}
@@ -234,8 +225,8 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 		Seed: drawSeed(),
 	})
 	if err != nil {
-		// Everything downstream of a successful compile is
-		// RUNTIME_EXECUTION_FAILED (WORK-0003's Fatal-Path Classification).
+		// Everything downstream of a successful compile that fails is
+		// treated as RUNTIME_EXECUTION_FAILED.
 		return m.terminalizeStartFatal(ctx, tx, lockedSession, requestID, now, session.TerminalReasonRuntimeExecutionFailed)
 	}
 
@@ -285,13 +276,12 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 // terminalizeStartFatal performs Start's pre-first-Turn fatal path
 // (GAME-ADR-0019): atomically terminalizes the Session directly from
 // LOBBY, revokes its JoinCode, and records the fatal outcome as the START
-// idempotency claim's completed - and replayable - outcome, per
-// idempotency.md's Completed Outcomes vs. Transient Failures (WORK-0003
-// Blocker 3, human-approved 2026-09-19: a Start that already fatally
-// terminalized the Session must never be re-attempted on a same-token
-// retry). started_at is left at its canonical NULL - the Session never
-// actually ran. No session_runtime_turns/steps/state row is written; no
-// session_runtime_failures diagnostic entity exists yet (Slice 6's scope).
+// idempotency claim's completed - and replayable - outcome, so a Start that
+// already fatally terminalized the Session is never re-attempted on a
+// same-token retry (idempotency.md's Completed Outcomes vs. Transient
+// Failures). started_at is left at its canonical NULL - the Session never
+// actually ran. No session_runtime_turns/steps/state row is written, and no
+// runtime-failure diagnostic entity exists yet.
 func (m *Manager) terminalizeStartFatal(ctx context.Context, tx *gorm.DB, lockedSession *sessionlock.Session, requestID uint, terminalAt time.Time, terminalReason string) (StartResult, error) {
 	if err := m.startRepo.SetSessionTerminal(ctx, tx, lockedSession.ID, terminalAt, terminalReason); err != nil {
 		return StartResult{}, err
@@ -311,7 +301,7 @@ func (m *Manager) terminalizeStartFatal(ctx context.Context, tx *gorm.DB, locked
 // replayed decline - including the fatal RuntimeInitFailed outcome - is
 // returned as the same outcome value it was originally recorded as
 // (GAME-ADR-0022), never reconstructed as an error and never re-attempted
-// against a Session that has since become TERMINAL (WORK-0003 Blocker 3).
+// against a Session that has since become TERMINAL.
 func interpretExistingStartClaim(existing *idempotency.Request, incoming startRequestPayload) (StartResult, error) {
 	if existing.Status != idempotency.StatusCompleted {
 		return StartResult{}, session.ErrIdempotencyInFlight
@@ -363,13 +353,12 @@ type runtimeStepTrace struct {
 // toward maxStepsPerRuntimeTurn - exactly GAME-ADR-0019's definition,
 // applying equally to Start's own initialization chain.
 //
-// This is Start's own inline RuntimeTurn execution logic - per the human's
-// 2026-09-19 rejection of a new shared game/session/internal/runtimeturn
-// package (WORK-0003's Approved Design: RuntimeTurn Execution Logic
-// subsection) - a pure function over engine/engineservice with no
+// This is Start's own inline RuntimeTurn execution logic rather than a
+// separate shared package, since no other current use case calls it
+// independently. It is a pure function over engine/engineservice with no
 // persistence/transaction dependency, so it can be unit-tested directly
-// (see this package's TestDrainRuntimeTurn) without a real Postgres
-// connection, mirroring engineservice's own test style.
+// without a real Postgres connection, mirroring engineservice's own test
+// style.
 //
 // On success, ok is true, finalSnapshot is the Turn's final authoritative
 // Snapshot, and steps traces every actual Step call in order. On a
@@ -377,9 +366,8 @@ type runtimeStepTrace struct {
 // (engineservice.ErrSignalRejected/ErrInputRejected) of the initial signal
 // or any subsequent internal signal, or needing a Step call beyond
 // maxStepsPerRuntimeTurn to reach quiescence, ok is false and the original
-// snapshot is returned unchanged - the caller decides the Session-lifecycle
-// consequence (always RUNTIME_EXECUTION_FAILED for Start's own initial
-// chain - see WORK-0003's Fatal-Path Classification).
+// snapshot is returned unchanged - the caller decides the resulting
+// Session-lifecycle consequence.
 func drainRuntimeTurn(p engine.Program, snapshot engine.Snapshot, initialSignal engine.Signal) (finalSnapshot engine.Snapshot, steps []runtimeStepTrace, ok bool) {
 	pending := []engine.Signal{initialSignal}
 	current := snapshot

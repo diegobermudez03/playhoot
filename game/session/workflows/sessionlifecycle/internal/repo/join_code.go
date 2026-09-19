@@ -15,12 +15,12 @@ const maxJoinCodeAttempts = 10
 
 // JoinCodeResolution identifies which Session a JoinCode currently names,
 // and that Session's pinned Definition/Version UUID. RevokedAt is non-nil
-// when the resolved join_codes row is itself already revoked - the Manager
+// when the resolved join_codes row is itself already revoked - the caller
 // still re-validates the Session's admissibility under lock afterward, using
 // RevokedAt to distinguish a code revoked independently of the Session it
 // names still being open (genuinely invalid) from one revoked concurrently
 // by that same Session's own lazy lobby-expiration materialization (a value
-// outcome, not an error - see step_join.go's Join/joinSessionInTx).
+// outcome, not an error).
 type JoinCodeResolution struct {
 	SessionID          uint
 	GameDefinitionUUID string

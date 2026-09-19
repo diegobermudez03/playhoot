@@ -6,7 +6,7 @@ package session
 
 import "errors"
 
-// Session lifecycle phase values. Slice 2 (Start) introduces PhaseRunning.
+// Session lifecycle phase values.
 const (
 	PhaseLobby    = "LOBBY"
 	PhaseRunning  = "RUNNING"
@@ -14,28 +14,25 @@ const (
 )
 
 // SessionActor semantic presence values (GAME-ADR-0015). A normal Join
-// begins CONNECTED; DISCONNECTED is not produced by anything in this work.
+// begins CONNECTED; DISCONNECTED is not currently produced by any operation.
 const (
 	PresenceConnected    = "CONNECTED"
 	PresenceDisconnected = "DISCONNECTED"
 )
 
-// Internal terminal-reason values materialized by this work.
+// Terminal-reason values recorded when a Session becomes TERMINAL.
 const (
 	TerminalReasonLobbyExpired = "LOBBY_EXPIRED"
 
-	// TerminalReasonRuntimeExecutionFailed is Start's pre-first-Turn fatal
-	// path (GAME-ADR-0017/0019) for everything downstream of a successful
-	// compile: NewSnapshot/Step returning a non-rejection ExecutionError, an
-	// outright rejection of Start's own initial signal chain, or exceeding
-	// MAX_STEPS_PER_RUNTIME_TURN.
+	// TerminalReasonRuntimeExecutionFailed marks a Session terminated by a
+	// deterministic game-execution failure occurring before its first Turn
+	// completes (GAME-ADR-0017/0019).
 	TerminalReasonRuntimeExecutionFailed = "RUNTIME_EXECUTION_FAILED"
 
-	// TerminalReasonRuntimeStateInvalid is Start's pre-first-Turn fatal path
-	// for the one narrow case of the pinned Definition unexpectedly failing
-	// to recompile despite having compiled successfully at Create - durable
-	// state invalidity (GAME-ADR-0017), not a deterministic game-execution
-	// failure.
+	// TerminalReasonRuntimeStateInvalid marks a Session terminated because
+	// its pinned Definition unexpectedly fails to recompile at Start despite
+	// having compiled successfully at Create - a durable state-integrity
+	// failure, not a game-execution failure (GAME-ADR-0017).
 	TerminalReasonRuntimeStateInvalid = "RUNTIME_STATE_INVALID"
 )
 
@@ -62,8 +59,8 @@ var (
 
 	// ErrIdempotencyInFlight is returned, defensively, when an existing
 	// idempotency claim is found but has not yet reached a completed
-	// outcome. Under this work's single-transaction claim-then-commit
-	// design, callers should not normally observe this.
+	// outcome. Under the single-transaction claim-then-commit design,
+	// callers should not normally observe this.
 	ErrIdempotencyInFlight = errors.New("idempotency key claim is still in flight")
 
 	// ErrJoinCodeInvalid is returned when a JoinCode does not resolve to an

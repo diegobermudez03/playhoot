@@ -22,8 +22,10 @@ func New(db *gorm.DB) *UseCase {
 	}
 }
 
-// GetPlayableGameWithCurrentVersion returns the playable game by its uuid
-// - Playable game means that its visibility is playable
+// GetPlayableGameWithCurrentVersion returns the game identified by gameUUID
+// together with its current definition, or (nil, nil) if the game does not
+// exist. It fails with ErrNonPlayableGame if the game's visibility does not
+// allow play, and with ErrBrokenGame if its stored data is invalid.
 func (c *UseCase) GetPlayableGameWithCurrentVersion(ctx context.Context, gameUUID string) (*management.Game, error) {
 	defer logging.Step(ctx, "GetGameWithCurrentVersion").Close()
 	logging.LogFields(ctx, logging.Field("game_uuid", gameUUID))
@@ -34,7 +36,6 @@ func (c *UseCase) GetPlayableGameWithCurrentVersion(ctx context.Context, gameUUI
 	}
 	logging.LogFields(ctx, logging.Field("found", g != nil))
 
-	// not found or non existent
 	if g == nil {
 		return nil, nil
 	}

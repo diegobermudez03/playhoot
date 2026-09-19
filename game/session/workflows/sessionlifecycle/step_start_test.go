@@ -16,8 +16,7 @@ import (
 // lazy-expiration materialization, idempotency claim, host/roster
 // resolution, and engine execution further down this path call the shared
 // sessionlock/idempotency mechanism packages and the real Game Language
-// engine directly (per WORK-0001's Repository Responsibility - Direct
-// mechanism usage), which require a real Postgres connection to exercise
+// engine directly, which require a real Postgres connection to exercise
 // meaningfully. That business logic is proven instead by this package's
 // TestManagerStart_Integration* tests against a real disposable database.
 func TestManagerStart(t *testing.T) {
@@ -55,10 +54,9 @@ func stayProgram() engine.Program {
 
 // rejectingProgram builds a "Main" root workflow declaring no transition
 // at all for WorkflowStarted, so its own mandatory first Step call is an
-// outright ErrSignalRejected - WORK-0003's Fatal-Path Classification reads
-// an outright rejection of Start's own initial signal chain the same as
-// any other fatal failure, since LOBBY has no established RuntimeTurn
-// history for the Session to safely remain on.
+// outright ErrSignalRejected - treated as a fatal failure the same as any
+// other, since LOBBY has no established RuntimeTurn history for the
+// Session to safely remain on.
 func rejectingProgram() engine.Program {
 	return engine.Program{
 		RootWorkflow: "Main",
@@ -74,8 +72,8 @@ func rejectingProgram() engine.Program {
 
 // divideByZeroProgram builds a "Main" root workflow whose only transition
 // deterministically fails its very first Step call with a non-rejection
-// ExecutionError (division by zero) - WORK-0003's Verification requires
-// proving this class of failure without a real Postgres connection.
+// ExecutionError (division by zero), proving this failure class without a
+// real Postgres connection.
 func divideByZeroProgram() engine.Program {
 	return engine.Program{
 		RootWorkflow: "Main",
@@ -178,11 +176,10 @@ func newSnapshotAndSignal(t *testing.T, p engine.Program) (engine.Snapshot, engi
 }
 
 // TestDrainRuntimeTurn directly exercises Start's own inline RuntimeTurn
-// execution logic (WORK-0003's Approved Design: RuntimeTurn Execution
-// Logic) as a pure function over engine/engineservice, with no
+// execution logic as a pure function over engine/engineservice, with no
 // persistence/transaction dependency - proving its Step-bound enforcement
-// and atomicity without needing a real Postgres connection (WORK-0003's
-// Verification), mirroring engineservice's own test style.
+// and atomicity without needing a real Postgres connection, mirroring
+// engineservice's own test style.
 func TestDrainRuntimeTurn(t *testing.T) {
 	t.Run("commits_within_bound", func(t *testing.T) {
 		p := stayProgram()

@@ -55,8 +55,7 @@ func TestClaimAndComplete(t *testing.T) {
 // raced the winner's still-open insert) - callers with no other
 // serialization of their own (unlike Join/Leave, which lock the owning
 // Session's row before ever reaching Claim) must expect and handle this
-// (`docs/engineering/standards/idempotency.md`'s Claim Mechanism Contract;
-// WORK-0001's Claim Mechanism And Step-Local Interpretation).
+// (`docs/engineering/standards/idempotency.md`'s Claim Mechanism Contract).
 func TestClaim_ConcurrentSameIdentityResolvesToExactlyOneFreshClaim(t *testing.T) {
 	db := testdb.OpenSessionDB(t)
 	userUUID := uuid.NewString()

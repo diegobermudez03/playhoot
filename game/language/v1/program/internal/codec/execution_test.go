@@ -321,10 +321,10 @@ func allOperationVariants() []program.Operation {
 	}
 }
 
-// wantedOperationKinds must match every discriminator declared by this
-// codec increment. If a variant is added to program without a matching
-// entry here and in allOperationVariants, this test fails loudly instead
-// of silently under-covering the codec.
+// wantedOperationKinds must match every operation discriminator the codec
+// supports. If a variant is added to program without a matching entry here
+// and in allOperationVariants, this test fails loudly instead of silently
+// under-covering the codec.
 var wantedOperationKinds = []string{
 	"let", "set",
 	"list_append", "list_insert", "list_remove_at",

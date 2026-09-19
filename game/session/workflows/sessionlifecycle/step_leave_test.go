@@ -12,8 +12,7 @@ import (
 // of Leave mockable without a real DB transaction: the lock, lazy-expiration
 // materialization, idempotency claim, and actor/participant lookup further
 // down this path call the shared sessionlock/idempotency mechanism packages
-// directly (per WORK-0001's Repository Responsibility - Direct mechanism
-// usage), which require a real Postgres connection to run their SQL. That
+// directly, which require a real Postgres connection to run their SQL. That
 // business logic (replay/conflict, NotInLobby, ActorNotFound, deactivation)
 // is proven instead by this package's TestManagerLeave_Integration tests
 // against a real disposable database.

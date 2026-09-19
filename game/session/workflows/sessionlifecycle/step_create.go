@@ -43,13 +43,12 @@ type createRequestPayload struct {
 	GameUUID string `json:"game_uuid"`
 }
 
-// outcomeCreated is CREATE's only recorded logical outcome label (Create has
-// no deterministic decline outcome in this WORK's scope).
+// outcomeCreated is CREATE's only recorded logical outcome label; Create has
+// no deterministic decline outcome.
 const outcomeCreated = "CREATED"
 
 // Create resolves/compiles/pins the Game's current playable Definition, then
 // creates a LOBBY Session with a host SessionActor and an active JoinCode.
-// See WORK-0001's Manager Operation Behavior - Create.
 func (m *Manager) Create(ctx context.Context, gameUUID GameUUID, hostUserUUID UserUUID, idempotencyKey IdempotencyKey) (CreatedSession, error) {
 	defer logging.Step(ctx, "SessionLifecycle.Create").Close()
 	logging.LogFields(ctx,

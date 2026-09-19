@@ -193,8 +193,7 @@ func TestManagerStart_Integration(t *testing.T) {
 		require.NotNil(t, joinCodeRevoked)
 
 		// A same-token retry against the now-TERMINAL Session must replay
-		// the recorded outcome, never re-attempt engine initialization
-		// (WORK-0003 Blocker 3).
+		// the recorded outcome, never re-attempt engine initialization.
 		second, err := m.Start(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(hostUUID), "start-key-fatal")
 		require.NoError(t, err)
 		require.Equal(t, first, second)

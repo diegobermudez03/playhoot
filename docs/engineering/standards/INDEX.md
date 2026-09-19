@@ -20,5 +20,6 @@ This index routes engineers and AI agents to accepted reusable engineering stand
 | Persisted cross-domain entity-reference naming | `cross-domain-reference-naming.md` |
 | Method/function contract conventions: explicit parameters vs. input structs, semantic primitive types, return-value shape | `function-signatures.md` |
 | Natural vs. request/command idempotency, required tokens, replay/conflict semantics, replayed-outcome-vs-error distinction, claim mechanism contract, idempotency responsibility ownership | `idempotency.md` |
+| Source-code comment purpose and style: what comments should/should not explain, per-symbol-kind guidance, task/history comments, comment-only refactors | `code-comments.md` |
 
 This initial set was extracted from the previously canonical `AGENTS.md -> Project Patterns`.

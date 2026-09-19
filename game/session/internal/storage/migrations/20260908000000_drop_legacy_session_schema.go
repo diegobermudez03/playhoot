@@ -5,12 +5,12 @@ import (
 	"gorm.io/gorm"
 )
 
-// migration20260908000000DropLegacySessionSchema removes the pre-Slice-1
+// migration20260908000000DropLegacySessionSchema removes the legacy
 // scaffolding schema (sessions/session_states/session_players/join_codes).
 // That schema never held real data - CreateRoom/JoinRoom were no-op stubs
 // that never persisted anything - and directly contradicted the accepted
 // Session/Actor/Participant/lobby identity model, so it is dropped outright
-// rather than migrated in place. See WORK-0001's Data/Migration Impact.
+// rather than migrated in place.
 func migration20260908000000DropLegacySessionSchema() *gormigrate.Migration {
 	return &gormigrate.Migration{
 		ID: "20260908000000_drop_legacy_session_schema",

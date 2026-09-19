@@ -6,11 +6,9 @@ package engine
 // Type is engine's own internal representation, decoupled from
 // program.TypeReference and program.TypeDeclaration the same way
 // engine.Program is decoupled from program.Definition (see program.go
-// and doc.go): a future compilation step builds a Type from a
+// and doc.go): engineservice.Compile builds a Type from a
 // program.Definition's type declarations, resolving every named
-// reference into the shape declared here. This package does not yet
-// implement that resolution; it only defines the shape Type takes once
-// resolved.
+// reference into the shape declared here.
 //
 // Type is a closed interface, mirroring program's own closed-interface
 // pattern: its marker method is unexported so packages outside engine

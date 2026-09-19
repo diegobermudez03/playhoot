@@ -98,8 +98,8 @@ func startableDefinition(playersMin, playersMax int) program.Definition {
 // (so Create could pin it) but whose root workflow declares no transition
 // at all for WorkflowStarted - Start's mandatory first Step call is then an
 // outright rejection, forcing the pre-first-Turn RUNTIME_EXECUTION_FAILED
-// fatal path (WORK-0003's Fatal-Path Classification) deterministically, for
-// tests that need to force that path against a real database.
+// fatal path deterministically, for tests that need to force that path
+// against a real database.
 func nonStartableDefinition(playersMin, playersMax int) program.Definition {
 	return program.Definition{
 		Metadata:     program.Metadata{ID: "non-startable", Name: "NonStartable"},

@@ -9,8 +9,8 @@ import (
 
 // runtimeTurnInsert is the persisted shape of one committed RuntimeTurn.
 // source_interaction_id/source_timer_obligation_id/actor_id are left NULL by
-// every caller in this WORK (Start) - Slices 3/5 populate them for their own
-// causes (`game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md`'s Runtime History
+// Start; other RuntimeTurn sources populate them for their own causes
+// (`game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md`'s Runtime History
 // Tables).
 type runtimeTurnInsert struct {
 	ID                    uint   `gorm:"column:id"`

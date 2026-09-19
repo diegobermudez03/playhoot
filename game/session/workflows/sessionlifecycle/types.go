@@ -1,5 +1,5 @@
 // Package sessionlifecycle is the Session lifecycle workflow: one Manager
-// exposing Create/Join/Leave (and, from Slice 2, Start) as its steps, per
+// exposing Create/Join/Leave/Start as its steps, per
 // `docs/engineering/standards/domain-logic-placement.md`'s Preferred
 // Workflow Package Shape. The Manager decides business/lifecycle policy
 // (transaction scope, admission, expiration, idempotency-replay meaning);
@@ -107,8 +107,8 @@ const (
 	// sessions.host_actor_id.
 	StartOutcomeNotHost StartOutcome = "NOT_HOST"
 	// StartOutcomeNotEnoughPlayers means active Participant count is below
-	// the pinned Definition's players.min (or, defensively, above
-	// players.max - see WORK-0003's Approved Design).
+	// the pinned Definition's players.min, or (as a defensive check) above
+	// players.max.
 	StartOutcomeNotEnoughPlayers StartOutcome = "NOT_ENOUGH_PLAYERS"
 	// StartOutcomeRuntimeInitFailed means the pre-first-Turn fatal path was
 	// taken (GAME-ADR-0017/0019): the Session is now TERMINAL, started_at

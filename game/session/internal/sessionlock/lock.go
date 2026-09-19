@@ -2,8 +2,8 @@
 // primitive that every LOBBY mutation (Join, Leave, and lazy lobby-expiration
 // materialization) must use rather than each inventing its own locking
 // query, per the Session Runtime Lobby Lifecycle Contract's serialization
-// rule. It is intentionally shaped so a later RUNNING-phase slice can reuse
-// it unchanged (GAME-ADR-0018).
+// rule. It is intentionally shaped so RUNNING-phase mutations can reuse it
+// unchanged (GAME-ADR-0018).
 //
 // This package owns locking only. It reports the locked row's current facts
 // (phase, lobby_expires_at, ...); it does not decide lobby-expiration policy

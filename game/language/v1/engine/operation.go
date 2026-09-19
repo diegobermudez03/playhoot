@@ -45,11 +45,6 @@ type Block struct {
 
 // Operation is the compiled representation of one program.Operation.
 //
-// This version does not yet compile an ask-group or task-group
-// operation; a Block containing one of those is diagnosed, at compile
-// time, as using an unsupported operation, and does not appear in the
-// compiled Block at all — see engineservice's compile_operations.go.
-//
 // Operation is a closed interface, mirroring program's own
 // closed-interface pattern.
 type Operation interface {

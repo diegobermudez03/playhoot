@@ -51,9 +51,9 @@ type QuestionSlotInstance struct {
 }
 
 // PendingQuestion is one concrete, in-flight question instance: the
-// user it was opened for and the arguments captured when it opened — see
-// program.OpenQuestionOperation. A future step, once operations are
-// compiled, is what creates one.
+// user it was opened for and the arguments captured when it opened —
+// see program.OpenQuestionOperation. engineservice.Step is what creates
+// one.
 type PendingQuestion struct {
 	Recipient UserID
 	Arguments []FieldValue

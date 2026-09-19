@@ -67,12 +67,10 @@ func strictDecodeInto(path string, data json.RawMessage, v any) error {
 	return nil
 }
 
-// pathField appends a named object field to path.
 func pathField(path, field string) string {
 	return path + "." + field
 }
 
-// pathIndex appends an array index to path.
 func pathIndex(path string, index int) string {
 	return fmt.Sprintf("%s[%d]", path, index)
 }
@@ -113,12 +111,11 @@ func decodeOrdinaryObject(path string, data json.RawMessage, v any) error {
 	return strictDecodeInto(path, raw, v)
 }
 
-// decodeUnion is a small dispatch helper shared by every closed-interface
-// decoder in this package: it handles the null/missing case, decodes and
-// isolates exactly one top-level JSON value, reads its "kind"
-// discriminator, and hands off to dispatch to decode the matching concrete
-// wire struct. It performs no reflection-based field mapping; dispatch is
-// responsible for that, one concrete type at a time.
+// decodeUnion is the shared decode entry point for every closed-interface
+// family in this package: it resolves the null/missing case and dispatches
+// by the JSON value's "kind" discriminator to the matching concrete wire
+// struct. It performs no reflection-based field mapping itself; dispatch
+// handles that, one concrete type at a time.
 func decodeUnion[T any](path string, data json.RawMessage, dispatch func(path, kind string, raw json.RawMessage) (T, error)) (T, error) {
 	var zero T
 	if isEmptyOrNull(data) {
@@ -135,10 +132,9 @@ func decodeUnion[T any](path string, data json.RawMessage, dispatch func(path, k
 	return dispatch(path, kind, raw)
 }
 
-// encodeUnion is the encode-side counterpart to decodeUnion: it handles
-// the nil/typed-nil case and normalizes a pointer to its pointed-to value
-// before handing off to encode, which type switches over the concrete
-// node types one at a time.
+// encodeUnion is the encode-side counterpart to decodeUnion: it resolves
+// the nil/typed-nil case before handing off to encode for the concrete
+// type switch.
 func encodeUnion(value any, encode func(resolved any) (json.RawMessage, error)) (json.RawMessage, error) {
 	resolved, isNil := dereferencePointer(value)
 	if isNil {

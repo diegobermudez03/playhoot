@@ -24,13 +24,10 @@ type ResourceDeclaration struct {
 
 // StateDeclaration describes a mutable state object: a named, typed set of
 // fields together with the initializer used when the owning scope is
-// created.
-//
-// For this step, a StateDeclaration is used as Definition.GlobalState,
-// which is instantiated once per game session and modified thereafter only
-// by engine-executed operations, as part of the game snapshot. The same
-// model is intended to be reused later for workflow-local state and
-// client-local UI state.
+// created. It is shared by global state, workflow-local state, and
+// client-local UI state, each instantiated independently from its own
+// StateDeclaration and modified thereafter only by its owning scope's
+// operations.
 type StateDeclaration struct {
 	Fields []StateFieldDeclaration
 }

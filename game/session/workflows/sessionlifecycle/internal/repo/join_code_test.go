@@ -33,8 +33,7 @@ func TestRepoResolveSessionForJoinCode(t *testing.T) {
 		// concurrently by the same Session's own lazy lobby-expiration
 		// materialization must surface as the ordinary LobbyExpired outcome
 		// value rather than a hard "invalid code" error discovered here and
-		// never re-checked under lock (WORK-0001's Concurrency acceptance
-		// criteria).
+		// never re-checked under lock.
 		resolution, err := r.ResolveSessionForJoinCode(context.Background(), 5252)
 		require.NoError(t, err)
 		require.NotNil(t, resolution)

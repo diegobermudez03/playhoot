@@ -3,65 +3,64 @@ package repo
 import "time"
 
 type game struct {
-	ID                  uint   // PK, incremental
-	UUID                string // UUID, exported one, INDEX UNIQUE
-	Name                string // string, max 32 chars
-	Description         string // string, max 255 chars
-	OwnerUUID           string // extenral reference, INDEX
-	CurrentDefinitionID *uint  // Reference to game_definitions, INDEX UNIQUE
+	ID                  uint
+	UUID                string // UUID is the identifier exposed to callers; ID stays internal to storage.
+	Name                string // Name is limited to 32 characters.
+	Description         string // Description is limited to 255 characters.
+	OwnerUUID           string // OwnerUUID references an owner managed outside this schema; it has no local foreign key.
+	CurrentDefinitionID *uint  // CurrentDefinitionID is nil until the game has a current definition; a definition can be current for only one game.
 	LogoImageURL        string
-	Visibility          string // public, team, direct share only, private, etc...
+	Visibility          string // Visibility stores the value of management.VisibilityType as text.
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
 	DeletedAt           *time.Time
 }
 
 type gameImages struct {
-	ID        uint   // PK, incremental
-	GameID    uint   // Reference to games table, INDEX
-	ImageURL  string // url string
+	ID        uint
+	GameID    uint
+	ImageURL  string
 	CreatedAt time.Time
 	RemovedAt *time.Time
 }
 
-// table works as a snapshot of the changed values:
-// basically, a new history record will only record the columns which value changed from the last previous non null value
-// so the first history record is created at the same time the original record is created, it contains all the values
-// then for each new change, we'll compare all new column values with the latest history non null value for those columns, if value changed
-// then new record will store those columns new valuees
+// gameHistory stores a diff-based audit trail of a game's mutable fields. The
+// record created alongside the game captures every field; each later record
+// stores only the columns whose value changed since the last non-null record
+// for that column, leaving the rest nil.
 type gameHistory struct {
-	ID           uint    // PK, incremental
-	GameID       uint    // reference to games table, INDEX
-	Name         *string // Name at the given time, nullable
-	Description  *string // description at that given time, nullable
-	LogoImageURL *string // url at that given time, nullable
-	Visibility   *string // visibility at the given time, nullable
-	IsPublished  *bool   // if it was published at the given time, nullable
+	ID           uint
+	GameID       uint
+	Name         *string
+	Description  *string
+	LogoImageURL *string
+	Visibility   *string
+	IsPublished  *bool
 	CreatedAt    time.Time
 }
 
 type gameDefinition struct {
-	ID            uint       // PK, incremental
-	UUID          string     // exported uuid, INDEX UNIQUE
-	GameID        uint       // reference to the game ID, INDEX
-	VersionNumber uint       // incremental for each new version of the game
-	Script        string     // raw text with the script (as json)
-	PublishedAt   *time.Time // once the version is published then the version cannot be updated, new version must be created
+	ID            uint
+	UUID          string // UUID is the identifier exposed to callers; ID stays internal to storage.
+	GameID        uint
+	VersionNumber uint       // VersionNumber increments per game, not globally.
+	Script        string     // Script holds the raw JSON-encoded definition script.
+	PublishedAt   *time.Time // PublishedAt marks the definition as immutable; once set, changes require a new version.
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 	DisabledAt    *time.Time
 }
 
-// basically, a new history record will only record the columns which value changed from the last previous non null value
-// so the first history record is created at the same time the original record is created, it contains all the values
-// then for each new change, we'll compare all new column values with the latest history non null value for those columns, if value changed
-// then new record will store those columns new valuees
+// gameDefinitionHistory stores a diff-based audit trail of a game
+// definition's mutable fields, using the same non-null-carries-forward
+// convention as gameHistory: a record only stores the columns whose value
+// changed since the last non-null record for that column.
 type gameDefinitionHistory struct {
 	ID               uint
-	GameDefinitionID uint       // INDEX
-	Script           *string    // nullable
-	PublishedAt      *time.Time // nullable
-	DisabledAt       *time.Time // nullable
+	GameDefinitionID uint
+	Script           *string
+	PublishedAt      *time.Time
+	DisabledAt       *time.Time
 
 	CreatedAt time.Time
 }

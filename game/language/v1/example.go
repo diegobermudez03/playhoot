@@ -51,10 +51,9 @@ type gameSession struct {
 // Snapshot" pipeline: everything that happens once, when a game instance
 // is created.
 func newGameSession() (*gameSession, error) {
-	// Step 1: get a program.Definition. In real life this bytes slice
-	// would come from wherever game definitions are stored/authored (see
-	// program/DEFINITION.md for how one gets generated in the first
-	// place) — left empty here since this is just a draft.
+	// In real life this bytes slice would come from wherever game
+	// definitions are stored/authored (see program/DEFINITION.md) —
+	// left empty here since this is just a draft.
 	var encodedDefinition []byte
 
 	def, err := gameservice.DecodeJSON(encodedDefinition)
@@ -67,35 +66,28 @@ func newGameSession() (*gameSession, error) {
 	}
 
 	// Optional but cheap: gameservice.Validate catches obvious
-	// language-level mistakes (duplicate names, bad operator/operand
-	// types) before we even bother handing this to the engine. Doesn't
-	// guarantee the definition compiles - see DEFINITION.md's note on
-	// this - just narrows feedback earlier when it does find something.
+	// language-level mistakes before bothering the engine with them.
+	// It doesn't guarantee the definition compiles (see DEFINITION.md),
+	// it just narrows feedback earlier when it does find something.
 	if errs := gameservice.Validate(*def); len(errs) > 0 {
 		return nil, fmt.Errorf("definition failed validation: %v", errs)
 	}
 
-	// Step 2: compile it. This is the real, authoritative check.
+	// Compile is the real, authoritative check. Any SeverityError
+	// diagnostic means compiledProgram must not be used to run a game;
+	// a warning or info diagnostic is fine to log and move on from.
 	compiledProgram, diags := engineservice.Compile(*def)
 	if diags.HasErrors() {
-		// diags is a Diagnostics (ordered []Diagnostic), collected, not
-		// stop-at-first-problem. Any SeverityError entry means
-		// compiledProgram must NOT be used to run a game - treat the
-		// whole thing as unusable, log/report every diagnostic, don't
-		// try to "run it anyway".
 		return nil, fmt.Errorf("compile errors: %v", diags)
 	}
-	// diags might still be non-empty here even without errors (warnings,
-	// info) - those are fine to just log and move on.
 
-	// Step 3: create the initial Snapshot for this one game instance.
 	snap, startSignal, err := engineservice.NewSnapshot(compiledProgram, engine.InitializationInput{
 		RootParameters: map[string]engine.Value{
 			// whatever the root workflow's declared Parameters need, by name.
 		},
-		// Seed should come from a real entropy source, drawn once, here -
-		// never a hardcoded/predictable value in real code. Left as the
-		// zero value in this draft.
+		// A real Seed must come from a real entropy source, drawn once,
+		// here — never a hardcoded/predictable value. Left as the zero
+		// value in this draft.
 		Seed: 0,
 	})
 	if err != nil {
@@ -108,12 +100,9 @@ func newGameSession() (*gameSession, error) {
 		pendingQuestions: map[string]engine.OpenQuestionOutput{},
 	}
 
-	// startSignal is mandatory - it's what actually gets the root
-	// workflow instance to run its first transition (typically a
-	// "WorkflowStarted" reaction). Don't discard it - run it through
-	// Step exactly like any other signal, using our own generic
-	// applyStep helper below, which is also what every other kind of
-	// incoming signal will go through.
+	// startSignal is mandatory: it is what gets the root workflow
+	// instance to run its first transition. It must be run through Step
+	// like any other signal, not discarded.
 	if err := session.applyStep(startSignal); err != nil {
 		return nil, fmt.Errorf("applying start signal: %w", err)
 	}
@@ -128,37 +117,28 @@ func newGameSession() (*gameSession, error) {
 func (s *gameSession) applyStep(signal engine.Signal) error {
 	commit, err := engineservice.Step(s.program, s.snapshot, signal, engine.DefaultLimits())
 	if err != nil {
-		// Two of these are "expected, nothing happened" outcomes, not
-		// bugs - see README.md. A real consumer should check for these
-		// specifically (errors.Is) before treating something as a real
-		// failure to log/alert on.
-		//
-		//   if errors.Is(err, engineservice.ErrSignalRejected) { ... }
-		//   if errors.Is(err, engineservice.ErrInputRejected) { ... }
-		//
-		// Either way: s.snapshot is guaranteed untouched here, nothing
-		// was published - it's safe to just return and let the caller
-		// decide what to tell the player (e.g. "that's not valid right
-		// now").
+		// ErrSignalRejected and ErrInputRejected are "expected, nothing
+		// happened" outcomes, not bugs (see README.md) — a real consumer
+		// should check for these specifically with errors.Is before
+		// treating something as a real failure to log/alert on. Either
+		// way, s.snapshot is guaranteed untouched and nothing was
+		// published, so it's safe to just return here.
 		return fmt.Errorf("step rejected/failed: %w", err)
 	}
 
-	// Success: commit.Snapshot is the new authoritative state. This is
-	// where a real consumer would persist it (engineservice.EncodeSnapshot
-	// -> save to storage) instead of just reassigning a field.
+	// A real consumer would persist commit.Snapshot here
+	// (engineservice.EncodeSnapshot -> storage) instead of just
+	// reassigning a field.
 	s.snapshot = commit.Snapshot
 
-	// commit.Outputs: declarative things WE need to actually go do.
-	// The engine never does any of this itself - see README.md's Outputs
-	// table. Type-switch over every variant.
+	// commit.Outputs are declarative: the engine never performs any of
+	// these itself (see README.md's Outputs table) — a consumer must.
 	for _, output := range commit.Outputs {
 		switch o := output.(type) {
 		case engine.OpenQuestionOutput:
-			// Remember this so that when the answer comes back (from a
-			// websocket message, an HTTP request, whatever), we know
-			// what it's an answer TO. This is exactly the "map between
-			// what we send to the user and what we receive" bookkeeping
-			// mentioned above.
+			// Remembered so a later answer (arriving as a websocket
+			// message, an HTTP request, whatever) can be matched back to
+			// what it's an answer to.
 			s.pendingQuestions[o.Slot] = o
 			// ... also actually deliver the question to o.Recipient
 			// through whatever real transport this consumer uses.
@@ -170,12 +150,10 @@ func (s *gameSession) applyStep(signal engine.Signal) error {
 			// ... push o.Model / removal to o.Recipient's client.
 
 		case engine.ScheduleTimerOutput:
-			// ... this is a REQUEST to schedule a real timer. The engine
-			// never does this itself - a consumer needs a real scheduler
-			// (a job queue, time.AfterFunc, whatever) that, when it
-			// fires, builds a SignalKindTimerExpired signal and runs it
-			// through applyStep, the same way QuestionAnswered does
-			// below for questions.
+			// ... a request to schedule a real timer: a consumer needs a
+			// real scheduler (a job queue, time.AfterFunc, whatever)
+			// that, when it fires, builds a SignalKindTimerExpired
+			// signal and runs it through applyStep.
 
 		case engine.CancelTimerOutput:
 			// ... cancel whatever real timer was scheduled for this slot.
@@ -184,31 +162,27 @@ func (s *gameSession) applyStep(signal engine.Signal) error {
 			// ... purely cosmetic, deliver-or-don't, never affects state.
 
 		case engine.WorkflowCompletedOutput:
-			// o.Path empty means the ROOT workflow (the whole game
-			// instance) just ended - o.Outcome tells us how (Completed /
-			// Failed / Cancelled). This is the one place a session layer
-			// finds out the game is over and can start wrapping up
-			// (show results, archive the session, etc).
+			// o.Path empty means the root workflow — the whole game
+			// instance — just ended; this is the one place a session
+			// layer finds out the game is over.
 			if len(o.Path) == 0 {
 				fmt.Println("game instance ended:", o.Outcome.Kind)
 			}
 		}
 	}
 
-	// commit.InternalSignals: signals the engine itself still needs
-	// applied, in SEPARATE Step calls (Step never chains these for us).
-	// The most common example is a freshly spawned child workflow's own
-	// "WorkflowStarted" signal. Just feed each one back through
-	// applyStep, same as anything else.
+	// commit.InternalSignals still need to be applied, each as its own
+	// Step call — Step never chains these itself. The most common
+	// example is a freshly spawned child workflow's own
+	// "WorkflowStarted" signal.
 	for _, internal := range commit.InternalSignals {
 		if err := s.applyStep(internal); err != nil {
 			return fmt.Errorf("applying internal signal: %w", err)
 		}
 	}
 
-	// commit.Trace: informational only (logging/debugging/replay
-	// verification) - nothing downstream needs to consume it, so nothing
-	// to do with it here.
+	// commit.Trace is informational only (logging/debugging/replay
+	// verification); nothing downstream needs to consume it here.
 
 	return nil
 }
@@ -231,13 +205,10 @@ func (s *gameSession) HandleUserIntent(actor engine.UserID, intent string, field
 // QuestionAnswered is called whenever a player responds to a question we
 // previously opened (see the OpenQuestionOutput handling above).
 func (s *gameSession) QuestionAnswered(respondent engine.UserID, slot string, answer engine.Value) error {
-	// Here we're supposed to match which question we received the
-	// answer for: slot alone is enough to look it up in the bookkeeping
-	// we built when we handled OpenQuestionOutput above, but a real
-	// implementation should also confirm respondent actually matches
-	// pending.Recipient, and probably reject/no-op if there's nothing
-	// pending for that slot at all (the player answered something we no
-	// longer care about, e.g. after a timeout already closed it).
+	// A real implementation should confirm respondent actually matches
+	// pending.Recipient, and reject/no-op if nothing is pending for this
+	// slot (the player answered something we no longer care about, e.g.
+	// after a timeout already closed it).
 	pending, ok := s.pendingQuestions[slot]
 	if !ok {
 		return fmt.Errorf("no pending question for slot %q", slot)
@@ -246,11 +217,10 @@ func (s *gameSession) QuestionAnswered(respondent engine.UserID, slot string, an
 		return fmt.Errorf("slot %q is not awaiting an answer from %q", slot, respondent)
 	}
 
-	// Building the actual signal: Step itself re-validates all of this
-	// (authorized respondent, response type, any Validation expression)
-	// before ever accepting it - see ErrInputRejected in README.md - so
-	// this session-layer check is just to fail fast / give a clearer
-	// error, not the real authority.
+	// Step itself re-validates all of this (authorized respondent,
+	// response type, any Validation expression) before ever accepting
+	// it — see ErrInputRejected in README.md — so this session-layer
+	// check is just to fail fast, not the real authority.
 	err := s.applyStep(engine.Signal{
 		Kind:       engine.SignalKindQuestionAnswered,
 		Slot:       slot,
@@ -261,21 +231,15 @@ func (s *gameSession) QuestionAnswered(respondent engine.UserID, slot string, an
 		return err
 	}
 
-	// Only clear our own bookkeeping once Step actually accepted it -
-	// applyStep's own handling of CloseQuestionOutput above also does
-	// this whenever the engine closes the slot on its own, so this is
-	// belt-and-suspenders for the case where the slot stays open for a
-	// repeatable question (draft-quality reasoning here, not verified
-	// against actual multi-answer semantics).
+	// Cleared only once Step actually accepted the answer; applyStep's
+	// own CloseQuestionOutput handling also clears this whenever the
+	// engine closes the slot on its own.
 	delete(s.pendingQuestions, slot)
 	return nil
 }
 
 // TimerExpired would be the analogous method for a real timer actually
-// firing (see ScheduleTimerOutput above) - sketched, not filled in, same
-// idea as QuestionAnswered: look up whatever we remembered about this
-// timer slot when we scheduled it, then build a
-// SignalKindTimerExpired signal and applyStep it.
+// firing (see ScheduleTimerOutput above) — sketched, not filled in.
 func (s *gameSession) TimerExpired(slot string) error {
 	return s.applyStep(engine.Signal{
 		Kind: engine.SignalKindTimerExpired,

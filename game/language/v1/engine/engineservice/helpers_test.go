@@ -8,17 +8,14 @@ import (
 	"github.com/diegobermudez03/playhoot/game/language/v1/program"
 )
 
-// This file gathers small local duplicates of fixtures and helpers that
-// used to live alongside the tests that needed them, before those
-// tests (and their fixtures) moved into engine/internal/compiler and
-// engine/internal/runtime. The tests remaining here — genuine
-// engineservice-level logic (CheckSnapshotCompatibility) and
-// cross-package integration tests exercising the full
-// compile->initialize->step pipeline — still need them, but can no
-// longer share code with the packages the originals moved to. Per this
-// codebase's convention for that exact situation (see
-// findInstanceQuestionSlot/findInstanceTimerSlot's history), each side
-// keeps its own minimal copy of just what it needs.
+// This file holds small fixtures and helpers used only by this
+// package's tests: minimal program.TypeReference builders, and
+// hand-built program.Definition/engine.Program fixtures supporting
+// CheckSnapshotCompatibility and the cross-package
+// compile->initialize->step integration tests. They are local, rather
+// than shared with engine/internal/compiler's or engine/internal/runtime's
+// own test fixtures of similar shape, because engineservice cannot
+// import those internal packages' test files.
 
 func numberType() program.TypeReference {
 	return program.BuiltinTypeReference{Type: program.BuiltinTypeNumber}

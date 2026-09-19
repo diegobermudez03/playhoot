@@ -169,10 +169,8 @@ func TestManagerJoin_Integration_DifferentUsersSameKeyDoNotCollide(t *testing.T)
 
 // TestManagerJoin_Integration_PinnedDefinitionImmutability proves Join
 // enforces the Session's pinned game_definition_uuid, never the Game's
-// current version - WORK-0001's Pinned Game Definition Is Immutable For The
-// Session, tested here by simulating "current version changed" directly in
-// the pinned-definition reader rather than a literal publish workflow (as
-// the WORK's acceptance criteria explicitly allows).
+// current version, by simulating "current version changed" directly in the
+// pinned-definition reader rather than through a literal publish workflow.
 func TestManagerJoin_Integration_PinnedDefinitionImmutability(t *testing.T) {
 	db := testdb.OpenSessionDB(t)
 	fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))

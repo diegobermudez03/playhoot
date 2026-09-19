@@ -15,7 +15,7 @@ import (
 // TestManagerCreate_Integration exercises the real public Manager.Create
 // against a real Postgres database (not mocked collaborators), proving the
 // full Host/SessionActor Creation Cycle, JoinCode issuance, and idempotency
-// persistence WORK-0001 requires.
+// persistence.
 func TestManagerCreate_Integration(t *testing.T) {
 	type test struct {
 		gameUUID       GameUUID
@@ -144,7 +144,7 @@ func TestManagerCreate_Integration_DifferentUsersReusingSameKeyDoNotCollide(t *t
 // eventual winner's still-open one is expected to fail with a
 // unique-constraint-violation error rather than gracefully replay - this is
 // the deliberate, simpler design chosen over a claim mechanism that
-// papers over that race (WORK-0001's Concurrent Create Correctness).
+// papers over that race.
 func TestManagerCreate_Integration_Concurrent(t *testing.T) {
 	db := testdb.OpenSessionDB(t)
 	reader := stubCurrentGameReader{versionUUID: uuid.NewString(), definition: compilableDefinitionForTest(4)}

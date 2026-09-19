@@ -107,7 +107,7 @@ type Program struct {
 	// semantically validated — see engineservice's compile_workflows.go.
 	Workflows map[string]Workflow
 
-	// RootWorkflow names the Workflow a future engine step uses to
+	// RootWorkflow names the Workflow engineservice.NewSnapshot uses to
 	// start a new game instance. The compiler guarantees it names an
 	// entry in Workflows.
 	RootWorkflow string

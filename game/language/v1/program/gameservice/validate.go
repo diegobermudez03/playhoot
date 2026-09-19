@@ -640,9 +640,9 @@ func (v *validator) validateWorkflowControl(control program.WorkflowControl, pat
 
 // --- expression validation and static type inference ---
 
-// staticType represents an expression's statically determinable type, or
-// nil if this package cannot determine it without lexical-scope or
-// reference resolution.
+// inferType returns expr's statically determinable type, or nil if this
+// package cannot determine it without lexical-scope or reference
+// resolution.
 func (v *validator) inferType(expr program.Expression) program.TypeReference {
 	switch e := expr.(type) {
 	case nil:

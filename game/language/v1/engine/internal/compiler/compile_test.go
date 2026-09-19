@@ -10,8 +10,8 @@ import (
 
 // withMinimalRootWorkflow adds a trivially valid root workflow to def,
 // for tests that exercise other compiler concerns and don't care about
-// workflow validation, but must satisfy validateRootWorkflow's now-
-// mandatory check to compile without errors.
+// workflow validation, but must satisfy validateRootWorkflow's mandatory
+// check to compile without errors.
 func withMinimalRootWorkflow(def program.Definition) program.Definition {
 	def.Workflows = append(def.Workflows, program.WorkflowDeclaration{
 		Name:         "Main",
