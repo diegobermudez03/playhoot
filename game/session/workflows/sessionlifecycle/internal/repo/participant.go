@@ -50,6 +50,34 @@ func (r *Repo) CountActiveParticipants(ctx context.Context, tx *gorm.DB, session
 	return count, nil
 }
 
+// RosterParticipant is one active Participant selected for Start's
+// `players` root roster (see WORK-0003's Root Roster And Engine
+// Initialization) - only the internal SessionActor id Start needs to
+// derive an opaque `engine.UserID`, never a display name or UserUUID.
+type RosterParticipant struct {
+	ActorID uint `gorm:"column:actor_id"`
+}
+
+// ListActiveParticipantsForRoster returns sessionID's currently active
+// Participants ordered by joined_at ascending (ties broken by internal
+// actor id) - Start's accepted default `players` roster ordering (WORK-0003
+// Blocker 4, human-approved 2026-09-19). This is the same active-Participant
+// set CountActiveParticipants counts, just projected/ordered for roster
+// construction instead of counted.
+func (r *Repo) ListActiveParticipantsForRoster(ctx context.Context, tx *gorm.DB, sessionID uint) ([]RosterParticipant, error) {
+	var rows []RosterParticipant
+	if err := tx.WithContext(ctx).Raw(`
+		SELECT a.id AS actor_id
+		FROM session_participants p
+		INNER JOIN session_actors a ON a.id = p.session_actor_id
+		WHERE a.session_id = ? AND p.active = TRUE
+		ORDER BY p.joined_at ASC, a.id ASC
+	`, sessionID).Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("listing active participants for roster: %s", err)
+	}
+	return rows, nil
+}
+
 type participantInsert struct {
 	ID             uint      `gorm:"column:id"`
 	SessionActorID uint      `gorm:"column:session_actor_id"`

@@ -6,10 +6,10 @@ package session
 
 import "errors"
 
-// Session lifecycle phase values. V1 (this package) only ever observes
-// PhaseLobby and PhaseTerminal; RUNNING is a later slice's concern.
+// Session lifecycle phase values. Slice 2 (Start) introduces PhaseRunning.
 const (
 	PhaseLobby    = "LOBBY"
+	PhaseRunning  = "RUNNING"
 	PhaseTerminal = "TERMINAL"
 )
 
@@ -23,6 +23,20 @@ const (
 // Internal terminal-reason values materialized by this work.
 const (
 	TerminalReasonLobbyExpired = "LOBBY_EXPIRED"
+
+	// TerminalReasonRuntimeExecutionFailed is Start's pre-first-Turn fatal
+	// path (GAME-ADR-0017/0019) for everything downstream of a successful
+	// compile: NewSnapshot/Step returning a non-rejection ExecutionError, an
+	// outright rejection of Start's own initial signal chain, or exceeding
+	// MAX_STEPS_PER_RUNTIME_TURN.
+	TerminalReasonRuntimeExecutionFailed = "RUNTIME_EXECUTION_FAILED"
+
+	// TerminalReasonRuntimeStateInvalid is Start's pre-first-Turn fatal path
+	// for the one narrow case of the pinned Definition unexpectedly failing
+	// to recompile despite having compiled successfully at Create - durable
+	// state invalidity (GAME-ADR-0017), not a deterministic game-execution
+	// failure.
+	TerminalReasonRuntimeStateInvalid = "RUNTIME_STATE_INVALID"
 )
 
 var (

@@ -59,3 +59,72 @@ type stubPinnedGameReader struct {
 func (s stubPinnedGameReader) GetGameDefinition(ctx context.Context, gameDefinitionUUID string) (*program.Definition, error) {
 	return &program.Definition{Players: program.PlayerPolicy{Max: s.playersMax}}, nil
 }
+
+// startableDefinition builds a real, engineservice.Compile-able Definition
+// declaring the accepted `players: list<user>` root roster parameter
+// (game/README.md's Accepted Game Language Root Roster Contract) and a
+// root workflow that actually reacts to WorkflowStarted with StayControl -
+// unlike testutil_test.go's other fixtures (compilableDefinitionForTest,
+// stubPinnedGameReader's minimal stub), which never execute past compile.
+// Start's integration tests need a Definition that both compiles and
+// executes its first RuntimeTurn successfully.
+func startableDefinition(playersMin, playersMax int) program.Definition {
+	return program.Definition{
+		Metadata:     program.Metadata{ID: "startable", Name: "Startable"},
+		RootWorkflow: "Main",
+		Players:      program.PlayerPolicy{Min: playersMin, Max: playersMax},
+		Workflows: []program.WorkflowDeclaration{
+			{
+				Name: "Main",
+				Parameters: []program.FieldDeclaration{
+					{Name: "players", Type: program.ListTypeReference{Element: program.BuiltinTypeReference{Type: program.BuiltinTypeUser}}},
+				},
+				ResultType:   program.BuiltinTypeReference{Type: program.BuiltinTypeUnit},
+				InitialState: "Start",
+				States: []program.WorkflowStateDeclaration{
+					{
+						Name: "Start",
+						Transitions: []program.TransitionDeclaration{
+							{Name: "Started", Signal: program.SignalPattern{Source: program.NamedSignalSource{Name: "WorkflowStarted"}}, Control: program.StayControl{}},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+// nonStartableDefinition builds a Definition that compiles successfully
+// (so Create could pin it) but whose root workflow declares no transition
+// at all for WorkflowStarted - Start's mandatory first Step call is then an
+// outright rejection, forcing the pre-first-Turn RUNTIME_EXECUTION_FAILED
+// fatal path (WORK-0003's Fatal-Path Classification) deterministically, for
+// tests that need to force that path against a real database.
+func nonStartableDefinition(playersMin, playersMax int) program.Definition {
+	return program.Definition{
+		Metadata:     program.Metadata{ID: "non-startable", Name: "NonStartable"},
+		RootWorkflow: "Main",
+		Players:      program.PlayerPolicy{Min: playersMin, Max: playersMax},
+		Workflows: []program.WorkflowDeclaration{
+			{
+				Name:         "Main",
+				ResultType:   program.BuiltinTypeReference{Type: program.BuiltinTypeUnit},
+				InitialState: "Start",
+				States:       []program.WorkflowStateDeclaration{{Name: "Start"}},
+			},
+		},
+	}
+}
+
+// stubStartPinnedGameReader satisfies gamePinnedDefinitionReader with a
+// fixed, caller-supplied Definition, so Start's integration tests can
+// exercise real engineservice.Compile/NewSnapshot/Step execution end to
+// end against whichever fixture (startableDefinition/
+// nonStartableDefinition) a given test case needs.
+type stubStartPinnedGameReader struct {
+	definition program.Definition
+}
+
+func (s stubStartPinnedGameReader) GetGameDefinition(ctx context.Context, gameDefinitionUUID string) (*program.Definition, error) {
+	return &s.definition, nil
+}

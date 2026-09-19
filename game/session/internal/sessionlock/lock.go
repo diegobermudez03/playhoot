@@ -20,8 +20,12 @@ import (
 	"gorm.io/gorm"
 )
 
-// Session is the locked snapshot of a sessions row needed by lobby
-// mutations.
+// Session is the locked snapshot of a sessions row needed by lobby and
+// RUNNING-phase mutations. CurrentTurnID is sessions.current_turn_id - the
+// current-authoritative-RuntimeTurn pointer colocated on sessions rather
+// than a separate session_runtime_state table (GAME-ADR-0023, refining
+// GAME-ADR-0007), since every caller reading it here already holds this
+// same locked row for per-Session serialization.
 type Session struct {
 	ID                 uint
 	UUID               string
@@ -29,6 +33,7 @@ type Session struct {
 	HostActorID        *uint
 	Phase              string
 	LobbyExpiresAt     time.Time
+	CurrentTurnID      *uint
 	TerminalAt         *time.Time
 	TerminalReason     *string
 }
@@ -40,7 +45,7 @@ type Session struct {
 func LockByID(ctx context.Context, tx *gorm.DB, sessionID uint) (*Session, error) {
 	var row Session
 	result := tx.WithContext(ctx).Raw(`
-		SELECT id, uuid, game_definition_uuid, host_actor_id, phase, lobby_expires_at, terminal_at, terminal_reason
+		SELECT id, uuid, game_definition_uuid, host_actor_id, phase, lobby_expires_at, current_turn_id, terminal_at, terminal_reason
 		FROM sessions
 		WHERE id = ?
 		FOR UPDATE
@@ -59,7 +64,7 @@ func LockByID(ctx context.Context, tx *gorm.DB, sessionID uint) (*Session, error
 func LockByUUID(ctx context.Context, tx *gorm.DB, sessionUUID string) (*Session, error) {
 	var row Session
 	result := tx.WithContext(ctx).Raw(`
-		SELECT id, uuid, game_definition_uuid, host_actor_id, phase, lobby_expires_at, terminal_at, terminal_reason
+		SELECT id, uuid, game_definition_uuid, host_actor_id, phase, lobby_expires_at, current_turn_id, terminal_at, terminal_reason
 		FROM sessions
 		WHERE uuid = ?
 		FOR UPDATE

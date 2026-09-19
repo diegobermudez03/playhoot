@@ -58,10 +58,8 @@ func (m *Manager) Leave(ctx context.Context, sessionUUID SessionUUID, userUUID U
 		return LeaveResult{}, session.ErrIdempotencyKeyRequired
 	}
 
-	incomingPayload := leaveRequestPayload{SessionUUID: string(sessionUUID), UserUUID: string(userUUID)}
-
 	return utils.RunInDBTransaction(ctx, m, func(ctx context.Context, tx *gorm.DB) (LeaveResult, error) {
-		return m.leaveSessionInTx(ctx, tx, sessionUUID, userUUID, idempotencyKey, incomingPayload)
+		return m.leaveSessionInTx(ctx, tx, sessionUUID, userUUID, idempotencyKey)
 	})
 }
 
@@ -71,7 +69,9 @@ func (m *Manager) Leave(ctx context.Context, sessionUUID SessionUUID, userUUID U
 // mechanism calls further down this same path require a real Postgres
 // connection to run their SQL, which is instead proven by this package's
 // repository-integration/concurrency tests.
-func (m *Manager) leaveSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID SessionUUID, userUUID UserUUID, idempotencyKey IdempotencyKey, incomingPayload leaveRequestPayload) (LeaveResult, error) {
+func (m *Manager) leaveSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID SessionUUID, userUUID UserUUID, idempotencyKey IdempotencyKey) (LeaveResult, error) {
+	incomingPayload := leaveRequestPayload{SessionUUID: string(sessionUUID), UserUUID: string(userUUID)}
+
 	lockedSession, err := sessionlock.LockByUUID(ctx, tx, string(sessionUUID))
 	if err != nil {
 		return LeaveResult{}, err

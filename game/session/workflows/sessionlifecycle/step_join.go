@@ -108,11 +108,10 @@ func (m *Manager) Join(ctx context.Context, joinCode JoinCode, userUUID UserUUID
 	}
 	playersMax := definition.Players.Max
 
-	incomingPayload := joinRequestPayload{JoinCode: uint(joinCode), UserUUID: string(userUUID), DisplayName: string(displayName)}
 	codeWasRevokedAtResolution := resolution.RevokedAt != nil
 
 	return utils.RunInDBTransaction(ctx, m, func(ctx context.Context, tx *gorm.DB) (JoinResult, error) {
-		return m.joinSessionInTx(ctx, tx, resolution.SessionID, codeWasRevokedAtResolution, playersMax, userUUID, displayName, idempotencyKey, incomingPayload)
+		return m.joinSessionInTx(ctx, tx, resolution.SessionID, codeWasRevokedAtResolution, playersMax, joinCode, userUUID, displayName, idempotencyKey)
 	})
 }
 
@@ -122,7 +121,9 @@ func (m *Manager) Join(ctx context.Context, joinCode JoinCode, userUUID UserUUID
 // mechanism calls further down this same path require a real Postgres
 // connection to run their SQL, which is instead proven by this package's
 // repository-integration/concurrency tests.
-func (m *Manager) joinSessionInTx(ctx context.Context, tx *gorm.DB, sessionID uint, codeWasRevokedAtResolution bool, playersMax int, userUUID UserUUID, displayName DisplayName, idempotencyKey IdempotencyKey, incomingPayload joinRequestPayload) (JoinResult, error) {
+func (m *Manager) joinSessionInTx(ctx context.Context, tx *gorm.DB, sessionID uint, codeWasRevokedAtResolution bool, playersMax int, joinCode JoinCode, userUUID UserUUID, displayName DisplayName, idempotencyKey IdempotencyKey) (JoinResult, error) {
+	incomingPayload := joinRequestPayload{JoinCode: uint(joinCode), UserUUID: string(userUUID), DisplayName: string(displayName)}
+
 	lockedSession, err := sessionlock.LockByID(ctx, tx, sessionID)
 	if err != nil {
 		return JoinResult{}, err

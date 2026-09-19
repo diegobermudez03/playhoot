@@ -46,6 +46,43 @@ type sessionInsert struct {
 
 func (sessionInsert) TableName() string { return "sessions" }
 
+// SetSessionRunning persists Start's successful LOBBY -> RUNNING transition.
+// Expiration/host/roster validation is Start's own business policy, decided
+// before this call; this method only performs the already-decided mutation
+// (`docs/engineering/standards/domain-logic-placement.md`'s Responsibility
+// Categories). updated_at is an audit timestamp the repository stamps
+// itself; startedAt is semantic lifecycle state and remains an explicit
+// input (`repositories.md`'s Timestamp Ownership).
+func (r *Repo) SetSessionRunning(ctx context.Context, tx *gorm.DB, sessionID uint, startedAt time.Time) error {
+	if err := tx.WithContext(ctx).Exec(`
+		UPDATE sessions
+		SET phase = ?, started_at = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?
+	`, session.PhaseRunning, startedAt, sessionID).Error; err != nil {
+		return fmt.Errorf("setting session running: %s", err)
+	}
+	return nil
+}
+
+// SetCurrentTurn advances sessionID's current-authoritative-RuntimeTurn
+// pointer, sessions.current_turn_id - a logical, non-DB-enforced reference
+// colocated on sessions rather than a separate session_runtime_state table
+// (GAME-ADR-0023, refining GAME-ADR-0007): every caller that needs it
+// already holds the locked sessions row for per-Session serialization.
+// Start calls this once, creating the pointer for the Session's first Turn;
+// a later RUNNING-phase caller (Slice 3+) advances the same column for its
+// own committed Turn.
+func (r *Repo) SetCurrentTurn(ctx context.Context, tx *gorm.DB, sessionID uint, currentTurnID uint) error {
+	if err := tx.WithContext(ctx).Exec(`
+		UPDATE sessions
+		SET current_turn_id = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?
+	`, currentTurnID, sessionID).Error; err != nil {
+		return fmt.Errorf("setting session current turn: %s", err)
+	}
+	return nil
+}
+
 // CreateSessionWithHost persists the Host/SessionActor Creation Cycle
 // (WORK-0001): inserts the sessions row with host_actor_id NULL, inserts the
 // host session_actors row, then assigns host_actor_id - one cohesive

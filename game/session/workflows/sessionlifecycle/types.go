@@ -91,3 +91,35 @@ type LeaveResult struct {
 	Outcome     LeaveOutcome `json:"outcome"`
 	SessionUUID SessionUUID  `json:"session_uuid,omitempty"`
 }
+
+// StartOutcome is Start's expected business outcome, a value distinct from
+// a Go error (GAME-ADR-0022).
+type StartOutcome string
+
+const (
+	// StartOutcomeStarted means the Session is now RUNNING with its first
+	// RuntimeTurn committed.
+	StartOutcomeStarted StartOutcome = "STARTED"
+	// StartOutcomeLobbyExpired means the lobby was discovered already
+	// expired and materialized TERMINAL in the same transaction.
+	StartOutcomeLobbyExpired StartOutcome = "LOBBY_EXPIRED"
+	// StartOutcomeNotHost means the resolved SessionActorID is not
+	// sessions.host_actor_id.
+	StartOutcomeNotHost StartOutcome = "NOT_HOST"
+	// StartOutcomeNotEnoughPlayers means active Participant count is below
+	// the pinned Definition's players.min (or, defensively, above
+	// players.max - see WORK-0003's Approved Design).
+	StartOutcomeNotEnoughPlayers StartOutcome = "NOT_ENOUGH_PLAYERS"
+	// StartOutcomeRuntimeInitFailed means the pre-first-Turn fatal path was
+	// taken (GAME-ADR-0017/0019): the Session is now TERMINAL, started_at
+	// remains NULL, and no RuntimeTurn/Step/State was persisted.
+	StartOutcomeRuntimeInitFailed StartOutcome = "RUNTIME_INIT_FAILED"
+)
+
+// StartResult is Start's logical outcome, also the shape persisted as the
+// idempotency record's replayable response payload. SessionUUID is only
+// populated when Outcome is StartOutcomeStarted.
+type StartResult struct {
+	Outcome     StartOutcome `json:"outcome"`
+	SessionUUID SessionUUID  `json:"session_uuid,omitempty"`
+}

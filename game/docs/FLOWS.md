@@ -77,6 +77,63 @@ sequenceDiagram
     Mgr->>Idem: Complete(...)
 ```
 
+## Start Session (First RuntimeTurn)
+
+```mermaid
+sequenceDiagram
+    participant Caller
+    participant Mgr as sessionlifecycle.Manager
+    participant Lock as sessionlock
+    participant Idem as idempotency
+    participant GetDef as getgamedefinition.UseCase
+    participant Engine as engineservice
+    participant Repo as internal/repo
+    participant DB as Session tables
+
+    Caller->>Mgr: Start(sessionUUID, userUUID, idempotencyKey)
+    Mgr->>Lock: LockByUUID(sessionUUID)
+    Mgr->>Mgr: materializeExpirationIfDue(lockedSession, now)
+    Mgr->>Idem: Claim(START, ...)
+    Mgr->>Repo: FindActor(...) / host authority check
+    Mgr->>GetDef: GetGameDefinition(pinned game_definition_uuid)
+    Mgr->>Engine: Compile(definition)
+    alt recompile fails (RUNTIME_STATE_INVALID)
+        Mgr->>Repo: SetSessionTerminal / RevokeActiveJoinCode
+        Mgr->>Idem: Complete(RUNTIME_INIT_FAILED)
+    else recompiles
+        Mgr->>Repo: ListActiveParticipantsForRoster(...)
+        Mgr->>Mgr: players.min/max check
+        Mgr->>Engine: NewSnapshot(program, {players, seed})
+        loop drainRuntimeTurn - up to MAX_STEPS_PER_RUNTIME_TURN=20
+            Mgr->>Engine: Step(program, snapshot, signal, DefaultLimits())
+        end
+        alt initialization fails or exceeds Step bound (RUNTIME_EXECUTION_FAILED)
+            Mgr->>Repo: SetSessionTerminal / RevokeActiveJoinCode
+            Mgr->>Idem: Complete(RUNTIME_INIT_FAILED)
+        else quiescence reached within bound
+            Mgr->>Repo: CreateRuntimeTurn / CreateRuntimeStep(s)
+            Mgr->>Repo: SetSessionRunning (phase, started_at, current_turn_id) / RevokeActiveJoinCode
+            Repo->>DB: phase=RUNNING, started_at, Turn 1, join_codes revoked
+            Mgr->>Idem: Complete(STARTED)
+        end
+    end
+```
+
+Implemented behavior:
+
+- `Start` is a fourth step on the same `sessionlifecycle.Manager`, reusing the identical lock/lazy-expiration/idempotency pattern as Create/Join/Leave, plus the existing `pinnedGameReader` dependency Join already established (no new Game Management capability).
+- Start's own RuntimeTurn execution logic (Step-draining `Commit.InternalSignals` in FIFO order, the `MAX_STEPS_PER_RUNTIME_TURN = 20` bound, and Turn/Step/State persistence) lives inline inside `step_start.go` (`drainRuntimeTurn` and `startSessionInTx`) rather than a separate shared package - a deliberate human decision (2026-09-19, see `docs/work/active/WORK-0003-session-start-first-runtimeturn.md`) that this is workflow execution logic no other current use case calls independently. `drainRuntimeTurn` is a pure function over `engine`/`engineservice` with no persistence dependency, unit-tested directly without a real database connection.
+- `StartOutcomeStarted`/`LobbyExpired`/`NotHost`/`NotEnoughPlayers`/`RuntimeInitFailed` are all returned as `StartResult.Outcome` values alongside a `nil` error (GAME-ADR-0022), including the fatal `RuntimeInitFailed` case, which is recorded as the `START` idempotency claim's completed - and replayable - outcome exactly like any other decline.
+- Two distinct fatal-path terminal reasons are materialized directly `LOBBY -> TERMINAL` with `started_at` left `NULL` and no Turn/Step/State row written: `RUNTIME_STATE_INVALID` (the pinned Definition unexpectedly fails to recompile - a data-integrity anomaly, since it already compiled at Create) and `RUNTIME_EXECUTION_FAILED` (everything else - `NewSnapshot`/`Step` execution errors, an outright rejection of Start's own initial signal chain, or exceeding the 20-Step bound).
+- The `players` root roster is built from active Participants ordered by `joined_at` ascending (ties broken by internal actor id); each `engine.UserValue.ID` is the Participant's internal `session_actors.id`, never `Identity.UserUUID`.
+- A concurrent Start that observes the Session already `RUNNING` (having lost the per-Session lock race to another Start under a different idempotency token) reports `StartOutcomeStarted` directly - it is already-true current state, not a lobby-expiration decline.
+- The current-authoritative-Turn pointer is `sessions.current_turn_id`, not a separate `session_runtime_state` table (GAME-ADR-0023, refining GAME-ADR-0007) - every caller that needs it already holds the locked `sessions` row for per-Session serialization, so colocating it there is free; it is a logical, non-DB-enforced reference like every other reference in this schema.
+
+Evidence:
+
+- `game/session/workflows/sessionlifecycle/step_start.go`, `internal/repo/runtime_turn.go`, `internal/repo/session.go`'s `SetSessionRunning`, `internal/repo/participant.go`'s `ListActiveParticipantsForRoster`
+- `game/session/internal/storage/migrations/2026091900000{0,1}_*.go` (`session_runtime_turns`/`session_runtime_steps`); `sessions.current_turn_id` is added by `game/session/internal/storage/migrations/20260908000001_sessions.go`'s successor migration (see WORK-0003's revision record)
+
 Implemented behavior:
 
 - One `sessionlifecycle.Manager` workflow controller exposes `Create`/`Join`/`Leave` as its steps; it decides all business/lifecycle policy (admission, lazy lobby-expiration, idempotency-replay meaning) and owns transaction scope by calling `utils.RunInDBTransaction` directly (Manager itself satisfies its `DBServicer` contract) - it holds no separate injected `transactor` dependency. Its narrow `internal/repo` persistence layer reports facts and performs the mutations the Manager requests - it decides no policy itself. Each step calls the shared `sessionlock`/`idempotency` mechanism packages directly rather than through repository forwarding methods.
@@ -94,4 +151,4 @@ Evidence:
 
 ## Not Documented As Implemented
 
-- Start, RuntimeTurn/engine execution, the Live Session Coordinator/WebSocket transport, disconnect/reconnect, and inactivity expiration (see `docs/ai/workspaces/active/session-runtime-v1/PLAN.md` Slices 2+).
+- Interaction response processing, the Live Session Coordinator/WebSocket transport, timer obligations, the `session_runtime_failures` diagnostic entity, disconnect/reconnect, and inactivity expiration (see `docs/ai/workspaces/active/session-runtime-v1/PLAN.md` Slices 3+).

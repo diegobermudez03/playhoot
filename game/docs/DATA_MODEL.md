@@ -65,7 +65,7 @@ classDiagram
 
 ## Session Runtime Tables
 
-Status: this replaces the pre-Slice-1 `sessions`/`session_players`/`session_states`/`join_codes` shape - see WORK-0001's Data/Migration Impact. The full accepted design (including the not-yet-implemented RUNNING-phase tables) remains recorded in `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md`.
+Status: this replaces the pre-Slice-1 `sessions`/`session_players`/`session_states`/`join_codes` shape - see WORK-0001's Data/Migration Impact. Slice 2 (WORK-0003) added `session_runtime_turns`/`session_runtime_steps` and `sessions.current_turn_id` (GAME-ADR-0023 - a logical, non-DB-enforced pointer to the current authoritative RuntimeTurn, colocated on `sessions` rather than a separate `session_runtime_state` table). The full accepted design (including the not-yet-implemented RUNNING-phase interaction/timer/failure tables) remains recorded in `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md`.
 
 ```mermaid
 classDiagram
@@ -77,6 +77,7 @@ classDiagram
         phase
         lobby_expires_at
         started_at
+        current_turn_id
         terminal_at
         terminal_reason
         created_at
@@ -116,15 +117,37 @@ classDiagram
         status
         created_at
     }
+    class session_runtime_turns {
+        id
+        session_id
+        sequence
+        source_kind
+        source_interaction_id
+        source_timer_obligation_id
+        actor_id
+        snapshot_payload
+        snapshot_format_version
+        created_at
+    }
+    class session_runtime_steps {
+        id
+        runtime_turn_id
+        step_index
+        commit_payload
+        created_at
+    }
 
     sessions "1" --> "*" session_actors : "session_actors.session_id -> sessions.id"
     sessions "0..1 host" --> "1" session_actors : "sessions.host_actor_id -> session_actors.id"
     session_actors "1" --> "0..1" session_participants : "session_participants.session_actor_id -> session_actors.id"
     sessions "1" --> "*" join_codes : "join_codes.session_id -> sessions.id"
     sessions "0..1" --> "*" session_requests : "session_requests.session_id -> sessions.id"
+    sessions "1" --> "*" session_runtime_turns : "session_runtime_turns.session_id -> sessions.id"
+    session_runtime_turns "0..1" --> "*" sessions : "sessions.current_turn_id -> session_runtime_turns.id (logical, non-DB-enforced)"
+    session_runtime_turns "1" --> "*" session_runtime_steps : "session_runtime_steps.runtime_turn_id -> session_runtime_turns.id"
 ```
 
-`phase` is `LOBBY | TERMINAL` in the currently implemented behavior (Create/Join/Leave); `RUNNING` is not yet reachable. `started_at` is always `NULL` in the currently implemented behavior.
+`phase` is `LOBBY | RUNNING | TERMINAL` in the currently implemented behavior (Create/Join/Leave/Start). `started_at` is set only once Start commits a Session's first RuntimeTurn; it remains `NULL` for a Session still in `LOBBY` or one that fatally terminalized before ever running (`terminal_reason` = `RUNTIME_STATE_INVALID` or `RUNTIME_EXECUTION_FAILED`). `session_runtime_turns.source_interaction_id`/`source_timer_obligation_id`/`actor_id` are always `NULL` in the currently implemented behavior (Start's own Turn never populates them) - Slices 3/5 populate them for their own causes. Only `sequence = 1` currently exists (Start's own first Turn); no later slice that would advance it is implemented yet.
 
 ## Relationship Types
 
@@ -142,6 +165,9 @@ Logical persisted references:
 - `session_participants.session_actor_id -> session_actors.id`
 - `join_codes.session_id -> sessions.id`
 - `session_requests.session_id -> sessions.id`
+- `session_runtime_turns.session_id -> sessions.id`
+- `session_runtime_steps.runtime_turn_id -> session_runtime_turns.id`
+- `sessions.current_turn_id -> session_runtime_turns.id` (GAME-ADR-0023)
 
 Logical cross-capability references within Game (no database FK, same bounded context, independent persistence/transaction ownership per GAME-ADR-0001):
 

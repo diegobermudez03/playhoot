@@ -77,10 +77,8 @@ func (m *Manager) Create(ctx context.Context, gameUUID GameUUID, hostUserUUID Us
 		return CreatedSession{}, session.ErrDefinitionDoesNotCompile
 	}
 
-	incomingPayload := createRequestPayload{GameUUID: string(gameUUID)}
-
 	return utils.RunInDBTransaction(ctx, m, func(ctx context.Context, tx *gorm.DB) (CreatedSession, error) {
-		return m.createSessionInTx(ctx, tx, playableGame.VersionUUID, hostUserUUID, idempotencyKey, incomingPayload)
+		return m.createSessionInTx(ctx, tx, gameUUID, playableGame.VersionUUID, hostUserUUID, idempotencyKey)
 	})
 }
 
@@ -90,7 +88,8 @@ func (m *Manager) Create(ctx context.Context, gameUUID GameUUID, hostUserUUID Us
 // sessionlock/idempotency mechanism calls further down this same path
 // require a real Postgres connection to run their SQL, which is instead
 // proven by this package's repository-integration/concurrency tests.
-func (m *Manager) createSessionInTx(ctx context.Context, tx *gorm.DB, gameDefinitionUUID string, hostUserUUID UserUUID, idempotencyKey IdempotencyKey, incomingPayload createRequestPayload) (CreatedSession, error) {
+func (m *Manager) createSessionInTx(ctx context.Context, tx *gorm.DB, gameUUID GameUUID, gameDefinitionUUID string, hostUserUUID UserUUID, idempotencyKey IdempotencyKey) (CreatedSession, error) {
+	incomingPayload := createRequestPayload{GameUUID: string(gameUUID)}
 	payloadBytes, err := json.Marshal(incomingPayload)
 	if err != nil {
 		return CreatedSession{}, fmt.Errorf("marshaling create request payload: %s", err)

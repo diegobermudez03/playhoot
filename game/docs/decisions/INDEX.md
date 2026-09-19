@@ -32,8 +32,9 @@ This index is the Game decision family under the repository-wide routing model d
 | [GAME-ADR-0020](GAME-ADR-0020-session-runtime-post-commit-client-delivery-semantics.md) | Session Runtime Post-Commit Client Delivery Semantics | ACCEPTED | 2026-09-08 | None | `game/README.md`, `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md` |
 | [GAME-ADR-0021](GAME-ADR-0021-session-lobby-command-idempotency-token-semantics.md) | Session Lobby Command Idempotency Token Semantics | ACCEPTED | 2026-09-16 | None | `game/README.md` |
 | [GAME-ADR-0022](GAME-ADR-0022-session-lobby-business-declines-as-workflow-outcomes.md) | Session Lobby Business Declines As Workflow Outcomes | ACCEPTED | 2026-09-17 | None | `game/README.md` |
+| [GAME-ADR-0023](GAME-ADR-0023-session-runtime-current-turn-pointer-on-sessions.md) | Session Runtime Current-Turn Pointer Lives On `sessions`, Not A Separate Table | ACCEPTED | 2026-09-19 | None | `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md`, `game/README.md`, `game/docs/DATA_MODEL.md`, `game/docs/FLOWS.md` |
 
-Next Game ADR: `GAME-ADR-0023`.
+Next Game ADR: `GAME-ADR-0024`.
 
 These IDs were migrated from the previously centralized global architecture family (`docs/decisions/architecture/`) on 2026-09-07. Historical status, rationale, alternatives, consequences, and created dates were preserved unchanged; only the identifier/location/cross-reference wiring changed. See `docs/decisions/LEGACY_ADR_ID_MAP.md` for the full old-ID -> new-ID mapping.
 

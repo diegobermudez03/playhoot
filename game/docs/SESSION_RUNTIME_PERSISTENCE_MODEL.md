@@ -18,6 +18,7 @@ Rationale and alternatives are recorded in:
 - `game/docs/decisions/GAME-ADR-0018-session-running-mutation-serialization.md` (RUNNING mutations serialize per Session using the same DB-locking mechanism as LOBBY; a RuntimeTurn reloads current state after obtaining serialization; authoritative ordering is defined by serialization/Turn sequence, not arrival timestamps).
 - `game/docs/decisions/GAME-ADR-0019-runtimeturn-execution-bound-and-terminal-cleanup.md` (the `MAX_STEPS_PER_RUNTIME_TURN` bound and its fatal-overflow diagnostic below; the no-ACTIVE-obligations-after-terminalization invariant and closure-provenance fields introduced below; `session_runtime_failures.base_turn_id` nullability and pre-first-Turn fatal Start semantics).
 - `game/docs/decisions/GAME-ADR-0020-session-runtime-post-commit-client-delivery-semantics.md` (durable commit is the correctness boundary; no generic durable client-delivery outbox in V1; resync recovers current truth rather than replaying missed messages; presentation-only effects may be lost).
+- `game/docs/decisions/GAME-ADR-0023-session-runtime-current-turn-pointer-on-sessions.md` (refines GAME-ADR-0007: the current-authoritative-Turn pointer is `sessions.current_turn_id`, not a separate `session_runtime_state` table).
 
 ## Central Concept: RuntimeTurn vs RuntimeStep
 
@@ -27,7 +28,7 @@ One `RuntimeTurn` begins from one external/runtime cause and may execute 1..N in
 
 A RuntimeTurn's internal `engine.Step` chain is bounded by a Session-level `MAX_STEPS_PER_RUNTIME_TURN = 20` (V1 value, code/configuration-defined, not durably persisted per Session), counting every `Step` call in the Turn - the initial externally-caused `Step` plus every subsequent `Step` caused by draining a prior `Step`'s `InternalSignals` - distinct from `engine.Limits`, which bounds work inside one `Step` call only. Exceeding this bound is a deterministic fatal failure recorded through `session_runtime_failures` below (`failure_kind = RUNTIME_EXECUTION`, a stable `runtime_turn_step_limit_exceeded`-equivalent `error_code`); no partial RuntimeTurn is persisted. See GAME-ADR-0019.
 
-RUNNING-phase RuntimeTurn creation participates in the same per-Session serialization boundary already used for LOBBY mutations (database-backed pessimistic locking within Session Runtime's transaction boundary); a RuntimeTurn always executes against `session_runtime_state.current_turn_id`/Snapshot reloaded after that serialization is acquired, never against a pre-lock read. See GAME-ADR-0018.
+RUNNING-phase RuntimeTurn creation participates in the same per-Session serialization boundary already used for LOBBY mutations (database-backed pessimistic locking within Session Runtime's transaction boundary); a RuntimeTurn always executes against `sessions.current_turn_id`/Snapshot reloaded after that serialization is acquired, never against a pre-lock read. See GAME-ADR-0018.
 
 ## SessionActor Semantic Presence vs Participant Admission
 
@@ -118,6 +119,7 @@ classDiagram
         lobby_expires_at
         activity_expires_at
         started_at
+        current_turn_id
         terminal_at
         terminal_reason
         created_at
@@ -148,11 +150,6 @@ classDiagram
         step_index
         commit_payload
         created_at
-    }
-    class session_runtime_state {
-        session_id
-        current_turn_id
-        updated_at
     }
     class session_interactions {
         id
@@ -187,8 +184,7 @@ classDiagram
 
     sessions "1" --> "*" session_runtime_turns : "session_runtime_turns.session_id -> sessions.id"
     session_runtime_turns "1" --> "*" session_runtime_steps : "session_runtime_steps.runtime_turn_id -> session_runtime_turns.id"
-    sessions "1" --> "1" session_runtime_state : "session_runtime_state.session_id -> sessions.id"
-    session_runtime_turns "1" --> "0..1" session_runtime_state : "session_runtime_state.current_turn_id -> session_runtime_turns.id"
+    session_runtime_turns "0..1" --> "*" sessions : "sessions.current_turn_id -> session_runtime_turns.id (logical, non-DB-enforced - GAME-ADR-0023)"
     sessions "1" --> "*" session_interactions : "session_interactions.session_id -> sessions.id"
     session_actors "1" --> "*" session_interactions : "session_interactions.session_actor_id -> session_actors.id"
     session_runtime_turns "1 opens" --> "*" session_interactions : "session_interactions.opened_by_turn_id -> session_runtime_turns.id"
@@ -201,7 +197,7 @@ classDiagram
     session_actors "0..1" --> "*" session_runtime_turns : "session_runtime_turns.actor_id -> session_actors.id"
 ```
 
-`session_runtime_state` duplicates no Snapshot payload: current Session runtime state is defined as the Snapshot stored on the Turn referenced by `current_turn_id`.
+`sessions.current_turn_id` duplicates no Snapshot payload: current Session runtime state is defined as the Snapshot stored on the Turn it references (GAME-ADR-0023, refining GAME-ADR-0007 - no separate `session_runtime_state` table exists).
 
 ### Turn / Interaction / Timer Worked Example
 
@@ -288,7 +284,7 @@ Cardinality notes:
 - `error_code` may hold either the engine's existing `ExecutionErrorCode` or a Session-owned stable code such as `runtime_turn_step_limit_exceeded` for the RuntimeTurn Step-chain-overflow case (GAME-ADR-0019), so operators can distinguish it from every other `RUNTIME_EXECUTION` cause.
 - `source_interaction_id`/`source_timer_obligation_id`/`actor_id` are nullable, mirroring the equivalent nullable `source_*` fields already accepted on `session_runtime_turns`.
 - `attempted_sequence` and `failed_step_index` are plain diagnostic integers, not foreign keys - they do not reference any row in `session_runtime_turns`/`session_runtime_steps`, since the attempted Turn/Step never committed and therefore never existed as a persisted row (see GAME-ADR-0017's RuntimeTurn failure boundary).
-- `SessionRuntimeFailure` is not a RuntimeTurn: it owns no Snapshot, does not advance `session_runtime_state.current_turn_id`, and is never itself the `base_turn_id`/`source_*` target of another Turn or failure record.
+- `SessionRuntimeFailure` is not a RuntimeTurn: it owns no Snapshot, does not advance `sessions.current_turn_id`, and is never itself the `base_turn_id`/`source_*` target of another Turn or failure record.
 
 ## No Durable `live_timer_schedules` In V1
 
@@ -307,7 +303,7 @@ Cardinality notes:
 
 ## Process-Agnostic Recovery
 
-Session Runtime does not persist any process/instance ownership state (no `owner_process_id`, no heartbeat, no fencing/takeover generation, no durable `RECOVERING` phase). Recovery of a `RUNNING` Session reconstructs current state from `sessions`, `session_runtime_state.current_turn_id`, the final Snapshot stored on that RuntimeTurn, active `session_interactions`, and active `session_timer_obligations` - not by replaying `session_runtime_turns`/`session_runtime_steps` history. An uncommitted RuntimeTurn transaction at the moment of process death rolls back entirely via ordinary database transaction atomicity; a committed RuntimeTurn remains authoritative regardless of which process executed it or what happened immediately after commit. See GAME-ADR-0013.
+Session Runtime does not persist any process/instance ownership state (no `owner_process_id`, no heartbeat, no fencing/takeover generation, no durable `RECOVERING` phase). Recovery of a `RUNNING` Session reconstructs current state from `sessions` (including `current_turn_id`), the final Snapshot stored on that RuntimeTurn, active `session_interactions`, and active `session_timer_obligations` - not by replaying `session_runtime_turns`/`session_runtime_steps` history. An uncommitted RuntimeTurn transaction at the moment of process death rolls back entirely via ordinary database transaction atomicity; a committed RuntimeTurn remains authoritative regardless of which process executed it or what happened immediately after commit. See GAME-ADR-0013.
 
 Total process loss does not itself mutate `session_actors.semantic_presence` (GAME-ADR-0015); durable `CONNECTED`/`DISCONNECTED` values are ordinary rows unaffected by ephemeral Coordinator state loss, requiring no recovery-specific persistence. For a RUNNING runtime member, the `semantic_presence` transition (`CONNECTED <-> DISCONNECTED`) and its corresponding `UserDisconnected`/`UserReconnected` Game Language processing commit within one Session transaction, extending the same RuntimeTurn atomicity guarantee above to the presence mutation itself: if the transaction does not commit, the presence edge did not occur authoritatively and durable state remains at its prior value; if it commits, presence and any resulting RuntimeTurn/consequences are already authoritative together. No new column/table is introduced for this - `session_actors.semantic_presence` already exists (GAME-ADR-0015), and Coordinator's post-crash recovery-grace mechanism remains entirely ephemeral, non-durable state. See GAME-ADR-0016.
 
@@ -368,7 +364,6 @@ Hot runtime/history tables become an explicit hard-delete exception only after: 
 
 Candidate removable hot runtime data:
 
-- `session_runtime_state`
 - `session_runtime_turns`
 - `session_runtime_steps`
 - `session_interactions`
@@ -376,6 +371,7 @@ Candidate removable hot runtime data:
 
 Explicitly excluded from this deletion policy, and retained indefinitely for product queries (a User's session history, who hosted a Session, who participated):
 
+- `sessions` (including `current_turn_id` - GAME-ADR-0023: a logical, non-DB-enforced reference that keeps identifying the Session's last-current Turn even after that Turn's own row is hard-deleted, resolving against the archive artifact instead)
 - `session_actors`
 - `session_participants`
 
