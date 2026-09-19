@@ -1,20 +1,29 @@
-# Slice 2 — Start + First RuntimeTurn: READY (Human-Approved 2026-09-19)
+# Slice 3 — Interaction Response Processing: DRAFT (Awaiting Review)
 
-Process: Feature Development (Slice 2 of `session-runtime-v1`; architecture is CLOSED, the broader initiative remains governed by `PLAN.md`)
+Process: Feature Development (Slice 3 of `session-runtime-v1`; architecture is CLOSED, the broader initiative remains governed by `PLAN.md`)
 
-Status: **RESOLVED.** `docs/work/active/WORK-0003-session-start-first-runtimeturn.md` moved DRAFT -> READY on 2026-09-19 after the human resolved all four Blockers below. This supersedes the prior checkpoint in this file (the DRAFT proposal awaiting review).
+Status: **DRAFT PROPOSED, 2026-09-19.** `docs/work/active/WORK-0004-interaction-response-processing.md` was created as DRAFT after reconciling Slice 3's design against the actual post-Slice-2 codebase (GAME-ADR-0007/0018/0019, the engine's actual `OpenQuestionOutput`/`SignalKindQuestionAnswered`/`SignalKindAskGroupAnswered` API, and `step_start.go`'s actual implementation). This supersedes the prior checkpoint in this file (Slice 2's READY-approval record, now historical - see `docs/work/completed/WORK-0003-session-start-first-runtimeturn.md` for that record).
 
-## Resolution Of The Four Material Decisions
+## What This Slice Delivers
 
-1. **Where the common RuntimeTurn execution logic lives.** Proposed a new shared package, `game/session/internal/runtimeturn`. **Human decision: rejected.** Reason given: this is workflow execution logic that no other use case will call - it belongs inside `step_start.go`, the workflow step that actually performs the execution, not a horizontal shared package. A shared package is deferred until Slice 3 (interaction responses) actually needs to reuse this logic; WORK-0003's Approved Design and Scope were revised accordingly (RuntimeTurn Execution Logic subsection, inline in `step_start.go`).
-2. **Fatal-failure classification split** (`RUNTIME_STATE_INVALID` for a pinned-Definition recompile failure; `RUNTIME_EXECUTION_FAILED` for everything else, including an outright rejection of Start's own initial signal). **Approved as proposed.**
-3. **Replaying a fatal Start via idempotency** (`StartOutcomeRuntimeInitFailed` replays as a completed outcome on retry, never re-attempted). **Approved as proposed.**
-4. **`players` root-roster ordering** (ascending `joined_at`, first to join is `players[0]`). **Approved as proposed.**
+A player can answer an open interaction against a `RUNNING` Session, entirely at the Go-API level: Session Runtime obtains RUNNING-phase per-Session serialization (GAME-ADR-0018, extending the existing LOBBY locking mechanism unchanged), reloads current state, applies the response through the engine, and persists the resulting RuntimeTurn while resolving the answered `session_interactions` row.
+
+**A real gap was found while designing this**, not previously visible: no Turn-producing code today persists `session_interactions` at all - `step_start.go`'s own first Turn can open a question and nothing durable would ever record it. This WORK is also where that capture is introduced.
+
+## Five Material Decisions Needing Your Resolution
+
+WORK-0004's Blockers section has the full reasoning for each; summarized here for a quick decision:
+
+1. **New sibling workflow package (`game/session/workflows/runtimeexecution`) vs. adding `AnswerInteraction` onto the existing `sessionlifecycle.Manager`.** Proposed: new sibling package - Create/Join/Leave/Start is an "admission into a running game" lifecycle; interaction/timer/presence processing is a materially distinct "progressing a running game" process with its own concurrency model, expected to grow (Slices 5/7 add `TimerExpired`/disconnect-reconnect to the same new package).
+2. **Extract the shared RuntimeTurn Step-draining/bound execution logic now** (`game/session/internal/runtimeturn`), reversing Slice 2's deferral now that a second real caller needs it - exactly the condition you set when rejecting it at Slice 2. `step_start.go` would be refactored to call the extracted function; nothing about its behavior changes.
+3. **Retrofit `step_start.go` to also capture interactions opened by its own first Turn**, so a game that opens a question immediately at Start actually works with this feature. Proposed: yes, in this WORK's scope, since leaving it out would silently break the most natural authored-game shape.
+4. **How to determine whether an opened interaction is a `Question` or an `AskGroup`** (needed to construct the correct signal kind on response) - proposed: read it off the compiled `engine.Program`'s own slot declaration at capture time and persist it on the row. Flagged as not yet deeply verified against the compiler's actual internal shape.
+5. **Narrow terminal-cleanup scope**: when this slice's own fatal path terminates a Session, should it close any still-`ACTIVE` interactions itself (a small, path-scoped instance of GAME-ADR-0019's general invariant), or is leaving that gap until Slice 6's general sweep acceptable? Proposed: implement the narrow case now - this is the first slice where a fatal failure could leave a real `ACTIVE` interaction behind.
 
 ## Consequence
 
-`WORK-0003` is now **READY**. A future Codebase Agent session may implement it following the READY specification and `docs/ai/protocols/IMPLEMENTATION_REVIEW.md`. No Slice 2 implementation has begun yet.
+`WORK-0004` remains **DRAFT** - no implementation authority - until you resolve the five items above (approve as proposed, or redirect, per item). Once resolved, the DRAFT is revised in place and moved to READY, exactly as WORK-0003 was.
 
 ## Next Human Action
 
-None required for this checkpoint. Implementation may proceed per the Feature Development protocol's Handoff step.
+Review and resolve the five Blockers above (or ask for more detail on any of them) so this can move DRAFT -> READY.
