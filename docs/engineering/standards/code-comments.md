@@ -154,6 +154,35 @@ references to the AI session or task that introduced the code, or migration
 narration — unless compatibility with old behavior is an active runtime
 requirement. Use git history, WORK documents, or ADRs for that information.
 
+This includes narrating *how* a piece of reasoning was arrived at — "found
+by independent review", "per explicit human direction (2026-09-19)",
+"discovered via real-Postgres verification", "fixed after code review",
+"per this session's instructions". A comment documents the code's contract
+and behavior, not the provenance of the sentence itself. If the reasoning is
+worth keeping, state it directly as a property of the code:
+
+```go
+// Bad: narrates the review/discovery process that produced the code.
+// If the Session is already RUNNING, a different token's Start already won
+// (found by independent review - reachable without any race, e.g. a
+// client auto-retrying with a fresh key after a prior fatal failure).
+// Reporting Started here too is harmless and consistent, since the
+// operation is naturally idempotent.
+```
+
+```go
+// Good: states the behavior and its reason, nothing about how it was found.
+// If the Session is already RUNNING, a different token's Start already
+// won; reporting Started here too is harmless and consistent, since the
+// operation is naturally idempotent regardless of who actually caused it.
+```
+
+A reader should never be able to tell, from a comment alone, that a review
+happened, when a decision was made, or which task/WORK/ADR number produced
+the line — except a direct ADR/standard citation used the same way a code
+comment cites any other stable design document (e.g. `(GAME-ADR-0022)`),
+never narrated as "the human approved this on \<date\>" or "per WORK-0003".
+
 ## No Artificial Coupling
 
 A comment on one symbol should not need to change merely because an

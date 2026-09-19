@@ -197,6 +197,15 @@ func TestManagerStart_Integration(t *testing.T) {
 		second, err := m.Start(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(hostUUID), "start-key-fatal")
 		require.NoError(t, err)
 		require.Equal(t, first, second)
+
+		// A *differently*-tokened Start against the same already-fatally-
+		// terminalized Session (no prior claim for this token, so no replay
+		// applies) must still report RuntimeInitFailed, never LobbyExpired -
+		// the Session is TERMINAL because Start's own initialization
+		// deterministically failed, not because the lobby timed out.
+		third, err := m.Start(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(hostUUID), "start-key-fatal-different-token")
+		require.NoError(t, err)
+		require.Equal(t, StartOutcomeRuntimeInitFailed, third.Outcome)
 	})
 
 	t.Run("two_concurrent_starts_never_both_execute_a_runtime_turn", func(t *testing.T) {

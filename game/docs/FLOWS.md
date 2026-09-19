@@ -94,27 +94,38 @@ sequenceDiagram
     Mgr->>Lock: LockByUUID(sessionUUID)
     Mgr->>Mgr: materializeExpirationIfDue(lockedSession, now)
     Mgr->>Idem: Claim(START, ...)
-    Mgr->>Repo: FindActor(...) / host authority check
-    Mgr->>GetDef: GetGameDefinition(pinned game_definition_uuid)
-    Mgr->>Engine: Compile(definition)
-    alt recompile fails (RUNTIME_STATE_INVALID)
-        Mgr->>Repo: SetSessionTerminal / RevokeActiveJoinCode
-        Mgr->>Idem: Complete(RUNTIME_INIT_FAILED)
-    else recompiles
-        Mgr->>Repo: ListActiveParticipantsForRoster(...)
-        Mgr->>Mgr: players.min/max check
-        Mgr->>Engine: NewSnapshot(program, {players, seed})
-        loop drainRuntimeTurn - up to MAX_STEPS_PER_RUNTIME_TURN=20
-            Mgr->>Engine: Step(program, snapshot, signal, DefaultLimits())
-        end
-        alt initialization fails or exceeds Step bound (RUNTIME_EXECUTION_FAILED)
-            Mgr->>Repo: SetSessionTerminal / RevokeActiveJoinCode
-            Mgr->>Idem: Complete(RUNTIME_INIT_FAILED)
-        else quiescence reached within bound
-            Mgr->>Repo: CreateRuntimeTurn / CreateRuntimeStep(s)
-            Mgr->>Repo: SetSessionRunning (phase, started_at, current_turn_id) / RevokeActiveJoinCode
-            Repo->>DB: phase=RUNNING, started_at, Turn 1, join_codes revoked
+    alt existing claim for this token
+        Mgr->>Mgr: replay its recorded Outcome (Started/NotHost/NotEnoughPlayers/RuntimeInitFailed/LobbyExpired)
+    else no existing claim (fresh command)
+        alt phase == RUNNING (a different token already started it)
             Mgr->>Idem: Complete(STARTED)
+        else phase == TERMINAL
+            Mgr->>Mgr: pick outcome from terminal_reason - LobbyExpired only if lobby-expiration, otherwise RuntimeInitFailed
+            Mgr->>Idem: Complete(outcome)
+        else phase == LOBBY
+            Mgr->>Repo: FindActor(...) / host authority check
+            Mgr->>GetDef: GetGameDefinition(pinned game_definition_uuid)
+            Mgr->>Engine: Compile(definition)
+            alt recompile fails (RUNTIME_STATE_INVALID)
+                Mgr->>Repo: SetSessionTerminal / RevokeActiveJoinCode
+                Mgr->>Idem: Complete(RUNTIME_INIT_FAILED)
+            else recompiles
+                Mgr->>Repo: ListActiveParticipantsForRoster(...)
+                Mgr->>Mgr: players.min/max check
+                Mgr->>Engine: NewSnapshot(program, {players, seed})
+                loop drainRuntimeTurn - up to MAX_STEPS_PER_RUNTIME_TURN=20
+                    Mgr->>Engine: Step(program, snapshot, signal, DefaultLimits())
+                end
+                alt initialization fails or exceeds Step bound (RUNTIME_EXECUTION_FAILED)
+                    Mgr->>Repo: SetSessionTerminal / RevokeActiveJoinCode
+                    Mgr->>Idem: Complete(RUNTIME_INIT_FAILED)
+                else quiescence reached within bound
+                    Mgr->>Repo: CreateRuntimeTurn / CreateRuntimeStep(s)
+                    Mgr->>Repo: SetSessionRunning (phase, started_at, current_turn_id) / RevokeActiveJoinCode
+                    Repo->>DB: phase=RUNNING, started_at, Turn 1, join_codes revoked
+                    Mgr->>Idem: Complete(STARTED)
+                end
+            end
         end
     end
 ```
@@ -126,7 +137,7 @@ Implemented behavior:
 - `StartOutcomeStarted`/`LobbyExpired`/`NotHost`/`NotEnoughPlayers`/`RuntimeInitFailed` are all returned as `StartResult.Outcome` values alongside a `nil` error (GAME-ADR-0022), including the fatal `RuntimeInitFailed` case, which is recorded as the `START` idempotency claim's completed - and replayable - outcome exactly like any other decline.
 - Two distinct fatal-path terminal reasons are materialized directly `LOBBY -> TERMINAL` with `started_at` left `NULL` and no Turn/Step/State row written: `RUNTIME_STATE_INVALID` (the pinned Definition unexpectedly fails to recompile - a data-integrity anomaly, since it already compiled at Create) and `RUNTIME_EXECUTION_FAILED` (everything else - `NewSnapshot`/`Step` execution errors, an outright rejection of Start's own initial signal chain, or exceeding the 20-Step bound).
 - The `players` root roster is built from active Participants ordered by `joined_at` ascending (ties broken by internal actor id); each `engine.UserValue.ID` is the Participant's internal `session_actors.id`, never `Identity.UserUUID`.
-- A concurrent Start that observes the Session already `RUNNING` (having lost the per-Session lock race to another Start under a different idempotency token) reports `StartOutcomeStarted` directly - it is already-true current state, not a lobby-expiration decline.
+- The idempotency claim is attempted before any phase-based decision, so a same-token retry always replays its own recorded outcome first, regardless of the Session's current phase; only a token with no existing claim (a genuinely fresh command) falls through to a phase-based decision. A concurrent Start that observes the Session already `RUNNING` (a different token already won the lock race) reports `StartOutcomeStarted` directly - already-true current state, not a lobby-expiration decline. A fresh command against an already-`TERMINAL` Session reports the outcome its actual `terminal_reason` explains - `StartOutcomeLobbyExpired` only for lobby expiration, `StartOutcomeRuntimeInitFailed` for a Session terminalized by an earlier Start's own fatal path - never unconditionally the former.
 - The current-authoritative-Turn pointer is `sessions.current_turn_id`, not a separate `session_runtime_state` table (GAME-ADR-0023, refining GAME-ADR-0007) - every caller that needs it already holds the locked `sessions` row for per-Session serialization, so colocating it there is free; it is a logical, non-DB-enforced reference like every other reference in this schema.
 
 Evidence:

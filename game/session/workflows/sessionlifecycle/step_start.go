@@ -48,6 +48,7 @@ const (
 	outcomeNotHost           = "NOT_HOST"
 	outcomeNotEnoughPlayers  = "NOT_ENOUGH_PLAYERS"
 	outcomeRuntimeInitFailed = "RUNTIME_INIT_FAILED"
+	outcomeLobbyExpired      = "LOBBY_EXPIRED"
 )
 
 // startRepoAPI is Start's own narrow persistence contract (see
@@ -114,23 +115,12 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 	if _, err := materializeExpirationIfDue(ctx, tx, m.startRepo, lockedSession, now); err != nil {
 		return StartResult{}, err
 	}
-	if lockedSession.Phase == session.PhaseRunning {
-		// A concurrent Start (a different idempotency token racing this
-		// same call for lock acquisition) already won and committed Turn 1:
-		// this is not a lobby-expiration decline, it is simply already-true
-		// current state, accurately reported as the same outcome a caller
-		// who actually won the race would see.
-		return StartResult{Outcome: StartOutcomeStarted, SessionUUID: SessionUUID(lockedSession.UUID)}, nil
-	}
-	if lockedSession.Phase != session.PhaseLobby {
-		// A rejection discovered before any idempotency claim is attempted
-		// never reaches session_requests at all - there is no token-scoped
-		// outcome to record. Any materialization above must still commit
-		// even though this attempted Start is rejected - it already has,
-		// via this same callback's eventual successful return.
-		return StartResult{Outcome: StartOutcomeLobbyExpired}, nil
-	}
 
+	// Claimed before any phase-based decision: unlike Join/Leave, Start's
+	// own action can itself drive the Session to TERMINAL or RUNNING, so a
+	// same-token retry must replay that already-recorded outcome via
+	// interpretExistingStartClaim below rather than re-derive an answer from
+	// current phase as if this were a fresh command.
 	payloadBytes, err := json.Marshal(incomingPayload)
 	if err != nil {
 		return StartResult{}, fmt.Errorf("marshaling start request payload: %s", err)
@@ -147,6 +137,42 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 	}
 	if existing != nil {
 		return interpretExistingStartClaim(existing, incomingPayload)
+	}
+
+	// No prior claim exists for this token, so it is evaluated as a fresh
+	// command against current state, mirroring Join/Leave's own pre-claim
+	// rejections.
+	//
+	// If the Session is already RUNNING, a different token's Start already
+	// won; reporting Started here too is harmless and consistent, since the
+	// operation is naturally idempotent regardless of who actually caused
+	// it. Completing this claim lets a later retry under this same token
+	// replay the same answer.
+	//
+	// If the Session is TERMINAL, the outcome reflects its actual
+	// terminal_reason instead of always assuming lobby expiration, so a
+	// Session terminalized by Start's own fatal path is reported as
+	// RuntimeInitFailed rather than mislabeled as a lobby timeout.
+	if lockedSession.Phase == session.PhaseRunning {
+		result := StartResult{Outcome: StartOutcomeStarted, SessionUUID: SessionUUID(lockedSession.UUID)}
+		responseBytes, err := json.Marshal(result)
+		if err != nil {
+			return StartResult{}, fmt.Errorf("marshaling start response payload: %s", err)
+		}
+		if err := idempotency.Complete(ctx, tx, requestID, &lockedSession.ID, outcomeStarted, string(responseBytes)); err != nil {
+			return StartResult{}, fmt.Errorf("completing start session request: %s", err)
+		}
+		return result, nil
+	}
+	if lockedSession.Phase != session.PhaseLobby {
+		outcome, resultOutcome := outcomeLobbyExpired, StartOutcomeLobbyExpired
+		if lockedSession.TerminalReason != nil && *lockedSession.TerminalReason != session.TerminalReasonLobbyExpired {
+			outcome, resultOutcome = outcomeRuntimeInitFailed, StartOutcomeRuntimeInitFailed
+		}
+		if err := idempotency.Complete(ctx, tx, requestID, &lockedSession.ID, outcome, ""); err != nil {
+			return StartResult{}, fmt.Errorf("completing start session request: %s", err)
+		}
+		return StartResult{Outcome: resultOutcome}, nil
 	}
 
 	// A missing actor is indistinguishable from "not the host" for this
@@ -322,6 +348,8 @@ func interpretExistingStartClaim(existing *idempotency.Request, incoming startRe
 		return StartResult{Outcome: StartOutcomeNotEnoughPlayers}, nil
 	case outcomeRuntimeInitFailed:
 		return StartResult{Outcome: StartOutcomeRuntimeInitFailed}, nil
+	case outcomeLobbyExpired:
+		return StartResult{Outcome: StartOutcomeLobbyExpired}, nil
 	}
 
 	if existing.ResponsePayload == nil {
