@@ -1,10 +1,11 @@
 // Package idempotency implements the shared session_requests claim
-// mechanics reused by CreateSession/JoinSession/LeaveSession: atomically
-// claiming a (user_uuid, operation, idempotency_key) identity before any
-// mutating effect happens, and completing a claim with its logical outcome.
-// It owns no per-operation business policy (meaningful-field comparison,
-// conflict vs. replay interpretation): that stays with each use case, which
-// understands its own request/response payload shapes.
+// mechanics reused by the Session lifecycle workflow's Create/Join/Leave
+// steps: atomically claiming a (user_uuid, operation, idempotency_key)
+// identity before any mutating effect happens, and completing a claim with
+// its logical outcome. It owns no per-operation business policy
+// (meaningful-field comparison, conflict vs. replay interpretation): that
+// stays with each step, which understands its own request/response payload
+// shapes.
 package idempotency
 
 import (
@@ -12,7 +13,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/diegobermudez03/playhoot/game/session/internal/pgerrs"
 	"gorm.io/gorm"
 )
 
@@ -22,8 +22,9 @@ const (
 	StatusCompleted = "COMPLETED"
 )
 
-// Row is a persisted session_requests record.
-type Row struct {
+// Request is a persisted session_requests record, as seen by the workflow
+// code that claims/replays it.
+type Request struct {
 	ID              uint
 	Operation       string
 	UserUUID        string
@@ -44,54 +45,74 @@ type ClaimInput struct {
 	RequestPayload string
 }
 
-type claimInsert struct {
-	ID             uint   `gorm:"column:id"`
-	Operation      string `gorm:"column:operation"`
-	IdempotencyKey string `gorm:"column:idempotency_key"`
-	UserUUID       string `gorm:"column:user_uuid"`
-	SessionID      *uint  `gorm:"column:session_id"`
-	RequestPayload string `gorm:"column:request_payload"`
-	Outcome        string `gorm:"column:outcome"`
-	Status         string `gorm:"column:status"`
+// claimRow is the physical row shape returned by the claim upsert, including
+// the xmax-derived Inserted flag distinguishing a fresh claim from an
+// already-existing identity (see Claim's doc comment).
+type claimRow struct {
+	ID              uint    `gorm:"column:id"`
+	Operation       string  `gorm:"column:operation"`
+	UserUUID        string  `gorm:"column:user_uuid"`
+	IdempotencyKey  string  `gorm:"column:idempotency_key"`
+	SessionID       *uint   `gorm:"column:session_id"`
+	RequestPayload  string  `gorm:"column:request_payload"`
+	Outcome         string  `gorm:"column:outcome"`
+	ResponsePayload *string `gorm:"column:response_payload"`
+	Status          string  `gorm:"column:status"`
+	Inserted        bool    `gorm:"column:inserted"`
 }
 
-func (claimInsert) TableName() string { return "session_requests" }
-
-// Claim attempts to atomically own (user_uuid, operation, idempotency_key)
-// by inserting a PENDING session_requests row.
+// Claim attempts to atomically own (user_uuid, operation, idempotency_key).
 //
-// If claimed is true, requestID identifies the freshly inserted row; the
-// caller owns it and must later call Complete inside the same transaction.
-// If claimed is false, existing holds the already-owned row found via the
-// same unique identity, for the caller to interpret as a replay or a
-// conflict.
-func Claim(ctx context.Context, tx *gorm.DB, input ClaimInput) (requestID uint, claimed bool, existing *Row, err error) {
-	row := claimInsert{
-		Operation:      input.Operation,
-		IdempotencyKey: input.IdempotencyKey,
-		UserUUID:       input.UserUUID,
-		SessionID:      input.SessionID,
-		RequestPayload: input.RequestPayload,
-		Outcome:        "",
-		Status:         StatusPending,
+// If requestID != 0, the caller acquired a fresh claim and must later call
+// Complete inside the same transaction. If existing != nil, the identity was
+// already owned by a prior request, for the caller to interpret as a replay
+// or a conflict. These two outcomes are mutually exclusive
+// (`docs/engineering/standards/idempotency.md`'s Claim Mechanism Contract).
+//
+// The claim is performed as a single INSERT ... ON CONFLICT DO UPDATE
+// upsert, using Postgres's xmax system column to tell an insert from a
+// conflict-resolution update, rather than INSERT ... ON CONFLICT DO NOTHING
+// followed by a separate SELECT for the existing row. A separate
+// snapshot-bound SELECT after a DO NOTHING no-op can fail to observe a
+// concurrently committed row for the remainder of a REPEATABLE READ
+// transaction (the isolation level `utils.RunInDBTransaction` runs under),
+// even though the row now exists - the DO UPDATE variant instead always
+// returns exactly one row, computed from current data by the same statement
+// that resolved the conflict, so the caller reliably observes the winning
+// claim regardless of when it committed relative to this transaction's
+// snapshot.
+func Claim(ctx context.Context, tx *gorm.DB, input ClaimInput) (requestID uint, existing *Request, err error) {
+	var row claimRow
+	result := tx.WithContext(ctx).Raw(`
+		INSERT INTO session_requests (operation, idempotency_key, user_uuid, session_id, request_payload, outcome, status)
+		VALUES (?, ?, ?, ?, ?, '', ?)
+		ON CONFLICT (user_uuid, operation, idempotency_key)
+		DO UPDATE SET operation = session_requests.operation
+		RETURNING
+			id, operation, user_uuid, idempotency_key, session_id, request_payload, outcome, response_payload, status,
+			(xmax = 0) AS inserted
+	`, input.Operation, input.IdempotencyKey, input.UserUUID, input.SessionID, input.RequestPayload, StatusPending).Scan(&row)
+	if result.Error != nil {
+		return 0, nil, fmt.Errorf("claiming idempotency identity: %s", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return 0, nil, errors.New("idempotency claim upsert returned no row")
 	}
 
-	if createErr := tx.WithContext(ctx).Create(&row).Error; createErr != nil {
-		if !pgerrs.IsUniqueViolation(createErr) {
-			return 0, false, nil, fmt.Errorf("inserting idempotency claim: %s", createErr)
-		}
-
-		existingRow, findErr := find(ctx, tx, input.Operation, input.UserUUID, input.IdempotencyKey)
-		if findErr != nil {
-			return 0, false, nil, findErr
-		}
-		if existingRow == nil {
-			return 0, false, nil, errors.New("idempotency claim conflicted but no existing row was found")
-		}
-		return 0, false, existingRow, nil
+	if row.Inserted {
+		return row.ID, nil, nil
 	}
-
-	return row.ID, true, nil, nil
+	return 0, &Request{
+		ID:              row.ID,
+		Operation:       row.Operation,
+		UserUUID:        row.UserUUID,
+		IdempotencyKey:  row.IdempotencyKey,
+		SessionID:       row.SessionID,
+		RequestPayload:  row.RequestPayload,
+		Outcome:         row.Outcome,
+		ResponsePayload: row.ResponsePayload,
+		Status:          row.Status,
+	}, nil
 }
 
 // Complete marks a previously claimed request row as COMPLETED with its
@@ -106,20 +127,4 @@ func Complete(ctx context.Context, tx *gorm.DB, requestID uint, sessionID *uint,
 		return fmt.Errorf("completing idempotency claim: %s", err)
 	}
 	return nil
-}
-
-func find(ctx context.Context, tx *gorm.DB, operation, userUUID, idempotencyKey string) (*Row, error) {
-	var row Row
-	result := tx.WithContext(ctx).Raw(`
-		SELECT id, operation, user_uuid, idempotency_key, session_id, request_payload, outcome, response_payload, status
-		FROM session_requests
-		WHERE user_uuid = ? AND operation = ? AND idempotency_key = ?
-	`, userUUID, operation, idempotencyKey).Scan(&row)
-	if result.Error != nil {
-		return nil, fmt.Errorf("reading existing idempotency claim: %s", result.Error)
-	}
-	if result.RowsAffected == 0 {
-		return nil, nil
-	}
-	return &row, nil
 }

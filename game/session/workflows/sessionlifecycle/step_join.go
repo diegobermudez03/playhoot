@@ -2,14 +2,29 @@ package sessionlifecycle
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/diegobermudez03/playhoot/game/language/v1/program"
 	"github.com/diegobermudez03/playhoot/game/session"
+	"github.com/diegobermudez03/playhoot/game/session/internal/idempotency"
+	"github.com/diegobermudez03/playhoot/game/session/internal/sessionlock"
 	internalrepo "github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/repo"
 	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/monitoring"
+	"github.com/diegobermudez03/playhoot/utils"
 	"gorm.io/gorm"
+)
+
+// Join outcome labels persisted to session_requests.outcome for a
+// deterministic post-claim decline that must survive as a replayable
+// outcome (WORK-0001's Transaction Ownership). JOINED itself is also
+// recorded so a same-token replay can tell success from a decline.
+const (
+	outcomeJoined        = "JOINED"
+	outcomeAlreadyJoined = "ALREADY_JOINED"
+	outcomeLobbyFull     = "LOBBY_FULL"
 )
 
 // gamePinnedDefinitionReader is the narrow Game Management read capability
@@ -23,20 +38,62 @@ type gamePinnedDefinitionReader interface {
 
 // joinRepoAPI is Join's own narrow persistence contract (see createRepoAPI's
 // doc comment on why this is not shared verbatim with Create/Leave despite
-// some overlapping method shapes).
+// some overlapping method shapes). The shared sessionlock/idempotency
+// mechanism packages are called directly by this step instead of through
+// repository forwarding methods
+// (`docs/engineering/standards/repositories.md`'s Sharing Rule).
 type joinRepoAPI interface {
+	expirationStore
 	ResolveActiveSessionForJoinCode(ctx context.Context, joinCode uint) (*internalrepo.JoinCodeResolution, error)
-	LockSessionByID(ctx context.Context, tx *gorm.DB, sessionID uint) (*internalrepo.SessionRow, error)
-	SetSessionTerminal(ctx context.Context, tx *gorm.DB, sessionID uint, terminalAt time.Time, terminalReason string, now time.Time) error
-	RevokeActiveJoinCode(ctx context.Context, tx *gorm.DB, sessionID uint, now time.Time) error
-	ClaimSessionRequest(ctx context.Context, tx *gorm.DB, operation, userUUID, idempotencyKey string, sessionID *uint, requestPayload string) (requestID uint, claimed bool, existing *internalrepo.RequestRow, err error)
-	CompleteSessionRequest(ctx context.Context, tx *gorm.DB, requestID uint, sessionID *uint, outcome string, responsePayload string) error
-	FindActor(ctx context.Context, tx *gorm.DB, sessionID uint, userUUID string) (*internalrepo.ActorRow, error)
-	CreateActor(ctx context.Context, tx *gorm.DB, sessionID uint, userUUID string, now time.Time) (uint, error)
-	FindParticipant(ctx context.Context, tx *gorm.DB, actorID uint) (*internalrepo.ParticipantRow, error)
+	FindActor(ctx context.Context, tx *gorm.DB, sessionID uint, userUUID string) (*internalrepo.Actor, error)
+	CreateActor(ctx context.Context, tx *gorm.DB, sessionID uint, userUUID string) (uint, error)
+	FindParticipant(ctx context.Context, tx *gorm.DB, actorID uint) (*internalrepo.Participant, error)
 	CountActiveParticipants(ctx context.Context, tx *gorm.DB, sessionID uint) (int, error)
-	CreateParticipant(ctx context.Context, tx *gorm.DB, actorID uint, displayName string, now time.Time) error
-	ActivateParticipant(ctx context.Context, tx *gorm.DB, participantID uint, displayName string, now time.Time) error
+	CreateParticipant(ctx context.Context, tx *gorm.DB, actorID uint, displayName string, joinedAt time.Time) error
+	ActivateParticipant(ctx context.Context, tx *gorm.DB, participantID uint, displayName string, joinedAt time.Time) error
+}
+
+// joinRequestPayload is JOIN's meaningful-field idempotency payload
+// (GAME-ADR-0021).
+type joinRequestPayload struct {
+	JoinCode    uint   `json:"join_code"`
+	UserUUID    string `json:"user_uuid"`
+	DisplayName string `json:"display_name"`
+}
+
+// interpretExistingJoinClaim decides what an already-claimed JOIN identity
+// means for the incoming request: replay or conflict
+// (`docs/engineering/standards/idempotency.md`'s Token Semantics). A
+// replayed decline is returned as the same outcome value it was originally
+// recorded as (GAME-ADR-0022), never reconstructed as an error.
+func interpretExistingJoinClaim(existing *idempotency.Request, incoming joinRequestPayload) (JoinResult, error) {
+	if existing.Status != idempotency.StatusCompleted {
+		return JoinResult{}, session.ErrIdempotencyInFlight
+	}
+
+	var stored joinRequestPayload
+	if err := json.Unmarshal([]byte(existing.RequestPayload), &stored); err != nil {
+		return JoinResult{}, fmt.Errorf("decoding stored join request payload: %s", err)
+	}
+	if stored != incoming {
+		return JoinResult{}, session.ErrIdempotencyConflict
+	}
+
+	switch existing.Outcome {
+	case outcomeAlreadyJoined:
+		return JoinResult{Outcome: JoinOutcomeAlreadyJoined}, nil
+	case outcomeLobbyFull:
+		return JoinResult{Outcome: JoinOutcomeLobbyFull}, nil
+	}
+
+	if existing.ResponsePayload == nil {
+		return JoinResult{}, fmt.Errorf("completed join idempotency record missing response payload")
+	}
+	var result JoinResult
+	if err := json.Unmarshal([]byte(*existing.ResponsePayload), &result); err != nil {
+		return JoinResult{}, fmt.Errorf("decoding stored join response payload: %s", err)
+	}
+	return result, nil
 }
 
 // Join resolves an active JoinCode to its Session, loads that Session's
@@ -82,112 +139,115 @@ func (m *Manager) Join(ctx context.Context, joinCode JoinCode, userUUID UserUUID
 		return JoinResult{}, err
 	}
 
-	var result JoinResult
-	var bizErr error
-	txErr := m.tx.RunInTransaction(ctx, func(ctx context.Context, tx *gorm.DB) error {
-		row, err := m.joinRepo.LockSessionByID(ctx, tx, resolution.SessionID)
-		if err != nil {
-			return err
-		}
-		if row == nil {
-			bizErr = session.ErrSessionNotFound
-			return nil
-		}
-
-		now := m.now()
-		expired, err := materializeExpirationIfDue(ctx, tx, m.joinRepo, row, now)
-		if err != nil {
-			return err
-		}
-		if expired || row.Phase != session.PhaseLobby {
-			// The materialization above (if it ran) must still commit even
-			// though this attempted Join is rejected - see
-			// WORK-0001's Transaction Ownership.
-			bizErr = session.ErrLobbyExpired
-			return nil
-		}
-
-		sessionID := row.ID
-		requestID, claimed, existing, err := m.joinRepo.ClaimSessionRequest(ctx, tx, operationJoin, string(userUUID), string(idempotencyKey), &sessionID, payloadBytes)
-		if err != nil {
-			return err
-		}
-		if !claimed {
-			result, bizErr = interpretExistingJoinClaim(existing, incomingPayload)
-			return nil
-		}
-
-		actor, err := m.joinRepo.FindActor(ctx, tx, row.ID, string(userUUID))
-		if err != nil {
-			return err
-		}
-
-		var actorID uint
-		var participant *internalrepo.ParticipantRow
-		if actor != nil {
-			actorID = actor.ID
-			participant, err = m.joinRepo.FindParticipant(ctx, tx, actorID)
-			if err != nil {
-				return err
-			}
-		} else {
-			actorID, err = m.joinRepo.CreateActor(ctx, tx, row.ID, string(userUUID), now)
-			if err != nil {
-				return err
-			}
-		}
-
-		if participant != nil && participant.Active {
-			// A *different* idempotency token than any previously used for
-			// this user's admission, evaluated against current state, while
-			// already an active Participant: a new command, rejected - not
-			// silently replayed or treated as success (GAME-ADR-0021). The
-			// rejection is itself the token's completed logical outcome, so
-			// it still commits together with the just-created claim.
-			if err := m.joinRepo.CompleteSessionRequest(ctx, tx, requestID, &sessionID, outcomeAlreadyJoined, ""); err != nil {
-				return err
-			}
-			bizErr = session.ErrAlreadyJoined
-			return nil
-		}
-
-		activeCount, err := m.joinRepo.CountActiveParticipants(ctx, tx, row.ID)
-		if err != nil {
-			return err
-		}
-		if playersMax > 0 && activeCount >= playersMax {
-			if err := m.joinRepo.CompleteSessionRequest(ctx, tx, requestID, &sessionID, outcomeLobbyFull, ""); err != nil {
-				return err
-			}
-			bizErr = session.ErrLobbyFull
-			return nil
-		}
-
-		if participant == nil {
-			if err := m.joinRepo.CreateParticipant(ctx, tx, actorID, string(displayName), now); err != nil {
-				return err
-			}
-		} else {
-			if err := m.joinRepo.ActivateParticipant(ctx, tx, participant.ID, string(displayName), now); err != nil {
-				return err
-			}
-		}
-
-		result = JoinResult{SessionUUID: SessionUUID(row.UUID), DisplayName: displayName}
-		responseBytes, err := marshalPayload(result)
-		if err != nil {
-			return err
-		}
-		if err := m.joinRepo.CompleteSessionRequest(ctx, tx, requestID, &sessionID, outcomeJoined, responseBytes); err != nil {
-			return err
-		}
-		return nil
+	return utils.RunInDBTransaction(ctx, m, func(ctx context.Context, tx *gorm.DB) (JoinResult, error) {
+		return m.joinInTx(ctx, tx, resolution.SessionID, playersMax, userUUID, displayName, idempotencyKey, incomingPayload, payloadBytes)
 	})
-	if txErr != nil {
-		return JoinResult{}, txErr
+}
+
+// joinInTx is Join's per-transaction business logic, split out from the
+// public Join so it can be exercised directly by mocked-collaborator unit
+// tests without needing a real DB transaction - sessionlock/idempotency
+// mechanism calls further down this same path require a real Postgres
+// connection to run their SQL, which is instead proven by this package's
+// repository-integration/concurrency tests.
+func (m *Manager) joinInTx(ctx context.Context, tx *gorm.DB, sessionID uint, playersMax int, userUUID UserUUID, displayName DisplayName, idempotencyKey IdempotencyKey, incomingPayload joinRequestPayload, payloadBytes string) (JoinResult, error) {
+	lockedSession, err := sessionlock.LockByID(ctx, tx, sessionID)
+	if err != nil {
+		return JoinResult{}, err
 	}
-	if bizErr != nil {
-		return JoinResult{}, bizErr
+	if lockedSession == nil {
+		return JoinResult{}, session.ErrSessionNotFound
+	}
+
+	now := m.now()
+	if _, err := materializeExpirationIfDue(ctx, tx, m.joinRepo, lockedSession, now); err != nil {
+		return JoinResult{}, err
+	}
+	if lockedSession.Phase != session.PhaseLobby {
+		// A rejection discovered before any idempotency claim is attempted
+		// never reaches session_requests at all - there is no token-scoped
+		// outcome to record. Any materialization above must still commit
+		// even though this attempted Join is rejected (WORK-0001's
+		// Transaction Ownership) - it already has, via this same callback's
+		// eventual successful return.
+		return JoinResult{Outcome: JoinOutcomeLobbyExpired}, nil
+	}
+
+	requestID, existing, err := idempotency.Claim(ctx, tx, idempotency.ClaimInput{
+		Operation:      operationJoin,
+		UserUUID:       string(userUUID),
+		IdempotencyKey: string(idempotencyKey),
+		SessionID:      &lockedSession.ID,
+		RequestPayload: payloadBytes,
+	})
+	if err != nil {
+		return JoinResult{}, fmt.Errorf("claiming join session request: %s", err)
+	}
+	if existing != nil {
+		return interpretExistingJoinClaim(existing, incomingPayload)
+	}
+
+	actor, err := m.joinRepo.FindActor(ctx, tx, lockedSession.ID, string(userUUID))
+	if err != nil {
+		return JoinResult{}, err
+	}
+
+	var actorID uint
+	var participant *internalrepo.Participant
+	if actor != nil {
+		actorID = actor.ID
+		participant, err = m.joinRepo.FindParticipant(ctx, tx, actorID)
+		if err != nil {
+			return JoinResult{}, err
+		}
+	} else {
+		actorID, err = m.joinRepo.CreateActor(ctx, tx, lockedSession.ID, string(userUUID))
+		if err != nil {
+			return JoinResult{}, err
+		}
+	}
+
+	if participant != nil && participant.Active {
+		// A *different* idempotency token than any previously used for
+		// this user's admission, evaluated against current state, while
+		// already an active Participant: a new command, rejected - not
+		// silently replayed or treated as success (GAME-ADR-0021). The
+		// rejection is itself the token's completed logical outcome, so
+		// it still commits together with the just-created claim.
+		if err := idempotency.Complete(ctx, tx, requestID, &lockedSession.ID, outcomeAlreadyJoined, ""); err != nil {
+			return JoinResult{}, fmt.Errorf("completing join session request: %s", err)
+		}
+		return JoinResult{Outcome: JoinOutcomeAlreadyJoined}, nil
+	}
+
+	activeCount, err := m.joinRepo.CountActiveParticipants(ctx, tx, lockedSession.ID)
+	if err != nil {
+		return JoinResult{}, err
+	}
+	if playersMax > 0 && activeCount >= playersMax {
+		if err := idempotency.Complete(ctx, tx, requestID, &lockedSession.ID, outcomeLobbyFull, ""); err != nil {
+			return JoinResult{}, fmt.Errorf("completing join session request: %s", err)
+		}
+		return JoinResult{Outcome: JoinOutcomeLobbyFull}, nil
+	}
+
+	if participant == nil {
+		if err := m.joinRepo.CreateParticipant(ctx, tx, actorID, string(displayName), now); err != nil {
+			return JoinResult{}, err
+		}
+	} else {
+		if err := m.joinRepo.ActivateParticipant(ctx, tx, participant.ID, string(displayName), now); err != nil {
+			return JoinResult{}, err
+		}
+	}
+
+	result := JoinResult{Outcome: JoinOutcomeJoined, SessionUUID: SessionUUID(lockedSession.UUID), DisplayName: displayName}
+	responseBytes, err := marshalPayload(result)
+	if err != nil {
+		return JoinResult{}, err
+	}
+	if err := idempotency.Complete(ctx, tx, requestID, &lockedSession.ID, outcomeJoined, responseBytes); err != nil {
+		return JoinResult{}, fmt.Errorf("completing join session request: %s", err)
 	}
 	return result, nil
 }

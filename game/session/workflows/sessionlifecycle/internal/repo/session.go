@@ -6,41 +6,21 @@ import (
 	"time"
 
 	"github.com/diegobermudez03/playhoot/game/session"
-	"github.com/diegobermudez03/playhoot/game/session/internal/sessionlock"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
-// SessionRow is the locked snapshot of a sessions row needed by lobby
-// mutations - a thin alias over sessionlock.Row, the shared per-Session
-// locking primitive's own fact-reporting shape.
-type SessionRow = sessionlock.Row
-
-// LockSessionByID selects the sessions row FOR UPDATE by its internal id via
-// the shared sessionlock primitive, serializing every other lobby mutation
-// attempted against the same Session. Callers must invoke this from within
-// an already-open DB transaction. Returns nil, nil if no such Session
-// exists.
-func (r *Repo) LockSessionByID(ctx context.Context, tx *gorm.DB, sessionID uint) (*SessionRow, error) {
-	return sessionlock.LockByID(ctx, tx, sessionID)
-}
-
-// LockSessionByUUID selects the sessions row FOR UPDATE by its public uuid
-// via the shared sessionlock primitive. Returns nil, nil if no such Session
-// exists.
-func (r *Repo) LockSessionByUUID(ctx context.Context, tx *gorm.DB, sessionUUID string) (*SessionRow, error) {
-	return sessionlock.LockByUUID(ctx, tx, sessionUUID)
-}
-
 // SetSessionTerminal persists an already-decided terminal transition
 // (expiration ownership - deciding *whether* now is at/after
-// lobby_expires_at - belongs to the Manager, not this method).
-func (r *Repo) SetSessionTerminal(ctx context.Context, tx *gorm.DB, sessionID uint, terminalAt time.Time, terminalReason string, now time.Time) error {
+// lobby_expires_at - belongs to the Manager, not this method). updated_at is
+// an audit timestamp the repository stamps itself
+// (`docs/engineering/standards/repositories.md`'s Timestamp Ownership).
+func (r *Repo) SetSessionTerminal(ctx context.Context, tx *gorm.DB, sessionID uint, terminalAt time.Time, terminalReason string) error {
 	if err := tx.WithContext(ctx).Exec(`
 		UPDATE sessions
-		SET phase = ?, terminal_at = ?, terminal_reason = ?, updated_at = ?
+		SET phase = ?, terminal_at = ?, terminal_reason = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?
-	`, session.PhaseTerminal, terminalAt, terminalReason, now, sessionID).Error; err != nil {
+	`, session.PhaseTerminal, terminalAt, terminalReason, sessionID).Error; err != nil {
 		return fmt.Errorf("setting session terminal: %s", err)
 	}
 	return nil
@@ -62,8 +42,6 @@ type sessionInsert struct {
 	GameDefinitionUUID string    `gorm:"column:game_definition_uuid"`
 	Phase              string    `gorm:"column:phase"`
 	LobbyExpiresAt     time.Time `gorm:"column:lobby_expires_at"`
-	CreatedAt          time.Time `gorm:"column:created_at"`
-	UpdatedAt          time.Time `gorm:"column:updated_at"`
 }
 
 func (sessionInsert) TableName() string { return "sessions" }
@@ -75,21 +53,22 @@ func (sessionInsert) TableName() string { return "sessions" }
 // host relationship), not application-level orchestration (see
 // `docs/engineering/standards/repositories.md`'s Multi-Table Persistence
 // Encapsulation). It does not create a JoinCode; that remains a separate,
-// Manager-orchestrated step within the same transaction.
-func (r *Repo) CreateSessionWithHost(ctx context.Context, tx *gorm.DB, gameDefinitionUUID string, hostUserUUID string, lobbyExpiresAt time.Time, now time.Time) (CreatedSession, error) {
+// Manager-orchestrated step within the same transaction. created_at/
+// updated_at are audit timestamps the DB stamps itself
+// (`repositories.md`'s Timestamp Ownership); lobbyExpiresAt is semantic
+// lifecycle state and remains an explicit input.
+func (r *Repo) CreateSessionWithHost(ctx context.Context, tx *gorm.DB, gameDefinitionUUID string, hostUserUUID string, lobbyExpiresAt time.Time) (CreatedSession, error) {
 	sessionRow := sessionInsert{
 		UUID:               uuid.NewString(),
 		GameDefinitionUUID: gameDefinitionUUID,
 		Phase:              session.PhaseLobby,
 		LobbyExpiresAt:     lobbyExpiresAt,
-		CreatedAt:          now,
-		UpdatedAt:          now,
 	}
 	if err := tx.WithContext(ctx).Create(&sessionRow).Error; err != nil {
 		return CreatedSession{}, fmt.Errorf("creating session: %s", err)
 	}
 
-	actorID, err := createActorRow(ctx, tx, sessionRow.ID, hostUserUUID, now)
+	actorID, err := createActorRow(ctx, tx, sessionRow.ID, hostUserUUID)
 	if err != nil {
 		return CreatedSession{}, fmt.Errorf("creating host session actor: %s", err)
 	}

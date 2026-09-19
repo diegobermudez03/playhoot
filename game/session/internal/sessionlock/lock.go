@@ -20,8 +20,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// Row is the locked snapshot of a sessions row needed by lobby mutations.
-type Row struct {
+// Session is the locked snapshot of a sessions row needed by lobby
+// mutations.
+type Session struct {
 	ID                 uint
 	UUID               string
 	GameDefinitionUUID string
@@ -36,8 +37,8 @@ type Row struct {
 // serializing every other lobby mutation attempted against the same
 // Session. Callers must invoke this from within an already-open DB
 // transaction. Returns nil, nil if no such Session exists.
-func LockByID(ctx context.Context, tx *gorm.DB, sessionID uint) (*Row, error) {
-	var row Row
+func LockByID(ctx context.Context, tx *gorm.DB, sessionID uint) (*Session, error) {
+	var row Session
 	result := tx.WithContext(ctx).Raw(`
 		SELECT id, uuid, game_definition_uuid, host_actor_id, phase, lobby_expires_at, terminal_at, terminal_reason
 		FROM sessions
@@ -55,8 +56,8 @@ func LockByID(ctx context.Context, tx *gorm.DB, sessionID uint) (*Row, error) {
 
 // LockByUUID selects the sessions row FOR UPDATE by its public uuid. Returns
 // nil, nil if no such Session exists.
-func LockByUUID(ctx context.Context, tx *gorm.DB, sessionUUID string) (*Row, error) {
-	var row Row
+func LockByUUID(ctx context.Context, tx *gorm.DB, sessionUUID string) (*Session, error) {
+	var row Session
 	result := tx.WithContext(ctx).Raw(`
 		SELECT id, uuid, game_definition_uuid, host_actor_id, phase, lobby_expires_at, terminal_at, terminal_reason
 		FROM sessions

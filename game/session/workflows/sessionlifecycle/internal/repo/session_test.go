@@ -20,7 +20,7 @@ func TestRepoCreateSessionWithHost(t *testing.T) {
 	gameDefinitionUUID := uuid.NewString()
 	hostUserUUID := uuid.NewString()
 
-	created, err := r.CreateSessionWithHost(context.Background(), db, gameDefinitionUUID, hostUserUUID, lobbyExpiresAt, now)
+	created, err := r.CreateSessionWithHost(context.Background(), db, gameDefinitionUUID, hostUserUUID, lobbyExpiresAt)
 	require.NoError(t, err)
 
 	require.NotEmpty(t, created.SessionUUID)
@@ -59,11 +59,11 @@ func TestRepoSetSessionTerminal(t *testing.T) {
 	r := New(db)
 
 	now := time.Now().UTC()
-	created, err := r.CreateSessionWithHost(context.Background(), db, uuid.NewString(), uuid.NewString(), now.Add(10*time.Minute), now)
+	created, err := r.CreateSessionWithHost(context.Background(), db, uuid.NewString(), uuid.NewString(), now.Add(10*time.Minute))
 	require.NoError(t, err)
 
 	terminalAt := now.Add(-1 * time.Minute)
-	require.NoError(t, r.SetSessionTerminal(context.Background(), db, created.SessionID, terminalAt, session.TerminalReasonLobbyExpired, now))
+	require.NoError(t, r.SetSessionTerminal(context.Background(), db, created.SessionID, terminalAt, session.TerminalReasonLobbyExpired))
 
 	var row struct {
 		Phase          string
@@ -73,27 +73,4 @@ func TestRepoSetSessionTerminal(t *testing.T) {
 	require.Equal(t, session.PhaseTerminal, row.Phase)
 	require.NotNil(t, row.TerminalReason)
 	require.Equal(t, session.TerminalReasonLobbyExpired, *row.TerminalReason)
-}
-
-func TestRepoLockSessionByIDAndByUUID(t *testing.T) {
-	db := testdb.OpenSessionDB(t)
-	r := New(db)
-
-	now := time.Now().UTC()
-	created, err := r.CreateSessionWithHost(context.Background(), db, uuid.NewString(), uuid.NewString(), now.Add(10*time.Minute), now)
-	require.NoError(t, err)
-
-	byID, err := r.LockSessionByID(context.Background(), db, created.SessionID)
-	require.NoError(t, err)
-	require.NotNil(t, byID)
-	require.Equal(t, created.SessionUUID, byID.UUID)
-
-	byUUID, err := r.LockSessionByUUID(context.Background(), db, created.SessionUUID)
-	require.NoError(t, err)
-	require.NotNil(t, byUUID)
-	require.Equal(t, created.SessionID, byUUID.ID)
-
-	missing, err := r.LockSessionByID(context.Background(), db, 0)
-	require.NoError(t, err)
-	require.Nil(t, missing)
 }

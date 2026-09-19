@@ -44,7 +44,7 @@ func TestRepoCreateAndRevokeJoinCode(t *testing.T) {
 	r := New(db)
 	fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
 
-	code, err := r.CreateJoinCode(context.Background(), db, fx.SessionID, time.Now().UTC())
+	code, err := r.CreateJoinCode(context.Background(), db, fx.SessionID)
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, code, uint(1000))
 	require.LessOrEqual(t, code, uint(9999))

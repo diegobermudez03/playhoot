@@ -8,9 +8,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// ParticipantRow is the persisted session_participants record owned by a
+// Participant is the persisted session_participants record owned by a
 // SessionActor.
-type ParticipantRow struct {
+type Participant struct {
 	ID             uint
 	SessionActorID uint
 	DisplayName    string
@@ -19,8 +19,8 @@ type ParticipantRow struct {
 
 // FindParticipant returns the Participant owned by actorID, or nil, nil if
 // none has ever been created for it.
-func (r *Repo) FindParticipant(ctx context.Context, tx *gorm.DB, actorID uint) (*ParticipantRow, error) {
-	var row ParticipantRow
+func (r *Repo) FindParticipant(ctx context.Context, tx *gorm.DB, actorID uint) (*Participant, error) {
+	var row Participant
 	result := tx.WithContext(ctx).Raw(`
 		SELECT id, session_actor_id, display_name, active
 		FROM session_participants
@@ -61,12 +61,14 @@ type participantInsert struct {
 func (participantInsert) TableName() string { return "session_participants" }
 
 // CreateParticipant inserts the first, active Participant for actorID.
-func (r *Repo) CreateParticipant(ctx context.Context, tx *gorm.DB, actorID uint, displayName string, now time.Time) error {
+// joinedAt is the semantic joined_at event time, explicit workflow input
+// (`docs/engineering/standards/repositories.md`'s Timestamp Ownership).
+func (r *Repo) CreateParticipant(ctx context.Context, tx *gorm.DB, actorID uint, displayName string, joinedAt time.Time) error {
 	row := participantInsert{
 		SessionActorID: actorID,
 		DisplayName:    displayName,
 		Active:         true,
-		JoinedAt:       now,
+		JoinedAt:       joinedAt,
 	}
 	if err := tx.WithContext(ctx).Create(&row).Error; err != nil {
 		return fmt.Errorf("creating participant: %s", err)
@@ -75,25 +77,27 @@ func (r *Repo) CreateParticipant(ctx context.Context, tx *gorm.DB, actorID uint,
 }
 
 // ActivateParticipant re-admits a previously deactivated Participant,
-// refreshing its display-name snapshot and joined_at.
-func (r *Repo) ActivateParticipant(ctx context.Context, tx *gorm.DB, participantID uint, displayName string, now time.Time) error {
+// refreshing its display-name snapshot and joined_at (the semantic
+// re-admission event time, explicit workflow input).
+func (r *Repo) ActivateParticipant(ctx context.Context, tx *gorm.DB, participantID uint, displayName string, joinedAt time.Time) error {
 	if err := tx.WithContext(ctx).Exec(`
 		UPDATE session_participants
 		SET active = TRUE, left_at = NULL, display_name = ?, joined_at = ?
 		WHERE id = ?
-	`, displayName, now, participantID).Error; err != nil {
+	`, displayName, joinedAt, participantID).Error; err != nil {
 		return fmt.Errorf("activating participant: %s", err)
 	}
 	return nil
 }
 
-// DeactivateParticipant releases participantID's lobby slot.
-func (r *Repo) DeactivateParticipant(ctx context.Context, tx *gorm.DB, participantID uint, now time.Time) error {
+// DeactivateParticipant releases participantID's lobby slot. leftAt is the
+// semantic left_at event time, explicit workflow input.
+func (r *Repo) DeactivateParticipant(ctx context.Context, tx *gorm.DB, participantID uint, leftAt time.Time) error {
 	if err := tx.WithContext(ctx).Exec(`
 		UPDATE session_participants
 		SET active = FALSE, left_at = ?
 		WHERE id = ?
-	`, now, participantID).Error; err != nil {
+	`, leftAt, participantID).Error; err != nil {
 		return fmt.Errorf("deactivating participant: %s", err)
 	}
 	return nil

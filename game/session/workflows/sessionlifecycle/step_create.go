@@ -2,15 +2,18 @@ package sessionlifecycle
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/diegobermudez03/playhoot/game/game"
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine/engineservice"
 	"github.com/diegobermudez03/playhoot/game/session"
+	"github.com/diegobermudez03/playhoot/game/session/internal/idempotency"
 	internalrepo "github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/repo"
 	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/monitoring"
+	"github.com/diegobermudez03/playhoot/utils"
 	"gorm.io/gorm"
 )
 
@@ -25,12 +28,47 @@ type gameCurrentVersionReader interface {
 // concrete internal/repo.Repo happens to satisfy createRepoAPI/joinRepoAPI/
 // leaveRepoAPI today, each step keeps its own contract
 // (`docs/engineering/standards/domain-logic-placement.md`'s Workflow
-// Grouping Does Not Imply A Shared Repository Contract).
+// Grouping Does Not Imply A Shared Repository Contract). The shared
+// sessionlock/idempotency mechanism packages are called directly by this
+// step instead of through repository forwarding methods
+// (`docs/engineering/standards/repositories.md`'s Sharing Rule).
 type createRepoAPI interface {
-	ClaimSessionRequest(ctx context.Context, tx *gorm.DB, operation, userUUID, idempotencyKey string, sessionID *uint, requestPayload string) (requestID uint, claimed bool, existing *internalrepo.RequestRow, err error)
-	CompleteSessionRequest(ctx context.Context, tx *gorm.DB, requestID uint, sessionID *uint, outcome string, responsePayload string) error
-	CreateSessionWithHost(ctx context.Context, tx *gorm.DB, gameDefinitionUUID string, hostUserUUID string, lobbyExpiresAt time.Time, now time.Time) (internalrepo.CreatedSession, error)
-	CreateJoinCode(ctx context.Context, tx *gorm.DB, sessionID uint, now time.Time) (uint, error)
+	CreateSessionWithHost(ctx context.Context, tx *gorm.DB, gameDefinitionUUID string, hostUserUUID string, lobbyExpiresAt time.Time) (internalrepo.CreatedSession, error)
+	CreateJoinCode(ctx context.Context, tx *gorm.DB, sessionID uint) (uint, error)
+}
+
+// createRequestPayload is CREATE's meaningful-field idempotency payload (the
+// host UserUUID is already implied by the idempotency identity itself).
+type createRequestPayload struct {
+	GameUUID string `json:"game_uuid"`
+}
+
+// interpretExistingCreateClaim decides what an already-claimed CREATE
+// identity means for the incoming request: replay or conflict
+// (`docs/engineering/standards/idempotency.md`'s Token Semantics). This is
+// Manager policy - the shared idempotency mechanism only reports the
+// existing request.
+func interpretExistingCreateClaim(existing *idempotency.Request, incoming createRequestPayload) (CreatedSession, error) {
+	if existing.Status != idempotency.StatusCompleted {
+		return CreatedSession{}, session.ErrIdempotencyInFlight
+	}
+
+	var stored createRequestPayload
+	if err := json.Unmarshal([]byte(existing.RequestPayload), &stored); err != nil {
+		return CreatedSession{}, fmt.Errorf("decoding stored create request payload: %s", err)
+	}
+	if stored != incoming {
+		return CreatedSession{}, session.ErrIdempotencyConflict
+	}
+
+	if existing.ResponsePayload == nil {
+		return CreatedSession{}, fmt.Errorf("completed create idempotency record missing response payload")
+	}
+	var result CreatedSession
+	if err := json.Unmarshal([]byte(*existing.ResponsePayload), &result); err != nil {
+		return CreatedSession{}, fmt.Errorf("decoding stored create response payload: %s", err)
+	}
+	return result, nil
 }
 
 // Create resolves/compiles/pins the Game's current playable Definition, then
@@ -69,50 +107,59 @@ func (m *Manager) Create(ctx context.Context, gameUUID GameUUID, hostUserUUID Us
 		return CreatedSession{}, err
 	}
 
-	var result CreatedSession
-	var bizErr error
-	txErr := m.tx.RunInTransaction(ctx, func(ctx context.Context, tx *gorm.DB) error {
-		requestID, claimed, existing, err := m.createRepo.ClaimSessionRequest(ctx, tx, operationCreate, string(hostUserUUID), string(idempotencyKey), nil, payloadBytes)
-		if err != nil {
-			return err
-		}
-		if !claimed {
-			result, bizErr = interpretExistingCreateClaim(existing, incomingPayload)
-			return nil
-		}
-
-		now := m.now()
-		created, err := m.createRepo.CreateSessionWithHost(ctx, tx, playableGame.VersionUUID, string(hostUserUUID), now.Add(m.lobbyTTL), now)
-		if err != nil {
-			return err
-		}
-
-		joinCode, err := m.createRepo.CreateJoinCode(ctx, tx, created.SessionID, now)
-		if err != nil {
-			return err
-		}
-
-		result = CreatedSession{
-			SessionUUID:    SessionUUID(created.SessionUUID),
-			JoinCode:       JoinCode(joinCode),
-			LobbyExpiresAt: created.LobbyExpiresAt,
-		}
-		responseBytes, err := marshalPayload(result)
-		if err != nil {
-			return err
-		}
-
-		sessionID := created.SessionID
-		if err := m.createRepo.CompleteSessionRequest(ctx, tx, requestID, &sessionID, outcomeCreated, responseBytes); err != nil {
-			return err
-		}
-		return nil
+	return utils.RunInDBTransaction(ctx, m, func(ctx context.Context, tx *gorm.DB) (CreatedSession, error) {
+		return m.createInTx(ctx, tx, playableGame.VersionUUID, hostUserUUID, idempotencyKey, incomingPayload, payloadBytes)
 	})
-	if txErr != nil {
-		return CreatedSession{}, txErr
+}
+
+// createInTx is Create's per-transaction business logic, split out from the
+// public Create so it can be exercised directly by mocked-collaborator unit
+// tests without needing a real DB transaction - sessionlock/idempotency
+// mechanism calls further down this same path require a real Postgres
+// connection to run their SQL, which is instead proven by this package's
+// repository-integration/concurrency tests.
+func (m *Manager) createInTx(ctx context.Context, tx *gorm.DB, gameDefinitionUUID string, hostUserUUID UserUUID, idempotencyKey IdempotencyKey, incomingPayload createRequestPayload, payloadBytes string) (CreatedSession, error) {
+	requestID, existing, err := idempotency.Claim(ctx, tx, idempotency.ClaimInput{
+		Operation:      operationCreate,
+		UserUUID:       string(hostUserUUID),
+		IdempotencyKey: string(idempotencyKey),
+		RequestPayload: payloadBytes,
+	})
+	if err != nil {
+		return CreatedSession{}, fmt.Errorf("claiming create session request: %s", err)
 	}
-	if bizErr != nil {
-		return CreatedSession{}, bizErr
+	if existing != nil {
+		return interpretExistingCreateClaim(existing, incomingPayload)
+	}
+
+	now := m.now()
+	created, err := m.createRepo.CreateSessionWithHost(ctx, tx, gameDefinitionUUID, string(hostUserUUID), now.Add(m.lobbyTTL))
+	if err != nil {
+		return CreatedSession{}, err
+	}
+
+	joinCode, err := m.createRepo.CreateJoinCode(ctx, tx, created.SessionID)
+	if err != nil {
+		return CreatedSession{}, err
+	}
+
+	result := CreatedSession{
+		SessionUUID:    SessionUUID(created.SessionUUID),
+		JoinCode:       JoinCode(joinCode),
+		LobbyExpiresAt: created.LobbyExpiresAt,
+	}
+	responseBytes, err := marshalPayload(result)
+	if err != nil {
+		return CreatedSession{}, err
+	}
+
+	sessionID := created.SessionID
+	if err := idempotency.Complete(ctx, tx, requestID, &sessionID, outcomeCreated, responseBytes); err != nil {
+		return CreatedSession{}, fmt.Errorf("completing create session request: %s", err)
 	}
 	return result, nil
 }
+
+// outcomeCreated is CREATE's only recorded logical outcome label (Create has
+// no deterministic decline outcome in this WORK's scope).
+const outcomeCreated = "CREATED"

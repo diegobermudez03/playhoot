@@ -6,7 +6,6 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/diegobermudez03/playhoot/game/session/internal/pgerrs"
 	"gorm.io/gorm"
 )
 
@@ -42,43 +41,49 @@ func (r *Repo) ResolveActiveSessionForJoinCode(ctx context.Context, joinCode uin
 	return &resolution, nil
 }
 
-type joinCodeInsert struct {
-	ID        uint      `gorm:"column:id"`
-	SessionID uint      `gorm:"column:session_id"`
-	Code      uint      `gorm:"column:code"`
-	CreatedAt time.Time `gorm:"column:created_at"`
-}
-
-func (joinCodeInsert) TableName() string { return "join_codes" }
-
 // CreateJoinCode persists a fresh active JoinCode for sessionID, retrying on
-// a collision with another currently-active code.
-func (r *Repo) CreateJoinCode(ctx context.Context, tx *gorm.DB, sessionID uint, now time.Time) (uint, error) {
+// a collision with another currently-active code. created_at is an audit
+// timestamp the DB stamps itself
+// (`docs/engineering/standards/repositories.md`'s Timestamp Ownership).
+//
+// A collision is detected via a non-error ON CONFLICT DO NOTHING path
+// against the active-code partial unique index, rather than a real
+// unique-violation error: an actual Postgres error here would abort the
+// caller's whole Create transaction (the same class of problem
+// `docs/engineering/standards/idempotency.md`'s Claim Mechanism Contract
+// describes for the idempotency claim), leaving no usable transaction to
+// retry a fresh random code against.
+func (r *Repo) CreateJoinCode(ctx context.Context, tx *gorm.DB, sessionID uint) (uint, error) {
 	for attempt := 0; attempt < maxJoinCodeAttempts; attempt++ {
 		code := uint(rand.Intn(9000) + 1000) //nolint:gosec // not security sensitive, just a human-facing lobby code
-		row := joinCodeInsert{
-			SessionID: sessionID,
-			Code:      code,
-			CreatedAt: now,
+		var inserted struct {
+			ID uint `gorm:"column:id"`
 		}
-		err := tx.WithContext(ctx).Create(&row).Error
-		if err == nil {
+		result := tx.WithContext(ctx).Raw(`
+			INSERT INTO join_codes (session_id, code)
+			VALUES (?, ?)
+			ON CONFLICT (code) WHERE revoked_at IS NULL DO NOTHING
+			RETURNING id
+		`, sessionID, code).Scan(&inserted)
+		if result.Error != nil {
+			return 0, fmt.Errorf("creating join code: %s", result.Error)
+		}
+		if result.RowsAffected > 0 {
 			return code, nil
-		}
-		if !pgerrs.IsUniqueViolation(err) {
-			return 0, fmt.Errorf("creating join code: %s", err)
 		}
 	}
 	return 0, fmt.Errorf("creating join code: exhausted %d attempts generating a unique active code", maxJoinCodeAttempts)
 }
 
-// RevokeActiveJoinCode revokes sessionID's currently active JoinCode, if any.
-func (r *Repo) RevokeActiveJoinCode(ctx context.Context, tx *gorm.DB, sessionID uint, now time.Time) error {
+// RevokeActiveJoinCode revokes sessionID's currently active JoinCode, if
+// any. revokedAt is the semantic revocation event time, explicit workflow
+// input.
+func (r *Repo) RevokeActiveJoinCode(ctx context.Context, tx *gorm.DB, sessionID uint, revokedAt time.Time) error {
 	if err := tx.WithContext(ctx).Exec(`
 		UPDATE join_codes
 		SET revoked_at = ?
 		WHERE session_id = ? AND revoked_at IS NULL
-	`, now, sessionID).Error; err != nil {
+	`, revokedAt, sessionID).Error; err != nil {
 		return fmt.Errorf("revoking join code: %s", err)
 	}
 	return nil

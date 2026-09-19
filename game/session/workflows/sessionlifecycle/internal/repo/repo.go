@@ -26,9 +26,3 @@ type Repo struct {
 func New(db *gorm.DB) *Repo {
 	return &Repo{db: db}
 }
-
-// DB returns the plain (non-transaction-scoped) DB handle, for callers that
-// need to satisfy a transactor's DBServicer-style contract.
-func (r *Repo) DB() *gorm.DB {
-	return r.db
-}

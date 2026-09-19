@@ -56,35 +56,12 @@ var (
 	// admissible Session (unknown or already revoked).
 	ErrJoinCodeInvalid = errors.New("join code is invalid or no longer active")
 
-	// ErrLobbyExpired is returned when an operation discovers and
-	// materializes an already-expired lobby.
-	ErrLobbyExpired = errors.New("lobby has expired")
-
-	// ErrLobbyFull is returned when Join would exceed the pinned
-	// Definition's players.max.
-	ErrLobbyFull = errors.New("lobby is full")
-
 	// ErrSessionNotFound is returned when a Session UUID does not resolve to
 	// an existing Session.
 	ErrSessionNotFound = errors.New("session not found")
-
-	// ErrNotInLobbyPhase is returned by Leave when the Session is no longer
-	// in LOBBY phase.
-	ErrNotInLobbyPhase = errors.New("session is not in lobby phase")
-
-	// ErrActorNotFound is returned by Leave when the calling user never
-	// joined the Session.
-	ErrActorNotFound = errors.New("session actor not found")
 
 	// ErrIdempotencyKeyRequired is returned by Create/Join/Leave when the
 	// caller supplies a missing/empty idempotency token (idempotency.md's
 	// Required Token rule).
 	ErrIdempotencyKeyRequired = errors.New("idempotency key is required")
-
-	// ErrAlreadyJoined is returned by Join when a *different* idempotency
-	// token than any previously used for this user's admission is evaluated
-	// as a new command while the caller is already an active Participant
-	// (GAME-ADR-0021) - it is never inferred to be a retry merely because
-	// the desired end state already holds.
-	ErrAlreadyJoined = errors.New("user is already an active participant")
 )

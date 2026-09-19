@@ -72,8 +72,9 @@ func TestManagerLeave_Integration(t *testing.T) {
 		testfixtures.SeedActiveParticipant(t, db, fx.SessionID, userUUID, "User Three")
 		require.NoError(t, db.Exec(`UPDATE sessions SET phase = 'TERMINAL' WHERE id = ?`, fx.SessionID).Error)
 
-		_, err := m.Leave(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(userUUID), "leave-key-terminal")
-		require.ErrorIs(t, err, session.ErrNotInLobbyPhase)
+		result, err := m.Leave(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(userUUID), "leave-key-terminal")
+		require.NoError(t, err)
+		require.Equal(t, LeaveOutcomeNotInLobby, result.Outcome)
 	})
 
 	t.Run("lazily_materializes_expired_lobby_and_rejects", func(t *testing.T) {
@@ -81,8 +82,9 @@ func TestManagerLeave_Integration(t *testing.T) {
 		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(-1*time.Minute))
 		testfixtures.SeedActiveParticipant(t, db, fx.SessionID, userUUID, "User Four")
 
-		_, err := m.Leave(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(userUUID), "leave-key-expired")
-		require.ErrorIs(t, err, session.ErrNotInLobbyPhase)
+		result, err := m.Leave(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(userUUID), "leave-key-expired")
+		require.NoError(t, err)
+		require.Equal(t, LeaveOutcomeNotInLobby, result.Outcome)
 
 		var phase string
 		require.NoError(t, db.Raw(`SELECT phase FROM sessions WHERE uuid = ?`, fx.SessionUUID).Scan(&phase).Error)
@@ -92,7 +94,8 @@ func TestManagerLeave_Integration(t *testing.T) {
 	t.Run("rejects_when_actor_never_joined", func(t *testing.T) {
 		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
 
-		_, err := m.Leave(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(uuid.NewString()), "leave-key-missing")
-		require.ErrorIs(t, err, session.ErrActorNotFound)
+		result, err := m.Leave(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(uuid.NewString()), "leave-key-missing")
+		require.NoError(t, err)
+		require.Equal(t, LeaveOutcomeActorNotFound, result.Outcome)
 	})
 }

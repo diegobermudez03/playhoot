@@ -3,14 +3,13 @@ package repo
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/diegobermudez03/playhoot/game/session"
 	"gorm.io/gorm"
 )
 
-// ActorRow is the persisted session_actors identity for a (Session, User).
-type ActorRow struct {
+// Actor is the persisted session_actors identity for a (Session, User).
+type Actor struct {
 	ID        uint
 	SessionID uint
 	UserUUID  string
@@ -18,8 +17,8 @@ type ActorRow struct {
 
 // FindActor returns the SessionActor for (sessionID, userUUID), or nil, nil
 // if none exists yet.
-func (r *Repo) FindActor(ctx context.Context, tx *gorm.DB, sessionID uint, userUUID string) (*ActorRow, error) {
-	var row ActorRow
+func (r *Repo) FindActor(ctx context.Context, tx *gorm.DB, sessionID uint, userUUID string) (*Actor, error) {
+	var row Actor
 	result := tx.WithContext(ctx).Raw(`
 		SELECT id, session_id, user_uuid
 		FROM session_actors
@@ -35,21 +34,19 @@ func (r *Repo) FindActor(ctx context.Context, tx *gorm.DB, sessionID uint, userU
 }
 
 type actorInsert struct {
-	ID               uint      `gorm:"column:id"`
-	SessionID        uint      `gorm:"column:session_id"`
-	UserUUID         string    `gorm:"column:user_uuid"`
-	SemanticPresence string    `gorm:"column:semantic_presence"`
-	CreatedAt        time.Time `gorm:"column:created_at"`
+	ID               uint   `gorm:"column:id"`
+	SessionID        uint   `gorm:"column:session_id"`
+	UserUUID         string `gorm:"column:user_uuid"`
+	SemanticPresence string `gorm:"column:semantic_presence"`
 }
 
 func (actorInsert) TableName() string { return "session_actors" }
 
-func createActorRow(ctx context.Context, tx *gorm.DB, sessionID uint, userUUID string, now time.Time) (uint, error) {
+func createActorRow(ctx context.Context, tx *gorm.DB, sessionID uint, userUUID string) (uint, error) {
 	row := actorInsert{
 		SessionID:        sessionID,
 		UserUUID:         userUUID,
 		SemanticPresence: session.PresenceConnected,
-		CreatedAt:        now,
 	}
 	if err := tx.WithContext(ctx).Create(&row).Error; err != nil {
 		return 0, err
@@ -58,9 +55,11 @@ func createActorRow(ctx context.Context, tx *gorm.DB, sessionID uint, userUUID s
 }
 
 // CreateActor inserts a new SessionActor for (sessionID, userUUID), starting
-// semantic_presence CONNECTED, and returns its id.
-func (r *Repo) CreateActor(ctx context.Context, tx *gorm.DB, sessionID uint, userUUID string, now time.Time) (uint, error) {
-	id, err := createActorRow(ctx, tx, sessionID, userUUID, now)
+// semantic_presence CONNECTED, and returns its id. created_at is an audit
+// timestamp the DB stamps itself
+// (`docs/engineering/standards/repositories.md`'s Timestamp Ownership).
+func (r *Repo) CreateActor(ctx context.Context, tx *gorm.DB, sessionID uint, userUUID string) (uint, error) {
+	id, err := createActorRow(ctx, tx, sessionID, userUUID)
 	if err != nil {
 		return 0, fmt.Errorf("creating session actor: %s", err)
 	}

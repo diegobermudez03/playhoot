@@ -21,7 +21,7 @@ func TestRepoFindAndCreateActor(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, none)
 
-	actorID, err := r.CreateActor(context.Background(), db, fx.SessionID, userUUID, time.Now().UTC())
+	actorID, err := r.CreateActor(context.Background(), db, fx.SessionID, userUUID)
 	require.NoError(t, err)
 	require.NotZero(t, actorID)
 

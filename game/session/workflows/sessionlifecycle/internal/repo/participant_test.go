@@ -16,7 +16,7 @@ func TestRepoParticipantLifecycle(t *testing.T) {
 	r := New(db)
 	fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
 	userUUID := uuid.NewString()
-	actorID, err := r.CreateActor(context.Background(), db, fx.SessionID, userUUID, time.Now().UTC())
+	actorID, err := r.CreateActor(context.Background(), db, fx.SessionID, userUUID)
 	require.NoError(t, err)
 
 	none, err := r.FindParticipant(context.Background(), db, actorID)

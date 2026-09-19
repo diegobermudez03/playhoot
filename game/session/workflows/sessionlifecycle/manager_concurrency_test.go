@@ -45,18 +45,21 @@ func TestManagerJoin_Integration_ConcurrentJoinsForFinalSlot(t *testing.T) {
 	close(start)
 	wg.Wait()
 
+	require.NoError(t, errA)
+	require.NoError(t, errB)
+
 	successCount := 0
-	if errA == nil {
+	if resA.Outcome == JoinOutcomeJoined {
 		successCount++
 		require.NotEmpty(t, resA.DisplayName)
 	} else {
-		require.ErrorIs(t, errA, session.ErrLobbyFull)
+		require.Equal(t, JoinOutcomeLobbyFull, resA.Outcome)
 	}
-	if errB == nil {
+	if resB.Outcome == JoinOutcomeJoined {
 		successCount++
 		require.NotEmpty(t, resB.DisplayName)
 	} else {
-		require.ErrorIs(t, errB, session.ErrLobbyFull)
+		require.Equal(t, JoinOutcomeLobbyFull, resB.Outcome)
 	}
 	require.Equal(t, 1, successCount, "exactly one Join must succeed when only one slot remains")
 
@@ -105,6 +108,7 @@ func TestManagerJoin_Integration_ConcurrentJoinRacingLeave(t *testing.T) {
 	wg.Wait()
 
 	require.NoError(t, leaveErr, "Leave has no reason to fail regardless of ordering")
+	require.NoError(t, joinErr)
 
 	var activeCount int64
 	require.NoError(t, db.Raw(`
@@ -113,11 +117,11 @@ func TestManagerJoin_Integration_ConcurrentJoinRacingLeave(t *testing.T) {
 		WHERE a.session_id = ? AND p.active = TRUE
 	`, fx.SessionID).Scan(&activeCount).Error)
 
-	if joinErr == nil {
+	if joinResult.Outcome == JoinOutcomeJoined {
 		require.NotEmpty(t, joinResult.DisplayName)
 		require.Equal(t, int64(1), activeCount, "Join won the race after Leave released the slot")
 	} else {
-		require.ErrorIs(t, joinErr, session.ErrLobbyFull)
+		require.Equal(t, JoinOutcomeLobbyFull, joinResult.Outcome)
 		require.Equal(t, int64(0), activeCount, "Join lost the race while the existing Participant still held the only slot")
 	}
 }
@@ -141,24 +145,28 @@ func TestManagerJoin_Integration_ConcurrentOperationRacingLobbyExpiration(t *tes
 
 	start := make(chan struct{})
 	var wg sync.WaitGroup
+	var joinResult JoinResult
+	var leaveResult LeaveResult
 	var joinErr, leaveErr error
 
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
 		<-start
-		_, joinErr = m.Join(context.Background(), 7002, newUser, "New", "race-expire-join")
+		joinResult, joinErr = m.Join(context.Background(), 7002, newUser, "New", "race-expire-join")
 	}()
 	go func() {
 		defer wg.Done()
 		<-start
-		_, leaveErr = m.Leave(context.Background(), SessionUUID(fx.SessionUUID), existingUser, "race-expire-leave")
+		leaveResult, leaveErr = m.Leave(context.Background(), SessionUUID(fx.SessionUUID), existingUser, "race-expire-leave")
 	}()
 	close(start)
 	wg.Wait()
 
-	require.ErrorIs(t, joinErr, session.ErrLobbyExpired)
-	require.ErrorIs(t, leaveErr, session.ErrNotInLobbyPhase)
+	require.NoError(t, joinErr)
+	require.NoError(t, leaveErr)
+	require.Equal(t, JoinOutcomeLobbyExpired, joinResult.Outcome)
+	require.Equal(t, LeaveOutcomeNotInLobby, leaveResult.Outcome)
 
 	var phase, terminalReason string
 	require.NoError(t, db.Raw(`SELECT phase FROM sessions WHERE id = ?`, fx.SessionID).Scan(&phase).Error)

@@ -66,7 +66,8 @@ func TestManagerJoin_Integration(t *testing.T) {
 					return fx, 1113, UserUUID(uuid.NewString())
 				},
 				assert: func(t *testing.T, db *gorm.DB, fx testfixtures.SessionFixture, userUUID UserUUID, result JoinResult, err error) {
-					require.ErrorIs(t, err, session.ErrLobbyExpired)
+					require.NoError(t, err)
+					require.Equal(t, JoinOutcomeLobbyExpired, result.Outcome)
 
 					var phase string
 					require.NoError(t, db.Raw(`SELECT phase FROM sessions WHERE id = ?`, fx.SessionID).Scan(&phase).Error)
@@ -83,7 +84,8 @@ func TestManagerJoin_Integration(t *testing.T) {
 					return fx, 1114, UserUUID(uuid.NewString())
 				},
 				assert: func(t *testing.T, db *gorm.DB, fx testfixtures.SessionFixture, userUUID UserUUID, result JoinResult, err error) {
-					require.ErrorIs(t, err, session.ErrLobbyFull)
+					require.NoError(t, err)
+					require.Equal(t, JoinOutcomeLobbyFull, result.Outcome)
 				},
 			}
 		},
@@ -138,8 +140,9 @@ func TestManagerJoin_Integration_TokenSemantics(t *testing.T) {
 	})
 
 	t.Run("different_token_while_already_active_is_rejected", func(t *testing.T) {
-		_, err := m.Join(context.Background(), 2211, userUUID, "Casey", "join-key-second")
-		require.ErrorIs(t, err, session.ErrAlreadyJoined)
+		result, err := m.Join(context.Background(), 2211, userUUID, "Casey", "join-key-second")
+		require.NoError(t, err)
+		require.Equal(t, JoinOutcomeAlreadyJoined, result.Outcome)
 
 		var actorCount int64
 		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_actors WHERE session_id = ? AND user_uuid = ?`, fx.SessionID, string(userUUID)).Scan(&actorCount).Error)
@@ -180,8 +183,9 @@ func TestManagerJoin_Integration_PinnedDefinitionImmutability(t *testing.T) {
 	}
 	m := New(db, nil, &pinnedReader)
 
-	_, err := m.Join(context.Background(), 2213, UserUUID(uuid.NewString()), "Late Joiner", "join-key-pinned")
-	require.ErrorIs(t, err, session.ErrLobbyFull, "Join must still enforce the pinned V1 players.max, not a hypothetical current V2")
+	result, err := m.Join(context.Background(), 2213, UserUUID(uuid.NewString()), "Late Joiner", "join-key-pinned")
+	require.NoError(t, err)
+	require.Equal(t, JoinOutcomeLobbyFull, result.Outcome, "Join must still enforce the pinned V1 players.max, not a hypothetical current V2")
 	require.Equal(t, []string{fx.GameDefinitionUUID}, pinnedReader.requestedUUIDs, "Join must load the Definition by the Session's pinned game_definition_uuid, never by re-resolving the Game's current version")
 }
 
