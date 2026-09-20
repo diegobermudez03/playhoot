@@ -24,12 +24,9 @@ const (
 	outcomeActorNotFound = "ACTOR_NOT_FOUND"
 )
 
-// leaveRepoAPI is Leave's own narrow persistence contract (see
-// createRepoAPI's doc comment on why this is not shared verbatim with
-// Create/Join despite some overlapping method shapes). The shared
+// leaveRepoAPI is Leave's own narrow persistence contract. The shared
 // sessionlock/idempotency mechanism packages are called directly by this
-// step instead of through repository forwarding methods
-// (`docs/engineering/standards/repositories.md`'s Sharing Rule).
+// step instead of through repository forwarding methods.
 type leaveRepoAPI interface {
 	expirationStore
 	FindActor(ctx context.Context, tx *gorm.DB, sessionID uint, userUUID string) (*internalrepo.Actor, error)
@@ -145,10 +142,9 @@ func (m *Manager) leaveSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 }
 
 // interpretExistingLeaveClaim decides what an already-claimed LEAVE identity
-// means for the incoming request: replay or conflict
-// (`docs/engineering/standards/idempotency.md`'s Token Semantics). A
-// replayed decline is returned as the same outcome value it was originally
-// recorded as (GAME-ADR-0022), never reconstructed as an error.
+// means for the incoming request: replay or conflict. A replayed decline is
+// returned as the same outcome value it was originally recorded as, never
+// reconstructed as an error.
 func interpretExistingLeaveClaim(existing *idempotency.Request, incoming leaveRequestPayload) (LeaveResult, error) {
 	if existing.Status != idempotency.StatusCompleted {
 		return LeaveResult{}, session.ErrIdempotencyInFlight

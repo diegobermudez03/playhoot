@@ -54,8 +54,7 @@ func TestClaimAndComplete(t *testing.T) {
 // winner committed) or fails with a unique-constraint-violation error (if it
 // raced the winner's still-open insert) - callers with no other
 // serialization of their own (unlike Join/Leave, which lock the owning
-// Session's row before ever reaching Claim) must expect and handle this
-// (`docs/engineering/standards/idempotency.md`'s Claim Mechanism Contract).
+// Session's row before ever reaching Claim) must expect and handle this.
 func TestClaim_ConcurrentSameIdentityResolvesToExactlyOneFreshClaim(t *testing.T) {
 	db := testdb.OpenSessionDB(t)
 	userUUID := uuid.NewString()

@@ -13,8 +13,7 @@ import (
 // SetSessionTerminal persists an already-decided terminal transition
 // (expiration ownership - deciding *whether* now is at/after
 // lobby_expires_at - belongs to the Manager, not this method). updated_at is
-// an audit timestamp the repository stamps itself
-// (`docs/engineering/standards/repositories.md`'s Timestamp Ownership).
+// an audit timestamp the repository stamps itself.
 func (r *Repo) SetSessionTerminal(ctx context.Context, tx *gorm.DB, sessionID uint, terminalAt time.Time, terminalReason string) error {
 	if err := tx.WithContext(ctx).Exec(`
 		UPDATE sessions
@@ -48,11 +47,9 @@ func (sessionInsert) TableName() string { return "sessions" }
 
 // SetSessionRunning persists Start's successful LOBBY -> RUNNING transition.
 // Expiration/host/roster validation is Start's own business policy, decided
-// before this call; this method only performs the already-decided mutation
-// (`docs/engineering/standards/domain-logic-placement.md`'s Responsibility
-// Categories). updated_at is an audit timestamp the repository stamps
-// itself; startedAt is semantic lifecycle state and remains an explicit
-// input (`repositories.md`'s Timestamp Ownership).
+// before this call; this method only performs the already-decided mutation.
+// updated_at is an audit timestamp the repository stamps itself; startedAt
+// is semantic lifecycle state and remains an explicit input.
 func (r *Repo) SetSessionRunning(ctx context.Context, tx *gorm.DB, sessionID uint, startedAt time.Time) error {
 	if err := tx.WithContext(ctx).Exec(`
 		UPDATE sessions
@@ -65,13 +62,9 @@ func (r *Repo) SetSessionRunning(ctx context.Context, tx *gorm.DB, sessionID uin
 }
 
 // SetCurrentTurn advances sessionID's current-authoritative-RuntimeTurn
-// pointer, sessions.current_turn_id - a logical, non-DB-enforced reference
-// colocated on sessions rather than a separate session_runtime_state table
-// (GAME-ADR-0023, refining GAME-ADR-0007): every caller that needs it
-// already holds the locked sessions row for per-Session serialization.
-// Start calls this once, creating the pointer for the Session's first Turn;
-// a later RUNNING-phase caller advances the same column for its own
-// committed Turn.
+// pointer, sessions.current_turn_id. Start calls this once, creating the
+// pointer for the Session's first Turn; a later RUNNING-phase caller
+// advances the same column for its own committed Turn.
 func (r *Repo) SetCurrentTurn(ctx context.Context, tx *gorm.DB, sessionID uint, currentTurnID uint) error {
 	if err := tx.WithContext(ctx).Exec(`
 		UPDATE sessions
@@ -85,15 +78,12 @@ func (r *Repo) SetCurrentTurn(ctx context.Context, tx *gorm.DB, sessionID uint, 
 
 // CreateSessionWithHost persists the Host/SessionActor Creation Cycle:
 // inserts the sessions row with host_actor_id NULL, inserts the host
-// session_actors row, then assigns host_actor_id - one cohesive
-// structural invariant (a validly persisted Session always has its mandatory
-// host relationship), not application-level orchestration (see
-// `docs/engineering/standards/repositories.md`'s Multi-Table Persistence
-// Encapsulation). It does not create a JoinCode; that remains a separate,
+// session_actors row, then assigns host_actor_id - one cohesive structural
+// invariant (a validly persisted Session always has its mandatory host
+// relationship). It does not create a JoinCode; that remains a separate,
 // Manager-orchestrated step within the same transaction. created_at/
-// updated_at are audit timestamps the DB stamps itself
-// (`repositories.md`'s Timestamp Ownership); lobbyExpiresAt is semantic
-// lifecycle state and remains an explicit input.
+// updated_at are audit timestamps the DB stamps itself; lobbyExpiresAt is
+// semantic lifecycle state and remains an explicit input.
 func (r *Repo) CreateSessionWithHost(ctx context.Context, tx *gorm.DB, gameDefinitionUUID string, hostUserUUID string, lobbyExpiresAt time.Time) (CreatedSession, error) {
 	sessionRow := sessionInsert{
 		UUID:               uuid.NewString(),

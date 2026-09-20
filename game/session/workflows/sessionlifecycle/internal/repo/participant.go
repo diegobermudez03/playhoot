@@ -87,8 +87,7 @@ type participantInsert struct {
 func (participantInsert) TableName() string { return "session_participants" }
 
 // CreateParticipant inserts the first, active Participant for actorID.
-// joinedAt is the semantic joined_at event time, explicit workflow input
-// (`docs/engineering/standards/repositories.md`'s Timestamp Ownership).
+// joinedAt is the semantic joined_at event time, explicit workflow input.
 func (r *Repo) CreateParticipant(ctx context.Context, tx *gorm.DB, actorID uint, displayName string, joinedAt time.Time) error {
 	row := participantInsert{
 		SessionActorID: actorID,

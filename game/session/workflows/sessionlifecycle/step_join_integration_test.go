@@ -105,8 +105,8 @@ func TestManagerJoin_Integration(t *testing.T) {
 	}
 }
 
-// TestManagerJoin_Integration_TokenSemantics proves GAME-ADR-0021's
-// token-aware Join semantics against a real Postgres database: a repeated
+// TestManagerJoin_Integration_TokenSemantics proves Join's token-aware
+// semantics against a real Postgres database: a repeated
 // identical token replays; the same token with different fields conflicts;
 // a *different* token while already active is rejected AlreadyJoined
 // (never silently replayed or succeeded).

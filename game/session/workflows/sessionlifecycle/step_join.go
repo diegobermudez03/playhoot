@@ -35,12 +35,9 @@ type gamePinnedDefinitionReader interface {
 	GetGameDefinition(ctx context.Context, gameDefinitionUUID string) (*program.Definition, error)
 }
 
-// joinRepoAPI is Join's own narrow persistence contract (see createRepoAPI's
-// doc comment on why this is not shared verbatim with Create/Leave despite
-// some overlapping method shapes). The shared sessionlock/idempotency
-// mechanism packages are called directly by this step instead of through
-// repository forwarding methods
-// (`docs/engineering/standards/repositories.md`'s Sharing Rule).
+// joinRepoAPI is Join's own narrow persistence contract. The shared
+// sessionlock/idempotency mechanism packages are called directly by this
+// step instead of through repository forwarding methods.
 type joinRepoAPI interface {
 	expirationStore
 	ResolveSessionForJoinCode(ctx context.Context, joinCode uint) (*internalrepo.JoinCodeResolution, error)
@@ -52,8 +49,7 @@ type joinRepoAPI interface {
 	ActivateParticipant(ctx context.Context, tx *gorm.DB, participantID uint, displayName string, joinedAt time.Time) error
 }
 
-// joinRequestPayload is JOIN's meaningful-field idempotency payload
-// (GAME-ADR-0021).
+// joinRequestPayload is JOIN's meaningful-field idempotency payload.
 type joinRequestPayload struct {
 	JoinCode    uint   `json:"join_code"`
 	UserUUID    string `json:"user_uuid"`
@@ -62,8 +58,7 @@ type joinRequestPayload struct {
 
 // Join resolves an active JoinCode to its Session, loads that Session's
 // pinned immutable Game Definition, and admits the caller as an active
-// Participant under the Session's per-Session DB mutation lock
-// (GAME-ADR-0021).
+// Participant under the Session's per-Session DB mutation lock.
 func (m *Manager) Join(ctx context.Context, joinCode JoinCode, userUUID UserUUID, displayName DisplayName, idempotencyKey IdempotencyKey) (JoinResult, error) {
 	defer logging.Step(ctx, "SessionLifecycle.Join").Close()
 	logging.LogFields(ctx,
@@ -95,8 +90,8 @@ func (m *Manager) Join(ctx context.Context, joinCode JoinCode, userUUID UserUUID
 
 	// Loads the Session's pinned Definition/Version UUID directly - never
 	// the Game's current version - before opening the mutation
-	// transaction/row lock (GAME-ADR-0001), so lobby capacity stays governed
-	// by the exact version this Session was pinned to at Create.
+	// transaction/row lock, so lobby capacity stays governed by the exact
+	// version this Session was pinned to at Create.
 	definition, err := m.pinnedGameReader.GetGameDefinition(ctx, resolution.GameDefinitionUUID)
 	if err != nil {
 		return JoinResult{}, err
@@ -195,9 +190,9 @@ func (m *Manager) joinSessionInTx(ctx context.Context, tx *gorm.DB, sessionID ui
 		// A *different* idempotency token than any previously used for
 		// this user's admission, evaluated against current state, while
 		// already an active Participant: a new command, rejected - not
-		// silently replayed or treated as success (GAME-ADR-0021). The
-		// rejection is itself the token's completed logical outcome, so
-		// it still commits together with the just-created claim.
+		// silently replayed or treated as success. The rejection is itself
+		// the token's completed logical outcome, so it still commits
+		// together with the just-created claim.
 		if err := idempotency.Complete(ctx, tx, requestID, &lockedSession.ID, outcomeAlreadyJoined, ""); err != nil {
 			return JoinResult{}, fmt.Errorf("completing join session request: %s", err)
 		}
@@ -237,10 +232,9 @@ func (m *Manager) joinSessionInTx(ctx context.Context, tx *gorm.DB, sessionID ui
 }
 
 // interpretExistingJoinClaim decides what an already-claimed JOIN identity
-// means for the incoming request: replay or conflict
-// (`docs/engineering/standards/idempotency.md`'s Token Semantics). A
-// replayed decline is returned as the same outcome value it was originally
-// recorded as (GAME-ADR-0022), never reconstructed as an error.
+// means for the incoming request: replay or conflict. A replayed decline is
+// returned as the same outcome value it was originally recorded as, never
+// reconstructed as an error.
 func interpretExistingJoinClaim(existing *idempotency.Request, incoming joinRequestPayload) (JoinResult, error) {
 	if existing.Status != idempotency.StatusCompleted {
 		return JoinResult{}, session.ErrIdempotencyInFlight

@@ -65,7 +65,7 @@ classDiagram
 
 ## Session Runtime Tables
 
-Status: this replaces the pre-Slice-1 `sessions`/`session_players`/`session_states`/`join_codes` shape - see WORK-0001's Data/Migration Impact. Slice 2 (WORK-0003) added `session_runtime_turns`/`session_runtime_steps` and `sessions.current_turn_id` (GAME-ADR-0023 - a logical, non-DB-enforced pointer to the current authoritative RuntimeTurn, colocated on `sessions` rather than a separate `session_runtime_state` table). The full accepted design (including the not-yet-implemented RUNNING-phase interaction/timer/failure tables) remains recorded in `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md`.
+Status: this replaces the pre-Slice-1 `sessions`/`session_players`/`session_states`/`join_codes` shape - see WORK-0001's Data/Migration Impact. Slice 2 (WORK-0003) added `session_runtime_turns`/`session_runtime_steps` and `sessions.current_turn_id` (GAME-ADR-0023 - a logical, non-DB-enforced pointer to the current authoritative RuntimeTurn, colocated on `sessions` rather than a separate `session_runtime_state` table). Slice 3 (WORK-0004) added `session_interactions`. The full accepted design (including the not-yet-implemented timer/failure tables) remains recorded in `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md`.
 
 ```mermaid
 classDiagram
@@ -136,6 +136,22 @@ classDiagram
         commit_payload
         created_at
     }
+    class session_interactions {
+        id
+        uuid
+        session_id
+        session_actor_id
+        kind
+        engine_path
+        engine_slot
+        interaction_payload
+        response_payload
+        state
+        opened_by_turn_id
+        closed_by_turn_id
+        closure_reason
+        created_at
+    }
 
     sessions "1" --> "*" session_actors : "session_actors.session_id -> sessions.id"
     sessions "0..1 host" --> "1" session_actors : "sessions.host_actor_id -> session_actors.id"
@@ -145,9 +161,14 @@ classDiagram
     sessions "1" --> "*" session_runtime_turns : "session_runtime_turns.session_id -> sessions.id"
     session_runtime_turns "0..1" --> "*" sessions : "sessions.current_turn_id -> session_runtime_turns.id (logical, non-DB-enforced)"
     session_runtime_turns "1" --> "*" session_runtime_steps : "session_runtime_steps.runtime_turn_id -> session_runtime_turns.id"
+    sessions "1" --> "*" session_interactions : "session_interactions.session_id -> sessions.id"
+    session_actors "1" --> "*" session_interactions : "session_interactions.session_actor_id -> session_actors.id"
+    session_runtime_turns "1 opens" --> "*" session_interactions : "session_interactions.opened_by_turn_id -> session_runtime_turns.id"
+    session_runtime_turns "0..1 closes" --> "*" session_interactions : "session_interactions.closed_by_turn_id -> session_runtime_turns.id"
+    session_interactions "0..1 causes" --> "*" session_runtime_turns : "session_runtime_turns.source_interaction_id -> session_interactions.id"
 ```
 
-`phase` is `LOBBY | RUNNING | TERMINAL` in the currently implemented behavior (Create/Join/Leave/Start). `started_at` is set only once Start commits a Session's first RuntimeTurn; it remains `NULL` for a Session still in `LOBBY` or one that fatally terminalized before ever running (`terminal_reason` = `RUNTIME_STATE_INVALID` or `RUNTIME_EXECUTION_FAILED`). `session_runtime_turns.source_interaction_id`/`source_timer_obligation_id`/`actor_id` are always `NULL` in the currently implemented behavior (Start's own Turn never populates them) - Slices 3/5 populate them for their own causes. Only `sequence = 1` currently exists (Start's own first Turn); no later slice that would advance it is implemented yet.
+`phase` is `LOBBY | RUNNING | TERMINAL` in the currently implemented behavior (Create/Join/Leave/Start/AnswerInteraction). `started_at` is set only once Start commits a Session's first RuntimeTurn; it remains `NULL` for a Session still in `LOBBY` or one that fatally terminalized before ever running (`terminal_reason` = `RUNTIME_STATE_INVALID` or `RUNTIME_EXECUTION_FAILED`). `session_runtime_turns.source_interaction_id`/`actor_id` are populated by AnswerInteraction's own caused Turn; `source_timer_obligation_id` is always `NULL` in the currently implemented behavior (Slice 5 populates it for its own cause). `sequence` currently reaches 2 for a Session with one answered interaction (Start's first Turn, then AnswerInteraction's); no later slice that would advance it further is implemented yet. `session_interactions.kind` is `QUESTION | ASK_GROUP`; `state` is `ACTIVE | CLOSED | TERMINATED` in this codebase's own chosen vocabulary (`CLOSED` for ordinary Turn-produced closure, `TERMINATED` for this slice's own narrow terminal-cleanup closure - `closed_by_turn_id` `NULL` + `closure_reason = SESSION_TERMINATED`); GAME-ADR-0019 leaves the exact enum naming an implementation-planning detail. `engine_path`/`interaction_payload`/`response_payload` are JSONB, encoding `engine.Value`-typed data through `engineservice.EncodeValue`/`DecodeValue`, never plain `encoding/json`.
 
 ## Relationship Types
 
@@ -168,6 +189,11 @@ Logical persisted references:
 - `session_runtime_turns.session_id -> sessions.id`
 - `session_runtime_steps.runtime_turn_id -> session_runtime_turns.id`
 - `sessions.current_turn_id -> session_runtime_turns.id` (GAME-ADR-0023)
+- `session_interactions.session_id -> sessions.id`
+- `session_interactions.session_actor_id -> session_actors.id`
+- `session_interactions.opened_by_turn_id -> session_runtime_turns.id`
+- `session_interactions.closed_by_turn_id -> session_runtime_turns.id` (nullable)
+- `session_runtime_turns.source_interaction_id -> session_interactions.id` (nullable)
 
 Logical cross-capability references within Game (no database FK, same bounded context, independent persistence/transaction ownership per GAME-ADR-0001):
 

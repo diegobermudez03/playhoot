@@ -6,15 +6,14 @@ import (
 )
 
 // migration20260919000002SessionsCurrentTurnID adds the current-authoritative-
-// RuntimeTurn pointer directly to sessions, per GAME-ADR-0023 (refining
-// GAME-ADR-0007): every caller that needs it already holds the locked
-// sessions row for per-Session serialization, so colocating it there is
-// free - no separate session_runtime_state table. This is a logical,
-// non-DB-enforced reference like every other reference in this schema
-// (SESSION_RUNTIME_PERSISTENCE_MODEL.md's Relationship Types); it remains
-// meaningful after session_runtime_turns is eventually hard-deleted
-// following archival (GAME-ADR-0009) - it then resolves against the
-// archived artifact instead of a live row, not a broken reference.
+// RuntimeTurn pointer directly to sessions: every caller that needs it
+// already holds the locked sessions row for per-Session serialization, so
+// colocating it there is free - no separate table is needed just to hold
+// one pointer. It is a logical reference with no database foreign key, like
+// every other cross-table reference in this schema; it stays meaningful
+// even after the row it points to is eventually deleted as part of history
+// archival, resolving against the archived artifact instead of a live row -
+// not a broken reference.
 func migration20260919000002SessionsCurrentTurnID() *gormigrate.Migration {
 	return &gormigrate.Migration{
 		ID: "20260919000002_sessions_current_turn_id",

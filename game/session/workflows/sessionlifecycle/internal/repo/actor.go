@@ -56,8 +56,7 @@ func createActorRow(ctx context.Context, tx *gorm.DB, sessionID uint, userUUID s
 
 // CreateActor inserts a new SessionActor for (sessionID, userUUID), starting
 // semantic_presence CONNECTED, and returns its id. created_at is an audit
-// timestamp the DB stamps itself
-// (`docs/engineering/standards/repositories.md`'s Timestamp Ownership).
+// timestamp the DB stamps itself.
 func (r *Repo) CreateActor(ctx context.Context, tx *gorm.DB, sessionID uint, userUUID string) (uint, error) {
 	id, err := createActorRow(ctx, tx, sessionID, userUUID)
 	if err != nil {

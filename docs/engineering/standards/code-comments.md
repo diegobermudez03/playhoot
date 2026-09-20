@@ -179,9 +179,39 @@ worth keeping, state it directly as a property of the code:
 
 A reader should never be able to tell, from a comment alone, that a review
 happened, when a decision was made, or which task/WORK/ADR number produced
-the line — except a direct ADR/standard citation used the same way a code
-comment cites any other stable design document (e.g. `(GAME-ADR-0022)`),
-never narrated as "the human approved this on \<date\>" or "per WORK-0003".
+the line.
+
+## No Citing Internal Documents As A Stand-In For Explanation
+
+Do not cite an ADR, WORK document, workspace file, or engineering-standard
+path (`GAME-ADR-0018`, `ADR-0005`, `docs/engineering/standards/repositories.md`,
+`docs/work/...`, anything under `docs/ai/...`) as the reason something is
+true. Assume the reader — human or AI, inside this org or outside it —
+cannot open that document and has never heard of it, even though it
+technically lives in this repository. Whatever reasoning the citation
+stands in for must be written out in the comment itself, in plain language,
+so the comment is completely self-sufficient with zero knowledge of this
+repository's internal decision-tracking or documentation structure.
+
+```go
+// Bad: the reasoning lives in a document the reader is expected to already
+// know about and go open.
+// Mutations against the same Session serialize with one another
+// (GAME-ADR-0018).
+```
+
+```go
+// Good: states the actual guarantee, understandable on its own.
+// At most one mutation against a given Session executes at a time; a
+// concurrent one waits until this one commits or rolls back.
+```
+
+This applies to every kind of internal citation, not only ADRs — a
+standards-doc path is exactly as opaque to an outside reader as a WORK or
+Slice number. Default to no citation at all. If one is included anyway (for
+a maintainer who wants to trace the deeper design record), it must be
+strictly supplementary: the sentence must already be complete and correct
+with the citation deleted.
 
 ## No Artificial Coupling
 
@@ -216,5 +246,7 @@ During code review, flag in particular:
 - an inline comment restating an obvious line ("get X", "check the error");
 - a comment referencing a WORK/task/PR/date or describing "previously X, now
   Y" implementation history;
+- a comment citing an ADR/WORK/standards-doc path as the reason for
+  something, instead of stating the reason itself in plain language;
 - a genuine correctness/concurrency/invariant comment being deleted merely
   to reduce comment count.

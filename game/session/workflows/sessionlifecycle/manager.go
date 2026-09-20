@@ -7,14 +7,14 @@ import (
 	"gorm.io/gorm"
 )
 
-//go:generate mockgen -package=sessionlifecycle -destination=mocks_test.go . createRepoAPI,joinRepoAPI,leaveRepoAPI,startRepoAPI,gameCurrentVersionReader,gamePinnedDefinitionReader
+//go:generate mockgen -package=sessionlifecycle -destination=mocks_test.go . createRepoAPI,joinRepoAPI,leaveRepoAPI,startRepoAPI,answerInteractionRepoAPI,gameCurrentVersionReader,gamePinnedDefinitionReader
 
 // defaultLobbyTTL is the lobby lifetime applied when no other TTL
 // configuration is supplied.
 const defaultLobbyTTL = 10 * time.Minute
 
-// Session lifecycle idempotency operation labels
-// (`docs/engineering/standards/idempotency.md`).
+// Session lifecycle idempotency operation labels, scoping each command's
+// idempotency identity to (UserUUID, operation, IdempotencyKey).
 const (
 	operationCreate = "CREATE"
 	operationJoin   = "JOIN"
@@ -23,26 +23,28 @@ const (
 )
 
 // Manager is the Session lifecycle workflow controller, exposing
-// Create/Join/Leave/Start as its steps. Each step depends on its own narrow
-// persistence contract rather than one shared repository interface, even
-// though a single concrete internal/repo.Repo currently satisfies all of
-// them, so a step's dependencies stay scoped to what it actually needs
-// (`docs/engineering/standards/domain-logic-placement.md`'s Workflow
-// Grouping Does Not Imply A Shared Repository Contract). Start's own
-// RuntimeTurn execution logic lives inline rather than in a separate shared
-// package, since no other current use case calls it independently.
+// Create/Join/Leave/Start/AnswerInteraction as its steps: LOBBY admission
+// and RUNNING-phase execution both stay on this one Manager rather than
+// splitting into a separate workflow package. Each step depends on its own
+// narrow persistence contract naming only the methods that step actually
+// calls, rather than one shared repository interface - even though a single
+// concrete internal/repo.Repo currently satisfies all of them - so adding a
+// method for one step never forces every other step's interface, mock, and
+// test to change with it. The shared RuntimeTurn Step-draining/bound
+// execution mechanism lives in `internal/runtimeturn`, scoped to this
+// workflow package.
 //
 // Manager decides transaction scope itself by calling
 // utils.RunInDBTransaction directly, rather than holding a separate injected
 // `transactor` dependency whose only purpose would be to indirect into that
-// already generic helper (`docs/engineering/standards/repositories.md`'s
-// Transaction Ownership). Manager satisfies utils.DBServicer itself via
+// already generic helper. Manager satisfies utils.DBServicer itself via
 // GetDB so it can be passed directly to that helper.
 type Manager struct {
-	createRepo createRepoAPI
-	joinRepo   joinRepoAPI
-	leaveRepo  leaveRepoAPI
-	startRepo  startRepoAPI
+	createRepo            createRepoAPI
+	joinRepo              joinRepoAPI
+	leaveRepo             leaveRepoAPI
+	startRepo             startRepoAPI
+	answerInteractionRepo answerInteractionRepoAPI
 
 	db *gorm.DB
 
@@ -59,22 +61,21 @@ func (m *Manager) GetDB() *gorm.DB {
 }
 
 // New constructs a Manager. currentGameReader resolves a Game's current
-// playable Definition/Version (Create's Game Management dependency,
-// GAME-ADR-0001/GAME-ADR-0004); pinnedGameReader loads an already-pinned
+// playable Definition/Version; pinnedGameReader loads an already-pinned
 // immutable Game Definition by its own Definition/Version UUID, never
-// "current version" (Join's dependency, reused unchanged by Start), since
-// the pinned Definition must stay immutable for the lifetime of the
-// Session.
+// "current version", since the pinned Definition must stay immutable for
+// the lifetime of the Session.
 func New(db *gorm.DB, currentGameReader gameCurrentVersionReader, pinnedGameReader gamePinnedDefinitionReader) *Manager {
 	r := internalrepo.New(db)
 	return &Manager{
-		createRepo:        r,
-		joinRepo:          r,
-		leaveRepo:         r,
-		startRepo:         r,
-		db:                db,
-		currentGameReader: currentGameReader,
-		pinnedGameReader:  pinnedGameReader,
-		lobbyTTL:          defaultLobbyTTL,
+		createRepo:            r,
+		joinRepo:              r,
+		leaveRepo:             r,
+		startRepo:             r,
+		answerInteractionRepo: r,
+		db:                    db,
+		currentGameReader:     currentGameReader,
+		pinnedGameReader:      pinnedGameReader,
+		lobbyTTL:              defaultLobbyTTL,
 	}
 }

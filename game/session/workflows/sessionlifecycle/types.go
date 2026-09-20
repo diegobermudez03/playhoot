@@ -1,10 +1,9 @@
 // Package sessionlifecycle is the Session lifecycle workflow: one Manager
-// exposing Create/Join/Leave/Start as its steps, per
-// `docs/engineering/standards/domain-logic-placement.md`'s Preferred
-// Workflow Package Shape. The Manager decides business/lifecycle policy
-// (transaction scope, admission, expiration, idempotency-replay meaning);
-// its narrow `internal/repo` persistence layer reports facts and performs
-// the mutations the Manager requests.
+// exposing Create/Join/Leave/Start/AnswerInteraction as its steps. The
+// Manager decides business/lifecycle policy (transaction scope, admission,
+// expiration, idempotency-replay meaning); its narrow `internal/repo`
+// persistence layer reports facts and performs the mutations the Manager
+// requests.
 package sessionlifecycle
 
 import "time"
@@ -12,8 +11,8 @@ import "time"
 // GameUUID is a public Game identity (Create's input).
 type GameUUID string
 
-// UserUUID is an already-authenticated caller identity (GAME-ADR-0005).
-// Session lifecycle operations never resolve credentials themselves.
+// UserUUID is an already-authenticated caller identity. Session lifecycle
+// operations never resolve credentials themselves.
 type UserUUID string
 
 // SessionUUID is a Session's public identity.
@@ -27,8 +26,9 @@ type JoinCode uint
 type DisplayName string
 
 // IdempotencyKey is a caller-supplied opaque token scoping one logical
-// command within its (UserUUID, operation) stream
-// (`docs/engineering/standards/idempotency.md`).
+// command within its (UserUUID, operation) stream: retrying the same
+// command with the same key replays its original outcome instead of
+// executing it again.
 type IdempotencyKey string
 
 // CreatedSession is Create's logical outcome, also the shape persisted as
@@ -40,8 +40,8 @@ type CreatedSession struct {
 }
 
 // JoinOutcome is Join's expected business outcome, a value distinct from a
-// Go error (GAME-ADR-0022, `docs/engineering/standards/error-handling.md`'s
-// Expected Business Outcome vs. Error).
+// Go error: an ordinary decline a caller should branch on, not treat as a
+// failure.
 type JoinOutcome string
 
 const (
@@ -55,7 +55,7 @@ const (
 	JoinOutcomeLobbyFull JoinOutcome = "LOBBY_FULL"
 	// JoinOutcomeAlreadyJoined means a differently-tokened Join was
 	// evaluated as a new command while the caller is already an active
-	// Participant (GAME-ADR-0021).
+	// Participant.
 	JoinOutcomeAlreadyJoined JoinOutcome = "ALREADY_JOINED"
 )
 
@@ -69,7 +69,8 @@ type JoinResult struct {
 }
 
 // LeaveOutcome is Leave's expected business outcome, a value distinct from a
-// Go error (GAME-ADR-0022).
+// Go error: an ordinary decline a caller should branch on, not treat as a
+// failure.
 type LeaveOutcome string
 
 const (
@@ -93,7 +94,8 @@ type LeaveResult struct {
 }
 
 // StartOutcome is Start's expected business outcome, a value distinct from
-// a Go error (GAME-ADR-0022).
+// a Go error: an ordinary decline a caller should branch on, not treat as a
+// failure.
 type StartOutcome string
 
 const (
@@ -111,8 +113,8 @@ const (
 	// players.max.
 	StartOutcomeNotEnoughPlayers StartOutcome = "NOT_ENOUGH_PLAYERS"
 	// StartOutcomeRuntimeInitFailed means the pre-first-Turn fatal path was
-	// taken (GAME-ADR-0017/0019): the Session is now TERMINAL, started_at
-	// remains NULL, and no RuntimeTurn/Step/State was persisted.
+	// taken: the Session is now TERMINAL, started_at remains NULL, and no
+	// RuntimeTurn/Step/State was persisted.
 	StartOutcomeRuntimeInitFailed StartOutcome = "RUNTIME_INIT_FAILED"
 )
 
@@ -122,4 +124,44 @@ const (
 type StartResult struct {
 	Outcome     StartOutcome `json:"outcome"`
 	SessionUUID SessionUUID  `json:"session_uuid,omitempty"`
+}
+
+// InteractionUUID is a session_interactions row's public identity.
+type InteractionUUID string
+
+// AnswerInteractionOutcome is AnswerInteraction's expected business
+// outcome, a value distinct from a Go error: an ordinary decline a caller
+// should branch on, not treat as a failure.
+type AnswerInteractionOutcome string
+
+const (
+	// AnswerInteractionOutcomeAnswered means the response was accepted: a
+	// new RuntimeTurn committed and the interaction resolved - or, for a
+	// retried, semantically equivalent response to an already-resolved
+	// interaction, the original outcome replayed without a second engine
+	// effect.
+	AnswerInteractionOutcomeAnswered AnswerInteractionOutcome = "ANSWERED"
+	// AnswerInteractionOutcomeRejected means the response was declined
+	// without any engine effect: the caller was not the interaction's
+	// recipient, the interaction was no longer answerable (already
+	// terminally closed, or resolved by a different respondent's answer -
+	// unreachable for this caller), or the engine itself rejected the
+	// answer as stale/duplicate/invalid.
+	AnswerInteractionOutcomeRejected AnswerInteractionOutcome = "REJECTED"
+	// AnswerInteractionOutcomeConflict means the interaction was already
+	// resolved with a response different from the one now submitted.
+	AnswerInteractionOutcomeConflict AnswerInteractionOutcome = "CONFLICT"
+	// AnswerInteractionOutcomeRuntimeExecutionFailed means a deterministic
+	// engine execution failure (including Step-bound overflow) terminalized
+	// the Session while processing the response.
+	AnswerInteractionOutcomeRuntimeExecutionFailed AnswerInteractionOutcome = "RUNTIME_EXECUTION_FAILED"
+)
+
+// AnswerInteractionResult is AnswerInteraction's logical outcome.
+// SessionUUID is populated whenever the interaction's owning Session was
+// resolved (every outcome except an unresolved interactionUUID, reported as
+// session.ErrInteractionNotFound instead).
+type AnswerInteractionResult struct {
+	Outcome     AnswerInteractionOutcome `json:"outcome"`
+	SessionUUID SessionUUID              `json:"session_uuid,omitempty"`
 }

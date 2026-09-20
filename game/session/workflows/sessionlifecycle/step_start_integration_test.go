@@ -60,6 +60,39 @@ func TestManagerStart_Integration(t *testing.T) {
 		require.Equal(t, turn.ID, currentTurnID)
 	})
 
+	t.Run("first_turn_opening_a_question_persists_an_active_interaction", func(t *testing.T) {
+		m := New(db, nil, stubStartPinnedGameReader{definition: answerableDefinition(1, 4)})
+
+		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
+		hostUUID := uuid.NewString()
+		hostActorID := testfixtures.SeedActor(t, db, fx.SessionID, hostUUID)
+		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
+		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
+
+		result, err := m.Start(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(hostUUID), "start-key-opens-question")
+		require.NoError(t, err)
+		require.Equal(t, StartOutcomeStarted, result.Outcome)
+
+		var turn struct {
+			ID uint `gorm:"column:id"`
+		}
+		require.NoError(t, db.Raw(`SELECT id FROM session_runtime_turns WHERE session_id = ?`, fx.SessionID).Scan(&turn).Error)
+
+		var row struct {
+			SessionActorID uint   `gorm:"column:session_actor_id"`
+			Kind           string `gorm:"column:kind"`
+			EngineSlot     string `gorm:"column:engine_slot"`
+			State          string `gorm:"column:state"`
+			OpenedByTurnID uint   `gorm:"column:opened_by_turn_id"`
+		}
+		require.NoError(t, db.Raw(`SELECT session_actor_id, kind, engine_slot, state, opened_by_turn_id FROM session_interactions WHERE session_id = ?`, fx.SessionID).Scan(&row).Error)
+		require.Equal(t, hostActorID, row.SessionActorID, "the only active Participant is players[0], the question's Recipient")
+		require.Equal(t, session.InteractionKindQuestion, row.Kind)
+		require.Equal(t, answerableSlot, row.EngineSlot)
+		require.Equal(t, session.InteractionStateActive, row.State)
+		require.Equal(t, turn.ID, row.OpenedByTurnID)
+	})
+
 	t.Run("rejects_start_by_non_host", func(t *testing.T) {
 		m := New(db, nil, stubStartPinnedGameReader{definition: startableDefinition(1, 4)})
 

@@ -117,14 +117,111 @@ func nonStartableDefinition(playersMin, playersMax int) program.Definition {
 }
 
 // stubStartPinnedGameReader satisfies gamePinnedDefinitionReader with a
-// fixed, caller-supplied Definition, so Start's integration tests can
-// exercise real engineservice.Compile/NewSnapshot/Step execution end to
-// end against whichever fixture (startableDefinition/
-// nonStartableDefinition) a given test case needs.
+// fixed, caller-supplied Definition, so Start's/AnswerInteraction's
+// integration tests can exercise real
+// engineservice.Compile/NewSnapshot/Step execution end to end against
+// whichever fixture (startableDefinition/nonStartableDefinition/
+// answerableDefinition) a given test case needs.
 type stubStartPinnedGameReader struct {
 	definition program.Definition
 }
 
 func (s stubStartPinnedGameReader) GetGameDefinition(ctx context.Context, gameDefinitionUUID string) (*program.Definition, error) {
 	return &s.definition, nil
+}
+
+// answerableQuestionName/answerableSlot/answerableEffect name
+// answerableDefinition's own declarations, reused directly by tests that
+// need to assert against them (constructing an expected engine.Value
+// answer, or asserting a captured interaction's slot).
+const (
+	answerableQuestionName = "PickNumber"
+	answerableSlot         = "Q"
+)
+
+// answerableDefinition builds a real, engineservice.Compile-able Definition
+// declaring the accepted `players: list<user>` root roster parameter, whose
+// root workflow opens a Question at players[0] immediately at Start (Slot
+// "Q", Question "PickNumber", a bare number response) and closes it once
+// answered - for tests that need a Definition compiling and executing an
+// interaction end to end, whether opened at Start or answered afterward.
+func answerableDefinition(playersMin, playersMax int) program.Definition {
+	return program.Definition{
+		Metadata:     program.Metadata{ID: "answerable", Name: "Answerable"},
+		RootWorkflow: "Main",
+		Players:      program.PlayerPolicy{Min: playersMin, Max: playersMax},
+		Questions: []program.QuestionDeclaration{
+			{
+				Name:         answerableQuestionName,
+				ResponseType: program.BuiltinTypeReference{Type: program.BuiltinTypeNumber},
+			},
+		},
+		Workflows: []program.WorkflowDeclaration{
+			{
+				Name: "Main",
+				Parameters: []program.FieldDeclaration{
+					{Name: "players", Type: program.ListTypeReference{Element: program.BuiltinTypeReference{Type: program.BuiltinTypeUser}}},
+				},
+				ResultType:   program.BuiltinTypeReference{Type: program.BuiltinTypeUnit},
+				InitialState: "Start",
+				QuestionSlots: []program.QuestionSlotDeclaration{
+					{Name: answerableSlot, Question: answerableQuestionName},
+				},
+				States: []program.WorkflowStateDeclaration{
+					{
+						Name: "Start",
+						Transitions: []program.TransitionDeclaration{
+							{
+								Name:   "Started",
+								Signal: program.SignalPattern{Source: program.NamedSignalSource{Name: "WorkflowStarted"}},
+								Operations: program.Block{Operations: []program.Operation{
+									program.OpenQuestionOperation{
+										Slot: answerableSlot,
+										Recipient: program.IndexExpression{
+											Target: program.ReferenceExpression{Name: "players"},
+											Index:  program.NumberLiteralExpression{Value: "0"},
+										},
+									},
+								}},
+								Control: program.StayControl{},
+							},
+							{
+								Name:   "Answered",
+								Signal: program.SignalPattern{Source: program.QuestionAnsweredSignalSource{Slot: answerableSlot}},
+								Operations: program.Block{Operations: []program.Operation{
+									program.CloseQuestionOperation{Slot: answerableSlot},
+								}},
+								Control: program.StayControl{},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+// answerableDefinitionWithFatalAnswer is answerableDefinition's shape,
+// except its "Answered" transition deterministically fails (division by
+// zero) instead of closing the question - forcing AnswerInteraction's fatal
+// RUNTIME_EXECUTION_FAILED path against a real database.
+func answerableDefinitionWithFatalAnswer(playersMin, playersMax int) program.Definition {
+	d := answerableDefinition(playersMin, playersMax)
+	d.Metadata = program.Metadata{ID: "answerable-fatal", Name: "AnswerableFatal"}
+	d.GlobalState = program.StateDeclaration{
+		Fields: []program.StateFieldDeclaration{
+			{Name: "n", Type: program.BuiltinTypeReference{Type: program.BuiltinTypeNumber}, Initializer: program.NumberLiteralExpression{Value: "0"}},
+		},
+	}
+	d.Workflows[0].States[0].Transitions[1].Operations = program.Block{Operations: []program.Operation{
+		program.SetOperation{
+			Target: program.FieldTarget{Target: program.NameTarget{Name: "global"}, Field: "n"},
+			Value: program.BinaryExpression{
+				Operator: program.BinaryOperatorDivide,
+				Left:     program.NumberLiteralExpression{Value: "1"},
+				Right:    program.NumberLiteralExpression{Value: "0"},
+			},
+		},
+	}}
+	return d
 }

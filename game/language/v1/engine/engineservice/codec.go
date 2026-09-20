@@ -52,6 +52,20 @@ func DecodeSnapshot(data []byte) (engine.Snapshot, error) {
 	return codec.DecodeSnapshot("$", data)
 }
 
+// EncodeValue encodes v as compact JSON, the same wire representation used
+// for engine.Value-typed data nested inside an encoded Snapshot. Exposed
+// standalone for a caller that needs to durably persist one engine.Value
+// outside of a Snapshot without maintaining a second, redundant encoding.
+func EncodeValue(v engine.Value) ([]byte, error) {
+	return codec.EncodeValue("$", v)
+}
+
+// DecodeValue decodes data as an engine.Value, the counterpart to
+// EncodeValue.
+func DecodeValue(data []byte) (engine.Value, error) {
+	return codec.DecodeValue("$", data)
+}
+
 // CheckSnapshotCompatibility reports whether snapshot can be resumed
 // against p: its root instance must run p's own RootWorkflow, and every
 // instance anywhere in its child-workflow tree (root, every occupied

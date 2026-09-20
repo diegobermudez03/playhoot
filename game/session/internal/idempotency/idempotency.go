@@ -68,8 +68,7 @@ func fetchExisting(ctx context.Context, tx *gorm.DB, input ClaimInput) (*Request
 // If requestID != 0, the caller acquired a fresh claim and must later call
 // Complete inside the same transaction. If existing != nil, the identity was
 // already owned by a prior request, for the caller to interpret as a replay
-// or a conflict. These two outcomes are mutually exclusive
-// (`docs/engineering/standards/idempotency.md`'s Claim Mechanism Contract).
+// or a conflict. These two outcomes are mutually exclusive.
 //
 // Claim first fetches by identity; only if nothing is found does it insert a
 // fresh row. Claim does not itself resolve a race between its own fetch and

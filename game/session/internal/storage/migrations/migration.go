@@ -18,9 +18,8 @@ func MigrateTables(db *gorm.DB) error {
 		migration20260817000001Sessions(),
 		migration20260817000000SessionStates(),
 
-		// Replaces the pre-lobby scaffolding schema above with the accepted
-		// Session/Actor/Participant/lobby identity model. See
-		// game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md.
+		// Replaces the pre-lobby scaffolding schema above with the
+		// Session/Actor/Participant/lobby identity model.
 		migration20260908000000DropLegacySessionSchema(),
 		migration20260908000001Sessions(),
 		migration20260908000002SessionActors(),
@@ -29,13 +28,14 @@ func MigrateTables(db *gorm.DB) error {
 		migration20260908000005SessionRequests(),
 
 		// RuntimeTurn/RuntimeStep tables and the sessions.current_turn_id
-		// pointer Start's inline RuntimeTurn execution logic persists to. See
-		// game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md's Runtime History
-		// Tables and GAME-ADR-0023 (current_turn_id lives on sessions, not
-		// a separate session_runtime_state table).
+		// pointer to the current one.
 		migration20260919000000SessionRuntimeTurns(),
 		migration20260919000001SessionRuntimeSteps(),
 		migration20260919000002SessionsCurrentTurnID(),
+
+		// session_interactions - the durable Interaction entity a committed
+		// RuntimeTurn opens (from an engine.OpenQuestionOutput) and resolves.
+		migration20260919000003SessionInteractions(),
 	})
 
 	return migrator.Migrate()

@@ -1,9 +1,9 @@
 // Package sessionlock implements the one shared per-Session DB-locking
 // primitive that every LOBBY mutation (Join, Leave, and lazy lobby-expiration
 // materialization) must use rather than each inventing its own locking
-// query, per the Session Runtime Lobby Lifecycle Contract's serialization
-// rule. It is intentionally shaped so RUNNING-phase mutations can reuse it
-// unchanged (GAME-ADR-0018).
+// query, so at most one mutation against a given Session ever executes at a
+// time. It is intentionally shaped so RUNNING-phase mutations can reuse it
+// unchanged.
 //
 // This package owns locking only. It reports the locked row's current facts
 // (phase, lobby_expires_at, ...); it does not decide lobby-expiration policy
@@ -21,11 +21,8 @@ import (
 )
 
 // Session is the locked snapshot of a sessions row needed by lobby and
-// RUNNING-phase mutations. CurrentTurnID is sessions.current_turn_id - the
-// current-authoritative-RuntimeTurn pointer colocated on sessions rather
-// than a separate session_runtime_state table (GAME-ADR-0023, refining
-// GAME-ADR-0007), since every caller reading it here already holds this
-// same locked row for per-Session serialization.
+// RUNNING-phase mutations. CurrentTurnID is sessions.current_turn_id, the
+// current-authoritative-RuntimeTurn pointer.
 type Session struct {
 	ID                 uint
 	UUID               string

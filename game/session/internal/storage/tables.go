@@ -25,7 +25,7 @@ type sessionActor struct {
 	ID               uint   // PK, incremental
 	SessionID        uint   // References sessions.id, INDEX
 	UserUUID         string // References Identity.User.user_uuid (external domain reference, no FK)
-	SemanticPresence string // CONNECTED | DISCONNECTED (GAME-ADR-0015)
+	SemanticPresence string // CONNECTED | DISCONNECTED
 	CreatedAt        time.Time
 	// UNIQUE INDEX(session_id, user_uuid)
 }

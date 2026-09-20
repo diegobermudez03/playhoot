@@ -19,19 +19,18 @@ import (
 
 // gameCurrentVersionReader is the narrow Game Management read capability
 // Create depends on to resolve the Game's current playable
-// Definition/Version to pin (GAME-ADR-0001, GAME-ADR-0004).
+// Definition/Version to pin.
 type gameCurrentVersionReader interface {
 	GetPlayableGameWithCurrentVersion(ctx context.Context, gameUUID string) (*management.Game, error)
 }
 
 // createRepoAPI is Create's own narrow persistence contract. Even though one
 // concrete internal/repo.Repo happens to satisfy createRepoAPI/joinRepoAPI/
-// leaveRepoAPI today, each step keeps its own contract
-// (`docs/engineering/standards/domain-logic-placement.md`'s Workflow
-// Grouping Does Not Imply A Shared Repository Contract). The shared
-// sessionlock/idempotency mechanism packages are called directly by this
-// step instead of through repository forwarding methods
-// (`docs/engineering/standards/repositories.md`'s Sharing Rule).
+// leaveRepoAPI today, each step keeps its own contract naming only the
+// methods that step actually calls, so a method added for one step never
+// forces every other step's interface, mock, and test to change with it.
+// The shared sessionlock/idempotency mechanism packages are called directly
+// by this step instead of through repository forwarding methods.
 type createRepoAPI interface {
 	CreateSessionWithHost(ctx context.Context, tx *gorm.DB, gameDefinitionUUID string, hostUserUUID string, lobbyExpiresAt time.Time) (internalrepo.CreatedSession, error)
 	CreateJoinCode(ctx context.Context, tx *gorm.DB, sessionID uint) (uint, error)
@@ -136,8 +135,7 @@ func (m *Manager) createSessionInTx(ctx context.Context, tx *gorm.DB, gameUUID G
 }
 
 // interpretExistingCreateClaim decides what an already-claimed CREATE
-// identity means for the incoming request: replay or conflict
-// (`docs/engineering/standards/idempotency.md`'s Token Semantics). This is
+// identity means for the incoming request: replay or conflict. This is
 // Manager policy - the shared idempotency mechanism only reports the
 // existing request.
 func interpretExistingCreateClaim(existing *idempotency.Request, incoming createRequestPayload) (CreatedSession, error) {
