@@ -140,9 +140,8 @@ func encodeEnginePath(path []engine.PathStep) ([]byte, error) {
 }
 
 // decodeEnginePath decodes session_interactions.engine_path back into an
-// engine.Signal.Path, the counterpart to encodeEnginePath - needed to
-// construct the response Signal targeting the same workflow instance the
-// interaction was opened against.
+// engine.Signal.Path, so a response can be built targeting the same
+// workflow instance the interaction was opened against.
 func decodeEnginePath(data []byte) ([]engine.PathStep, error) {
 	var wire []pathStepWire
 	if err := json.Unmarshal(data, &wire); err != nil {

@@ -161,6 +161,102 @@ func TestManagerAnswerInteraction_Integration(t *testing.T) {
 		require.NoError(t, db.Raw(`SELECT state FROM session_interactions WHERE uuid = ?`, string(interactionUUID)).Scan(&interactionState).Error)
 		require.Equal(t, session.InteractionStateTerminated, interactionState, "a fatal failure must close the still-ACTIVE interaction it was processing")
 	})
+
+	t.Run("accepted_answer_to_ask_group_question_resolves_interaction", func(t *testing.T) {
+		m, sessionUUID, hostUUID, interactionUUID := startedAnswerableSession(t, db, askGroupAnswerableDefinition(1, 4))
+
+		var kind string
+		require.NoError(t, db.Raw(`SELECT kind FROM session_interactions WHERE uuid = ?`, string(interactionUUID)).Scan(&kind).Error)
+		require.Equal(t, session.InteractionKindAskGroup, kind)
+
+		result, err := m.AnswerInteraction(context.Background(), interactionUUID, hostUUID, engine.NumberValue{Value: 21})
+		require.NoError(t, err)
+		require.Equal(t, AnswerInteractionOutcomeAnswered, result.Outcome)
+		require.Equal(t, sessionUUID, result.SessionUUID)
+
+		var row struct {
+			State           string `gorm:"column:state"`
+			ResponsePayload []byte `gorm:"column:response_payload"`
+		}
+		require.NoError(t, db.Raw(`SELECT state, response_payload FROM session_interactions WHERE uuid = ?`, string(interactionUUID)).Scan(&row).Error)
+		require.Equal(t, session.InteractionStateClosed, row.State)
+		require.NotEmpty(t, row.ResponsePayload)
+
+		var turnCount int64
+		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_turns WHERE session_id = ?`, sessionIDForUUID(t, db, sessionUUID)).Scan(&turnCount).Error)
+		require.Equal(t, int64(2), turnCount, "the response must commit a second RuntimeTurn")
+	})
+
+	t.Run("closing_a_different_pending_slot_while_answering_is_captured", func(t *testing.T) {
+		m := New(db, nil, stubStartPinnedGameReader{definition: dualQuestionDefinition(1, 4)})
+
+		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
+		hostUUID := uuid.NewString()
+		hostActorID := testfixtures.SeedActor(t, db, fx.SessionID, hostUUID)
+		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
+		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
+
+		startResult, err := m.Start(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(hostUUID), IdempotencyKey(uuid.NewString()))
+		require.NoError(t, err)
+		require.Equal(t, StartOutcomeStarted, startResult.Outcome)
+
+		var primaryUUID, secondaryUUID string
+		require.NoError(t, db.Raw(`SELECT uuid FROM session_interactions WHERE session_id = ? AND engine_slot = ?`, fx.SessionID, dualPrimarySlot).Scan(&primaryUUID).Error)
+		require.NoError(t, db.Raw(`SELECT uuid FROM session_interactions WHERE session_id = ? AND engine_slot = ?`, fx.SessionID, dualSecondarySlot).Scan(&secondaryUUID).Error)
+		require.NotEmpty(t, primaryUUID)
+		require.NotEmpty(t, secondaryUUID)
+
+		result, err := m.AnswerInteraction(context.Background(), InteractionUUID(primaryUUID), UserUUID(hostUUID), engine.NumberValue{Value: 5})
+		require.NoError(t, err)
+		require.Equal(t, AnswerInteractionOutcomeAnswered, result.Outcome)
+
+		var primaryRow struct {
+			State           string `gorm:"column:state"`
+			ResponsePayload []byte `gorm:"column:response_payload"`
+			ClosedByTurnID  *uint  `gorm:"column:closed_by_turn_id"`
+		}
+		require.NoError(t, db.Raw(`SELECT state, response_payload, closed_by_turn_id FROM session_interactions WHERE uuid = ?`, primaryUUID).Scan(&primaryRow).Error)
+		require.Equal(t, session.InteractionStateClosed, primaryRow.State)
+		require.NotEmpty(t, primaryRow.ResponsePayload)
+		require.NotNil(t, primaryRow.ClosedByTurnID)
+
+		var secondaryRow struct {
+			State           string `gorm:"column:state"`
+			ResponsePayload []byte `gorm:"column:response_payload"`
+			ClosedByTurnID  *uint  `gorm:"column:closed_by_turn_id"`
+		}
+		require.NoError(t, db.Raw(`SELECT state, response_payload, closed_by_turn_id FROM session_interactions WHERE uuid = ?`, secondaryUUID).Scan(&secondaryRow).Error)
+		require.Equal(t, session.InteractionStateClosed, secondaryRow.State, "the authored CloseQuestionOperation's CloseQuestionOutput must be captured generically")
+		require.Empty(t, secondaryRow.ResponsePayload, "Q2 was never answered, only closed")
+		require.Equal(t, primaryRow.ClosedByTurnID, secondaryRow.ClosedByTurnID, "both closures happen in the same RuntimeTurn")
+	})
+
+	t.Run("two_concurrent_answers_to_the_same_interaction_never_both_execute_a_runtime_turn", func(t *testing.T) {
+		m, sessionUUID, hostUUID, interactionUUID := startedAnswerableSession(t, db, answerableDefinition(1, 4))
+
+		type outcome struct {
+			result AnswerInteractionResult
+			err    error
+		}
+		results := make(chan outcome, 2)
+		answer := func() {
+			result, err := m.AnswerInteraction(context.Background(), interactionUUID, hostUUID, engine.NumberValue{Value: 11})
+			results <- outcome{result: result, err: err}
+		}
+		go answer()
+		go answer()
+
+		first := <-results
+		second := <-results
+		require.NoError(t, first.err)
+		require.NoError(t, second.err)
+		require.Equal(t, AnswerInteractionOutcomeAnswered, first.result.Outcome)
+		require.Equal(t, AnswerInteractionOutcomeAnswered, second.result.Outcome, "the loser must replay the winner's outcome, not fail or reject")
+
+		var turnCount int64
+		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_turns WHERE session_id = ?`, sessionIDForUUID(t, db, sessionUUID)).Scan(&turnCount).Error)
+		require.Equal(t, int64(2), turnCount, "exactly one RuntimeTurn must ever be produced for this response, on top of Start's own first Turn")
+	})
 }
 
 // sessionIDForUUID resolves sessionUUID's internal id, for assertions that

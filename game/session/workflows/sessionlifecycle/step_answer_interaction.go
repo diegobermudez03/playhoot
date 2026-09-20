@@ -225,16 +225,19 @@ func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessio
 			return AnswerInteractionResult{}, err
 		}
 	}
-	if err := captureInteractions(ctx, tx, m.answerInteractionRepo, compiledProgram, lockedSession.ID, turnID, drainResult.Steps); err != nil {
-		return AnswerInteractionResult{}, err
-	}
 	// engineservice.Step clears an accepted answer's own slot internally,
 	// before the transition's own operations run, and produces no Output
 	// recording that closure - only an authored CloseQuestionOperation on a
 	// *different* slot ever does. The answered interaction is therefore
 	// closed directly by its already-known id instead of being discovered
-	// through captured Outputs.
+	// through captured Outputs. This runs before captureInteractions so an
+	// authored transition that reopens this same (session, path, slot,
+	// actor) key within the same Turn finds it already closed, not still
+	// occupying the active-slot uniqueness constraint.
 	if err := m.answerInteractionRepo.CloseAnsweredInteraction(ctx, tx, interaction.ID, responsePayload, turnID); err != nil {
+		return AnswerInteractionResult{}, err
+	}
+	if err := captureInteractions(ctx, tx, m.answerInteractionRepo, compiledProgram, lockedSession.ID, turnID, drainResult.Steps); err != nil {
 		return AnswerInteractionResult{}, err
 	}
 	if err := m.answerInteractionRepo.SetCurrentTurn(ctx, tx, lockedSession.ID, turnID); err != nil {

@@ -225,3 +225,134 @@ func answerableDefinitionWithFatalAnswer(playersMin, playersMax int) program.Def
 	}}
 	return d
 }
+
+// askGroupAnswerableQuestionName/askGroupAnswerableSlot name
+// askGroupAnswerableDefinition's own declarations.
+const (
+	askGroupAnswerableQuestionName = "PickNumber"
+	askGroupAnswerableSlot         = "AG"
+)
+
+// askGroupAnswerableDefinition builds a real, engineservice.Compile-able
+// Definition whose root workflow opens an ask group at all of `players`
+// immediately at Start (Slot "AG", a bare number response, completing once
+// every recipient has answered). Answering an ask-group member never
+// selects or runs a workflow transition and never produces InternalSignals
+// (the engine's own documented behavior for SignalKindAskGroupAnswered), so
+// unlike answerableDefinition this fixture needs no transition at all
+// beyond the one that opens the group.
+func askGroupAnswerableDefinition(playersMin, playersMax int) program.Definition {
+	return program.Definition{
+		Metadata:     program.Metadata{ID: "ask-group-answerable", Name: "AskGroupAnswerable"},
+		RootWorkflow: "Main",
+		Players:      program.PlayerPolicy{Min: playersMin, Max: playersMax},
+		Questions: []program.QuestionDeclaration{
+			{
+				Name:         askGroupAnswerableQuestionName,
+				ResponseType: program.BuiltinTypeReference{Type: program.BuiltinTypeNumber},
+			},
+		},
+		Workflows: []program.WorkflowDeclaration{
+			{
+				Name: "Main",
+				Parameters: []program.FieldDeclaration{
+					{Name: "players", Type: program.ListTypeReference{Element: program.BuiltinTypeReference{Type: program.BuiltinTypeUser}}},
+				},
+				ResultType:   program.BuiltinTypeReference{Type: program.BuiltinTypeUnit},
+				InitialState: "Start",
+				AskGroupSlots: []program.AskGroupSlotDeclaration{
+					{Name: askGroupAnswerableSlot, Question: askGroupAnswerableQuestionName},
+				},
+				States: []program.WorkflowStateDeclaration{
+					{
+						Name: "Start",
+						Transitions: []program.TransitionDeclaration{
+							{
+								Name:   "Started",
+								Signal: program.SignalPattern{Source: program.NamedSignalSource{Name: "WorkflowStarted"}},
+								Operations: program.Block{Operations: []program.Operation{
+									program.OpenAskGroupOperation{
+										Slot:       askGroupAnswerableSlot,
+										Recipients: program.ReferenceExpression{Name: "players"},
+										Completion: program.AskGroupAllResponsesPolicy{},
+									},
+								}},
+								Control: program.StayControl{},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+// dualQuestionName/dualPrimarySlot/dualSecondarySlot name
+// dualQuestionDefinition's own declarations.
+const (
+	dualQuestionName  = "PickNumber"
+	dualPrimarySlot   = "Q1"
+	dualSecondarySlot = "Q2"
+)
+
+// dualQuestionDefinition builds a real, engineservice.Compile-able
+// Definition whose root workflow opens two independent questions at
+// players[0] immediately at Start (Q1 and Q2), and whose Q1-answered
+// transition explicitly closes the still-pending Q2 via
+// CloseQuestionOperation - the one case that actually produces a
+// CloseQuestionOutput for a slot other than the one just answered.
+func dualQuestionDefinition(playersMin, playersMax int) program.Definition {
+	recipient := program.IndexExpression{
+		Target: program.ReferenceExpression{Name: "players"},
+		Index:  program.NumberLiteralExpression{Value: "0"},
+	}
+	return program.Definition{
+		Metadata:     program.Metadata{ID: "dual-question", Name: "DualQuestion"},
+		RootWorkflow: "Main",
+		Players:      program.PlayerPolicy{Min: playersMin, Max: playersMax},
+		Questions: []program.QuestionDeclaration{
+			{
+				Name:         dualQuestionName,
+				ResponseType: program.BuiltinTypeReference{Type: program.BuiltinTypeNumber},
+			},
+		},
+		Workflows: []program.WorkflowDeclaration{
+			{
+				Name: "Main",
+				Parameters: []program.FieldDeclaration{
+					{Name: "players", Type: program.ListTypeReference{Element: program.BuiltinTypeReference{Type: program.BuiltinTypeUser}}},
+				},
+				ResultType:   program.BuiltinTypeReference{Type: program.BuiltinTypeUnit},
+				InitialState: "Start",
+				QuestionSlots: []program.QuestionSlotDeclaration{
+					{Name: dualPrimarySlot, Question: dualQuestionName},
+					{Name: dualSecondarySlot, Question: dualQuestionName},
+				},
+				States: []program.WorkflowStateDeclaration{
+					{
+						Name: "Start",
+						Transitions: []program.TransitionDeclaration{
+							{
+								Name:   "Started",
+								Signal: program.SignalPattern{Source: program.NamedSignalSource{Name: "WorkflowStarted"}},
+								Operations: program.Block{Operations: []program.Operation{
+									program.OpenQuestionOperation{Slot: dualPrimarySlot, Recipient: recipient},
+									program.OpenQuestionOperation{Slot: dualSecondarySlot, Recipient: recipient},
+								}},
+								Control: program.StayControl{},
+							},
+							{
+								Name:   "PrimaryAnswered",
+								Signal: program.SignalPattern{Source: program.QuestionAnsweredSignalSource{Slot: dualPrimarySlot}},
+								Operations: program.Block{Operations: []program.Operation{
+									program.CloseQuestionOperation{Slot: dualSecondarySlot},
+								}},
+								Control: program.StayControl{},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
