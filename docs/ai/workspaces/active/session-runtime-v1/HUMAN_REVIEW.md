@@ -1,29 +1,27 @@
-# Slice 3 — Interaction Response Processing: DRAFT (Awaiting Review)
+# Slice 3 — Interaction Response Processing: READY
 
 Process: Feature Development (Slice 3 of `session-runtime-v1`; architecture is CLOSED, the broader initiative remains governed by `PLAN.md`)
 
-Status: **DRAFT PROPOSED, 2026-09-19.** `docs/work/active/WORK-0004-interaction-response-processing.md` was created as DRAFT after reconciling Slice 3's design against the actual post-Slice-2 codebase (GAME-ADR-0007/0018/0019, the engine's actual `OpenQuestionOutput`/`SignalKindQuestionAnswered`/`SignalKindAskGroupAnswered` API, and `step_start.go`'s actual implementation). This supersedes the prior checkpoint in this file (Slice 2's READY-approval record, now historical - see `docs/work/completed/WORK-0003-session-start-first-runtimeturn.md` for that record).
+Status: **READY, 2026-09-19.** `docs/work/active/WORK-0004-interaction-response-processing.md` moved DRAFT -> READY the same day it was drafted: the human reviewed and resolved all five Blockers below. This supersedes the prior checkpoint in this file (the DRAFT-proposal record).
 
 ## What This Slice Delivers
 
 A player can answer an open interaction against a `RUNNING` Session, entirely at the Go-API level: Session Runtime obtains RUNNING-phase per-Session serialization (GAME-ADR-0018, extending the existing LOBBY locking mechanism unchanged), reloads current state, applies the response through the engine, and persists the resulting RuntimeTurn while resolving the answered `session_interactions` row.
 
-**A real gap was found while designing this**, not previously visible: no Turn-producing code today persists `session_interactions` at all - `step_start.go`'s own first Turn can open a question and nothing durable would ever record it. This WORK is also where that capture is introduced.
+This also closes a real gap found while designing it: no Turn-producing code today persists `session_interactions` at all - `step_start.go`'s own first Turn can open a question and nothing durable would ever record it. This WORK is also where that capture is introduced.
 
-## Five Material Decisions Needing Your Resolution
+## Five Material Decisions - Resolved
 
-WORK-0004's Blockers section has the full reasoning for each; summarized here for a quick decision:
-
-1. **New sibling workflow package (`game/session/workflows/runtimeexecution`) vs. adding `AnswerInteraction` onto the existing `sessionlifecycle.Manager`.** Proposed: new sibling package - Create/Join/Leave/Start is an "admission into a running game" lifecycle; interaction/timer/presence processing is a materially distinct "progressing a running game" process with its own concurrency model, expected to grow (Slices 5/7 add `TimerExpired`/disconnect-reconnect to the same new package).
-2. **Extract the shared RuntimeTurn Step-draining/bound execution logic now** (`game/session/internal/runtimeturn`), reversing Slice 2's deferral now that a second real caller needs it - exactly the condition you set when rejecting it at Slice 2. `step_start.go` would be refactored to call the extracted function; nothing about its behavior changes.
-3. **Retrofit `step_start.go` to also capture interactions opened by its own first Turn**, so a game that opens a question immediately at Start actually works with this feature. Proposed: yes, in this WORK's scope, since leaving it out would silently break the most natural authored-game shape.
-4. **How to determine whether an opened interaction is a `Question` or an `AskGroup`** (needed to construct the correct signal kind on response) - proposed: read it off the compiled `engine.Program`'s own slot declaration at capture time and persist it on the row. Flagged as not yet deeply verified against the compiler's actual internal shape.
-5. **Narrow terminal-cleanup scope**: when this slice's own fatal path terminates a Session, should it close any still-`ACTIVE` interactions itself (a small, path-scoped instance of GAME-ADR-0019's general invariant), or is leaving that gap until Slice 6's general sweep acceptable? Proposed: implement the narrow case now - this is the first slice where a fatal failure could leave a real `ACTIVE` interaction behind.
+1. **New sibling workflow package vs. a step on the existing `sessionlifecycle.Manager`.** **Resolved: no sibling package.** `AnswerInteraction` is a new step directly on `sessionlifecycle.Manager` (`step_answer_interaction.go`), following the same pattern as `Create`/`Join`/`Leave`/`Start`. Whether `TimerExpired` (Slice 5) or disconnect-reconnect (Slice 7) eventually warrant splitting into a separate package is left for those slices to decide when they materialize, not decided now.
+2. **Extract the shared RuntimeTurn Step-draining/bound execution logic now.** **Resolved: extract, but not as a session-level package.** The original proposal (`game/session/internal/runtimeturn`, sibling to `sessionlock`/`idempotency`) is rejected - that treats workflow-internal execution logic as if it were a horizontal Session Runtime mechanism. Instead it stays scoped to the `sessionlifecycle` workflow itself: either a plain shared helper inside the `sessionlifecycle` package, or, if a package is warranted, `game/session/workflows/sessionlifecycle/internal/runtimeturn` - never at session level. `step_start.go` is refactored to call it; its behavior doesn't change.
+3. **Retrofit `step_start.go` to also capture interactions opened by its own first Turn.** **Approved as proposed**, in this WORK's scope.
+4. **How to determine whether an opened interaction is a `Question` or an `AskGroup`.** **Approved as proposed** - read off the compiled `engine.Program`'s own slot declaration at capture time and persisted on the row.
+5. **Narrow terminal-cleanup scope for this slice's own fatal path.** **Approved as proposed, now** - this slice's own fatal path atomically closes any still-`ACTIVE` interactions it leaves behind, in the same transaction; the fully general sweep stays with Slice 6.
 
 ## Consequence
 
-`WORK-0004` remains **DRAFT** - no implementation authority - until you resolve the five items above (approve as proposed, or redirect, per item). Once resolved, the DRAFT is revised in place and moved to READY, exactly as WORK-0003 was.
+`WORK-0004` is now **READY** - the DRAFT was revised in place per the resolutions above. Implementation may begin.
 
 ## Next Human Action
 
-Review and resolve the five Blockers above (or ask for more detail on any of them) so this can move DRAFT -> READY.
+None required to proceed with implementation. Independent review will surface anything further once implementation completes.
