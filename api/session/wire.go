@@ -19,24 +19,19 @@ type createSessionResponse struct {
 	LobbyExpiresAt time.Time `json:"lobby_expires_at"`
 }
 
-// joinSessionRequest/joinSessionResponse are POST /sessions/join's wire
-// shapes.
-type joinSessionRequest struct {
-	JoinCode       uint   `json:"join_code"`
-	UserUUID       string `json:"user_uuid"`
-	DisplayName    string `json:"display_name"`
-	IdempotencyKey string `json:"idempotency_key"`
-}
-
-type joinSessionResponse struct {
-	Outcome     string `json:"outcome"`
-	SessionUUID string `json:"session_uuid,omitempty"`
-	DisplayName string `json:"display_name,omitempty"`
+// joinDeclineResponse is GET /ws's plain-HTTP wire shape for a Join call
+// that completed but did not result in an active Participant (a
+// deterministic decline, not an error) - the connection is never upgraded
+// in that case, so the client learns why over ordinary HTTP instead of a
+// WS message.
+type joinDeclineResponse struct {
+	Outcome string `json:"outcome"`
 }
 
 // Inbound WS message types - the client-to-server command envelope's
-// "type" discriminator. Only Start and AnswerInteraction ride the
-// WebSocket; Create/Join stay ordinary HTTP.
+// "type" discriminator. Joining is the WS handshake itself (GET /ws), not
+// a message ridden over an already-open connection; Start and
+// AnswerInteraction are the only two.
 const (
 	inboundTypeStart             = "START"
 	inboundTypeAnswerInteraction = "ANSWER_INTERACTION"
@@ -57,6 +52,7 @@ type inboundMessage struct {
 // Outbound WS message types - the server-to-client envelope's "type"
 // discriminator.
 const (
+	outboundTypeJoinResult        = "JOIN_RESULT"
 	outboundTypeStartResult       = "START_RESULT"
 	outboundTypeAnswerResult      = "ANSWER_RESULT"
 	outboundTypeInteractionOpened = "INTERACTION_OPENED"
@@ -65,12 +61,15 @@ const (
 )
 
 // outboundMessage is the WS server-to-client envelope, covering both a
-// direct command result (StartResult/AnswerResult) and an asynchronously
-// fanned-out Event (InteractionOpened/InteractionClosed) - the client
-// distinguishes them by Type alone, not by which request they answer.
+// direct command result (JoinResult/StartResult/AnswerResult) and an
+// asynchronously fanned-out Event (InteractionOpened/InteractionClosed) -
+// the client distinguishes them by Type alone, not by which request they
+// answer. SessionUUID is only ever set on JoinResult, for a client that
+// joined by join_code alone and does not already know it.
 type outboundMessage struct {
 	Type          string         `json:"type"`
 	Outcome       string         `json:"outcome,omitempty"`
+	SessionUUID   string         `json:"session_uuid,omitempty"`
 	InteractionID string         `json:"interaction_id,omitempty"`
 	Question      string         `json:"question,omitempty"`
 	Arguments     map[string]any `json:"arguments,omitempty"`

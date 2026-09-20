@@ -47,36 +47,6 @@ func (h *Handler) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (h *Handler) handleJoinSession(w http.ResponseWriter, r *http.Request) {
-	ctx := logging.Start(r.Context())
-	defer logging.FinishRequestLog(ctx, slog.Default(), "api.session.JoinSession")
-
-	var req joinSessionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		logging.LogError(ctx, err)
-		httpx.WriteError(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-	logging.LogFields(ctx,
-		logging.Field("join_code", req.JoinCode),
-		logging.Field("user_uuid", req.UserUUID),
-	)
-
-	result, err := h.coord.Join(ctx, req.JoinCode, req.UserUUID, req.DisplayName, req.IdempotencyKey)
-	if err != nil {
-		logging.LogError(ctx, err)
-		writeDomainError(w, err)
-		return
-	}
-	logging.LogFields(ctx, logging.Field("outcome", string(result.Outcome)))
-
-	httpx.WriteJSON(w, http.StatusOK, joinSessionResponse{
-		Outcome:     string(result.Outcome),
-		SessionUUID: string(result.SessionUUID),
-		DisplayName: result.DisplayName,
-	})
-}
-
 // writeDomainError maps a sentinel business-outcome error to an HTTP
 // status; anything else is an unexpected failure.
 func writeDomainError(w http.ResponseWriter, err error) {

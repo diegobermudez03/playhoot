@@ -6,8 +6,10 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"sync"
 
+	"github.com/diegobermudez03/playhoot/api/internal/httpx"
 	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/play"
 	"github.com/gorilla/websocket"
@@ -106,31 +108,22 @@ func (c *wsConn) writePump() {
 	}
 }
 
-// handleWebSocket upgrades the connection, binds it to (session_uuid,
-// user_uuid) - both supplied directly by the client as query parameters,
-// trusted as-is - and runs its read pump until the connection closes.
+// handleWebSocket performs Join-and-upgrade as its own logged step, then -
+// only once that succeeded - runs the read pump for the rest of the
+// connection's life. Join-and-upgrade must flush its own log as soon as it
+// completes, not when the connection eventually closes: readPump blocks
+// for as long as the client stays connected, which would otherwise delay
+// the join log far past when it actually happened.
 func (h *Handler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
-	sessionUUID := r.URL.Query().Get("session_uuid")
-	userUUID := r.URL.Query().Get("user_uuid")
-	if sessionUUID == "" || userUUID == "" {
-		http.Error(w, "session_uuid and user_uuid query parameters are required", http.StatusBadRequest)
+	wc, sessionUUID, userUUID, unbind, ok := h.joinAndUpgrade(w, r)
+	if !ok {
 		return
 	}
-
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Printf("api/session: WS upgrade failed: %v", err)
-		return
-	}
-
-	wc := newWSConn(conn)
-	unbind := h.coord.Bind(play.SessionUUID(sessionUUID), play.UserUUID(userUUID), wc)
-	logConnectionEvent(r.Context(), sessionUUID, userUUID, "api.session.WebSocketConnected")
 
 	go wc.writePump()
 
 	// Blocks until the client disconnects or sends an unreadable message.
-	h.readPump(r, wc, play.SessionUUID(sessionUUID), play.UserUUID(userUUID))
+	h.readPump(r, wc, sessionUUID, userUUID)
 
 	// unbind first, so no further Deliver call is accepted for this
 	// connection, then stop the write pump, then close the socket - in
@@ -139,8 +132,78 @@ func (h *Handler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	// panic against a closed channel.
 	unbind()
 	wc.close()
-	conn.Close()
-	logConnectionEvent(r.Context(), sessionUUID, userUUID, "api.session.WebSocketDisconnected")
+	wc.conn.Close()
+	logConnectionEvent(r.Context(), string(sessionUUID), string(userUUID), "api.session.WebSocketDisconnected")
+}
+
+// joinAndUpgrade performs Join and, only when it results in an active
+// Participant (a fresh JOINED, or an idempotent-replay-shaped
+// ALREADY_JOINED - the same reconnect path a client retrying with a new
+// idempotency token after a drop takes), upgrades the connection and
+// binds it - one client-facing operation with one outcome, never a Join
+// that silently leaves the caller unconnected or a connection bound to a
+// Session the caller never actually joined. Logged and flushed as its own
+// single entry, separate from the connection's subsequent per-message log
+// entries.
+//
+// A decline (LOBBY_EXPIRED, LOBBY_FULL) or an error is reported over
+// plain HTTP without ever upgrading, since nothing worth connecting for
+// happened. Bind requires an actual live socket, so upgrading has to
+// follow a successful Join, not precede it - Join is validated first, the
+// socket is only opened once it is known to be worth opening.
+func (h *Handler) joinAndUpgrade(w http.ResponseWriter, r *http.Request) (wc *wsConn, sessionUUID play.SessionUUID, userUUID play.UserUUID, unbind func(), ok bool) {
+	ctx := logging.Start(r.Context())
+	defer logging.FinishRequestLog(ctx, slog.Default(), "api.session.WebSocketJoin")
+
+	joinCode, userUUIDStr, displayName, idempotencyKey, valid := parseJoinQuery(r)
+	if !valid {
+		httpx.WriteError(w, http.StatusBadRequest, "join_code, user_uuid, display_name, and idempotency_key query parameters are required, and join_code must be a number")
+		return nil, "", "", nil, false
+	}
+	logging.LogFields(ctx,
+		logging.Field("join_code", joinCode),
+		logging.Field("user_uuid", userUUIDStr),
+	)
+
+	result, err := h.coord.Join(ctx, joinCode, userUUIDStr, displayName, idempotencyKey)
+	if err != nil {
+		logging.LogError(ctx, err)
+		writeDomainError(w, err)
+		return nil, "", "", nil, false
+	}
+	logging.LogFields(ctx, logging.Field("outcome", string(result.Outcome)))
+	if result.Outcome != play.JoinOutcomeJoined && result.Outcome != play.JoinOutcomeAlreadyJoined {
+		httpx.WriteJSON(w, http.StatusOK, joinDeclineResponse{Outcome: string(result.Outcome)})
+		return nil, "", "", nil, false
+	}
+
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		logging.LogError(ctx, err)
+		return nil, "", "", nil, false
+	}
+
+	newConn := newWSConn(conn)
+	unbind = h.coord.Bind(result.SessionUUID, play.UserUUID(userUUIDStr), newConn)
+	_ = newConn.enqueue(outboundMessage{Type: outboundTypeJoinResult, Outcome: string(result.Outcome), SessionUUID: string(result.SessionUUID)})
+
+	return newConn, result.SessionUUID, play.UserUUID(userUUIDStr), unbind, true
+}
+
+// parseJoinQuery reads and validates GET /ws's required query parameters.
+func parseJoinQuery(r *http.Request) (joinCode uint, userUUID, displayName, idempotencyKey string, ok bool) {
+	query := r.URL.Query()
+	userUUID = query.Get("user_uuid")
+	displayName = query.Get("display_name")
+	idempotencyKey = query.Get("idempotency_key")
+	if userUUID == "" || displayName == "" || idempotencyKey == "" {
+		return 0, "", "", "", false
+	}
+	parsed, err := strconv.ParseUint(query.Get("join_code"), 10, 64)
+	if err != nil {
+		return 0, "", "", "", false
+	}
+	return uint(parsed), userUUID, displayName, idempotencyKey, true
 }
 
 // logConnectionEvent records one connection-lifecycle event (as opposed to

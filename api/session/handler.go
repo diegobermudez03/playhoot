@@ -23,9 +23,14 @@ type coordinatorAPI interface {
 	Deliver(sessionUUID play.SessionUUID, events []play.Event)
 }
 
-// Handler exposes the session workflow's endpoints: Create and Join as
-// ordinary HTTP request/response, and a WebSocket upgrade carrying Start/
-// AnswerInteraction and their resulting fan-out.
+// Handler exposes the session workflow's endpoints: Create as ordinary
+// HTTP request/response, and a WebSocket upgrade that performs Join and
+// binds the connection as one operation, then carries Start/
+// AnswerInteraction and their resulting fan-out for the rest of the
+// connection's life. Joining and connecting are deliberately not two
+// independently-failable client calls: a client that successfully
+// upgrades is, by construction, both an active Participant and a bound
+// live connection: never the first without the second.
 type Handler struct {
 	coord coordinatorAPI
 }
@@ -39,6 +44,5 @@ func NewHandler(coord coordinatorAPI) *Handler {
 // api.RouteGroup.
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /sessions", h.handleCreateSession)
-	mux.HandleFunc("POST /sessions/join", h.handleJoinSession)
 	mux.HandleFunc("GET /ws", h.handleWebSocket)
 }

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -185,30 +187,23 @@ func TestLiveTransport_CreateJoinStartAnswer_EndToEnd(t *testing.T) {
 	require.NoError(t, json.NewDecoder(createResp.Body).Decode(&created))
 	require.NotEmpty(t, created.SessionUUID)
 
-	// Join is plain HTTP request/response too.
-	joinBody, err := json.Marshal(map[string]any{
-		"join_code":       created.JoinCode,
-		"user_uuid":       hostUserUUID,
-		"display_name":    "Alice",
-		"idempotency_key": "join-" + uuid.NewString(),
-	})
-	require.NoError(t, err)
-	joinResp, err := http.Post(ts.URL+"/sessions/join", "application/json", bytes.NewReader(joinBody))
-	require.NoError(t, err)
-	defer joinResp.Body.Close()
-	require.Equal(t, http.StatusOK, joinResp.StatusCode)
-	var joined struct {
-		Outcome string `json:"outcome"`
+	// Joining is the WebSocket handshake itself: a successful upgrade means
+	// the caller is both an active Participant and a bound live connection.
+	wsQuery := url.Values{
+		"join_code":       []string{strconv.FormatUint(uint64(created.JoinCode), 10)},
+		"user_uuid":       []string{hostUserUUID},
+		"display_name":    []string{"Alice"},
+		"idempotency_key": []string{"join-" + uuid.NewString()},
 	}
-	require.NoError(t, json.NewDecoder(joinResp.Body).Decode(&joined))
-	require.Equal(t, "JOINED", joined.Outcome)
-
-	// Connect over the live transport, binding this connection to
-	// (session, user).
-	wsURL := strings.Replace(ts.URL, "http://", "ws://", 1) + "/ws?session_uuid=" + created.SessionUUID + "&user_uuid=" + hostUserUUID
+	wsURL := strings.Replace(ts.URL, "http://", "ws://", 1) + "/ws?" + wsQuery.Encode()
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 	require.NoError(t, err)
 	defer conn.Close()
+
+	joinResult := readWSMessage(t, conn)
+	require.Equal(t, "JOIN_RESULT", joinResult["type"])
+	require.Equal(t, "JOINED", joinResult["outcome"])
+	require.Equal(t, created.SessionUUID, joinResult["session_uuid"])
 
 	// Start rides the WebSocket; its own committed RuntimeTurn opens the
 	// Question, delivered live to this same connection.

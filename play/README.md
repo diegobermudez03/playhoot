@@ -8,7 +8,7 @@ It owns:
 - Binding a connection to `(SessionUUID, UserUUID)` (`Coordinator.Bind`).
 - Translating a decoded client command into a call against the `SessionRuntime` port it depends on, and fanning out the `Event`s a committed call produces to every currently-bound recipient connection (`Coordinator.Start`/`AnswerInteraction`).
 
-It owns no database handle, no transaction, and no `game` business logic. `Create`/`Join` are forwarded directly to `SessionRuntime` with no connection involved (they happen before any live connection exists).
+It owns no database handle, no transaction, and no `game` business logic. `Create` and `Join` are forwarded directly to `SessionRuntime`; neither call itself touches the connection registry (`Join`'s own signature takes no `Conn`). `Create` happens before any Participant or connection exists. `Join`'s caller (`api/session`) does pair it with a connection in practice - it calls `Join`, and only once that succeeds does it upgrade the client's connection and call `Bind` separately - but that sequencing is the transport layer's responsibility, not something `Coordinator.Join` does or assumes on its own.
 
 ## The dependency-inversion boundary
 
@@ -37,6 +37,12 @@ go list -deps ./game/...          # must contain neither play nor api
 ## No shared database transaction with `game`
 
 `play` never receives, stores, or passes through a `*gorm.DB`/transaction handle. Every mutation it triggers happens by calling the `SessionRuntime` interface; the implementation's own call into `sessionlifecycle.Manager` owns that call's entire transaction scope exactly as it already does today, entirely on the `game` side of the boundary. `play/sessionruntime` does hold its own `*gorm.DB`, used only to read back already-durably-committed `session_interactions`/`sessions` rows once `Manager`'s own call has returned - never to share a transaction with it.
+
+## Wire-protocol design principle: only Question/Presentation/Effect cross the boundary
+
+A client is never told that some internal/domain fact happened as its own event - only three shapes of message ever cross the live-transport boundary: a **Question** opening/closing, a **Presentation** (a mounted UI component with its data) activating/updating/being removed, and an **Effect** (a presentation-only animation/sound). If some other fact matters to a client, it is because the backend already decided it changes what that client's UI shows - which means it must manifest as a Presentation update or an Effect addressed to that client, never as a raw "an interaction was answered" or "a turn committed" notification. This governs every `Output` this Coordinator is ever extended to fan out, not only the ones already wired (`docs/work/active/WORK-0006-broaden-live-fanout-effects-presentations.md`).
+
+A session-wide fact that is not about any one recipient's UI state at all - for example, the whole Session ending - does not fit this model and is not forced into it as a fourth `Event` kind; it uses its own broadcast-to-everyone-bound mechanism instead (`docs/work/active/WORK-0007-session-termination-live-notification.md`), separate from `Event`/`Deliver`'s per-recipient contract.
 
 ## Delivery is best-effort, after commit (GAME-ADR-0020)
 
