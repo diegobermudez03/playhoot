@@ -21,5 +21,6 @@ This index routes engineers and AI agents to accepted reusable engineering stand
 | Method/function contract conventions: explicit parameters vs. input structs, semantic primitive types, return-value shape | `function-signatures.md` |
 | Natural vs. request/command idempotency, required tokens, replay/conflict semantics, replayed-outcome-vs-error distinction, claim mechanism contract, idempotency responsibility ownership | `idempotency.md` |
 | Source-code comment purpose and style: what comments should/should not explain, per-symbol-kind guidance, task/history comments, comment-only refactors | `code-comments.md` |
+| Where the per-request log (`logging.Start`/`Step`/`LogFields`/`FinishRequestLog`) is started and flushed; entry-point vs. domain responsibility; per-message logging on a long-lived connection | `logging.md` |
 
 This initial set was extracted from the previously canonical `AGENTS.md -> Project Patterns`.

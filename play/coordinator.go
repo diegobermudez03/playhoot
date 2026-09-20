@@ -4,6 +4,8 @@ import (
 	"context"
 	"log"
 	"sync"
+
+	"github.com/diegobermudez03/playhoot/logging"
 )
 
 // Conn is a bound live connection's outbound delivery capability, satisfied
@@ -46,11 +48,21 @@ func NewCoordinator(rt SessionRuntime) *Coordinator {
 // Create forwards directly to rt.Create. Create happens before any live
 // connection exists, so it never touches the connection registry.
 func (c *Coordinator) Create(ctx context.Context, gameUUID, hostUserUUID, idempotencyKey string) (CreatedSession, error) {
+	defer logging.Step(ctx, "Coordinator.Create").Close()
+	logging.LogFields(ctx,
+		logging.Field("game_uuid", gameUUID),
+		logging.Field("host_user_uuid", hostUserUUID),
+	)
 	return c.rt.Create(ctx, gameUUID, hostUserUUID, idempotencyKey)
 }
 
 // Join forwards directly to rt.Join, for the same reason Create does.
 func (c *Coordinator) Join(ctx context.Context, joinCode uint, userUUID, displayName, idempotencyKey string) (JoinResult, error) {
+	defer logging.Step(ctx, "Coordinator.Join").Close()
+	logging.LogFields(ctx,
+		logging.Field("join_code", joinCode),
+		logging.Field("user_uuid", userUUID),
+	)
 	return c.rt.Join(ctx, joinCode, userUUID, displayName, idempotencyKey)
 }
 
@@ -95,6 +107,11 @@ func (c *Coordinator) Bind(sessionUUID SessionUUID, userUUID UserUUID, conn Conn
 // enqueued first, so it leaves that ordering to api rather than guessing.
 // Coordinator still owns the fan-out mechanism itself (Deliver).
 func (c *Coordinator) Start(ctx context.Context, sessionUUID SessionUUID, userUUID UserUUID, idempotencyKey string) (StartOutcome, []Event, error) {
+	defer logging.Step(ctx, "Coordinator.Start").Close()
+	logging.LogFields(ctx,
+		logging.Field("session_uuid", string(sessionUUID)),
+		logging.Field("user_uuid", string(userUUID)),
+	)
 	result, err := c.rt.Start(ctx, string(sessionUUID), string(userUUID), idempotencyKey)
 	if err != nil {
 		return "", nil, err
@@ -108,6 +125,12 @@ func (c *Coordinator) Start(ctx context.Context, sessionUUID SessionUUID, userUU
 // Session, per Bind) rather than derived from interactionUUID, since
 // Coordinator's registry is keyed by Session, not by interaction.
 func (c *Coordinator) AnswerInteraction(ctx context.Context, sessionUUID SessionUUID, interactionUUID InteractionUUID, userUUID UserUUID, answer []byte) (AnswerOutcome, []Event, error) {
+	defer logging.Step(ctx, "Coordinator.AnswerInteraction").Close()
+	logging.LogFields(ctx,
+		logging.Field("session_uuid", string(sessionUUID)),
+		logging.Field("interaction_uuid", string(interactionUUID)),
+		logging.Field("user_uuid", string(userUUID)),
+	)
 	result, err := c.rt.AnswerInteraction(ctx, string(interactionUUID), string(userUUID), answer)
 	if err != nil {
 		return "", nil, err

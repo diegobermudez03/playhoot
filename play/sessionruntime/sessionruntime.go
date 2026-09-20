@@ -18,6 +18,7 @@ import (
 
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine/engineservice"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle"
+	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/play"
 	"gorm.io/gorm"
 )
@@ -45,6 +46,7 @@ func New(manager *sessionlifecycle.Manager, db *gorm.DB) *SessionRuntime {
 var _ play.SessionRuntime = (*SessionRuntime)(nil)
 
 func (sr *SessionRuntime) Create(ctx context.Context, gameUUID, hostUserUUID, idempotencyKey string) (play.CreatedSession, error) {
+	defer logging.Step(ctx, "SessionRuntime.Create").Close()
 	result, err := sr.manager.Create(ctx, sessionlifecycle.GameUUID(gameUUID), sessionlifecycle.UserUUID(hostUserUUID), sessionlifecycle.IdempotencyKey(idempotencyKey))
 	if err != nil {
 		return play.CreatedSession{}, translateError(err)
@@ -57,6 +59,7 @@ func (sr *SessionRuntime) Create(ctx context.Context, gameUUID, hostUserUUID, id
 }
 
 func (sr *SessionRuntime) Join(ctx context.Context, joinCode uint, userUUID, displayName, idempotencyKey string) (play.JoinResult, error) {
+	defer logging.Step(ctx, "SessionRuntime.Join").Close()
 	result, err := sr.manager.Join(ctx, sessionlifecycle.JoinCode(joinCode), sessionlifecycle.UserUUID(userUUID), sessionlifecycle.DisplayName(displayName), sessionlifecycle.IdempotencyKey(idempotencyKey))
 	if err != nil {
 		return play.JoinResult{}, translateError(err)
@@ -74,6 +77,7 @@ func (sr *SessionRuntime) Join(ctx context.Context, joinCode uint, userUUID, dis
 // to its caller, so this read-after-commit is the only way to learn them
 // without changing Manager's own method signatures or internal behavior.
 func (sr *SessionRuntime) Start(ctx context.Context, sessionUUID, userUUID, idempotencyKey string) (play.StartResult, error) {
+	defer logging.Step(ctx, "SessionRuntime.Start").Close()
 	result, err := sr.manager.Start(ctx, sessionlifecycle.SessionUUID(sessionUUID), sessionlifecycle.UserUUID(userUUID), sessionlifecycle.IdempotencyKey(idempotencyKey))
 	if err != nil {
 		return play.StartResult{}, translateError(err)
@@ -95,6 +99,7 @@ func (sr *SessionRuntime) Start(ctx context.Context, sessionUUID, userUUID, idem
 // reports ANSWERED, reads back the committed Turn's interactions the same
 // way Start does.
 func (sr *SessionRuntime) AnswerInteraction(ctx context.Context, interactionUUID, userUUID string, answer []byte) (play.AnswerInteractionResult, error) {
+	defer logging.Step(ctx, "SessionRuntime.AnswerInteraction").Close()
 	value, err := engineservice.DecodeValue(answer)
 	if err != nil {
 		return play.AnswerInteractionResult{}, err

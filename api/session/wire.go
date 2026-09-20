@@ -1,4 +1,4 @@
-package api
+package session
 
 import (
 	"encoding/json"
@@ -32,11 +32,6 @@ type joinSessionResponse struct {
 	Outcome     string `json:"outcome"`
 	SessionUUID string `json:"session_uuid,omitempty"`
 	DisplayName string `json:"display_name,omitempty"`
-}
-
-// errorResponse is every HTTP handler's error wire shape.
-type errorResponse struct {
-	Message string `json:"message"`
 }
 
 // Inbound WS message types - the client-to-server command envelope's

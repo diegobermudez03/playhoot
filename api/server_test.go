@@ -2,7 +2,6 @@ package api_test
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -14,11 +13,9 @@ import (
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine"
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine/engineservice"
 	"github.com/diegobermudez03/playhoot/game/language/v1/program"
-	"github.com/diegobermudez03/playhoot/game/management"
+	"github.com/diegobermudez03/playhoot/game/language/v1/program/gameservice"
+	managementmigration "github.com/diegobermudez03/playhoot/game/management/migration"
 	sessionmigration "github.com/diegobermudez03/playhoot/game/session/migration"
-	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle"
-	"github.com/diegobermudez03/playhoot/play"
-	"github.com/diegobermudez03/playhoot/play/sessionruntime"
 	"github.com/diegobermudez03/playhoot/utils"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -27,9 +24,12 @@ import (
 )
 
 var apiTestDB = utils.DisposableTestDB{
-	Key:        "session",
+	Key:        "api",
 	NameSuffix: "api_pkg_test",
 	Migrate: func(db *gorm.DB) error {
+		if err := managementmigration.Migrate(db); err != nil {
+			return err
+		}
 		return sessionmigration.Migrate(db)
 	},
 }
@@ -95,31 +95,73 @@ func e2eDefinition() program.Definition {
 	}
 }
 
-type e2eCurrentGameReader struct{ definition program.Definition }
-
-func (r e2eCurrentGameReader) GetPlayableGameWithCurrentVersion(ctx context.Context, gameUUID string) (*management.Game, error) {
-	return &management.Game{UUID: gameUUID, VersionUUID: uuid.NewString(), Definition: r.definition}, nil
+type gameSeedInsert struct {
+	ID                  uint   `gorm:"column:id"`
+	UUID                string `gorm:"column:uuid"`
+	Name                string `gorm:"column:name"`
+	Description         string `gorm:"column:description"`
+	OwnerUUID           string `gorm:"column:owner_uuid"`
+	CurrentDefinitionID *uint  `gorm:"column:current_definition_id"`
+	LogoImageURL        string `gorm:"column:logo_image_url"`
+	Visibility          string `gorm:"column:visibility"`
 }
 
-type e2ePinnedGameReader struct{ definition program.Definition }
+func (gameSeedInsert) TableName() string { return "games" }
 
-func (r e2ePinnedGameReader) GetGameDefinition(ctx context.Context, gameDefinitionUUID string) (*program.Definition, error) {
-	return &r.definition, nil
+type gameDefinitionSeedInsert struct {
+	ID            uint   `gorm:"column:id"`
+	UUID          string `gorm:"column:uuid"`
+	GameID        uint   `gorm:"column:game_id"`
+	VersionNumber uint   `gorm:"column:version_number"`
+	Script        []byte `gorm:"column:script"`
+}
+
+func (gameDefinitionSeedInsert) TableName() string { return "game_definitions" }
+
+// seedGame inserts a playable games/game_definitions pair for definition
+// and returns the game's public UUID - the one piece of Game Management
+// state api.NewServer(db)'s own real getgame/getgamedefinition readers
+// need to resolve Create/Start against, now that api builds them itself
+// from db rather than accepting stub readers from its caller.
+func seedGame(t *testing.T, db *gorm.DB, definition program.Definition) string {
+	t.Helper()
+
+	script, err := gameservice.EncodeJSON(definition)
+	require.NoError(t, err)
+
+	game := gameSeedInsert{
+		UUID:         uuid.NewString(),
+		Name:         "E2E",
+		Description:  "End-to-end live transport test game",
+		OwnerUUID:    uuid.NewString(),
+		LogoImageURL: "https://example.com/logo.png",
+		Visibility:   "public",
+	}
+	require.NoError(t, db.Create(&game).Error)
+
+	def := gameDefinitionSeedInsert{
+		UUID:          uuid.NewString(),
+		GameID:        game.ID,
+		VersionNumber: 1,
+		Script:        script,
+	}
+	require.NoError(t, db.Create(&def).Error)
+
+	require.NoError(t, db.Exec(`UPDATE games SET current_definition_id = ? WHERE id = ?`, def.ID, game.ID).Error)
+
+	return game.UUID
 }
 
 // TestLiveTransport_CreateJoinStartAnswer_EndToEnd proves that a real
 // client, over a real WebSocket (and real HTTP for Create/Join), can
 // Create -> Join -> Start -> receive-the-opened-interaction -> answer ->
-// receive-its-resolution against a real sessionlifecycle.Manager backed by
-// real Postgres - the actual live path, not just a direct Go call.
+// receive-its-resolution against api.NewServer's own real, fully-wired
+// stack - the actual live path, not just a direct Go call.
 func TestLiveTransport_CreateJoinStartAnswer_EndToEnd(t *testing.T) {
 	db := apiTestDB.Open(t)
-	definition := e2eDefinition()
-	manager := sessionlifecycle.New(db, e2eCurrentGameReader{definition: definition}, e2ePinnedGameReader{definition: definition})
-	sr := sessionruntime.New(manager, db)
-	coord := play.NewCoordinator(sr)
-	srv := api.NewServer(coord)
+	gameUUID := seedGame(t, db, e2eDefinition())
 
+	srv := api.NewServer(db)
 	ts := httptest.NewServer(srv.Routes())
 	defer ts.Close()
 
@@ -127,7 +169,7 @@ func TestLiveTransport_CreateJoinStartAnswer_EndToEnd(t *testing.T) {
 
 	// Create is plain HTTP request/response.
 	createBody, err := json.Marshal(map[string]any{
-		"game_uuid":       "game-1",
+		"game_uuid":       gameUUID,
 		"host_user_uuid":  hostUserUUID,
 		"idempotency_key": "create-" + uuid.NewString(),
 	})

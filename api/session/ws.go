@@ -1,11 +1,14 @@
-package api
+package session
 
 import (
+	"context"
 	"errors"
 	"log"
+	"log/slog"
 	"net/http"
 	"sync"
 
+	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/play"
 	"github.com/gorilla/websocket"
 )
@@ -97,7 +100,7 @@ func (c *wsConn) close() {
 func (c *wsConn) writePump() {
 	for msg := range c.send {
 		if err := c.conn.WriteJSON(msg); err != nil {
-			log.Printf("api: writing WS message: %v", err)
+			log.Printf("api/session: writing WS message: %v", err)
 			return
 		}
 	}
@@ -106,7 +109,7 @@ func (c *wsConn) writePump() {
 // handleWebSocket upgrades the connection, binds it to (session_uuid,
 // user_uuid) - both supplied directly by the client as query parameters,
 // trusted as-is - and runs its read pump until the connection closes.
-func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	sessionUUID := r.URL.Query().Get("session_uuid")
 	userUUID := r.URL.Query().Get("user_uuid")
 	if sessionUUID == "" || userUUID == "" {
@@ -116,17 +119,18 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("api: WS upgrade failed: %v", err)
+		log.Printf("api/session: WS upgrade failed: %v", err)
 		return
 	}
 
 	wc := newWSConn(conn)
-	unbind := s.coord.Bind(play.SessionUUID(sessionUUID), play.UserUUID(userUUID), wc)
+	unbind := h.coord.Bind(play.SessionUUID(sessionUUID), play.UserUUID(userUUID), wc)
+	logConnectionEvent(r.Context(), sessionUUID, userUUID, "api.session.WebSocketConnected")
 
 	go wc.writePump()
 
 	// Blocks until the client disconnects or sends an unreadable message.
-	s.readPump(r, wc, play.SessionUUID(sessionUUID), play.UserUUID(userUUID))
+	h.readPump(r, wc, play.SessionUUID(sessionUUID), play.UserUUID(userUUID))
 
 	// unbind first, so no further Deliver call is accepted for this
 	// connection, then stop the write pump, then close the socket - in
@@ -136,43 +140,77 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	unbind()
 	wc.close()
 	conn.Close()
+	logConnectionEvent(r.Context(), sessionUUID, userUUID, "api.session.WebSocketDisconnected")
+}
+
+// logConnectionEvent records one connection-lifecycle event (as opposed to
+// a per-message exchange) as its own single-line structured log entry.
+func logConnectionEvent(ctx context.Context, sessionUUID, userUUID, message string) {
+	ctx = logging.Start(ctx)
+	logging.LogFields(ctx,
+		logging.Field("session_uuid", sessionUUID),
+		logging.Field("user_uuid", userUUID),
+	)
+	logging.FinishRequestLog(ctx, slog.Default(), message)
 }
 
 // readPump blocks reading inbound command messages until conn closes or
 // sends an unreadable message, dispatching each to Coordinator.
-func (s *Server) readPump(r *http.Request, wc *wsConn, sessionUUID play.SessionUUID, userUUID play.UserUUID) {
-	ctx := r.Context()
+func (h *Handler) readPump(r *http.Request, wc *wsConn, sessionUUID play.SessionUUID, userUUID play.UserUUID) {
 	for {
 		var msg inboundMessage
 		if err := wc.conn.ReadJSON(&msg); err != nil {
 			return
 		}
+		h.handleInboundMessage(r.Context(), wc, sessionUUID, userUUID, msg)
+	}
+}
 
-		switch msg.Type {
-		case inboundTypeStart:
-			outcome, events, err := s.coord.Start(ctx, sessionUUID, userUUID, msg.IdempotencyKey)
-			if err != nil {
-				_ = wc.enqueue(outboundMessage{Type: outboundTypeError, Message: err.Error()})
-				continue
-			}
-			// This connection's own direct reply is enqueued before the
-			// fan-out, so it is always the first of the two this same
-			// connection can see - Deliver has no way to know that
-			// ordering matters, so api sequences it explicitly.
-			_ = wc.enqueue(outboundMessage{Type: outboundTypeStartResult, Outcome: string(outcome)})
-			s.coord.Deliver(sessionUUID, events)
+// handleInboundMessage dispatches one decoded WS command and logs it as its
+// own single request-scoped entry, covering the message received through
+// to the direct reply sent back on this same connection - a long-lived
+// connection carries many such entries, one per exchange, rather than one
+// entry for the connection's entire lifetime.
+func (h *Handler) handleInboundMessage(reqCtx context.Context, wc *wsConn, sessionUUID play.SessionUUID, userUUID play.UserUUID, msg inboundMessage) {
+	ctx := logging.Start(reqCtx)
+	defer logging.FinishRequestLog(ctx, slog.Default(), "api.session.WSMessage")
 
-		case inboundTypeAnswerInteraction:
-			outcome, events, err := s.coord.AnswerInteraction(ctx, sessionUUID, play.InteractionUUID(msg.InteractionID), userUUID, []byte(msg.Answer))
-			if err != nil {
-				_ = wc.enqueue(outboundMessage{Type: outboundTypeError, Message: err.Error()})
-				continue
-			}
-			_ = wc.enqueue(outboundMessage{Type: outboundTypeAnswerResult, Outcome: string(outcome), InteractionID: msg.InteractionID})
-			s.coord.Deliver(sessionUUID, events)
+	logging.LogFields(ctx,
+		logging.Field("session_uuid", string(sessionUUID)),
+		logging.Field("user_uuid", string(userUUID)),
+		logging.Field("message_type", msg.Type),
+	)
 
-		default:
-			_ = wc.enqueue(outboundMessage{Type: outboundTypeError, Message: "unknown message type"})
+	switch msg.Type {
+	case inboundTypeStart:
+		outcome, events, err := h.coord.Start(ctx, sessionUUID, userUUID, msg.IdempotencyKey)
+		if err != nil {
+			logging.LogError(ctx, err)
+			_ = wc.enqueue(outboundMessage{Type: outboundTypeError, Message: err.Error()})
+			return
 		}
+		logging.LogFields(ctx, logging.Field("outcome", string(outcome)))
+		// This connection's own direct reply is enqueued before the
+		// fan-out, so it is always the first of the two this same
+		// connection can see - Deliver has no way to know that
+		// ordering matters, so this handler sequences it explicitly.
+		_ = wc.enqueue(outboundMessage{Type: outboundTypeStartResult, Outcome: string(outcome)})
+		h.coord.Deliver(sessionUUID, events)
+
+	case inboundTypeAnswerInteraction:
+		logging.LogFields(ctx, logging.Field("interaction_id", msg.InteractionID))
+		outcome, events, err := h.coord.AnswerInteraction(ctx, sessionUUID, play.InteractionUUID(msg.InteractionID), userUUID, []byte(msg.Answer))
+		if err != nil {
+			logging.LogError(ctx, err)
+			_ = wc.enqueue(outboundMessage{Type: outboundTypeError, Message: err.Error()})
+			return
+		}
+		logging.LogFields(ctx, logging.Field("outcome", string(outcome)))
+		_ = wc.enqueue(outboundMessage{Type: outboundTypeAnswerResult, Outcome: string(outcome), InteractionID: msg.InteractionID})
+		h.coord.Deliver(sessionUUID, events)
+
+	default:
+		logging.LogFields(ctx, logging.Field("error", "unknown message type"))
+		_ = wc.enqueue(outboundMessage{Type: outboundTypeError, Message: "unknown message type"})
 	}
 }
