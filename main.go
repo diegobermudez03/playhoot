@@ -4,11 +4,18 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"strconv"
 	"strings"
 
+	"github.com/diegobermudez03/playhoot/api"
+	"github.com/diegobermudez03/playhoot/game/management/usecases/getgame"
+	"github.com/diegobermudez03/playhoot/game/management/usecases/getgamedefinition"
+	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle"
+	"github.com/diegobermudez03/playhoot/play"
+	"github.com/diegobermudez03/playhoot/play/sessionruntime"
 	"github.com/joho/godotenv"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -22,6 +29,7 @@ type envVariables struct {
 	DatabasePassword string
 	DatabaseName     string
 	DatabaseSSLMode  string
+	HTTPPort         string
 }
 
 func main() {
@@ -48,6 +56,15 @@ func main() {
 	if err := PostgresMigrate(db); err != nil {
 		log.Fatalf("running PostgreSQL migrations: %v", err)
 	}
+
+	manager := sessionlifecycle.New(db, getgame.New(db), getgamedefinition.New(db))
+	coordinator := play.NewCoordinator(sessionruntime.New(manager, db))
+	server := api.NewServer(coordinator)
+
+	log.Printf("listening on :%s", envVars.HTTPPort)
+	if err := http.ListenAndServe(":"+envVars.HTTPPort, server.Routes()); err != nil {
+		log.Fatalf("serving HTTP: %v", err)
+	}
 }
 
 func readEnvVariables() (*envVariables, error) {
@@ -65,6 +82,7 @@ func readEnvVariables() (*envVariables, error) {
 		DatabasePassword: os.Getenv("DATABASE_PASSWORD"),
 		DatabaseName:     strings.TrimSpace(os.Getenv("DATABASE_NAME")),
 		DatabaseSSLMode:  strings.TrimSpace(os.Getenv("DATABASE_SSL_MODE")),
+		HTTPPort:         strings.TrimSpace(os.Getenv("HTTP_PORT")),
 	}
 
 	required := []struct {
@@ -78,6 +96,7 @@ func readEnvVariables() (*envVariables, error) {
 		{name: "DATABASE_PASSWORD", value: envVars.DatabasePassword},
 		{name: "DATABASE_NAME", value: envVars.DatabaseName},
 		{name: "DATABASE_SSL_MODE", value: envVars.DatabaseSSLMode},
+		{name: "HTTP_PORT", value: envVars.HTTPPort},
 	}
 	for _, variable := range required {
 		if variable.value == "" {
@@ -88,6 +107,11 @@ func readEnvVariables() (*envVariables, error) {
 	port, err := strconv.Atoi(envVars.DatabasePort)
 	if err != nil || port < 1 || port > 65535 {
 		return nil, fmt.Errorf("DATABASE_PORT must be a valid TCP port")
+	}
+
+	httpPort, err := strconv.Atoi(envVars.HTTPPort)
+	if err != nil || httpPort < 1 || httpPort > 65535 {
+		return nil, fmt.Errorf("HTTP_PORT must be a valid TCP port")
 	}
 
 	return envVars, nil

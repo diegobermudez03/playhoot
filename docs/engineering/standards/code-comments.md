@@ -237,7 +237,16 @@ cannot communicate.
 
 ## Enforcement
 
-Code review and this standard. No automated linter enforces comment content.
+Code review and this standard are the primary enforcement mechanism; no
+general linter checks comment content. `TestNoInternalDocCitationsInComments`
+(root package, `comment_standard_test.go`) runs as part of `go test ./...`
+and mechanically catches one specific, common violation - a comment citing
+an ADR/WORK/Blocker/Slice reference or a `docs/work|engineering|ai/` path
+as the reason something is true - but it cannot detect most of what this
+standard covers (narrating the function body, describing current callers
+instead of what a symbol represents, historical "previously X, now Y"
+phrasing, etc.). Code review remains required for the rest.
+
 During code review, flag in particular:
 
 - a comment narrating the function body instead of its contract;

@@ -242,6 +242,48 @@ Evidence:
 - `game/session/internal/sessionlock/`, `game/session/internal/idempotency/` (shared cross-cutting mechanics, called directly by the Manager's steps)
 - `game/management/usecases/getgamedefinition/`
 
+## Live Transport: Start / AnswerInteraction Fan-Out (WebSocket)
+
+A real client connects over WebSocket and exercises `Start`/`AnswerInteraction` live, with the interaction Session Runtime opens delivered back to it and its answer delivered back to Session Runtime (WORK-0005). `Create`/`Join` stay ordinary HTTP request/response - they happen before any live connection exists.
+
+```
+Client                api (transport)        play.Coordinator      play/sessionruntime      sessionlifecycle.Manager      Postgres
+  |--POST /sessions------->|                        |                      |                         |                       |
+  |                        |---Create-------------->|---Create------------>|---Create--------------->|--commit-------------->|
+  |<--session_uuid,--------|<-----------------------|<---------------------|<------------------------|                       |
+  |    join_code           |                        |                      |                         |                       |
+  |--POST /sessions/join-->|---Join---------------->|---Join--------------->|---Join------------------>|--commit-------------->|
+  |<--JOINED----------------|<-----------------------|<---------------------|<------------------------|                       |
+  |--GET /ws?session_uuid&user_uuid--(upgrade)------>|                      |                         |                       |
+  |                        |---Bind(session,user,conn)->[registered]        |                         |                       |
+  |--{"type":"START"}----->|---Start--------------->|---Start-------------->|---Start (Manager)------->|--commit RuntimeTurn-->|
+  |                        |                        |                      |---read session_interactions WHERE opened_by_turn_id=current_turn_id (post-commit)--->|
+  |                        |                        |<--Events[Opened]------|<------------------------|                       |
+  |<--START_RESULT---------|<--fan-out Deliver()----|                      |                         |                       |
+  |<--INTERACTION_OPENED---|                        |                      |                         |                       |
+  |--{"type":"ANSWER_INTERACTION",answer}-->|--AnswerInteraction-->|--AnswerInteraction-->|--AnswerInteraction (Manager)->|--commit RuntimeTurn-->|
+  |                        |                        |                      |---read session_interactions WHERE closed_by_turn_id=current_turn_id (post-commit)--->|
+  |                        |                        |<--Events[Closed]------|<------------------------|                       |
+  |<--ANSWER_RESULT--------|<--fan-out Deliver()----|                      |                         |                       |
+  |<--INTERACTION_CLOSED---|                        |                      |                         |                       |
+```
+
+Implemented behavior:
+
+- `api` owns the HTTP upgrade handshake and one read-pump/write-pump goroutine pair per connection (`api/ws.go`); all outbound writes for a connection - both fanned-out `play.Event`s and that same connection's own command results/errors - go through one buffered channel drained by that connection's single write-pump goroutine, since a WebSocket connection supports exactly one concurrent writer.
+- `play` (top-level package, sibling of `game`/`api`/`identity`) is the Live Session Coordinator: an in-process, per-Session registry of bound connections (`Coordinator.Bind`/`Coordinator.deliver`), never touching `game` directly. It declares the `SessionRuntime` port it depends on; nothing `play` exports references a `game` type (verified by `go list -deps ./play` containing no `game/...` package, and `go list -deps ./game/...` containing neither `play` nor `api`).
+- `play/sessionruntime` implements that port by calling the existing, unmodified `sessionlifecycle.Manager`. Since `Manager` never returns `engine.Output` values to its caller (and this slice does not change that), `play/sessionruntime` reads back the committed `RuntimeTurn`'s `session_interactions` rows (`opened_by_turn_id`/`closed_by_turn_id` = `sessions.current_turn_id`, GAME-ADR-0023) after `Manager`'s own call has already durably committed and reported success, and translates them into `play.Event`s - the durable record `interaction_capture.go` already writes for exactly `OpenQuestionOutput`/`CloseQuestionOutput`, never any other `Output` variant (Blocker 4's resolved scope). The translation never leaks `engine_path`/`Slot`/`SessionActorID`: a recipient is resolved through `session_actors.user_uuid` to the caller-facing `UserUUID` the client itself supplied.
+- Delivery is best-effort and strictly post-commit (GAME-ADR-0020): `Coordinator` never sees an `Event` until `SessionRuntime`'s call has already returned success, and a `Conn.Deliver` failure is only ever logged - it never reopens, retries, or reinterprets the already-committed Session state. A recipient with no bound connection simply receives nothing.
+- `(SessionUUID, UserUUID)` connection binding extends Slice 1's already-established trusted-caller stance (no Identity implementation exists yet): the client supplies `UserUUID` directly as a `GET /ws` query parameter; real credential verification is deferred to a future Identity/Auth slice.
+- The client's submitted answer rides the WebSocket as the engine's own `engineservice.EncodeValue` wire format - the same codec `session_interactions.response_payload` already persists through, reused rather than inventing a second value encoding for this thin slice.
+
+Evidence:
+
+- `play/play.go`, `play/coordinator.go`, `play/README.md`
+- `play/sessionruntime/sessionruntime.go`, `play/sessionruntime/query.go`
+- `api/server.go`, `api/handlers.go`, `api/ws.go`, `api/wire.go`
+- `docs/work/active/WORK-0005-thin-live-coordinator.md`
+
 ## Not Documented As Implemented
 
-- The Live Session Coordinator/WebSocket transport, timer obligations, the `session_runtime_failures` diagnostic entity, disconnect/reconnect, and inactivity expiration (see `docs/ai/workspaces/active/session-runtime-v1/PLAN.md` Slices 5+).
+- Session Runtime timer obligations, the `session_runtime_failures` diagnostic entity, disconnect/reconnect, resync, and inactivity expiration (see `docs/ai/workspaces/active/session-runtime-v1/PLAN.md` Slices 5-8). The Coordinator/WebSocket transport above is deliberately thin: no disconnect grace/debounce, no semantic presence, no timer scheduling, no reconnect/resync - a client that disconnects simply stops receiving further messages until Slice 7 exists.
