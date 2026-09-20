@@ -1,0 +1,133 @@
+# WORK-0005: Thin Live Coordinator / WebSocket
+
+Status: DRAFT
+Created: 2026-09-19
+Last status change: 2026-09-20
+
+Related decisions:
+- GAME-ADR-0002 (Session Runtime durable boundary, Live Session Coordinator responsibility boundary, V1 scaling)
+- GAME-ADR-0020 (post-commit client delivery semantics, best-effort, no outbox)
+- GAME-ADR-0005 (public/internal identity boundary)
+
+Canonical context:
+- `game/README.md` (Live Session Coordinator, Session Runtime Post-Commit Client Delivery Semantics sections)
+- `game/docs/decisions/GAME-ADR-0002-session-runtime-durable-boundary.md`
+- `game/docs/decisions/GAME-ADR-0020-session-runtime-post-commit-client-delivery-semantics.md`
+- `docs/ai/workspaces/active/session-runtime-v1/PLAN.md` (Slice 4)
+- `game/session/workflows/sessionlifecycle/manager.go`, `types.go` (the existing Create/Join/Leave/Start/AnswerInteraction public surface this slice exposes live)
+- `game/language/v1/engine/output.go` (the committed `Output` variants a RuntimeTurn can produce)
+- `api/README.md` (existing, currently code-empty, external transport/application edge convention)
+- `identity/CURRENT_STATE.md` (Identity has no implementation yet - governs Blocker 2)
+
+## Outcome
+
+A real client can connect over a live transport and exercise Create -> Join -> Start -> answer-one-interaction against a real `sessionlifecycle.Manager`, with the interaction Session Runtime opens delivered to the connected client and the client's answer delivered back to Session Runtime - proving the actual live path works, not just the Go-API surface Slices 1-3 already validated.
+
+This is deliberately the thinnest transport slice that proves that path. It must not grow to include disconnect grace/debounce, semantic presence, timer scheduling/reconciliation, an inactivity reaper, full process-loss recovery, or advanced reconnect semantics - all explicitly deferred to Slices 5-8 per `PLAN.md`.
+
+## Context
+
+Slices 1-3 (WORK-0001, WORK-0003, WORK-0004) are DONE: `sessionlifecycle.Manager` exposes `Create`/`Join`/`Leave`/`Start`/`AnswerInteraction`, all Go-API-level (typed parameters, typed `engine.Value` answers, no wire/DTO decoding, no transport). No HTTP or WebSocket server exists anywhere in the repository yet - `main.go` only opens Postgres and runs migrations. `api/` exists as a package with only a README describing the general external-transport-edge convention; it contains no Go code. `play/` exists as a directory with no files at all, not even a README - `PLAN.md`'s own drift notes flagged it as "the most plausible future home" for a Coordinator, without an accepted decision committing to that.
+
+GAME-ADR-0002 already accepts the Live Session Coordinator as a responsibility boundary (ephemeral connection binding, delivery/fan-out, physical disconnect detection, physical timer scheduling - owning no authoritative truth), and that V1 may keep it in the same Go process using local maps/channels/goroutines, never Redis or distributed routing. GAME-ADR-0020 already accepts that delivery is best-effort against already-durable Session Runtime truth: a RuntimeTurn commits first, live delivery happens only after, a delivery failure never reopens or rolls back anything, and V1 introduces no durable delivery outbox/ACK mechanism. Resync (GAME-ADR-0010) - reconstructing a player-facing projection for a client that missed live delivery - is explicitly Slice 7 scope, not this slice's.
+
+Identity has no implementation (`identity/CURRENT_STATE.md`): there is no capability anywhere in the repository that resolves a real credential into an authenticated `UserUUID`. Slice 1 already faced the same gap for its plain Go-API callers and settled it by having trusted callers supply `UserUUID` directly, explicitly avoiding any temporary fake-auth mechanism that would later need removal. This slice introduces the first actual external-facing connection boundary in the repository and needs its own explicit answer to the same question for a live connection specifically (see Blocker 2).
+
+## Scope
+
+### In Scope
+
+- Three components, split by responsibility and dependency direction (resolved, see Blockers):
+  - **`api/` - WebSocket transport (stateless/dumb).** Owns the HTTP upgrade handshake and one read-pump/write-pump goroutine pair per connection. Decodes/encodes wire JSON, forwards decoded client commands to `play`, forwards outbound messages from `play` back to the socket. Holds no Session/connection registry and no business state. Depends only on `play`'s exported API (never on any `game/...` package), consistent with `api/README.md`'s existing "user-facing transport endpoints"/"transport-level concerns" charter.
+  - **`play` - Live Session Coordinator (stateful), a new top-level package.** The conceptual GAME-ADR-0002 Coordinator - itself already framed as a boundary "outside Session Runtime" - lives as a top-level package, a sibling of `game/`, `api/`, `identity/`, not nested inside any of them. Its exported API - the methods and struct types other packages call/reference - declares a `SessionRuntime` interface and uses only primitive/`play`-owned types (`string`/`time.Time`/`play`'s own result structs) for everything crossing that boundary, never a `game`-package type. `play`'s own package (the `play` import path itself) imports no other domain package. It owns an in-process, per-Session registry of bound connections (channel-based, per GAME-ADR-0002's accepted local-maps/channels stance), binds a connection to `(SessionUUID, UserUUID)` per Blocker 2, and translates a decoded client command into a call against the `SessionRuntime` interface.
+  - **An implementation of `play`'s `SessionRuntime` interface** that actually calls the existing, unmodified `sessionlifecycle.Manager` and translates between `play`'s primitive types and `Manager`'s semantic types (`SessionUUID`, `UserUUID`, `JoinResult`, `engine.Output`, etc.) in both directions - including translating a committed `Manager` call's resulting `OpenQuestionOutput`/`CloseQuestionOutput` (scope per Blocker 4) into the primitive event values `play` fans out. This implementation is expected to import `game` - that is normal and required, since it is the piece whose whole job is bridging to `game`'s real types. Where it physically lives (a subpackage under `play/`, e.g. `play/sessionruntime`, or elsewhere) is Implementation Freedom; what matters is that it is not the `play` package itself, so `play`'s own imports/exported API stay clean.
+
+### Dependency Direction (Why This Split Matters)
+
+The rule is about `play`'s own package and its exported API, not about every file anywhere under the `play/` directory: the `play` package itself imports no other domain package, and every type its exported methods/structs expose is `play`-owned or a primitive - never a `game` type. The concrete implementation of `SessionRuntime` is expected to import `game` (it has to, to call `sessionlifecycle.Manager` and translate its real types) - that is normal and does not violate the rule, as long as it isn't part of `play`'s own exported surface. `game` itself imports nothing from `play` or `api`, and `api` imports only `play`'s exported API. This is what avoids a circular dependency between `play` and `game`, and is what makes them swappable to separate deployment units later: moving from an in-process call to a network call means replacing the `SessionRuntime` implementation with an HTTP/gRPC client - no change to `play`'s own exported API, hub/registry/fan-out logic, or to `game` at all.
+
+### Out of Scope
+
+- Disconnect grace/debounce, semantic presence tracking/recovery, reconnect handling, and the resync read capability (Slice 7, GAME-ADR-0010/0015/0016).
+- Physical timer scheduling/reconciliation (Slice 5, GAME-ADR-0008/0013).
+- An inactivity reaper (Slice 8, GAME-ADR-0014).
+- Any change to `sessionlifecycle.Manager`'s existing business logic, method signatures, or persistence model - this slice adds a transport layer in front of it, nothing inside it changes.
+- Real credential verification / Identity implementation - this slice extends the same trusted-caller stance Slice 1 already established (see Blocker 2), it does not build Identity/Auth.
+- A client that connects to a Session already `RUNNING` with a pre-existing open interaction seeing that interaction live - with no resync capability until Slice 7, such a client simply receives no further messages until it exists, per `PLAN.md`'s own explicit framing of this slice's exclusions ("a client that disconnects simply stops receiving further messages until Slice 7 exists").
+- Multi-instance/distributed delivery, Redis, sticky routing (already excluded from all of V1 by GAME-ADR-0002, not specific to this slice).
+
+## Approved Design
+
+Beyond canonical context, this WORK settles:
+
+- **`play` owns the port; a separate implementation owns the bridge to `game`.** `play`'s own package declares the `SessionRuntime` interface (or equivalent name) it depends on, and every type in `play`'s exported API (interface methods, exported structs) is primitive or `play`-owned - no `game` package (`sessionlifecycle`, `engine`, etc.) is ever referenced by anything `play` exports. The concrete implementation of that interface is expected to import `game` and call `sessionlifecycle.Manager` in-process - that is normal, not a violation, as long as the implementation itself isn't part of `play`'s own package/exported surface. This is a deliberate dependency-inversion boundary to avoid a `play`<->`game` circular dependency, not incidental structure: it is what lets `play` and `game` later become separate deployment units by swapping only the `SessionRuntime` implementation.
+- **No shared database transaction, or database handle at all, between `play` and `game`.** `play` never receives, stores, or passes through a `*gorm.DB`/transaction handle; every mutation it triggers happens by calling the `SessionRuntime` interface, and the implementation's own call into `sessionlifecycle.Manager` owns that call's entire transaction scope exactly as it already does today, entirely on the `game` side of the boundary.
+- **Durable commit remains the correctness boundary.** A `Manager` call's transaction must fully commit (inside the `SessionRuntime` implementation, on the `game` side of the interface) before any Output resulting from it is translated into a `play`-owned event and delivered live; a delivery failure afterward never rolls back, reopens, or otherwise reinterprets the committed Session state (GAME-ADR-0020). This slice adds no compensating/retry logic for a failed delivery.
+- **No new persistence.** This slice adds no migration, no connection-presence column, no delivery outbox, and no ACK table. Connection state is ephemeral, in-process Go state, not Session Runtime persistence.
+- **`sessionlifecycle.Manager` is called, never reimplemented.** The `SessionRuntime` implementation is a caller of the Manager's existing public methods, exactly as a future HTTP handler would be; it owns no lifecycle/admission/execution policy itself, and neither does `play`.
+
+## Constraints and Invariants
+
+- `game` imports nothing from `play` or `api`. `api` imports only `play`'s exported API, never `game`. `play`'s own package imports no other domain package, and nothing `play` exports (interface methods, exported struct fields) references a `game` type. The concrete `SessionRuntime` implementation may and normally does import `game` - that dependency direction (implementation -> game, never `play`'s own package -> game) is what avoids a `play`<->`game` cycle, not an absolute ban on `game` appearing anywhere under the `play/` directory.
+- `play` never holds a `*gorm.DB`, a transaction handle, or any other Session Runtime persistence reference of any kind.
+- No Coordinator/client-visible output is ever delivered before its causing transaction has durably committed (GAME-ADR-0020, already-established Start/AnswerInteraction behavior).
+- A delivery failure, a disconnected client, or a Coordinator/process crash immediately after commit must never be treated as a reason to reverse, retry against, or reinterpret the already-committed Session state.
+- No authoritative connection-presence field (`is_connected`, `connection_id`, `websocket_id`, or equivalent) is added to any Session Runtime persistence (GAME-ADR-0003) - this slice does not yet implement `semantic_presence` at all (that is Slice 7).
+- This slice must not implicitly grow into disconnect grace/debounce, timer scheduling, an inactivity reaper, or reconnect/resync handling - if implementation discovers one of these is unavoidable to make the thin path work, that is new information routed back through this WORK rather than silently implemented.
+
+## Acceptance Criteria
+
+- A client can connect, create a Session, join it, start it, and receive the interaction opened by Start's first RuntimeTurn, entirely over the live transport.
+- Submitting a valid answer over the live transport results in a new RuntimeTurn committing (exactly as `AnswerInteraction` already guarantees at the Go-API level) and the connected client(s) receiving whatever further `Output`s that Turn produces, per Blocker 4's resolved scope.
+- No Output is ever observed by a client before its causing transaction has committed - provable by a test that fails a delivery attempt (or observes ordering directly) and confirms the durable Session state is already correct regardless.
+- Disconnecting a client mid-Session does not affect Session Runtime's durable state in any way (no Participant deactivation, no termination, no error) - it simply stops receiving further messages, per this slice's explicit exclusion of disconnect handling.
+- `go list -deps ./play` (the root `play` package only, not its subpackages) contains no `game/...` package, and `go list -deps ./game/...` contains neither `play` nor `api` - the dependency-inversion boundary is real, not merely described in comments. A subpackage implementing `SessionRuntime` (if that is where Implementation Freedom places it) is expected to depend on `game` and is not part of this check.
+- `go build ./...`, `go vet ./...`, and `go test ./... -count=1` pass, with no new failure introduced beyond the already-recorded out-of-scope `getgame` JSONB-comparison test defect.
+
+## Implementation Freedom
+
+- Exact WebSocket/transport library choice (none currently exists in `go.mod`) - a local implementation decision, mirroring how Slice 1 introduced `github.com/google/uuid` without treating the choice itself as a material blocker.
+- Exact name/shape of `play`'s `SessionRuntime` (or equivalently named) port interface and its request/response DTOs, and exactly where its concrete implementation lives - a subpackage under `play/` (e.g. `play/sessionruntime`), a package elsewhere, or directly in `main.go`'s wiring - as long as it is not part of `play`'s own package/exported surface and the dependency direction in this WORK's Constraints holds.
+- Exact shape of the in-process per-Session connection registry (a map guarded by a mutex, one goroutine per Session, or another concurrency-safe structure), subject to `docs/engineering/standards/`.
+- Exact Go type/package/file names for the new transport/coordinator code, subject to `repositories.md`/`domain-logic-placement.md`/`function-signatures.md`.
+- Test structure/fixtures, following `testing.md` and the existing Slice 1-3 test layout; a live-transport test may use an in-process test client/server rather than a real network socket where that is sufficient to prove the required behavior. `play`'s own hub/registry/fan-out tests should mock the `SessionRuntime` interface rather than exercising a real `sessionlifecycle.Manager`, since `play` itself never depends on it.
+
+## Verification
+
+- `go build ./...`, `go vet ./...`, `gofmt -l` on changed files.
+- `go test ./... -count=1`, including real-Postgres repository-integration/concurrency tests already required by Slices 1-3 (unaffected by this slice, since `sessionlifecycle.Manager` itself does not change).
+- A live-transport-level test proving the full Create -> Join -> Start -> receive-interaction -> answer -> receive-resolution path end-to-end, and a test proving delivery never precedes commit.
+
+## Documentation Impact
+
+### Accepted / Canonical Knowledge
+
+- None expected. GAME-ADR-0002 and GAME-ADR-0020 already describe this design, including framing the Coordinator as a boundary "outside Session Runtime" - placing its code as a top-level `play/` package is consistent with, not a change to, that accepted architecture. Unless a Blocker resolution below reveals a genuine accepted-architecture gap, this WORK implements without changing canonical knowledge.
+
+### Current-State Documentation After Implementation
+
+- `game/CURRENT_STATE.md` - describe the live Coordinator as now-implemented (currently listed as a Current Gap), referencing the new top-level `play` package and its `SessionRuntime` implementation boundary.
+- `game/docs/FLOWS.md` - add the live-transport connection/fan-out flow, including the `SessionRuntime` implementation's role translating between `play` and `sessionlifecycle.Manager`.
+- A new top-level `play/README.md` (sibling to `api/README.md`), describing `play`'s Coordinator responsibility (connection registry, fan-out, the `SessionRuntime` interface it depends on) and stating the precise dependency rule: `play`'s own package and everything it exports depend only on primitives/its own types, never on `game` - but a `SessionRuntime` implementation is expected to import `game` and may live in a subpackage without violating that rule.
+- A brief addition to `api/README.md` noting it hosts the WebSocket transport adapter that forwards to `play`.
+
+### Intentionally Unchanged
+
+- `ARCHITECTURE.md` - GAME-ADR-0002 already accepts the Coordinator as a boundary outside Session Runtime; this WORK's package-placement choice does not change global cross-domain architecture rules and does not require a new global ADR.
+- `docs/work/completed/WORK-0001-session-lobby-foundation.md`, `WORK-0002-rename-game-management-package.md`, `WORK-0003-session-start-first-runtimeturn.md`, `WORK-0004-interaction-response-processing.md` (completed work, historical).
+- `game/session/workflows/sessionlifecycle/` - not touched beyond being called through the new `SessionRuntime` implementation; `game` imports nothing from `play`.
+
+## Blockers
+
+Status: **RESOLVED, pending final human confirmation of Blocker 1's refined resolution (2026-09-20)**. Blockers 2-4 reached HUMAN-APPROVED resolution on 2026-09-20 and are unaffected by Blocker 1's revisions below. Each item below shaped a pattern later slices inherit (Slice 5's timer scheduling and Slice 7's disconnect/reconnect both explicitly extend this same Coordinator rather than inventing a new one), so none was silently decided here.
+
+1. **Where does the Coordinator/live-transport code live, and what is the exact dependency rule between `play` and `game`?** **Resolution: RESOLVED, HUMAN-APPROVED (revised twice on 2026-09-20, superseding this WORK's own first two passes).** Pass one proposed nesting the stateful Coordinator inside `game/` (`game/play/`); the human corrected this to a top-level `play` package instead, so `play` and `game` could later become separate deployment units by swapping an in-process call for a network call - which requires `play` not to depend on `game` types, and no shared database transaction between them. Pass two initially over-specified this as "no `game` import anywhere under `play/`'s directory tree, adapter must live outside it entirely"; the human refined this to the precise rule actually needed: **`play`'s own package and its exported API (interface methods, exported struct types) must depend only on primitives/`play`-owned types and must never import or reference `game`** - but the concrete implementation of the `SessionRuntime` interface `play` declares is expected to import `game` (it has to, to call `sessionlifecycle.Manager` and translate its real types), and that implementation may live anywhere, including a subpackage under `play/` - it is simply not part of `play`'s own package or exported surface. This is the precise rule that breaks the circular-dependency risk without over-constraining where implementation code physically lives. **Final resolution**: `play` is a new **top-level** package, a sibling of `game/`, `api/`, `identity/`. The WebSocket transport adapter stays in `api/` as before, depending only on `play`'s exported API. See this WORK's Approved Design/Constraints and Scope's "Dependency Direction" subsection for the precise rule. This choice also decides where Slice 5's timer-scheduling extension and Slice 7's disconnect/reconnect extension both land (inside `play`, behind the same `SessionRuntime` boundary), since both explicitly extend this same Coordinator rather than building a second one.
+2. **V1 connection authentication / `(SessionUUID, UserUUID)` binding with no Identity implementation.** `game/README.md` requires an already-trusted `UserUUID` before Session Runtime ever sees a caller ("the external client is not the trusted source of `UserUUID`"), but Identity has no implementation anywhere. Slice 1 already resolved the analogous problem for its plain Go-API method calls: trusted callers supply `UserUUID` directly, no temporary fake-auth mechanism. **Resolution: APPROVED as proposed.** This slice extends that exact same stance to the live connection handshake - the client supplies `UserUUID` directly at connection time (for example a query parameter or an initial handshake message), with real credential verification explicitly deferred to a future Identity/Auth slice, exactly as every Go-API caller already does today. This sets no new identity precedent; it is a live-transport-shaped instance of the one precedent Slice 1 already established.
+3. **Which operations ride the live connection itself, versus ordinary request/response?** `PLAN.md`'s Slice 4 scope describes "translating Slice 1-3's existing Session application operations into transport requests" without specifying the transport shape per operation. **Resolution: APPROVED as proposed.** `Create` and `Join` happen before any live connection exists (a host creates a Session, a player scans a join code) and stay ordinary HTTP request/response; only `Start`, `AnswerInteraction`, and the resulting `Output` fan-out - the operations that need to be correlated with an open connection expecting live delivery - ride the WebSocket.
+4. **Which engine `Output` variants are translated into client-facing fan-out messages, and their wire shape.** The engine currently produces nine committed `Output` variants (`OpenQuestionOutput`, `CloseQuestionOutput`, `ScheduleTimerOutput`, `CancelTimerOutput`, `EmitEffectOutput`, `ActivatePresentationOutput`, `UpdatePresentationOutput`, `RemovePresentationOutput`, `WorkflowCompletedOutput`). `PLAN.md`'s own Slice 4 Delivers line says only "at minimum whatever is needed to see an opened interaction and its resolution," leaving the rest ambiguous. **Resolution: APPROVED as proposed.** This slice translates and fans out exactly `OpenQuestionOutput`/`CloseQuestionOutput` - the minimum needed to prove the live path end-to-end - and silently ignores every other variant for now (no error, no partial translation): `ScheduleTimerOutput`/`CancelTimerOutput` have no consumer until Slice 5 exists, `EmitEffectOutput`/the presentation-shaped Outputs are explicitly best-effort/droppable presentation effects under GAME-ADR-0020, and `WorkflowCompletedOutput` has no accepted client-facing meaning defined anywhere yet. The fan-out DTO itself must not leak internal engine identities (`engine_path`, `Slot`, `SessionActorID`) - a recipient (`engine.UserID`) must be translated back through Session Runtime to the caller-facing identity the client already supplied (its own `UserUUID`), mirroring the same non-leakage principle already accepted for `game/README.md`'s (not-yet-built) resync projection, even though resync itself remains Slice 7's.
+
+Local implementation choices (exact WebSocket library, connection-registry data structure, package/file naming) remain Implementation Freedom and are not blockers.
+
+## Completion Record
+
+Not yet DONE. Status: **DRAFT** (returned from READY on 2026-09-20). WORK-0005 briefly reached READY on 2026-09-20 with Blocker 1 resolved as `game/play/` (nested); before implementation produced any code, the human corrected this twice in the same day: first to a top-level `play` package with a dependency-inversion boundary against `game`, then to refine that boundary's exact shape - the rule applies to `play`'s own package and its exported API only, not to every file anywhere under a `play/` directory tree, so a `SessionRuntime` implementation may import `game` and may live in a subpackage. Blocker 1's resolution reflects both revisions (see above); Blockers 2-4 are unaffected and remain HUMAN-APPROVED. Pending the human's confirmation of the refined Blocker 1, this WORK returns to READY and implementation resumes.
