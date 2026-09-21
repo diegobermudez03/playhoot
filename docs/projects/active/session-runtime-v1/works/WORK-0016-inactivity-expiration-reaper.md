@@ -2,11 +2,12 @@
 
 Status: PLANNED
 Created: 2026-09-20
-Last status change: 2026-09-20
+Last status change: 2026-09-20 (Part B reconciliation, same day: replay-input framing note added)
 
 Related decisions:
 - GAME-ADR-0014 (inactivity/reaper semantics)
 - GAME-ADR-0019 (terminal cleanup - reused, not reinvented, by this WORK)
+- GAME-ADR-0024 (Replay-First Session Runtime Persistence - inactivity termination is Session lifecycle state, not a gameplay RuntimeTurn, and stays that way under the replay-input model)
 
 Canonical context:
 - `docs/projects/active/session-runtime-v1/PROJECT.md`
@@ -54,6 +55,10 @@ Not yet defined - to be written when this WORK moves to DRAFT.
 ## Blockers
 
 - None yet beyond ordinary design questions for DRAFT.
+
+## Scope Clarification (Part B Reconciliation, 2026-09-20)
+
+`game/docs/decisions/GAME-ADR-0024-replay-first-session-runtime-persistence.md` confirms (does not change) this WORK's already-correct framing: inactivity termination is Session lifecycle state materialized without executing Game Language, not a gameplay RuntimeTurn - it must not be fabricated as a fake replay-input cause merely to make a Session's terminal history "look like" every other Turn-produced entry. No implementation was performed; this WORK's Status remains PLANNED.
 
 ## Documentation Impact
 

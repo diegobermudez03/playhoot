@@ -2,17 +2,21 @@
 
 Status: PLANNED
 Created: 2026-09-20
-Last status change: 2026-09-20
+Last status change: 2026-09-20 (Part B/J reconciliation, same day: replay-input durability and PARTICIPANT-only command surface made explicit - see "Scope Addition (Part B/J Reconciliation, 2026-09-20)" below)
 
 Related decisions:
 - GAME-ADR-0018 (RUNNING serialization boundary, reload-after-lock, ordering-by-commit)
 - GAME-ADR-0002 (Live Session Coordinator responsibility boundary)
+- GAME-ADR-0024 (Replay-First Session Runtime Persistence - this WORK's UserIntent input must be durably, order-preservingly representable)
+- GAME-ADR-0025 (Role-Aware Live Connections - UserIntent is a PARTICIPANT-only command)
 
 Canonical context:
 - `docs/projects/active/session-runtime-v1/PROJECT.md`
 - `game/language/v1/program/signal.go` (`UserIntentSignalSource`), `game/language/v1/program/ui.go` (`EmitUserIntentAction`)
 - `game/language/v1/engine/signal.go` (`SignalKindIntent`)
 - `docs/projects/active/session-runtime-v1/works/WORK-0004-interaction-response-processing.md` (the existing RuntimeTurn/serialization pattern this WORK's runtime path reuses)
+- `docs/projects/active/session-runtime-v1/works/WORK-0019-replay-first-session-runtime-persistence-migration.md` (owns the general replay-input model; this WORK is responsible for satisfying it for UserIntent specifically)
+- `docs/projects/active/session-runtime-v1/works/WORK-0020-role-aware-live-connections.md` (the PARTICIPANT connection this WORK's live command rides)
 
 ## Outcome
 
@@ -45,6 +49,8 @@ Not yet designed. The routing-context representation (how a client identifies wh
 
 - Must reuse the existing per-Session RUNNING serialization boundary (GAME-ADR-0018) - an intent-driven RuntimeTurn is subject to the same reload-after-lock/ordering-by-commit/Step-bound rules as `AnswerInteraction`.
 - Must not expose engine-internal slot/path identities to the client.
+- **(Part B reconciliation)** A submitted UserIntent's content (intent name, submitted arguments, actor, routing context) must be durably captured, in commit order, before or atomically with the RuntimeTurn it drives - per GAME-ADR-0024/WORK-0019's replay-input model, this WORK gives that content a durable home (a new narrow satellite entity, or a field on the RuntimeTurn envelope itself), since no existing normalized entity already captures it the way `session_interactions` does for answers. This WORK does not persist the resulting Presentation/Effect consequences for replay - those remain derived, per WORK-0006.
+- **(Part J reconciliation)** UserIntent is a PARTICIPANT-connection command, reached only from the PARTICIPANT connection WORK-0020 establishes - never from an ADMIN connection, and never duplicating Auth/Identity beyond WORK-0005's already-established trusted-`UserUUID` stance.
 
 ## Acceptance Criteria
 
@@ -53,6 +59,11 @@ Not yet defined - to be written when this WORK moves to DRAFT.
 ## Blockers
 
 - Routing-context representation (see Approved Design) is the material open question for the DRAFT phase.
+- Depends on WORK-0020 (PARTICIPANT connection) and, for its durable replay-input shape, coordination with WORK-0019's model.
+
+## Scope Addition (Part B/J Reconciliation, 2026-09-20)
+
+A broader reconciliation session accepted GAME-ADR-0024 (replay-first persistence) and GAME-ADR-0025 (role-aware connections). Both bear directly on this WORK, which was PLANNED without either constraint spelled out: (1) a submitted UserIntent is a RuntimeTurn-driving cause with no existing durable home, so this WORK must give it one, consistent with every other cause in the replay-input model, rather than only persisting whatever `sessionlifecycle.Manager` already needed for its own immediate correctness; (2) UserIntent is unambiguously a PARTICIPANT-connection command, never an ADMIN one, now that the connection-role distinction exists as accepted architecture. Neither changes this WORK's central open question (routing-context representation), which remains for DRAFT. No implementation was performed; this WORK's Status remains PLANNED.
 
 ## Documentation Impact
 

@@ -2,17 +2,21 @@
 
 Status: PLANNED
 Created: 2026-09-20
-Last status change: 2026-09-20
+Last status change: 2026-09-20 (Part B/I reconciliation, same day: ADMIN-only command surface and durable-cause requirement made explicit - see "Scope Addition (Part B/I Reconciliation, 2026-09-20)" below)
 
 Related decisions:
 - GAME-ADR-0019 (RuntimeTurn execution bound and terminal cleanup)
 - GAME-ADR-0002 (Live Session Coordinator responsibility boundary)
+- GAME-ADR-0024 (Replay-First Session Runtime Persistence - the cancellation cause must be durably representable)
+- GAME-ADR-0025 (Role-Aware Live Connections - Cancel is an ADMIN-only command)
 
 Canonical context:
 - `docs/projects/active/session-runtime-v1/PROJECT.md`
 - `game/docs/decisions/GAME-ADR-0004-session-lobby-contract.md` (Leave "does not automatically cancel the Session" - the gap this WORK closes)
 - `game/language/v1/program/signal.go`/compiler catalog (`SessionCancelled` - already a real, usable `NamedSignalSource`)
 - `docs/projects/active/session-runtime-v1/works/WORK-0007-session-termination-live-notification.md` (the generalized terminal-live consequence this WORK's resulting termination must reuse)
+- `docs/projects/active/session-runtime-v1/works/WORK-0019-replay-first-session-runtime-persistence-migration.md` (owns the general replay-input model; this WORK is responsible for satisfying it for SessionCancelled specifically)
+- `docs/projects/active/session-runtime-v1/works/WORK-0020-role-aware-live-connections.md` (the ADMIN connection this WORK's command rides, exclusively)
 
 ## Outcome
 
@@ -45,9 +49,10 @@ Not yet designed. Open questions include: the exact command/API/wire contract (d
 
 ## Constraints and Invariants
 
-- Only the Session's host may cancel it.
+- Only the Session's host may cancel it, authority coming from the connection role (ADMIN) plus Manager's own authoritative `host_actor_id` check together, never from either alone (GAME-ADR-0025) - a host who also holds a PARTICIPANT connection does not gain cancellation authority through that connection.
 - The resulting terminal transition must satisfy the same terminal-cleanup invariant (no dangling `ACTIVE` interaction/timer obligation) that other terminal paths already establish or that WORK-0014 generalizes.
 - Must reuse, not reimplement, WORK-0007's terminal-live-notification mechanism.
+- **(Part B reconciliation)** The cancellation cause (at minimum, the issuing host's actor identity and the fact that cancellation - not some other terminal reason - occurred) must be durably representable in commit order, per GAME-ADR-0024/WORK-0019's replay-input model, so a Session's terminal history remains reconstructible/understandable after the fact.
 
 ## Acceptance Criteria
 
@@ -56,6 +61,11 @@ Not yet defined - to be written when this WORK moves to DRAFT.
 ## Blockers
 
 - Exact command/API/wire contract is an open design question for the DRAFT phase, not resolved here.
+- Depends on WORK-0020 (ADMIN connection) landing first.
+
+## Scope Addition (Part B/I Reconciliation, 2026-09-20)
+
+A broader reconciliation session accepted GAME-ADR-0024 (replay-first persistence) and GAME-ADR-0025 (role-aware connections), both bearing on this previously-PLANNED WORK: (1) cancellation is explicitly an ADMIN-only command - a host's separate PARTICIPANT connection (if any) never gains cancellation authority merely because the same person holds it; (2) the cancellation cause needs a durable, ordered representation consistent with every other RuntimeTurn-driving cause, not only whatever `Manager` needed for its own immediate terminalization logic. Neither changes this WORK's own open design questions (exact command/wire contract, forced-terminal-vs-authored-handling semantics), which remain for DRAFT. No implementation was performed; this WORK's Status remains PLANNED.
 
 ## Documentation Impact
 

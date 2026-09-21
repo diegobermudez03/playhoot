@@ -2,10 +2,11 @@
 
 Status: PLANNED
 Created: 2026-09-20
-Last status change: 2026-09-20
+Last status change: 2026-09-20 (Part B reconciliation, same day: replay-input framing note added)
 
 Related decisions:
 - GAME-ADR-0012 (KeyedTimerSlot direction accepted; explicitly states no compiler/engine/program/migration/Session Runtime/WORK code is authorized by that record alone)
+- GAME-ADR-0024 (Replay-First Session Runtime Persistence - the same TimerExpired-occurrence framing WORK-0012 confirms applies equally to a keyed timer's expiration, carrying `engine_key`)
 
 Canonical context:
 - `docs/projects/active/session-runtime-v1/PROJECT.md`

@@ -2,11 +2,12 @@
 
 Status: PLANNED
 Created: 2026-09-20
-Last status change: 2026-09-20
+Last status change: 2026-09-20 (Part B reconciliation, same day: Snapshot-availability assumption reconciled - see "Scope Clarification (Part B Reconciliation, 2026-09-20)" below)
 
 Related decisions:
 - GAME-ADR-0017 (failure taxonomy, diagnostic entity - HUMAN-APPROVED and canonically promoted, not yet implemented)
 - GAME-ADR-0019 (RuntimeTurn execution bound and terminal cleanup)
+- GAME-ADR-0024 (Replay-First Session Runtime Persistence - no durable Snapshot exists for this WORK's diagnostics to reference)
 
 Canonical context:
 - `docs/projects/active/session-runtime-v1/PROJECT.md`
@@ -52,6 +53,10 @@ Not yet defined - to be written when this WORK moves to DRAFT.
 ## Blockers
 
 - None yet beyond the shared-mechanism-vs-per-path design question above.
+
+## Scope Clarification (Part B Reconciliation, 2026-09-20)
+
+`game/docs/decisions/GAME-ADR-0024-replay-first-session-runtime-persistence.md` removes durable per-Turn Snapshot persistence. This WORK's `session_runtime_failures.diagnostic_payload` (already accepted by GAME-ADR-0017 as "a versioned internal diagnostic structure... that may preserve the attempted cause, the failed signal, and traces from successful in-memory Steps before the fatal Step") must not assume a durable Snapshot is available to reference or embed - any diagnostic content it captures must be self-contained (the in-memory state actually available at failure time, captured directly into the payload) rather than a pointer to a Snapshot row that no longer exists under the replay-first model. This WORK must not reintroduce Snapshot persistence under another name (for example, a "failure snapshot" column) merely to make diagnostics easier - if richer diagnostic context is genuinely needed, it is captured directly in `diagnostic_payload` at the moment of failure, consistent with GAME-ADR-0017's own already-accepted shape. No implementation was performed; this WORK's Status remains PLANNED.
 
 ## Documentation Impact
 

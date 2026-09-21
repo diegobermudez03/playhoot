@@ -4,7 +4,7 @@ Status: ACCEPTED
 Created: 2026-09-07
 Last status change: 2026-09-07
 Supersedes: None
-Superseded by: None
+Superseded by: GAME-ADR-0024 (object-storage/GCS archive-location decision only — the archive is now a same-database PostgreSQL JSONB record, not a GCS artifact; the archive-metadata-entity concept, the verified-archival-before-hard-delete policy, and the exclusion of `session_actors`/`session_participants` from deletion below remain valid and are restated by GAME-ADR-0024)
 Legacy ID: ADR-0012
 
 ## Context

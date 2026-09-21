@@ -2,7 +2,7 @@
 
 Status: DRAFT
 Created: 2026-09-20
-Last status change: 2026-09-20
+Last status change: 2026-09-20 (Part C reconciliation, same day: Start-`Seed` persistence removed from this WORK's scope - see "Scope Correction (Part C Reconciliation, 2026-09-20)" below)
 
 Related decisions:
 - GAME-ADR-0002 (Session Runtime durable boundary, Live Session Coordinator responsibility boundary)
@@ -38,9 +38,9 @@ This also removes the concern raised in this WORK's original Blocker 1 about a f
 
 Game Language's `AnswerQuestionAction` carries no question-slot identity of its own (it relies entirely on the mounted presentation/question context to identify which open interaction it answers). This is already correctly resolved today, by WORK-0005/WORK-0004, not by this WORK: Session Runtime persists each opened interaction as its own `session_interactions` row (keyed by the engine's own `(EnginePath, EngineSlot)` identity, GAME-ADR-0007), and the live wire protocol already carries that row's opaque ID as routing/correlation context for an answer (`api/session/wire.go`'s `inboundMessage.InteractionID`, part of WORK-0005). An `AnswerQuestion` action from a rendered QuestionPresentation therefore already resolves unambiguously to the intended open Interaction without exposing internal engine slot/path identities. This WORK adds no new correlation mechanism and does not need one - it is recorded here only so the requirement is visibly confirmed satisfied, not silently unaddressed.
 
-### Replay is a separate, later concern - but this WORK closes the one real gap in its way
+### Replay is a separate, later concern, now owned by WORK-0019
 
-A human question during this WORK's own design confirmed engine execution is fully deterministic given `(compiled Program, starting Snapshot, driving Signal sequence)` - no wall-clock, no OS randomness anywhere in `game/language/v1/engine`. That means a hypothetical future "replay a Session to watch how it played out" feature genuinely does not need Presentations/Effects persisted at all - they are mechanically re-derivable by replaying the durably-captured inputs through the same compiled Program. What such a feature *would* need, and what is not captured today: the one-time `Seed` drawn at Start (`step_start.go`'s `drawSeed()`) is never written to any column - it only survives folded into the post-Turn-1 `Snapshot.Random`, not recoverably. This WORK persists that one value (a single column, written once, at Start) as a small, low-risk addition - not because this WORK needs it for live delivery, but because "make replay theoretically possible" is a stated goal and this is the one concrete hole standing in its way. Whether to eventually stop persisting full per-Turn Snapshots (since they too are re-derivable from inputs alone) is a separate, larger, explicitly deferred idea - see `docs/product/IDEAS.md -> Minimize Persisted RuntimeTurn History`.
+A human question during this WORK's own design confirmed engine execution is fully deterministic given `(compiled Program, starting Snapshot, driving Signal sequence)` - no wall-clock, no OS randomness anywhere in `game/language/v1/engine`. That means Presentations/Effects genuinely do not need to be persisted for a future replay/rewatch capability - they are mechanically re-derivable by replaying durably-captured inputs through the same compiled Program. This WORK originally also persisted the one-time `Seed` drawn at Start (`step_start.go`'s `drawSeed()`, otherwise unrecoverable once folded into `Snapshot.Random`) as a small addition toward that goal. **That addition has moved (2026-09-20, Part C reconciliation) to `docs/projects/active/session-runtime-v1/works/WORK-0019-replay-first-session-runtime-persistence-migration.md`**, which now owns the complete durable replay-input model (Seed, `RootParameters`, and every other RuntimeTurn-driving cause), per `game/docs/decisions/GAME-ADR-0024-replay-first-session-runtime-persistence.md`. This WORK no longer persists anything toward that goal - see "Scope Correction (Part C Reconciliation, 2026-09-20)" below. Whether to eventually stop persisting full per-Turn Snapshots is no longer a deferred idea - GAME-ADR-0024 already accepts stopping that, and WORK-0019 owns the migration.
 
 ## Scope
 
@@ -49,39 +49,42 @@ A human question during this WORK's own design confirmed engine execution is ful
 - Extend `sessionlifecycle.Manager.Start` and `Manager.AnswerInteraction`'s return types to also carry the committed Turn's `EmitEffectOutput`/`ActivatePresentationOutput`/`UpdatePresentationOutput`/`RemovePresentationOutput` values directly - additive data only, already computed in memory during `runtimeturn.Drain` (`drainResult.Steps[*].Outputs`) and simply not currently returned. No change to either method's existing parameters, business logic, or persistence for anything already implemented (Open/CloseQuestion capture, idempotency, transaction scope all unchanged).
 - `play/sessionruntime.Start`/`AnswerInteraction` translate these in-memory Outputs directly into `play.Event`s, addressed to each recipient's caller-facing `UserUUID` (the same non-leakage translation `eventsForTurn` already does for Open/CloseQuestion, applied to in-memory data instead of a read-after-commit query) - no new table, no new read.
 - New `play.EventKind` values and wire message types (`api/session/wire.go`) for a Presentation activated/updated/removed and an Effect emitted - never exposing `Slot`/internal engine identities, only `Name`/`View`/`Model` (presentations) or `Effect`/`Arguments` (effects).
-- A new durable column capturing the Start Turn's `Seed` (written once, at Start, alongside the existing Turn-1 row) - the one gap closed for future replay, unrelated to this WORK's own live-delivery mechanism.
 
 ### Out of Scope
 
 - `WorkflowCompletedOutput` - picked up by `docs/projects/active/session-runtime-v1/works/WORK-0007-session-termination-live-notification.md` instead (broadened to cover natural game completion, not only fatal failure), since a human-confirmed follow-up decided the root workflow completing is the deterministic "game over" signal and belongs with that WORK's termination-notification mechanism, not this one's Output-translation mechanism.
 - `ScheduleTimerOutput`/`CancelTimerOutput` - Slice 5's own scope, unaffected by this WORK.
 - Any change to delivery reliability/guarantees - GAME-ADR-0020's best-effort, no-outbox, no-replay rule already governs these Outputs exactly as it governs Open/CloseQuestion today.
-- Building an actual replay feature - only the one persistence gap (`Seed`) blocking a future one is closed here.
-- Reducing existing full-Snapshot persistence - tracked as its own explicitly-deferred idea (`docs/product/IDEAS.md`), not this WORK's concern.
+- **(2026-09-20, Part C reconciliation) Persisting Start's `Seed`, or any other replay-input persistence.** Moved to WORK-0019, which owns the complete durable replay-input model per GAME-ADR-0024. This WORK is now purely about live UI delivery (Presentations/Effects fan-out), not historical replay persistence, and adds no new durable column of any kind.
+- Reducing existing full-Snapshot persistence - no longer a deferred idea; owned by WORK-0019 per GAME-ADR-0024, not this WORK's concern.
 
 ## Blockers
 
 Status: **RESOLVED, HUMAN-APPROVED (2026-09-20)**.
 
 1. **Persist Presentation/Effect state, or have `Manager` return Outputs directly?** Originally DRAFT pending this decision. **Resolution: HUMAN-APPROVED - return directly, zero persistence.** This revises WORK-0005's "`Manager`'s method signatures do not change" constraint, deliberately and narrowly: `Start`/`AnswerInteraction` gain additive return data only, nothing about their existing behavior, parameters, or the durable capture Open/CloseQuestion already relies on changes. Confirmed this does not create a future resync gap (`deriveActivePresentations` recomputes current Presentation state fresh from the current Snapshot on demand - see Context).
-2. **Does replay remain theoretically possible without persisting Presentations/Effects?** **Resolution: yes, confirmed** - engine execution is fully deterministic given `(Program, Snapshot, Signal sequence)`, verified against `game/language/v1/engine`'s actual source (no wall-clock/OS-randomness dependency anywhere). The one real gap (Start's `Seed` not durably captured) is closed by this WORK's own new column, so nothing about choosing zero-persistence for Presentations/Effects makes replay any less possible than it already was.
+2. **Does replay remain theoretically possible without persisting Presentations/Effects?** **Resolution: yes, confirmed** - engine execution is fully deterministic given `(Program, Snapshot, Signal sequence)`, verified against `game/language/v1/engine`'s actual source (no wall-clock/OS-randomness dependency anywhere). Closing the actual replay-input gaps (Start's `Seed` and the rest of the durable replay-input model) is owned by WORK-0019 (GAME-ADR-0024), not this WORK - this WORK's own zero-persistence choice for Presentations/Effects does not make that goal any less achievable.
 
-Local implementation choices (exact wire message names/shapes, exact new return-type shape on `StartResult`/`AnswerInteractionResult`, exact column/migration for the `Seed`) remain Implementation Freedom.
+Local implementation choices (exact wire message names/shapes, exact new return-type shape on `StartResult`/`AnswerInteractionResult`) remain Implementation Freedom.
 
 ## Acceptance Criteria
 
 - A Definition authored so that answering one player's question causes `EmitEffectOutput`/`ActivatePresentationOutput`/`UpdatePresentationOutput` addressed to every player in the roster (via `Recipients`/target-users referencing the `players` list) results in every currently-connected player's client receiving the corresponding live message - not just the answering player.
 - A client only ever receives Question-, Presentation-, or Effect-shaped messages - no wire message exposes a raw internal/domain fact directly.
 - No Output this WORK translates is ever observed by a client before its causing transaction has committed (same rule WORK-0005 already established and proved for Open/CloseQuestion) - trivially true here since translation happens from `Manager`'s own successful return, which only ever happens after commit.
-- The Start Turn's `Seed` is durably persisted and recoverable.
+- This WORK adds no new durable column/table (verified by its own migration diff, if any, being empty).
 - `go build ./...`, `go vet ./...`, `go test ./... -count=1` pass, with no new failure beyond the already-recorded out-of-scope `getgame` JSONB-comparison defect.
 
 ## Documentation Impact
 
 - `game/CURRENT_STATE.md`, `game/docs/FLOWS.md` - describe the broadened fan-out and the wire-protocol design principle once implemented, alongside WORK-0005's existing Live Transport flow section.
 - `play/README.md` - document the "Question/Presentation/Effect only" wire-protocol principle, and extend the `Event`/`EventKind` description.
-- `docs/projects/active/session-runtime-v1/PROJECT.md` - Slice 11 update alongside this WORK's revision.
+- `docs/projects/active/session-runtime-v1/PROJECT.md` - WORK-0006's row update alongside this WORK's revision.
+
+## Scope Correction (Part C Reconciliation, 2026-09-20)
+
+This WORK originally included persisting Start's `Seed` (a single new durable column) as a small addition toward keeping replay theoretically possible. A broader reconciliation session accepted GAME-ADR-0024 (Replay-First Session Runtime Persistence), which gives the *complete* durable replay-input model - Seed, `RootParameters`, and every other RuntimeTurn-driving cause - a single dedicated owner, `docs/projects/active/session-runtime-v1/works/WORK-0019-replay-first-session-runtime-persistence-migration.md`. Persisting only the Seed here, in isolation from that complete model, would risk a mismatched or premature partial implementation of a model WORK-0019 owns designing as a whole. This WORK's scope, Blockers, Acceptance Criteria, and Documentation Impact above have been revised accordingly: this WORK now adds zero new durable persistence of any kind and is purely about live UI delivery (Presentations/Effects fan-out), exactly matching its own title. No production code was implemented or changed by this correction; this WORK's Status remains DRAFT, unaffected by this scope narrowing (still awaiting human READY authorization, as before).
 
 ## Completion Record
 
-Not yet DONE. Status: **DRAFT**, revised 2026-09-20 after human review changed the core mechanism from durable capture to direct return from `Manager` (reopening, narrowly, WORK-0005's Manager-signature constraint), added the "Question/Presentation/Effect only" wire-protocol principle, and added Start-Seed persistence for future replay. Both Blockers are now resolved; ready to move to READY pending final confirmation.
+Not yet DONE. Status: **DRAFT**, revised 2026-09-20 after human review changed the core mechanism from durable capture to direct return from `Manager` (reopening, narrowly, WORK-0005's Manager-signature constraint) and added the "Question/Presentation/Effect only" wire-protocol principle; further revised the same day (Part C reconciliation) to remove Start-Seed persistence from scope, moved to WORK-0019. Both Blockers are resolved; ready to move to READY pending final confirmation.

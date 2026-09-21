@@ -13,6 +13,6 @@ This package does not own:
 
 - Transport/network protocol concerns such as WebSocket, gRPC, or TCP.
 
-Completed-session history/archive ownership remains unresolved and is not defined here.
+Completed-session archival direction is accepted (same-database PostgreSQL JSONB compaction, `game/docs/decisions/GAME-ADR-0024-replay-first-session-runtime-persistence.md`) but not yet implemented (`docs/projects/active/session-runtime-v1/works/WORK-0017-archival.md`); this package does not itself define the archive schema.
 
 Canonical Game boundary documentation lives in `../README.md`.

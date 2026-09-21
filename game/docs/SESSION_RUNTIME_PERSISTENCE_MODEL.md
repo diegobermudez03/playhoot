@@ -1,14 +1,44 @@
 # Session Runtime - Persistence Model (Accepted Design)
 
-Status: ACCEPTED DESIGN, NOT YET IMPLEMENTED AS PERSISTED SCHEMA.
+Status: ACCEPTED DESIGN, NOT YET IMPLEMENTED AS PERSISTED SCHEMA. Revised 2026-09-20 (GAME-ADR-0024, replay-first persistence): full per-Turn Snapshot persistence and GCS-based archival, as originally accepted below in some sections, are superseded in part — see "Replay-First Persistence Model" immediately below, which is now the authoritative description of what Session Runtime persists. Sections below unaffected by that revision (Lobby/Identity tables, SessionActor semantic presence, RUNNING serialization, failure diagnostics, inactivity expiration, disconnect/reconnect boundary) remain as originally accepted.
 
 This document preserves the HUMAN-APPROVED Session Runtime persistence and runtime-history/archive schema for the `session-runtime-v1` initiative. It describes accepted future design, not current implementation. For the actually persisted schema, see `game/docs/DATA_MODEL.md`.
 
+## Replay-First Persistence Model (GAME-ADR-0024)
+
+Durable per-Turn Snapshot persistence (originally accepted by GAME-ADR-0007, described in "Runtime History Tables" below) and GCS-based archival (originally accepted by GAME-ADR-0009, described in "Archive Metadata"/"Archival And Hard-Delete Policy" below) are superseded. Session Runtime persists only what is required for live correctness, durable input ordering, and deterministic replay - not derived state kept merely because reloading it is convenient:
+
+```text
+Pinned Game semantics (game_definitions.uuid/script, including its own program.Metadata.LanguageVersion)
+        +
+Start seed / deterministic initialization (InitializationInput.Seed, InitializationInput.RootParameters)
+        +
+ordered durable driving-input history (one row per committed RuntimeTurn's cause, in commit order)
+        ↓
+deterministic replay (confirmed: engine execution has no wall-clock/OS-randomness dependency)
+        ↓
+current Runtime state + historical Runtime states + Presentations + Effects (all derived, never persisted)
+```
+
+**What is durable**: `session_runtime_turns` remains the ordered replay-input envelope (`session_id`, `sequence`, `source_kind`, `source_interaction_id`, `source_timer_obligation_id`, `actor_id`, `created_at`) but no longer carries `snapshot_payload`/`snapshot_format_version` - a Turn row identifies *which durable cause happened, in what order*, not the resulting state. Each cause's own content lives in its already-normalized-while-live entity: `session_interactions.response_payload` for an answered interaction, `session_timer_obligations.engine_path`/`engine_slot`/`engine_key` for a timer expiration. A cause with no existing normalized home (a submitted UserIntent's arguments, the issuing actor of a SessionCancelled, the occurrence - not merely the resulting current value - of a UserDisconnected/UserReconnected semantic-presence edge) must be given one by the WORK that introduces that cause (WORK-0010, WORK-0011, WORK-0015/WORK-0018 respectively) before it is authorized to produce a RuntimeTurn. Start's own `Seed`/`RootParameters` are captured once, at Start (exact column/table shape is WORK-0019's own design task).
+
+**What is derived, never persisted**: the full `engine.Snapshot` for any Turn (current or historical), Presentation state (already established by WORK-0006 - `deriveActivePresentations` recomputes fresh from the current Snapshot), and Effects. All are pure functions of `(pinned Program, Seed, RootParameters, the ordered replay-input history up to a point)` and are recomputed on demand rather than stored.
+
+**`session_runtime_steps`'s fate is not decided here.** It is technical-only intra-Turn execution trace with no independent live-correctness purpose and no replay-input role (a Turn's internal `InternalSignals` chain is a deterministic consequence of that Turn's own external cause, never an independent replay input). It is a strong removal candidate under this model but its exact disposition (removed, retained with bounded/short retention for near-term debugging, or unchanged) is left to WORK-0019's DRAFT design.
+
+**Recovery** no longer loads a durable Snapshot: a process resuming a `RUNNING` Session loads pinned Game semantics, Start's Seed/RootParameters, and the ordered replay-input history up to `sessions.current_turn_id`, then deterministically replays them to obtain the current authoritative `Snapshot` in memory. An ephemeral, non-durable in-memory cache/checkpoint of that result may exist purely for performance; it is never authoritative, needs no durable-recovery design, and its loss causes replay, never data loss - no durable checkpoint/snapshot table under another name is introduced. See GAME-ADR-0013 (unaffected) for the process-agnostic-ownership stance this extends, and GAME-ADR-0024 for the full rationale, replay-input catalog, and the still-open compiler/engine-build versioning question this record does not fully resolve.
+
+**Archive** moves from a GCS artifact to a same-database PostgreSQL JSONB record - see the revised "Archive Metadata"/"Archival And Hard-Delete Policy" sections below.
+
+Rationale, the complete audited replay-input catalog against actual Engine/Session code, and alternatives considered are recorded in `game/docs/decisions/GAME-ADR-0024-replay-first-session-runtime-persistence.md`.
+
 Rationale and alternatives are recorded in:
 
-- `game/docs/decisions/GAME-ADR-0007-session-runtime-turn-and-persistence-model.md` (RuntimeTurn as the historical unit, RuntimeStep as technical trace, the core tables, Turn/Interaction/Timer relationships).
+- `game/docs/decisions/GAME-ADR-0007-session-runtime-turn-and-persistence-model.md` (RuntimeTurn as the historical unit, RuntimeStep as technical trace, the core tables, Turn/Interaction/Timer relationships; its Snapshot-persistence portion is superseded by GAME-ADR-0024 above).
 - `game/docs/decisions/GAME-ADR-0008-session-runtime-v1-timer-recovery-simplification.md` (no durable `live_timer_schedules`, V1 recovery tradeoff).
-- `game/docs/decisions/GAME-ADR-0009-session-runtime-history-archival-and-hard-delete.md` (long-term archive metadata and verified hard-delete policy).
+- `game/docs/decisions/GAME-ADR-0009-session-runtime-history-archival-and-hard-delete.md` (archive-metadata-entity concept and verified hard-delete policy; its GCS-storage-location portion is superseded by GAME-ADR-0024 above).
+- `game/docs/decisions/GAME-ADR-0024-replay-first-session-runtime-persistence.md` (replay-first persistence model above: no durable per-Turn Snapshot, PostgreSQL JSONB archive, the audited replay-input catalog).
+- `game/docs/decisions/GAME-ADR-0025-role-aware-live-connections.md` (ADMIN/PARTICIPANT connection-role distinction; does not change this document's persisted-schema scope, referenced here for completeness).
 - `game/docs/decisions/GAME-ADR-0012-game-language-keyed-timer-slots.md` (keyed timer slot capability and the `session_timer_obligations.engine_key` persistence consequence below).
 - `game/docs/decisions/GAME-ADR-0013-session-runtime-process-agnostic-recovery.md` (process-agnostic recovery, RuntimeTurn crash/commit semantics, reconstruction from current checkpoint rather than event replay).
 - `game/docs/decisions/GAME-ADR-0014-session-runtime-durable-inactivity-expiration.md` (`activity_expires_at` as the RUNNING-phase inactivity deadline and source of truth, renewal, lazy materialization, Reaper role, and the Archive Worker boundary below).
@@ -108,6 +138,8 @@ Logical cross-domain references (no database FK, different bounded context):
 
 ## Runtime History Tables
 
+Status: revised by GAME-ADR-0024 (see "Replay-First Persistence Model" above) - `session_runtime_turns.snapshot_payload`/`snapshot_format_version` shown in the original diagram below are removed; a Turn row is the ordered replay-input envelope, not a Snapshot store. The rest of this section's relationships (Turn/Interaction/Timer references, closure provenance) are unaffected.
+
 ```mermaid
 classDiagram
     class sessions {
@@ -140,8 +172,6 @@ classDiagram
         source_interaction_id
         source_timer_obligation_id
         actor_id
-        snapshot_payload
-        snapshot_format_version
         created_at
     }
     class session_runtime_steps {
@@ -197,7 +227,9 @@ classDiagram
     session_actors "0..1" --> "*" session_runtime_turns : "session_runtime_turns.actor_id -> session_actors.id"
 ```
 
-`sessions.current_turn_id` duplicates no Snapshot payload: current Session runtime state is defined as the Snapshot stored on the Turn it references (GAME-ADR-0023, refining GAME-ADR-0007 - no separate `session_runtime_state` table exists).
+`sessions.current_turn_id` points at the ordered replay-input log's current position, not at a stored Snapshot (GAME-ADR-0023's "no separate `session_runtime_state` table" holds unchanged; GAME-ADR-0024 additionally removes the Snapshot payload from the Turn row itself). Current Session runtime state is defined as the result of deterministically replaying pinned Game semantics + Start's Seed/RootParameters + every committed replay input up to and including `current_turn_id`, not as a payload stored on any single row - see "Replay-First Persistence Model" above.
+
+`session_runtime_steps` (technical-only intra-Turn trace) is a strong removal candidate under the replay-first model above, since it has no independent replay-input role and no live-correctness purpose beyond debugging; whether it remains, is bounded, or is removed is decided by WORK-0019's DRAFT design, not frozen here.
 
 ### Turn / Interaction / Timer Worked Example
 
@@ -303,7 +335,7 @@ Cardinality notes:
 
 ## Process-Agnostic Recovery
 
-Session Runtime does not persist any process/instance ownership state (no `owner_process_id`, no heartbeat, no fencing/takeover generation, no durable `RECOVERING` phase). Recovery of a `RUNNING` Session reconstructs current state from `sessions` (including `current_turn_id`), the final Snapshot stored on that RuntimeTurn, active `session_interactions`, and active `session_timer_obligations` - not by replaying `session_runtime_turns`/`session_runtime_steps` history. An uncommitted RuntimeTurn transaction at the moment of process death rolls back entirely via ordinary database transaction atomicity; a committed RuntimeTurn remains authoritative regardless of which process executed it or what happened immediately after commit. See GAME-ADR-0013.
+Session Runtime does not persist any process/instance ownership state (no `owner_process_id`, no heartbeat, no fencing/takeover generation, no durable `RECOVERING` phase). Recovery of a `RUNNING` Session reconstructs current state from `sessions` (including `current_turn_id`), active `session_interactions`, and active `session_timer_obligations` for immediate operational needs, and reconstructs the current authoritative `Snapshot` itself by deterministically replaying pinned Game semantics + Start's Seed/RootParameters + the ordered `session_runtime_turns` replay-input log up to `current_turn_id` (GAME-ADR-0024, revising this section's original "the final Snapshot stored on that RuntimeTurn" - no Snapshot is stored on any Turn). An ephemeral, non-durable in-memory cache of the current Snapshot may avoid repeating this replay on every read; it is never authoritative and its loss only causes replay, never data loss. An uncommitted RuntimeTurn transaction at the moment of process death rolls back entirely via ordinary database transaction atomicity; a committed RuntimeTurn remains authoritative regardless of which process executed it or what happened immediately after commit. See GAME-ADR-0013 and GAME-ADR-0024.
 
 Total process loss does not itself mutate `session_actors.semantic_presence` (GAME-ADR-0015); durable `CONNECTED`/`DISCONNECTED` values are ordinary rows unaffected by ephemeral Coordinator state loss, requiring no recovery-specific persistence. For a RUNNING runtime member, the `semantic_presence` transition (`CONNECTED <-> DISCONNECTED`) and its corresponding `UserDisconnected`/`UserReconnected` Game Language processing commit within one Session transaction, extending the same RuntimeTurn atomicity guarantee above to the presence mutation itself: if the transaction does not commit, the presence edge did not occur authoritatively and durable state remains at its prior value; if it commits, presence and any resulting RuntimeTurn/consequences are already authoritative together. No new column/table is introduced for this - `session_actors.semantic_presence` already exists (GAME-ADR-0015), and Coordinator's post-crash recovery-grace mechanism remains entirely ephemeral, non-durable state. See GAME-ADR-0016.
 
@@ -322,7 +354,9 @@ Total process loss does not itself mutate `session_actors.semantic_presence` (GA
 
 Still-open `session_interactions`/`session_timer_obligations` at inactivity termination are closed/cancelled atomically as part of the same terminal-materialization transaction, under the general no-ACTIVE-obligations-after-terminalization invariant (see Terminal Cleanup: Closure Provenance above); materializing expiration must never fabricate engine responses or RuntimeTurns to close gameplay. See GAME-ADR-0014, GAME-ADR-0019.
 
-## Archive Metadata
+## Archive Metadata (revised by GAME-ADR-0024: PostgreSQL JSONB, not GCS)
+
+Status: revised 2026-09-20. The archive destination moves from a GCS object-storage artifact to a same-database PostgreSQL JSONB record, since removing full-Snapshot persistence (see "Replay-First Persistence Model" above) removes the volume problem GCS archival existed to manage. The archive-metadata-entity concept and the verified-archival-before-hard-delete policy are otherwise unchanged from the original GAME-ADR-0009 design.
 
 ```mermaid
 classDiagram
@@ -340,42 +374,41 @@ classDiagram
         created_at
         updated_at
     }
-    class session_history_archives {
+    class session_archives {
         id
         session_id
-        status
-        storage_provider
-        storage_key
         format_version
-        checksum
+        payload
         archived_at
         created_at
         updated_at
     }
 
-    sessions "1" --> "0..1" session_history_archives : "session_history_archives.session_id -> sessions.id"
+    sessions "1" --> "0..1" session_archives : "session_archives.session_id -> sessions.id"
 ```
 
-`status` is `PENDING | READY | FAILED` or an equivalent enum. `storage_provider`/`storage_key` identify the archive object; an expiring/public URL is not persisted. The final JSON archive schema and GCS implementation are deferred (see GAME-ADR-0009). The archive must eventually preserve whatever `engine_key`/keyed-timer metadata is necessary to understand/replay archived keyed-timer history (see GAME-ADR-0012); the concrete archive JSON format remains deferred here regardless.
+`session_archives` (name illustrative - exact naming is WORK-0017/WORK-0019 implementation-planning detail) replaces the previously proposed `session_history_archives`. `payload` is a `JSONB` column holding the versioned archive artifact directly in PostgreSQL - no `storage_provider`/`storage_key`/`checksum`/external-object identifier is needed, since the artifact lives in the same row/database rather than an external object store. `format_version` is retained. There is normally at most one archive record per Session.
 
-## Archival And Hard-Delete Policy
+The archive payload contains what is required to understand/replay the completed Session, per GAME-ADR-0024's replay-first model: pinned Game semantic/version identity, Start's Seed/RootParameters, the ordered replay-input history (interactions/responses, and, once each respective WORK lands, user-intent/timer-expiration/disconnect-reconnect/cancellation inputs), and terminal metadata. It does not include derived Snapshots, Presentations, or Effects - these remain excluded from the archive for the same reason they were never persisted live. The archive must eventually preserve whatever `engine_key`/keyed-timer metadata is necessary to understand/replay archived keyed-timer history (see GAME-ADR-0012); the concrete archive JSON schema remains deferred here regardless, per GAME-ADR-0009's still-valid "final JSON archive schema is deferred" stance.
 
-Hot runtime/history tables become an explicit hard-delete exception only after: the archive is successfully written; checksum verification succeeds; and `session_history_archives.status = READY`. If archival/verification fails, no hard delete occurs.
+## Archival And Hard-Delete Policy (revised by GAME-ADR-0024: transactional same-database compaction)
 
-Candidate removable hot runtime data:
+Status: revised 2026-09-20. Because archive and source rows now live in the same database, the archival operation may use one straightforward transactional sequence rather than a separate archive-then-verify-then-delete workflow spanning two storage systems: build the archive payload, insert/mark the `session_archives` row, delete the removable source rows, commit - all in one transaction, idempotent under retry. If the transaction does not commit, no source row is deleted and no partial archive exists; this replaces the original GCS design's checksum-verification step, which existed specifically to guard against a cross-system write succeeding non-atomically - a same-database transaction removes that risk category outright. Archival before every removable row has a persisted archive to point back to (i.e. before the transaction that both writes the archive and deletes the source rows commits) must never occur; the underlying safety property (no hard delete without a durably persisted archive) is unchanged from the original GAME-ADR-0009 policy, only the mechanism enforcing it is simpler.
+
+Candidate removable hot runtime data (unchanged from the original policy):
 
 - `session_runtime_turns`
-- `session_runtime_steps`
+- `session_runtime_steps` (if WORK-0019 retains it at all - see "Replay-First Persistence Model" above)
 - `session_interactions`
 - `session_timer_obligations`
 
 Explicitly excluded from this deletion policy, and retained indefinitely for product queries (a User's session history, who hosted a Session, who participated):
 
-- `sessions` (including `current_turn_id` - GAME-ADR-0023: a logical, non-DB-enforced reference that keeps identifying the Session's last-current Turn even after that Turn's own row is hard-deleted, resolving against the archive artifact instead)
+- `sessions` (including `current_turn_id` - GAME-ADR-0023: a logical, non-DB-enforced reference that keeps identifying the Session's last-current Turn even after that Turn's own row is hard-deleted, resolving against the archive record instead)
 - `session_actors`
 - `session_participants`
 
-`session_runtime_failures` (see Session Runtime Failure Diagnostics above) is likewise excluded from this automatic hard-delete policy. Lightweight fatal-runtime-failure metadata remains relationally queryable in PostgreSQL after heavy runtime-history archival, supporting operational/product queries such as failure counts by error code or by game definition (see GAME-ADR-0017). This is unlike the heavy per-Turn/per-Step tables above because failure records are low-volume by construction - a Session normally produces at most one. A separate retention/compaction strategy for large `diagnostic_payload` content may be designed later if payload volume ever warrants it; it is not designed here.
+`session_runtime_failures` (see Session Runtime Failure Diagnostics above) is likewise excluded from this automatic hard-delete policy. Lightweight fatal-runtime-failure metadata remains relationally queryable in PostgreSQL after heavy runtime-history archival/compaction, supporting operational/product queries such as failure counts by error code or by game definition (see GAME-ADR-0017). This is unlike the heavy per-Turn/per-Step tables above because failure records are low-volume by construction - a Session normally produces at most one. A separate retention/compaction strategy for large `diagnostic_payload` content may be designed later if payload volume ever warrants it; it is not designed here.
 
 Retention of `session_requests`, `join_codes`, and other lightweight lifecycle metadata is unchanged by this decision.
 
@@ -398,8 +431,10 @@ Logical cross-domain references (no database FK, different bounded context):
 
 ## Not Yet Decided
 
-- The final JSON archive schema.
-- The GCS (or other object storage) integration and archival/verification worker implementation.
+- The final JSON archive schema (now a PostgreSQL JSONB payload, not a GCS artifact - see GAME-ADR-0024).
+- The exact same-database archival/compaction transaction shape and its idempotency-under-retry mechanism (see GAME-ADR-0024; WORK-0017/WORK-0019).
+- `session_runtime_steps`'s final disposition (removed, bounded-retention, or unchanged) and the exact durable shape/table for Start's `Seed`/`RootParameters` and for each future RuntimeTurn cause without an existing normalized home (UserIntent arguments, SessionCancelled issuing actor, UserDisconnected/UserReconnected occurrence ordering) - see GAME-ADR-0024; WORK-0019.
+- Whether/how a future compiler/engine-build change is tracked beyond the existing pinned `program.Metadata.LanguageVersion`, for replay-compatibility purposes (see GAME-ADR-0024's still-open versioning question).
 - The idempotency JSON canonicalization/comparison algorithm for `session_requests`.
 - The exhaustive `source_kind` and interaction/terminal-reason enums.
 - The concrete `KeyedTimerSlot<Key>` declaration/operation/signal-source design and the serialized/typed representation of `engine_key` (see GAME-ADR-0012).

@@ -4,7 +4,7 @@ Status: ACCEPTED
 Created: 2026-09-07
 Last status change: 2026-09-07
 Supersedes: None
-Superseded by: None
+Superseded by: GAME-ADR-0024 (Snapshot-persistence portion only — `session_runtime_turns.snapshot_payload`/`snapshot_format_version` and `session_runtime_state` as a Snapshot store; the RuntimeTurn/RuntimeStep conceptual model and the Turn/Interaction/Timer relationship rules below remain valid and are restated by GAME-ADR-0024)
 Legacy ID: ADR-0010
 
 ## Context

@@ -2,12 +2,13 @@
 
 Status: PLANNED
 Created: 2026-09-20
-Last status change: 2026-09-20
+Last status change: 2026-09-20 (Part B reconciliation, same day: replay-input framing clarified - see "Scope Clarification (Part B Reconciliation, 2026-09-20)" below)
 
 Related decisions:
 - GAME-ADR-0008 (no durable due-at, full-configured-delay recovery tradeoff)
 - GAME-ADR-0013 (process-agnostic timer recovery)
 - GAME-ADR-0018 (RUNNING serialization - timer expiration contends for the same boundary as interaction responses)
+- GAME-ADR-0024 (Replay-First Session Runtime Persistence - `session_timer_obligations` already gives a TimerExpired occurrence a durable home; this WORK confirms, does not newly design, that fit)
 
 Canonical context:
 - `docs/projects/active/session-runtime-v1/PROJECT.md`
@@ -56,6 +57,10 @@ Not yet defined - to be written when this WORK moves to DRAFT.
 ## Blockers
 
 - Scheduler/recovery mechanism design is the material open question for DRAFT, not resolved here.
+
+## Scope Clarification (Part B Reconciliation, 2026-09-20)
+
+`game/docs/decisions/GAME-ADR-0024-replay-first-session-runtime-persistence.md` distinguishes two things this WORK must keep separate: the *physical scheduling mechanism* (Coordinator-owned, ephemeral, already out of scope for durable persistence per GAME-ADR-0008/GAME-ADR-0013 - ordinary operational/diagnostic logging about scheduling is fine, but it is never archived as replay-input truth) versus the *semantic `TimerExpired` occurrence* (a genuine RuntimeTurn-driving cause, whose ordering in the replay-input log matters). This WORK already gives the latter a durable home via `session_timer_obligations` (`engine_path`/`engine_slot`/`engine_key`) plus the causing Turn's own `source_timer_obligation_id` - this is confirmed sufficient by GAME-ADR-0024's audit, not a new requirement this WORK must additionally design for. This is a clarification of already-intended scope, not a new deliverable; no implementation was performed and this WORK's Status remains PLANNED.
 
 ## Documentation Impact
 

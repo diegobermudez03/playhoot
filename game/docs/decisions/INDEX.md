@@ -33,8 +33,12 @@ This index is the Game decision family under the repository-wide routing model d
 | [GAME-ADR-0021](GAME-ADR-0021-session-lobby-command-idempotency-token-semantics.md) | Session Lobby Command Idempotency Token Semantics | ACCEPTED | 2026-09-16 | None | `game/README.md` |
 | [GAME-ADR-0022](GAME-ADR-0022-session-lobby-business-declines-as-workflow-outcomes.md) | Session Lobby Business Declines As Workflow Outcomes | ACCEPTED | 2026-09-17 | None | `game/README.md` |
 | [GAME-ADR-0023](GAME-ADR-0023-session-runtime-current-turn-pointer-on-sessions.md) | Session Runtime Current-Turn Pointer Lives On `sessions`, Not A Separate Table | ACCEPTED | 2026-09-19 | None | `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md`, `game/README.md`, `game/docs/DATA_MODEL.md`, `game/docs/FLOWS.md` |
+| [GAME-ADR-0024](GAME-ADR-0024-replay-first-session-runtime-persistence.md) | Replay-First Session Runtime Persistence | ACCEPTED | 2026-09-20 | None | `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md`, `game/README.md` |
+| [GAME-ADR-0025](GAME-ADR-0025-role-aware-live-connections.md) | Role-Aware Live Connections — Admin and Participant | ACCEPTED | 2026-09-20 | None | `game/README.md` |
 
-Next Game ADR: `GAME-ADR-0024`.
+Next Game ADR: `GAME-ADR-0026`.
+
+GAME-ADR-0024 supersedes GAME-ADR-0007's Snapshot-persistence decision and GAME-ADR-0009's object-storage archival decision **in part only** — see GAME-ADR-0024's own header for the precise scope; the rest of each superseded record (RuntimeTurn/RuntimeStep conceptual model, archive-metadata-entity concept, verified-hard-delete policy) remains valid and is restated by GAME-ADR-0024. GAME-ADR-0025 refines (does not supersede) GAME-ADR-0002 and GAME-ADR-0005.
 
 These IDs were migrated from the previously centralized global architecture family (`docs/decisions/architecture/`) on 2026-09-07. Historical status, rationale, alternatives, consequences, and created dates were preserved unchanged; only the identifier/location/cross-reference wiring changed. See `docs/decisions/LEGACY_ADR_ID_MAP.md` for the full old-ID -> new-ID mapping.
 

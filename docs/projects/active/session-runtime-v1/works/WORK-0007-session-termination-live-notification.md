@@ -2,7 +2,7 @@
 
 Status: DRAFT
 Created: 2026-09-20
-Last status change: 2026-09-20
+Last status change: 2026-09-20 (Part H reconciliation, same day: broadcast scope generalized to both connection roles - see "Scope Addition (Part H Reconciliation, 2026-09-20)" below)
 
 Related decisions:
 - GAME-ADR-0002 (Live Session Coordinator responsibility boundary)
@@ -11,6 +11,7 @@ Related decisions:
 
 Canonical context:
 - `docs/projects/active/session-runtime-v1/works/WORK-0005-thin-live-coordinator.md` (the live Coordinator this WORK extends)
+- `docs/projects/active/session-runtime-v1/works/WORK-0020-role-aware-live-connections.md` (the second, ADMIN, registry this WORK's broadcast must also reach - see "Scope Addition (Part H Reconciliation, 2026-09-20)" below)
 - `docs/projects/active/session-runtime-v1/works/WORK-0006-broaden-live-fanout-effects-presentations.md` (the "Question/Presentation/Effect only cross the wire" principle this WORK's own termination message follows, as a generic UI-shaped signal rather than a raw domain event)
 - `game/session/workflows/sessionlifecycle/step_answer_interaction.go` (`terminalizeAnswerInteractionFatal`), `game/session/workflows/sessionlifecycle/step_start.go` (`terminalizeStartFatal`) - the existing fatal paths this WORK's notification covers
 - `game/session/workflows/sessionlifecycle/internal/repo/interaction.go` (`CloseAllActiveInteractionsForSession` - confirms closed rows from these paths have `closed_by_turn_id = NULL`, structurally excluded from the existing live-event query)
@@ -75,6 +76,10 @@ Status: **PARTIALLY RESOLVED**. Direction (send-then-close, generic message, cov
 - `game/session/session.go` - new `TerminalReason` constant, documented alongside the existing three.
 - `play/README.md` - document the new broadcast mechanism as a second, distinct fan-out path alongside per-recipient `Deliver`.
 
+## Scope Addition (Part H Reconciliation, 2026-09-20)
+
+`game/docs/decisions/GAME-ADR-0025-role-aware-live-connections.md` (accepted by a broader reconciliation session, alongside `docs/projects/active/session-runtime-v1/works/WORK-0020-role-aware-live-connections.md`) establishes that a Session's live transport has two independent connection roles, `ADMIN` and `PARTICIPANT`, and that the same `UserUUID` may legitimately hold one of each simultaneously. This WORK's "broadcast to every currently-bound connection for a Session" mechanism (Blocker 2) must reach every bound connection of *either* role, not only the participant registry this WORK's design was originally sketched against - including both of a host-as-Participant's two independent connections. This is a broadening of what "every currently-bound connection" already meant in this WORK's own Outcome/Scope above, not a new mechanism: the same broadcast-not-filtered-by-recipient design already called for reaching everyone bound to the Session; it must simply iterate both registries once WORK-0020's second registry exists, rather than assuming one registry. This WORK depends on WORK-0020 landing (or being designed concurrently) for this reason, in addition to its existing WORK-0005 dependency. No other part of this WORK's scope changes.
+
 ## Completion Record
 
-Not yet DONE. Status: **DRAFT**, revised 2026-09-20 to broaden scope from "fatal termination only" to "any Session termination while clients are connected," after confirming the root workflow's completion is a deterministic, structurally-forced "game over" signal (not a design ambiguity as first thought) and that the human wants it wired the same way as the fatal path - one generic message, same screen for everyone, personalization deferred. Blockers 1-4 need resolution before READY.
+Not yet DONE. Status: **DRAFT**, revised 2026-09-20 to broaden scope from "fatal termination only" to "any Session termination while clients are connected," after confirming the root workflow's completion is a deterministic, structurally-forced "game over" signal (not a design ambiguity as first thought) and that the human wants it wired the same way as the fatal path - one generic message, same screen for everyone, personalization deferred; further revised the same day (Part H reconciliation) to require the broadcast to reach both ADMIN and PARTICIPANT connections. Blockers 1-4 need resolution before READY.
