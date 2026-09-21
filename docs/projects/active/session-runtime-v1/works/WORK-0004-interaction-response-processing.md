@@ -15,7 +15,7 @@ Canonical context:
 - `game/README.md` (Session Runtime Turn And Persistence Model, RUNNING Mutation Serialization, RuntimeTurn Execution Bound And Terminal Cleanup sections)
 - `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md` (`session_interactions` shape, Turn/Interaction relationships)
 - `game/language/v1/engine/README.md` (Step contract, Outputs table, Signal kinds)
-- `docs/ai/workspaces/active/session-runtime-v1/PLAN.md` (Slice 3)
+- `docs/projects/active/session-runtime-v1/PROJECT.md` (Slice 3)
 - `game/session/workflows/sessionlifecycle/step_start.go` (existing RuntimeTurn execution/persistence pattern this WORK extends)
 
 ## Outcome
@@ -108,7 +108,7 @@ Beyond canonical context, this WORK settles:
 
 ### Intentionally Unchanged
 
-- `docs/work/completed/WORK-0001-session-lobby-foundation.md`, `WORK-0002-rename-game-management-package.md`, `WORK-0003-session-start-first-runtimeturn.md` (completed work, historical).
+- `docs/projects/active/session-runtime-v1/works/WORK-0001-session-lobby-foundation.md`, `WORK-0002-rename-game-management-package.md`, `WORK-0003-session-start-first-runtimeturn.md` (completed work, historical).
 
 ## Blockers
 
@@ -124,7 +124,7 @@ Local implementation choices (exact SQL/column types for the `session_interactio
 
 ## Completion Record
 
-Not yet DONE. Status transitioned DRAFT -> READY on 2026-09-19 per the human's resolution of all five Blockers above (see this file's Blockers section and `docs/ai/workspaces/active/session-runtime-v1/HUMAN_REVIEW.md`), then READY -> IMPLEMENTING the same day when implementation began.
+Not yet DONE. Status transitioned DRAFT -> READY on 2026-09-19 per the human's resolution of all five Blockers above (see this file's Blockers section and `docs/projects/active/session-runtime-v1/internal/LEGACY_HUMAN_REVIEW_2026-09-20.md`), then READY -> IMPLEMENTING the same day when implementation began.
 
 **Implementation pass (2026-09-19)**: Implemented per this WORK's Approved Design as revised by the Blocker resolutions.
 

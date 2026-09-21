@@ -1,0 +1,66 @@
+# WORK-0012: Timer Obligations
+
+Status: PLANNED
+Created: 2026-09-20
+Last status change: 2026-09-20
+
+Related decisions:
+- GAME-ADR-0008 (no durable due-at, full-configured-delay recovery tradeoff)
+- GAME-ADR-0013 (process-agnostic timer recovery)
+- GAME-ADR-0018 (RUNNING serialization - timer expiration contends for the same boundary as interaction responses)
+
+Canonical context:
+- `docs/projects/active/session-runtime-v1/PROJECT.md`
+- `game/language/v1/program/timer.go` (`TimerSlotDeclaration`, `ScheduleTimerOperation`, `CancelTimerOperation` - already implemented, ordinary single-pending-timer only)
+- `game/language/v1/engine/output.go` (`ScheduleTimerOutput`/`CancelTimerOutput` - already produced by the engine, currently unhandled anywhere in Session Runtime)
+- `docs/projects/active/session-runtime-v1/works/WORK-0005-thin-live-coordinator.md` (the live Coordinator this WORK's physical scheduling extends, not replaces)
+
+## Outcome
+
+An authored Game Language `TimerSlot` obligation is durably scheduled, survives process loss/restart, and its expiration re-enters Session Runtime as a RuntimeTurn cause exactly like an interaction response does today.
+
+Today, `ScheduleTimerOutput`/`CancelTimerOutput` are real engine outputs but `grep "Timer"` across `game/session/` returns zero matches - nothing schedules a real delayed delivery of a timer-expiration signal anywhere in Session Runtime.
+
+## Context
+
+This is required before any authored game that uses a timer (a countdown per question, a turn-time-limit, etc.) can actually run to completion in Session Runtime - without it, a `ScheduleTimerOutput` the engine produces is simply dropped, and the game logically waiting on that timer can never receive its expiration.
+
+## Scope
+
+### In Scope (known required outcome; design not yet started)
+
+- Durable persistence for a pending timer obligation (`session_timer_obligations` per the accepted persistence model).
+- Physical scheduling/wakeup added to the existing live Coordinator (`play`) - not a new Coordinator mechanism.
+- Cancellation/replacement semantics matching `CancelTimerOperation`'s authored meaning.
+- Timer expiration as a RuntimeTurn cause, reusing the existing Step-draining/bound execution mechanism and contending correctly for the same per-Session RUNNING serialization boundary interaction responses already use (GAME-ADR-0018).
+- Correctness after process loss/restart, using the accepted full-configured-delay recovery tradeoff (GAME-ADR-0008/0013) rather than a durable due-at timestamp.
+
+### Out of Scope
+
+- Keyed/per-key independent timers (WORK-0013) - this WORK covers only the existing single-pending-timer `TimerSlot` shape already in `program/timer.go`.
+- Disconnect-driven timer usage (WORK-0015) - a consumer of this mechanism, not this WORK's own scope.
+
+## Approved Design
+
+Not yet designed. Scheduler mechanism, leasing/claiming approach if any, and exact recovery-on-restart procedure remain open, per GAME-ADR-0008/0013's already-accepted tradeoffs, deliberately left for the DRAFT phase.
+
+## Constraints and Invariants
+
+- No durable due-at timestamp is required to be exact (GAME-ADR-0008's accepted tradeoff); recovery uses the full configured delay, not a resumed countdown.
+- Timer expiration must serialize correctly against a concurrent interaction response for the same Session (GAME-ADR-0018).
+
+## Acceptance Criteria
+
+Not yet defined - to be written when this WORK moves to DRAFT.
+
+## Blockers
+
+- Scheduler/recovery mechanism design is the material open question for DRAFT, not resolved here.
+
+## Documentation Impact
+
+Not yet assessed in detail; expected to touch `game/CURRENT_STATE.md`, `game/docs/FLOWS.md`, `play/README.md` once designed.
+
+## Completion Record
+
+Not started. PLANNED.

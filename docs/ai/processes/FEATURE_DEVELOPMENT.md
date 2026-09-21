@@ -61,10 +61,10 @@ Known constraints, accepted decisions, or out-of-scope items:
 
 The AI will challenge scope and placement first. If the feature is not ready, it will recommend the right product, architecture, domain, or standard process before implementation.
 
-For non-trivial work, the Conversational AI prepares `docs/ai/workspaces/active/<feature-topic>/HUMAN_REVIEW.md` content as the human checkpoint surface. Expect:
+For non-trivial work, the Conversational AI prepares `docs/ai/workspaces/active/<feature-topic>/HUMAN_REVIEW.md` content (or, once the initiative has graduated into a Project, `docs/projects/active/<project-slug>/internal/HUMAN_REVIEW.md`) as the human checkpoint surface. Expect:
 
 - a Feature Design Review for scope, behavior, tradeoffs, and material decisions;
-- a DRAFT WORK specification under `docs/work/active/` once the work is concrete enough;
+- a WORK specification under `docs/work/active/` (or a Project's `works/`) — created as `PLANNED` as soon as the outcome is known to be required, moved to `DRAFT` once concrete design work is actually happening;
 - a READY Review that summarizes what you are approving without requiring you to inspect machine-oriented WORK internals line by line.
 
 Persisting the workspace and creating/updating the DRAFT WORK file are CODEBASE AGENT steps; the Conversational AI gives you a CODEBASE AGENT HANDOFF for them.
@@ -85,6 +85,7 @@ Implementation then goes to a CODEBASE AGENT operating on the checkout, using th
 Implement the approved Playhoot work specification:
 
 docs/work/active/WORK-NNNN-short-title.md
+(or docs/projects/active/<project-slug>/works/WORK-NNNN-short-title.md, if grouped under a Project)
 
 It is READY.
 

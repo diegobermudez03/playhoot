@@ -51,14 +51,23 @@ repository changes. Do not require the human to create these files manually.
   review is currently pending. It does not need to exist merely to satisfy a
   file-pairing rule during stages where the human has no open checkpoint
   (for example, mid-implementation awaiting independent review).
-- `PLAN.md` — optional; used only for an initiative with multiple
-  implementation slices. See
-  `docs/ai/protocols/CONVERSATIONAL_ORCHESTRATOR.md` for what it owns and how
-  it is used. It is temporary, non-canonical, non-authoritative, and must not
-  duplicate WORK content or accepted decisions.
 
 Do not create `docs/ai/workspaces/completed/`. Do not create a second,
 competing process-state system alongside this one.
+
+## Graduating Into A Project
+
+Once an initiative's accepted direction needs multiple related, ordered
+implementation WORK items, it graduates into a Project
+(`docs/projects/active/<project-slug>/`, see `docs/projects/README.md`)
+instead of tracking that decomposition as prose inside this workspace. A
+Project's `PROJECT.md` is the durable roadmap/dashboard; a Project may keep
+its own `internal/AI_CONTEXT.md`/`internal/HUMAN_REVIEW.md` for agent
+continuity, following the same rules this file describes. Do not track an
+ordered WORK sequence in a workspace-local `PLAN.md` — that role belongs to
+`PROJECT.md` once the initiative reaches that point. A workspace under this
+directory is for an initiative that has not yet reached that point (or that
+will never need a Project at all, e.g. a single Architecture Discussion).
 
 ## HUMAN_REVIEW.md
 
@@ -152,8 +161,9 @@ merely because it changed.
 ## Surface Ownership
 
 A Conversational AI owns/prepares the semantic content of
-`HUMAN_REVIEW.md`/`AI_CONTEXT.md`/`PLAN.md` — the design/conversation
-process, checkpoint, and resumable context.
+`HUMAN_REVIEW.md`/`AI_CONTEXT.md` (and, for a graduated Project, its
+`PROJECT.md` and `internal/HUMAN_REVIEW.md`/`internal/AI_CONTEXT.md`) — the
+design/conversation process, checkpoint, and resumable context.
 
 Persisting, updating, or removing these workspace files is always a Codebase
 Agent action. The Conversational AI produces a Codebase Agent Handoff (see
@@ -177,10 +187,11 @@ durable owner required by that process. The workspace is not enough.
 ## Workspace Lifetime
 
 The same active initiative workspace normally survives the whole active
-process, including a Feature Development slice's full lifecycle:
+process, including a WORK's full Feature Development/implementation
+lifecycle:
 
-design -> DRAFT -> human READY -> READY -> IMPLEMENTING -> independent review
--> fixes/re-review -> DONE/CANCELLED
+PLANNED -> design -> DRAFT -> human READY -> READY -> IMPLEMENTING ->
+independent review -> fixes/re-review -> DONE/CANCELLED
 
 Do not remove it merely because:
 
@@ -211,13 +222,17 @@ a durable terminal/resolved state — the initiative goal is satisfied or
 cancelled, no known downstream work intentionally remains tracked, and all
 required information has been promoted to canonical or durable owners.
 
-For a Feature Development slice specifically: when its WORK reaches
-DONE/CANCELLED, move it to `docs/work/completed/` and synchronize
-canonical/current-state docs as required, per usual rules — then return to
-the initiative plan (see the Orchestrator's initiative loop in
+For a single WORK's Feature Development pass specifically: when it reaches
+DONE/CANCELLED, move it to `docs/work/completed/` (a standalone WORK) — or,
+for a WORK grouped under a Project, leave it in place in that Project's own
+`works/` directory and update `PROJECT.md`'s WORK table instead (see
+`docs/projects/README.md`) — and synchronize canonical/current-state docs as
+required, per usual rules. Then return to the initiative plan (see the
+Orchestrator's initiative loop in
 `docs/ai/protocols/CONVERSATIONAL_ORCHESTRATOR.md`) rather than assuming the
-workspace can be removed immediately. Remove the workspace only once the
-initiative itself is resolved by the rule above.
+workspace/Project can be removed immediately. Remove the workspace, or move
+the Project to `docs/projects/completed/`, only once the initiative/Project
+itself is resolved by the rule above.
 
 Examples of durable owners include accepted product/architecture/domain/
 standard documentation, decision records, WORK specifications, current-state

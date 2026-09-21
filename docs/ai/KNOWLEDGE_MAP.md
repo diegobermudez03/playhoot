@@ -36,9 +36,13 @@ This is a machine-facing routing document. It does not explain Playhoot. It tell
 | Legacy pre-migration ADR identifier lookup | `docs/decisions/LEGACY_ADR_ID_MAP.md` | AVAILABLE / HISTORICAL | |
 | Product decision rationale | `docs/decisions/product/INDEX.md` and referenced PDRs | AVAILABLE | |
 | Decision-record process/templates | `docs/decisions/README.md` and `docs/decisions/templates/` | AVAILABLE | |
-| Current implementation work | `docs/work/active/` | AVAILABLE | |
-| Completed implementation history | `docs/work/completed/` | AVAILABLE | |
-| Work specification process/template | `docs/work/README.md` and `docs/work/templates/` | AVAILABLE | |
+| Active project dashboard / roadmap | `docs/projects/active/<project-slug>/PROJECT.md` | AVAILABLE | |
+| Project-grouped WORK (current + completed, kept together) | `docs/projects/active/<project-slug>/works/` | AVAILABLE | |
+| Completed project history | `docs/projects/completed/<project-slug>/` | AVAILABLE | |
+| Project process/template | `docs/projects/README.md` and `docs/projects/templates/` | AVAILABLE | |
+| Standalone (non-Project) current implementation work | `docs/work/active/` | AVAILABLE | |
+| Standalone (non-Project) completed implementation history | `docs/work/completed/` | AVAILABLE | |
+| Work specification process/template, WORK lifecycle | `docs/work/README.md` and `docs/work/templates/` | AVAILABLE | |
 | AI development behavior | `docs/ai/OPERATING_MODEL.md` | AVAILABLE | |
 | Execution surface / actor authority | `docs/ai/OPERATING_MODEL.md` | AVAILABLE | |
 | AI workflow evolution history | `docs/ai/CHANGELOG.md` | AVAILABLE / HISTORICAL | |
@@ -48,7 +52,7 @@ This is a machine-facing routing document. It does not explain Playhoot. It tell
 | Human AI workflow entry point | `docs/ai/README.md` | AVAILABLE | |
 | Human process/runbook | `docs/ai/processes/*` | AVAILABLE / HUMAN-FACING | |
 | Workspace mechanics | `docs/ai/workspaces/README.md` | AVAILABLE | |
-| Temporary active process/initiative workspace, open-process discovery | `docs/ai/workspaces/active/<initiative>/` | TEMPORARY / NON-AUTHORITATIVE | |
+| Temporary active process/initiative workspace (exploratory, not yet decomposed into WORK), open-process discovery | `docs/ai/workspaces/active/<initiative>/` | TEMPORARY / NON-AUTHORITATIVE | |
 
 `DATA_MODEL.md` diagrams, once created, must represent current implementation, show all persisted columns, and show exact column-to-column relationships. Indexes and SQL types are not required.
 

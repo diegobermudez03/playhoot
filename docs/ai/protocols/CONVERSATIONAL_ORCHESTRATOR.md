@@ -30,7 +30,8 @@ The Conversational Orchestrator owns:
 - transitioning between processes/subprocesses and returning to the parent
   process;
 - downstream consequence analysis after a material milestone;
-- initiative-level implementation planning (decomposition into slices);
+- initiative-level implementation planning (decomposition into a Project's
+  ordered WORK, per `docs/projects/README.md`);
 - selecting the next appropriate action/process;
 - open-initiative discovery;
 - determining when an initiative is actually resolved.
@@ -46,8 +47,8 @@ process. Examples: `session-runtime-v1`, `observability-hardening`,
 
 An initiative may internally move through Architecture Discussion, Domain
 Design, Architecture Discussion again, implementation planning, Feature
-Development, implementation/review, and another Feature Development slice —
-without creating a new human-facing workflow every time.
+Development, implementation/review, and another Feature Development pass on
+the next WORK — without creating a new human-facing workflow every time.
 
 Prefer ONE active workspace for one coherent initiative:
 
@@ -63,9 +64,9 @@ does not redefine those.
 
 1. Determine whether the request is a continuation of an existing open
    initiative, interaction with existing WORK, or genuinely new work.
-2. Search `docs/ai/workspaces/active/` (and `docs/work/active/` when
-   implementation state matters) for matching state before creating
-   duplicate work.
+2. Search `docs/ai/workspaces/active/`, `docs/projects/active/` (each
+   Project's `PROJECT.md` and `works/`), and `docs/work/active/` (standalone
+   WORK) for matching state before creating duplicate work.
 3. Select the internal process that currently owns the concern.
 4. Load the matching human-facing process guide (`docs/ai/processes/*`) and
    agent protocol (`docs/ai/protocols/*`).
@@ -160,62 +161,77 @@ Explain the meaningful next step naturally. If the human says something like
 into tasks", transition accordingly without requiring the human to name an
 internal process.
 
-## Initiative Implementation Planning
+## Initiative Implementation Planning: Graduating Into A Project
 
-For an accepted larger direction, transform it into coherent, incremental
-implementation slices using accepted decisions/canonical knowledge, actual
-current implementation, current-state docs, dependencies, risk, and useful
-vertical boundaries. Do not mechanically decompose by endpoint, file,
-package, or repository method unless that genuinely is the right boundary.
-Prefer coherent capabilities/outcomes.
+For an accepted larger direction, transform it into coherent, ordered WORK
+using accepted decisions/canonical knowledge, actual current implementation,
+current-state docs, dependencies, risk, and useful vertical boundaries. Do
+not mechanically decompose by endpoint, file, package, or repository method
+unless that genuinely is the right boundary. Prefer coherent
+capabilities/outcomes.
 
-### Optional PLAN.md
+### Project Replaces PLAN.md
 
-For an initiative requiring multiple implementation slices, allow:
+Once an initiative needs multiple related, ordered implementation WORK
+items, it graduates into a Project (`docs/projects/README.md`):
 
-`docs/ai/workspaces/active/<initiative>/PLAN.md`
+`docs/projects/active/<project-slug>/PROJECT.md` plus `works/`.
 
-PLAN.md is TEMPORARY, NON-CANONICAL, NON-AUTHORITATIVE. It owns only
-initiative-level implementation decomposition:
+`PROJECT.md` is the durable, human-facing dashboard for the initiative's
+implementation roadmap - it replaces the earlier ad hoc practice of tracking
+a numbered "Slice" sequence in a workspace `PLAN.md`. `PROJECT.md` owns
+initiative implementation goal, the ordered/grouped WORK table, dependencies,
+sequencing rationale, intentionally-excluded scope, and the project
+completion criterion. It does not own accepted architecture/domain/product
+truth, a WORK's detailed implementation contract, or a WORK's own
+status/source-level progress - those remain owned by their existing sources
+(ADRs/canonical docs, the WORK file itself, Git).
 
-- initiative implementation goal;
-- ordered/coherent slices;
-- important dependencies;
-- sequencing rationale;
-- intentionally deferred/out-of-scope slices;
-- links to WORK specs once they exist.
+An initiative still exploratory - architecture/domain design not yet decided
+to require concrete implementation WORK - remains a
+`docs/ai/workspaces/active/<initiative>/` process; it graduates into a
+Project only once it needs an ordered set of required implementation WORK
+(see `docs/projects/README.md`).
 
-It does not own accepted architecture/domain/product truth, detailed
-implementation contracts, actual WORK status, source-level progress, or exact
-diffs. Actual WORK lifecycle/status remains owned by `docs/work/`. Do not
-duplicate WORK content into PLAN.md.
+### Known Future Outcomes Get A PLANNED WORK Immediately
 
-### Just-In-Time WORK Specs
+Do not defer materializing a WORK merely because its design has not started.
+When a required implementation outcome becomes known - discovered during
+design, during implementation of another WORK, or during an audit of an
+active Project's remaining scope - create it as a `PLANNED` WORK immediately
+under the Project (`docs/projects/README.md` Invariant 1) and place/order it
+in `PROJECT.md`, then continue whatever else is in progress if appropriate.
+Do not let a known required outcome exist only as prose in `PROJECT.md`, an
+`AI_CONTEXT.md`, an ADR, or a handoff.
 
-Default to planning the initiative broadly but materializing detailed WORK
-specifications just in time. For example, given a plan with slices S1-S4, it
-may be appropriate to create detailed WORK only for S1. After S1's
-implementation/review, inspect what was learned, reevaluate the downstream
-plan if necessary, then materialize/refine the next slice.
+### Design/Refine Just In Time
 
-Do not freeze detailed WORK specifications for every future slice when later
-implementation evidence may change them. Creating multiple WORK specs up
-front is allowed when their contracts are already genuinely stable and doing
-so adds value, but it is not the default.
+Default to planning the Project's roadmap broadly (as PLANNED WORK) but
+designing each WORK in detail (PLANNED -> DRAFT) just in time. For example,
+given a Project with WORK-A through WORK-D all PLANNED, it may be appropriate
+to move only WORK-A to DRAFT now. After WORK-A's implementation/review,
+inspect what was learned, reevaluate the remaining PLANNED WORK if necessary,
+then design/refine the next one.
+
+Do not freeze detailed DRAFT specifications for every future WORK when later
+implementation evidence may change them. Moving multiple WORK items to DRAFT
+up front is allowed when their contracts are already genuinely stable and
+doing so adds value, but it is not the default.
 
 ## Feature Development As Internal Graduation
 
-Feature Development is the internal governed mechanism used when a planned
-slice is ready to become concrete implementable WORK. The human does not
-normally say "start Feature Development." Instead:
+Feature Development is the internal governed mechanism used to move a
+PLANNED WORK through design (DRAFT) to concrete implementable WORK (READY).
+The human does not normally say "start Feature Development." Instead:
 
-Human: "Let's implement the next slice."
+Human: "Let's design/implement the next WORK."
 
-Orchestrator: identifies the next slice, loads Feature Development
-internally, determines whether material design is already resolved, asks
-only unresolved material questions, produces/persists the WORK through a
-Codebase Agent Handoff, drives it to the READY checkpoint, and after human
-READY, routes to implementation.
+Orchestrator: identifies the next PLANNED WORK from the active Project's
+`PROJECT.md` (or accepts a genuinely new WORK outside any Project), loads
+Feature Development internally, moves it PLANNED -> DRAFT, determines
+whether material design is already resolved, asks only unresolved material
+questions, persists the WORK through a Codebase Agent Handoff, drives it to
+the READY checkpoint, and after human READY, routes to implementation.
 
 All existing WORK/READY governance in `docs/work/README.md`,
 `docs/ai/processes/FEATURE_DEVELOPMENT.md`, and
@@ -223,23 +239,28 @@ All existing WORK/READY governance in `docs/work/README.md`,
 
 ## Initiative Loop After WORK Completion
 
-When a WORK reaches DONE, do not automatically conclude the initiative.
-Return control to the initiative plan. Determine:
+When a WORK reaches DONE, do not automatically conclude the initiative or
+Project. Return control to `PROJECT.md`. Determine:
 
-- did the WORK satisfy the entire initiative goal?
-- did implementation produce learning that changes remaining slices?
-- what planned slice remains?
+- did the WORK satisfy the entire Project goal?
+- did implementation produce learning that changes remaining PLANNED WORK?
+- did implementation or review surface a newly-known-required outcome that
+  needs its own new PLANNED WORK (Invariant 1)?
+- what PLANNED/DRAFT WORK remains?
 - is another design/exploration step required?
-- is the initiative now complete?
+- is the Project now complete (see its completion criterion)?
 
-If more work remains, update initiative continuity (`AI_CONTEXT.md`, and
-`PLAN.md` if present) and guide the human toward the next meaningful step.
+If more work remains, update `PROJECT.md`'s WORK table/status and initiative
+continuity (`internal/AI_CONTEXT.md` if present) and guide the human toward
+the next meaningful step.
 
-Only remove the active initiative workspace when the initiative goal is
-satisfied or cancelled, no known downstream work intentionally remains
-tracked, and required durable knowledge has been promoted to its owners. See
-the Durable Active Process Invariant and Workspace Lifetime rules in
-`docs/ai/workspaces/README.md`.
+Only move the Project to `docs/projects/completed/` when its completion
+criterion is satisfied or the Project is cancelled, no known downstream work
+intentionally remains tracked, and required durable knowledge has been
+promoted to its owners. See `docs/projects/README.md` and the Durable Active
+Process Invariant / Workspace Lifetime rules in
+`docs/ai/workspaces/README.md` for the equivalent rule while an initiative is
+still a pre-Project workspace.
 
 ## Open Initiative/Process Discovery
 
@@ -248,15 +269,19 @@ Support natural requests such as: "What processes/initiatives are open?",
 currently being implemented?", "What is blocked?", "What tasks remain for
 X?", "Where did we stop?", "Resume the session work."
 
-Primary source: `docs/ai/workspaces/active/`. For each active workspace, read
-`AI_CONTEXT.md`'s resume header (see `docs/ai/workspaces/README.md`) and
-summarize topic, current internal process/stage, related WORK/decision/
-artifacts, blocker/current checkpoint, next actor, and next action. When
-`PLAN.md` exists, use it for initiative decomposition.
+Primary sources: `docs/ai/workspaces/active/` for pre-Project exploratory
+initiatives, and `docs/projects/active/<project-slug>/PROJECT.md` for any
+initiative that has graduated into a Project. For each active workspace,
+read `AI_CONTEXT.md`'s resume header (see `docs/ai/workspaces/README.md`)
+and summarize topic, current internal process/stage, related WORK/decision/
+artifacts, blocker/current checkpoint, next actor, and next action. For each
+active Project, read `PROJECT.md`'s Current Work and WORK table directly,
+and its `internal/AI_CONTEXT.md` resume header if present.
 
-Cross-check `docs/work/active/` and `docs/work/completed/` for actual WORK
-lifecycle. If an active WORK exists without an active workspace under the
-Durable Active Process Invariant, report:
+Cross-check `docs/work/active/`/`docs/work/completed/` (standalone WORK) and
+each Project's `works/` directory for actual WORK lifecycle. If an active
+WORK exists without an active workspace/Project under the Durable Active
+Process Invariant, report:
 
 ```text
 PROCESS CONTINUITY DRIFT
@@ -282,7 +307,9 @@ initiative context. Do not require command syntax or internal process names.
 - Do not collapse the existing Playhoot processes into one giant protocol.
 - Do not remove governance, weaken material decision gates, weaken READY, or
   weaken independent review.
-- Do not invent new WORK statuses.
+- Do not invent WORK statuses beyond the set `docs/work/README.md` defines
+  (PLANNED, DRAFT, READY, IMPLEMENTING, DONE, CANCELLED); that set changes
+  only through the AI_WORKFLOW_CHANGE process, not ad hoc during routing.
 - Do not create a manually maintained active-process registry.
 - Do not duplicate exact Git diffs into `AI_CONTEXT.md`.
 - Do not require every trivial conversation to be persisted.

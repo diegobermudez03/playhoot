@@ -10,8 +10,8 @@ Related decisions:
 - GAME-ADR-0020 (post-commit client delivery semantics, best-effort)
 
 Canonical context:
-- `docs/work/active/WORK-0005-thin-live-coordinator.md` (the live Coordinator this WORK extends)
-- `docs/work/active/WORK-0006-broaden-live-fanout-effects-presentations.md` (the "Question/Presentation/Effect only cross the wire" principle this WORK's own termination message follows, as a generic UI-shaped signal rather than a raw domain event)
+- `docs/projects/active/session-runtime-v1/works/WORK-0005-thin-live-coordinator.md` (the live Coordinator this WORK extends)
+- `docs/projects/active/session-runtime-v1/works/WORK-0006-broaden-live-fanout-effects-presentations.md` (the "Question/Presentation/Effect only cross the wire" principle this WORK's own termination message follows, as a generic UI-shaped signal rather than a raw domain event)
 - `game/session/workflows/sessionlifecycle/step_answer_interaction.go` (`terminalizeAnswerInteractionFatal`), `game/session/workflows/sessionlifecycle/step_start.go` (`terminalizeStartFatal`) - the existing fatal paths this WORK's notification covers
 - `game/session/workflows/sessionlifecycle/internal/repo/interaction.go` (`CloseAllActiveInteractionsForSession` - confirms closed rows from these paths have `closed_by_turn_id = NULL`, structurally excluded from the existing live-event query)
 - `play/coordinator.go` (`Deliver`'s existing per-recipient fan-out, which this WORK's broadcast mechanism is deliberately different from - see Scope)
@@ -21,6 +21,8 @@ Canonical context:
 ## Outcome
 
 Every client currently connected to a Session receives a live "session ended" message, and then has their connection closed server-side, whenever that Session becomes `TERMINAL` for any reason while clients are connected - a fatal RuntimeTurn execution failure (already existed), or the game's own root workflow completing naturally (confirmed deterministic and newly wired by this WORK). Today only whoever's request directly triggered a fatal failure learns anything; every other connected client, and every client connected when the game simply finishes normally, is left with no signal at all.
+
+**Generalized invariant (added 2026-09-20, migration reconciliation - no scope change to this WORK's own two causes)**: the underlying mechanism this WORK builds - "broadcast a generic termination signal to every currently-bound connection for a Session, then close those connections" - must be built as a reusable mechanism on `play.Coordinator`, because every future terminal cause this Project's remaining WORK introduces is required to reuse it rather than reinventing "notify connected clients on termination" per cause: manual cancellation (WORK-0011), timer-driven termination if a game logic path terminalizes on one (WORK-0012), and inactivity/reaper termination (WORK-0016) all must plug into this same mechanism when they materialize. This WORK's own In Scope/Acceptance Criteria remain the two causes below; it is not expanded to implement those future causes itself.
 
 The message itself is a generic, cause-agnostic "session ended" UI signal - the same fixed screen for every client regardless of why. A personalized results screen (winners/losers/score) is explicitly deferred - see `docs/product/IDEAS.md -> Personalized End-of-Game Screen`.
 
@@ -45,7 +47,7 @@ Human-confirmed direction (2026-09-20): send a message to every connected client
 ### Out of Scope
 
 - A personalized/configurable end-of-game screen (winners/losers/score, derived from `WorkflowOutcome.Result`) - `docs/product/IDEAS.md -> Personalized End-of-Game Screen`, explicitly deferred.
-- Lobby-phase expiration (`LOBBY_EXPIRED`) notification - a Session can only expire from `LOBBY`, before `Start`, when whether any client is even connected yet is a separate question this WORK does not resolve; may be worth folding in later but is not assumed here.
+- Lobby-phase expiration (`LOBBY_EXPIRED`) notification - a Session can only expire from `LOBBY`, before `Start`, when whether any client is even connected yet is a separate question this WORK does not resolve; may be worth folding in later but is not assumed here. This becomes concretely reachable once WORK-0008 (Live Lobby / Session Bootstrap) lets clients hold a live connection before `Start` - worth resolving when WORK-0007 and WORK-0008 are jointly refined, not decided here.
 - The general "other connected players learn about ordinary gameplay state changes" gap (WORK-0006) - a different mechanism (per-recipient `Event` translation vs. this WORK's session-wide broadcast); the two WORKs are related but not the same code path.
 - Reconnect/resync (Slice 7) - a client not connected at the moment of termination simply never received anything, consistent with this whole initiative's best-effort/no-replay stance (GAME-ADR-0020).
 - Any change to how a non-fatal, non-terminal decline (`AnswerInteractionOutcomeRejected`/`Conflict`) is reported - unaffected, still only a direct reply to the caller.

@@ -26,18 +26,24 @@ A work spec may reference those sources. Do not duplicate their complete content
 
 Do not create a work spec for every idea or discussion.
 
-A work spec is appropriate when concrete implementation work is being prepared or approved.
+A work spec is appropriate when concrete implementation work is being prepared or approved, **or** when an implementation outcome is already known to be required (typically because it is required to complete an active Project, per `docs/projects/README.md` Invariant 1) even though its design is not yet known — that WORK starts life as PLANNED rather than DRAFT.
 
 - Open product questions belong in `docs/ai/processes/PRODUCT_DISCUSSION.md`.
 - Open architecture questions belong in `docs/ai/processes/ARCHITECTURE_DISCUSSION.md`.
 - Open domain-boundary questions belong in `docs/ai/processes/DOMAIN_DESIGN.md`.
 - Reusable engineering rules belong in `docs/ai/processes/ENGINEERING_STANDARD.md`.
 
-Future ideas, backlog items, and radar concerns do not become DRAFT work specs merely because they may eventually be implemented.
+Future ideas, backlog items, and radar concerns do not become PLANNED or DRAFT work specs merely because they may eventually be implemented — PLANNED is for an outcome already known to be required, not a speculative idea backlog.
 
-Normally `FEATURE_DEVELOPMENT.md` creates/persists the work spec after the Scope Challenge Gate and enough design has occurred to define concrete implementation work.
+Normally `FEATURE_DEVELOPMENT.md` creates/persists the work spec (as PLANNED, or directly as DRAFT when concrete design work is already starting) and moves it to DRAFT once the Scope Challenge Gate has passed and enough design has occurred to define concrete implementation work.
 
 DRAFT is an implementation-design state, not a general idea backlog.
+
+## Work And Project
+
+A WORK is the sole lifecycle-bearing unit of implementation/design work. When several related WORK items together deliver one coherent outcome, they are grouped under a Project (`docs/projects/README.md`), which owns grouping, ordering/dependencies, and the project-level completion criterion — never a WORK's own status or design. A standalone WORK unrelated to any broader initiative does not need a Project.
+
+"Slice" is not a tracking concept; a required future outcome is a WORK, not a numbered "Slice N" (see `docs/projects/README.md`).
 
 ## Identifiers And Files
 
@@ -49,42 +55,53 @@ The same format covers product features, technical capabilities, migrations, ref
 
 Do not create separate FEATURE/MIGRATION/REFACTOR numbering systems now.
 
-Numbers form one repository-wide monotonically increasing WORK sequence. Determine the next ID by inspecting both `docs/work/active/` and `docs/work/completed/`.
+Numbers form one repository-wide monotonically increasing WORK sequence, regardless of whether the file lives under a Project's `works/` directory (`docs/projects/active|completed/<project-slug>/works/`) or under the standalone directories below. Determine the next ID by inspecting `docs/work/active/`, `docs/work/completed/`, and every `docs/projects/*/*/works/` directory.
 
 Never reuse or renumber an existing WORK ID.
 
-The filename remains stable when work moves from active to completed.
+The filename remains stable as status changes and as the file moves between directories.
 
 ## Directory Semantics
 
-`docs/work/active/` contains non-terminal work specs:
+A WORK grouped under an active Project lives in that Project's own `docs/projects/active/<project-slug>/works/` for its entire lifecycle, DONE included — do not move a completed Project WORK out to a separate global completed location; that would fragment the Project's history (see `docs/projects/README.md`). Only once the whole Project resolves does its entire directory move to `docs/projects/completed/<project-slug>/`.
 
+A standalone WORK not grouped under any Project uses:
+
+`docs/work/active/` — non-terminal work specs:
+
+- PLANNED
 - DRAFT
 - READY
 - IMPLEMENTING
 
-`docs/work/completed/` contains terminal/closed work specs:
+`docs/work/completed/` — terminal/closed work specs:
 
 - DONE
 - CANCELLED
 
-When work reaches DONE or CANCELLED, move the same WORK file from `active/` to `completed/`. Do not create a replacement copy.
-
-The completed directory preserves closed work history, including CANCELLED work that was not implemented.
+When such a WORK reaches DONE or CANCELLED, move the same file from `active/` to `completed/`. Do not create a replacement copy. The completed directory preserves closed work history, including CANCELLED work that was not implemented.
 
 ## Status Model
 
 The only current work-spec statuses are:
 
+- PLANNED
 - DRAFT
 - READY
 - IMPLEMENTING
 - DONE
 - CANCELLED
 
+PLANNED:
+
+- We have decided this outcome is required (as part of an active Project, or otherwise known to be needed), but its design is not yet known.
+- Material design questions may remain fully open; scope boundaries may still be provisional.
+- Not authorized for implementation, and not yet under active design either — that transition is PLANNED -> DRAFT.
+- Not a speculative idea backlog item: create a PLANNED WORK only when an implementation outcome is already known to be required, not merely possible or interesting. See `docs/projects/README.md` Invariant 1.
+
 DRAFT:
 
-- Concrete implementation work is being designed/scoped.
+- Concrete implementation work is being actively designed/scoped.
 - Has no implementation authority.
 - May contain unresolved blockers.
 - May change materially.
@@ -118,12 +135,14 @@ CANCELLED:
 
 ## Normal Transitions
 
+- PLANNED -> DRAFT
 - DRAFT -> READY
 - READY -> IMPLEMENTING
 - IMPLEMENTING -> DONE
 
 Cancellation may occur from any non-terminal state:
 
+- PLANNED -> CANCELLED
 - DRAFT -> CANCELLED
 - READY -> CANCELLED
 - IMPLEMENTING -> CANCELLED

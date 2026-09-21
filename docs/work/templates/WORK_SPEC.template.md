@@ -7,7 +7,7 @@ Resulting record shape:
 ```text
 # WORK-NNNN: <Title>
 
-Status: DRAFT
+Status: PLANNED | DRAFT
 Created: YYYY-MM-DD
 Last status change: YYYY-MM-DD
 
@@ -19,7 +19,10 @@ Canonical context:
 
 ## Outcome
 
-<Concrete result this work should achieve and why it matters.>
+<Concrete result this work should achieve and why it matters. For a PLANNED
+WORK, this is often the only section that must be substantive - it records
+WHY the outcome is already known to be required, even though HOW is not yet
+designed.>
 
 ## Context
 
@@ -118,3 +121,13 @@ Optional sections may be added only when materially relevant, such as Data / Mig
 Do not create empty boilerplate sections for concerns that do not matter.
 
 If an optional concern becomes a material architecture/product/standard decision, route it through the corresponding decision process instead of silently deciding it in the work spec.
+
+## PLANNED WORK
+
+A WORK may be created directly as `Status: PLANNED` when an implementation outcome is already known to be required (see `docs/work/README.md` and, for Project-grouped WORK, `docs/projects/README.md` Invariant 1), before its design is known. For a PLANNED WORK:
+
+- `Outcome` and enough `Context` to explain why the outcome is required should be substantive.
+- `Scope`, `Approved Design`, `Constraints and Invariants`, `Acceptance Criteria`, `Verification`, and `Documentation Impact` may be left minimal, or noted as "not yet designed", rather than filled with placeholder content.
+- `Blockers` should record the known open design questions, if any are already apparent, without pretending they are resolved.
+
+Moving PLANNED -> DRAFT is when this design work actually happens and these sections are filled in for real.

@@ -40,8 +40,8 @@ Requested immediately after WORK-0001 (Session Lobby Foundation, Slice 1) reache
 
 - Any change to Game Management's, Session Runtime's, or Game Language's behavior, public contract, or domain semantics beyond the identifier changes strictly required by the package rename itself.
 - Renaming `getgame`/`getgamedefinition`/any other subpackage that does not share the top-level directory's old name.
-- Rewriting historical decision records (ADRs) or the completed `docs/work/completed/WORK-0001-session-lobby-foundation.md` to reflect the new path - those documents describe state as it was at specific points in time and are governed by `docs/decisions/README.md`'s Historical Immutability rule and `docs/work/README.md`'s Completed Work Immutability rule respectively. `docs/decisions/architecture/ADR-0001-intra-domain-responsibility-boundary.md` and `game/docs/decisions/GAME-ADR-0001-game-capability-persistence-transaction-boundary.md` reference `game/game/...` as historical-rationale evidence and are intentionally left unchanged.
-- Rewriting past dated checkpoint narrative entries in `docs/ai/workspaces/active/session-runtime-v1/AI_CONTEXT.md`/`PLAN.md` that describe `game/game` as it existed at that checkpoint's time - only their live/current-facing sections are updated if they name the physical path as current fact.
+- Rewriting historical decision records (ADRs) or the completed `docs/projects/active/session-runtime-v1/works/WORK-0001-session-lobby-foundation.md` to reflect the new path - those documents describe state as it was at specific points in time and are governed by `docs/decisions/README.md`'s Historical Immutability rule and `docs/work/README.md`'s Completed Work Immutability rule respectively. `docs/decisions/architecture/ADR-0001-intra-domain-responsibility-boundary.md` and `game/docs/decisions/GAME-ADR-0001-game-capability-persistence-transaction-boundary.md` reference `game/game/...` as historical-rationale evidence and are intentionally left unchanged.
+- Rewriting past dated checkpoint narrative entries in `docs/projects/active/session-runtime-v1/internal/AI_CONTEXT.md`/`PLAN.md` that describe `game/game` as it existed at that checkpoint's time - only their live/current-facing sections are updated if they name the physical path as current fact.
 - Starting, designing, or scoping Slice 2 (Start + First RuntimeTurn) in any way.
 - Any opportunistic cleanup, refactor, or behavior change unrelated to the rename (including the previously-recorded, explicitly out-of-scope `game/game/usecases/getgame` test-assertion defect - unaffected by this rename beyond its own path update).
 
@@ -96,8 +96,8 @@ No design beyond the mechanical rename described in Scope above. The physical pa
 ### Intentionally Unchanged
 
 - `docs/decisions/architecture/ADR-0001-intra-domain-responsibility-boundary.md`, `game/docs/decisions/GAME-ADR-0001-game-capability-persistence-transaction-boundary.md` - historical decision rationale, governed by Historical Immutability.
-- `docs/work/completed/WORK-0001-session-lobby-foundation.md` - completed work spec, governed by Completed Work Immutability.
-- Past dated checkpoint entries in `docs/ai/workspaces/active/session-runtime-v1/AI_CONTEXT.md`/`PLAN.md` - historical narrative describing state at each checkpoint's time.
+- `docs/projects/active/session-runtime-v1/works/WORK-0001-session-lobby-foundation.md` - completed work spec, governed by Completed Work Immutability.
+- Past dated checkpoint entries in `docs/projects/active/session-runtime-v1/internal/AI_CONTEXT.md`/`PLAN.md` - historical narrative describing state at each checkpoint's time.
 
 ## Blockers
 

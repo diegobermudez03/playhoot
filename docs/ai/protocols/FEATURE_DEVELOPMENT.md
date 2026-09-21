@@ -8,7 +8,7 @@ This protocol owns design-to-READY execution, primarily performed by a CONVERSAT
 
 ## Scope
 
-Use for concrete product or technical capabilities that may become approved WORK.
+Use for concrete product or technical capabilities that may become approved WORK, including moving an already-created PLANNED WORK (see `docs/projects/README.md` Invariant 1, for a WORK grouped under a Project) into active design.
 
 Do not implement until a persistent WORK specification is READY. Do not use Feature Development to silently make product, architecture, domain, or engineering-standard decisions that require their owning processes.
 
@@ -26,7 +26,7 @@ The human should be able to authorize READY from the human review without readin
 - Load context through the Knowledge Map.
 - Inspect code, tests, migrations, and current-state docs when implementation reality matters.
 - Ensure `AI_CONTEXT.md` is persisted, via a CODEBASE AGENT HANDOFF, for fresh-session continuation, never as hidden implementation authority.
-- Create DRAFT WORK under `docs/work/active/` only when concrete implementation work is being prepared.
+- Create DRAFT WORK (under `docs/work/active/`, or under an active Project's `works/` per `docs/projects/README.md`) only when concrete implementation work is being prepared. If a PLANNED WORK already exists for this outcome, move it PLANNED -> DRAFT in place rather than creating a duplicate.
 - Use `docs/work/templates/WORK_SPEC.template.md`.
 - Validate Definition of Ready from `docs/work/README.md`.
 - Synchronize accepted/canonical knowledge only through the owning product, architecture, domain, or standard process.
@@ -88,6 +88,6 @@ Feature Development is complete only after the implementation/review protocol re
 - Any human-accepted exceptional limitation/deviation has been resolved through the implementation/review protocol and recorded where appropriate.
 - Required documentation synchronization is complete.
 - No unresolved material drift was introduced.
-- DONE or CANCELLED WORK has moved from `docs/work/active/` to `docs/work/completed/`.
+- A standalone DONE or CANCELLED WORK has moved from `docs/work/active/` to `docs/work/completed/`. A Project-grouped WORK stays in place in its Project's `works/` directory; `PROJECT.md`'s WORK table is updated instead (see `docs/projects/README.md`).
 
-After closure, return to the initiative plan (`docs/ai/protocols/CONVERSATIONAL_ORCHESTRATOR.md`) rather than assuming the surrounding initiative or its workspace is finished; remove the workspace only when the initiative itself is resolved (see `docs/ai/workspaces/README.md`).
+After closure, return to the initiative plan (`docs/ai/protocols/CONVERSATIONAL_ORCHESTRATOR.md`) rather than assuming the surrounding initiative, its workspace, or its Project is finished; remove the workspace, or move the Project to `docs/projects/completed/`, only when the initiative/Project itself is resolved (see `docs/ai/workspaces/README.md` / `docs/projects/README.md`).

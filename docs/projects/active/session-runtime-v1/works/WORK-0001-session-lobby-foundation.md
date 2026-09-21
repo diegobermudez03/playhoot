@@ -21,7 +21,7 @@ Canonical context:
 - `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md` (Lobby And Identity Tables)
 - `game/docs/DATA_MODEL.md` and `game/CURRENT_STATE.md` (current implementation reality; the implementation boundary this WORK approves is now materially ahead of what these describe - see "2026-09-16 Design Revision" below)
 - `docs/engineering/standards/cross-domain-reference-naming.md`, `repositories.md`, `error-handling.md`, `data-integrity.md`, `testing.md`, `domain-logic-placement.md`, `function-signatures.md`, `idempotency.md`
-- `docs/ai/workspaces/active/session-runtime-v1/PLAN.md` (Slice 1 of the approved initiative sequence)
+- `docs/projects/active/session-runtime-v1/PROJECT.md` (Slice 1 of the approved initiative sequence)
 
 ## 2026-09-16 Design Revision (Material, HUMAN-APPROVED)
 
@@ -71,7 +71,7 @@ The "Context" section immediately below describes the codebase as it was found b
 
 ## Standard-Compliance Migration Record (2026-09-11)
 
-A human-approved engineering-standard clarification (`docs/engineering/standards/domain-logic-placement.md`/`repositories.md`, 2026-09-09) required a targeted migration of this implementation before Slice 2 could continue, recorded in `docs/ai/workspaces/active/session-runtime-v1/AI_CONTEXT.md` -> "Mandatory Standard-Compliance Migration". That migration is now complete:
+A human-approved engineering-standard clarification (`docs/engineering/standards/domain-logic-placement.md`/`repositories.md`, 2026-09-09) required a targeted migration of this implementation before Slice 2 could continue, recorded in `docs/projects/active/session-runtime-v1/internal/AI_CONTEXT.md` -> "Mandatory Standard-Compliance Migration". That migration is now complete:
 
 - `game/session/usecases/{createsession,joinsession,leavesession}/` moved, unchanged in behavior, to `game/session/workflows/sessionlifecycle/{createsession,joinsession,leavesession}/` - a discoverable Session-lifecycle workflow package, per `domain-logic-placement.md`'s Workflow vs. Use Case guidance. Each operation keeps its own focused `service.go`/`repo.go`/tests; no combined lifecycle service/struct was introduced.
 - The horizontal `game/session/internal/actors` package (shared `Find`/`Create`/`FindParticipant`/`CreateParticipant`/`ReactivateParticipant`/`RefreshActiveDisplayName`/`DeactivateParticipant`/`CountActive` consumed directly by both Join and Leave) was removed. Its behavior was migrated, unchanged in semantics and SQL, into behavior-local unexported functions inside each consumer: `joinsession/repo.go` now owns its own `findActor`/`createActor`/`findParticipant`/`createParticipant`/`reactivateParticipant`/`refreshActiveDisplayName`/`countActiveParticipants`; `leavesession/repo.go` owns only the read-side subset it actually needs (`findActor`/`findParticipant`/`deactivateParticipant` - Leave never creates/admits). The small duplication between Join's and Leave's `findActor`/`findParticipant` is intentional per `repositories.md`'s Sharing Rule - both query the same tables today, but remain separate behavior-local consumers whose needs may diverge independently, not a shared horizontal entity API.

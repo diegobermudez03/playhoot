@@ -2,7 +2,9 @@
 
 Status: DIRECTORY GUIDE
 
-This directory preserves terminal work specs.
+This directory preserves terminal, standalone (not grouped under any Project) work specs.
+
+A completed WORK grouped under a Project stays inside that Project's own `works/` directory (see `docs/projects/README.md`) - it is not moved here.
 
 Allowed statuses here are DONE and CANCELLED.
 

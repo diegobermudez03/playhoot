@@ -13,7 +13,7 @@ Canonical context:
 - `game/README.md` (Live Session Coordinator, Session Runtime Post-Commit Client Delivery Semantics sections)
 - `game/docs/decisions/GAME-ADR-0002-session-runtime-durable-boundary.md`
 - `game/docs/decisions/GAME-ADR-0020-session-runtime-post-commit-client-delivery-semantics.md`
-- `docs/ai/workspaces/active/session-runtime-v1/PLAN.md` (Slice 4)
+- `docs/projects/active/session-runtime-v1/PROJECT.md` (this Project's roadmap; formerly tracked as "Slice 4" in the now-superseded `internal/LEGACY_SLICE_PLAN.md`)
 - `game/session/workflows/sessionlifecycle/manager.go`, `types.go` (the existing Create/Join/Leave/Start/AnswerInteraction public surface this slice exposes live)
 - `game/language/v1/engine/output.go` (the committed `Output` variants a RuntimeTurn can produce)
 - `api/README.md` (existing, currently code-empty, external transport/application edge convention)
@@ -114,7 +114,7 @@ Beyond canonical context, this WORK settles:
 ### Intentionally Unchanged
 
 - `ARCHITECTURE.md` - GAME-ADR-0002 already accepts the Coordinator as a boundary outside Session Runtime; this WORK's package-placement choice does not change global cross-domain architecture rules and does not require a new global ADR.
-- `docs/work/completed/WORK-0001-session-lobby-foundation.md`, `WORK-0002-rename-game-management-package.md`, `WORK-0003-session-start-first-runtimeturn.md`, `WORK-0004-interaction-response-processing.md` (completed work, historical).
+- `docs/projects/active/session-runtime-v1/works/WORK-0001-session-lobby-foundation.md`, `WORK-0002-rename-game-management-package.md`, `WORK-0003-session-start-first-runtimeturn.md`, `WORK-0004-interaction-response-processing.md` (completed work, historical).
 - `game/session/workflows/sessionlifecycle/` - not touched beyond being called through the new `SessionRuntime` implementation; `game` imports nothing from `play`.
 
 ## Blockers
@@ -134,13 +134,15 @@ Status: **RESOLVED, HUMAN-APPROVED (Blocker 1's refined resolution confirmed 202
 
 Local implementation choices (exact WebSocket library, connection-registry data structure, package/file naming) remain Implementation Freedom and are not blockers.
 
+8. **DISCOVERY (2026-09-20, found during the Project/WORK migration's completeness audit): the implemented live-connection path forces a host to become a roster Participant merely to connect and issue `Start`, contradicting already-accepted architecture.** `game/README.md`'s "Session Runtime Actor and Lifecycle Model" section states: "Host and Participant are independent concepts. Creating a Session establishes a host but does not automatically make that host a gameplay participant." As implemented (`api/session/ws.go`'s `joinAndUpgrade`), `GET /ws` is the only way to obtain a bound live connection, and it unconditionally calls `Join` first, upgrading only on a `JOINED`/`ALREADY_JOINED` outcome - so a host who has not otherwise joined must go through `Join` (counted against `playersMax`, added to the game roster) purely to get a connection through which to send `Start`. `sessionlifecycle.Manager`'s own domain logic already keeps these correctly independent (`CreateSessionWithHost` never creates a Participant for the host; `Start`'s authorization checks `sessions.host_actor_id`, never Participant status) - the drift is transport-layer only, introduced as a side effect of Blocker 7's fix for a different problem (players silently missing delivery after HTTP-only Join), not a considered design choice for the host case. **Status: REQUIRED, UNRESOLVED.** This is a compliance gap against already-accepted architecture, not a new product/design question - a host-specific way to obtain a bound connection without becoming a Participant is required before this WORK can reach DONE. The exact mechanism (e.g., a distinct host-connect handshake keyed on `(SessionUUID, HostActorID)` that calls `Bind` without calling `Join`) is Implementation Freedom, left for whoever implements the fix; see `docs/projects/active/session-runtime-v1/PROJECT.md` for how this is tracked at the Project level. No production code has been changed to address this by the migration that discovered it, per that migration's explicit scope.
+
 ## Completion Record
 
 Not yet DONE. Status: **IMPLEMENTING** (2026-09-20). WORK-0005 briefly reached READY on 2026-09-20 with Blocker 1 resolved as `game/play/` (nested); before implementation produced any code, the human corrected this twice in the same day: first to a top-level `play` package with a dependency-inversion boundary against `game`, then to refine that boundary's exact shape - the rule applies to `play`'s own package and its exported API only, not to every file anywhere under a `play/` directory tree, so a `SessionRuntime` implementation may import `game` and may live in a subpackage. The human confirmed this refined resolution on 2026-09-20; all Blockers are HUMAN-APPROVED and implementation began the same day.
 
 ### Implementation Report (2026-09-20)
 
-Work: `docs/work/active/WORK-0005-thin-live-coordinator.md`
+Work: `docs/projects/active/session-runtime-v1/works/WORK-0005-thin-live-coordinator.md`
 
 Work status: IMPLEMENTING
 
@@ -178,6 +180,6 @@ Known limitations:
 - `-race` not run in this environment (see Verification performed).
 
 Ready for independent review:
-YES
+YES, as of the original implementation report above. Blocker 8 (host/Participant drift, added 2026-09-20) was discovered afterward and remains unresolved - independent review should treat it as an open REQUIRED_FIX-shaped item rather than assume this WORK is ready to close on review alone.
 
 **Comment-standard cleanup pass (2026-09-20), same day**: per direct human feedback, source comments introduced by this implementation pass cited internal decision-tracking references (`GAME-ADR-NNNN`, `Blocker N`, `Slice N`, `this WORK`) and one internal doc path (`play/README.md`) as the reason for a behavior, instead of stating the reason directly in plain language - violating the Code Comment Standard's "No Citing Internal Documents As A Stand-In For Explanation" and "No Task/History Comments" sections. Swept every `.go` file this WORK added or modified (`play/`, `play/sessionruntime/`, `api/`, `main.go`, production and test) and rewrote each flagged comment to state the behavior/invariant/reason directly, with no citation and no task/process reference. `play/README.md` and `game/docs/FLOWS.md`/`game/CURRENT_STATE.md` were left as-is - the Code Comment Standard scopes itself to source-code comments, and citing accepted decisions/WORK documents is this repository's established convention for `.md` documentation (mirrored by `game/README.md` itself). Re-verified `go build ./...`, `go vet ./...`, `gofmt -l` (changed files), and `go test ./play/... ./api/... -count=1` clean after the sweep - comment-only changes, no behavior touched.

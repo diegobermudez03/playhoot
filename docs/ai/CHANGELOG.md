@@ -44,6 +44,43 @@ Do not reconstruct current behavior from the changelog when current workflow art
 
 Do not include full diffs, commit dumps, every implementation detail, or copied runbook contents. Git remains the detailed change history.
 
+## 2026-09-20 - Replaced Slice tracking with Project + WORK, added PLANNED status
+
+**Change**
+- Retired "Slice" as a first-class work-tracking concept. It may still be used descriptively (e.g. "a vertical slice of behavior") but has no numbering, status, or authority of its own.
+- Introduced Project as the grouping/ordering/completion-criterion unit above WORK: `docs/projects/active/<project-slug>/PROJECT.md` + `works/` + optional `internal/`, moving to `docs/projects/completed/<project-slug>/` once the whole Project resolves. Added the canonical process reference `docs/projects/README.md` and `docs/projects/templates/PROJECT.template.md`. `PROJECT.md` replaces the earlier ad hoc practice of tracking a numbered Slice sequence in a workspace `PLAN.md`.
+- Extended the WORK lifecycle with a new leading state, `PLANNED` (`docs/work/README.md`): `PLANNED -> DRAFT -> READY -> IMPLEMENTING -> DONE`, cancellable from any non-terminal state. `PLANNED` means an implementation outcome is already known to be required (typically to complete an active Project) even though its design is not yet known - it is not a speculative idea backlog item.
+- Established a tracking invariant (`docs/projects/README.md` Invariants 1-4): a future implementation outcome known to be required for an active Project must have a WORK (at minimum `PLANNED`) immediately; it may never exist only in `PROJECT.md`, an `AI_CONTEXT.md`, an ADR, or free-form prose.
+- Updated `docs/work/README.md` (status model, transitions, directory semantics distinguishing Project-grouped WORK from standalone WORK, WORK-ID uniqueness now spanning `docs/projects/*/*/works/` too), `docs/work/templates/WORK_SPEC.template.md`, `docs/work/active/README.md`, `docs/work/completed/README.md`, `docs/ai/KNOWLEDGE_MAP.md` (new Project routing rows), `docs/ai/protocols/CONVERSATIONAL_ORCHESTRATOR.md` (Project graduation replacing the "Optional PLAN.md"/"Just-In-Time WORK Specs" sections, "create a PLANNED WORK immediately" behavior, initiative loop now returns to `PROJECT.md`), `docs/ai/workspaces/README.md` (removed `PLAN.md` as a default workspace file; added the graduation-into-a-Project pointer), `docs/ai/protocols/FEATURE_DEVELOPMENT.md` and `docs/ai/processes/FEATURE_DEVELOPMENT.md` (PLANNED -> DRAFT graduation step, Project-aware paths).
+- Migrated the active `session-runtime-v1` initiative into this model: its 12-item numbered Slice sequence (`docs/ai/workspaces/active/session-runtime-v1/PLAN.md`) became `docs/projects/active/session-runtime-v1/PROJECT.md`; its WORK files (WORK-0001 through WORK-0007) moved into `docs/projects/active/session-runtime-v1/works/`, keeping their existing IDs and DONE/IMPLEMENTING/DRAFT statuses unchanged; its workspace `AI_CONTEXT.md` moved to `docs/projects/active/session-runtime-v1/internal/AI_CONTEXT.md` (resume header updated, historical checkpoint narrative left untouched); the former `PLAN.md` and a stale `HUMAN_REVIEW.md` were preserved, not deleted, as clearly-labeled superseded historical records under `internal/`. A completeness audit against Game Language's supported semantics produced 11 new `PLANNED` WORK items (WORK-0008 through WORK-0018) covering previously-unowned required capabilities (live lobby/session bootstrap, client-safe UI manifest, user intents, manual cancellation, timer obligations, keyed timers, runtime failure diagnostics/terminal cleanup, disconnect/reconnect/full resync, inactivity expiration, archival, and the Game Language signal-schema prerequisite for disconnect/reconnect).
+
+**Reason**
+- The Slice/WORK/PLAN.md split had drifted in practice: `PLAN.md` (documented as owning only initiative-level decomposition, explicitly barred from owning "actual WORK status") had come to carry per-Slice status, a full WORK<->Slice cross-reference table, and dated narrative updates - exactly the WORK-status/progress-tracking role it was supposed not to own. A completeness audit of the active `session-runtime-v1` initiative also found several already-known-required Session Runtime capabilities (user intents, manual cancellation, timers, disconnect/reconnect, inactivity expiration, archival, a client-safe manifest) with no WORK anywhere - known future work existing only as prose in `PLAN.md`/ADRs/product ideas, violating the intent (if not the letter) of "no committed future work exists only in prose." A single Project dashboard with an explicit PLANNED state closes that gap structurally.
+
+**Affected workflow artifacts**
+- `docs/projects/README.md` (new)
+- `docs/projects/templates/PROJECT.template.md` (new)
+- `docs/work/README.md`
+- `docs/work/templates/WORK_SPEC.template.md`
+- `docs/work/active/README.md`
+- `docs/work/completed/README.md`
+- `docs/ai/KNOWLEDGE_MAP.md`
+- `docs/ai/protocols/CONVERSATIONAL_ORCHESTRATOR.md`
+- `docs/ai/workspaces/README.md`
+- `docs/ai/protocols/FEATURE_DEVELOPMENT.md`
+- `docs/ai/processes/FEATURE_DEVELOPMENT.md`
+- `docs/ai/CHANGELOG.md`
+- `docs/projects/active/session-runtime-v1/*` (new location for the migrated initiative)
+
+**Compatibility / migration**
+- MIGRATE EXISTING TRACKING ARTIFACTS: `session-runtime-v1`'s WORK-0001 through WORK-0007 changed directory (not filename/ID/status) from `docs/work/{active,completed}/` to `docs/projects/active/session-runtime-v1/works/`. No WORK's approved scope, Completion Record, or historical narrative was rewritten; WORK-0005 (IMPLEMENTING) gained one new Blocker documenting a discovered drift against already-accepted architecture (`game/README.md`'s host/Participant independence) that its live-transport implementation currently violates - a required-fix note, not a scope change, and no production code was touched. No other repository-wide `docs/work/`-only artifact required migration; `docs/work/active/`/`docs/work/completed/` remain the home for standalone (non-Project) WORK and are otherwise unaffected.
+- The historical `docs/ai/workspaces/active/session-runtime-v1/PLAN.md` and its then-current `HUMAN_REVIEW.md` were preserved (moved, not deleted) under `docs/projects/active/session-runtime-v1/internal/` with a superseded banner, since they document real historical decisions/rationale that would be lost if deleted outright; Git history also preserves them at their original path.
+- Other active/completed workspaces (`domain-scoped-adrs`, `behavior-locality-and-workflow-organization`) are unaffected - neither uses Slice tracking or needs a Project yet.
+
+**Notes**
+- WORK statuses beyond this new set (PLANNED/DRAFT/READY/IMPLEMENTING/DONE/CANCELLED) still require a future AI_WORKFLOW_CHANGE pass, per `docs/ai/protocols/CONVERSATIONAL_ORCHESTRATOR.md`'s Non-Goals; this entry is that governed change for PLANNED itself.
+- Independent review, READY human-approval authority, and every other existing governance gate are unchanged by this migration.
+
 ## When To Add Entries
 
 Add an entry when an APPLIED workflow change materially changes semantics.

@@ -1,6 +1,6 @@
 # play
 
-`play` is the Live Session Coordinator: the connection-binding, delivery/fan-out boundary GAME-ADR-0002 accepts as living outside Session Runtime, owning no authoritative Session truth of its own. It is a top-level package, a sibling of `game/`, `api/`, `identity/` - not nested inside any of them (WORK-0005).
+`play` is the Live Session Coordinator: the connection-binding, delivery/fan-out boundary GAME-ADR-0002 accepts as living outside Session Runtime, owning no authoritative Session truth of its own. It is a top-level package, a sibling of `game/`, `api/`, `identity/` - not nested inside any of them (`docs/projects/active/session-runtime-v1/works/WORK-0005-thin-live-coordinator.md`).
 
 It owns:
 
@@ -9,6 +9,8 @@ It owns:
 - Translating a decoded client command into a call against the `SessionRuntime` port it depends on, and fanning out the `Event`s a committed call produces to every currently-bound recipient connection (`Coordinator.Start`/`AnswerInteraction`).
 
 It owns no database handle, no transaction, and no `game` business logic. `Create` and `Join` are forwarded directly to `SessionRuntime`; neither call itself touches the connection registry (`Join`'s own signature takes no `Conn`). `Create` happens before any Participant or connection exists. `Join`'s caller (`api/session`) does pair it with a connection in practice - it calls `Join`, and only once that succeeds does it upgrade the client's connection and call `Bind` separately - but that sequencing is the transport layer's responsibility, not something `Coordinator.Join` does or assumes on its own.
+
+**Known gap (tracked as a Blocker on WORK-0005, not yet fixed)**: `game/README.md`'s accepted architecture states host and Participant are independent - a host is not automatically a gameplay Participant. Today, the only way to obtain a bound live connection at all is `GET /ws`, which unconditionally calls `Join` first - so a host must become an active roster Participant (counted against `playersMax`) merely to obtain a connection through which to send `Start`. This currently contradicts the accepted architecture; see `docs/projects/active/session-runtime-v1/works/WORK-0005-thin-live-coordinator.md`'s Blockers section and `docs/projects/active/session-runtime-v1/PROJECT.md`.
 
 ## The dependency-inversion boundary
 
@@ -42,12 +44,12 @@ go list -deps ./game/...          # must contain neither play nor api
 
 A client is never told that some internal/domain fact happened as its own event - only three shapes of message ever cross the live-transport boundary: a **Question** opening/closing, a **Presentation** (a mounted UI component with its data) activating/updating/being removed, and an **Effect** (a presentation-only animation/sound). If some other fact matters to a client, it is because the backend already decided it changes what that client's UI shows - which means it must manifest as a Presentation update or an Effect addressed to that client, never as a raw "an interaction was answered" or "a turn committed" notification. This governs every `Output` this Coordinator is ever extended to fan out, not only the ones already wired (`docs/work/active/WORK-0006-broaden-live-fanout-effects-presentations.md`).
 
-A session-wide fact that is not about any one recipient's UI state at all - for example, the whole Session ending - does not fit this model and is not forced into it as a fourth `Event` kind; it uses its own broadcast-to-everyone-bound mechanism instead (`docs/work/active/WORK-0007-session-termination-live-notification.md`), separate from `Event`/`Deliver`'s per-recipient contract.
+A session-wide fact that is not about any one recipient's UI state at all - for example, the whole Session ending - does not fit this model and is not forced into it as a fourth `Event` kind; it uses its own broadcast-to-everyone-bound mechanism instead (`docs/projects/active/session-runtime-v1/works/WORK-0007-session-termination-live-notification.md`), separate from `Event`/`Deliver`'s per-recipient contract.
 
 ## Delivery is best-effort, after commit (GAME-ADR-0020)
 
-`Coordinator.Start`/`AnswerInteraction` call `SessionRuntime` first; only once that call has returned successfully do they fan its `Event`s out to bound connections. A `Conn.Deliver` failure is logged and never retried, queued, or fed back into Session Runtime - it never reopens, rolls back, or reinterprets the already-committed call that produced the `Event`. A recipient with no bound connection simply receives nothing; there is no resync/replay in this slice (Slice 7).
+`Coordinator.Start`/`AnswerInteraction` call `SessionRuntime` first; only once that call has returned successfully do they fan its `Event`s out to bound connections. A `Conn.Deliver` failure is logged and never retried, queued, or fed back into Session Runtime - it never reopens, rolls back, or reinterprets the already-committed call that produced the `Event`. A recipient with no bound connection simply receives nothing; there is no resync/replay yet (planned in `docs/projects/active/session-runtime-v1/works/WORK-0015-disconnect-reconnect-full-resync.md`).
 
-## What this slice deliberately does not do
+## What this package deliberately does not do yet
 
-Disconnect grace/debounce, semantic presence, timer scheduling/reconciliation, an inactivity reaper, full process-loss recovery, and advanced reconnect semantics are all explicitly deferred to Slices 5-8. `Coordinator.Bind`'s rebind-replaces-outright behavior is this slice's entire "disconnect" story.
+Disconnect grace/debounce, semantic presence, timer scheduling/reconciliation, an inactivity reaper, full process-loss recovery, and advanced reconnect semantics are all explicitly deferred to future WORK under `docs/projects/active/session-runtime-v1/` (see `PROJECT.md`). `Coordinator.Bind`'s rebind-replaces-outright behavior is the entire "disconnect" story today.

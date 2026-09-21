@@ -10,7 +10,7 @@ Related decisions:
 - GAME-ADR-0020 (post-commit client delivery semantics, best-effort, no outbox)
 
 Canonical context:
-- `docs/work/active/WORK-0005-thin-live-coordinator.md` (Blocker 4's resolved scope: only `OpenQuestionOutput`/`CloseQuestionOutput` are translated today; also the origin of the "`Manager`'s method signatures/internal behavior do not change" constraint this WORK's Blocker 1 explicitly revises)
+- `docs/projects/active/session-runtime-v1/works/WORK-0005-thin-live-coordinator.md` (Blocker 4's resolved scope: only `OpenQuestionOutput`/`CloseQuestionOutput` are translated today; also the origin of the "`Manager`'s method signatures/internal behavior do not change" constraint this WORK's Blocker 1 explicitly revises)
 - `play/README.md`, `api/README.md` (current Coordinator/transport shape this WORK extends, not replaces)
 - `game/language/v1/engine/output.go` (`EmitEffectOutput`, `ActivatePresentationOutput`, `UpdatePresentationOutput`, `RemovePresentationOutput` field definitions)
 - `game/language/v1/engine/internal/runtime/presentation.go` (`deriveActivePresentations`/`diffPresentations` - how the engine decides Activate vs. Update vs. Remove per commit; also why a future resync capability needs none of this WORK's own persistence - see Context)
@@ -34,6 +34,10 @@ Only three shapes of message ever cross the live-transport boundary to a client:
 
 This also removes the concern raised in this WORK's original Blocker 1 about a future resync (Slice 7) needing "currently active Presentation state": `deriveActivePresentations` (`game/language/v1/engine/internal/runtime/presentation.go`) is a pure function of `(Program, the current WorkflowInstance)` - the *current* Session Snapshot already contains everything needed to recompute "what's currently mounted for this player" from scratch, on demand, exactly when a resync capability needs it. There is nothing to keep in sync with a separate table, because nothing needs to be kept - resync recomputes, it does not replay history.
 
+### Correlation note (added 2026-09-20, migration reconciliation - no scope change)
+
+Game Language's `AnswerQuestionAction` carries no question-slot identity of its own (it relies entirely on the mounted presentation/question context to identify which open interaction it answers). This is already correctly resolved today, by WORK-0005/WORK-0004, not by this WORK: Session Runtime persists each opened interaction as its own `session_interactions` row (keyed by the engine's own `(EnginePath, EngineSlot)` identity, GAME-ADR-0007), and the live wire protocol already carries that row's opaque ID as routing/correlation context for an answer (`api/session/wire.go`'s `inboundMessage.InteractionID`, part of WORK-0005). An `AnswerQuestion` action from a rendered QuestionPresentation therefore already resolves unambiguously to the intended open Interaction without exposing internal engine slot/path identities. This WORK adds no new correlation mechanism and does not need one - it is recorded here only so the requirement is visibly confirmed satisfied, not silently unaddressed.
+
 ### Replay is a separate, later concern - but this WORK closes the one real gap in its way
 
 A human question during this WORK's own design confirmed engine execution is fully deterministic given `(compiled Program, starting Snapshot, driving Signal sequence)` - no wall-clock, no OS randomness anywhere in `game/language/v1/engine`. That means a hypothetical future "replay a Session to watch how it played out" feature genuinely does not need Presentations/Effects persisted at all - they are mechanically re-derivable by replaying the durably-captured inputs through the same compiled Program. What such a feature *would* need, and what is not captured today: the one-time `Seed` drawn at Start (`step_start.go`'s `drawSeed()`) is never written to any column - it only survives folded into the post-Turn-1 `Snapshot.Random`, not recoverably. This WORK persists that one value (a single column, written once, at Start) as a small, low-risk addition - not because this WORK needs it for live delivery, but because "make replay theoretically possible" is a stated goal and this is the one concrete hole standing in its way. Whether to eventually stop persisting full per-Turn Snapshots (since they too are re-derivable from inputs alone) is a separate, larger, explicitly deferred idea - see `docs/product/IDEAS.md -> Minimize Persisted RuntimeTurn History`.
@@ -49,7 +53,7 @@ A human question during this WORK's own design confirmed engine execution is ful
 
 ### Out of Scope
 
-- `WorkflowCompletedOutput` - picked up by `docs/work/active/WORK-0007-session-termination-live-notification.md` instead (broadened to cover natural game completion, not only fatal failure), since a human-confirmed follow-up decided the root workflow completing is the deterministic "game over" signal and belongs with that WORK's termination-notification mechanism, not this one's Output-translation mechanism.
+- `WorkflowCompletedOutput` - picked up by `docs/projects/active/session-runtime-v1/works/WORK-0007-session-termination-live-notification.md` instead (broadened to cover natural game completion, not only fatal failure), since a human-confirmed follow-up decided the root workflow completing is the deterministic "game over" signal and belongs with that WORK's termination-notification mechanism, not this one's Output-translation mechanism.
 - `ScheduleTimerOutput`/`CancelTimerOutput` - Slice 5's own scope, unaffected by this WORK.
 - Any change to delivery reliability/guarantees - GAME-ADR-0020's best-effort, no-outbox, no-replay rule already governs these Outputs exactly as it governs Open/CloseQuestion today.
 - Building an actual replay feature - only the one persistence gap (`Seed`) blocking a future one is closed here.
@@ -76,7 +80,7 @@ Local implementation choices (exact wire message names/shapes, exact new return-
 
 - `game/CURRENT_STATE.md`, `game/docs/FLOWS.md` - describe the broadened fan-out and the wire-protocol design principle once implemented, alongside WORK-0005's existing Live Transport flow section.
 - `play/README.md` - document the "Question/Presentation/Effect only" wire-protocol principle, and extend the `Event`/`EventKind` description.
-- `docs/ai/workspaces/active/session-runtime-v1/PLAN.md` - Slice 11 update alongside this WORK's revision.
+- `docs/projects/active/session-runtime-v1/PROJECT.md` - Slice 11 update alongside this WORK's revision.
 
 ## Completion Record
 

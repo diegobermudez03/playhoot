@@ -1,3 +1,5 @@
+> **SUPERSEDED, 2026-09-20 — HISTORICAL RECORD ONLY.** This checkpoint is stale: WORK-0005 subsequently moved DRAFT -> READY -> IMPLEMENTING the same day (all seven Blockers resolved, implementation complete, verified against real Postgres) - see `../works/WORK-0005-thin-live-coordinator.md`'s own Blockers/Completion Record for the authoritative current state. Kept only as a historical record of the Blocker 1 refinement decision it documents (still accurately recorded in WORK-0005 itself). For current pending checkpoints, see `../internal/HUMAN_REVIEW.md`.
+
 # Slice 4 — Thin Live Coordinator / WebSocket: DRAFT (Blocker 1 refined)
 
 Process: Feature Development (Slice 4 of `session-runtime-v1`; architecture is CLOSED, the broader initiative remains governed by `PLAN.md`)

@@ -21,7 +21,7 @@ Canonical context:
 - `game/README.md` (Session Runtime Lobby Lifecycle Contract - Start; RUNNING Mutation Serialization; Turn And Persistence Model; Failure Classification And Diagnostic Persistence; Terminal Cleanup)
 - `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md` (Runtime History Tables ER diagram, Turn/Interaction/Timer worked example)
 - `game/language/v1/engine/LOGICAL_CONTRACT.md`, `game/language/v1/engine/engineservice/{compile.go,runtime.go,codec.go}` (Compile, NewSnapshot, Step, EncodeSnapshot)
-- `docs/work/completed/WORK-0001-session-lobby-foundation.md` (the Manager/repo/sessionlock/idempotency pattern this WORK extends, not replaces)
+- `docs/projects/active/session-runtime-v1/works/WORK-0001-session-lobby-foundation.md` (the Manager/repo/sessionlock/idempotency pattern this WORK extends, not replaces)
 - `docs/engineering/standards/{domain-logic-placement.md,repositories.md,error-handling.md,idempotency.md,data-integrity.md,function-signatures.md,testing.md}`
 
 ## Outcome
@@ -169,7 +169,7 @@ A defensive `players.max` re-check (mirroring Join's) is included for robustness
 ### Intentionally Unchanged
 
 - `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md` itself (accepted future-design record; already matches what this WORK implements).
-- `docs/work/completed/WORK-0001-session-lobby-foundation.md` (completed work, historical).
+- `docs/projects/active/session-runtime-v1/works/WORK-0001-session-lobby-foundation.md` (completed work, historical).
 
 ## Blockers
 
@@ -184,7 +184,7 @@ Local implementation choices (engine `UserID` representation, exact serialized `
 
 ## Completion Record
 
-Not yet DONE. Status transitioned DRAFT -> READY on 2026-09-19 per the human's resolution of all four Blockers above (see this file's Blockers section and `docs/ai/workspaces/active/session-runtime-v1/HUMAN_REVIEW.md`), then READY -> IMPLEMENTING the same day when implementation began.
+Not yet DONE. Status transitioned DRAFT -> READY on 2026-09-19 per the human's resolution of all four Blockers above (see this file's Blockers section and `docs/projects/active/session-runtime-v1/internal/LEGACY_HUMAN_REVIEW_2026-09-20.md`), then READY -> IMPLEMENTING the same day when implementation began.
 
 **Implementation pass (2026-09-19)**: Implemented per this WORK's Approved Design as revised by the Blocker resolutions (inline RuntimeTurn execution logic in `step_start.go`, no shared package). Added `Start`/`startSessionInTx`/`drainRuntimeTurn`/`terminalizeStartFatal`/`interpretExistingStartClaim` (`step_start.go`); `StartOutcome`/`StartResult` (`types.go`); `PhaseRunning`/`TerminalReasonRuntimeExecutionFailed`/`TerminalReasonRuntimeStateInvalid` (`session.go`); `startRepoAPI`, `operationStart`, and the `startRepo` field (`manager.go`); repository methods `SetSessionRunning`/`SetCurrentTurn` (`internal/repo/session.go`), `ListActiveParticipantsForRoster` (`internal/repo/participant.go`), and `CreateRuntimeTurn`/`CreateRuntimeStep` (new `internal/repo/runtime_turn.go`); migrations for `session_runtime_turns`/`session_runtime_steps` and `sessions.current_turn_id` (`game/session/internal/storage/migrations/2026091900000{0,1,2}_*.go`, registered in `migration.go`); `sessionlock.Session` gained a `CurrentTurnID *uint` field (`game/session/internal/sessionlock/lock.go`). Tests: `step_start_test.go` (`TestManagerStart`'s pre-transaction idempotency-key check; `TestDrainRuntimeTurn`'s five subtests proving the Step-draining/20-Step-bound logic in isolation - commits within bound, rejects an unhandled initial signal, fails on a first-transition `ExecutionError`, exceeds the bound, and commits exactly at the bound - using hand-assembled `engine.Program` fixtures bypassing the compiler, mirroring `engineservice`'s own test style); `step_start_integration_test.go` (`TestManagerStart_Integration`'s 8 subtests: successful Start with full Turn/Step/JoinCode-revocation assertions, non-host rejection, below-`players.min` rejection, lazy lobby-expiration, same-token replay of a successful Start, idempotency-conflict rejection, the fatal `RUNTIME_INIT_FAILED` path with replay-without-re-execution, and two concurrent Starts under different tokens producing exactly one RuntimeTurn). `testutil_test.go` gained `startableDefinition`/`nonStartableDefinition`/`stubStartPinnedGameReader` fixtures (a real compilable/executable Definition with the `players: list<user>` root parameter, distinct from the existing compile-only fixtures). `mocks_test.go` regenerated (`mockgen`) to add `MockstartRepoAPI`.
 

@@ -1,3 +1,7 @@
+> **SUPERSEDED, 2026-09-20 — HISTORICAL RECORD ONLY.** This file is the pre-migration "Slice"-numbered implementation plan for this initiative, kept only so the reasoning/dependency history it recorded is not lost. It is **not** current tracking. Current status, the WORK table, ordering, and completion criteria live in `../PROJECT.md`; individual WORK live under `../works/`. "Slice N" below has no current tracking meaning — see `docs/projects/README.md`. Do not update this file going forward.
+>
+> Slice-to-WORK cross-reference for historical navigation: Slice 1 = WORK-0001, Slice 2 = WORK-0003, Slice 3 = WORK-0004, Slice 4 = WORK-0005, Slice 5 = WORK-0012, Slice 6 = WORK-0014, Slice 7 = WORK-0015, Slice 8 = WORK-0016, Slice 9 = WORK-0013, Slice 10 = WORK-0017, Slice 11 = WORK-0006, Slice 12 = WORK-0007. (WORK-0002 was an out-of-band rename, never a numbered Slice.)
+
 # session-runtime-v1 — Implementation Plan
 
 Status: TEMPORARY / NON-CANONICAL / NON-AUTHORITATIVE. Initiative-level decomposition only. Does not own accepted architecture/domain/product truth, detailed implementation contracts, or WORK status/progress - see `AI_CONTEXT.md` for canonical-reference links and `docs/work/` for actual WORK once slices graduate into Feature Development.
