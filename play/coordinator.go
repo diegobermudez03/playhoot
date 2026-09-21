@@ -2,7 +2,7 @@ package play
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"sync"
 
 	"github.com/diegobermudez03/playhoot/logging"
@@ -144,6 +144,11 @@ func (c *Coordinator) AnswerInteraction(ctx context.Context, sessionUUID Session
 // Event. A Deliver failure on one connection is logged and never affects
 // any other connection, and never reopens/retries/reinterprets the
 // already-committed call that produced events.
+//
+// Deliver takes no ctx: it fans out to potentially many recipient
+// connections, not only the one whose request caused these events, so no
+// single request context could correctly own its log - a failure here is
+// logged standalone instead.
 func (c *Coordinator) Deliver(sessionUUID SessionUUID, events []Event) {
 	if len(events) == 0 {
 		return
@@ -163,7 +168,12 @@ func (c *Coordinator) Deliver(sessionUUID SessionUUID, events []Event) {
 			continue
 		}
 		if err := conn.Deliver(event); err != nil {
-			log.Printf("play: best-effort delivery failed: session=%s recipient=%s kind=%s: %v", sessionUUID, event.Recipient, event.Kind, err)
+			logging.LogStandalone(slog.Default(), []string{"delivery", "session"}, "play.Coordinator.DeliverFailed",
+				logging.Field("session_uuid", string(sessionUUID)),
+				logging.Field("recipient", string(event.Recipient)),
+				logging.Field("event_kind", string(event.Kind)),
+				logging.Field("error", err.Error()),
+			)
 		}
 	}
 }

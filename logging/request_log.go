@@ -145,6 +145,39 @@ func LogLoopFields(ctx context.Context, loopName string, fields ...logField) {
 	})
 }
 
+// LogStandalone emits one structured log line for a log that is not
+// caused by, and cannot be attributed to, any single request/connection
+// already tracked via Start/Step/LogFields/LogError - for example a
+// server-initiated push fanned out across multiple recipient connections,
+// or a goroutine with no owning request context. This is the Logging
+// Standard's documented "server-initiated push" gap, given a real,
+// package-native answer instead of a caller reaching for the standard
+// library's log package.
+//
+// tags are fixed, low-cardinality values identifying where in the system
+// the log came from (e.g. "websocket", "session") - a standalone log
+// already sits outside this package's normal per-request correlation, so
+// tags are what make it possible to filter/find in aggregate instead of
+// disappearing into an unstructured stream. At least one tag is required;
+// a call with none logs "untagged" rather than silently dropping the tag
+// requirement, so a missing tag is visible in the log stream itself
+// instead of unnoticed.
+func LogStandalone(logger *slog.Logger, tags []string, message string, fields ...logField) {
+	if logger == nil {
+		return
+	}
+	if len(tags) == 0 {
+		tags = []string{"untagged"}
+	}
+
+	args := make([]any, 0, 2+len(fields)*2)
+	args = append(args, "tags", tags)
+	for _, field := range fields {
+		args = append(args, field.Key, field.Value)
+	}
+	logger.InfoContext(context.Background(), message, args...)
+}
+
 func requestLogFromContext(ctx context.Context) (*RequestLog, bool) {
 	if ctx == nil {
 		return nil, false

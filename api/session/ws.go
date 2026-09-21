@@ -3,7 +3,6 @@ package session
 import (
 	"context"
 	"errors"
-	"log"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -99,10 +98,17 @@ func (c *wsConn) close() {
 
 // writePump drains send and writes each message to the socket, until send
 // is closed. The one goroutine ever allowed to call conn.WriteJSON.
+//
+// This goroutine has no owning request context - it drains sends that can
+// originate from another connection's Coordinator.Deliver call as easily
+// as from this connection's own read pump - so a write failure is logged
+// standalone rather than through the per-request logging.Start/Step chain.
 func (c *wsConn) writePump() {
 	for msg := range c.send {
 		if err := c.conn.WriteJSON(msg); err != nil {
-			log.Printf("api/session: writing WS message: %v", err)
+			logging.LogStandalone(slog.Default(), []string{"websocket", "session"}, "api.session.WSWriteFailed",
+				logging.Field("error", err.Error()),
+			)
 			return
 		}
 	}

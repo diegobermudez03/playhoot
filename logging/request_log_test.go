@@ -149,6 +149,46 @@ func TestFinishRequestLogWritesSingleStructuredLog(t *testing.T) {
 	}
 }
 
+func TestLogStandaloneWritesTaggedStructuredLog(t *testing.T) {
+	var output bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&output, &slog.HandlerOptions{}))
+
+	LogStandalone(logger, []string{"websocket", "session"}, "api.session.WSWriteFailed",
+		logField{Key: "error", Value: "write: broken pipe"},
+	)
+
+	var logged map[string]any
+	if err := json.Unmarshal(output.Bytes(), &logged); err != nil {
+		t.Fatalf("decode JSON log %q: %v", output.String(), err)
+	}
+	assertJSONList(t, logged["tags"], []string{"websocket", "session"})
+	if logged["error"] != "write: broken pipe" {
+		t.Fatalf("error = %#v, want %q", logged["error"], "write: broken pipe")
+	}
+	if logged["msg"] != "api.session.WSWriteFailed" {
+		t.Fatalf("msg = %#v, want api.session.WSWriteFailed", logged["msg"])
+	}
+}
+
+func TestLogStandaloneDefaultsMissingTags(t *testing.T) {
+	var output bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&output, &slog.HandlerOptions{}))
+
+	LogStandalone(logger, nil, "no tags given")
+
+	var logged map[string]any
+	if err := json.Unmarshal(output.Bytes(), &logged); err != nil {
+		t.Fatalf("decode JSON log %q: %v", output.String(), err)
+	}
+	assertJSONList(t, logged["tags"], []string{"untagged"})
+}
+
+func TestLogStandaloneNoopWhenLoggerNil(t *testing.T) {
+	// Must not panic - the same "never blow up the caller" contract every
+	// other helper in this file gives a caller with an unusable context.
+	LogStandalone(nil, []string{"session"}, "ignored")
+}
+
 func TestRequestLogSupportsConcurrentWrites(t *testing.T) {
 	ctx := Start(context.Background())
 
