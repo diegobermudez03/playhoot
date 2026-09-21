@@ -18,7 +18,7 @@ Implement the complete Session backend required to execute the supported Game De
 
 ## Current Work
 
-- **WORK-0005** (Thin Live Coordinator / WebSocket) - IMPLEMENTING. Implementation is complete and verified against real Postgres; independent review has not yet happened. A newly discovered Blocker (host/Participant drift against already-accepted architecture - see WORK-0005's Blockers) must also be resolved before this can reach DONE.
+- **WORK-0005** (Thin Live Coordinator / WebSocket) - DRAFT (returned from IMPLEMENTING 2026-09-20; see WORK-0005's "Status Correction" and "Host Connection Design Revision" sections). The Create/Join/Start/AnswerInteraction/Deliver path implemented so far remains intact and verified against real Postgres, but the live-connection-establishment path for the Session host requires a material redesign (Blocker 8: host/Participant drift against already-accepted architecture) before this WORK can return to READY. A concrete DRAFT proposal now exists and awaits human approval; independent review of the whole WORK (including the already-implemented parts, never yet reviewed) is deferred until that redesign is implemented.
 - **WORK-0006** (Broaden Live Fan-Out: Effects + Presentations) - DRAFT. Both Blockers are resolved; awaiting human READY authorization.
 - **WORK-0007** (Session Termination Live Notification) - DRAFT. Direction is human-confirmed; Blockers 1-4 (exact mechanism) remain unresolved.
 
@@ -30,7 +30,7 @@ Implement the complete Session backend required to execute the supported Game De
 | 2 | WORK-0003 — Start + First RuntimeTurn | DONE |
 | 3 | WORK-0004 — Interaction Response Processing | DONE |
 | — | WORK-0002 — Rename `game/game` → `game/management` (out-of-band structural rename, not sequenced) | DONE |
-| 4 | WORK-0005 — Thin Live Coordinator / WebSocket | IMPLEMENTING |
+| 4 | WORK-0005 — Thin Live Coordinator / WebSocket | DRAFT |
 | 5 | WORK-0008 — Live Lobby / Session Bootstrap | PLANNED |
 | 6 | WORK-0009 — Client-Safe Game UI Manifest | PLANNED |
 | 7 | WORK-0006 — Broaden Live Fan-Out: Effects + Presentations | DRAFT |
@@ -45,7 +45,7 @@ Implement the complete Session backend required to execute the supported Game De
 | 16 | WORK-0016 — Inactivity Expiration / Reaper | PLANNED |
 | 17 | WORK-0017 — Archival | PLANNED |
 
-18 WORK total: 4 DONE, 1 IMPLEMENTING, 2 DRAFT, 11 PLANNED.
+18 WORK total: 4 DONE, 0 IMPLEMENTING, 3 DRAFT, 11 PLANNED.
 
 ## Ordering / Dependencies
 
@@ -82,7 +82,7 @@ Required to run a Session frontend end-to-end against the supported Game Languag
 | UI effects | Engine-only; not yet fanned out | WORK-0006 (DRAFT) |
 | Client-safe UI/game definition | Does not exist | WORK-0009 (PLANNED) |
 | Per-viewer output | Partial (Question-only today) | WORK-0004 (question) + WORK-0006 (presentation, DRAFT) |
-| Live transport | Implemented, narrow; one open Blocker | WORK-0005 (IMPLEMENTING) |
+| Live transport | Implemented, narrow (Create/Join/Start/AnswerInteraction/Deliver); host-connection redesign proposed, awaiting human approval | WORK-0005 (DRAFT) |
 | Live lobby / bootstrap / roster / leave | Not implemented | WORK-0008 (PLANNED) |
 | Terminal notifications | Not implemented; two causes in design | WORK-0007 (DRAFT); reused by WORK-0011/0012/0016 |
 | Manual cancellation | Not implemented | WORK-0011 (PLANNED) |
@@ -104,7 +104,7 @@ These were found during this Project's completeness audit and reconciliation (20
 3. **WORK-0018's domain placement** - it is Game Language/compiler work (not Session Runtime application logic), tracked under this Project because it directly gates WORK-0015, the same treatment the original plan already gave Keyed Timers (WORK-0013). Confirm this is the right call rather than spinning up a separate Game Language initiative for it.
 4. **The recommended execution order above** is derived from actual code dependencies found during this audit, not merely inherited from the original plan (most notably: Keyed Timers now ordered before Disconnect/Reconnect, reversing the original order). It is a recommendation, not a commitment - nothing has been implemented against it yet.
 
-**Not a decision needing input, recorded here only for visibility**: WORK-0005's host/Participant Blocker (a host must not be required to become a Participant merely to connect and issue `Start`) is a required compliance fix against already-accepted architecture (`game/README.md`), not a new product/design question - see WORK-0005's Blocker 8.
+5. **WORK-0005's host/Participant Blocker (Blocker 8) now has a concrete DRAFT design proposal** (a distinct host-connect handshake, validated by a new read-only `SessionRuntime.ResolveHost` capability mirroring `Start`'s existing host check, bound into a structurally separate `play.Coordinator` registry slot from the participant registry) - see WORK-0005's "Host Connection Design Revision (2026-09-20, DRAFT PROPOSAL)" section for the full design. This remains a required compliance fix against already-accepted architecture (`game/README.md`), not a new product/design question, but the specific mechanism is a material design choice (new port method, new registry, new endpoint) that needs explicit human approval before WORK-0005 can return to READY - it is listed here, not left as mere "visibility," because that approval is the actual next required human action blocking this Project's WORK-0005 row.
 
 ## Completion Criteria
 
