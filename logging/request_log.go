@@ -21,12 +21,15 @@ const (
 
 type requestLogContextKey struct{}
 type traceIDContextKey struct{}
+type spanIDContextKey struct{}
 
 type RequestLog struct {
-	mu         sync.Mutex
-	started    time.Time
-	traceID    string
-	logActions []logAction
+	mu           sync.Mutex
+	started      time.Time
+	traceID      string
+	spanID       string
+	parentSpanID string
+	logActions   []logAction
 }
 
 type logAction struct {
@@ -69,25 +72,55 @@ func TraceID(ctx context.Context) (string, bool) {
 	return traceID, ok
 }
 
-// Start begins a new request log and returns the ctx it lives on. If ctx
-// already carries a trace ID (attached by an earlier Start call further up
-// this same causal chain, or by WithTraceID), that same trace ID is
-// reused; otherwise a fresh one is minted. This is what lets a long-lived
-// WebSocket connection's many separate per-message request logs - each
-// its own Start/FinishRequestLog pair - still share one trace ID with the
-// connection-level log that opened it, so they can all be correlated
-// later even though each is flushed as its own independent structured log
-// line.
+// SpanID returns the span ID of whichever request log most recently
+// Start-ed against ctx (or one of its ancestors), if any - the id a
+// nested Start call records as its own parent_span_id.
+func SpanID(ctx context.Context) (string, bool) {
+	spanID, ok := ctx.Value(spanIDContextKey{}).(string)
+	return spanID, ok
+}
+
+// Start begins a new request log and returns the ctx it lives on.
+//
+// If ctx already carries a trace ID (attached by an earlier Start call
+// further up this same causal chain, or by WithTraceID), that same trace
+// ID is reused; otherwise a fresh one is minted. This is what lets a
+// long-lived WebSocket connection's many separate per-message request
+// logs - each its own Start/FinishRequestLog pair - still share one trace
+// ID with the connection-level log that opened it, so they can all be
+// correlated later even though each is flushed as its own independent
+// structured log line.
+//
+// Start also always mints a fresh span ID for this specific call - unlike
+// the trace ID, the span ID is never reused, since it identifies this one
+// unit of work alone (this one message, this one connection-open event),
+// not the whole causal chain it belongs to. If ctx already carries a span
+// ID from an enclosing Start call, that ID becomes this new span's
+// parent_span_id, forming a parent/child tree of spans under one shared
+// trace: a WebSocket connection's own open event is the root span, and
+// the join handshake and every individual message are its direct
+// children, each identifiable on its own (by span_id) while still
+// traceable back to the connection that carried them (by trace_id and
+// parent_span_id). A future call this span makes to another
+// separately-deployed service would carry this same trace ID plus this
+// span's own ID as that call's parent_span_id, extending the same tree
+// across a process boundary without any further change here.
 func Start(ctx context.Context) context.Context {
 	traceID, ok := TraceID(ctx)
 	if !ok {
 		traceID = uuid.NewString()
-		ctx = WithTraceID(ctx, traceID)
 	}
+	parentSpanID, _ := SpanID(ctx)
+	spanID := uuid.NewString()
+
+	ctx = WithTraceID(ctx, traceID)
+	ctx = context.WithValue(ctx, spanIDContextKey{}, spanID)
 
 	requestLog := &RequestLog{
-		started: time.Now(),
-		traceID: traceID,
+		started:      time.Now(),
+		traceID:      traceID,
+		spanID:       spanID,
+		parentSpanID: parentSpanID,
 	}
 
 	return context.WithValue(ctx, requestLogContextKey{}, requestLog)
@@ -242,7 +275,12 @@ func (l *RequestLog) SlogArgs() []any {
 	}
 	ended := time.Now()
 	root.closeOpenScopes(ended)
-	return append([]any{"trace_id", l.traceID}, root.slogArgs(ended)...)
+
+	args := []any{"trace_id", l.traceID, "span_id", l.spanID}
+	if l.parentSpanID != "" {
+		args = append(args, "parent_span_id", l.parentSpanID)
+	}
+	return append(args, root.slogArgs(ended)...)
 }
 
 type requestLogScope struct {

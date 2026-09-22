@@ -59,23 +59,18 @@ func NewServer() *Server {
 	}
 	for _, group := range groups {
 		for _, route := range group.RESTRoutes() {
-			mux.HandleFunc(route.Pattern, chain(withObservability(restObservability(route.Pattern), route.Middlewares), route.Handler))
+			// Observability goes first (outermost), so it sees every
+			// request/response regardless of what a route-specific
+			// middleware does to it.
+			mws := append([]Middleware{restObservability(route.Pattern)}, route.Middlewares...)
+			mux.HandleFunc(route.Pattern, chain(mws, route.Handler))
 		}
 		for _, route := range group.WebSocketRoutes() {
-			mux.HandleFunc(route.Pattern, chain(withObservability(wsObservability(route.Pattern), route.Middlewares), route.Handler))
+			mws := append([]Middleware{wsObservability(route.Pattern)}, route.Middlewares...)
+			mux.HandleFunc(route.Pattern, chain(mws, route.Handler))
 		}
 	}
 	return &Server{mux: mux}
-}
-
-// withObservability prepends observability (always outermost, so it sees
-// every request/response regardless of what a route-specific middleware
-// does to it) to route's own declared middlewares.
-func withObservability(observability Middleware, routeMiddlewares []Middleware) []Middleware {
-	mws := make([]Middleware, 0, len(routeMiddlewares)+1)
-	mws = append(mws, observability)
-	mws = append(mws, routeMiddlewares...)
-	return mws
 }
 
 // restObservability is the one place an ordinary request/response

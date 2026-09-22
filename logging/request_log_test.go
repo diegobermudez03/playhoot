@@ -28,6 +28,7 @@ func TestRequestLogSlogArgsBuildsOrderedStructuredScopes(t *testing.T) {
 
 	assertArgKeys(t, args, []string{
 		"trace_id",
+		"span_id",
 		"started_at",
 		"ended_at",
 		"duration_ms",
@@ -68,6 +69,7 @@ func TestRequestLogSlogArgsBuildsNestedStepsAndLoopLists(t *testing.T) {
 	args := requestLogFromContextForTest(t, ctx).SlogArgs()
 	assertArgKeys(t, args, []string{
 		"trace_id",
+		"span_id",
 		"started_at",
 		"ended_at",
 		"duration_ms",
@@ -203,6 +205,65 @@ func TestNestedStartCallsShareOneTraceID(t *testing.T) {
 	if msg1Log == msg2Log {
 		t.Fatal("two nested Start calls produced the same *RequestLog instance, want independent ones")
 	}
+}
+
+func TestStartMintsFreshSpanIDEveryCall(t *testing.T) {
+	ctx1 := Start(context.Background())
+	ctx2 := Start(context.Background())
+
+	id1, ok := SpanID(ctx1)
+	if !ok || id1 == "" {
+		t.Fatalf("SpanID(ctx1) = %q, %v, want a non-empty id", id1, ok)
+	}
+	id2, ok := SpanID(ctx2)
+	if !ok || id2 == "" {
+		t.Fatalf("SpanID(ctx2) = %q, %v, want a non-empty id", id2, ok)
+	}
+	if id1 == id2 {
+		t.Fatalf("two independent Start calls minted the same span id %q", id1)
+	}
+}
+
+func TestRootSpanHasNoParent(t *testing.T) {
+	ctx := Start(context.Background())
+
+	args := requestLogFromContextForTest(t, ctx).SlogArgs()
+	logged := renderJSONLog(t, args)
+	if _, present := logged["parent_span_id"]; present {
+		t.Fatalf("root span logged a parent_span_id = %#v, want none", logged["parent_span_id"])
+	}
+}
+
+func TestNestedStartCallsFormParentChildSpans(t *testing.T) {
+	// Mirrors a WebSocket connection: the connection-level Start call's
+	// own span becomes the parent of every later per-message Start call
+	// derived from its context - each message is independently
+	// identifiable by its own span id, while still traceable back to the
+	// connection that carried it via parent_span_id (and via trace_id,
+	// shared by all of them - see TestNestedStartCallsShareOneTraceID).
+	connCtx := Start(context.Background())
+	connSpanID, _ := SpanID(connCtx)
+
+	msgCtx := Start(connCtx)
+	msgSpanID, _ := SpanID(msgCtx)
+
+	if msgSpanID == connSpanID {
+		t.Fatalf("message span id equals connection span id %q, want a distinct child span", connSpanID)
+	}
+
+	msgArgs := requestLogFromContextForTest(t, msgCtx).SlogArgs()
+	assertSlogArg(t, msgArgs, "span_id", msgSpanID)
+	assertSlogArg(t, msgArgs, "parent_span_id", connSpanID)
+
+	// A second message nested the same way is its own sibling span - a
+	// distinct span id, the same parent, the same trace.
+	msg2Ctx := Start(connCtx)
+	msg2SpanID, _ := SpanID(msg2Ctx)
+	if msg2SpanID == msgSpanID {
+		t.Fatal("two sibling messages minted the same span id, want distinct ones")
+	}
+	msg2Args := requestLogFromContextForTest(t, msg2Ctx).SlogArgs()
+	assertSlogArg(t, msg2Args, "parent_span_id", connSpanID)
 }
 
 func TestLogStandaloneWritesTaggedStructuredLog(t *testing.T) {
