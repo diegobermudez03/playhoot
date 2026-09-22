@@ -12,7 +12,7 @@ Related decisions:
 Canonical context:
 - `game/docs/decisions/GAME-ADR-0025-role-aware-live-connections.md` (the accepted model this WORK implements)
 - `game/README.md` (Session Runtime Actor and Lifecycle Model - "Host and Participant are independent concepts", the invariant this WORK's transport finally complies with)
-- `docs/projects/active/session-runtime-v1/works/WORK-0005-thin-live-coordinator.md` ("Host Connection Design Revision" section - the original proposal this WORK supersedes and formally owns going forward; WORK-0005's already-implemented Create/Join/Start/AnswerInteraction/Deliver path and participant registry are unchanged foundations this WORK builds on, not replaced)
+- `docs/projects/active/session-runtime-v1/works/WORK-0005-thin-live-coordinator.md` ("Host Connection Design Revision" section - the original proposal this WORK supersedes and formally owns going forward; WORK-0005's already-implemented Create/Join/AnswerInteraction/Deliver path and participant registry are unchanged foundations this WORK builds on, not replaced. WORK-0005's own Blocker 10 (2026-09-21) removed `Start` from the live wire entirely rather than leave it on the Join-coupled connection this WORK's own Blocker 8 already knew was wrong - so this WORK is not replacing a working `Start`-over-wire path, it is adding the first one, on the `ADMIN` connection it builds.)
 - `play/coordinator.go`, `play/sessionruntime/` (the existing Coordinator/SessionRuntime-port implementation this WORK extends)
 
 ## Outcome

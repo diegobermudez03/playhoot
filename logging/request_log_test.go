@@ -27,6 +27,7 @@ func TestRequestLogSlogArgsBuildsOrderedStructuredScopes(t *testing.T) {
 	args := requestLogFromContextForTest(t, ctx).SlogArgs()
 
 	assertArgKeys(t, args, []string{
+		"trace_id",
 		"started_at",
 		"ended_at",
 		"duration_ms",
@@ -66,6 +67,7 @@ func TestRequestLogSlogArgsBuildsNestedStepsAndLoopLists(t *testing.T) {
 
 	args := requestLogFromContextForTest(t, ctx).SlogArgs()
 	assertArgKeys(t, args, []string{
+		"trace_id",
 		"started_at",
 		"ended_at",
 		"duration_ms",
@@ -146,6 +148,60 @@ func TestFinishRequestLogWritesSingleStructuredLog(t *testing.T) {
 		if !strings.Contains(logged, want) {
 			t.Fatalf("log output %q does not contain %q", logged, want)
 		}
+	}
+}
+
+func TestStartMintsFreshTraceIDWhenNoneExists(t *testing.T) {
+	ctx1 := Start(context.Background())
+	ctx2 := Start(context.Background())
+
+	id1, ok := TraceID(ctx1)
+	if !ok || id1 == "" {
+		t.Fatalf("TraceID(ctx1) = %q, %v, want a non-empty id", id1, ok)
+	}
+	id2, ok := TraceID(ctx2)
+	if !ok || id2 == "" {
+		t.Fatalf("TraceID(ctx2) = %q, %v, want a non-empty id", id2, ok)
+	}
+	if id1 == id2 {
+		t.Fatalf("two independent Start calls minted the same trace id %q", id1)
+	}
+}
+
+func TestStartReusesTraceIDAlreadyOnContext(t *testing.T) {
+	seeded := WithTraceID(context.Background(), "trace-123")
+	ctx := Start(seeded)
+
+	got, ok := TraceID(ctx)
+	if !ok || got != "trace-123" {
+		t.Fatalf("TraceID(ctx) = %q, %v, want trace-123, true", got, ok)
+	}
+
+	args := requestLogFromContextForTest(t, ctx).SlogArgs()
+	assertSlogArg(t, args, "trace_id", "trace-123")
+}
+
+func TestNestedStartCallsShareOneTraceID(t *testing.T) {
+	// Mirrors a long-lived WebSocket connection: the connection-level
+	// Start call mints a trace id, and every later per-message Start call
+	// against a context derived from it reuses that same id, even though
+	// each produces its own independent RequestLog.
+	connCtx := Start(context.Background())
+	connTraceID, _ := TraceID(connCtx)
+
+	msg1Ctx := Start(connCtx)
+	msg2Ctx := Start(connCtx)
+
+	msg1TraceID, _ := TraceID(msg1Ctx)
+	msg2TraceID, _ := TraceID(msg2Ctx)
+	if msg1TraceID != connTraceID || msg2TraceID != connTraceID {
+		t.Fatalf("message trace ids = %q, %q, want both to equal connection trace id %q", msg1TraceID, msg2TraceID, connTraceID)
+	}
+
+	msg1Log := requestLogFromContextForTest(t, msg1Ctx)
+	msg2Log := requestLogFromContextForTest(t, msg2Ctx)
+	if msg1Log == msg2Log {
+		t.Fatal("two nested Start calls produced the same *RequestLog instance, want independent ones")
 	}
 }
 

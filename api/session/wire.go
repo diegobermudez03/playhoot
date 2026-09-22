@@ -30,10 +30,18 @@ type joinDeclineResponse struct {
 
 // Inbound WS message types - the client-to-server command envelope's
 // "type" discriminator. Joining is the WS handshake itself (GET /ws), not
-// a message ridden over an already-open connection; Start and
-// AnswerInteraction are the only two.
+// a message ridden over an already-open connection.
+//
+// Start is deliberately not a wire message here: this connection only
+// exists once a client has joined and become a roster Participant, but
+// Start is a host-only operation - a host who has not otherwise joined
+// should still be able to issue it, and a host who has joined issuing it
+// should not be conflated with their Participant identity. Riding this
+// connection would force the host through Join merely to obtain a
+// connection at all. Until a connection kind exists that does not require
+// joining, Start stays reachable only at the Go-API level
+// (sessionlifecycle.Manager/play.Coordinator), never over this wire.
 const (
-	inboundTypeStart             = "START"
 	inboundTypeAnswerInteraction = "ANSWER_INTERACTION"
 )
 
@@ -43,17 +51,15 @@ const (
 // exactly like every other transport-level payload's decoding being the
 // caller's responsibility.
 type inboundMessage struct {
-	Type           string          `json:"type"`
-	IdempotencyKey string          `json:"idempotency_key,omitempty"`
-	InteractionID  string          `json:"interaction_id,omitempty"`
-	Answer         json.RawMessage `json:"answer,omitempty"`
+	Type          string          `json:"type"`
+	InteractionID string          `json:"interaction_id,omitempty"`
+	Answer        json.RawMessage `json:"answer,omitempty"`
 }
 
 // Outbound WS message types - the server-to-client envelope's "type"
 // discriminator.
 const (
 	outboundTypeJoinResult        = "JOIN_RESULT"
-	outboundTypeStartResult       = "START_RESULT"
 	outboundTypeAnswerResult      = "ANSWER_RESULT"
 	outboundTypeInteractionOpened = "INTERACTION_OPENED"
 	outboundTypeInteractionClosed = "INTERACTION_CLOSED"
@@ -61,8 +67,8 @@ const (
 )
 
 // outboundMessage is the WS server-to-client envelope, covering both a
-// direct command result (JoinResult/StartResult/AnswerResult) and an
-// asynchronously fanned-out Event (InteractionOpened/InteractionClosed) -
+// direct command result (JoinResult/AnswerResult) and an asynchronously
+// fanned-out Event (InteractionOpened/InteractionClosed) -
 // the client distinguishes them by Type alone, not by which request they
 // answer. SessionUUID is only ever set on JoinResult, for a client that
 // joined by join_code alone and does not already know it.

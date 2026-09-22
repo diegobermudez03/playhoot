@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 const (
@@ -18,10 +20,12 @@ const (
 )
 
 type requestLogContextKey struct{}
+type traceIDContextKey struct{}
 
 type RequestLog struct {
 	mu         sync.Mutex
 	started    time.Time
+	traceID    string
 	logActions []logAction
 }
 
@@ -48,9 +52,42 @@ func Field(key string, value any) logField {
 	}
 }
 
+// WithTraceID attaches traceID to ctx so that a later Start call - anywhere
+// in this same causal chain, including a value never seen by this package
+// before - reuses it instead of minting a new one. This is the mechanism a
+// future inbound trace header (once this system splits into multiple
+// deployed services) would use to make an incoming request's trace ID
+// this process's own; today, Start's own trace-ID-per-connection reuse
+// (see its doc comment) is this function's only caller.
+func WithTraceID(ctx context.Context, traceID string) context.Context {
+	return context.WithValue(ctx, traceIDContextKey{}, traceID)
+}
+
+// TraceID returns the trace ID already active on ctx, if any.
+func TraceID(ctx context.Context) (string, bool) {
+	traceID, ok := ctx.Value(traceIDContextKey{}).(string)
+	return traceID, ok
+}
+
+// Start begins a new request log and returns the ctx it lives on. If ctx
+// already carries a trace ID (attached by an earlier Start call further up
+// this same causal chain, or by WithTraceID), that same trace ID is
+// reused; otherwise a fresh one is minted. This is what lets a long-lived
+// WebSocket connection's many separate per-message request logs - each
+// its own Start/FinishRequestLog pair - still share one trace ID with the
+// connection-level log that opened it, so they can all be correlated
+// later even though each is flushed as its own independent structured log
+// line.
 func Start(ctx context.Context) context.Context {
+	traceID, ok := TraceID(ctx)
+	if !ok {
+		traceID = uuid.NewString()
+		ctx = WithTraceID(ctx, traceID)
+	}
+
 	requestLog := &RequestLog{
 		started: time.Now(),
+		traceID: traceID,
 	}
 
 	return context.WithValue(ctx, requestLogContextKey{}, requestLog)
@@ -205,7 +242,7 @@ func (l *RequestLog) SlogArgs() []any {
 	}
 	ended := time.Now()
 	root.closeOpenScopes(ended)
-	return root.slogArgs(ended)
+	return append([]any{"trace_id", l.traceID}, root.slogArgs(ended)...)
 }
 
 type requestLogScope struct {

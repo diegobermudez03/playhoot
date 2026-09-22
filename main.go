@@ -52,7 +52,7 @@ func main() {
 		log.Fatalf("running PostgreSQL migrations: %v", err)
 	}
 
-	server := api.NewServer(db)
+	server := api.NewServer()
 
 	log.Printf("listening on :%s", envVars.HTTPPort)
 	if err := http.ListenAndServe(":"+envVars.HTTPPort, server.Routes()); err != nil {

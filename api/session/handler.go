@@ -1,48 +1,44 @@
-// Package session is the session workflow's route group: the HTTP/
-// WebSocket endpoints for Create, Join, Start, and AnswerInteraction, and
-// the fan-out delivered back over a live connection. It depends only on
-// play's exported API, never on any `game` package.
+// Package session is the session workflow's route group: currently an
+// HTTP/WebSocket transport skeleton only. It registers the same endpoint
+// shapes and keeps the same connection-upgrade mechanics already proven
+// out, but calls no domain package - there is nothing to call yet.
+//
+// This is deliberate, not an oversight: a prior pass built a stateful
+// coordinator here on top of Session Runtime output-handling that was
+// both incomplete and already known to change. Rather than keep building
+// on that foundation, this package was reduced back to its transport
+// plumbing until Session Runtime's own engine-Output handling is actually
+// complete, at which point a real dispatch layer is rebuilt on top of it
+// once, correctly.
 package session
 
 import (
-	"context"
-	"net/http"
-
-	"github.com/diegobermudez03/playhoot/play"
+	"github.com/diegobermudez03/playhoot/api/internal/routing"
 )
 
-// coordinatorAPI is the narrow play.Coordinator contract this package
-// depends on - every type it exposes is play-owned/primitive, never a
-// `game` type.
-type coordinatorAPI interface {
-	Create(ctx context.Context, gameUUID, hostUserUUID, idempotencyKey string) (play.CreatedSession, error)
-	Join(ctx context.Context, joinCode uint, userUUID, displayName, idempotencyKey string) (play.JoinResult, error)
-	Bind(sessionUUID play.SessionUUID, userUUID play.UserUUID, conn play.Conn) (unbind func())
-	Start(ctx context.Context, sessionUUID play.SessionUUID, userUUID play.UserUUID, idempotencyKey string) (play.StartOutcome, []play.Event, error)
-	AnswerInteraction(ctx context.Context, sessionUUID play.SessionUUID, interactionUUID play.InteractionUUID, userUUID play.UserUUID, answer []byte) (play.AnswerOutcome, []play.Event, error)
-	Deliver(sessionUUID play.SessionUUID, events []play.Event)
+// Handler exposes the session workflow's endpoints. It holds no
+// dependency today - handleCreateSession and handleWebSocket are
+// currently stubs (see http.go/ws.go).
+type Handler struct{}
+
+// NewHandler constructs a Handler.
+func NewHandler() *Handler {
+	return &Handler{}
 }
 
-// Handler exposes the session workflow's endpoints: Create as ordinary
-// HTTP request/response, and a WebSocket upgrade that performs Join and
-// binds the connection as one operation, then carries Start/
-// AnswerInteraction and their resulting fan-out for the rest of the
-// connection's life. Joining and connecting are deliberately not two
-// independently-failable client calls: a client that successfully
-// upgrades is, by construction, both an active Participant and a bound
-// live connection: never the first without the second.
-type Handler struct {
-	coord coordinatorAPI
+// RESTRoutes returns this group's ordinary request/response endpoints,
+// satisfying api.routeGroup. It never touches an http.ServeMux and never
+// starts its own request log - Server owns both (see api/server.go).
+func (h *Handler) RESTRoutes() []routing.Route {
+	return []routing.Route{
+		{Pattern: "POST /sessions", Handler: h.handleCreateSession},
+	}
 }
 
-// NewHandler constructs a Handler dispatching against coord.
-func NewHandler(coord coordinatorAPI) *Handler {
-	return &Handler{coord: coord}
-}
-
-// Register attaches every session endpoint to mux, satisfying
-// api.RouteGroup.
-func (h *Handler) Register(mux *http.ServeMux) {
-	mux.HandleFunc("POST /sessions", h.handleCreateSession)
-	mux.HandleFunc("GET /ws", h.handleWebSocket)
+// WebSocketRoutes returns this group's WebSocket endpoints, satisfying
+// api.routeGroup.
+func (h *Handler) WebSocketRoutes() []routing.Route {
+	return []routing.Route{
+		{Pattern: "GET /ws", Handler: h.handleWebSocket},
+	}
 }

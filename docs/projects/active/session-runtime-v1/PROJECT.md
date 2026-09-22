@@ -2,7 +2,7 @@
 
 Status: ACTIVE
 Created: 2026-09-20 (migrated from the earlier `docs/ai/workspaces/active/session-runtime-v1/` initiative workspace and its numbered-Slice `PLAN.md`, which together tracked this initiative from 2026-09-08)
-Last updated: 2026-09-20 (replay-first persistence and role-aware live connections reconciliation pass, same day - see "2026-09-20 Reconciliation Pass" below)
+Last updated: 2026-09-21 (inside-out sequencing restructuring - see "Restructuring (2026-09-21): Inside-Out Sequencing" below)
 
 ## Goal
 
@@ -16,13 +16,22 @@ Implement the complete Session backend required to execute the supported Game De
 - Multi-instance/distributed live-transport routing (Redis, sticky routing) - excluded from all of V1 by GAME-ADR-0002, not a gap.
 - Building an actual replay/rewatch feature - WORK-0019 only keeps replay theoretically possible (the durable replay-input model, per GAME-ADR-0024); no replay feature is built by this Project.
 
+## Restructuring (2026-09-21): Inside-Out Sequencing
+
+WORK-0005 built a stateful live-session Coordinator (`play`) and its bridge to `sessionlifecycle.Manager` (`play/sessionruntime`) before Session Runtime's own domain layer (`game/session`) could actually return the Game Language engine's `Output` values - `Manager.Start`/`AnswerInteraction` only ever persist and expose 2 of the engine's 9 committed `Output` variants (Open/CloseQuestion), and never return any of them to a caller as a Go value. `play/sessionruntime` worked around this by issuing its own raw SQL against Session Runtime's tables instead. WORK-0006 (still DRAFT, no code written) already designed the correct fix for the Presentation/Effect-shaped Outputs it covers - `Manager` additively returning them in memory - but it was never implemented before `play` shipped its own workaround. Continuing to build `play`'s connection-role/lobby/spectator/timer logic on top of that incomplete, already-known-to-change foundation would mean writing more stateful logic that a near-term WORK already knew it would have to rebuild.
+
+**Decision**: `play`/`play/sessionruntime` are removed (see WORK-0005's Blocker 11); WORK-0005 is reduced to an HTTP/WebSocket transport skeleton with no domain coupling. This Project's remaining WORK is resequenced into three explicit phases, inside-out: finish Session Runtime's own engine-Output handling first (a `game/session` domain concern), then rebuild the stateful live Coordinator (`play`) once, correctly, on top of it, then the transport layer that exposes it (`api`, largely co-implemented with each Phase 2 WORK). Nothing beyond WORK-0005 has any implemented code yet, so this resequencing is free - no completed or reviewed WORK is reopened.
+
+Several currently-DRAFT WORKs (0006, 0007, 0010, 0011, 0012) mix a Session-Runtime-domain concern with a `play`/`api` concern in one document. They are **not** split into separate files yet - each is annotated below with which phase its still-undesigned domain/play halves belong to; the actual split happens when each WORK is next drafted for real (just-in-time, matching this Project's existing practice - see e.g. WORK-0002's own historical "next just-in-time candidate" framing).
+
 ## Current Work
 
-- **WORK-0005** (Thin Live Coordinator / WebSocket) - IMPLEMENTING (returned from DRAFT 2026-09-20; see WORK-0005's "Status Correction (Part E Reconciliation, 2026-09-20)" section). The Create/Join/Start/AnswerInteraction/Deliver path implemented so far remains intact and verified against real Postgres. Blocker 8 (host/Participant drift) is no longer this WORK's own pending redesign - ownership transferred to WORK-0020, which owns implementing the actual fix. This WORK's own remaining gate to DONE is independent review of its already-implemented scope (never yet performed), which may proceed independently of WORK-0020's timeline.
-- **WORK-0006** (Broaden Live Fan-Out: Effects + Presentations) - DRAFT. Both Blockers are resolved; Start-`Seed` persistence removed from scope (moved to WORK-0019); awaiting human READY authorization.
-- **WORK-0007** (Session Termination Live Notification) - DRAFT. Direction is human-confirmed; Blockers 1-4 (exact mechanism) remain unresolved; broadcast scope now must reach both ADMIN and PARTICIPANT connections (depends on WORK-0020).
-- **WORK-0019** (Replay-First Session Runtime Persistence Migration) - DRAFT (new). Implements GAME-ADR-0024; Blockers 1-5 (durable Seed/RootParameters shape, `session_runtime_steps` disposition, per-cause durable representation, ephemeral-cache mechanism, migration sequencing) need human input before READY.
-- **WORK-0020** (Role-Aware Live Connections / Host Administration Channel) - DRAFT (new). Implements GAME-ADR-0025 and formally supersedes WORK-0005's own Blocker 8 proposal; Blockers 1-3 (confirm/broaden the inherited mechanism, route shape, registry extensibility) need human approval before READY.
+- **WORK-0005** (Thin Live Coordinator / WebSocket) - IMPLEMENTING. **2026-09-21 (Blocker 11)**: reduced to an HTTP/WebSocket transport skeleton - `play`/`play/sessionruntime` are deleted; `POST /sessions` and `GET /ws` still work as real transport (a real 501, a real connection upgrade) but call no domain package. This WORK's own remaining gate to DONE is independent review of this now-small scope (never yet performed).
+- **Phase 1 (Session Runtime domain completion)** is this Project's next actual design/implementation work - see "Phase 1" in the Work table below. No WORK in it has started; WORK-0019 is the natural first candidate (it defines the durable representation every later cause in this phase must satisfy).
+- **WORK-0006** (Broaden Live Fan-Out: Effects + Presentations) - DRAFT, both Blockers resolved. Its domain half (Phase 1) and play half (Phase 2) have not yet been split into separate documents - see Restructuring above.
+- **WORK-0007** (Session Termination Live Notification) - DRAFT, Blockers 1-4 unresolved. Same domain/play split note as WORK-0006.
+- **WORK-0019** (Replay-First Session Runtime Persistence Migration) - DRAFT. Implements GAME-ADR-0024; Blockers 1-5 need human input before READY. Moved to the front of Phase 1 - it defines the durable representation every future RuntimeTurn cause (UserIntent, SessionCancelled, TimerExpired) must satisfy.
+- **WORK-0020** (Role-Aware Live Connections / Host Administration Channel) - DRAFT. Implements GAME-ADR-0025; Blockers 1-3 need human approval before READY. Now the first WORK of Phase 2 (it no longer follows a working `play`, since `play` was removed - it is the first thing that rebuilds it).
 
 ## 2026-09-20 Reconciliation Pass
 
@@ -37,52 +46,61 @@ A dedicated reconciliation session accepted several human architecture decisions
 
 ## Work
 
+Reorganized 2026-09-21 into three inside-out phases (see Restructuring above). WORK-0006/0007/0010/0011/0012 each appear once, in the phase their still-undesigned domain half belongs to; each also needs a play-half counterpart in Phase 2 once it is actually drafted (not yet a separate document - see Restructuring).
+
+**Foundational (before Phase 1):**
+
 | Order | Work | Status |
 |------:|------|--------|
 | 1 | WORK-0001 — Session Lobby Foundation | DONE |
 | 2 | WORK-0003 — Start + First RuntimeTurn | DONE |
 | 3 | WORK-0004 — Interaction Response Processing | DONE |
 | — | WORK-0002 — Rename `game/game` → `game/management` (out-of-band structural rename, not sequenced) | DONE |
-| 4 | WORK-0005 — Thin Live Coordinator / WebSocket | IMPLEMENTING |
-| 5 | WORK-0006 — Broaden Live Fan-Out: Effects + Presentations | DRAFT |
-| 6 | WORK-0019 — Replay-First Session Runtime Persistence Migration | DRAFT |
-| 7 | WORK-0020 — Role-Aware Live Connections / Host Administration Channel | DRAFT |
-| 8 | WORK-0008 — Live Lobby / Session Bootstrap | PLANNED |
-| 9 | WORK-0009 — Client-Safe Game UI Manifest | PLANNED |
-| 10 | WORK-0021 — Host Participant Spectator View | PLANNED |
-| 11 | WORK-0010 — User Intent Runtime Path | PLANNED |
-| 12 | WORK-0007 — Session Termination Live Notification | DRAFT |
-| 13 | WORK-0011 — Manual Session Cancellation | PLANNED |
-| 14 | WORK-0012 — Timer Obligations | PLANNED |
-| 15 | WORK-0013 — Keyed Timers | PLANNED |
-| 16 | WORK-0018 — Game Language Disconnect/Reconnect Signal Support | PLANNED |
-| 17 | WORK-0014 — Runtime Failure Diagnostics + Terminal Cleanup | PLANNED |
-| 18 | WORK-0015 — Disconnect / Reconnect / Full Resync | PLANNED |
-| 19 | WORK-0016 — Inactivity Expiration / Reaper | PLANNED |
-| 20 | WORK-0017 — Archival | PLANNED |
+| 4 | WORK-0005 — Thin Live Coordinator / WebSocket (reduced to a transport skeleton, Blocker 11) | IMPLEMENTING |
+
+**Phase 1 — Session Runtime Domain Completion (`game/session`).** Goal: `Manager` (and every RuntimeTurn-producing method) actually handles all 9 engine `Output` kinds, with the right persistence shape per kind - some derived-on-demand and never persisted (Presentations/Effects), some genuinely durable because they drive a future cause (Timers, UserIntents, Cancellation).
+
+| Order | Work | Status |
+|------:|------|--------|
+| 5 | WORK-0019 — Replay-First Session Runtime Persistence Migration (moved first - defines the durable model every cause below must satisfy) | DRAFT |
+| 6 | WORK-0006 — domain half only: `Manager` additively returns Effect/Presentation Outputs in memory | DRAFT |
+| 7 | WORK-0007 — domain half only: `WorkflowCompletedOutput` detection + termination | DRAFT |
+| 8 | WORK-0012 — domain half: Timer persistence + `TimerExpired`-as-cause | PLANNED |
+| 9 | WORK-0013 — Keyed Timers (WORK-0012's compiler prerequisite) | PLANNED |
+| 10 | WORK-0018 — Game Language Disconnect/Reconnect Signal Support (unrelated parallel prerequisite, gates Phase 2's WORK-0015) | PLANNED |
+| 11 | WORK-0010 — domain half: UserIntent as a new RuntimeTurn cause | PLANNED |
+| 12 | WORK-0011 — domain half: SessionCancelled as a new cause | PLANNED |
+| 13 | WORK-0014 — Runtime Failure Diagnostics + Terminal Cleanup | PLANNED |
+| 14 | WORK-0016 — Inactivity Expiration / Reaper (schema half) | PLANNED |
+| 15 | WORK-0017 — Archival | PLANNED |
+
+**Phase 2 — Live Coordinator (`play`, rebuilt once Phase 1 is real).**
+
+| Order | Work | Status |
+|------:|------|--------|
+| 16 | WORK-0020 — Role-Aware Live Connections / Host Administration Channel (registry foundation, first in this phase) | DRAFT |
+| — | WORK-0006/0007/0010/0011/0012 — play halves (not yet split into documents) | not started |
+| 17 | WORK-0008 — Live Lobby / Session Bootstrap | PLANNED |
+| 18 | WORK-0021 — Host Participant Spectator View | PLANNED |
+| — | WORK-0015 — Disconnect/Reconnect/Full Resync, play half | PLANNED |
+
+**Phase 3 — Transport (`api`).** Rebuilding `api/session`'s real dispatch happens as part of whichever Phase 2 WORK needs it, not as a separate pass.
+
+| Order | Work | Status |
+|------:|------|--------|
+| 19 | WORK-0009 — Client-Safe Game UI Manifest (independent read endpoint) | PLANNED |
 
 21 WORK total: 4 DONE, 1 IMPLEMENTING, 4 DRAFT, 12 PLANNED.
 
 ## Ordering / Dependencies
 
-- **1-3 (DONE)** gate everything: every later WORK needs a correctly modeled, serialized Session with a working RuntimeTurn executor.
-- **4 (WORK-0005)** gates all live-transport-dependent WORK (5 onward) - there is no live connection to extend without it. Its Blocker 8 no longer gates anything here (transferred to WORK-0020, item 7 below); WORK-0005's own remaining gate is independent review of already-implemented scope, which can proceed in parallel with everything below.
-- **5 (WORK-0006)** needs only WORK-0005 - it is already DRAFT, no longer touches persistence at all (Start-`Seed` moved to WORK-0019), and does not need WORK-0019/WORK-0020 first. Moved earlier than the original plan's placement (which had it after the lobby/manifest WORK) because auditing its actual dependencies during this reconciliation found none beyond WORK-0005.
-- **6 (WORK-0019)** and **7 (WORK-0020)** both need only WORK-0005 and are independent of each other - they may be designed/implemented in parallel. WORK-0019 replaces durable per-Turn Snapshot persistence with replay-input persistence; WORK-0020 replaces the single-connection-kind live transport with role-aware ADMIN/PARTICIPANT connections. Neither depends on the other's outcome, though both should land before most of what follows, since later WORK builds on one or both.
-- **8 (WORK-0008)** needs WORK-0020 (its role-specific lobby projections require the ADMIN/PARTICIPANT connection model to exist first).
-- **9 (WORK-0009)** is independent of WORK-0019/0020/0008 and can be designed/implemented at any point once WORK-0005 exists; kept near WORK-0008 only because both are needed before a real lobby+manifest-driven frontend can render anything, not because either depends on the other.
-- **10 (WORK-0021)** needs WORK-0020 (the ADMIN connection its spectator selection attaches to) and WORK-0006 (the Presentation/Effect delivery mechanism it mirrors read-only). Left PLANNED rather than DRAFT specifically because its initial-Presentation-reconstruction mechanism should ideally reuse whatever generic resync/projection capability WORK-0015 (18) eventually builds, rather than duplicating that logic now - its ordering here reflects when its hard dependencies are satisfied, not when its DRAFT design should necessarily start; a human may reasonably choose to defer its actual design work until closer to WORK-0015.
-- **11 (WORK-0010)** needs WORK-0020 (PARTICIPANT connection, explicit command-role scoping), WORK-0019 (durable replay-input representation for a submitted intent), and reuses WORK-0006's fan-out for its own Presentation/Effect consequences.
-- **12 (WORK-0007)** needs WORK-0005 and now also WORK-0020 (its broadcast must reach both connection registries) - ordered here because WORK-0011/0012(timers)/0016 all reuse its mechanism once it exists.
-- **13 (WORK-0011)** needs WORK-0020 (ADMIN-only command surface), WORK-0007's generalized terminal-live mechanism, and WORK-0019 (durable cancellation-cause representation).
-- **14 (WORK-0012)** needs WORK-0005 (physical scheduling extends its Coordinator), the RuntimeTurn-from-external-cause pattern WORK-0004 already established, and WORK-0019 (its TimerExpired-occurrence replay-input framing, already confirmed satisfied by the existing `session_timer_obligations` shape).
-- **15 (WORK-0013)** extends WORK-0012's mechanism; ordered immediately after it.
-- **16 (WORK-0018)** is a Game Language-side prerequisite with no Session Runtime dependency of its own - it can be designed/implemented in parallel with 14-15, but must land before 18 (WORK-0015).
-- **Reordering vs. the original plan**: Keyed Timers (15) is still ordered *before* Disconnect/Reconnect (18), reversing the original plan's order, because a per-user disconnect-grace timeout plausibly needs an independent keyed timer per user - see WORK-0013's and WORK-0015's own Context sections. Re-evaluate this dependency once both are designed in more detail; it may turn out WORK-0015 can proceed with WORK-0012's ordinary timer alone.
-- **17 (WORK-0014)** retrofits diagnostics/cleanup across every RuntimeTurn-producing path that exists by the time it's designed (ideally after 8-16 have landed, so it does this once rather than repeatedly) but does not strictly require all of them - it can start once at least Start/AnswerInteraction/one external-cause path exist. Also needs WORK-0019 (no durable Snapshot exists for its diagnostics to reference).
-- **18 (WORK-0015)** has a hard prerequisite on WORK-0018 (16) and needs WORK-0019 (resync reconstructs via replay, not a stored Snapshot) and WORK-0020 (reconnect is designed per connection role from the outset, not retrofitted). Likely also needs WORK-0013 (15) for per-user grace timing - see above.
-- **19 (WORK-0016)** is purely additive once RUNNING operations exist to renew/validate activity against; reuses WORK-0014's cleanup invariant and WORK-0007's notification mechanism. Lower risk than 8-18, so it can trail them without gating anything else.
-- **20 (WORK-0017)** needs WORK-0019's replay-input model to be stable enough to define a self-sufficient archive payload (see WORK-0017's own Blockers) but not necessarily fully DONE first; ordered last as the lowest-risk, purely additive item, consistent with the original plan's own reasoning. No longer depends on any GCS/object-storage integration (superseded).
+- **Foundational (1-4)**: unchanged from before this restructuring - every later WORK needs a correctly modeled, serialized Session with a working RuntimeTurn executor (1-3), and a working HTTP/WS entry point to eventually expose things through (4, now a transport skeleton per Blocker 11).
+- **Phase 1 is now this Project's actual next work**, not WORK-0006/0019/0020 running in parallel with a live `play` as before. WORK-0019 leads it: it defines the durable representation every later cause in this phase (UserIntent, SessionCancelled, TimerExpired) must satisfy, so it can no longer sit in parallel with a transport WORK the way the pre-restructuring plan had it.
+- WORK-0006's domain half, WORK-0007's domain half, WORK-0012 (+ its WORK-0013 compiler prerequisite), WORK-0018 (Game-Language-only, no Session Runtime dependency of its own, but gates Phase 2's WORK-0015), WORK-0010's domain half, and WORK-0011's domain half each need only WORK-0019's durable model (where they touch persistence) or nothing beyond the Foundational tier - none of them need a live `play` to exist, since they change `Manager`'s own return values/persistence, not anything transport-facing.
+- WORK-0014 (diagnostics/cleanup) ideally lands after the other Phase 1 causes exist, so it retrofits once rather than repeatedly, but only strictly needs at least one RuntimeTurn-producing path plus WORK-0019 (no durable Snapshot to reference otherwise).
+- WORK-0016's schema half (activity_expires_at) and WORK-0017 (archival) are purely additive, lowest-risk, and trail the rest of Phase 1.
+- **Phase 2 cannot start until Phase 1 actually returns/handles the Output data it fans out** - this is the entire point of the restructuring. WORK-0020 leads it (the ADMIN/PARTICIPANT registry foundation everything else in this phase binds into), followed by WORK-0006/0007/0010/0011/0012's play halves (now consuming real in-memory Output values instead of a DB read-back hack), WORK-0008 (needs WORK-0020's role model), WORK-0021 (needs WORK-0020 + WORK-0006's play half), and WORK-0015's play half (needs WORK-0018 from Phase 1, WORK-0019's replay reconstruction, and WORK-0020's per-role reconnect design).
+- **Phase 3 (`api`)** is mostly co-implemented with whichever Phase 2 WORK needs a real dispatch layer again - not a separate pass. WORK-0009 is the one independent read endpoint, buildable once Phase 1's UI-facing declarations are stable.
 
 ## Capability Coverage
 
@@ -101,11 +119,12 @@ Required to run a Session frontend end-to-end against the supported Game Languag
 | UI effects | Engine-only; not yet fanned out | WORK-0006 (DRAFT) |
 | Client-safe UI/game definition | Does not exist | WORK-0009 (PLANNED) |
 | Per-viewer output | Partial (Question-only today) | WORK-0004 (question) + WORK-0006 (presentation, DRAFT) |
-| Live transport (Create/Join/Start/AnswerInteraction/Deliver) | Implemented, narrow; participant path complete | WORK-0005 (IMPLEMENTING, review pending) |
+| Live transport (Create/Join/AnswerInteraction/Deliver) | **Reduced 2026-09-21 (Blocker 11)**: transport skeleton only (real routes, real WS upgrade), no domain coupling - `play`/`play/sessionruntime` removed. Rebuilt by Phase 2's WORK-0020 onward, once Phase 1 completes | WORK-0005 (IMPLEMENTING, skeleton) |
+| **Engine Output handling (Presentations/Effects/Timers/WorkflowCompleted returned or persisted)** | Not implemented - only 2 of 9 `Output` variants (Open/CloseQuestion) are captured today, and none are returned to a caller | WORK-0006/0007/0010/0011/0012's domain halves, WORK-0019 (Phase 1, DRAFT/PLANNED) |
 | **Replay-input persistence** | Design accepted (GAME-ADR-0024); not implemented | WORK-0019 (DRAFT) |
 | **Deterministic runtime reconstruction (process-loss recovery without a stored Snapshot)** | Design accepted; not implemented | WORK-0019 (DRAFT) |
-| **Admin live connection** | Design accepted (GAME-ADR-0025); not implemented (WORK-0005's host connection still goes through Join) | WORK-0020 (DRAFT) |
-| **Participant live connection (role-formalized)** | Implemented as a single connection kind (WORK-0005); role separation from Admin not yet implemented | WORK-0005 (base) + WORK-0020 (DRAFT, role formalization) |
+| **Admin live connection** | Design accepted (GAME-ADR-0025); not implemented (no `play` exists at all today) | WORK-0020 (DRAFT, Phase 2) |
+| **Participant live connection (role-formalized)** | Not implemented - the single-connection-kind implementation WORK-0005 originally built was removed (Blocker 11); rebuilt by WORK-0020 onward | WORK-0020 (DRAFT, Phase 2) |
 | **Role-scoped command authorization** | Design accepted; not implemented (Manager's own per-command checks already exist and remain the actual enforcement) | WORK-0020 (DRAFT) |
 | Live lobby / bootstrap / roster / leave, role-specific projection | Not implemented | WORK-0008 (PLANNED), depends on WORK-0020 |
 | **Host-as-Participant dual connection** | Design accepted; not implemented | WORK-0020 (DRAFT) |
