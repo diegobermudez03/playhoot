@@ -26,7 +26,7 @@ Several currently-DRAFT WORKs (0006, 0007, 0010, 0011, 0012) mix a Session-Runti
 
 ## Current Work
 
-- **WORK-0005** (Thin Live Coordinator / WebSocket) - IMPLEMENTING. **2026-09-21 (Blocker 11)**: reduced to an HTTP/WebSocket transport skeleton - `play`/`play/sessionruntime` are deleted; `POST /sessions` and `GET /ws` still work as real transport (a real 501, a real connection upgrade) but call no domain package. This WORK's own remaining gate to DONE is independent review of this now-small scope (never yet performed).
+- **WORK-0005** (Thin Live Coordinator / WebSocket) - **DONE (2026-09-22)**. Reduced to an HTTP/WebSocket transport skeleton (Blocker 11) - `play`/`play/sessionruntime` are deleted; `POST /sessions` and `GET /ws` work as real transport (a real 501, a real connection upgrade, centralized observability + trace/span IDs, Blockers 12-13) but call no domain package. Independent review APPROVED after one REQUIRED_FIX (stale doc comments) was fixed and re-reviewed.
 - **Phase 1 (Session Runtime domain completion)** is this Project's next actual design/implementation work - see "Phase 1" in the Work table below. No WORK in it has started; WORK-0019 is the natural first candidate (it defines the durable representation every later cause in this phase must satisfy).
 - **WORK-0006** (Broaden Live Fan-Out: Effects + Presentations) - DRAFT, both Blockers resolved. Its domain half (Phase 1) and play half (Phase 2) have not yet been split into separate documents - see Restructuring above.
 - **WORK-0007** (Session Termination Live Notification) - DRAFT, Blockers 1-4 unresolved. Same domain/play split note as WORK-0006.
@@ -56,7 +56,7 @@ Reorganized 2026-09-21 into three inside-out phases (see Restructuring above). W
 | 2 | WORK-0003 — Start + First RuntimeTurn | DONE |
 | 3 | WORK-0004 — Interaction Response Processing | DONE |
 | — | WORK-0002 — Rename `game/game` → `game/management` (out-of-band structural rename, not sequenced) | DONE |
-| 4 | WORK-0005 — Thin Live Coordinator / WebSocket (reduced to a transport skeleton, Blocker 11) | IMPLEMENTING |
+| 4 | WORK-0005 — Thin Live Coordinator / WebSocket (reduced to a transport skeleton, Blocker 11) | DONE |
 
 **Phase 1 — Session Runtime Domain Completion (`game/session`).** Goal: `Manager` (and every RuntimeTurn-producing method) actually handles all 9 engine `Output` kinds, with the right persistence shape per kind - some derived-on-demand and never persisted (Presentations/Effects), some genuinely durable because they drive a future cause (Timers, UserIntents, Cancellation).
 
@@ -90,7 +90,7 @@ Reorganized 2026-09-21 into three inside-out phases (see Restructuring above). W
 |------:|------|--------|
 | 19 | WORK-0009 — Client-Safe Game UI Manifest (independent read endpoint) | PLANNED |
 
-21 WORK total: 4 DONE, 1 IMPLEMENTING, 4 DRAFT, 12 PLANNED.
+21 WORK total: 5 DONE, 0 IMPLEMENTING, 4 DRAFT, 12 PLANNED.
 
 ## Ordering / Dependencies
 
@@ -119,7 +119,7 @@ Required to run a Session frontend end-to-end against the supported Game Languag
 | UI effects | Engine-only; not yet fanned out | WORK-0006 (DRAFT) |
 | Client-safe UI/game definition | Does not exist | WORK-0009 (PLANNED) |
 | Per-viewer output | Partial (Question-only today) | WORK-0004 (question) + WORK-0006 (presentation, DRAFT) |
-| Live transport (Create/Join/AnswerInteraction/Deliver) | **Reduced 2026-09-21 (Blocker 11)**: transport skeleton only (real routes, real WS upgrade), no domain coupling - `play`/`play/sessionruntime` removed. Rebuilt by Phase 2's WORK-0020 onward, once Phase 1 completes | WORK-0005 (IMPLEMENTING, skeleton) |
+| Live transport (Create/Join/AnswerInteraction/Deliver) | **Reduced 2026-09-21 (Blocker 11), DONE as a skeleton**: real routes, real WS upgrade, centralized observability + trace/span IDs, no domain coupling - `play`/`play/sessionruntime` removed. Rebuilt by Phase 2's WORK-0020 onward, once Phase 1 completes | WORK-0005 (DONE, skeleton) |
 | **Engine Output handling (Presentations/Effects/Timers/WorkflowCompleted returned or persisted)** | Not implemented - only 2 of 9 `Output` variants (Open/CloseQuestion) are captured today, and none are returned to a caller | WORK-0006/0007/0010/0011/0012's domain halves, WORK-0019 (Phase 1, DRAFT/PLANNED) |
 | **Replay-input persistence** | Design accepted (GAME-ADR-0024); not implemented | WORK-0019 (DRAFT) |
 | **Deterministic runtime reconstruction (process-loss recovery without a stored Snapshot)** | Design accepted; not implemented | WORK-0019 (DRAFT) |

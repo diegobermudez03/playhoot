@@ -1,15 +1,8 @@
 // Package session is the session workflow's route group: currently an
-// HTTP/WebSocket transport skeleton only. It registers the same endpoint
-// shapes and keeps the same connection-upgrade mechanics already proven
-// out, but calls no domain package - there is nothing to call yet.
-//
-// This is deliberate, not an oversight: a prior pass built a stateful
-// coordinator here on top of Session Runtime output-handling that was
-// both incomplete and already known to change. Rather than keep building
-// on that foundation, this package was reduced back to its transport
-// plumbing until Session Runtime's own engine-Output handling is actually
-// complete, at which point a real dispatch layer is rebuilt on top of it
-// once, correctly.
+// HTTP/WebSocket transport skeleton only. It registers real endpoints
+// with real connection-upgrade mechanics, but calls no domain package -
+// there is nothing to call yet, so every handler answers a fixed
+// placeholder response until a real dispatch layer exists behind it.
 package session
 
 import (

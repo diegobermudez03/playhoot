@@ -179,9 +179,8 @@ func (h *Handler) readPump(r *http.Request, wc *wsConn, sessionUUID, userUUID st
 
 // handleInboundMessage logs one decoded WS command as its own single
 // request-scoped entry. No message type has a real implementation yet -
-// every message currently answers ERROR/"unknown message type" (see this
-// package's doc comment) - message-specific dispatch depended entirely on
-// the now-removed play.Coordinator and returns once it is rebuilt.
+// every message currently answers ERROR/"unknown message type", since
+// there is no domain package to dispatch any of them to.
 func (h *Handler) handleInboundMessage(reqCtx context.Context, wc *wsConn, sessionUUID, userUUID string, msg inboundMessage) {
 	ctx := logging.Start(reqCtx)
 	defer logging.FinishRequestLog(ctx, slog.Default(), "api.session.WSMessage")

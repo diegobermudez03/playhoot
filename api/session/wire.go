@@ -40,16 +40,16 @@ type joinDeclineResponse struct {
 // connection would force the host through Join merely to obtain a
 // connection at all. Until a connection kind exists that does not require
 // joining, Start stays reachable only at the Go-API level
-// (sessionlifecycle.Manager/play.Coordinator), never over this wire.
+// (sessionlifecycle.Manager), never over this wire.
 const (
 	inboundTypeAnswerInteraction = "ANSWER_INTERACTION"
 )
 
 // inboundMessage is the WS client-to-server command envelope. Answer is
 // the engine's own EncodeValue wire format, opaque to this package -
-// forwarded as-is to play.Coordinator/the SessionRuntime implementation,
-// exactly like every other transport-level payload's decoding being the
-// caller's responsibility.
+// forwarded as-is to whatever eventually dispatches it, exactly like
+// every other transport-level payload's decoding being the caller's
+// responsibility.
 type inboundMessage struct {
 	Type          string          `json:"type"`
 	InteractionID string          `json:"interaction_id,omitempty"`

@@ -14,8 +14,7 @@ import (
 // or FinishRequestLog itself. It still validates and logs the wire
 // request - that contract is real - but does not call any domain package
 // yet, so it always answers 501: there is nothing behind this endpoint
-// until Session Runtime's engine-Output handling (and a rebuilt
-// play.Coordinator on top of it) exist.
+// to call.
 func (h *Handler) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 

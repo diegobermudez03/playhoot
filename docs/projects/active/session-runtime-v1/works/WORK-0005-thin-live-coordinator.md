@@ -1,8 +1,8 @@
 # WORK-0005: Thin Live Coordinator / WebSocket
 
-Status: IMPLEMENTING
+Status: DONE
 Created: 2026-09-19
-Last status change: 2026-09-20 (DRAFT -> IMPLEMENTING, Part E reconciliation - see "Status Correction (Part E Reconciliation, 2026-09-20)" below; the intervening IMPLEMENTING -> DRAFT correction and its cause, Blocker 8, are preserved unedited above as history)
+Last status change: 2026-09-22 (IMPLEMENTING -> DONE, independent review APPROVED - see "Completion Record" below; every earlier status transition, including the IMPLEMENTING -> DRAFT -> IMPLEMENTING correction and its cause, Blocker 8, is preserved unedited above as history)
 
 Related decisions:
 - GAME-ADR-0002 (Session Runtime durable boundary, Live Session Coordinator responsibility boundary, V1 scaling)
@@ -343,3 +343,19 @@ This WORK's own end-to-end proof still needs a Session in `RUNNING` with an open
 **Documentation impact**: `docs/engineering/standards/logging.md`'s "Trace IDs" section was renamed "Trace IDs and Spans" and rewritten to describe the full model.
 
 **Verification**: `go build ./...`, `go vet ./...`, `gofmt -l` (changed files) all clean; `go test ./... -count=1` passes with no new failure beyond the already-recorded out-of-scope `getgame` JSONB-comparison test defect, including new `logging` tests proving a fresh span ID is minted every call, a root span logs no `parent_span_id`, and nested `Start` calls form the expected parent/child relationship while sharing one trace ID; `api`'s existing trace-ID-correlation test continues to pass unchanged.
+
+### Closure (2026-09-22): IMPLEMENTING -> DONE
+
+Independent review was performed per `docs/ai/protocols/IMPLEMENTATION_REVIEW.md`, by a fresh agent that had not implemented this WORK's own reduced scope (Blockers 9-13), reasoning from the WORK file, `docs/engineering/standards/logging.md`/`code-comments.md`, the actual current code, and the actual tests - not from any implementation summary.
+
+**First pass - verdict CHANGES_REQUIRED**, one finding: several source-code doc comments in `api/session` (`handler.go`'s package doc, `ws.go`'s `handleInboundMessage` doc, `wire.go`'s Start-reachability and `inboundMessage` doc comments, `http.go`'s `handleCreateSession` doc) narrated removed implementation history ("a prior pass built...", "the now-removed `play.Coordinator`...") and named the already-deleted `play`/`play.Coordinator`/`play/sessionruntime` types as if still current - a real violation of `docs/engineering/standards/code-comments.md`'s "No Task/History Comments" section that the repository's own automated `TestNoInternalDocCitationsInComments` does not catch, since that test only pattern-matches literal ADR/WORK/Blocker/docs-path citations, not general historical narration or references to a deleted type by name. Classified REQUIRED_FIX (mechanical, local, no design/scope implication - the reasoning these comments needed to state directly was already settled by Blocker 11).
+
+**Resolution**: all five comments rewritten to state the current contract directly, with no history narration and no reference to any deleted type. Re-verified: `go build`/`go vet`/`gofmt -l`/`TestNoInternalDocCitationsInComments`/full `go test ./... -count=1` all clean, no regression.
+
+**Re-review - verdict APPROVED**: a second fresh agent confirmed all five spots now describe only current, accurate behavior, confirmed no other reference to the deleted `play` package remains anywhere in `api/session`, and re-ran build/vet/format/tests with no regression. No other finding was raised in either pass - the original full review had already independently verified every current (post-Blocker-13) Acceptance Criterion met, the centralized-observability/trace-ID/span-ID mechanism matching its own standard exactly, and no other documentation drift.
+
+**Incidental, unrelated infrastructure note**: the first review pass needed a reachable local Postgres and, finding none running, started Docker Desktop and used a temporary container for its own verification; this left the session's own long-running `playhoot-postgres-1` container (and its host port-forwarding) in a bad state afterward, unrelated to this WORK's own code. Recreated via `docker compose down && docker compose up -d postgres`; full suite re-confirmed clean. Not a defect in this WORK's implementation - recorded here only because it happened during this WORK's own closure.
+
+No production code outside the five comments changed during closure. `sessionlifecycle.Manager` and every other package this WORK depends on were untouched.
+
+`Status:` set to `DONE`. Per this Project's own convention (individual WORK files stay in `docs/projects/active/session-runtime-v1/works/`; only the whole Project moves to `docs/projects/completed/` once every WORK is DONE or explicitly out of scope), this file is not relocated.
