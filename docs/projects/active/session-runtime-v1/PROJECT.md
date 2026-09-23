@@ -27,10 +27,10 @@ Several currently-DRAFT WORKs (0006, 0007, 0010, 0011, 0012) mix a Session-Runti
 ## Current Work
 
 - **WORK-0005** (Thin Live Coordinator / WebSocket) - **DONE (2026-09-22)**. Reduced to an HTTP/WebSocket transport skeleton (Blocker 11) - `play`/`play/sessionruntime` are deleted; `POST /sessions` and `GET /ws` work as real transport (a real 501, a real connection upgrade, centralized observability + trace/span IDs, Blockers 12-13) but call no domain package. Independent review APPROVED after one REQUIRED_FIX (stale doc comments) was fixed and re-reviewed.
-- **Phase 1 (Session Runtime domain completion)** is this Project's next actual design/implementation work - see "Phase 1" in the Work table below. No WORK in it has started; WORK-0019 is the natural first candidate (it defines the durable representation every later cause in this phase must satisfy).
+- **Phase 1 (Session Runtime domain completion)** is this Project's next actual design/implementation work - see "Phase 1" in the Work table below. WORK-0019 is READY (2026-09-22) and is next for implementation; no WORK in this phase has begun implementation yet.
 - **WORK-0006** (Broaden Live Fan-Out: Effects + Presentations) - DRAFT, both Blockers resolved. Its domain half (Phase 1) and play half (Phase 2) have not yet been split into separate documents - see Restructuring above.
 - **WORK-0007** (Session Termination Live Notification) - DRAFT, Blockers 1-4 unresolved. Same domain/play split note as WORK-0006.
-- **WORK-0019** (Replay-First Session Runtime Persistence Migration) - DRAFT. Implements GAME-ADR-0024; Blockers 1-5 need human input before READY. Moved to the front of Phase 1 - it defines the durable representation every future RuntimeTurn cause (UserIntent, SessionCancelled, TimerExpired) must satisfy.
+- **WORK-0019** (Replay-First Session Runtime Persistence Migration) - **READY (human-authorized 2026-09-22)**. Implements GAME-ADR-0024; all 5 Blockers HUMAN-APPROVED (see WORK-0019's own Blockers section). Next step is the Codebase Agent implementation/review handoff. Moved to the front of Phase 1 - it defines the durable representation every future RuntimeTurn cause (UserIntent, SessionCancelled, TimerExpired) must satisfy, now including the shared `session_cause_events` table Blocker 3 fixed for them.
 - **WORK-0020** (Role-Aware Live Connections / Host Administration Channel) - DRAFT. Implements GAME-ADR-0025; Blockers 1-3 need human approval before READY. Now the first WORK of Phase 2 (it no longer follows a working `play`, since `play` was removed - it is the first thing that rebuilds it).
 
 ## 2026-09-20 Reconciliation Pass
@@ -62,7 +62,7 @@ Reorganized 2026-09-21 into three inside-out phases (see Restructuring above). W
 
 | Order | Work | Status |
 |------:|------|--------|
-| 5 | WORK-0019 — Replay-First Session Runtime Persistence Migration (moved first - defines the durable model every cause below must satisfy) | DRAFT |
+| 5 | WORK-0019 — Replay-First Session Runtime Persistence Migration (moved first - defines the durable model every cause below must satisfy) | READY |
 | 6 | WORK-0006 — domain half only: `Manager` additively returns Effect/Presentation Outputs in memory | DRAFT |
 | 7 | WORK-0007 — domain half only: `WorkflowCompletedOutput` detection + termination | DRAFT |
 | 8 | WORK-0012 — domain half: Timer persistence + `TimerExpired`-as-cause | PLANNED |
@@ -73,24 +73,30 @@ Reorganized 2026-09-21 into three inside-out phases (see Restructuring above). W
 | 13 | WORK-0014 — Runtime Failure Diagnostics + Terminal Cleanup | PLANNED |
 | 14 | WORK-0016 — Inactivity Expiration / Reaper (schema half) | PLANNED |
 | 15 | WORK-0017 — Archival | PLANNED |
+| 16 | WORK-0023 — Session Runtime Observability Metrics (needs WORK-0019's replay mechanism to exist first; feeds WORK-0019's own deferred cache decision, Blocker 4) | PLANNED |
+| — | WORK-0022 — Session/Platform Abuse and Resource-Rate Limits (identified 2026-09-22 while resolving WORK-0019's Blocker 2; not yet sequenced - see Blockers) | PLANNED |
 
 **Phase 2 — Live Coordinator (`play`, rebuilt once Phase 1 is real).**
 
 | Order | Work | Status |
 |------:|------|--------|
-| 16 | WORK-0020 — Role-Aware Live Connections / Host Administration Channel (registry foundation, first in this phase) | DRAFT |
+| 17 | WORK-0020 — Role-Aware Live Connections / Host Administration Channel (registry foundation, first in this phase) | DRAFT |
 | — | WORK-0006/0007/0010/0011/0012 — play halves (not yet split into documents) | not started |
-| 17 | WORK-0008 — Live Lobby / Session Bootstrap | PLANNED |
-| 18 | WORK-0021 — Host Participant Spectator View | PLANNED |
+| 18 | WORK-0008 — Live Lobby / Session Bootstrap | PLANNED |
+| 19 | WORK-0021 — Host Participant Spectator View | PLANNED |
 | — | WORK-0015 — Disconnect/Reconnect/Full Resync, play half | PLANNED |
 
 **Phase 3 — Transport (`api`).** Rebuilding `api/session`'s real dispatch happens as part of whichever Phase 2 WORK needs it, not as a separate pass.
 
 | Order | Work | Status |
 |------:|------|--------|
-| 19 | WORK-0009 — Client-Safe Game UI Manifest (independent read endpoint) | PLANNED |
+| 20 | WORK-0009 — Client-Safe Game UI Manifest (independent read endpoint) | PLANNED |
 
-21 WORK total: 5 DONE, 0 IMPLEMENTING, 4 DRAFT, 12 PLANNED.
+23 WORK total: 5 DONE, 0 IMPLEMENTING, 1 READY, 3 DRAFT, 14 PLANNED.
+
+## 2026-09-22 Addition: WORK-0022 (Abuse/Resource-Rate Limits)
+
+While resolving WORK-0019's Blocker 2 (removing `session_runtime_steps`), a human review identified that no WORK in this Project owns platform abuse/resource-rate limits above the single-execution level GAME-ADR-0019 already bounds (`engine.Limits`, `runtimeturn.Drain`'s `MaxSteps`) - a real gap given Session Runtime executes user-authored Game Language programs. This was already listed as a deferred design topic in `internal/AI_CONTEXT.md` with no owning WORK, which is itself a process gap (Invariant 1 of `docs/projects/README.md` requires every known-required future outcome to have a WORK, even PLANNED). **WORK-0022** now tracks it. It is not yet sequenced into a phase - it needs human/security decisions on enforcement shape and thresholds (see its own Blockers) before it can be placed and move to DRAFT.
 
 ## Ordering / Dependencies
 
