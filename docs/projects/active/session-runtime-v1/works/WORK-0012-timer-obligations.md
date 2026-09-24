@@ -14,7 +14,7 @@ Canonical context:
 - `docs/projects/active/session-runtime-v1/PROJECT.md`
 - `game/language/v1/program/timer.go` (`TimerSlotDeclaration`, `ScheduleTimerOperation`, `CancelTimerOperation` - already implemented, ordinary single-pending-timer only)
 - `game/language/v1/engine/output.go` (`ScheduleTimerOutput`/`CancelTimerOutput` - already produced by the engine, currently unhandled anywhere in Session Runtime)
-- `docs/projects/active/session-runtime-v1/works/WORK-0005-thin-live-coordinator.md` (the live Coordinator this WORK's physical scheduling extends, not replaces)
+- `docs/projects/active/session-runtime-v1/works/WORK-0020-role-aware-live-connections.md` (owns rebuilding the `play` Coordinator this WORK's physical scheduling extends. **2026-09-23 correction**: `play` does not currently exist - deleted in full by WORK-0005's Blocker 11 (2026-09-21); this WORK's durable-persistence half needs no `play` at all, but its physical scheduling/wakeup half can only be implemented once WORK-0020 (re)builds the Coordinator - this WORK was drafted before that deletion and never reconciled against it until now)
 
 ## Outcome
 
@@ -30,8 +30,8 @@ This is required before any authored game that uses a timer (a countdown per que
 
 ### In Scope (known required outcome; design not yet started)
 
-- Durable persistence for a pending timer obligation (`session_timer_obligations` per the accepted persistence model).
-- Physical scheduling/wakeup added to the existing live Coordinator (`play`) - not a new Coordinator mechanism.
+- Durable persistence for a pending timer obligation (`session_timer_obligations` per the accepted persistence model) - needs no `play`/transport code.
+- Physical scheduling/wakeup added to the `play` Coordinator WORK-0020 (re)builds - not a mechanism this WORK invents independently of WORK-0020's own registry/lifecycle design.
 - Cancellation/replacement semantics matching `CancelTimerOperation`'s authored meaning.
 - Timer expiration as a RuntimeTurn cause, reusing the existing Step-draining/bound execution mechanism and contending correctly for the same per-Session RUNNING serialization boundary interaction responses already use (GAME-ADR-0018).
 - Correctness after process loss/restart, using the accepted full-configured-delay recovery tradeoff (GAME-ADR-0008/0013) rather than a durable due-at timestamp.

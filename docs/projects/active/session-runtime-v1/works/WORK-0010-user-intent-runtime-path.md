@@ -32,9 +32,9 @@ This is a distinct runtime path from `AnswerInteraction`, not a variant of it: `
 
 ### In Scope (known required outcome; design not yet started)
 
-- A `Manager`-level capability (parallel to `Start`/`AnswerInteraction`) that accepts a client-submitted intent, resolves it to the correct runtime/workflow instance, and drives a RuntimeTurn through the existing Step-draining/bound execution mechanism.
-- A live-transport command and Coordinator-side translation, reusing WORK-0005's existing translation/fan-out shape.
-- Whatever Presentation/Effect consequences result, reusing WORK-0006's fan-out mechanism once that WORK exists.
+- A `Manager`-level capability (parallel to `Start`/`AnswerInteraction`) that accepts a client-submitted intent, resolves it to the correct runtime/workflow instance, and drives a RuntimeTurn through the existing Step-draining/bound execution mechanism. This part needs only `sessionlifecycle.Manager` and no `play`/transport code.
+- A live-transport command and Coordinator-side translation. **(2026-09-23 correction)** `play`/`play/sessionruntime` do not exist today - deleted in full by WORK-0005's Blocker 11 (2026-09-21) and not yet rebuilt; this part reuses whatever translation/fan-out shape `docs/projects/active/session-runtime-v1/works/WORK-0020-role-aware-live-connections.md` (re)builds, once it lands, not WORK-0005's original (deleted) implementation.
+- Whatever Presentation/Effect consequences result, reusing WORK-0006's play-half fan-out mechanism (not yet drafted - see WORK-0006's own "Scope Correction (Domain/Play Split, 2026-09-23)") once it exists.
 
 ### Out of Scope
 

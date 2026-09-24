@@ -15,7 +15,7 @@ Canonical context:
 - `docs/projects/active/session-runtime-v1/works/WORK-0006-broaden-live-fanout-effects-presentations.md` (the "Question/Presentation/Effect only cross the wire" principle this WORK's own termination message follows, as a generic UI-shaped signal rather than a raw domain event)
 - `game/session/workflows/sessionlifecycle/step_answer_interaction.go` (`terminalizeAnswerInteractionFatal`), `game/session/workflows/sessionlifecycle/step_start.go` (`terminalizeStartFatal`) - the existing fatal paths this WORK's notification covers
 - `game/session/workflows/sessionlifecycle/internal/repo/interaction.go` (`CloseAllActiveInteractionsForSession` - confirms closed rows from these paths have `closed_by_turn_id = NULL`, structurally excluded from the existing live-event query)
-- `play/coordinator.go` (`Deliver`'s existing per-recipient fan-out, which this WORK's broadcast mechanism is deliberately different from - see Scope)
+- **(2026-09-23 correction)** `play`/`play/sessionruntime` do not exist today - deleted in full by WORK-0005's Blocker 11 (2026-09-21). This WORK's own domain half (below) needs none of it; its broadcast mechanism (`Deliver`'s per-recipient fan-out is the thing it must differ from - see Scope) is a play-half concern that can only be implemented once WORK-0020 has rebuilt `play` from scratch. This WORK was drafted 2026-09-20, one day before that deletion, and was never reconciled against it until now.
 - `game/language/v1/engine/output.go` (`WorkflowCompletedOutput` - `Path == nil` is the root instance; per its own doc comment, "there is no parent to notify... this is how a session layer observes that directly, ending the game instance")
 - `game/language/v1/engine/instance.go` (`WorkflowInstance.Outcome` - nil while running, set only once a `Complete`/`Fail`/`Cancel` control applies and "no further transition may apply" - confirms a completed root instance can structurally never produce anything else, so treating it as terminal is forced, not a judgment call)
 
@@ -59,8 +59,8 @@ Status: **PARTIALLY RESOLVED**. Direction (send-then-close, generic message, cov
 
 1. **Exact `TerminalReason`/business-logic shape for natural completion.** Mirrors the existing fatal path's shape closely, but is a new code path inside `Manager`, not a copy-paste: what `TerminalReason` value, does it need the `WorkflowOutcome.Result` payload recorded anywhere durably (even if not delivered to clients yet, per the deferred personalized-screen idea), and does this detection happen inside the same drain loop that already looks for `OpenQuestionOutput`/`CloseQuestionOutput` (Blocker: does this belong in `interaction_capture.go`-adjacent code, or is it clearly separate enough to be its own step)?
 2. **Where does "broadcast to everyone bound" live** - a dedicated `Coordinator` method reading its own registry directly (`c.sessions[sessionUUID]`, no per-recipient filtering), versus overloading `Event`/`Deliver` with a "broadcast" meaning. Leaning toward a dedicated method, consistent with WORK-0006's own "Question/Presentation/Effect are the only Event-shaped things" principle - a session-wide termination signal is not any of those three, so it should not pretend to be an `Event` at all.
-3. **How `play/sessionruntime` signals "this call's result means the Session is now `TERMINAL`" up to `Coordinator`** - an explicit field on `play.StartResult`/`AnswerInteractionResult` (e.g. `Terminated bool` plus a reason string), rather than `Coordinator` needing to know which outcome strings imply termination.
-4. **Transport-level "send this message, then close the socket"** - `api/session`'s write pump has no such concept today; a small, local addition once Blockers 1-3 are resolved.
+3. **How the rebuilt `play` Coordinator (WORK-0020) learns "this call's result means the Session is now `TERMINAL`"** - an explicit field on `Manager`'s own `StartResult`/`AnswerInteractionResult` (e.g. `Terminated bool` plus a reason string), rather than the Coordinator needing to know which outcome strings imply termination. (Corrected 2026-09-23: originally phrased against `play.StartResult` - `play` does not exist; the field belongs on `Manager`'s result type, which this WORK's domain half already touches, and the rebuilt Coordinator reads it once WORK-0020 lands.)
+4. **Transport-level "send this message, then close the socket"** - `api/session`'s write pump has no such concept today (it is currently a skeleton with no domain coupling, WORK-0005 Blocker 11); this is a play-half addition, only possible once WORK-0020 rebuilds the Coordinator.
 
 ## Acceptance Criteria (Draft, Pending Blocker Resolution)
 
@@ -74,7 +74,7 @@ Status: **PARTIALLY RESOLVED**. Direction (send-then-close, generic message, cov
 
 - `game/CURRENT_STATE.md`, `game/docs/FLOWS.md` - describe the new termination-notification flow, including natural completion, once implemented.
 - `game/session/session.go` - new `TerminalReason` constant, documented alongside the existing three.
-- `play/README.md` - document the new broadcast mechanism as a second, distinct fan-out path alongside per-recipient `Deliver`.
+- `play/README.md` - document the new broadcast mechanism as a second, distinct fan-out path alongside per-recipient `Deliver`, once WORK-0020 has (re)created this file.
 
 ## Scope Addition (Part H Reconciliation, 2026-09-20)
 
