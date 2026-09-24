@@ -7,16 +7,14 @@ import (
 )
 
 type workflowInstanceWire struct {
-	Workflow       string              `json:"workflow"`
-	State          string              `json:"state"`
-	Parameters     []fieldValueWire    `json:"parameters,omitempty"`
-	LocalState     json.RawMessage     `json:"local_state"`
-	Outcome        json.RawMessage     `json:"outcome,omitempty"`
-	QuestionSlots  []questionSlotWire  `json:"question_slots,omitempty"`
-	AskGroupSlots  []askGroupSlotWire  `json:"ask_group_slots,omitempty"`
-	TimerSlots     []timerSlotWire     `json:"timer_slots,omitempty"`
-	ChildSlots     []childSlotWire     `json:"child_slots,omitempty"`
-	TaskGroupSlots []taskGroupSlotWire `json:"task_group_slots,omitempty"`
+	Workflow      string             `json:"workflow"`
+	State         string             `json:"state"`
+	Parameters    []fieldValueWire   `json:"parameters,omitempty"`
+	LocalState    json.RawMessage    `json:"local_state"`
+	Outcome       json.RawMessage    `json:"outcome,omitempty"`
+	QuestionSlots []questionSlotWire `json:"question_slots,omitempty"`
+	AskGroupSlots []askGroupSlotWire `json:"ask_group_slots,omitempty"`
+	TimerSlots    []timerSlotWire    `json:"timer_slots,omitempty"`
 }
 
 type questionSlotWire struct {
@@ -53,29 +51,6 @@ type timerSlotWire struct {
 	Pending bool   `json:"pending,omitempty"`
 }
 
-type childSlotWire struct {
-	Name  string          `json:"name"`
-	Child json.RawMessage `json:"child,omitempty"`
-}
-
-type taskGroupSlotWire struct {
-	Name  string          `json:"name"`
-	Group json.RawMessage `json:"group,omitempty"`
-}
-
-type taskGroupStateWire struct {
-	Tasks          []taskGroupTaskWire `json:"tasks,omitempty"`
-	Phase          int                 `json:"phase"`
-	CompletionKind int                 `json:"completion_kind"`
-	QuorumCount    int                 `json:"quorum_count,omitempty"`
-	TerminalOrder  []json.RawMessage   `json:"terminal_order,omitempty"`
-}
-
-type taskGroupTaskWire struct {
-	Key   json.RawMessage `json:"key"`
-	Child json.RawMessage `json:"child"`
-}
-
 type workflowOutcomeWire struct {
 	Kind   int             `json:"kind"`
 	Result json.RawMessage `json:"result,omitempty"`
@@ -83,8 +58,8 @@ type workflowOutcomeWire struct {
 	Reason string          `json:"reason,omitempty"`
 }
 
-// EncodeWorkflowInstance encodes instance — the recursive edge of a
-// Snapshot's child-workflow tree, through ChildSlots and TaskGroupSlots.
+// EncodeWorkflowInstance encodes instance — the one workflow instance a
+// Session runs for its entire lifetime.
 func EncodeWorkflowInstance(path string, instance engine.WorkflowInstance) (json.RawMessage, error) {
 	params, err := encodeFieldValues(path, instance.Parameters)
 	if err != nil {
@@ -115,26 +90,16 @@ func EncodeWorkflowInstance(path string, instance engine.WorkflowInstance) (json
 	for i, s := range instance.TimerSlots {
 		timerSlots[i] = timerSlotWire{Name: s.Name, Pending: s.Pending}
 	}
-	childSlots, err := encodeChildSlots(path, instance.ChildSlots)
-	if err != nil {
-		return nil, err
-	}
-	taskGroupSlots, err := encodeTaskGroupSlots(path, instance.TaskGroupSlots)
-	if err != nil {
-		return nil, err
-	}
 
 	return json.Marshal(workflowInstanceWire{
-		Workflow:       instance.Workflow,
-		State:          instance.State,
-		Parameters:     params,
-		LocalState:     localState,
-		Outcome:        outcome,
-		QuestionSlots:  questionSlots,
-		AskGroupSlots:  askGroupSlots,
-		TimerSlots:     timerSlots,
-		ChildSlots:     childSlots,
-		TaskGroupSlots: taskGroupSlots,
+		Workflow:      instance.Workflow,
+		State:         instance.State,
+		Parameters:    params,
+		LocalState:    localState,
+		Outcome:       outcome,
+		QuestionSlots: questionSlots,
+		AskGroupSlots: askGroupSlots,
+		TimerSlots:    timerSlots,
 	})
 }
 
@@ -176,26 +141,16 @@ func DecodeWorkflowInstance(path string, data json.RawMessage) (engine.WorkflowI
 	for _, s := range w.TimerSlots {
 		timerSlots = append(timerSlots, engine.TimerSlotInstance{Name: s.Name, Pending: s.Pending})
 	}
-	childSlots, err := decodeChildSlots(path, w.ChildSlots)
-	if err != nil {
-		return engine.WorkflowInstance{}, err
-	}
-	taskGroupSlots, err := decodeTaskGroupSlots(path, w.TaskGroupSlots)
-	if err != nil {
-		return engine.WorkflowInstance{}, err
-	}
 
 	return engine.WorkflowInstance{
-		Workflow:       w.Workflow,
-		State:          w.State,
-		Parameters:     nilIfEmpty(params),
-		LocalState:     localRecord,
-		Outcome:        outcome,
-		QuestionSlots:  nilIfEmpty(questionSlots),
-		AskGroupSlots:  nilIfEmpty(askGroupSlots),
-		TimerSlots:     timerSlots,
-		ChildSlots:     nilIfEmpty(childSlots),
-		TaskGroupSlots: nilIfEmpty(taskGroupSlots),
+		Workflow:      w.Workflow,
+		State:         w.State,
+		Parameters:    nilIfEmpty(params),
+		LocalState:    localRecord,
+		Outcome:       outcome,
+		QuestionSlots: nilIfEmpty(questionSlots),
+		AskGroupSlots: nilIfEmpty(askGroupSlots),
+		TimerSlots:    timerSlots,
 	}, nil
 }
 
@@ -342,131 +297,5 @@ func decodePendingAskGroup(path string, data json.RawMessage) (engine.PendingAsk
 	return engine.PendingAskGroup{
 		Recipients: recipients, Arguments: nilIfEmpty(args), Responses: responses,
 		Completed: w.Completed, CompletionKind: engine.AskGroupCompletionKind(w.CompletionKind), QuorumCount: w.QuorumCount,
-	}, nil
-}
-
-func encodeChildSlots(path string, slots []engine.ChildWorkflowSlotInstance) ([]childSlotWire, error) {
-	result := make([]childSlotWire, len(slots))
-	for i, s := range slots {
-		var child json.RawMessage
-		if s.Child != nil {
-			raw, err := EncodeWorkflowInstance(pathIndex(pathField(path, "child_slots"), i), *s.Child)
-			if err != nil {
-				return nil, err
-			}
-			child = raw
-		}
-		result[i] = childSlotWire{Name: s.Name, Child: child}
-	}
-	return result, nil
-}
-
-func decodeChildSlots(path string, wire []childSlotWire) ([]engine.ChildWorkflowSlotInstance, error) {
-	result := make([]engine.ChildWorkflowSlotInstance, len(wire))
-	for i, s := range wire {
-		var child *engine.WorkflowInstance
-		if !isEmptyOrNull(s.Child) {
-			c, err := DecodeWorkflowInstance(pathIndex(pathField(path, "child_slots"), i), s.Child)
-			if err != nil {
-				return nil, err
-			}
-			child = &c
-		}
-		result[i] = engine.ChildWorkflowSlotInstance{Name: s.Name, Child: child}
-	}
-	return result, nil
-}
-
-func encodeTaskGroupSlots(path string, slots []engine.TaskGroupSlotInstance) ([]taskGroupSlotWire, error) {
-	result := make([]taskGroupSlotWire, len(slots))
-	for i, s := range slots {
-		spath := pathIndex(pathField(path, "task_group_slots"), i)
-		var group json.RawMessage
-		if s.Group != nil {
-			raw, err := encodeTaskGroupState(spath, *s.Group)
-			if err != nil {
-				return nil, err
-			}
-			group = raw
-		}
-		result[i] = taskGroupSlotWire{Name: s.Name, Group: group}
-	}
-	return result, nil
-}
-
-func encodeTaskGroupState(path string, g engine.TaskGroupState) (json.RawMessage, error) {
-	tasks := make([]taskGroupTaskWire, len(g.Tasks))
-	for i, t := range g.Tasks {
-		tpath := pathIndex(pathField(path, "tasks"), i)
-		key, err := EncodeValue(pathField(tpath, "key"), t.Key)
-		if err != nil {
-			return nil, err
-		}
-		child, err := EncodeWorkflowInstance(pathField(tpath, "child"), t.Child)
-		if err != nil {
-			return nil, err
-		}
-		tasks[i] = taskGroupTaskWire{Key: key, Child: child}
-	}
-	terminalOrder := make([]json.RawMessage, len(g.TerminalOrder))
-	for i, v := range g.TerminalOrder {
-		raw, err := EncodeValue(pathIndex(pathField(path, "terminal_order"), i), v)
-		if err != nil {
-			return nil, err
-		}
-		terminalOrder[i] = raw
-	}
-	return json.Marshal(taskGroupStateWire{
-		Tasks: tasks, Phase: int(g.Phase), CompletionKind: int(g.CompletionKind),
-		QuorumCount: g.QuorumCount, TerminalOrder: terminalOrder,
-	})
-}
-
-func decodeTaskGroupSlots(path string, wire []taskGroupSlotWire) ([]engine.TaskGroupSlotInstance, error) {
-	result := make([]engine.TaskGroupSlotInstance, len(wire))
-	for i, s := range wire {
-		spath := pathIndex(pathField(path, "task_group_slots"), i)
-		var group *engine.TaskGroupState
-		if !isEmptyOrNull(s.Group) {
-			g, err := decodeTaskGroupState(spath, s.Group)
-			if err != nil {
-				return nil, err
-			}
-			group = &g
-		}
-		result[i] = engine.TaskGroupSlotInstance{Name: s.Name, Group: group}
-	}
-	return result, nil
-}
-
-func decodeTaskGroupState(path string, data json.RawMessage) (engine.TaskGroupState, error) {
-	var w taskGroupStateWire
-	if err := strictDecodeInto(path, data, &w); err != nil {
-		return engine.TaskGroupState{}, err
-	}
-	tasks := make([]engine.TaskGroupTask, len(w.Tasks))
-	for i, t := range w.Tasks {
-		tpath := pathIndex(pathField(path, "tasks"), i)
-		key, err := DecodeValue(pathField(tpath, "key"), t.Key)
-		if err != nil {
-			return engine.TaskGroupState{}, err
-		}
-		child, err := DecodeWorkflowInstance(pathField(tpath, "child"), t.Child)
-		if err != nil {
-			return engine.TaskGroupState{}, err
-		}
-		tasks[i] = engine.TaskGroupTask{Key: key, Child: child}
-	}
-	terminalOrder := make([]engine.Value, len(w.TerminalOrder))
-	for i, raw := range w.TerminalOrder {
-		v, err := DecodeValue(pathIndex(pathField(path, "terminal_order"), i), raw)
-		if err != nil {
-			return engine.TaskGroupState{}, err
-		}
-		terminalOrder[i] = v
-	}
-	return engine.TaskGroupState{
-		Tasks: nilIfEmpty(tasks), Phase: engine.TaskGroupPhase(w.Phase), CompletionKind: engine.TaskGroupCompletionKind(w.CompletionKind),
-		QuorumCount: w.QuorumCount, TerminalOrder: nilIfEmpty(terminalOrder),
 	}, nil
 }

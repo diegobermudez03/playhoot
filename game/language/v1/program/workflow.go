@@ -48,24 +48,12 @@ type WorkflowDeclaration struct {
 	// semantics.
 	TimerSlots []TimerSlotDeclaration
 
-	// ChildSlots declares the statically named child-workflow slots owned
-	// by each instance of this workflow. See ChildWorkflowSlotDeclaration
-	// for its semantics.
-	ChildSlots []ChildWorkflowSlotDeclaration
-
-	// TaskGroupSlots declares the statically named task-group slots owned
-	// by each instance of this workflow. See TaskGroupSlotDeclaration for
-	// its semantics and its distinction from ChildSlots.
-	TaskGroupSlots []TaskGroupSlotDeclaration
-
 	// Presentations declares this workflow's workflow-level presentations,
 	// each active for the entire lifetime of a workflow instance —
 	// created when the instance is created, remaining active across every
 	// state transition, and unmounted only when the instance completes,
 	// fails, or is cancelled. See PresentationDeclaration for its
-	// semantics. A child workflow instance owns its own workflow-level
-	// presentations independently, active only while that child instance
-	// exists.
+	// semantics.
 	Presentations []PresentationDeclaration
 
 	// InitialState names the state a new workflow instance begins in.

@@ -39,30 +39,6 @@ const (
 	// considered; see ErrInputRejected.
 	SignalKindTimerExpired
 
-	// SignalKindChildCompleted identifies that the child workflow
-	// instance in the child slot named Slot, owned by the instance
-	// Path addresses, completed successfully. engineservice.Step reads
-	// the child's durable result directly from the slot — Signal
-	// carries no payload of its own for this kind — and rejects a
-	// stale or duplicate delivery once the slot has already been
-	// joined and cleared; see program.ChildCompletedSignalSource and
-	// ErrInputRejected.
-	SignalKindChildCompleted
-
-	// SignalKindChildFailed identifies that the child workflow instance
-	// in the child slot named Slot, owned by the instance Path
-	// addresses, terminated through an authored FailControl. See
-	// SignalKindChildCompleted and program.ChildFailedSignalSource.
-	SignalKindChildFailed
-
-	// SignalKindChildCancelled identifies that the child workflow
-	// instance in the child slot named Slot, owned by the instance Path
-	// addresses, terminated itself through an authored CancelControl.
-	// This is distinct from parent-driven cancellation
-	// (CancelChildWorkflowOperation), which never produces a Signal.
-	// See SignalKindChildCompleted and program.ChildCancelledSignalSource.
-	SignalKindChildCancelled
-
 	// SignalKindAskGroupAnswered identifies a submitted answer to the
 	// ask group collecting in the workflow slot named Slot: Respondent
 	// is the answering user and Answer the submitted value.
@@ -81,69 +57,30 @@ const (
 	SignalKindAskGroupAnswered
 
 	// SignalKindAskGroupCompleted identifies that the ask group in the
-	// slot named Slot, owned by the instance Path addresses, is
-	// completed-awaiting-join — its completion policy was satisfied
-	// naturally, or a FinalizeAskGroupOperation forced it. Signal
-	// carries no payload of its own; engineservice.Step reads the
-	// group's durable "responses", "respondents", and "missing" data
-	// directly from the slot. A stale or duplicate delivery once the
-	// slot has already been joined and cleared is rejected; see
-	// program.AskGroupCompletedSignalSource and ErrInputRejected.
+	// slot named Slot is completed-awaiting-join — its completion
+	// policy was satisfied naturally, or a FinalizeAskGroupOperation
+	// forced it. Signal carries no payload of its own; engineservice.Step
+	// reads the group's durable "responses", "respondents", and
+	// "missing" data directly from the slot. A stale or duplicate
+	// delivery once the slot has already been joined and cleared is
+	// rejected; see program.AskGroupCompletedSignalSource and
+	// ErrInputRejected.
 	SignalKindAskGroupCompleted
-
-	// SignalKindTaskGroupCompleted identifies that the task group in
-	// the slot named Slot, owned by the instance Path addresses, is
-	// completed-awaiting-join — its completion policy was satisfied
-	// naturally, or a FinalizeTaskGroupOperation forced it. Signal
-	// carries no payload of its own; engineservice.Step reads the
-	// group's durable "taskKeys", "terminalKeys", "results", "failures",
-	// "cancellations", and "unfinished" data directly from the slot.
-	// Unlike a child workflow's individual outcome, no single task in
-	// the group ever produces its own signal to the owning workflow —
-	// only this aggregate does, once, when the whole group completes.
-	// A stale or duplicate delivery once the slot has already been
-	// joined and cleared is rejected; see
-	// program.TaskGroupCompletedSignalSource and ErrInputRejected.
-	SignalKindTaskGroupCompleted
 )
-
-// PathStep identifies one step from a parent workflow instance down to
-// a child it owns, as part of a Signal.Path — either a child occupying
-// a named ChildWorkflowSlot (TaskKey nil), or a task occupying a named
-// TaskGroupSlot at the task key TaskKey (TaskKey non-nil).
-type PathStep struct {
-	Slot    string
-	TaskKey Value
-}
 
 // Signal is one runtime input to engineservice.Step: something that
 // happened, together with whatever payload its schema exposes for
 // binding — see engine.SignalPattern and engine.SignalBinding. Which
 // fields are meaningful depends on Kind; see each SignalKind constant.
+// A Session runs exactly one workflow instance for its entire lifetime,
+// so a Signal always targets that one instance - there is no addressing
+// concept to resolve.
 //
 // A Signal is always consumed by exactly one Step call; Step never
 // applies more than one Signal, and the engine does not recursively
 // generate and apply further transitions inside one Step.
 type Signal struct {
 	Kind SignalKind
-
-	// Path addresses which workflow instance in the current
-	// child-workflow tree this Signal targets, as a sequence of
-	// PathStep values walked from the root instance down — for example,
-	// []PathStep{{Slot: "Opponent"}} targets the child currently
-	// occupying the root instance's "Opponent" child slot, and
-	// []PathStep{{Slot: "Workers", TaskKey: NumberValue{Value: 3}}}
-	// targets the task keyed 3 inside the root instance's "Workers"
-	// task-group slot. A nil or empty Path targets the root instance
-	// itself.
-	//
-	// A child-outcome signal (SignalKindChildCompleted,
-	// SignalKindChildFailed, SignalKindChildCancelled), an
-	// AskGroupCompletedSignalSource, or a TaskGroupCompletedSignalSource
-	// targets the parent that owns the terminated child's slot, not the
-	// terminated child itself — joining is something the parent's own
-	// transition does.
-	Path []PathStep
 
 	Name string
 

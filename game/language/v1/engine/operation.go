@@ -230,38 +230,3 @@ type EmitEffectOperation struct {
 }
 
 func (EmitEffectOperation) isOperation() {}
-
-// SpawnChildWorkflowOperation creates one child workflow instance in the
-// named child slot Slot, passing Arguments as the child's parameters.
-// The compiler guarantees Arguments matches the slot's declared
-// workflow's declared parameters exactly. Spawning into an already
-// occupied slot — holding a running child or a terminal outcome still
-// awaiting join — is an execution error that fails the transition
-// atomically. Spawning does not itself execute the child's
-// WorkflowStarted transition; it produces the corresponding
-// engine.Signal as one of the enclosing engineservice.Step call's
-// Commit.InternalSignals, for a later Step call to apply — see
-// program.SpawnChildWorkflowOperation.
-type SpawnChildWorkflowOperation struct {
-	Slot      string
-	Arguments []CallArgument
-}
-
-func (SpawnChildWorkflowOperation) isOperation() {}
-
-// CancelChildWorkflowOperation recursively cancels the running child
-// workflow instance in the named child slot Slot, together with every
-// descendant it owns, and clears the slot. This is parent-driven
-// cancellation: unlike a child cancelling itself (observed by its
-// parent through ChildCancelledSignalSource), it never produces a
-// signal. Cancelling an already empty slot is an idempotent no-op.
-// Cancelling a slot that holds a terminal outcome still awaiting join
-// is an execution error — that outcome must be joined through its
-// corresponding child-outcome signal first, never silently discarded.
-// See program.CancelChildWorkflowOperation.
-type CancelChildWorkflowOperation struct {
-	Slot   string
-	Reason Expression
-}
-
-func (CancelChildWorkflowOperation) isOperation() {}

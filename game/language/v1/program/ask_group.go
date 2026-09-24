@@ -8,9 +8,7 @@ package program
 // Use an ask group when several users independently answer one question
 // as part of one logical interaction step (every player selecting a card,
 // team members voting, collecting simultaneous secret choices, waiting for
-// a quorum of responses). Ask groups are for one-step parallel
-// interactions; multi-step parallel processes belong to child workflows
-// (see ChildWorkflowSlotDeclaration) and future task groups.
+// a quorum of responses).
 //
 // A slot references exactly one QuestionDeclaration by Question — the same
 // reusable, typed question contract used by single-recipient question

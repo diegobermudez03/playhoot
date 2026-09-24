@@ -28,15 +28,10 @@ const (
 	ExecutionErrorSlotOccupied             = runtime.ExecutionErrorSlotOccupied
 	ExecutionErrorInvalidTimerDelay        = runtime.ExecutionErrorInvalidTimerDelay
 	ExecutionErrorInputRejected            = runtime.ExecutionErrorInputRejected
-	ExecutionErrorChildOutcomeNotJoined    = runtime.ExecutionErrorChildOutcomeNotJoined
 	ExecutionErrorDuplicateRecipient       = runtime.ExecutionErrorDuplicateRecipient
 	ExecutionErrorInvalidQuorum            = runtime.ExecutionErrorInvalidQuorum
 	ExecutionErrorAskGroupNotJoined        = runtime.ExecutionErrorAskGroupNotJoined
-	ExecutionErrorDuplicateTaskKey         = runtime.ExecutionErrorDuplicateTaskKey
-	ExecutionErrorTaskGroupNotJoined       = runtime.ExecutionErrorTaskGroupNotJoined
-	ExecutionErrorTaskGroupLeftBuilding    = runtime.ExecutionErrorTaskGroupLeftBuilding
 	ExecutionErrorPresentationSlotOccupied = runtime.ExecutionErrorPresentationSlotOccupied
-	ExecutionErrorWorkflowDepthExceeded    = runtime.ExecutionErrorWorkflowDepthExceeded
 	ExecutionErrorActiveSlotLimitExceeded  = runtime.ExecutionErrorActiveSlotLimitExceeded
 )
 

@@ -27,27 +27,7 @@ type wireTimerExpiredSignalSource struct {
 	Slot string `json:"slot"`
 }
 
-type wireChildCompletedSignalSource struct {
-	Kind string `json:"kind"`
-	Slot string `json:"slot"`
-}
-
-type wireChildFailedSignalSource struct {
-	Kind string `json:"kind"`
-	Slot string `json:"slot"`
-}
-
-type wireChildCancelledSignalSource struct {
-	Kind string `json:"kind"`
-	Slot string `json:"slot"`
-}
-
 type wireAskGroupCompletedSignalSource struct {
-	Kind string `json:"kind"`
-	Slot string `json:"slot"`
-}
-
-type wireTaskGroupCompletedSignalSource struct {
 	Kind string `json:"kind"`
 	Slot string `json:"slot"`
 }
@@ -65,16 +45,8 @@ func encodeSignalSource(path string, value program.SignalSource) (json.RawMessag
 			return json.Marshal(wireQuestionAnsweredSignalSource{Kind: "question_answered", Slot: v.Slot})
 		case program.TimerExpiredSignalSource:
 			return json.Marshal(wireTimerExpiredSignalSource{Kind: "timer_expired", Slot: v.Slot})
-		case program.ChildCompletedSignalSource:
-			return json.Marshal(wireChildCompletedSignalSource{Kind: "child_completed", Slot: v.Slot})
-		case program.ChildFailedSignalSource:
-			return json.Marshal(wireChildFailedSignalSource{Kind: "child_failed", Slot: v.Slot})
-		case program.ChildCancelledSignalSource:
-			return json.Marshal(wireChildCancelledSignalSource{Kind: "child_cancelled", Slot: v.Slot})
 		case program.AskGroupCompletedSignalSource:
 			return json.Marshal(wireAskGroupCompletedSignalSource{Kind: "ask_group_completed", Slot: v.Slot})
-		case program.TaskGroupCompletedSignalSource:
-			return json.Marshal(wireTaskGroupCompletedSignalSource{Kind: "task_group_completed", Slot: v.Slot})
 		default:
 			return nil, fmt.Errorf("%s: unsupported program.SignalSource implementation %T", path, value)
 		}
@@ -110,36 +82,12 @@ func decodeSignalSource(path string, data json.RawMessage) (program.SignalSource
 				return nil, err
 			}
 			return program.TimerExpiredSignalSource{Slot: wire.Slot}, nil
-		case "child_completed":
-			var wire wireChildCompletedSignalSource
-			if err := strictDecodeInto(path, raw, &wire); err != nil {
-				return nil, err
-			}
-			return program.ChildCompletedSignalSource{Slot: wire.Slot}, nil
-		case "child_failed":
-			var wire wireChildFailedSignalSource
-			if err := strictDecodeInto(path, raw, &wire); err != nil {
-				return nil, err
-			}
-			return program.ChildFailedSignalSource{Slot: wire.Slot}, nil
-		case "child_cancelled":
-			var wire wireChildCancelledSignalSource
-			if err := strictDecodeInto(path, raw, &wire); err != nil {
-				return nil, err
-			}
-			return program.ChildCancelledSignalSource{Slot: wire.Slot}, nil
 		case "ask_group_completed":
 			var wire wireAskGroupCompletedSignalSource
 			if err := strictDecodeInto(path, raw, &wire); err != nil {
 				return nil, err
 			}
 			return program.AskGroupCompletedSignalSource{Slot: wire.Slot}, nil
-		case "task_group_completed":
-			var wire wireTaskGroupCompletedSignalSource
-			if err := strictDecodeInto(path, raw, &wire); err != nil {
-				return nil, err
-			}
-			return program.TaskGroupCompletedSignalSource{Slot: wire.Slot}, nil
 		default:
 			return nil, newDecodeError(path, fmt.Sprintf("unsupported signal source kind %q", kind), nil)
 		}

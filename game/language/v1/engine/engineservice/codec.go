@@ -67,44 +67,21 @@ func DecodeValue(data []byte) (engine.Value, error) {
 }
 
 // CheckSnapshotCompatibility reports whether snapshot can be resumed
-// against p: its root instance must run p's own RootWorkflow, and every
-// instance anywhere in its child-workflow tree (root, every occupied
-// ChildSlot, and every task-group task) must run a workflow p actually
-// compiles. This is the same root-workflow check Step itself makes
-// (ExecutionErrorSnapshotProgramMismatch), exposed standalone so a
-// caller restoring a persisted Snapshot can validate it once, before
-// resuming — for example, after DecodeSnapshot, or after recompiling a
-// program.Definition to a newer engine.Program version and before
-// stepping an older persisted Snapshot against it.
+// against p: its one workflow instance must run p's own RootWorkflow,
+// and p must actually compile a workflow of that name. This is the same
+// check Step itself makes (ExecutionErrorSnapshotProgramMismatch),
+// exposed standalone so a caller restoring a persisted Snapshot can
+// validate it once, before resuming — for example, after DecodeSnapshot,
+// or after recompiling a program.Definition to a newer engine.Program
+// version and before stepping an older persisted Snapshot against it.
 func CheckSnapshotCompatibility(p engine.Program, snapshot engine.Snapshot) error {
 	if snapshot.Root.Workflow != p.RootWorkflow {
 		return &ExecutionError{Code: ExecutionErrorSnapshotProgramMismatch, Message: fmt.Sprintf(
 			"engineservice: snapshot's root instance runs workflow %q, but this program's root workflow is %q", snapshot.Root.Workflow, p.RootWorkflow)}
 	}
-	return checkInstanceCompatibility(p, snapshot.Root)
-}
-
-func checkInstanceCompatibility(p engine.Program, instance engine.WorkflowInstance) error {
-	if _, ok := p.Workflows[instance.Workflow]; !ok {
+	if _, ok := p.Workflows[snapshot.Root.Workflow]; !ok {
 		return &ExecutionError{Code: ExecutionErrorSnapshotProgramMismatch, Message: fmt.Sprintf(
-			"engineservice: snapshot references workflow %q, which this program does not compile", instance.Workflow)}
-	}
-	for _, s := range instance.ChildSlots {
-		if s.Child != nil {
-			if err := checkInstanceCompatibility(p, *s.Child); err != nil {
-				return err
-			}
-		}
-	}
-	for _, s := range instance.TaskGroupSlots {
-		if s.Group == nil {
-			continue
-		}
-		for _, t := range s.Group.Tasks {
-			if err := checkInstanceCompatibility(p, t.Child); err != nil {
-				return err
-			}
-		}
+			"engineservice: snapshot references workflow %q, which this program does not compile", snapshot.Root.Workflow)}
 	}
 	return nil
 }

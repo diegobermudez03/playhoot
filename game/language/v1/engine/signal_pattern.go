@@ -46,32 +46,6 @@ type TimerExpiredSignalSource struct {
 
 func (TimerExpiredSignalSource) isSignalSource() {}
 
-// ChildCompletedSignalSource matches the signal produced when the child
-// workflow in the named ChildWorkflowSlot Slot completes successfully.
-type ChildCompletedSignalSource struct {
-	Slot string
-}
-
-func (ChildCompletedSignalSource) isSignalSource() {}
-
-// ChildFailedSignalSource matches the signal produced when the child
-// workflow in the named ChildWorkflowSlot Slot terminates through an
-// authored FailControl.
-type ChildFailedSignalSource struct {
-	Slot string
-}
-
-func (ChildFailedSignalSource) isSignalSource() {}
-
-// ChildCancelledSignalSource matches the signal produced when the child
-// workflow in the named ChildWorkflowSlot Slot terminates through an
-// authored CancelControl.
-type ChildCancelledSignalSource struct {
-	Slot string
-}
-
-func (ChildCancelledSignalSource) isSignalSource() {}
-
 // AskGroupCompletedSignalSource matches the signal produced when the ask
 // group in the named AskGroupSlot Slot completes.
 type AskGroupCompletedSignalSource struct {
@@ -79,14 +53,6 @@ type AskGroupCompletedSignalSource struct {
 }
 
 func (AskGroupCompletedSignalSource) isSignalSource() {}
-
-// TaskGroupCompletedSignalSource matches the signal produced when the
-// task group in the named TaskGroupSlot Slot completes.
-type TaskGroupCompletedSignalSource struct {
-	Slot string
-}
-
-func (TaskGroupCompletedSignalSource) isSignalSource() {}
 
 // SignalBinding binds Field from a matched signal's schema (see
 // SignalSource) to the immutable lexical name Name, in scope for the

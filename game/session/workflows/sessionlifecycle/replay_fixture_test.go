@@ -49,7 +49,6 @@ func TestReplayObservableDefinitionFixture(t *testing.T) {
 
 	answerSignal1 := engine.Signal{
 		Kind:       engine.SignalKindQuestionAnswered,
-		Path:       drain1.Steps[0].Path,
 		Slot:       replayObservableSlot,
 		Respondent: engine.UserID(strconv.FormatUint(1, 10)),
 		Answer:     engine.NumberValue{Value: 111},
@@ -70,7 +69,6 @@ func TestReplayObservableDefinitionFixture(t *testing.T) {
 
 	answerSignal2 := engine.Signal{
 		Kind:       engine.SignalKindQuestionAnswered,
-		Path:       drain2.Steps[0].Path,
 		Slot:       replayObservableSlot2,
 		Respondent: engine.UserID(strconv.FormatUint(1, 10)),
 		Answer:     engine.NumberValue{Value: 222},

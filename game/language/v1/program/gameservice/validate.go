@@ -430,9 +430,6 @@ func (v *validator) validateWorkflows() {
 		v.validateTypeReference(w.ResultType, path+".result_type")
 		v.validateStateDeclaration(w.LocalState, path+".local_state")
 
-		for j, slot := range w.TaskGroupSlots {
-			v.validateTypeReference(slot.KeyType, fmt.Sprintf("%s.task_group_slots[%d].key_type", path, j))
-		}
 		for j, slot := range w.QuestionSlots {
 			v.validateQuestionPresentation(slot.Presentation, fmt.Sprintf("%s.question_slots[%d].presentation", path, j))
 		}
@@ -558,12 +555,6 @@ func (v *validator) validateOperation(op program.Operation, path string) {
 	case program.ScheduleTimerOperation:
 		v.validateNumberExpression(o.DelayMilliseconds, path+".delay_milliseconds")
 	case program.CancelTimerOperation:
-	case program.SpawnChildWorkflowOperation:
-		for i, arg := range o.Arguments {
-			v.validateExpression(arg.Value, fmt.Sprintf("%s.arguments[%d].value", path, i))
-		}
-	case program.CancelChildWorkflowOperation:
-		v.validateStringExpression(o.Reason, path+".reason")
 	case program.OpenAskGroupOperation:
 		v.validateExpression(o.Recipients, path+".recipients")
 		for i, arg := range o.Arguments {
@@ -572,17 +563,6 @@ func (v *validator) validateOperation(op program.Operation, path string) {
 		v.validateAskGroupCompletionPolicy(o.Completion, path+".completion")
 	case program.FinalizeAskGroupOperation:
 	case program.CancelAskGroupOperation:
-	case program.BeginTaskGroupOperation:
-		v.validateTaskGroupCompletionPolicy(o.Completion, path+".completion")
-	case program.SpawnTaskGroupChildOperation:
-		v.validateExpression(o.Key, path+".key")
-		for i, arg := range o.Arguments {
-			v.validateExpression(arg.Value, fmt.Sprintf("%s.arguments[%d].value", path, i))
-		}
-	case program.SealTaskGroupOperation:
-	case program.FinalizeTaskGroupOperation:
-	case program.CancelTaskGroupOperation:
-		v.validateStringExpression(o.Reason, path+".reason")
 	case program.DrawRandomOperation:
 		v.validateRandomGenerator(o.Generator, path+".generator")
 	}
@@ -590,12 +570,6 @@ func (v *validator) validateOperation(op program.Operation, path string) {
 
 func (v *validator) validateAskGroupCompletionPolicy(policy program.AskGroupCompletionPolicy, path string) {
 	if quorum, ok := policy.(program.AskGroupQuorumPolicy); ok {
-		v.validateNumberExpression(quorum.Count, path+".count")
-	}
-}
-
-func (v *validator) validateTaskGroupCompletionPolicy(policy program.TaskGroupCompletionPolicy, path string) {
-	if quorum, ok := policy.(program.TaskGroupQuorumTerminalPolicy); ok {
 		v.validateNumberExpression(quorum.Count, path+".count")
 	}
 }

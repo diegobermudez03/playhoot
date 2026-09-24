@@ -97,33 +97,6 @@ func TestCodec_SimpleSnapshotRoundTrips(t *testing.T) {
 	assertSnapshotsEqual(t, snap, decoded)
 }
 
-func TestCodec_ChildWorkflowTreeRoundTrips(t *testing.T) {
-	p := childWorkflowProgram()
-	snap := spawnAndStart(t, p, mainSnapshot())
-	decoded := roundTripSnapshot(t, snap)
-	assertSnapshotsEqual(t, snap, decoded)
-	if decoded.Root.ChildSlots[0].Child == nil || decoded.Root.ChildSlots[0].Child.Workflow != "Worker" {
-		t.Fatalf("child instance lost across round trip: %+v", decoded.Root.ChildSlots[0])
-	}
-}
-
-func TestCodec_TaskGroupRoundTrips(t *testing.T) {
-	p := taskGroupProgram(engine.TaskGroupQuorumTerminalPolicy{Count: engine.NumberLiteralExpression{Value: 2}}, []float64{10, 20, 30}, engine.UnitType{}, engine.StayControl{})
-	commit, err := engineservice.Step(p, taskGroupSnapshot(), engine.Signal{Name: "BeginAndSeal"}, engine.DefaultLimits())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	snap := terminateTask(t, p, commit.Snapshot, 1, "Succeed")
-	snap = terminateTask(t, p, snap, 3, "Fail")
-
-	decoded := roundTripSnapshot(t, snap)
-	assertSnapshotsEqual(t, snap, decoded)
-	group := decoded.Root.TaskGroupSlots[0].Group
-	if group == nil || group.Phase != engine.TaskGroupPhaseCompleted || len(group.TerminalOrder) != 2 {
-		t.Fatalf("task group state lost across round trip: %+v", group)
-	}
-}
-
 func TestCodec_AskGroupRoundTrips(t *testing.T) {
 	p := askGroupProgram(engine.AskGroupAllResponsesPolicy{}, engine.UnitType{}, engine.StayControl{})
 	commit, _ := engineservice.Step(p, askGroupSnapshot([]engine.UserID{askAlice, askBob}), engine.Signal{Name: "Open"}, engine.DefaultLimits())
@@ -259,12 +232,14 @@ func TestCodec_CheckSnapshotCompatibility(t *testing.T) {
 	}
 }
 
-func TestCodec_CheckSnapshotCompatibilityDetectsMissingChildWorkflow(t *testing.T) {
-	p := childWorkflowProgram()
-	snap := spawnAndStart(t, p, mainSnapshot())
+func TestCodec_CheckSnapshotCompatibilityDetectsUncompiledRootWorkflow(t *testing.T) {
+	p := counterProgram()
+	snap := counterSnapshot(0)
 
-	// Simulate resuming against a newer program version that dropped "Worker".
-	trimmed := engine.Program{RootWorkflow: p.RootWorkflow, Workflows: map[string]engine.Workflow{"Main": p.Workflows["Main"]}}
+	// Simulate resuming against a newer program version that dropped the
+	// snapshot's own root workflow from its compiled Workflows, while
+	// still naming it as RootWorkflow.
+	trimmed := engine.Program{RootWorkflow: p.RootWorkflow, Workflows: map[string]engine.Workflow{}}
 	err := engineservice.CheckSnapshotCompatibility(trimmed, snap)
 	if e, ok := err.(*engineservice.ExecutionError); !ok || e.Code != engineservice.ExecutionErrorSnapshotProgramMismatch {
 		t.Fatalf("expected engineservice.ExecutionErrorSnapshotProgramMismatch, got %v", err)

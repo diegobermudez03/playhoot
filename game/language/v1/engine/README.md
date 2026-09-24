@@ -98,7 +98,7 @@ Rationale and alternatives are recorded in `game/docs/decisions/GAME-ADR-0006-ga
 
 ### Accepted Disconnect/Reconnect Delivery And Offline-Interaction Invariants
 
-Status: ACCEPTED DESIGN, NOT YET IMPLEMENTED. `UserDisconnected`/`UserReconnected` are accepted as standard `NamedSignalSource` platform/lifecycle signals exposing only `user: user`; nothing in this package's current `Step`/`Signal` handling implements them today. Session Runtime is accepted to address delivery of both exclusively to the root workflow instance path — never as an implicit broadcast to nested instances — consistent with `Step` already resolving and applying exactly one signal against one instance path per call, with no internal chaining/fan-out to other instances. An authored game may declare no matching transition for either signal; that is an ordinary `ErrSignalRejected` outcome, not an error condition, and Session Runtime must not create a `RuntimeTurn` or infer any gameplay consequence from it.
+Status: ACCEPTED DESIGN, NOT YET IMPLEMENTED. `UserDisconnected`/`UserReconnected` are accepted as standard `NamedSignalSource` platform/lifecycle signals exposing only `user: user`; nothing in this package's current `Step`/`Signal` handling implements them today. Session Runtime is accepted to deliver both to the one workflow instance a Session runs — there is no other instance to broadcast to, since the engine executes a Session's entire game logic as a single flat workflow instance (see `game/docs/decisions/GAME-ADR-0026-flat-workflow-execution-model-and-keyed-interaction-slots.md`). An authored game may declare no matching transition for either signal; that is an ordinary `ErrSignalRejected` outcome, not an error condition, and Session Runtime must not create a `RuntimeTurn` or infer any gameplay consequence from it.
 
 Independently, Session Runtime opening an interaction/question for a SessionActor with no live transport connection must still produce the engine's normal `OpenQuestionOutput`/interaction behavior unconditionally — engine execution itself has no notion of connectivity, and this accepted invariant constrains the Session Runtime caller, not this package.
 
@@ -114,9 +114,9 @@ Rationale and alternatives are recorded in `game/docs/decisions/GAME-ADR-0012-ga
 
 Applies exactly one `Signal` to `snapshot` and returns the result as one atomic `Commit`. `Step` never mutates `snapshot` in place — on success, the new state is `commit.Snapshot`; on failure, `snapshot` is guaranteed unchanged, no `Commit` was produced, and nothing in it should be treated as published.
 
-Internally, one successful `Step` call: resolves the target instance from `signal.Path`, selects one matching transition, evaluates its guard, runs its operations (bounded by `limits`), applies its control result, checks every invariant, recomputes affected presentations, and returns everything as one `Commit`. The engine never runs more than one transition per `Step` call — it does not recursively chain transitions internally, even when a transition's own operations produce further signals (see `Commit.InternalSignals` below).
+Internally, one successful `Step` call: selects one matching transition on the Session's one workflow instance, evaluates its guard, runs its operations (bounded by `limits`), applies its control result, checks every invariant, recomputes affected presentations, and returns everything as one `Commit`. The engine never runs more than one transition per `Step` call — it does not recursively chain transitions internally, even when a transition's own operations produce further signals (see `Commit.InternalSignals` below).
 
-`limits` bounds one `Step` call's work — `engine.DefaultLimits()` is generous enough for ordinary turn-based logic while still failing a runaway transition (an unbounded loop, an unbounded recursive spawn) deterministically instead of hanging. Pass your own `engine.Limits` if you need tighter or looser bounds.
+`limits` bounds one `Step` call's work — `engine.DefaultLimits()` is generous enough for ordinary turn-based logic while still failing a runaway transition (an unbounded loop, too many active interaction slots) deterministically instead of hanging. Pass your own `engine.Limits` if you need tighter or looser bounds.
 
 #### Reading a `Commit`
 
@@ -132,7 +132,7 @@ type Commit struct {
 
 - **`Snapshot`** — persist this; it's the new authoritative state.
 - **`Outputs`** — declarative, external actions to actually perform: open a question, schedule a timer, activate/update/remove a presentation, emit a client effect, report a workflow's completion. The engine never performs any of these itself (see "Outputs" below) — that's your job.
-- **`InternalSignals`** — signals the engine itself needs applied next, in a *separate* `Step` call (for example, the `WorkflowStarted` signal a freshly spawned child workflow needs). Feed each one back through `Step` yourself; the engine will never do this for you within the same call.
+- **`InternalSignals`** — signals the engine itself needs applied next, in a *separate* `Step` call. Feed each one back through `Step` yourself; the engine will never do this for you within the same call. Currently always empty: the engine runs a Session's game logic as one flat workflow instance, and nothing in it produces a signal that only another `Step` call can consume.
 - **`Trace`** — a debugging/explanation record of exactly what this one `Step` call did: which transition ran, its guard result, the state change, any terminal outcome, and how many operations it ran. Not consumed by anything downstream — it's for logs, replay verification, and tooling.
 - **`ConsumedSignal`** — the `signal` you passed in, echoed back for convenience.
 
@@ -140,7 +140,7 @@ type Commit struct {
 
 Two of `Step`'s possible errors are *expected, non-bug outcomes*, not something to alert on: a stale or unmatched signal simply produced no `Commit`.
 
-- **`engineservice.ErrSignalRejected`** — nothing in the target instance's compiled workflow was willing to react to this signal at all (no transition matched, or the one that did had a false guard) — including a `signal.Path` that no longer names a running instance.
+- **`engineservice.ErrSignalRejected`** — nothing in the compiled workflow was willing to react to this signal at all (no transition matched, or the one that did had a false guard).
 - **`engineservice.ErrInputRejected`** — something *was* willing to react to a signal of this shape, but its concrete payload failed authoritative validation (a stale/duplicate answer, an unauthorized respondent, an answer that doesn't satisfy the question's response type or `Validation` expression, an expired timer that was already cancelled, and so on).
 
 Use `errors.Is(err, engineservice.ErrSignalRejected)` / `errors.Is(err, engineservice.ErrInputRejected)` to distinguish these from a real problem. Anything else is an `*engineservice.ExecutionError`, with a stable `.Code` (`engineservice.ExecutionErrorCode`) you can switch on or log — invariant violations, budget/limit overruns, division by zero, an occupied slot, and so on. See `internal/runtime/step.go`'s `ExecutionErrorCode` constants for the full, documented set; new codes are only ever appended, never renumbered or reused for a different meaning.
@@ -163,7 +163,7 @@ Evaluates a single compiled `Expression` against an arbitrary `Scope`, using the
 | `ActivatePresentationOutput` | a presentation was newly mounted for one recipient, with its view name and computed model |
 | `UpdatePresentationOutput` | an already-active presentation's computed model changed |
 | `RemovePresentationOutput` | an active presentation was unmounted |
-| `WorkflowCompletedOutput` | a workflow instance reached a terminal outcome (`Completed`/`Failed`/`Cancelled`) — for the root instance (`Path` empty), this is the only way to observe the whole game instance ending, since there's no parent to notify through a signal |
+| `WorkflowCompletedOutput` | the one workflow instance a Session runs reached a terminal outcome (`Completed`/`Failed`/`Cancelled`) — this is the only way to observe the whole game instance ending, since there's no parent to notify through a signal |
 
 Type-switch over `engine.Output` exhaustively; the set is closed the same way `program.Expression`/`program.Operation` are — you can't add your own variant from outside the package.
 
@@ -199,7 +199,7 @@ There is deliberately no codec for `Program` itself. A compiled `Program` is a p
 - `Program.Metadata` — the game version's identity (carried over unchanged from `program.Definition.Metadata`).
 - `Program.Types`, `.Functions`, `.Resources`, `.Questions`, `.Effects`, `.Projections`, `.Views`, `.Workflows` — every one of `def`'s catalogs, compiled and keyed by declared name.
 - `Program.RootWorkflow` — the workflow name `NewSnapshot` starts.
-- `Snapshot.GlobalState`, `Snapshot.Root` (a `WorkflowInstance`, and through its `ChildSlots`/`TaskGroupSlots`, the whole child-workflow tree) — inspect these to build your own read models, admin tooling, or debugging views, using the exported `Value` variants (`BoolValue`, `NumberValue`, `RecordValue`, ...) and `Value.Equal`/`.Validate`.
+- `Snapshot.GlobalState`, `Snapshot.Root` (the one `WorkflowInstance` a Session runs) — inspect these to build your own read models, admin tooling, or debugging views, using the exported `Value` variants (`BoolValue`, `NumberValue`, `RecordValue`, ...) and `Value.Equal`/`.Validate`.
 
 You will not typically construct `engine.Program`/`engine.Workflow`/`engine.Expression`/... values by hand in real code — those come from `Compile`. Building them directly (as the engine's own tests do, to exercise runtime behavior independently of the compiler) is a testing technique, not the intended integration path.
 

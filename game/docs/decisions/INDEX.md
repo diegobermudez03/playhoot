@@ -35,10 +35,11 @@ This index is the Game decision family under the repository-wide routing model d
 | [GAME-ADR-0023](GAME-ADR-0023-session-runtime-current-turn-pointer-on-sessions.md) | Session Runtime Current-Turn Pointer Lives On `sessions`, Not A Separate Table | ACCEPTED | 2026-09-19 | None | `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md`, `game/README.md`, `game/docs/DATA_MODEL.md`, `game/docs/FLOWS.md` |
 | [GAME-ADR-0024](GAME-ADR-0024-replay-first-session-runtime-persistence.md) | Replay-First Session Runtime Persistence | ACCEPTED | 2026-09-20 | None | `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md`, `game/README.md` |
 | [GAME-ADR-0025](GAME-ADR-0025-role-aware-live-connections.md) | Role-Aware Live Connections — Admin and Participant | ACCEPTED | 2026-09-20 | None | `game/README.md` |
+| [GAME-ADR-0026](GAME-ADR-0026-flat-workflow-execution-model-and-keyed-interaction-slots.md) | Flat Workflow Execution Model, Keyed Interaction Slots, and Engine-Owned Interaction Addressing | ACCEPTED | 2026-09-24 | None | `game/README.md`, `game/language/v1/engine/LOGICAL_CONTRACT.md`, `game/language/v1/engine/README.md`, `game/language/v1/program/README.md`, `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md` |
 
-Next Game ADR: `GAME-ADR-0026`.
+Next Game ADR: `GAME-ADR-0027`.
 
-GAME-ADR-0024 supersedes GAME-ADR-0007's Snapshot-persistence decision and GAME-ADR-0009's object-storage archival decision **in part only** — see GAME-ADR-0024's own header for the precise scope; the rest of each superseded record (RuntimeTurn/RuntimeStep conceptual model, archive-metadata-entity concept, verified-hard-delete policy) remains valid and is restated by GAME-ADR-0024. GAME-ADR-0025 refines (does not supersede) GAME-ADR-0002 and GAME-ADR-0005.
+GAME-ADR-0024 supersedes GAME-ADR-0007's Snapshot-persistence decision and GAME-ADR-0009's object-storage archival decision **in part only** — see GAME-ADR-0024's own header for the precise scope; the rest of each superseded record (RuntimeTurn/RuntimeStep conceptual model, archive-metadata-entity concept, verified-hard-delete policy) remains valid and is restated by GAME-ADR-0024. GAME-ADR-0025 refines (does not supersede) GAME-ADR-0002 and GAME-ADR-0005. GAME-ADR-0026 generalizes (does not supersede) GAME-ADR-0012's keyed-slot concept.
 
 These IDs were migrated from the previously centralized global architecture family (`docs/decisions/architecture/`) on 2026-09-07. Historical status, rationale, alternatives, consequences, and created dates were preserved unchanged; only the identifier/location/cross-reference wiring changed. See `docs/decisions/LEGACY_ADR_ID_MAP.md` for the full old-ID -> new-ID mapping.
 

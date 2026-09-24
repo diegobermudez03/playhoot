@@ -113,7 +113,7 @@ func TestCaptureInteractions(t *testing.T) {
 	t.Run("open_then_close_in_one_step_use_the_same_engine_path", func(t *testing.T) {
 		repo := &fakeInteractionCaptureRepo{}
 		steps := []runtimeturn.StepTrace{
-			{Workflow: "Main", Path: []engine.PathStep{{Slot: "Opponent"}}, Outputs: []engine.Output{
+			{Workflow: "Main", Outputs: []engine.Output{
 				engine.OpenQuestionOutput{Slot: "Q", Recipient: engine.UserID("1"), Question: "PickNumber"},
 				engine.CloseQuestionOutput{Slot: "Q", Recipient: engine.UserID("2")},
 			}},
@@ -123,8 +123,7 @@ func TestCaptureInteractions(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, repo.creates, 1)
 		require.Len(t, repo.closes, 1)
-		require.Equal(t, repo.creates[0].enginePath, repo.closes[0].enginePath, "both outputs came from the same Step, addressing the same instance")
-		require.NotEqual(t, string(repo.creates[0].enginePath), "[]", "a non-root Path must not encode as the root's empty array")
+		require.Equal(t, repo.creates[0].enginePath, repo.closes[0].enginePath, "both outputs came from the same Step, addressing the same (and only) instance")
 	})
 
 	t.Run("steps_with_no_outputs_are_skipped", func(t *testing.T) {

@@ -138,9 +138,18 @@ func buildCompleteDefinition() program.Definition {
 		RootWorkflow: "PlayRound",
 		Workflows: []program.WorkflowDeclaration{
 			{
-				Name:         "PlayRound",
-				ResultType:   program.NamedTypeReference{Name: "TurnResult"},
-				ChildSlots:   []program.ChildWorkflowSlotDeclaration{{Name: "activeTurn", Workflow: "PlayTurn"}},
+				Name:       "PlayRound",
+				ResultType: program.NamedTypeReference{Name: "TurnResult"},
+				QuestionSlots: []program.QuestionSlotDeclaration{
+					{
+						Name:     "moveRequest",
+						Question: "ChooseCard",
+						Presentation: &program.QuestionPresentationDeclaration{
+							Slot: "primaryInteraction", Projection: "MyHand", View: "HandView",
+						},
+					},
+				},
+				TimerSlots:   []program.TimerSlotDeclaration{{Name: "moveDeadline"}},
 				InitialState: "Start",
 				States: []program.WorkflowStateDeclaration{
 					{
@@ -162,55 +171,13 @@ func buildCompleteDefinition() program.Definition {
 													Pattern: program.WildcardMatchPattern{},
 													Body: program.Block{
 														Operations: []program.Operation{
-															program.SpawnChildWorkflowOperation{Slot: "activeTurn", Arguments: []program.CallArgument{}},
+															program.OpenQuestionOperation{Slot: "moveRequest", Recipient: program.ReferenceExpression{Name: "participant"}, Arguments: []program.CallArgument{}},
+															program.ScheduleTimerOperation{Slot: "moveDeadline", DelayMilliseconds: program.NumberLiteralExpression{Value: "30000"}},
 														},
 													},
 												},
 											},
 										},
-									},
-								},
-								Control: program.GotoControl{State: "Waiting"},
-							},
-						},
-					},
-					{
-						Name: "Waiting",
-						Transitions: []program.TransitionDeclaration{
-							{
-								Name:    "child_completed",
-								Signal:  program.SignalPattern{Source: program.ChildCompletedSignalSource{Slot: "activeTurn"}, Bindings: []program.SignalBinding{{Field: "result", Name: "turnResult"}}},
-								Control: program.CompleteControl{Result: program.ReferenceExpression{Name: "turnResult"}},
-							},
-						},
-					},
-				},
-			},
-			{
-				Name:       "PlayTurn",
-				ResultType: program.NamedTypeReference{Name: "TurnResult"},
-				QuestionSlots: []program.QuestionSlotDeclaration{
-					{
-						Name:     "moveRequest",
-						Question: "ChooseCard",
-						Presentation: &program.QuestionPresentationDeclaration{
-							Slot: "primaryInteraction", Projection: "MyHand", View: "HandView",
-						},
-					},
-				},
-				TimerSlots:   []program.TimerSlotDeclaration{{Name: "moveDeadline"}},
-				InitialState: "RequestMove",
-				States: []program.WorkflowStateDeclaration{
-					{
-						Name: "RequestMove",
-						Transitions: []program.TransitionDeclaration{
-							{
-								Name:   "workflow_started",
-								Signal: program.SignalPattern{Source: program.NamedSignalSource{Name: "WorkflowStarted"}},
-								Operations: program.Block{
-									Operations: []program.Operation{
-										program.OpenQuestionOperation{Slot: "moveRequest", Recipient: program.ReferenceExpression{Name: "participant"}, Arguments: []program.CallArgument{}},
-										program.ScheduleTimerOperation{Slot: "moveDeadline", DelayMilliseconds: program.NumberLiteralExpression{Value: "30000"}},
 									},
 								},
 								Control: program.GotoControl{State: "WaitingForMove"},
@@ -510,8 +477,8 @@ func TestDecodeJSON_UnknownNestedField(t *testing.T) {
 		"root_workflow": "", "workflows": [
 			{
 				"name": "W", "parameters": [], "result_type": null, "local_state": {"fields": []},
-				"question_slots": [], "ask_group_slots": [], "timer_slots": [], "child_slots": [],
-				"task_group_slots": [], "presentations": [], "initial_state": "S",
+				"question_slots": [], "ask_group_slots": [], "timer_slots": [],
+				"presentations": [], "initial_state": "S",
 				"global_transitions": [],
 				"states": [
 					{
@@ -550,8 +517,8 @@ func TestDecodeJSON_DeepNestedInvalidExpression(t *testing.T) {
 		"root_workflow": "", "workflows": [
 			{
 				"name": "W", "parameters": [], "result_type": null, "local_state": {"fields": []},
-				"question_slots": [], "ask_group_slots": [], "timer_slots": [], "child_slots": [],
-				"task_group_slots": [], "presentations": [], "initial_state": "S",
+				"question_slots": [], "ask_group_slots": [], "timer_slots": [],
+				"presentations": [], "initial_state": "S",
 				"global_transitions": [],
 				"states": [
 					{"name": "A", "presentations": [], "transitions": []},
@@ -587,34 +554,6 @@ func TestDecodeJSON_DeepNestedInvalidExpression(t *testing.T) {
 	}
 }
 
-func TestDecodeJSON_DeepNestedInvalidTaskGroupKeyType(t *testing.T) {
-	_, err := gameservice.DecodeJSON([]byte(`{
-		"metadata": {"id":"","name":"","description":"","version":"","language_version":""},
-		"types": [], "resources": [], "global_state": {"fields": []},
-		"functions": [], "invariants": [], "projections": [], "views": [],
-		"presentation_slots": [], "user_intents": [], "questions": [], "effects": [],
-		"root_workflow": "", "workflows": [
-			{
-				"name": "W", "parameters": [], "result_type": null, "local_state": {"fields": []},
-				"question_slots": [], "ask_group_slots": [], "timer_slots": [], "child_slots": [],
-				"task_group_slots": [{"name": "s", "workflow": "w", "key_type": {"kind": "not_a_real_type"}}],
-				"presentations": [], "initial_state": "S",
-				"global_transitions": [], "states": []
-			}
-		]
-	}`))
-	if err == nil {
-		t.Fatal("expected an error")
-	}
-	var decodeErr *gameservice.DecodeError
-	if !errors.As(err, &decodeErr) {
-		t.Fatalf("expected *DecodeError, got %T: %v", err, err)
-	}
-	if decodeErr.Path != "$.workflows[0].task_group_slots[0].key_type" {
-		t.Fatalf("expected path $.workflows[0].task_group_slots[0].key_type, got %q", decodeErr.Path)
-	}
-}
-
 func TestDecodeJSON_SemanticInvalidityRemainsDecodable(t *testing.T) {
 	data := []byte(`{
 		"metadata": {"id":"x","name":"","description":"","version":"","language_version":""},
@@ -636,8 +575,8 @@ func TestDecodeJSON_SemanticInvalidityRemainsDecodable(t *testing.T) {
 			{
 				"name": "Duplicate", "parameters": [], "result_type": null, "local_state": {"fields": []},
 				"question_slots": [{"name": "unknownQ", "question": "NoSuchQuestion", "presentation": null}],
-				"ask_group_slots": [], "timer_slots": [], "child_slots": [],
-				"task_group_slots": [], "presentations": [], "initial_state": "UnknownState",
+				"ask_group_slots": [], "timer_slots": [],
+				"presentations": [], "initial_state": "UnknownState",
 				"global_transitions": [],
 				"states": [
 					{"name": "S", "presentations": [], "transitions": [
@@ -646,7 +585,7 @@ func TestDecodeJSON_SemanticInvalidityRemainsDecodable(t *testing.T) {
 							"signal": {"source": {"kind": "named", "name": "WorkflowStarted"}, "bindings": []},
 							"guard": {"kind": "number_literal", "value": "1"},
 							"operations": {"operations": [
-								{"kind": "begin_task_group", "slot": "notSealed", "completion": {"kind": "all_terminal"}}
+								{"kind": "close_question", "slot": "unknownSlot"}
 							]},
 							"control": {"kind": "goto", "state": "UnknownTarget"}
 						}
@@ -654,8 +593,8 @@ func TestDecodeJSON_SemanticInvalidityRemainsDecodable(t *testing.T) {
 				]
 			},
 			{"name": "Duplicate", "parameters": [], "result_type": null, "local_state": {"fields": []},
-			 "question_slots": [], "ask_group_slots": [], "timer_slots": [], "child_slots": [],
-			 "task_group_slots": [], "presentations": [], "initial_state": "S",
+			 "question_slots": [], "ask_group_slots": [], "timer_slots": [],
+			 "presentations": [], "initial_state": "S",
 			 "global_transitions": [], "states": []}
 		]
 	}`)

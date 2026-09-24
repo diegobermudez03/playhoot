@@ -179,18 +179,6 @@ type wireCancelTimerOperation struct {
 	Slot string `json:"slot"`
 }
 
-type wireSpawnChildWorkflowOperation struct {
-	Kind      string             `json:"kind"`
-	Slot      string             `json:"slot"`
-	Arguments []wireCallArgument `json:"arguments"`
-}
-
-type wireCancelChildWorkflowOperation struct {
-	Kind   string          `json:"kind"`
-	Slot   string          `json:"slot"`
-	Reason json.RawMessage `json:"reason"`
-}
-
 type wireOpenAskGroupOperation struct {
 	Kind       string             `json:"kind"`
 	Slot       string             `json:"slot"`
@@ -207,35 +195,6 @@ type wireFinalizeAskGroupOperation struct {
 type wireCancelAskGroupOperation struct {
 	Kind string `json:"kind"`
 	Slot string `json:"slot"`
-}
-
-type wireBeginTaskGroupOperation struct {
-	Kind       string          `json:"kind"`
-	Slot       string          `json:"slot"`
-	Completion json.RawMessage `json:"completion"`
-}
-
-type wireSpawnTaskGroupChildOperation struct {
-	Kind      string             `json:"kind"`
-	Slot      string             `json:"slot"`
-	Key       json.RawMessage    `json:"key"`
-	Arguments []wireCallArgument `json:"arguments"`
-}
-
-type wireSealTaskGroupOperation struct {
-	Kind string `json:"kind"`
-	Slot string `json:"slot"`
-}
-
-type wireFinalizeTaskGroupOperation struct {
-	Kind string `json:"kind"`
-	Slot string `json:"slot"`
-}
-
-type wireCancelTaskGroupOperation struct {
-	Kind   string          `json:"kind"`
-	Slot   string          `json:"slot"`
-	Reason json.RawMessage `json:"reason"`
 }
 
 type wireDrawRandomOperation struct {
@@ -433,18 +392,6 @@ func encodeOperation(path string, value program.Operation) (json.RawMessage, err
 			return json.Marshal(wireScheduleTimerOperation{Kind: "schedule_timer", Slot: v.Slot, DelayMilliseconds: delay})
 		case program.CancelTimerOperation:
 			return json.Marshal(wireCancelTimerOperation{Kind: "cancel_timer", Slot: v.Slot})
-		case program.SpawnChildWorkflowOperation:
-			arguments, err := encodeCallArguments(pathField(path, "arguments"), v.Arguments)
-			if err != nil {
-				return nil, err
-			}
-			return json.Marshal(wireSpawnChildWorkflowOperation{Kind: "spawn_child_workflow", Slot: v.Slot, Arguments: arguments})
-		case program.CancelChildWorkflowOperation:
-			reason, err := encodeExpression(pathField(path, "reason"), v.Reason)
-			if err != nil {
-				return nil, err
-			}
-			return json.Marshal(wireCancelChildWorkflowOperation{Kind: "cancel_child_workflow", Slot: v.Slot, Reason: reason})
 		case program.OpenAskGroupOperation:
 			recipients, err := encodeExpression(pathField(path, "recipients"), v.Recipients)
 			if err != nil {
@@ -463,32 +410,6 @@ func encodeOperation(path string, value program.Operation) (json.RawMessage, err
 			return json.Marshal(wireFinalizeAskGroupOperation{Kind: "finalize_ask_group", Slot: v.Slot})
 		case program.CancelAskGroupOperation:
 			return json.Marshal(wireCancelAskGroupOperation{Kind: "cancel_ask_group", Slot: v.Slot})
-		case program.BeginTaskGroupOperation:
-			completion, err := encodeTaskGroupCompletionPolicy(pathField(path, "completion"), v.Completion)
-			if err != nil {
-				return nil, err
-			}
-			return json.Marshal(wireBeginTaskGroupOperation{Kind: "begin_task_group", Slot: v.Slot, Completion: completion})
-		case program.SpawnTaskGroupChildOperation:
-			key, err := encodeExpression(pathField(path, "key"), v.Key)
-			if err != nil {
-				return nil, err
-			}
-			arguments, err := encodeCallArguments(pathField(path, "arguments"), v.Arguments)
-			if err != nil {
-				return nil, err
-			}
-			return json.Marshal(wireSpawnTaskGroupChildOperation{Kind: "spawn_task_group_child", Slot: v.Slot, Key: key, Arguments: arguments})
-		case program.SealTaskGroupOperation:
-			return json.Marshal(wireSealTaskGroupOperation{Kind: "seal_task_group", Slot: v.Slot})
-		case program.FinalizeTaskGroupOperation:
-			return json.Marshal(wireFinalizeTaskGroupOperation{Kind: "finalize_task_group", Slot: v.Slot})
-		case program.CancelTaskGroupOperation:
-			reason, err := encodeExpression(pathField(path, "reason"), v.Reason)
-			if err != nil {
-				return nil, err
-			}
-			return json.Marshal(wireCancelTaskGroupOperation{Kind: "cancel_task_group", Slot: v.Slot, Reason: reason})
 		case program.DrawRandomOperation:
 			generator, err := encodeRandomGenerator(pathField(path, "generator"), v.Generator)
 			if err != nil {
@@ -708,26 +629,6 @@ func decodeOperation(path string, data json.RawMessage) (program.Operation, erro
 				return nil, err
 			}
 			return program.CancelTimerOperation{Slot: wire.Slot}, nil
-		case "spawn_child_workflow":
-			var wire wireSpawnChildWorkflowOperation
-			if err := strictDecodeInto(path, raw, &wire); err != nil {
-				return nil, err
-			}
-			arguments, err := decodeCallArguments(pathField(path, "arguments"), wire.Arguments)
-			if err != nil {
-				return nil, err
-			}
-			return program.SpawnChildWorkflowOperation{Slot: wire.Slot, Arguments: arguments}, nil
-		case "cancel_child_workflow":
-			var wire wireCancelChildWorkflowOperation
-			if err := strictDecodeInto(path, raw, &wire); err != nil {
-				return nil, err
-			}
-			reason, err := decodeExpression(pathField(path, "reason"), wire.Reason)
-			if err != nil {
-				return nil, err
-			}
-			return program.CancelChildWorkflowOperation{Slot: wire.Slot, Reason: reason}, nil
 		case "open_ask_group":
 			var wire wireOpenAskGroupOperation
 			if err := strictDecodeInto(path, raw, &wire); err != nil {
@@ -758,52 +659,6 @@ func decodeOperation(path string, data json.RawMessage) (program.Operation, erro
 				return nil, err
 			}
 			return program.CancelAskGroupOperation{Slot: wire.Slot}, nil
-		case "begin_task_group":
-			var wire wireBeginTaskGroupOperation
-			if err := strictDecodeInto(path, raw, &wire); err != nil {
-				return nil, err
-			}
-			completion, err := decodeTaskGroupCompletionPolicy(pathField(path, "completion"), wire.Completion)
-			if err != nil {
-				return nil, err
-			}
-			return program.BeginTaskGroupOperation{Slot: wire.Slot, Completion: completion}, nil
-		case "spawn_task_group_child":
-			var wire wireSpawnTaskGroupChildOperation
-			if err := strictDecodeInto(path, raw, &wire); err != nil {
-				return nil, err
-			}
-			key, err := decodeExpression(pathField(path, "key"), wire.Key)
-			if err != nil {
-				return nil, err
-			}
-			arguments, err := decodeCallArguments(pathField(path, "arguments"), wire.Arguments)
-			if err != nil {
-				return nil, err
-			}
-			return program.SpawnTaskGroupChildOperation{Slot: wire.Slot, Key: key, Arguments: arguments}, nil
-		case "seal_task_group":
-			var wire wireSealTaskGroupOperation
-			if err := strictDecodeInto(path, raw, &wire); err != nil {
-				return nil, err
-			}
-			return program.SealTaskGroupOperation{Slot: wire.Slot}, nil
-		case "finalize_task_group":
-			var wire wireFinalizeTaskGroupOperation
-			if err := strictDecodeInto(path, raw, &wire); err != nil {
-				return nil, err
-			}
-			return program.FinalizeTaskGroupOperation{Slot: wire.Slot}, nil
-		case "cancel_task_group":
-			var wire wireCancelTaskGroupOperation
-			if err := strictDecodeInto(path, raw, &wire); err != nil {
-				return nil, err
-			}
-			reason, err := decodeExpression(pathField(path, "reason"), wire.Reason)
-			if err != nil {
-				return nil, err
-			}
-			return program.CancelTaskGroupOperation{Slot: wire.Slot, Reason: reason}, nil
 		case "draw_random":
 			var wire wireDrawRandomOperation
 			if err := strictDecodeInto(path, raw, &wire); err != nil {

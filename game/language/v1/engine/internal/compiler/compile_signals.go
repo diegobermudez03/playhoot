@@ -16,15 +16,14 @@ import (
 // Every entry's schema is currently empty (no payload fields): a new
 // workflow instance's own parameters are already in scope directly
 // through the workflow's own Parameters, not exposed as WorkflowStarted
-// payload fields. SessionCancelled, UserDisconnected, and
-// ParentCancelled are included because program's own documentation
-// names them as examples alongside WorkflowStarted; their schemas are
-// left empty until a concrete payload need is identified.
+// payload fields. SessionCancelled and UserDisconnected are included
+// because program's own documentation names them as examples alongside
+// WorkflowStarted; their schemas are left empty until a concrete payload
+// need is identified.
 var namedLifecycleSignals = map[string]map[string]engine.Type{
 	"WorkflowStarted":  {},
 	"SessionCancelled": {},
 	"UserDisconnected": {},
-	"ParentCancelled":  {},
 }
 
 // compileTransition compiles t's signal pattern, guard, operations, and
@@ -139,26 +138,6 @@ func (c *compiler) compileSignalSource(source program.SignalSource, path string,
 		}
 		return engine.TimerExpiredSignalSource{Slot: s.Slot}, map[string]engine.Type{}
 
-	case program.ChildCompletedSignalSource:
-		child, ok := ctx.childSlots[s.Slot]
-		if !ok {
-			c.addf(path+".slot", "reference to undeclared child slot %q", s.Slot)
-			return engine.ChildCompletedSignalSource{Slot: s.Slot}, map[string]engine.Type{}
-		}
-		return engine.ChildCompletedSignalSource{Slot: s.Slot}, map[string]engine.Type{"result": c.workflowResultTypes[child.Workflow]}
-
-	case program.ChildFailedSignalSource:
-		if _, ok := ctx.childSlots[s.Slot]; !ok {
-			c.addf(path+".slot", "reference to undeclared child slot %q", s.Slot)
-		}
-		return engine.ChildFailedSignalSource{Slot: s.Slot}, map[string]engine.Type{"error": engine.StringType{}}
-
-	case program.ChildCancelledSignalSource:
-		if _, ok := ctx.childSlots[s.Slot]; !ok {
-			c.addf(path+".slot", "reference to undeclared child slot %q", s.Slot)
-		}
-		return engine.ChildCancelledSignalSource{Slot: s.Slot}, map[string]engine.Type{"reason": engine.StringType{}}
-
 	case program.AskGroupCompletedSignalSource:
 		slot, ok := ctx.askGroupSlots[s.Slot]
 		if !ok {
@@ -170,23 +149,6 @@ func (c *compiler) compileSignalSource(source program.SignalSource, path string,
 			"responses":   engine.MapType{Key: engine.UserType{}, Value: responseType},
 			"respondents": engine.ListType{Element: engine.UserType{}},
 			"missing":     engine.ListType{Element: engine.UserType{}},
-		}
-
-	case program.TaskGroupCompletedSignalSource:
-		info, ok := ctx.taskGroupSlots[s.Slot]
-		if !ok {
-			c.addf(path+".slot", "reference to undeclared task-group slot %q", s.Slot)
-			return engine.TaskGroupCompletedSignalSource{Slot: s.Slot}, map[string]engine.Type{}
-		}
-		resultType := c.workflowResultTypes[info.workflow]
-		keyType := info.keyType
-		return engine.TaskGroupCompletedSignalSource{Slot: s.Slot}, map[string]engine.Type{
-			"taskKeys":      engine.ListType{Element: keyType},
-			"terminalKeys":  engine.ListType{Element: keyType},
-			"results":       engine.MapType{Key: keyType, Value: resultType},
-			"failures":      engine.MapType{Key: keyType, Value: engine.StringType{}},
-			"cancellations": engine.MapType{Key: keyType, Value: engine.StringType{}},
-			"unfinished":    engine.ListType{Element: keyType},
 		}
 
 	default:

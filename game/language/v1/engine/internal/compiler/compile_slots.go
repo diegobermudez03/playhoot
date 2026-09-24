@@ -86,57 +86,6 @@ func (c *compiler) compileTimerSlots(w program.WorkflowDeclaration, path string,
 	return result
 }
 
-func (c *compiler) compileChildSlots(w program.WorkflowDeclaration, path string, ctx *workflowContext) []engine.ChildWorkflowSlot {
-	prefix := path + ".child_slots"
-	result := make([]engine.ChildWorkflowSlot, 0, len(w.ChildSlots))
-	seen := make(map[string]int, len(w.ChildSlots))
-	for i, s := range w.ChildSlots {
-		sPath := fmt.Sprintf("%s[%d]", prefix, i)
-		if s.Name == "" {
-			c.addf(sPath, "child slot has an empty name")
-			continue
-		}
-		if first, ok := seen[s.Name]; ok {
-			c.addf(sPath, "duplicate child slot name %q (first declared at %s[%d])", s.Name, prefix, first)
-			continue
-		}
-		seen[s.Name] = i
-		ctx.childSlots[s.Name] = s
-
-		if _, ok := c.workflowDeclarations[s.Workflow]; !ok {
-			c.addf(sPath+".workflow", "reference to undeclared workflow %q", s.Workflow)
-		}
-		result = append(result, engine.ChildWorkflowSlot{Name: s.Name, Workflow: s.Workflow})
-	}
-	return result
-}
-
-func (c *compiler) compileTaskGroupSlots(w program.WorkflowDeclaration, path string, ctx *workflowContext) []engine.TaskGroupSlot {
-	prefix := path + ".task_group_slots"
-	result := make([]engine.TaskGroupSlot, 0, len(w.TaskGroupSlots))
-	seen := make(map[string]int, len(w.TaskGroupSlots))
-	for i, s := range w.TaskGroupSlots {
-		sPath := fmt.Sprintf("%s[%d]", prefix, i)
-		if s.Name == "" {
-			c.addf(sPath, "task-group slot has an empty name")
-			continue
-		}
-		if first, ok := seen[s.Name]; ok {
-			c.addf(sPath, "duplicate task-group slot name %q (first declared at %s[%d])", s.Name, prefix, first)
-			continue
-		}
-		seen[s.Name] = i
-
-		if _, ok := c.workflowDeclarations[s.Workflow]; !ok {
-			c.addf(sPath+".workflow", "reference to undeclared workflow %q", s.Workflow)
-		}
-		keyType := c.compileTypeReference(s.KeyType, sPath+".key_type")
-		ctx.taskGroupSlots[s.Name] = taskGroupSlotInfo{workflow: s.Workflow, keyType: keyType}
-		result = append(result, engine.TaskGroupSlot{Name: s.Name, Workflow: s.Workflow, KeyType: keyType})
-	}
-	return result
-}
-
 // compileQuestionPresentation compiles one
 // program.QuestionPresentationDeclaration. Per its documented argument
 // scope, ProjectionArguments may reference the referenced question's own

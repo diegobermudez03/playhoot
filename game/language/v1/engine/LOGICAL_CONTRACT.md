@@ -34,15 +34,16 @@ SessionActorID, not Identity.UserUUID.
 Accepted, not yet implemented, Operational Lifecycle contracts to preserve:
 
 - `UserDisconnected`/`UserReconnected` are standard `NamedSignalSource`
-  signals exposing only `user: user`, delivered to the root workflow
-  instance only (no implicit broadcast to nested instances); handling is
-  optional and an unhandled delivery has no automatic gameplay consequence
-  and produces no RuntimeTurn (see
+  signals exposing only `user: user`, delivered to the one workflow
+  instance a Session runs; handling is optional and an unhandled delivery
+  has no automatic gameplay consequence and produces no RuntimeTurn (see
   `game/docs/decisions/GAME-ADR-0011-game-language-disconnect-reconnect-authored-semantics.md`).
 - A `KeyedTimerSlot<Key>` capability generalizes `TimerSlotDeclaration` to
-  independently addressable pending timers per `(workflow instance/path,
-  slot, key)`, exposing the authored key on expiration (see
-  `game/docs/decisions/GAME-ADR-0012-game-language-keyed-timer-slots.md`).
+  independently addressable pending timers per `(slot, key)`, exposing the
+  authored key on expiration (see
+  `game/docs/decisions/GAME-ADR-0012-game-language-keyed-timer-slots.md`,
+  generalized to Questions, Ask Groups, and Presentations by
+  `game/docs/decisions/GAME-ADR-0026-flat-workflow-execution-model-and-keyed-interaction-slots.md`).
 
 A Commit represents, as a single unit:
 
@@ -62,7 +63,11 @@ Permanent constraints:
 - deterministic execution;
 - every step is atomic;
 - Program is immutable and shareable;
-- the engine does not recursively execute multiple transitions inside one step.
+- the engine does not recursively execute multiple transitions inside one step
+  — a structural fact, not a policy constraint on a tree: a compiled Program
+  has exactly one instantiated workflow for the lifetime of a Session (see
+  `game/docs/decisions/GAME-ADR-0026-flat-workflow-execution-model-and-keyed-interaction-slots.md`),
+  so there is no other instance a step could recurse into.
 
 ## Why engine depends on program
 

@@ -24,27 +24,15 @@ type execContext struct {
 	limits   engine.Limits
 	opCount  int
 
-	// path addresses, within the current game instance's child-workflow
-	// tree, the WorkflowInstance this execContext is executing a
-	// transition for — the same path Step resolved via
-	// engine.Signal.Path. execSpawnChildWorkflow and
-	// execSpawnTaskGroupChild each append one more engine.PathStep to
-	// this to address their new child's or task's own WorkflowStarted
-	// signal.
-	path []engine.PathStep
-
-	// questionSlots, timerSlots, childSlots, askGroupSlots, and
-	// taskGroupSlots are candidate copies of the current instance's slot
-	// instances — copied once, up front, from engine.Snapshot so every
-	// mutation (an operation's, or Step's own slot-clearing on an
-	// accepted answer, timer expiration, child-outcome join,
-	// ask-group-completion join, or task-group-completion join) is
-	// applied to this copy and never to the original Snapshot's slices.
-	questionSlots  []engine.QuestionSlotInstance
-	timerSlots     []engine.TimerSlotInstance
-	childSlots     []engine.ChildWorkflowSlotInstance
-	askGroupSlots  []engine.AskGroupSlotInstance
-	taskGroupSlots []engine.TaskGroupSlotInstance
+	// questionSlots, timerSlots, and askGroupSlots are candidate copies
+	// of the current instance's slot instances — copied once, up front,
+	// from engine.Snapshot so every mutation (an operation's, or Step's
+	// own slot-clearing on an accepted answer, timer expiration, or
+	// ask-group-completion join) is applied to this copy and never to
+	// the original Snapshot's slices.
+	questionSlots []engine.QuestionSlotInstance
+	timerSlots    []engine.TimerSlotInstance
+	askGroupSlots []engine.AskGroupSlotInstance
 
 	// outputs accumulates every declarative engine.Output produced so
 	// far. Per LOGICAL_CONTRACT.md, the engine only ever describes what
@@ -53,11 +41,9 @@ type execContext struct {
 	outputs []engine.Output
 
 	// internalSignals accumulates every engine.Signal this step causes
-	// but does not itself apply — currently, the WorkflowStarted signal
-	// a SpawnChildWorkflowOperation or SpawnTaskGroupChildOperation
-	// causes for its new child or task. Per LOGICAL_CONTRACT.md, these
-	// become engine.Commit.InternalSignals only if the whole step
-	// succeeds, for a later Step call to apply.
+	// but does not itself apply. Per LOGICAL_CONTRACT.md, these become
+	// engine.Commit.InternalSignals only if the whole step succeeds, for
+	// a later Step call to apply.
 	internalSignals []engine.Signal
 }
 
@@ -95,29 +81,6 @@ func (ctx *execContext) questionSlotDeclaration(name string) (engine.QuestionSlo
 	return engine.QuestionSlot{}, false
 }
 
-// findChildSlot returns the index of the child slot named name in
-// ctx.childSlots, if any.
-func (ctx *execContext) findChildSlot(name string) (int, bool) {
-	for i, s := range ctx.childSlots {
-		if s.Name == name {
-			return i, true
-		}
-	}
-	return 0, false
-}
-
-// childSlotDeclaration returns the compiled engine.ChildWorkflowSlot
-// named name on ctx.workflow, if any — used to recover the workflow
-// type a slot was declared against, for execSpawnChildWorkflow.
-func (ctx *execContext) childSlotDeclaration(name string) (engine.ChildWorkflowSlot, bool) {
-	for _, s := range ctx.workflow.ChildSlots {
-		if s.Name == name {
-			return s, true
-		}
-	}
-	return engine.ChildWorkflowSlot{}, false
-}
-
 // findAskGroupSlot returns the index of the ask-group slot named name in
 // ctx.askGroupSlots, if any.
 func (ctx *execContext) findAskGroupSlot(name string) (int, bool) {
@@ -139,30 +102,6 @@ func (ctx *execContext) askGroupSlotDeclaration(name string) (engine.AskGroupSlo
 		}
 	}
 	return engine.AskGroupSlot{}, false
-}
-
-// findTaskGroupSlot returns the index of the task-group slot named name
-// in ctx.taskGroupSlots, if any.
-func (ctx *execContext) findTaskGroupSlot(name string) (int, bool) {
-	for i, s := range ctx.taskGroupSlots {
-		if s.Name == name {
-			return i, true
-		}
-	}
-	return 0, false
-}
-
-// taskGroupSlotDeclaration returns the compiled engine.TaskGroupSlot
-// named name on ctx.workflow, if any — used to recover the workflow
-// type and key type a slot was declared against, for
-// execSpawnTaskGroupChild.
-func (ctx *execContext) taskGroupSlotDeclaration(name string) (engine.TaskGroupSlot, bool) {
-	for _, s := range ctx.workflow.TaskGroupSlots {
-		if s.Name == name {
-			return s, true
-		}
-	}
-	return engine.TaskGroupSlot{}, false
 }
 
 // evalCallArguments evaluates args in order into their captured values.
@@ -194,9 +133,8 @@ func (ctx *execContext) consumeOp() error {
 }
 
 // activeSlotCount counts every occupied interaction slot on ctx's
-// candidate instance state — pending questions, pending timers,
-// running or awaiting-join children, collecting or awaiting-join ask
-// groups, and individual task-group tasks — toward
+// candidate instance state — pending questions, pending timers, and
+// collecting or awaiting-join ask groups — toward
 // Limits.MaxActiveSlotsPerInstance.
 func (ctx *execContext) activeSlotCount() int {
 	count := 0
@@ -210,19 +148,9 @@ func (ctx *execContext) activeSlotCount() int {
 			count++
 		}
 	}
-	for _, s := range ctx.childSlots {
-		if s.Child != nil {
-			count++
-		}
-	}
 	for _, s := range ctx.askGroupSlots {
 		if s.Pending != nil {
 			count++
-		}
-	}
-	for _, s := range ctx.taskGroupSlots {
-		if s.Group != nil {
-			count += len(s.Group.Tasks)
 		}
 	}
 	return count
@@ -231,27 +159,12 @@ func (ctx *execContext) activeSlotCount() int {
 // checkActiveSlotLimit fails atomically if occupying one more
 // interaction slot on ctx's candidate instance would exceed
 // Limits.MaxActiveSlotsPerInstance — called by every operation that is
-// about to occupy a new slot (open a question, schedule a timer, spawn
-// a child, open an ask group, or spawn a task-group task), before it
-// does so.
+// about to occupy a new slot (open a question, schedule a timer, or
+// open an ask group), before it does so.
 func (ctx *execContext) checkActiveSlotLimit() error {
 	if ctx.activeSlotCount() >= ctx.limits.MaxActiveSlotsPerInstance {
 		return newExecutionError(ExecutionErrorActiveSlotLimitExceeded,
 			"engineservice: instance already holds the maximum of %d active interaction slots", ctx.limits.MaxActiveSlotsPerInstance)
-	}
-	return nil
-}
-
-// checkWorkflowDepth fails atomically if spawning a new child or task
-// from ctx's candidate instance would exceed Limits.MaxWorkflowDepth —
-// called by SpawnChildWorkflowOperation and SpawnTaskGroupChildOperation
-// before creating their new instance. ctx.path is the current
-// instance's own depth (the root is at depth 0), so the new instance
-// would be at depth len(ctx.path)+1.
-func (ctx *execContext) checkWorkflowDepth() error {
-	if len(ctx.path)+1 > ctx.limits.MaxWorkflowDepth {
-		return newExecutionError(ExecutionErrorWorkflowDepthExceeded,
-			"engineservice: spawning here would create a child at depth %d, exceeding the maximum of %d", len(ctx.path)+1, ctx.limits.MaxWorkflowDepth)
 	}
 	return nil
 }
@@ -437,12 +350,6 @@ func execOperation(ctx *execContext, op engine.Operation, scope engine.Scope) (e
 	case engine.EmitEffectOperation:
 		return scope, ctx.execEmitEffect(o, scope)
 
-	case engine.SpawnChildWorkflowOperation:
-		return scope, ctx.execSpawnChildWorkflow(o, scope)
-
-	case engine.CancelChildWorkflowOperation:
-		return scope, ctx.execCancelChildWorkflow(o, scope)
-
 	case engine.OpenAskGroupOperation:
 		return scope, ctx.execOpenAskGroup(o, scope)
 
@@ -451,21 +358,6 @@ func execOperation(ctx *execContext, op engine.Operation, scope engine.Scope) (e
 
 	case engine.CancelAskGroupOperation:
 		return scope, ctx.execCancelAskGroup(o)
-
-	case engine.BeginTaskGroupOperation:
-		return scope, ctx.execBeginTaskGroup(o, scope)
-
-	case engine.SpawnTaskGroupChildOperation:
-		return scope, ctx.execSpawnTaskGroupChild(o, scope)
-
-	case engine.SealTaskGroupOperation:
-		return scope, ctx.execSealTaskGroup(o)
-
-	case engine.FinalizeTaskGroupOperation:
-		return scope, ctx.execFinalizeTaskGroup(o)
-
-	case engine.CancelTaskGroupOperation:
-		return scope, ctx.execCancelTaskGroup(o, scope)
 
 	case engine.MatchOperation:
 		v, err := Evaluate(ctx.program, o.Value, scope)
@@ -893,82 +785,3 @@ func (ctx *execContext) execEmitEffect(o engine.EmitEffectOperation, scope engin
 	return nil
 }
 
-// execSpawnChildWorkflow evaluates o.Arguments and creates a new child
-// workflow instance in the named child slot in ctx's candidate instance
-// state. Spawning into an already occupied slot — running or a terminal
-// outcome still awaiting join — fails the entire transition atomically
-// — see program.SpawnChildWorkflowOperation. This does not itself apply
-// the child's WorkflowStarted transition; it queues the corresponding
-// engine.Signal, addressed to the new child, as one of this step's
-// internalSignals for a later Step call to apply.
-func (ctx *execContext) execSpawnChildWorkflow(o engine.SpawnChildWorkflowOperation, scope engine.Scope) error {
-	idx, ok := ctx.findChildSlot(o.Slot)
-	if !ok {
-		return newExecutionError(ExecutionErrorUnknown, "engineservice: child slot %q not found", o.Slot)
-	}
-	if ctx.childSlots[idx].Child != nil {
-		return newExecutionError(ExecutionErrorSlotOccupied, "engineservice: child slot %q is already occupied", o.Slot)
-	}
-	if err := ctx.checkActiveSlotLimit(); err != nil {
-		return err
-	}
-	if err := ctx.checkWorkflowDepth(); err != nil {
-		return err
-	}
-
-	slotDecl, _ := ctx.childSlotDeclaration(o.Slot)
-	childWorkflow, ok := ctx.program.Workflows[slotDecl.Workflow]
-	if !ok {
-		return newExecutionError(ExecutionErrorUnknown, "engineservice: workflow %q is not compiled", slotDecl.Workflow)
-	}
-
-	args, err := evalCallArguments(ctx, o.Arguments, scope)
-	if err != nil {
-		return err
-	}
-	child, err := newChildInstance(ctx.program, childWorkflow, args)
-	if err != nil {
-		return err
-	}
-
-	ctx.childSlots[idx] = engine.ChildWorkflowSlotInstance{Name: o.Slot, Child: &child}
-
-	childPath := append(append([]engine.PathStep{}, ctx.path...), engine.PathStep{Slot: o.Slot})
-	ctx.internalSignals = append(ctx.internalSignals, engine.Signal{Kind: engine.SignalKindNamed, Path: childPath, Name: "WorkflowStarted"})
-	return nil
-}
-
-// execCancelChildWorkflow evaluates o.Reason and recursively discards
-// the running child workflow instance — together with every descendant
-// it owns — in the named child slot in ctx's candidate instance state.
-// This is parent-driven cancellation: it never produces a signal, since
-// program.CancelChildWorkflowOperation documents that the parent already
-// knows it requested the cancellation. Cancelling an already empty slot
-// is an idempotent no-op. Cancelling a slot holding a terminal outcome
-// still awaiting join fails the entire transition atomically — that
-// outcome must be joined through its own child-outcome signal first,
-// never silently discarded.
-func (ctx *execContext) execCancelChildWorkflow(o engine.CancelChildWorkflowOperation, scope engine.Scope) error {
-	idx, ok := ctx.findChildSlot(o.Slot)
-	if !ok {
-		return newExecutionError(ExecutionErrorUnknown, "engineservice: child slot %q not found", o.Slot)
-	}
-	child := ctx.childSlots[idx].Child
-	if child == nil {
-		return nil
-	}
-	if child.Outcome != nil {
-		return newExecutionError(ExecutionErrorChildOutcomeNotJoined,
-			"engineservice: child slot %q holds a terminal outcome that must be joined before it can be cancelled", o.Slot)
-	}
-
-	if _, err := Evaluate(ctx.program, o.Reason, scope); err != nil {
-		return err
-	}
-
-	// Dropping the pointer discards the entire subtree at once: every
-	// descendant this child owns goes with it, recursively, since
-	// nothing else references it.
-	ctx.childSlots[idx] = engine.ChildWorkflowSlotInstance{Name: o.Slot}
-	return nil
-}

@@ -137,7 +137,7 @@ func TestStep_SequentialStepsCanStopAndResume(t *testing.T) {
 	if completed == nil {
 		t.Fatalf("expected a WorkflowCompletedOutput, got %+v", commit.Outputs)
 	}
-	if len(completed.Path) != 0 || completed.Workflow != "Counter" || completed.Outcome.Kind != engine.WorkflowOutcomeCompleted {
+	if completed.Workflow != "Counter" || completed.Outcome.Kind != engine.WorkflowOutcomeCompleted {
 		t.Fatalf("got %+v", completed)
 	}
 }

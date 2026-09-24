@@ -162,19 +162,14 @@ func (s *gameSession) applyStep(signal engine.Signal) error {
 			// ... purely cosmetic, deliver-or-don't, never affects state.
 
 		case engine.WorkflowCompletedOutput:
-			// o.Path empty means the root workflow — the whole game
-			// instance — just ended; this is the one place a session
-			// layer finds out the game is over.
-			if len(o.Path) == 0 {
-				fmt.Println("game instance ended:", o.Outcome.Kind)
-			}
+			// The one workflow instance just ended; this is the one
+			// place a session layer finds out the game is over.
+			fmt.Println("game instance ended:", o.Outcome.Kind)
 		}
 	}
 
 	// commit.InternalSignals still need to be applied, each as its own
-	// Step call — Step never chains these itself. The most common
-	// example is a freshly spawned child workflow's own
-	// "WorkflowStarted" signal.
+	// Step call — Step never chains these itself.
 	for _, internal := range commit.InternalSignals {
 		if err := s.applyStep(internal); err != nil {
 			return fmt.Errorf("applying internal signal: %w", err)

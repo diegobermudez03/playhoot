@@ -200,8 +200,8 @@ func missingAskGroupRecipients(pending engine.PendingAskGroup) []engine.UserID {
 // returns ErrInputRejected and leaves snapshot unchanged, exactly like
 // any other rejected input.
 func stepAskGroupAnswer(p engine.Program, snapshot engine.Snapshot, signal engine.Signal) (engine.Commit, error) {
-	target, ok := resolveInstance(snapshot.Root, signal.Path)
-	if !ok || target.Outcome != nil {
+	target := snapshot.Root
+	if target.Outcome != nil {
 		return engine.Commit{}, ErrSignalRejected
 	}
 	workflow, ok := p.Workflows[target.Workflow]
@@ -262,21 +262,15 @@ func stepAskGroupAnswer(p engine.Program, snapshot engine.Snapshot, signal engin
 	newTarget := target
 	newTarget.AskGroupSlots = newSlots
 
-	newRoot, err := applyInstancePath(snapshot.Root, signal.Path, newTarget)
-	if err != nil {
-		return engine.Commit{}, err
-	}
-
 	return engine.Commit{
 		Snapshot: engine.Snapshot{
 			GlobalState: snapshot.GlobalState,
-			Root:        newRoot,
+			Root:        newTarget,
 			Random:      snapshot.Random,
 			Sequence:    snapshot.Sequence + 1,
 		},
 		Outputs: outputs,
 		Trace: engine.Trace{
-			Path:        signal.Path,
 			Workflow:    target.Workflow,
 			StateBefore: target.State,
 			StateAfter:  target.State,

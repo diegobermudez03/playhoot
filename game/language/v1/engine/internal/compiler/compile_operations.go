@@ -207,12 +207,6 @@ func (c *compiler) compileOperation(op program.Operation, scope exprScope, path 
 	case program.EmitEffectOperation:
 		return c.compileEmitEffect(o, scope, path)
 
-	case program.SpawnChildWorkflowOperation:
-		return c.compileSpawnChildWorkflow(o, scope, path, ctx)
-
-	case program.CancelChildWorkflowOperation:
-		return c.compileCancelChildWorkflow(o, scope, path, ctx)
-
 	case program.OpenAskGroupOperation:
 		return c.compileOpenAskGroup(o, scope, path, ctx)
 
@@ -221,21 +215,6 @@ func (c *compiler) compileOperation(op program.Operation, scope exprScope, path 
 
 	case program.CancelAskGroupOperation:
 		return c.compileCancelAskGroup(o, scope, path, ctx)
-
-	case program.BeginTaskGroupOperation:
-		return c.compileBeginTaskGroup(o, scope, path, ctx)
-
-	case program.SpawnTaskGroupChildOperation:
-		return c.compileSpawnTaskGroupChild(o, scope, path, ctx)
-
-	case program.SealTaskGroupOperation:
-		return c.compileSealTaskGroup(o, scope, path, ctx)
-
-	case program.FinalizeTaskGroupOperation:
-		return c.compileFinalizeTaskGroup(o, scope, path, ctx)
-
-	case program.CancelTaskGroupOperation:
-		return c.compileCancelTaskGroup(o, scope, path, ctx)
 
 	default:
 		c.addf(path, "operation %T is not yet supported by this compiler", op)
@@ -435,51 +414,6 @@ func (c *compiler) compileEmitEffect(o program.EmitEffectOperation, scope exprSc
 		return nil, scope, false
 	}
 	return engine.EmitEffectOperation{Effect: o.Effect, Recipients: recipients, Arguments: args}, scope, true
-}
-
-// compileSpawnChildWorkflow compiles one program.SpawnChildWorkflowOperation:
-// Slot must name a child slot declared on the enclosing workflow, and
-// Arguments must match that slot's declared workflow's declared
-// parameters exactly (see checkCallArguments).
-func (c *compiler) compileSpawnChildWorkflow(o program.SpawnChildWorkflowOperation, scope exprScope, path string, ctx *workflowContext) (engine.Operation, exprScope, bool) {
-	slotDecl, slotOK := ctx.childSlots[o.Slot]
-	if !slotOK {
-		c.addf(path+".slot", "reference to undeclared child slot %q", o.Slot)
-	}
-
-	args, argTypes, argsOK := c.compileCallArguments(o.Arguments, scope, path)
-	ok := argsOK
-	if slotOK {
-		if params, wfOK := c.workflowParameterTypes[slotDecl.Workflow]; wfOK {
-			if !c.checkCallArguments(params, args, argTypes, path) {
-				ok = false
-			}
-		}
-	}
-
-	if !slotOK || !ok {
-		return nil, scope, false
-	}
-	return engine.SpawnChildWorkflowOperation{Slot: o.Slot, Arguments: args}, scope, true
-}
-
-// compileCancelChildWorkflow compiles one program.CancelChildWorkflowOperation:
-// Slot must name a child slot declared on the enclosing workflow, and
-// Reason must be statically string.
-func (c *compiler) compileCancelChildWorkflow(o program.CancelChildWorkflowOperation, scope exprScope, path string, ctx *workflowContext) (engine.Operation, exprScope, bool) {
-	if _, ok := ctx.childSlots[o.Slot]; !ok {
-		c.addf(path+".slot", "reference to undeclared child slot %q", o.Slot)
-		return nil, scope, false
-	}
-	reason, reasonType := c.compileExpression(o.Reason, scope, path+".reason")
-	if reasonType == nil {
-		return nil, scope, false
-	}
-	if _, ok := reasonType.(engine.StringType); !ok {
-		c.addf(path+".reason", "cancel reason must be statically string, but it is %s", describeType(reasonType))
-		return nil, scope, false
-	}
-	return engine.CancelChildWorkflowOperation{Slot: o.Slot, Reason: reason}, scope, true
 }
 
 // compileAssignmentTarget compiles target, returning its resolved

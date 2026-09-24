@@ -10,11 +10,9 @@ type Workflow struct {
 	ResultType Type
 	LocalState []StateField
 
-	QuestionSlots  []QuestionSlot
-	AskGroupSlots  []AskGroupSlot
-	TimerSlots     []string
-	ChildSlots     []ChildWorkflowSlot
-	TaskGroupSlots []TaskGroupSlot
+	QuestionSlots []QuestionSlot
+	AskGroupSlots []AskGroupSlot
+	TimerSlots    []string
 
 	// Presentations are this workflow's workflow-level presentations,
 	// active for the lifetime of a workflow instance.
@@ -61,23 +59,6 @@ type QuestionPresentation struct {
 	Projection          string
 	ProjectionArguments []CallArgument
 	View                string
-}
-
-// ChildWorkflowSlot is the compiled representation of one
-// program.ChildWorkflowSlotDeclaration. The compiler guarantees Workflow
-// names a declared Workflow.
-type ChildWorkflowSlot struct {
-	Name     string
-	Workflow string
-}
-
-// TaskGroupSlot is the compiled representation of one
-// program.TaskGroupSlotDeclaration. The compiler guarantees Workflow
-// names a declared Workflow and KeyType is resolved.
-type TaskGroupSlot struct {
-	Name     string
-	Workflow string
-	KeyType  Type
 }
 
 // Presentation is the compiled representation of one

@@ -363,10 +363,6 @@ func TestWorkflowDeclaration_RoundTrip_AllCategories(t *testing.T) {
 			{Name: "votes", Question: "ChooseCard"},
 		},
 		TimerSlots: []program.TimerSlotDeclaration{{Name: "moveDeadline"}},
-		ChildSlots: []program.ChildWorkflowSlotDeclaration{{Name: "activeTurn", Workflow: "PlayTurn"}},
-		TaskGroupSlots: []program.TaskGroupSlotDeclaration{
-			{Name: "teamSelections", Workflow: "TeamChooseCard", KeyType: program.NamedTypeReference{Name: "TeamId"}},
-		},
 		Presentations: []program.PresentationDeclaration{
 			{Name: "MatchBoard", Slot: "main", Targets: program.ReferenceExpression{Name: "roomUsers"}, Projection: "BoardProjection", View: "BoardView"},
 		},
@@ -379,104 +375,6 @@ func TestWorkflowDeclaration_RoundTrip_AllCategories(t *testing.T) {
 			{Name: "Waiting", Transitions: []program.TransitionDeclaration{}},
 		},
 	}
-	raw, err := encodeWorkflowDeclaration("$", original)
-	if err != nil {
-		t.Fatalf("encode: %v", err)
-	}
-	decoded, err := decodeWorkflowDeclaration("$", raw)
-	if err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if !reflect.DeepEqual(original, decoded) {
-		t.Fatalf("round trip mismatch:\n  original = %#v\n  decoded  = %#v", original, decoded)
-	}
-}
-
-func TestWorkflowDeclaration_ComplexStructuredConcurrency(t *testing.T) {
-	original := program.WorkflowDeclaration{
-		Name:       "MatchRound",
-		ResultType: program.NamedTypeReference{Name: "RoundResult"},
-		QuestionSlots: []program.QuestionSlotDeclaration{
-			{Name: "confirmation", Question: "ConfirmAction"},
-		},
-		AskGroupSlots: []program.AskGroupSlotDeclaration{
-			{Name: "votes", Question: "ChooseCard"},
-		},
-		TimerSlots: []program.TimerSlotDeclaration{{Name: "deadline"}},
-		ChildSlots: []program.ChildWorkflowSlotDeclaration{{Name: "activeTurn", Workflow: "PlayTurn"}},
-		TaskGroupSlots: []program.TaskGroupSlotDeclaration{
-			{Name: "teamSelections", Workflow: "TeamChooseCard", KeyType: program.NamedTypeReference{Name: "TeamId"}},
-		},
-		Presentations: []program.PresentationDeclaration{
-			{Name: "MatchBoard", Slot: "main", Targets: program.ReferenceExpression{Name: "roomUsers"}, Projection: "BoardProjection", View: "BoardView"},
-		},
-		InitialState: "Start",
-		GlobalTransitions: []program.TransitionDeclaration{
-			{
-				Name:    "session_cancelled",
-				Signal:  program.SignalPattern{Source: program.NamedSignalSource{Name: "SessionCancelled"}},
-				Control: program.CancelControl{Reason: program.StringLiteralExpression{Value: "session ended"}},
-			},
-		},
-		States: []program.WorkflowStateDeclaration{
-			{
-				Name: "Start",
-				Transitions: []program.TransitionDeclaration{
-					{
-						Name:   "workflow_started",
-						Signal: program.SignalPattern{Source: program.NamedSignalSource{Name: "WorkflowStarted"}},
-						Operations: program.Block{
-							Operations: []program.Operation{
-								program.BeginTaskGroupOperation{Slot: "teamSelections", Completion: program.TaskGroupAllTerminalPolicy{}},
-								program.ForEachOperation{
-									Collection: program.FieldExpression{Target: program.ReferenceExpression{Name: "global"}, Field: "teams"},
-									ItemName:   "team",
-									Body: program.Block{
-										Operations: []program.Operation{
-											program.SpawnTaskGroupChildOperation{
-												Slot: "teamSelections",
-												Key:  program.FieldExpression{Target: program.ReferenceExpression{Name: "team"}, Field: "id"},
-												Arguments: []program.CallArgument{
-													{Name: "team", Value: program.ReferenceExpression{Name: "team"}},
-												},
-											},
-										},
-									},
-								},
-								program.SealTaskGroupOperation{Slot: "teamSelections"},
-								program.ScheduleTimerOperation{Slot: "deadline", DelayMilliseconds: program.NumberLiteralExpression{Value: "30000"}},
-							},
-						},
-						Control: program.GotoControl{State: "Waiting"},
-					},
-				},
-			},
-			{
-				Name: "Waiting",
-				Transitions: []program.TransitionDeclaration{
-					{
-						Name:   "task_group_completed",
-						Signal: program.SignalPattern{Source: program.TaskGroupCompletedSignalSource{Slot: "teamSelections"}, Bindings: []program.SignalBinding{{Field: "results", Name: "results"}}},
-						Operations: program.Block{
-							Operations: []program.Operation{
-								program.CancelTimerOperation{Slot: "deadline"},
-							},
-						},
-						Control: program.CompleteControl{Result: program.ReferenceExpression{Name: "results"}},
-					},
-					{
-						Name:   "deadline_expired",
-						Signal: program.SignalPattern{Source: program.TimerExpiredSignalSource{Slot: "deadline"}},
-						Operations: program.Block{
-							Operations: []program.Operation{program.FinalizeTaskGroupOperation{Slot: "teamSelections"}},
-						},
-						Control: program.StayControl{},
-					},
-				},
-			},
-		},
-	}
-
 	raw, err := encodeWorkflowDeclaration("$", original)
 	if err != nil {
 		t.Fatalf("encode: %v", err)
@@ -505,7 +403,7 @@ func TestExactJSON_WorkflowDeclaration(t *testing.T) {
 	}
 	expectedKeys := []string{
 		"name", "parameters", "result_type", "local_state", "question_slots",
-		"ask_group_slots", "timer_slots", "child_slots", "task_group_slots",
+		"ask_group_slots", "timer_slots",
 		"presentations", "initial_state", "global_transitions", "states",
 	}
 	if len(obj) != len(expectedKeys) {
@@ -532,8 +430,8 @@ func TestDecode_WorkflowDeclaration_Null(t *testing.T) {
 func TestDecode_UnknownField_WorkflowDeclaration(t *testing.T) {
 	_, err := decodeWorkflowDeclaration("$", json.RawMessage(`{
 		"name":"x","parameters":[],"result_type":null,"local_state":{"fields":[]},
-		"question_slots":[],"ask_group_slots":[],"timer_slots":[],"child_slots":[],
-		"task_group_slots":[],"presentations":[],"initial_state":"S",
+		"question_slots":[],"ask_group_slots":[],"timer_slots":[],
+		"presentations":[],"initial_state":"S",
 		"global_transitions":[],"states":[],"extra":true
 	}`))
 	if err == nil {
@@ -549,8 +447,8 @@ func TestDecode_NestedPathFailure_QuestionSlotPresentation(t *testing.T) {
 	data := json.RawMessage(`{
 		"name":"x","parameters":[],"result_type":null,"local_state":{"fields":[]},
 		"question_slots":[{"name":"s","question":"q","presentation":{"slot":"p","projection":"pr","projection_arguments":[],"view":"v","extra":true}}],
-		"ask_group_slots":[],"timer_slots":[],"child_slots":[],
-		"task_group_slots":[],"presentations":[],"initial_state":"S",
+		"ask_group_slots":[],"timer_slots":[],
+		"presentations":[],"initial_state":"S",
 		"global_transitions":[],"states":[]
 	}`)
 	_, err := decodeWorkflowDeclaration("$", data)
@@ -566,32 +464,11 @@ func TestDecode_NestedPathFailure_QuestionSlotPresentation(t *testing.T) {
 	}
 }
 
-func TestDecode_NestedPathFailure_WorkflowTaskGroupSlotKeyType(t *testing.T) {
-	data := json.RawMessage(`{
-		"name":"x","parameters":[],"result_type":null,"local_state":{"fields":[]},
-		"question_slots":[],"ask_group_slots":[],"timer_slots":[],"child_slots":[],
-		"task_group_slots":[{"name":"s","workflow":"w","key_type":{"kind":"not_a_real_type"}}],
-		"presentations":[],"initial_state":"S",
-		"global_transitions":[],"states":[]
-	}`)
-	_, err := decodeWorkflowDeclaration("$", data)
-	if err == nil {
-		t.Fatal("expected an error")
-	}
-	var decodeErr *DecodeError
-	if !errors.As(err, &decodeErr) {
-		t.Fatalf("expected *DecodeError, got %T: %v", err, err)
-	}
-	if decodeErr.Path != "$.task_group_slots[0].key_type" {
-		t.Fatalf("expected path $.task_group_slots[0].key_type, got %q", decodeErr.Path)
-	}
-}
-
 func TestDecode_NestedPathFailure_StatesTransitionControl(t *testing.T) {
 	data := json.RawMessage(`{
 		"name":"x","parameters":[],"result_type":null,"local_state":{"fields":[]},
-		"question_slots":[],"ask_group_slots":[],"timer_slots":[],"child_slots":[],
-		"task_group_slots":[],"presentations":[],"initial_state":"S",
+		"question_slots":[],"ask_group_slots":[],"timer_slots":[],
+		"presentations":[],"initial_state":"S",
 		"global_transitions":[],
 		"states":[
 			{"name":"A","presentations":[],"transitions":[]},

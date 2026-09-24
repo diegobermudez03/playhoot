@@ -42,11 +42,7 @@ type Commit struct {
 // line, a stored debugging record — can still fully explain what
 // happened without needing the rest of the Commit alongside it.
 type Trace struct {
-	// Path addresses which workflow instance this Step call targeted —
-	// the same value as the consumed Signal's own Path.
-	Path []PathStep
-
-	// Workflow names the compiled Workflow the targeted instance runs.
+	// Workflow names the compiled Workflow the one instance runs.
 	Workflow string
 
 	// TransitionName is the Name of the Transition selected — see

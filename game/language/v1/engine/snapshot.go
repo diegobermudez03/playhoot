@@ -21,10 +21,10 @@ type InitializationInput struct {
 }
 
 // Snapshot is a plain-data representation of the complete logical
-// position of one game instance: global game state, the root and child
-// workflow instances (with their own current state, parameters,
-// workflow-local state, and declared runtime slots), deterministic
-// random state, and the current engine sequence.
+// position of one game instance: global game state, the root workflow
+// instance (with its own current state, parameters, workflow-local
+// state, and declared runtime slots), deterministic random state, and
+// the current engine sequence.
 //
 // A Snapshot is never mutated in place. engineservice.Step takes a
 // Snapshot and produces a new one inside its returned Commit; the
@@ -36,8 +36,8 @@ type InitializationInput struct {
 // Snapshot does not record which Program it belongs to as an explicit
 // identity — instead, engineservice.CheckSnapshotCompatibility and
 // Step's own internal checks verify compatibility structurally, by
-// confirming every workflow name anywhere in the Snapshot's instance
-// tree is actually compiled by the Program in hand.
+// confirming the Snapshot's root workflow name is actually compiled by
+// the Program in hand.
 type Snapshot struct {
 	// GlobalState is this game instance's mutable global state,
 	// evaluated once by engineservice.NewSnapshot from
@@ -48,10 +48,8 @@ type Snapshot struct {
 	// name declared in Program.Types.
 	GlobalState RecordValue
 
-	// Root is the root workflow instance — see program.Definition's
-	// RootWorkflow and Program.RootWorkflow — and, through its
-	// ChildSlots and TaskGroupSlots, the root of this game instance's
-	// entire child-workflow tree.
+	// Root is the one workflow instance this game instance runs — see
+	// program.Definition's RootWorkflow and Program.RootWorkflow.
 	Root WorkflowInstance
 
 	// Random is this game instance's deterministic random state.

@@ -194,8 +194,6 @@ type wireWorkflowDeclaration struct {
 	QuestionSlots     []json.RawMessage      `json:"question_slots"`
 	AskGroupSlots     []json.RawMessage      `json:"ask_group_slots"`
 	TimerSlots        []json.RawMessage      `json:"timer_slots"`
-	ChildSlots        []json.RawMessage      `json:"child_slots"`
-	TaskGroupSlots    []json.RawMessage      `json:"task_group_slots"`
 	Presentations     []json.RawMessage      `json:"presentations"`
 	InitialState      string                 `json:"initial_state"`
 	GlobalTransitions []json.RawMessage      `json:"global_transitions"`
@@ -205,8 +203,8 @@ type wireWorkflowDeclaration struct {
 // encodeWorkflowDeclaration encodes value, an ordinary (non-interface)
 // struct, as its JSON wire representation, using the canonical field order
 // name, parameters, result_type, local_state, question_slots,
-// ask_group_slots, timer_slots, child_slots, task_group_slots,
-// presentations, initial_state, global_transitions, states.
+// ask_group_slots, timer_slots, presentations, initial_state,
+// global_transitions, states.
 func encodeWorkflowDeclaration(path string, value program.WorkflowDeclaration) (json.RawMessage, error) {
 	parameters, err := encodeFieldDeclarations(pathField(path, "parameters"), value.Parameters)
 	if err != nil {
@@ -232,14 +230,6 @@ func encodeWorkflowDeclaration(path string, value program.WorkflowDeclaration) (
 	if err != nil {
 		return nil, err
 	}
-	childSlots, err := encodeChildWorkflowSlotDeclarations(pathField(path, "child_slots"), value.ChildSlots)
-	if err != nil {
-		return nil, err
-	}
-	taskGroupSlots, err := encodeTaskGroupSlotDeclarations(pathField(path, "task_group_slots"), value.TaskGroupSlots)
-	if err != nil {
-		return nil, err
-	}
 	presentations, err := encodePresentationDeclarations(pathField(path, "presentations"), value.Presentations)
 	if err != nil {
 		return nil, err
@@ -260,8 +250,6 @@ func encodeWorkflowDeclaration(path string, value program.WorkflowDeclaration) (
 		QuestionSlots:     questionSlots,
 		AskGroupSlots:     askGroupSlots,
 		TimerSlots:        timerSlots,
-		ChildSlots:        childSlots,
-		TaskGroupSlots:    taskGroupSlots,
 		Presentations:     presentations,
 		InitialState:      value.InitialState,
 		GlobalTransitions: globalTransitions,
@@ -302,14 +290,6 @@ func decodeWorkflowDeclaration(path string, data json.RawMessage) (program.Workf
 	if err != nil {
 		return program.WorkflowDeclaration{}, err
 	}
-	childSlots, err := decodeChildWorkflowSlotDeclarations(pathField(path, "child_slots"), wire.ChildSlots)
-	if err != nil {
-		return program.WorkflowDeclaration{}, err
-	}
-	taskGroupSlots, err := decodeTaskGroupSlotDeclarations(pathField(path, "task_group_slots"), wire.TaskGroupSlots)
-	if err != nil {
-		return program.WorkflowDeclaration{}, err
-	}
 	presentations, err := decodePresentationDeclarations(pathField(path, "presentations"), wire.Presentations)
 	if err != nil {
 		return program.WorkflowDeclaration{}, err
@@ -330,8 +310,6 @@ func decodeWorkflowDeclaration(path string, data json.RawMessage) (program.Workf
 		QuestionSlots:     questionSlots,
 		AskGroupSlots:     askGroupSlots,
 		TimerSlots:        timerSlots,
-		ChildSlots:        childSlots,
-		TaskGroupSlots:    taskGroupSlots,
 		Presentations:     presentations,
 		InitialState:      wire.InitialState,
 		GlobalTransitions: globalTransitions,

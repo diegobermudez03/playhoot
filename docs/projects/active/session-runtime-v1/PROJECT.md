@@ -1,8 +1,14 @@
 # Project: Session Runtime V1
 
-Status: ACTIVE
+Status: ACTIVE (Phase 1 paused - see "Paused (2026-09-24)" below)
 Created: 2026-09-20 (migrated from the earlier `docs/ai/workspaces/active/session-runtime-v1/` initiative workspace and its numbered-Slice `PLAN.md`, which together tracked this initiative from 2026-09-08)
-Last updated: 2026-09-23 (WORK-0006 DRAFT -> READY, narrowed to its domain half only; WORK-0020 corrected to explicitly own rebuilding `play` from scratch, since it was still drafted as if extending an implementation that had already been deleted - see "Drift Correction (2026-09-23): WORK-0006/0007/0010/0012/0020 Assumed `play` Still Existed" below. Prior update, same day: WORK-0019 DONE - independent review APPROVED after two fix/re-review passes, real-Postgres verification completed; see "Current Work" below. Prior update: 2026-09-21 inside-out sequencing restructuring - see "Restructuring (2026-09-21): Inside-Out Sequencing" below)
+Last updated: 2026-09-24 (Project-wide pause: WORK-0006 returned READY -> DRAFT and its implementation reverted, pending `game/docs/decisions/GAME-ADR-0026-flat-workflow-execution-model-and-keyed-interaction-slots.md` (PROPOSED) - see "Paused (2026-09-24)" below. Prior update, same day: WORK-0006 DRAFT -> READY, narrowed to its domain half only; WORK-0020 corrected to explicitly own rebuilding `play` from scratch, since it was still drafted as if extending an implementation that had already been deleted - see "Drift Correction (2026-09-23): WORK-0006/0007/0010/0012/0020 Assumed `play` Still Existed" below. Prior update, same day: WORK-0019 DONE - independent review APPROVED after two fix/re-review passes, real-Postgres verification completed; see "Current Work" below. Prior update: 2026-09-21 inside-out sequencing restructuring - see "Restructuring (2026-09-21): Inside-Out Sequencing" below)
+
+## Paused (2026-09-24): Game Language Engine Redesign
+
+A human design review of how Session Runtime addresses interactions (`Path`/`Slot`, exposed all the way from the engine into `sessionlifecycle`'s own code) escalated into questioning whether Game Language's nested-workflow execution model (Child Workflows, Task Groups) is needed at all. Neither construct is used by any completed WORK in this Project, by any authored example, or by any prior GAME-ADR's acceptance - and the already-accepted `game/README.md` itself already deferred how the outside world would ever interact with a nested instance. An audit against the product's target game range found no game needing a genuinely separate execution instance; every case is expressible on one flat workflow instance with keyed interaction slots (generalizing GAME-ADR-0012) and engine-assigned interaction IDs. This is now `game/docs/decisions/GAME-ADR-0026-flat-workflow-execution-model-and-keyed-interaction-slots.md` (PROPOSED, pending human acceptance).
+
+Because `sessionlifecycle` is built directly against the engine `Output`/`Signal` shapes this record changes, **Phase 1 of this Project is paused** until GAME-ADR-0026 is accepted and at least its engine/compiler/program side is implemented (tracked as a separate, engine-scoped effort - not yet filed as a Project/WORK of its own). WORK-0006's already-completed implementation pass was reverted (not because it was wrong, but to avoid building/reviewing further against a surface about to change) and its Status returned to DRAFT - see its own "Paused (2026-09-24)" section. No other WORK in this Project changes as a result of this pause; WORK-0005/WORK-0019 (DONE) and WORK-0001/0003/0004 (DONE, historical) are unaffected, confirming the audit's finding that nested execution was never actually exercised by anything already built.
 
 ## Goal
 
@@ -28,8 +34,8 @@ Several currently-DRAFT WORKs (0006, 0007, 0010, 0011, 0012) mix a Session-Runti
 
 - **WORK-0005** (Thin Live Coordinator / WebSocket) - **DONE (2026-09-22)**. Reduced to an HTTP/WebSocket transport skeleton (Blocker 11) - `play`/`play/sessionruntime` are deleted; `POST /sessions` and `GET /ws` work as real transport (a real 501, a real connection upgrade, centralized observability + trace/span IDs, Blockers 12-13) but call no domain package. Independent review APPROVED after one REQUIRED_FIX (stale doc comments) was fixed and re-reviewed.
 - **WORK-0019** (Replay-First Session Runtime Persistence Migration) - **DONE (2026-09-23)**. Implements GAME-ADR-0024. `session_runtime_turns`'s Snapshot columns and `session_runtime_steps` removed; `session_runtime_starts`/`session_cause_events` added; replay-based reconstruction (`reconstructCurrentSnapshot`) implemented and proven against real Postgres by a test comparing reconstructed state to values live execution actually produced (not merely re-derived from the same durable rows). Independent review APPROVED after two fix/re-review passes (a circular test and missing data-integrity alerts, both fixed). Moved to the front of Phase 1 - it defines the durable representation every future RuntimeTurn cause (UserIntent, SessionCancelled, TimerExpired) must satisfy, now including the shared `session_cause_events` table Blocker 3 fixed for them, and a `PROJECT.md`-documented requirement that each such WORK also extend `sessionlifecycle.replay.go`'s `loadReplaySignal`, not only add a table.
-- **WORK-0006** (Broaden Live Fan-Out: Effects + Presentations, Domain Half) - **READY (2026-09-23)**, next to implement. Split from its original mixed scope: this WORK is now purely `sessionlifecycle.Manager.Start`/`AnswerInteraction` returning Effect/Presentation Outputs in memory, no `play`/wire code. The client-delivery half is deferred to a new, not-yet-numbered WORK that follows WORK-0020. See "Drift Correction (2026-09-23)" below.
-- **Phase 1 (Session Runtime domain completion)** continues with WORK-0006, then its next unstarted WORK - see "Phase 1" in the Work table below.
+- **WORK-0006** (Broaden Live Fan-Out: Effects + Presentations, Domain Half) - **DRAFT (paused, 2026-09-24)**. Split from its original mixed scope: this WORK is now purely `sessionlifecycle.Manager.Start`/`AnswerInteraction` returning Effect/Presentation Outputs in memory, no `play`/wire code (see "Drift Correction (2026-09-23)" below) - but implementation was reverted and the WORK returned to DRAFT pending GAME-ADR-0026 (see "Paused (2026-09-24)" above).
+- **Phase 1 (Session Runtime domain completion) is paused** pending GAME-ADR-0026 - see "Paused (2026-09-24)" above. It does not resume with WORK-0006 until that record is accepted and implemented.
 - **WORK-0007** (Session Termination Live Notification, domain half) - DRAFT, Blockers 1-4 unresolved. Same domain/play split as WORK-0006, applied lightly (corrected stale `play` references; full Scope/Acceptance-Criteria split deferred until this WORK is actually drafted for real, per this Project's just-in-time practice).
 - **WORK-0020** (Role-Aware Live Connections / Host Administration Channel) - DRAFT. Implements GAME-ADR-0025; Blockers 1-3 need human approval before READY. First WORK of Phase 2, and now explicitly the WORK that rebuilds the entire `play` Coordinator from scratch (both registries, both dispatch paths, `Deliver`) - its own file previously still described adding a registry to an implementation that had already been deleted; corrected 2026-09-23, see "Drift Correction" below.
 
@@ -74,7 +80,7 @@ Reorganized 2026-09-21 into three inside-out phases (see Restructuring above). W
 | Order | Work | Status |
 |------:|------|--------|
 | 5 | WORK-0019 — Replay-First Session Runtime Persistence Migration (moved first - defines the durable model every cause below must satisfy) | DONE |
-| 6 | WORK-0006 — domain half only: `Manager` additively returns Effect/Presentation Outputs in memory | READY |
+| 6 | WORK-0006 — domain half only: `Manager` additively returns Effect/Presentation Outputs in memory | DRAFT (paused, GAME-ADR-0026) |
 | 7 | WORK-0007 — domain half only: `WorkflowCompletedOutput` detection + termination | DRAFT |
 | 8 | WORK-0012 — domain half: Timer persistence + `TimerExpired`-as-cause | PLANNED |
 | 9 | WORK-0013 — Keyed Timers (WORK-0012's compiler prerequisite) | PLANNED |
@@ -103,7 +109,7 @@ Reorganized 2026-09-21 into three inside-out phases (see Restructuring above). W
 |------:|------|--------|
 | 20 | WORK-0009 — Client-Safe Game UI Manifest (independent read endpoint) | PLANNED |
 
-23 WORK total: 6 DONE, 0 IMPLEMENTING, 1 READY, 2 DRAFT, 14 PLANNED.
+23 WORK total: 6 DONE, 0 IMPLEMENTING, 0 READY, 3 DRAFT, 14 PLANNED.
 
 ## 2026-09-22 Addition: WORK-0022 (Abuse/Resource-Rate Limits)
 
@@ -133,12 +139,12 @@ Required to run a Session frontend end-to-end against the supported Game Languag
 | Runtime turns (Step-drain/bound execution) | DONE | WORK-0003 |
 | Interactions/questions | DONE | WORK-0004 |
 | User intents | Not implemented | WORK-0010 (PLANNED) |
-| Presentation state | Engine-only; not yet returned by `Manager`, not yet fanned out to clients | WORK-0006 (READY, domain half - returns it in memory); client delivery owned by a not-yet-drafted play-half WORK following WORK-0020 |
-| UI effects | Engine-only; not yet returned by `Manager`, not yet fanned out to clients | WORK-0006 (READY, domain half); client delivery same as above |
+| Presentation state | Engine-only; not yet returned by `Manager`, not yet fanned out to clients | WORK-0006 (DRAFT, paused pending GAME-ADR-0026); client delivery owned by a not-yet-drafted play-half WORK following WORK-0020 |
+| UI effects | Engine-only; not yet returned by `Manager`, not yet fanned out to clients | WORK-0006 (DRAFT, paused pending GAME-ADR-0026); client delivery same as above |
 | Client-safe UI/game definition | Does not exist | WORK-0009 (PLANNED) |
 | Per-viewer output | Partial (Question-only today) | WORK-0004 (question) + WORK-0006 (presentation, DRAFT) |
 | Live transport (Create/Join/AnswerInteraction/Deliver) | **Reduced 2026-09-21 (Blocker 11), DONE as a skeleton**: real routes, real WS upgrade, centralized observability + trace/span IDs, no domain coupling - `play`/`play/sessionruntime` removed. Rebuilt by Phase 2's WORK-0020 onward, once Phase 1 completes | WORK-0005 (DONE, skeleton) |
-| **Engine Output handling (Presentations/Effects/Timers/WorkflowCompleted returned or persisted)** | Not implemented - only 2 of 9 `Output` variants (Open/CloseQuestion) are captured today, and none are returned to a caller | WORK-0006's domain half (READY, next); WORK-0007/0010/0011/0012's domain halves (Phase 1, DRAFT/PLANNED) |
+| **Engine Output handling (Presentations/Effects/Timers/WorkflowCompleted returned or persisted)** | Not implemented - only 2 of 9 `Output` variants (Open/CloseQuestion) are captured today, and none are returned to a caller | WORK-0006's domain half (DRAFT, paused pending GAME-ADR-0026); WORK-0007/0010/0011/0012's domain halves (Phase 1, DRAFT/PLANNED, also paused) |
 | **Replay-input persistence** | DONE - `session_runtime_starts` durably persists Start's Seed/RootParameters; `session_runtime_turns` carries no Snapshot column | WORK-0019 |
 | **Deterministic runtime reconstruction (process-loss recovery without a stored Snapshot)** | DONE - `reconstructCurrentSnapshot` replays durable state with no cache of any kind, verified against real Postgres | WORK-0019 |
 | **Admin live connection** | Design accepted (GAME-ADR-0025); not implemented (no `play` exists at all today) | WORK-0020 (DRAFT, Phase 2) |

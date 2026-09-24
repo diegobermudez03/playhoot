@@ -83,14 +83,8 @@ func (FailControl) isWorkflowControl() {}
 // must reject it. Cancellation is a distinct outcome from both authored
 // failure and successful completion.
 //
-// CancelControl models a workflow cancelling itself; it is unrelated to a
-// parent cancelling a running child with CancelChildWorkflowOperation,
-// which never produces a child-outcome signal.
-//
-// When the cancelling workflow is a child, its parent observes this
-// outcome through ChildCancelledSignalSource. When it is the root
-// workflow, there is no parent to notify; a future session layer may
-// observe the root's terminal outcome.
+// There is no parent to notify; a future session layer may observe the
+// root's terminal outcome.
 type CancelControl struct {
 	Reason Expression
 }

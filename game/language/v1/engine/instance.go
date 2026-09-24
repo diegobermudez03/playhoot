@@ -1,7 +1,7 @@
 package engine
 
-// WorkflowInstance is the persistable runtime state of one running
-// workflow — the root, or any child anywhere in its child-workflow tree.
+// WorkflowInstance is the persistable runtime state of the one workflow a
+// Session runs for its entire lifetime.
 //
 // WorkflowInstance is plain data: nothing here executes anything, and
 // nothing enforces workflow structure or invariants. It exists so a
@@ -35,11 +35,9 @@ type WorkflowInstance struct {
 	// for the outcomes they produce.
 	Outcome *WorkflowOutcome
 
-	QuestionSlots  []QuestionSlotInstance
-	AskGroupSlots  []AskGroupSlotInstance
-	TimerSlots     []TimerSlotInstance
-	ChildSlots     []ChildWorkflowSlotInstance
-	TaskGroupSlots []TaskGroupSlotInstance
+	QuestionSlots []QuestionSlotInstance
+	AskGroupSlots []AskGroupSlotInstance
+	TimerSlots    []TimerSlotInstance
 }
 
 // QuestionSlotInstance is the runtime occupancy of one declared
@@ -131,102 +129,6 @@ type TimerSlotInstance struct {
 	Pending bool
 }
 
-// ChildWorkflowSlotInstance is the runtime occupancy of one declared
-// ChildWorkflowSlot: at most one child instance at a time. Child is nil
-// exactly when the slot is empty; this is the recursive edge that makes
-// a Snapshot's workflow instances form a tree.
-type ChildWorkflowSlotInstance struct {
-	Name  string
-	Child *WorkflowInstance
-}
-
-// TaskGroupSlotInstance is the runtime occupancy of one declared
-// TaskGroupSlot. Group is nil exactly when the slot is empty — see
-// program.TaskGroupSlotDeclaration's documented empty/building/running/
-// completed-awaiting-join states.
-type TaskGroupSlotInstance struct {
-	Name  string
-	Group *TaskGroupState
-}
-
-// TaskGroupState is one concrete, in-flight or completed-awaiting-join
-// task-group instance: a dynamically sized collection of same-workflow
-// child instances, each addressed by its own task Key, together with
-// the completion policy it was begun with.
-type TaskGroupState struct {
-	// Tasks holds every task in this group, in the order each was
-	// spawned — see program.TaskGroupCompletedSignalSource's documented
-	// "taskKeys" field.
-	Tasks []TaskGroupTask
-
-	Phase TaskGroupPhase
-
-	// CompletionKind and QuorumCount capture the TaskGroupCompletionPolicy
-	// this group was begun with, evaluated once at BeginTaskGroupOperation
-	// time — see program.TaskGroupCompletionPolicy's documented
-	// "evaluated once ... does not change afterward". QuorumCount is
-	// only meaningful when CompletionKind is TaskGroupCompletionQuorumTerminal.
-	CompletionKind TaskGroupCompletionKind
-	QuorumCount    int
-
-	// TerminalOrder holds every task Key whose task has reached an
-	// authored terminal outcome, in the order each did so — see
-	// program.TaskGroupCompletedSignalSource's documented "terminalKeys"
-	// field. A task Key not in TerminalOrder when Phase is
-	// TaskGroupPhaseCompleted was structurally cancelled without an
-	// authored outcome — see program.TaskGroupFirstTerminalPolicy's and
-	// program.TaskGroupQuorumTerminalPolicy's documented "unfinished"
-	// behavior.
-	TerminalOrder []Value
-}
-
-// TaskGroupPhase identifies which lifecycle phase a TaskGroupState is
-// in — see program.TaskGroupSlotDeclaration's documented "empty,
-// building, running, or completed-awaiting-join" (empty is represented
-// by a nil TaskGroupState, not by this type).
-type TaskGroupPhase int
-
-const (
-	// TaskGroupPhaseBuilding is the zero value: the group was begun and
-	// may still receive new tasks through SpawnTaskGroupChildOperation.
-	TaskGroupPhaseBuilding TaskGroupPhase = iota
-
-	// TaskGroupPhaseRunning: the group was sealed, membership is closed,
-	// and its tasks run their own workflow lifecycles.
-	TaskGroupPhaseRunning
-
-	// TaskGroupPhaseCompleted: the group is completed-awaiting-join —
-	// its completion policy was satisfied, or it was finalized or is
-	// otherwise not accepting further per-task terminal outcomes.
-	TaskGroupPhaseCompleted
-)
-
-// TaskGroupCompletionKind identifies which TaskGroupCompletionPolicy
-// variant a TaskGroupState was begun with.
-type TaskGroupCompletionKind int
-
-const (
-	// TaskGroupCompletionAllTerminal is the zero value: the group
-	// completes once every sealed task has reached an authored terminal
-	// outcome.
-	TaskGroupCompletionAllTerminal TaskGroupCompletionKind = iota
-
-	// TaskGroupCompletionFirstTerminal: the group completes as soon as
-	// the first task reaches any authored terminal outcome.
-	TaskGroupCompletionFirstTerminal
-
-	// TaskGroupCompletionQuorumTerminal: the group completes once
-	// QuorumCount tasks have reached an authored terminal outcome.
-	TaskGroupCompletionQuorumTerminal
-)
-
-// TaskGroupTask is one child instance owned by a TaskGroupState,
-// addressed by Key.
-type TaskGroupTask struct {
-	Key   Value
-	Child WorkflowInstance
-}
-
 // WorkflowOutcomeKind identifies which terminal outcome a
 // WorkflowOutcome represents.
 type WorkflowOutcomeKind int
@@ -258,17 +160,11 @@ func (k WorkflowOutcomeKind) String() string {
 	}
 }
 
-// WorkflowOutcome is the terminal outcome of one WorkflowInstance. Only
-// the field matching Kind is meaningful: Result for
+// WorkflowOutcome is the terminal outcome of the one WorkflowInstance a
+// Session runs. Only the field matching Kind is meaningful: Result for
 // WorkflowOutcomeCompleted, Error for WorkflowOutcomeFailed, Reason for
-// WorkflowOutcomeCancelled.
-//
-// When the terminated instance is a child, its parent observes this
-// outcome through ChildCompletedSignalSource, ChildFailedSignalSource,
-// or ChildCancelledSignalSource. When it is the root, per
-// program.FailControl's and program.CancelControl's documentation,
-// there is no parent to notify — a future session layer may observe it
-// here directly.
+// WorkflowOutcomeCancelled. A session layer observes it directly through
+// WorkflowCompletedOutput.
 type WorkflowOutcome struct {
 	Kind   WorkflowOutcomeKind
 	Result Value

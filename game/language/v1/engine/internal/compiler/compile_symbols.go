@@ -92,24 +92,16 @@ type compiler struct {
 	workflowDeclarations map[string]workflowEntry
 
 	// workflowResultTypes memoizes each registered workflow's compiled
-	// ResultType, computed once (in registerWorkflowNamespace's second
-	// pass, before any workflow's body compiles) from its own
-	// declaration without compiling the rest of it — this is what lets
-	// one workflow's child/task-group slot resolve another (or its own)
-	// ResultType for a child/task-group completion signal's schema
-	// without needing that workflow's full body compiled first, and
-	// without the recursion risk a named type or function has: a
-	// workflow's ResultType never depends on another workflow's body.
+	// ResultType, computed once (in buildWorkflowResultTypes, before any
+	// workflow's body compiles) from its own declaration without
+	// compiling the rest of it.
 	workflowResultTypes map[string]engine.Type
 
 	// workflowParameterTypes memoizes each registered workflow's
 	// compiled Parameters, computed once (in buildWorkflowParameterTypes,
-	// before any workflow's body compiles) for the same reason
-	// workflowResultTypes is: a SpawnChildWorkflowOperation targeting a
-	// child slot must validate its Arguments against that slot's
-	// declared workflow's parameters without needing that workflow's
-	// full body compiled first, and without compiling the same
-	// parameter declarations — and diagnosing them — a second time.
+	// before any workflow's body compiles) so compileWorkflowDeclaration
+	// can reuse the result instead of compiling — and diagnosing — the
+	// same parameter declarations a second time.
 	workflowParameterTypes map[string][]engine.FieldType
 
 	// compiledQuestions and compiledEffects hold every compiled

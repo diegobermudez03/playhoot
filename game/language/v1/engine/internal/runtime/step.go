@@ -112,22 +112,13 @@ const (
 	ExecutionErrorInvalidTimerDelay
 
 	// ExecutionErrorInputRejected marks a Step call for a
-	// SignalKindQuestionAnswered, SignalKindTimerExpired, or
-	// child-outcome Signal that did not pass authoritative validation:
-	// the targeted slot was already empty (stale or duplicate), the
-	// answer's respondent did not match the slot's pending recipient
-	// (unauthorized), the submitted answer failed response-type or
-	// Validation checks (invalid), or a child-outcome signal's slot did
-	// not hold a matching terminal outcome awaiting join. See
-	// ErrInputRejected.
+	// SignalKindQuestionAnswered or SignalKindTimerExpired Signal that
+	// did not pass authoritative validation: the targeted slot was
+	// already empty (stale or duplicate), the answer's respondent did
+	// not match the slot's pending recipient (unauthorized), or the
+	// submitted answer failed response-type or Validation checks
+	// (invalid). See ErrInputRejected.
 	ExecutionErrorInputRejected
-
-	// ExecutionErrorChildOutcomeNotJoined marks a
-	// CancelChildWorkflowOperation targeting a child slot that holds a
-	// terminal outcome still awaiting join — that outcome must be
-	// consumed through its corresponding child-outcome signal first,
-	// never silently discarded by cancellation.
-	ExecutionErrorChildOutcomeNotJoined
 
 	// ExecutionErrorDuplicateRecipient marks an OpenAskGroupOperation
 	// whose evaluated Recipients contains the same user identity more
@@ -148,26 +139,6 @@ const (
 	// cancellation.
 	ExecutionErrorAskGroupNotJoined
 
-	// ExecutionErrorDuplicateTaskKey marks a SpawnTaskGroupChildOperation
-	// whose evaluated Key is already used by another task in the same,
-	// currently building task group.
-	ExecutionErrorDuplicateTaskKey
-
-	// ExecutionErrorTaskGroupNotJoined marks a CancelTaskGroupOperation
-	// targeting a task-group slot that holds a terminal outcome still
-	// awaiting join — that outcome must be consumed through
-	// TaskGroupCompletedSignalSource first, never silently discarded by
-	// cancellation.
-	ExecutionErrorTaskGroupNotJoined
-
-	// ExecutionErrorTaskGroupLeftBuilding marks a Step call whose
-	// transition began a task group (BeginTaskGroupOperation) but ended
-	// without sealing or cancelling it — per
-	// program.BeginTaskGroupOperation's documented rule, a task group
-	// must never remain in the building phase once its opening
-	// transition commits.
-	ExecutionErrorTaskGroupLeftBuilding
-
 	// ExecutionErrorPresentationSlotOccupied marks a committed
 	// transition whose resulting active-presentation set would occupy
 	// the same presentation slot more than once for the same user —
@@ -179,21 +150,11 @@ const (
 	// active presentation per slot at a time.
 	ExecutionErrorPresentationSlotOccupied
 
-	// ExecutionErrorWorkflowDepthExceeded marks a SpawnChildWorkflowOperation
-	// or SpawnTaskGroupChildOperation that would create a new instance
-	// deeper than engine.Limits.MaxWorkflowDepth allows — see that
-	// field's doc comment. This guards against an unbounded recursive
-	// spawn (a workflow that spawns a same-typed child that spawns
-	// another, forever).
-	ExecutionErrorWorkflowDepthExceeded
-
 	// ExecutionErrorActiveSlotLimitExceeded marks an operation that
-	// would occupy a new interaction slot (a question, a timer, a
-	// child, an ask-group, or a task-group task) on an instance that
-	// already holds engine.Limits.MaxActiveSlotsPerInstance occupied
-	// slots. This guards against unbounded fan-out — for example, a
-	// loop that spawns one task-group child per iteration with no
-	// bound on the collection driving it.
+	// would occupy a new interaction slot (a question, a timer, or an
+	// ask-group) on an instance that already holds
+	// engine.Limits.MaxActiveSlotsPerInstance occupied slots. This
+	// guards against unbounded fan-out.
 	ExecutionErrorActiveSlotLimitExceeded
 )
 
@@ -240,24 +201,14 @@ func (c ExecutionErrorCode) String() string {
 		return "invalid_timer_delay"
 	case ExecutionErrorInputRejected:
 		return "input_rejected"
-	case ExecutionErrorChildOutcomeNotJoined:
-		return "child_outcome_not_joined"
 	case ExecutionErrorDuplicateRecipient:
 		return "duplicate_recipient"
 	case ExecutionErrorInvalidQuorum:
 		return "invalid_quorum"
 	case ExecutionErrorAskGroupNotJoined:
 		return "ask_group_not_joined"
-	case ExecutionErrorDuplicateTaskKey:
-		return "duplicate_task_key"
-	case ExecutionErrorTaskGroupNotJoined:
-		return "task_group_not_joined"
-	case ExecutionErrorTaskGroupLeftBuilding:
-		return "task_group_left_building"
 	case ExecutionErrorPresentationSlotOccupied:
 		return "presentation_slot_occupied"
-	case ExecutionErrorWorkflowDepthExceeded:
-		return "workflow_depth_exceeded"
 	case ExecutionErrorActiveSlotLimitExceeded:
 		return "active_slot_limit_exceeded"
 	default:
@@ -342,15 +293,13 @@ func NewSnapshot(p engine.Program, input engine.InitializationInput) (engine.Sna
 	}
 
 	rootInstance := engine.WorkflowInstance{
-		Workflow:       p.RootWorkflow,
-		State:          root.InitialState,
-		Parameters:     params,
-		LocalState:     engine.RecordValue{TypeName: "local", Fields: localFields},
-		QuestionSlots:  newQuestionSlotInstances(root.QuestionSlots),
-		AskGroupSlots:  newAskGroupSlotInstances(root.AskGroupSlots),
-		TimerSlots:     newTimerSlotInstances(root.TimerSlots),
-		ChildSlots:     newChildWorkflowSlotInstances(root.ChildSlots),
-		TaskGroupSlots: newTaskGroupSlotInstances(root.TaskGroupSlots),
+		Workflow:      p.RootWorkflow,
+		State:         root.InitialState,
+		Parameters:    params,
+		LocalState:    engine.RecordValue{TypeName: "local", Fields: localFields},
+		QuestionSlots: newQuestionSlotInstances(root.QuestionSlots),
+		AskGroupSlots: newAskGroupSlotInstances(root.AskGroupSlots),
+		TimerSlots:    newTimerSlotInstances(root.TimerSlots),
 	}
 
 	globalFields, err := evaluateStateFields(p, p.GlobalState, engine.Scope{})
@@ -450,60 +399,6 @@ func newTimerSlotInstances(slots []string) []engine.TimerSlotInstance {
 	return result
 }
 
-func newChildWorkflowSlotInstances(slots []engine.ChildWorkflowSlot) []engine.ChildWorkflowSlotInstance {
-	result := make([]engine.ChildWorkflowSlotInstance, len(slots))
-	for i, s := range slots {
-		result[i] = engine.ChildWorkflowSlotInstance{Name: s.Name}
-	}
-	return result
-}
-
-// newChildInstance creates the initial WorkflowInstance for one child
-// spawned by a SpawnChildWorkflowOperation: it binds workflow's declared
-// Parameters from args by name, evaluates its LocalState, creates its
-// declared runtime slots (all empty), and places it in its declared
-// InitialState — mirroring NewSnapshot's construction of the root
-// instance. The compiler already guarantees args matches workflow's
-// Parameters exactly (see compileSpawnChildWorkflow), so, unlike
-// bindParameters, this does not re-validate each value's type.
-func newChildInstance(p engine.Program, workflow engine.Workflow, args []engine.FieldValue) (engine.WorkflowInstance, error) {
-	argMap := fieldValueMap(args)
-	params := make([]engine.FieldValue, 0, len(workflow.Parameters))
-	for _, decl := range workflow.Parameters {
-		v, ok := argMap[decl.Name]
-		if !ok {
-			return engine.WorkflowInstance{}, newExecutionError(ExecutionErrorUnknown,
-				"engineservice: missing child workflow argument %q", decl.Name)
-		}
-		params = append(params, engine.FieldValue{Name: decl.Name, Value: v})
-	}
-
-	localFields, err := evaluateStateFields(p, workflow.LocalState, engine.Scope{Bindings: argMap})
-	if err != nil {
-		return engine.WorkflowInstance{}, err
-	}
-
-	return engine.WorkflowInstance{
-		Workflow:       workflow.Name,
-		State:          workflow.InitialState,
-		Parameters:     params,
-		LocalState:     engine.RecordValue{TypeName: "local", Fields: localFields},
-		QuestionSlots:  newQuestionSlotInstances(workflow.QuestionSlots),
-		AskGroupSlots:  newAskGroupSlotInstances(workflow.AskGroupSlots),
-		TimerSlots:     newTimerSlotInstances(workflow.TimerSlots),
-		ChildSlots:     newChildWorkflowSlotInstances(workflow.ChildSlots),
-		TaskGroupSlots: newTaskGroupSlotInstances(workflow.TaskGroupSlots),
-	}, nil
-}
-
-func newTaskGroupSlotInstances(slots []engine.TaskGroupSlot) []engine.TaskGroupSlotInstance {
-	result := make([]engine.TaskGroupSlotInstance, len(slots))
-	for i, s := range slots {
-		result[i] = engine.TaskGroupSlotInstance{Name: s.Name}
-	}
-	return result
-}
-
 // Step applies exactly one Signal to snapshot and returns the atomic
 // result as an engine.Commit.
 //
@@ -531,10 +426,8 @@ func newTaskGroupSlotInstances(slots []engine.TaskGroupSlot) []engine.TaskGroupS
 // limits bounds the transition's execution — see engine.Limits — and is
 // itself part of what a Commit is a deterministic function of: the same
 // program, snapshot, signal, and limits always produce the same result.
-//
-// signal.Path addresses which workflow instance in the child-workflow
-// tree this call targets — see engine.Signal's doc comment. This version
-// does not yet produce any engine.Trace content.
+// A Session runs exactly one workflow instance, so signal always targets
+// it directly.
 func Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal, limits engine.Limits) (engine.Commit, error) {
 	if snapshot.Root.Workflow != p.RootWorkflow {
 		return engine.Commit{}, newExecutionError(ExecutionErrorSnapshotProgramMismatch,
@@ -554,8 +447,8 @@ func Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal, limi
 		return stepAskGroupAnswer(p, snapshot, signal)
 	}
 
-	target, ok := resolveInstance(snapshot.Root, signal.Path)
-	if !ok || target.Outcome != nil {
+	target := snapshot.Root
+	if target.Outcome != nil {
 		return engine.Commit{}, ErrSignalRejected
 	}
 
@@ -564,9 +457,8 @@ func Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal, limi
 		return engine.Commit{}, newExecutionError(ExecutionErrorUnknown, "engineservice: workflow %q is not compiled", target.Workflow)
 	}
 
-	// Per program.QuestionAnsweredSignalSource, program.TimerExpiredSignalSource,
-	// program.ChildCompletedSignalSource, program.ChildFailedSignalSource, and
-	// program.ChildCancelledSignalSource, a signal of these kinds only
+	// Per program.QuestionAnsweredSignalSource and
+	// program.TimerExpiredSignalSource, a signal of these kinds only
 	// exists once authoritative validation accepts it — a stale,
 	// duplicate, unauthorized, or invalid submission is rejected here,
 	// before any transition is even considered.
@@ -579,24 +471,8 @@ func Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal, limi
 		if err := validateTimerExpiration(target, signal); err != nil {
 			return engine.Commit{}, err
 		}
-	case engine.SignalKindChildCompleted:
-		if err := validateChildOutcome(target, signal, engine.WorkflowOutcomeCompleted); err != nil {
-			return engine.Commit{}, err
-		}
-	case engine.SignalKindChildFailed:
-		if err := validateChildOutcome(target, signal, engine.WorkflowOutcomeFailed); err != nil {
-			return engine.Commit{}, err
-		}
-	case engine.SignalKindChildCancelled:
-		if err := validateChildOutcome(target, signal, engine.WorkflowOutcomeCancelled); err != nil {
-			return engine.Commit{}, err
-		}
 	case engine.SignalKindAskGroupCompleted:
 		if err := validateAskGroupCompletion(target, signal); err != nil {
-			return engine.Commit{}, err
-		}
-	case engine.SignalKindTaskGroupCompleted:
-		if err := validateTaskGroupCompletion(target, signal); err != nil {
 			return engine.Commit{}, err
 		}
 	}
@@ -628,25 +504,22 @@ func Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal, limi
 	}
 
 	ctx := &execContext{
-		program:        p,
-		workflow:       workflow,
-		path:           signal.Path,
-		global:         snapshot.GlobalState,
-		local:          target.LocalState,
-		random:         snapshot.Random,
-		limits:         limits,
-		questionSlots:  append([]engine.QuestionSlotInstance{}, target.QuestionSlots...),
-		timerSlots:     append([]engine.TimerSlotInstance{}, target.TimerSlots...),
-		childSlots:     append([]engine.ChildWorkflowSlotInstance{}, target.ChildSlots...),
-		askGroupSlots:  append([]engine.AskGroupSlotInstance{}, target.AskGroupSlots...),
-		taskGroupSlots: append([]engine.TaskGroupSlotInstance{}, target.TaskGroupSlots...),
+		program:       p,
+		workflow:      workflow,
+		global:        snapshot.GlobalState,
+		local:         target.LocalState,
+		random:        snapshot.Random,
+		limits:        limits,
+		questionSlots: append([]engine.QuestionSlotInstance{}, target.QuestionSlots...),
+		timerSlots:    append([]engine.TimerSlotInstance{}, target.TimerSlots...),
+		askGroupSlots: append([]engine.AskGroupSlotInstance{}, target.AskGroupSlots...),
 	}
 
-	// Accepting a validated answer, expiration, child outcome, or
-	// ask-group completion clears its slot, atomic with everything else
-	// this step does — if the step fails for any other reason below,
-	// this candidate clearing is discarded along with it, and the slot
-	// remains occupied.
+	// Accepting a validated answer, expiration, or ask-group completion
+	// clears its slot, atomic with everything else this step does — if
+	// the step fails for any other reason below, this candidate
+	// clearing is discarded along with it, and the slot remains
+	// occupied.
 	switch signal.Kind {
 	case engine.SignalKindQuestionAnswered:
 		if idx, ok := ctx.findQuestionSlot(signal.Slot); ok {
@@ -656,17 +529,9 @@ func Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal, limi
 		if idx, ok := ctx.findTimerSlot(signal.Slot); ok {
 			ctx.timerSlots[idx] = engine.TimerSlotInstance{Name: signal.Slot}
 		}
-	case engine.SignalKindChildCompleted, engine.SignalKindChildFailed, engine.SignalKindChildCancelled:
-		if idx, ok := ctx.findChildSlot(signal.Slot); ok {
-			ctx.childSlots[idx] = engine.ChildWorkflowSlotInstance{Name: signal.Slot}
-		}
 	case engine.SignalKindAskGroupCompleted:
 		if idx, ok := ctx.findAskGroupSlot(signal.Slot); ok {
 			ctx.askGroupSlots[idx] = engine.AskGroupSlotInstance{Name: signal.Slot}
-		}
-	case engine.SignalKindTaskGroupCompleted:
-		if idx, ok := ctx.findTaskGroupSlot(signal.Slot); ok {
-			ctx.taskGroupSlots[idx] = engine.TaskGroupSlotInstance{Name: signal.Slot}
 		}
 	}
 
@@ -678,18 +543,6 @@ func Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal, limi
 	outcome, err := applyControl(p, transition.Control, scope)
 	if err != nil {
 		return engine.Commit{}, err
-	}
-
-	// Per program.BeginTaskGroupOperation's documented rule, a task
-	// group must never remain in the building phase once its opening
-	// transition commits — every BeginTaskGroupOperation must be
-	// followed, within the same transition, by a SealTaskGroupOperation
-	// or a CancelTaskGroupOperation.
-	for _, s := range ctx.taskGroupSlots {
-		if s.Group != nil && s.Group.Phase == engine.TaskGroupPhaseBuilding {
-			return engine.Commit{}, newExecutionError(ExecutionErrorTaskGroupLeftBuilding,
-				"engineservice: task-group slot %q must be sealed or cancelled before its opening transition ends", s.Name)
-		}
 	}
 
 	invariantScope := engine.Scope{Bindings: map[string]engine.Value{globalScopeRootName: ctx.global}}
@@ -708,36 +561,25 @@ func Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal, limi
 	newTarget.LocalState = ctx.local
 	newTarget.QuestionSlots = ctx.questionSlots
 	newTarget.TimerSlots = ctx.timerSlots
-	newTarget.ChildSlots = ctx.childSlots
 	newTarget.AskGroupSlots = ctx.askGroupSlots
-	newTarget.TaskGroupSlots = ctx.taskGroupSlots
 	if outcome.changed {
 		newTarget.State = outcome.state
 	}
 	if outcome.outcome != nil {
 		newTarget.Outcome = outcome.outcome
-		// Per ChildWorkflowSlotDeclaration's documented "disappears when
-		// the parent workflow terminates": once this instance itself
-		// reaches a terminal outcome, every child slot, ask-group slot,
-		// and task-group slot it owns — running or terminal-awaiting-join
-		// — is discarded along with its entire subtree. Nothing can ever
-		// join a slot belonging to an instance that no longer runs any
-		// transitions.
-		newTarget.ChildSlots = clearedChildSlots(newTarget.ChildSlots)
+		// Once this instance reaches a terminal outcome, every ask-group
+		// slot it owns — collecting or awaiting-join — is discarded:
+		// nothing can ever join a slot belonging to an instance that no
+		// longer runs any transitions.
 		newTarget.AskGroupSlots = clearedAskGroupSlots(newTarget.AskGroupSlots)
-		newTarget.TaskGroupSlots = clearedTaskGroupSlots(newTarget.TaskGroupSlots)
 
 		ctx.outputs = append(ctx.outputs, engine.WorkflowCompletedOutput{
-			Path:     signal.Path,
 			Workflow: workflow.Name,
 			Outcome:  *outcome.outcome,
 		})
 	}
 
-	newRoot, err := applyInstancePath(snapshot.Root, signal.Path, newTarget)
-	if err != nil {
-		return engine.Commit{}, err
-	}
+	newRoot := newTarget
 
 	// Per program.ProjectionDeclaration's documented "only a
 	// successfully committed snapshot may ever be projected", active
@@ -769,7 +611,6 @@ func Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal, limi
 		InternalSignals: ctx.internalSignals,
 		Outputs:         ctx.outputs,
 		Trace: engine.Trace{
-			Path:           signal.Path,
 			Workflow:       workflow.Name,
 			TransitionName: transition.Name,
 			GuardEvaluated: transition.Guard != nil,
@@ -913,168 +754,11 @@ func findInstanceTimerSlot(instance engine.WorkflowInstance, name string) (engin
 	return engine.TimerSlotInstance{}, false
 }
 
-// validateChildOutcome implements program.ChildCompletedSignalSource's,
-// program.ChildFailedSignalSource's, and program.ChildCancelledSignalSource's
-// shared acceptance rule: the named child slot on instance must
-// currently hold a terminal outcome of exactly the kind want, awaiting
-// join. Per validateQuestionAnswer's doc comment, this has the same
-// narrow "reopened slot" gap; it also doubles as the "duplicate
-// delivery after joining" check, since an accepted child-outcome signal
-// clears its slot atomically with the rest of the step that handles it.
-func validateChildOutcome(instance engine.WorkflowInstance, signal engine.Signal, want engine.WorkflowOutcomeKind) error {
-	slot, ok := findInstanceChildSlot(instance, signal.Slot)
-	if !ok || slot.Child == nil || slot.Child.Outcome == nil || slot.Child.Outcome.Kind != want {
-		return ErrInputRejected
-	}
-	return nil
-}
-
-func findInstanceChildSlot(instance engine.WorkflowInstance, name string) (engine.ChildWorkflowSlotInstance, bool) {
-	for _, s := range instance.ChildSlots {
-		if s.Name == name {
-			return s, true
-		}
-	}
-	return engine.ChildWorkflowSlotInstance{}, false
-}
-
-// resolveInstance walks path from root, following each PathStep's
-// ChildSlot or TaskGroupSlot by name, and returns a copy of the
-// workflow instance it addresses — see engine.Signal.Path. An empty
-// path returns root itself. resolveInstance fails if any step names an
-// undeclared or empty slot, an unknown task key, or a task inside a
-// task group that has already completed — a task-group task is never
-// individually addressable once its owning group is
-// completed-awaiting-join, whether or not that specific task reached
-// its own authored terminal outcome (see TaskGroupPhaseCompleted).
-func resolveInstance(root engine.WorkflowInstance, path []engine.PathStep) (engine.WorkflowInstance, bool) {
-	current := root
-	for _, step := range path {
-		if step.TaskKey == nil {
-			slot, ok := findInstanceChildSlot(current, step.Slot)
-			if !ok || slot.Child == nil {
-				return engine.WorkflowInstance{}, false
-			}
-			current = *slot.Child
-			continue
-		}
-		slot, ok := findInstanceTaskGroupSlot(current, step.Slot)
-		if !ok || slot.Group == nil || slot.Group.Phase == engine.TaskGroupPhaseCompleted {
-			return engine.WorkflowInstance{}, false
-		}
-		task, ok := findGroupTask(*slot.Group, step.TaskKey)
-		if !ok {
-			return engine.WorkflowInstance{}, false
-		}
-		current = task.Child
-	}
-	return current, true
-}
-
-// applyInstancePath reconstructs root with the instance at path replaced
-// by updated, copying only the WorkflowInstance, ChildWorkflowSlotInstance,
-// and TaskGroupState values along that path — mirroring applyPath's
-// copy-on-write discipline for global/local state, but for the
-// child-workflow tree. An empty path replaces root itself.
-//
-// When the final PathStep addresses a task-group task (TaskKey
-// non-nil) and updated has just reached a terminal outcome, this also
-// performs the owning TaskGroupState's aggregation bookkeeping in the
-// same pass: appending the task's Key to TerminalOrder and, if that
-// newly satisfies the group's completion policy, marking it
-// TaskGroupPhaseCompleted — see taskGroupPolicySatisfied. This is the
-// only place a task's terminal outcome and its group's aggregation ever
-// update together, atomically, since no per-task signal ever exists for
-// a caller to drive that update separately (see program.SpawnTaskGroupChildOperation).
-func applyInstancePath(root engine.WorkflowInstance, path []engine.PathStep, updated engine.WorkflowInstance) (engine.WorkflowInstance, error) {
-	if len(path) == 0 {
-		return updated, nil
-	}
-	step := path[0]
-
-	if step.TaskKey == nil {
-		idx, ok := findChildSlotIndex(root.ChildSlots, step.Slot)
-		if !ok || root.ChildSlots[idx].Child == nil {
-			return engine.WorkflowInstance{}, newExecutionError(ExecutionErrorUnknown, "engineservice: no child instance in slot %q", step.Slot)
-		}
-		updatedChild, err := applyInstancePath(*root.ChildSlots[idx].Child, path[1:], updated)
-		if err != nil {
-			return engine.WorkflowInstance{}, err
-		}
-		newSlots := make([]engine.ChildWorkflowSlotInstance, len(root.ChildSlots))
-		copy(newSlots, root.ChildSlots)
-		newSlots[idx] = engine.ChildWorkflowSlotInstance{Name: step.Slot, Child: &updatedChild}
-		root.ChildSlots = newSlots
-		return root, nil
-	}
-
-	slotIdx, ok := findTaskGroupSlotIndex(root.TaskGroupSlots, step.Slot)
-	if !ok || root.TaskGroupSlots[slotIdx].Group == nil {
-		return engine.WorkflowInstance{}, newExecutionError(ExecutionErrorUnknown, "engineservice: no task group in slot %q", step.Slot)
-	}
-	group := root.TaskGroupSlots[slotIdx].Group
-	taskIdx, ok := findGroupTaskIndex(*group, step.TaskKey)
-	if !ok {
-		return engine.WorkflowInstance{}, newExecutionError(ExecutionErrorUnknown, "engineservice: no task for the given key in slot %q", step.Slot)
-	}
-
-	updatedChild, err := applyInstancePath(group.Tasks[taskIdx].Child, path[1:], updated)
-	if err != nil {
-		return engine.WorkflowInstance{}, err
-	}
-
-	newGroup := *group
-	newTasks := make([]engine.TaskGroupTask, len(group.Tasks))
-	copy(newTasks, group.Tasks)
-	newTasks[taskIdx] = engine.TaskGroupTask{Key: step.TaskKey, Child: updatedChild}
-	newGroup.Tasks = newTasks
-
-	if len(path) == 1 && updatedChild.Outcome != nil && !containsValue(newGroup.TerminalOrder, step.TaskKey) {
-		newGroup.TerminalOrder = append(append([]engine.Value{}, newGroup.TerminalOrder...), step.TaskKey)
-		if newGroup.Phase != engine.TaskGroupPhaseCompleted && taskGroupPolicySatisfied(newGroup) {
-			newGroup.Phase = engine.TaskGroupPhaseCompleted
-		}
-	}
-
-	newSlots := make([]engine.TaskGroupSlotInstance, len(root.TaskGroupSlots))
-	copy(newSlots, root.TaskGroupSlots)
-	newSlots[slotIdx] = engine.TaskGroupSlotInstance{Name: step.Slot, Group: &newGroup}
-	root.TaskGroupSlots = newSlots
-	return root, nil
-}
-
-func findChildSlotIndex(slots []engine.ChildWorkflowSlotInstance, name string) (int, bool) {
-	for i, s := range slots {
-		if s.Name == name {
-			return i, true
-		}
-	}
-	return 0, false
-}
-
-// clearedChildSlots returns a copy of slots with every entry emptied —
-// see ChildWorkflowSlotDeclaration's documented "disappears when the
-// parent workflow terminates".
-func clearedChildSlots(slots []engine.ChildWorkflowSlotInstance) []engine.ChildWorkflowSlotInstance {
-	cleared := make([]engine.ChildWorkflowSlotInstance, len(slots))
-	for i, s := range slots {
-		cleared[i] = engine.ChildWorkflowSlotInstance{Name: s.Name}
-	}
-	return cleared
-}
-
+// clearedAskGroupSlots returns a copy of slots with every entry emptied.
 func clearedAskGroupSlots(slots []engine.AskGroupSlotInstance) []engine.AskGroupSlotInstance {
 	cleared := make([]engine.AskGroupSlotInstance, len(slots))
 	for i, s := range slots {
 		cleared[i] = engine.AskGroupSlotInstance{Name: s.Name}
-	}
-	return cleared
-}
-
-func clearedTaskGroupSlots(slots []engine.TaskGroupSlotInstance) []engine.TaskGroupSlotInstance {
-	cleared := make([]engine.TaskGroupSlotInstance, len(slots))
-	for i, s := range slots {
-		cleared[i] = engine.TaskGroupSlotInstance{Name: s.Name}
 	}
 	return cleared
 }
@@ -1090,10 +774,9 @@ func workflowQuestionSlot(workflow engine.Workflow, name string) (engine.Questio
 
 // signalSchemaFields builds the field-name-to-value map a Signal's
 // schema exposes for binding — see engineservice's compileSignalSource
-// for the matching compile-time schema each SignalKind resolves to. A
-// child-outcome or ask-group-completion signal carries no payload of its
-// own; its fields come from instance's own slot, read before Step clears
-// it.
+// for the matching compile-time schema each SignalKind resolves to. An
+// ask-group-completion signal carries no payload of its own; its fields
+// come from instance's own slot, read before Step clears it.
 func signalSchemaFields(p engine.Program, workflow engine.Workflow, instance engine.WorkflowInstance, signal engine.Signal) map[string]engine.Value {
 	switch signal.Kind {
 	case engine.SignalKindIntent:
@@ -1105,21 +788,9 @@ func signalSchemaFields(p engine.Program, workflow engine.Workflow, instance eng
 		return fields
 	case engine.SignalKindQuestionAnswered:
 		return map[string]engine.Value{"respondent": engine.UserValue{ID: signal.Respondent}, "answer": signal.Answer}
-	case engine.SignalKindChildCompleted:
-		slot, _ := findInstanceChildSlot(instance, signal.Slot)
-		return map[string]engine.Value{"result": slot.Child.Outcome.Result}
-	case engine.SignalKindChildFailed:
-		slot, _ := findInstanceChildSlot(instance, signal.Slot)
-		return map[string]engine.Value{"error": engine.StringValue{Value: slot.Child.Outcome.Error}}
-	case engine.SignalKindChildCancelled:
-		slot, _ := findInstanceChildSlot(instance, signal.Slot)
-		return map[string]engine.Value{"reason": engine.StringValue{Value: slot.Child.Outcome.Reason}}
 	case engine.SignalKindAskGroupCompleted:
 		slot, _ := findInstanceAskGroupSlot(instance, signal.Slot)
 		return askGroupCompletionFields(p, workflow, slot.Pending, signal.Slot)
-	case engine.SignalKindTaskGroupCompleted:
-		slot, _ := findInstanceTaskGroupSlot(instance, signal.Slot)
-		return taskGroupCompletionFields(p, workflow, slot.Group, signal.Slot)
 	default:
 		return signal.Fields
 	}
@@ -1164,16 +835,8 @@ func signalMatchesSource(source engine.SignalSource, signal engine.Signal) bool 
 		return signal.Kind == engine.SignalKindQuestionAnswered && s.Slot == signal.Slot
 	case engine.TimerExpiredSignalSource:
 		return signal.Kind == engine.SignalKindTimerExpired && s.Slot == signal.Slot
-	case engine.ChildCompletedSignalSource:
-		return signal.Kind == engine.SignalKindChildCompleted && s.Slot == signal.Slot
-	case engine.ChildFailedSignalSource:
-		return signal.Kind == engine.SignalKindChildFailed && s.Slot == signal.Slot
-	case engine.ChildCancelledSignalSource:
-		return signal.Kind == engine.SignalKindChildCancelled && s.Slot == signal.Slot
 	case engine.AskGroupCompletedSignalSource:
 		return signal.Kind == engine.SignalKindAskGroupCompleted && s.Slot == signal.Slot
-	case engine.TaskGroupCompletedSignalSource:
-		return signal.Kind == engine.SignalKindTaskGroupCompleted && s.Slot == signal.Slot
 	default:
 		return false
 	}

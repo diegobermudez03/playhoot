@@ -37,10 +37,6 @@ func captureInteractions(ctx context.Context, tx *gorm.DB, repo interactionCaptu
 		if len(step.Outputs) == 0 {
 			continue
 		}
-		enginePath, err := encodeEnginePath(step.Path)
-		if err != nil {
-			return fmt.Errorf("encoding interaction engine path: %s", err)
-		}
 		for _, output := range step.Outputs {
 			switch o := output.(type) {
 			case engine.OpenQuestionOutput:
@@ -56,7 +52,7 @@ func captureInteractions(ctx context.Context, tx *gorm.DB, repo interactionCaptu
 				if err != nil {
 					return fmt.Errorf("encoding interaction payload: %s", err)
 				}
-				if _, err := repo.CreateInteraction(ctx, tx, sessionID, actorID, kind, enginePath, o.Slot, payload, turnID); err != nil {
+				if _, err := repo.CreateInteraction(ctx, tx, sessionID, actorID, kind, emptyEnginePath, o.Slot, payload, turnID); err != nil {
 					return err
 				}
 			case engine.CloseQuestionOutput:
@@ -70,7 +66,7 @@ func captureInteractions(ctx context.Context, tx *gorm.DB, repo interactionCaptu
 				if err != nil {
 					return fmt.Errorf("parsing interaction recipient: %s", err)
 				}
-				if err := repo.CloseActiveInteraction(ctx, tx, sessionID, enginePath, o.Slot, actorID, turnID); err != nil {
+				if err := repo.CloseActiveInteraction(ctx, tx, sessionID, emptyEnginePath, o.Slot, actorID, turnID); err != nil {
 					return err
 				}
 			}
@@ -113,54 +109,11 @@ func parseActorID(recipient engine.UserID) (uint, error) {
 	return uint(id), nil
 }
 
-// pathStepWire is engine_path's wire shape. TaskKey is only present for a
-// PathStep addressing a task-group task; it is engine.Value-typed, so it is
-// encoded through engineservice.EncodeValue like every other engine.Value
-// Session Runtime persists, never through plain encoding/json.
-type pathStepWire struct {
-	Slot    string          `json:"slot"`
-	TaskKey json.RawMessage `json:"task_key,omitempty"`
-}
-
-// encodeEnginePath encodes path as session_interactions.engine_path.
-func encodeEnginePath(path []engine.PathStep) ([]byte, error) {
-	wire := make([]pathStepWire, len(path))
-	for i, step := range path {
-		w := pathStepWire{Slot: step.Slot}
-		if step.TaskKey != nil {
-			encoded, err := engineservice.EncodeValue(step.TaskKey)
-			if err != nil {
-				return nil, fmt.Errorf("encoding path step %d task key: %s", i, err)
-			}
-			w.TaskKey = encoded
-		}
-		wire[i] = w
-	}
-	return json.Marshal(wire)
-}
-
-// decodeEnginePath decodes session_interactions.engine_path back into an
-// engine.Signal.Path, so a response can be built targeting the same
-// workflow instance the interaction was opened against.
-func decodeEnginePath(data []byte) ([]engine.PathStep, error) {
-	var wire []pathStepWire
-	if err := json.Unmarshal(data, &wire); err != nil {
-		return nil, fmt.Errorf("decoding engine path: %s", err)
-	}
-	path := make([]engine.PathStep, len(wire))
-	for i, w := range wire {
-		step := engine.PathStep{Slot: w.Slot}
-		if len(w.TaskKey) > 0 {
-			value, err := engineservice.DecodeValue(w.TaskKey)
-			if err != nil {
-				return nil, fmt.Errorf("decoding path step %d task key: %s", i, err)
-			}
-			step.TaskKey = value
-		}
-		path[i] = step
-	}
-	return path, nil
-}
+// emptyEnginePath is session_interactions.engine_path's persisted value for
+// every interaction: a Session runs exactly one workflow instance, so there
+// is no tree-addressing information left to encode. This is byte-identical
+// to what this column has always held for every interaction ever captured.
+var emptyEnginePath = []byte("[]")
 
 // interactionPayloadWire is interaction_payload's wire shape. Arguments is
 // engine.Value-typed data (each engine.FieldValue's Value), so it is

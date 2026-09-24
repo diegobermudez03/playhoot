@@ -16,7 +16,6 @@ func compileRootWorkflowWithSlots(t *testing.T) engine.Program {
 			{Name: "Confirm", ResponseType: program.BuiltinTypeReference{Type: program.BuiltinTypeBool}},
 		},
 		Workflows: []program.WorkflowDeclaration{
-			{Name: "Sub", ResultType: numberType(), InitialState: "S", States: []program.WorkflowStateDeclaration{{Name: "S"}}},
 			{
 				Name:       "Main",
 				Parameters: []program.FieldDeclaration{{Name: "startAt", Type: numberType()}},
@@ -24,13 +23,11 @@ func compileRootWorkflowWithSlots(t *testing.T) engine.Program {
 				LocalState: program.StateDeclaration{Fields: []program.StateFieldDeclaration{
 					{Name: "counter", Type: numberType(), Initializer: program.ReferenceExpression{Name: "startAt"}},
 				}},
-				QuestionSlots:  []program.QuestionSlotDeclaration{{Name: "Ask", Question: "Confirm"}},
-				AskGroupSlots:  []program.AskGroupSlotDeclaration{{Name: "AskAll", Question: "Confirm"}},
-				TimerSlots:     []program.TimerSlotDeclaration{{Name: "Deadline"}},
-				ChildSlots:     []program.ChildWorkflowSlotDeclaration{{Name: "SubSlot", Workflow: "Sub"}},
-				TaskGroupSlots: []program.TaskGroupSlotDeclaration{{Name: "Tasks", Workflow: "Sub", KeyType: program.BuiltinTypeReference{Type: program.BuiltinTypeString}}},
-				InitialState:   "Start",
-				States:         []program.WorkflowStateDeclaration{{Name: "Start"}},
+				QuestionSlots: []program.QuestionSlotDeclaration{{Name: "Ask", Question: "Confirm"}},
+				AskGroupSlots: []program.AskGroupSlotDeclaration{{Name: "AskAll", Question: "Confirm"}},
+				TimerSlots:    []program.TimerSlotDeclaration{{Name: "Deadline"}},
+				InitialState:  "Start",
+				States:        []program.WorkflowStateDeclaration{{Name: "Start"}},
 			},
 		},
 		RootWorkflow: "Main",
@@ -74,13 +71,6 @@ func TestNewSnapshot_RootInstanceHasAllDeclaredSlotsEmpty(t *testing.T) {
 	if len(root.TimerSlots) != 1 || root.TimerSlots[0].Name != "Deadline" || root.TimerSlots[0].Pending {
 		t.Fatalf("got %+v", root.TimerSlots)
 	}
-	if len(root.ChildSlots) != 1 || root.ChildSlots[0].Name != "SubSlot" || root.ChildSlots[0].Child != nil {
-		t.Fatalf("got %+v", root.ChildSlots)
-	}
-	if len(root.TaskGroupSlots) != 1 || root.TaskGroupSlots[0].Name != "Tasks" || root.TaskGroupSlots[0].Group != nil {
-		t.Fatalf("got %+v", root.TaskGroupSlots)
-	}
-
 	if signal.Name != "WorkflowStarted" {
 		t.Fatalf("expected WorkflowStarted signal, got %+v", signal)
 	}

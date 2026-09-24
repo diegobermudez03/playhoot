@@ -29,21 +29,11 @@ type workflowContext struct {
 	// per-transition with that transition's own signal bindings.
 	baseScope exprScope
 
-	questionSlots  map[string]program.QuestionSlotDeclaration
-	askGroupSlots  map[string]program.AskGroupSlotDeclaration
-	timerSlots     map[string]bool
-	childSlots     map[string]program.ChildWorkflowSlotDeclaration
-	taskGroupSlots map[string]taskGroupSlotInfo
+	questionSlots map[string]program.QuestionSlotDeclaration
+	askGroupSlots map[string]program.AskGroupSlotDeclaration
+	timerSlots    map[string]bool
 
 	stateNames map[string]bool
-}
-
-// taskGroupSlotInfo is what compileSignalSource needs to resolve a
-// TaskGroupCompletedSignalSource's schema for one registered task-group
-// slot.
-type taskGroupSlotInfo struct {
-	workflow string
-	keyType  engine.Type
 }
 
 // registerWorkflowNamespace walks c.definition.Workflows in source
@@ -67,10 +57,8 @@ func (c *compiler) registerWorkflowNamespace() {
 }
 
 // buildWorkflowResultTypes compiles every registered workflow's declared
-// ResultType — never the rest of its body — so a child or task-group
-// slot anywhere can resolve another (or its own) workflow's ResultType
-// for a completion signal's schema before any workflow's full body is
-// compiled. Unlike a named type or a function, this never risks
+// ResultType — never the rest of its body — before any workflow's full
+// body is compiled. Unlike a named type or a function, this never risks
 // recursion: a workflow's ResultType never depends on another
 // workflow's body.
 func (c *compiler) buildWorkflowResultTypes() {
@@ -81,12 +69,9 @@ func (c *compiler) buildWorkflowResultTypes() {
 
 // buildWorkflowParameterTypes compiles every registered workflow's
 // declared Parameters — never the rest of its body — into
-// c.workflowParameterTypes, mirroring buildWorkflowResultTypes: this
-// lets a SpawnChildWorkflowOperation anywhere validate its Arguments
-// against the target slot's declared workflow's parameters before that
-// workflow's full body is compiled, and lets compileWorkflowDeclaration
-// reuse the same result for its own parameters instead of compiling (and
-// diagnosing) them a second time.
+// c.workflowParameterTypes, mirroring buildWorkflowResultTypes: this lets
+// compileWorkflowDeclaration reuse the same result for its own
+// parameters instead of compiling (and diagnosing) them a second time.
 func (c *compiler) buildWorkflowParameterTypes() {
 	for name, entry := range c.workflowDeclarations {
 		scope := exprScope{resourcesScopeRootName: c.resourcesType}
@@ -130,13 +115,11 @@ func (c *compiler) compileWorkflows(p engine.Program) map[string]engine.Workflow
 // registered before any GotoControl can be validated against them.
 func (c *compiler) compileWorkflowDeclaration(w program.WorkflowDeclaration, path string, p engine.Program) engine.Workflow {
 	ctx := &workflowContext{
-		resultType:     c.workflowResultTypes[w.Name],
-		questionSlots:  map[string]program.QuestionSlotDeclaration{},
-		askGroupSlots:  map[string]program.AskGroupSlotDeclaration{},
-		timerSlots:     map[string]bool{},
-		childSlots:     map[string]program.ChildWorkflowSlotDeclaration{},
-		taskGroupSlots: map[string]taskGroupSlotInfo{},
-		stateNames:     map[string]bool{},
+		resultType:    c.workflowResultTypes[w.Name],
+		questionSlots: map[string]program.QuestionSlotDeclaration{},
+		askGroupSlots: map[string]program.AskGroupSlotDeclaration{},
+		timerSlots:    map[string]bool{},
+		stateNames:    map[string]bool{},
 	}
 
 	// Local state initializers may see the workflow's own parameters
@@ -161,8 +144,6 @@ func (c *compiler) compileWorkflowDeclaration(w program.WorkflowDeclaration, pat
 	questionSlots := c.compileQuestionSlots(w, path, ctx)
 	askGroupSlots := c.compileAskGroupSlots(w, path, ctx)
 	timerSlots := c.compileTimerSlots(w, path, ctx)
-	childSlots := c.compileChildSlots(w, path, ctx)
-	taskGroupSlots := c.compileTaskGroupSlots(w, path, ctx)
 
 	presentations := c.compilePresentations(w.Presentations, path+".presentations", ctx.baseScope)
 
@@ -209,8 +190,6 @@ func (c *compiler) compileWorkflowDeclaration(w program.WorkflowDeclaration, pat
 		QuestionSlots:     questionSlots,
 		AskGroupSlots:     askGroupSlots,
 		TimerSlots:        timerSlots,
-		ChildSlots:        childSlots,
-		TaskGroupSlots:    taskGroupSlots,
 		Presentations:     presentations,
 		InitialState:      w.InitialState,
 		GlobalTransitions: globalTransitions,

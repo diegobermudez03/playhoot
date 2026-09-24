@@ -23,8 +23,8 @@ type SignalSource interface {
 }
 
 // NamedSignalSource identifies a platform-defined or lifecycle signal by a
-// static name, such as WorkflowStarted, SessionCancelled,
-// UserDisconnected, or ParentCancelled.
+// static name, such as WorkflowStarted, SessionCancelled, or
+// UserDisconnected.
 //
 // This package does not declare or validate the schema of named signals;
 // the future compiler validates whether the signal exists, which fields it
@@ -87,29 +87,6 @@ type TimerExpiredSignalSource struct {
 
 func (TimerExpiredSignalSource) isSignalSource() {}
 
-// ChildCompletedSignalSource matches the signal produced when the child
-// workflow in the named child slot owned by the current workflow (see
-// ChildWorkflowSlotDeclaration) completes successfully.
-//
-// The signal schema exposes exactly one field, "result", typed as the
-// declared ResultType of the child workflow referenced by Slot — even a
-// child returning the unit built-in still exposes this field, typed as
-// unit. The signal never exposes child or parent workflow instance IDs,
-// the slot name as a value, other internal engine metadata, or arbitrary
-// child-local state.
-//
-// Handling this signal is how a parent joins an individual child slot: if
-// the parent's transition commits successfully, the child slot is cleared
-// and may be reused; if the transition fails, the slot remains
-// completed-awaiting-join with its result intact, and a duplicate or stale
-// completion delivery must not activate another transition once the slot
-// has already been joined and cleared.
-type ChildCompletedSignalSource struct {
-	Slot string
-}
-
-func (ChildCompletedSignalSource) isSignalSource() {}
-
 // AskGroupCompletedSignalSource matches the signal produced when the ask
 // group in the named ask-group slot owned by the current workflow (see
 // AskGroupSlotDeclaration) completes, whether by satisfying its
@@ -139,42 +116,6 @@ type AskGroupCompletedSignalSource struct {
 }
 
 func (AskGroupCompletedSignalSource) isSignalSource() {}
-
-// TaskGroupCompletedSignalSource matches the signal produced when the task
-// group in the named task-group slot owned by the current workflow (see
-// TaskGroupSlotDeclaration) completes, whether by satisfying its
-// TaskGroupCompletionPolicy naturally or through
-// FinalizeTaskGroupOperation.
-//
-// The signal schema exposes exactly six fields, all keyed or containing
-// the task-group slot's KeyType: "taskKeys" (list<KeyType>, every task key
-// in original spawn order), "terminalKeys" (list<KeyType>, keys in
-// authored terminal-outcome processing order), "results"
-// (map<KeyType, ChildResultType>, successfully completed child results,
-// where ChildResultType is the referenced child workflow's ResultType —
-// map<KeyType, unit> for a unit-returning child), "failures"
-// (map<KeyType, string>, authored child failure strings), "cancellations"
-// (map<KeyType, string>, authored child self-cancellation reasons), and
-// "unfinished" (list<KeyType>, keys whose tasks had no authored terminal
-// outcome because the group completed early or was explicitly finalized).
-// A task key never appears in more than one of results, failures, and
-// cancellations. The signal never exposes task-group, child-instance, or
-// parent-instance IDs, internal engine metadata, child local state, engine
-// execution errors, or the internal reason unfinished tasks were
-// cancelled for; it never produces a signal per individual task, only once
-// when the whole group completes.
-//
-// Handling this signal is how a workflow joins a task-group slot: if the
-// handling transition commits successfully, the slot is cleared and may
-// be reused; if it fails, the slot remains completed-awaiting-join with
-// all aggregated values intact, and a duplicate or stale completion
-// delivery must not activate another transition once the slot has already
-// been joined and cleared.
-type TaskGroupCompletedSignalSource struct {
-	Slot string
-}
-
-func (TaskGroupCompletedSignalSource) isSignalSource() {}
 
 // SignalBinding binds Field from a matched signal's payload to the
 // immutable lexical name Name.

@@ -1,7 +1,6 @@
 package runtime_test
 
 import (
-	"errors"
 	"reflect"
 	"testing"
 
@@ -9,96 +8,71 @@ import (
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine/internal/runtime"
 )
 
-// recursiveSpawnProgram builds a workflow that can spawn a same-typed
-// child of itself into its own "Child" slot — used to exercise
-// Limits.MaxWorkflowDepth.
-func recursiveSpawnProgram() engine.Program {
+// threeTimerSlotsProgram builds a workflow declaring three independent
+// timer slots and a single transition that schedules all three in one
+// step — used to exercise Limits.MaxActiveSlotsPerInstance.
+func threeTimerSlotsProgram() engine.Program {
+	schedule := func(slot string) engine.Operation {
+		return engine.ScheduleTimerOperation{Slot: slot, DelayMilliseconds: engine.NumberLiteralExpression{Value: 1000}}
+	}
 	wf := engine.Workflow{
-		Name:         "Recursive",
+		Name:         "Timers",
 		ResultType:   engine.UnitType{},
-		ChildSlots:   []engine.ChildWorkflowSlot{{Name: "Child", Workflow: "Recursive"}},
+		TimerSlots:   []string{"T1", "T2", "T3"},
 		InitialState: "S",
 		States: []engine.WorkflowState{
 			{
 				Name: "S",
 				Transitions: []engine.Transition{
-					{Name: "Started", Signal: engine.SignalPattern{Source: engine.NamedSignalSource{Name: "WorkflowStarted"}}, Control: engine.StayControl{}},
-					{Name: "Spawn", Signal: engine.SignalPattern{Source: engine.NamedSignalSource{Name: "Spawn"}}, Operations: engine.Block{Operations: []engine.Operation{
-						engine.SpawnChildWorkflowOperation{Slot: "Child"},
+					{Name: "ScheduleAll", Signal: engine.SignalPattern{Source: engine.NamedSignalSource{Name: "ScheduleAll"}}, Operations: engine.Block{Operations: []engine.Operation{
+						schedule("T1"), schedule("T2"), schedule("T3"),
 					}}, Control: engine.StayControl{}},
 				},
 			},
 		},
 	}
-	return engine.Program{RootWorkflow: "Recursive", Workflows: map[string]engine.Workflow{"Recursive": wf}}
+	return engine.Program{RootWorkflow: "Timers", Workflows: map[string]engine.Workflow{"Timers": wf}}
 }
 
-func recursiveSpawnSnapshot() engine.Snapshot {
+func threeTimerSlotsSnapshot() engine.Snapshot {
 	return engine.Snapshot{
 		GlobalState: engine.RecordValue{TypeName: "global"},
 		Root: engine.WorkflowInstance{
-			Workflow:   "Recursive",
+			Workflow:   "Timers",
 			State:      "S",
 			LocalState: engine.RecordValue{TypeName: "local"},
-			ChildSlots: []engine.ChildWorkflowSlotInstance{{Name: "Child"}},
+			TimerSlots: []engine.TimerSlotInstance{{Name: "T1"}, {Name: "T2"}, {Name: "T3"}},
 		},
 	}
 }
 
-func TestExec_WorkflowDepthLimitExceeded(t *testing.T) {
-	p := recursiveSpawnProgram()
-	limits := engine.Limits{MaxOperations: 100, MaxLoopIterations: 100, MaxWorkflowDepth: 2, MaxActiveSlotsPerInstance: 100}
-	snap := recursiveSpawnSnapshot()
-	path := []engine.PathStep{}
-
-	// Depths 0 -> 1 and 1 -> 2 must succeed (MaxWorkflowDepth is 2).
-	for depth := 0; depth < 2; depth++ {
-		commit, err := runtime.Step(p, snap, engine.Signal{Name: "Spawn", Path: path}, limits)
-		if err != nil {
-			t.Fatalf("unexpected error spawning at depth %d: %v", depth, err)
-		}
-		started := commit.InternalSignals[0]
-		commit, err = runtime.Step(p, commit.Snapshot, started, limits)
-		if err != nil {
-			t.Fatalf("unexpected error starting child at depth %d: %v", depth+1, err)
-		}
-		snap = commit.Snapshot
-		path = started.Path
-	}
-
-	// Depth 2 -> 3 must fail: it would exceed MaxWorkflowDepth of 2.
-	_, err := runtime.Step(p, snap, engine.Signal{Name: "Spawn", Path: path}, limits)
-	if e, ok := err.(*runtime.ExecutionError); !ok || e.Code != runtime.ExecutionErrorWorkflowDepthExceeded {
-		t.Fatalf("expected runtime.ExecutionErrorWorkflowDepthExceeded, got %v", err)
-	}
-	if e := err.(*runtime.ExecutionError); e.Code.String() != "workflow_depth_exceeded" {
-		t.Fatalf("got code name %q", e.Code.String())
-	}
-}
-
 func TestExec_ActiveSlotLimitExceeded(t *testing.T) {
-	p := taskGroupProgram(engine.TaskGroupAllTerminalPolicy{}, []float64{1, 2, 3, 4, 5}, engine.UnitType{}, engine.StayControl{})
-	limits := engine.Limits{MaxOperations: 100, MaxLoopIterations: 100, MaxWorkflowDepth: 8, MaxActiveSlotsPerInstance: 3}
-	snap := taskGroupSnapshot()
+	p := threeTimerSlotsProgram()
+	limits := engine.Limits{MaxOperations: 100, MaxLoopIterations: 100, MaxActiveSlotsPerInstance: 2}
+	snap := threeTimerSlotsSnapshot()
 
-	_, err := runtime.Step(p, snap, engine.Signal{Name: "BeginAndSeal"}, limits)
+	_, err := runtime.Step(p, snap, engine.Signal{Name: "ScheduleAll"}, limits)
 	if e, ok := err.(*runtime.ExecutionError); !ok || e.Code != runtime.ExecutionErrorActiveSlotLimitExceeded {
 		t.Fatalf("expected runtime.ExecutionErrorActiveSlotLimitExceeded, got %v", err)
 	}
 
-	// Atomicity: the original snapshot's task-group slot must remain empty.
-	if snap.Root.TaskGroupSlots[0].Group != nil {
-		t.Fatal("original snapshot must remain untouched")
+	// Atomicity: the original snapshot's timer slots must remain empty.
+	for _, s := range snap.Root.TimerSlots {
+		if s.Pending {
+			t.Fatal("original snapshot must remain untouched")
+		}
 	}
 
 	// A batch within the limit succeeds.
-	within := taskGroupProgram(engine.TaskGroupAllTerminalPolicy{}, []float64{1, 2, 3}, engine.UnitType{}, engine.StayControl{})
-	commit, err := runtime.Step(within, taskGroupSnapshot(), engine.Signal{Name: "BeginAndSeal"}, limits)
+	within := engine.Limits{MaxOperations: 100, MaxLoopIterations: 100, MaxActiveSlotsPerInstance: 3}
+	commit, err := runtime.Step(p, snap, engine.Signal{Name: "ScheduleAll"}, within)
 	if err != nil {
 		t.Fatalf("unexpected error for a batch within the limit: %v", err)
 	}
-	if len(commit.Snapshot.Root.TaskGroupSlots[0].Group.Tasks) != 3 {
-		t.Fatalf("got %+v", commit.Snapshot.Root.TaskGroupSlots[0].Group.Tasks)
+	for _, s := range commit.Snapshot.Root.TimerSlots {
+		if !s.Pending {
+			t.Fatalf("got %+v, want all timer slots pending", commit.Snapshot.Root.TimerSlots)
+		}
 	}
 }
 
@@ -216,19 +190,6 @@ func TestExec_RetryAfterSuccessReproducesIdenticalCommit(t *testing.T) {
 	}
 }
 
-func TestExec_SignalToNonexistentPathIsSignalRejectedNotInputRejected(t *testing.T) {
-	p := childWorkflowProgram()
-	snap := mainSnapshot() // slot "W" is empty: no child to address
-
-	_, err := runtime.Step(p, snap, engine.Signal{Name: "WorkflowStarted", Path: []engine.PathStep{{Slot: "W"}}}, engine.DefaultLimits())
-	if !errors.Is(err, runtime.ErrSignalRejected) {
-		t.Fatalf("expected runtime.ErrSignalRejected for an unaddressable path, got %v", err)
-	}
-	if errors.Is(err, runtime.ErrInputRejected) {
-		t.Fatal("a bad path must not be reported as runtime.ErrInputRejected — those are structurally different outcomes")
-	}
-}
-
 func TestExec_ExecutionErrorCodeStringIsExhaustiveAndStable(t *testing.T) {
 	codes := []runtime.ExecutionErrorCode{
 		runtime.ExecutionErrorUnknown, runtime.ExecutionErrorUndefinedReference,
@@ -237,10 +198,9 @@ func TestExec_ExecutionErrorCodeStringIsExhaustiveAndStable(t *testing.T) {
 		runtime.ExecutionErrorSnapshotProgramMismatch, runtime.ExecutionErrorSignalRejected, runtime.ExecutionErrorBudgetExceeded,
 		runtime.ExecutionErrorLoopLimitExceeded, runtime.ExecutionErrorInvalidRandomRange, runtime.ExecutionErrorEmptyRandomCollection,
 		runtime.ExecutionErrorSlotOccupied, runtime.ExecutionErrorInvalidTimerDelay, runtime.ExecutionErrorInputRejected,
-		runtime.ExecutionErrorChildOutcomeNotJoined, runtime.ExecutionErrorDuplicateRecipient, runtime.ExecutionErrorInvalidQuorum,
-		runtime.ExecutionErrorAskGroupNotJoined, runtime.ExecutionErrorDuplicateTaskKey, runtime.ExecutionErrorTaskGroupNotJoined,
-		runtime.ExecutionErrorTaskGroupLeftBuilding, runtime.ExecutionErrorPresentationSlotOccupied,
-		runtime.ExecutionErrorWorkflowDepthExceeded, runtime.ExecutionErrorActiveSlotLimitExceeded,
+		runtime.ExecutionErrorDuplicateRecipient, runtime.ExecutionErrorInvalidQuorum,
+		runtime.ExecutionErrorAskGroupNotJoined, runtime.ExecutionErrorPresentationSlotOccupied,
+		runtime.ExecutionErrorActiveSlotLimitExceeded,
 	}
 	seen := make(map[string]runtime.ExecutionErrorCode, len(codes))
 	for _, c := range codes {

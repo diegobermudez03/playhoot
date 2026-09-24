@@ -274,16 +274,6 @@ func allOperationVariants() []program.Operation {
 			DelayMilliseconds: program.NumberLiteralExpression{Value: "30000"},
 		},
 		program.CancelTimerOperation{Slot: "moveDeadline"},
-		program.SpawnChildWorkflowOperation{
-			Slot: "activeTurn",
-			Arguments: []program.CallArgument{
-				{Name: "participant", Value: program.ReferenceExpression{Name: "participantId"}},
-			},
-		},
-		program.CancelChildWorkflowOperation{
-			Slot:   "activeTurn",
-			Reason: program.StringLiteralExpression{Value: "participant disconnected"},
-		},
 		program.OpenAskGroupOperation{
 			Slot:       "cardVotes",
 			Recipients: program.FieldExpression{Target: program.ReferenceExpression{Name: "team"}, Field: "users"},
@@ -294,23 +284,6 @@ func allOperationVariants() []program.Operation {
 		},
 		program.FinalizeAskGroupOperation{Slot: "cardVotes"},
 		program.CancelAskGroupOperation{Slot: "cardVotes"},
-		program.BeginTaskGroupOperation{
-			Slot:       "teamSelections",
-			Completion: program.TaskGroupAllTerminalPolicy{},
-		},
-		program.SpawnTaskGroupChildOperation{
-			Slot: "teamSelections",
-			Key:  program.FieldExpression{Target: program.ReferenceExpression{Name: "team"}, Field: "id"},
-			Arguments: []program.CallArgument{
-				{Name: "team", Value: program.ReferenceExpression{Name: "team"}},
-			},
-		},
-		program.SealTaskGroupOperation{Slot: "teamSelections"},
-		program.FinalizeTaskGroupOperation{Slot: "teamSelections"},
-		program.CancelTaskGroupOperation{
-			Slot:   "teamSelections",
-			Reason: program.StringLiteralExpression{Value: "round cancelled"},
-		},
 		program.DrawRandomOperation{
 			Name: "firstDie",
 			Generator: program.RandomIntegerGenerator{
@@ -332,9 +305,7 @@ var wantedOperationKinds = []string{
 	"if", "for_each", "match",
 	"open_question", "close_question", "emit_effect",
 	"schedule_timer", "cancel_timer",
-	"spawn_child_workflow", "cancel_child_workflow",
 	"open_ask_group", "finalize_ask_group", "cancel_ask_group",
-	"begin_task_group", "spawn_task_group_child", "seal_task_group", "finalize_task_group", "cancel_task_group",
 	"draw_random",
 }
 
@@ -448,11 +419,7 @@ func TestSignalSource_AllVariants_RoundTrip(t *testing.T) {
 		program.UserIntentSignalSource{Intent: "PlayCard"},
 		program.QuestionAnsweredSignalSource{Slot: "moveRequest"},
 		program.TimerExpiredSignalSource{Slot: "moveDeadline"},
-		program.ChildCompletedSignalSource{Slot: "activeTurn"},
-		program.ChildFailedSignalSource{Slot: "activeTurn"},
-		program.ChildCancelledSignalSource{Slot: "activeTurn"},
 		program.AskGroupCompletedSignalSource{Slot: "cardVotes"},
-		program.TaskGroupCompletedSignalSource{Slot: "teamSelections"},
 	}
 
 	for _, original := range variants {
@@ -558,27 +525,6 @@ func TestAskGroupCompletionPolicy_AllVariants_RoundTrip(t *testing.T) {
 	}
 }
 
-func TestTaskGroupCompletionPolicy_AllVariants_RoundTrip(t *testing.T) {
-	variants := []program.TaskGroupCompletionPolicy{
-		program.TaskGroupAllTerminalPolicy{},
-		program.TaskGroupFirstTerminalPolicy{},
-		program.TaskGroupQuorumTerminalPolicy{Count: program.ReferenceExpression{Name: "requiredTasks"}},
-	}
-	for _, original := range variants {
-		raw, err := encodeTaskGroupCompletionPolicy("$", original)
-		if err != nil {
-			t.Fatalf("encode %T: %v", original, err)
-		}
-		decoded, err := decodeTaskGroupCompletionPolicy("$", raw)
-		if err != nil {
-			t.Fatalf("decode %T: %v", original, err)
-		}
-		if !reflect.DeepEqual(original, decoded) {
-			t.Fatalf("round trip mismatch for %T:\n  original = %#v\n  decoded  = %#v", original, original, decoded)
-		}
-	}
-}
-
 // --- representative exact JSON ---
 
 func TestExactJSON_SetOperation(t *testing.T) {
@@ -651,27 +597,6 @@ func TestExactJSON_OpenAskGroupOperation(t *testing.T) {
 	}
 	completion, ok := obj["completion"].(map[string]any)
 	if !ok || completion["kind"] != "quorum" {
-		t.Fatalf("unexpected completion: %#v", obj["completion"])
-	}
-}
-
-func TestExactJSON_BeginTaskGroupOperation(t *testing.T) {
-	raw, err := encodeOperation("$", program.BeginTaskGroupOperation{
-		Slot:       "teamSelections",
-		Completion: program.TaskGroupAllTerminalPolicy{},
-	})
-	if err != nil {
-		t.Fatalf("encode: %v", err)
-	}
-	var obj map[string]any
-	if err := json.Unmarshal(raw, &obj); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if obj["kind"] != "begin_task_group" {
-		t.Fatalf("unexpected kind: %#v", obj["kind"])
-	}
-	completion, ok := obj["completion"].(map[string]any)
-	if !ok || completion["kind"] != "all_terminal" {
 		t.Fatalf("unexpected completion: %#v", obj["completion"])
 	}
 }
@@ -761,20 +686,6 @@ func TestExactJSON_AskGroupQuorumPolicy(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if obj["kind"] != "quorum" {
-		t.Fatalf("unexpected kind: %#v", obj["kind"])
-	}
-}
-
-func TestExactJSON_TaskGroupQuorumTerminalPolicy(t *testing.T) {
-	raw, err := encodeTaskGroupCompletionPolicy("$", program.TaskGroupQuorumTerminalPolicy{Count: program.ReferenceExpression{Name: "requiredTasks"}})
-	if err != nil {
-		t.Fatalf("encode: %v", err)
-	}
-	var obj map[string]any
-	if err := json.Unmarshal(raw, &obj); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if obj["kind"] != "quorum_terminal" {
 		t.Fatalf("unexpected kind: %#v", obj["kind"])
 	}
 }
@@ -870,19 +781,6 @@ func TestPointerAndValueEquivalence_AskGroupPolicy(t *testing.T) {
 	assertSemanticJSONEqual(t, valueJSON, pointerJSON)
 }
 
-func TestPointerAndValueEquivalence_TaskGroupPolicy(t *testing.T) {
-	value := program.TaskGroupAllTerminalPolicy{}
-	valueJSON, err := encodeTaskGroupCompletionPolicy("$", value)
-	if err != nil {
-		t.Fatalf("encode value: %v", err)
-	}
-	pointerJSON, err := encodeTaskGroupCompletionPolicy("$", &value)
-	if err != nil {
-		t.Fatalf("encode pointer: %v", err)
-	}
-	assertSemanticJSONEqual(t, valueJSON, pointerJSON)
-}
-
 // --- typed nil pointers ---
 
 func TestTypedNilPointers_EncodeToNull(t *testing.T) {
@@ -910,11 +808,6 @@ func TestTypedNilPointers_EncodeToNull(t *testing.T) {
 	if raw, err := encodeAskGroupCompletionPolicy("$", askPolicy); err != nil || string(raw) != "null" {
 		t.Fatalf("AskGroupCompletionPolicy: expected null, got %s, err %v", raw, err)
 	}
-
-	var taskPolicy *program.TaskGroupAllTerminalPolicy
-	if raw, err := encodeTaskGroupCompletionPolicy("$", taskPolicy); err != nil || string(raw) != "null" {
-		t.Fatalf("TaskGroupCompletionPolicy: expected null, got %s, err %v", raw, err)
-	}
 }
 
 // --- null decoding ---
@@ -935,9 +828,6 @@ func TestJSONNullDecoding_ExecutionFamilies(t *testing.T) {
 	if v, err := decodeAskGroupCompletionPolicy("$", json.RawMessage("null")); err != nil || v != nil {
 		t.Fatalf("AskGroupCompletionPolicy: expected nil, nil got %#v, %v", v, err)
 	}
-	if v, err := decodeTaskGroupCompletionPolicy("$", json.RawMessage("null")); err != nil || v != nil {
-		t.Fatalf("TaskGroupCompletionPolicy: expected nil, nil got %#v, %v", v, err)
-	}
 }
 
 // --- unknown / missing discriminator ---
@@ -952,7 +842,6 @@ func TestDecode_UnknownDiscriminator_ExecutionFamilies(t *testing.T) {
 		{"program.WorkflowControl", func(p string, d json.RawMessage) error { _, err := decodeWorkflowControl(p, d); return err }},
 		{"program.SignalSource", func(p string, d json.RawMessage) error { _, err := decodeSignalSource(p, d); return err }},
 		{"program.AskGroupCompletionPolicy", func(p string, d json.RawMessage) error { _, err := decodeAskGroupCompletionPolicy(p, d); return err }},
-		{"program.TaskGroupCompletionPolicy", func(p string, d json.RawMessage) error { _, err := decodeTaskGroupCompletionPolicy(p, d); return err }},
 	}
 
 	for _, c := range cases {
@@ -1274,21 +1163,6 @@ func TestSemanticInvalidity_NegativeQuorumCount(t *testing.T) {
 	}
 }
 
-func TestSemanticInvalidity_NilTaskGroupSpawnKey(t *testing.T) {
-	decoded, err := decodeOperation("$", json.RawMessage(`{
-		"kind": "spawn_task_group_child",
-		"slot": "teamSelections",
-		"key": null,
-		"arguments": []
-	}`))
-	if err != nil {
-		t.Fatalf("expected structural success, got %v", err)
-	}
-	if decoded.(program.SpawnTaskGroupChildOperation).Key != nil {
-		t.Fatalf("expected nil key preserved, got %#v", decoded.(program.SpawnTaskGroupChildOperation).Key)
-	}
-}
-
 func TestSemanticInvalidity_UnavailableSignalBindingField(t *testing.T) {
 	decoded, err := decodeSignalPattern("$", json.RawMessage(`{
 		"source": {"kind": "timer_expired", "slot": "moveDeadline"},
@@ -1315,29 +1189,6 @@ func TestSemanticInvalidity_FailControlWithNumericExpression(t *testing.T) {
 	errExpr := decoded.(program.FailControl).Error.(program.NumberLiteralExpression)
 	if errExpr.Value != "404" {
 		t.Fatalf("expected numeric error expression preserved, got %#v", errExpr)
-	}
-}
-
-func TestSemanticInvalidity_InvalidTaskGroupLifecycleOrder(t *testing.T) {
-	// A block containing "seal" before "begin" is semantically invalid but
-	// must still round-trip structurally — lifecycle ordering is an engine
-	// concern, not a codec concern.
-	original := program.Block{
-		Operations: []program.Operation{
-			program.SealTaskGroupOperation{Slot: "teamSelections"},
-			program.BeginTaskGroupOperation{Slot: "teamSelections", Completion: program.TaskGroupAllTerminalPolicy{}},
-		},
-	}
-	raw, err := encodeBlock("$", original)
-	if err != nil {
-		t.Fatalf("encode: %v", err)
-	}
-	decoded, err := decodeBlock("$", raw)
-	if err != nil {
-		t.Fatalf("expected structural success, got %v", err)
-	}
-	if !reflect.DeepEqual(original, decoded) {
-		t.Fatalf("round trip mismatch:\n  original = %#v\n  decoded  = %#v", original, decoded)
 	}
 }
 
@@ -1435,10 +1286,10 @@ func TestDuplicateOrdering_SignalBindings(t *testing.T) {
 	}
 }
 
-func TestDuplicateOrdering_TaskSpawnArguments(t *testing.T) {
-	original := program.SpawnTaskGroupChildOperation{
-		Slot: "teamSelections",
-		Key:  program.ReferenceExpression{Name: "team"},
+func TestDuplicateOrdering_OpenQuestionArguments(t *testing.T) {
+	original := program.OpenQuestionOperation{
+		Slot:      "moveRequest",
+		Recipient: program.ReferenceExpression{Name: "participant"},
 		Arguments: []program.CallArgument{
 			{Name: "value", Value: program.NumberLiteralExpression{Value: "1"}},
 			{Name: "value", Value: program.NumberLiteralExpression{Value: "2"}},
@@ -1452,7 +1303,7 @@ func TestDuplicateOrdering_TaskSpawnArguments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	op := decoded.(program.SpawnTaskGroupChildOperation)
+	op := decoded.(program.OpenQuestionOperation)
 	if len(op.Arguments) != 2 || op.Arguments[0].Value.(program.NumberLiteralExpression).Value != "1" || op.Arguments[1].Value.(program.NumberLiteralExpression).Value != "2" {
 		t.Fatalf("argument order not preserved: %#v", op.Arguments)
 	}

@@ -2,7 +2,6 @@ package runtimeturn
 
 import (
 	"errors"
-	"fmt"
 	"testing"
 
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine"
@@ -88,60 +87,6 @@ func divideByZeroProgram() engine.Program {
 	}
 }
 
-// oversizedSpawnProgram builds a "Main" root workflow whose only transition
-// spawns spawnCount children in one Step call, each into its own declared
-// child slot running "Leaf" - a workflow that just stays on its own
-// WorkflowStarted, producing no further InternalSignals. This lets a test
-// force the RuntimeTurn's total Step count arbitrarily high (1 initial +
-// spawnCount children draining their own WorkflowStarted) while every spawn
-// stays at child depth 1, never tripping engine.Limits.MaxWorkflowDepth -
-// isolating MaxSteps's own bound from every other engine limit.
-func oversizedSpawnProgram(spawnCount int) engine.Program {
-	childSlots := make([]engine.ChildWorkflowSlot, spawnCount)
-	spawnOps := make([]engine.Operation, spawnCount)
-	for i := 0; i < spawnCount; i++ {
-		slot := fmt.Sprintf("Child%d", i)
-		childSlots[i] = engine.ChildWorkflowSlot{Name: slot, Workflow: "Leaf"}
-		spawnOps[i] = engine.SpawnChildWorkflowOperation{Slot: slot}
-	}
-
-	return engine.Program{
-		RootWorkflow: "Main",
-		Workflows: map[string]engine.Workflow{
-			"Main": {
-				Name:         "Main",
-				InitialState: "Start",
-				ChildSlots:   childSlots,
-				States: []engine.WorkflowState{
-					{
-						Name: "Start",
-						Transitions: []engine.Transition{
-							{
-								Name:       "Spawn",
-								Signal:     engine.SignalPattern{Source: engine.NamedSignalSource{Name: "WorkflowStarted"}},
-								Operations: engine.Block{Operations: spawnOps},
-								Control:    engine.StayControl{},
-							},
-						},
-					},
-				},
-			},
-			"Leaf": {
-				Name:         "Leaf",
-				InitialState: "Start",
-				States: []engine.WorkflowState{
-					{
-						Name: "Start",
-						Transitions: []engine.Transition{
-							{Name: "Started", Signal: engine.SignalPattern{Source: engine.NamedSignalSource{Name: "WorkflowStarted"}}, Control: engine.StayControl{}},
-						},
-					},
-				},
-			},
-		},
-	}
-}
-
 // newSnapshotAndSignal is a small test helper: builds p's initial Snapshot
 // and first Signal through the real engineservice.NewSnapshot, failing the
 // test immediately if initialization itself fails - every fixture above is
@@ -190,26 +135,11 @@ func TestDrain(t *testing.T) {
 		require.Nil(t, result.Steps)
 	})
 
-	t.Run("exceeds_step_bound", func(t *testing.T) {
-		// 1 initial Step + 25 children draining their own WorkflowStarted =
-		// 26 total Step calls, exceeding MaxSteps (20).
-		p := oversizedSpawnProgram(25)
-		snap, signal := newSnapshotAndSignal(t, p)
-
-		result := Drain(p, snap, signal)
-		require.ErrorIs(t, result.Err, ErrStepBoundExceeded)
-		require.Nil(t, result.Steps)
-	})
-
-	t.Run("commits_exactly_at_bound", func(t *testing.T) {
-		// 1 initial Step + 19 children = 20 total Step calls, exactly at
-		// MaxSteps - must still commit, not overflow.
-		p := oversizedSpawnProgram(19)
-		snap, signal := newSnapshotAndSignal(t, p)
-
-		result := Drain(p, snap, signal)
-		require.NoError(t, result.Err)
-		require.Len(t, result.Steps, 20)
-		require.Equal(t, "Main", result.Snapshot.Root.Workflow)
-	})
+	// Drain's MaxSteps bound (a cascade of several actual Step calls
+	// within one RuntimeTurn) has no fixture left to construct it with:
+	// its only source, spawning a child/task-group workflow whose own
+	// WorkflowStarted signal comes back as an InternalSignal, was
+	// removed - a Session now runs exactly one workflow instance, and
+	// nothing in the engine produces an InternalSignal any more. This is
+	// a known, accepted coverage gap, not a silently dropped case.
 }

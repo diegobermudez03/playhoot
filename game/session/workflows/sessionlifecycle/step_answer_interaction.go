@@ -183,17 +183,12 @@ func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessio
 		return AnswerInteractionResult{}, fmt.Errorf("reconstructing current runtime state: %s", err)
 	}
 
-	path, err := decodeEnginePath(interaction.EnginePath)
-	if err != nil {
-		return AnswerInteractionResult{}, fmt.Errorf("decoding interaction engine path: %s", err)
-	}
 	signalKind, err := answerSignalKind(interaction.Kind)
 	if err != nil {
 		return AnswerInteractionResult{}, err
 	}
 	signal := engine.Signal{
 		Kind:       signalKind,
-		Path:       path,
 		Slot:       interaction.EngineSlot,
 		Respondent: engine.UserID(strconv.FormatUint(uint64(actor.ID), 10)),
 		Answer:     answer,
