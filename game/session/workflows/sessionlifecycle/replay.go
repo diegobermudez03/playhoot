@@ -9,6 +9,7 @@ import (
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine/engineservice"
 	internalrepo "github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/repo"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/runtimeturn"
+	"github.com/diegobermudez03/playhoot/monitoring"
 	"gorm.io/gorm"
 )
 
@@ -27,10 +28,12 @@ func (m *Manager) reconstructCurrentSnapshot(ctx context.Context, tx *gorm.DB, c
 		return engine.Snapshot{}, err
 	}
 	if start == nil {
+		monitoring.Alert(ctx, fmt.Sprintf("session %d has no runtime start record", sessionID))
 		return engine.Snapshot{}, fmt.Errorf("reconstructing session %d snapshot: no runtime start record", sessionID)
 	}
 	rootParameters, err := decodeRootParameters(start.RootParameters)
 	if err != nil {
+		monitoring.Alert(ctx, fmt.Sprintf("session %d has an undecodable runtime start record: %s", sessionID, err))
 		return engine.Snapshot{}, fmt.Errorf("reconstructing session %d snapshot: decoding root parameters: %s", sessionID, err)
 	}
 
@@ -39,6 +42,7 @@ func (m *Manager) reconstructCurrentSnapshot(ctx context.Context, tx *gorm.DB, c
 		return engine.Snapshot{}, err
 	}
 	if len(turns) == 0 {
+		monitoring.Alert(ctx, fmt.Sprintf("session %d has no committed runtime turns", sessionID))
 		return engine.Snapshot{}, fmt.Errorf("reconstructing session %d snapshot: no committed runtime turns", sessionID)
 	}
 
@@ -47,10 +51,12 @@ func (m *Manager) reconstructCurrentSnapshot(ctx context.Context, tx *gorm.DB, c
 		Seed:           start.Seed,
 	})
 	if err != nil {
+		monitoring.Alert(ctx, fmt.Sprintf("session %d: replaying start initialization diverged from its original commit: %s", sessionID, err))
 		return engine.Snapshot{}, fmt.Errorf("reconstructing session %d snapshot: replaying start initialization: %s", sessionID, err)
 	}
 	current, err := replayTurn(compiledProgram, snapshot, startSignal, turns[0])
 	if err != nil {
+		monitoring.Alert(ctx, err.Error())
 		return engine.Snapshot{}, err
 	}
 
@@ -61,6 +67,7 @@ func (m *Manager) reconstructCurrentSnapshot(ctx context.Context, tx *gorm.DB, c
 		}
 		current, err = replayTurn(compiledProgram, current, signal, turn)
 		if err != nil {
+			monitoring.Alert(ctx, err.Error())
 			return engine.Snapshot{}, err
 		}
 	}
@@ -88,22 +95,30 @@ func (m *Manager) loadReplaySignal(ctx context.Context, tx *gorm.DB, turn intern
 	switch turn.SourceKind {
 	case answerInteractionSourceKind:
 		if turn.SourceInteractionID == nil || turn.ActorID == nil {
-			return engine.Signal{}, fmt.Errorf("reconstructing runtime turn %d: %s turn missing source_interaction_id/actor_id", turn.ID, answerInteractionSourceKind)
+			err := fmt.Errorf("reconstructing runtime turn %d: %s turn missing source_interaction_id/actor_id", turn.ID, answerInteractionSourceKind)
+			monitoring.Alert(ctx, err.Error())
+			return engine.Signal{}, err
 		}
 		interaction, err := m.answerInteractionRepo.GetInteractionByID(ctx, tx, *turn.SourceInteractionID)
 		if err != nil {
 			return engine.Signal{}, err
 		}
 		if interaction == nil {
-			return engine.Signal{}, fmt.Errorf("reconstructing runtime turn %d: source interaction %d not found", turn.ID, *turn.SourceInteractionID)
+			err := fmt.Errorf("reconstructing runtime turn %d: source interaction %d not found", turn.ID, *turn.SourceInteractionID)
+			monitoring.Alert(ctx, err.Error())
+			return engine.Signal{}, err
 		}
 		signal, err := buildAnswerSignal(interaction, *turn.ActorID)
 		if err != nil {
-			return engine.Signal{}, fmt.Errorf("reconstructing runtime turn %d: %s", turn.ID, err)
+			wrapped := fmt.Errorf("reconstructing runtime turn %d: %s", turn.ID, err)
+			monitoring.Alert(ctx, wrapped.Error())
+			return engine.Signal{}, wrapped
 		}
 		return signal, nil
 	default:
-		return engine.Signal{}, fmt.Errorf("reconstructing runtime turn %d: unsupported source_kind %q for replay", turn.ID, turn.SourceKind)
+		err := fmt.Errorf("reconstructing runtime turn %d: unsupported source_kind %q for replay", turn.ID, turn.SourceKind)
+		monitoring.Alert(ctx, err.Error())
+		return engine.Signal{}, err
 	}
 }
 

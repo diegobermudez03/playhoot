@@ -2,113 +2,140 @@ package sessionlifecycle
 
 import (
 	"context"
-	"strconv"
+	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine"
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine/engineservice"
 	"github.com/diegobermudez03/playhoot/game/session/internal/testdb"
-	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/runtimeturn"
+	"github.com/diegobermudez03/playhoot/game/session/internal/testfixtures"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
 
-// TestReconstructCurrentSnapshot_Integration proves end to end that a
-// Session's current authoritative engine.Snapshot is correctly
-// reconstructable purely from durable state (Start's persisted
-// Seed/RootParameters plus the ordered session_runtime_turns replay-input
-// log), with no persisted Snapshot and no in-memory cache of any kind
-// involved anywhere.
+// TestReconstructCurrentSnapshot_Integration proves replay reconstruction
+// matches state the original live execution actually produced - not merely
+// state re-derived from the same durable rows replay itself reads, which
+// would only prove replay is consistent with itself.
 //
-// It drives a real two-Turn Session (Start opens a question, AnswerInteraction
-// answers and closes it) through the ordinary Manager, then independently
-// replays the exact same durable inputs by hand - without calling
-// reconstructCurrentSnapshot - to obtain the state the original live
-// execution actually produced (no live Snapshot is retained anywhere for a
-// direct diff, by design). It then calls reconstructCurrentSnapshot from two
-// separate, freshly constructed Managers - simulating two different
-// processes, neither sharing any in-memory state with the live execution or
-// with each other - and asserts both reproduce that same state exactly.
-// This also is this WORK's process-loss-recovery proof: reconstruction never
-// depends on any particular process's memory, only on durable state.
+// It drives a real three-Turn Session through the ordinary Manager (Start
+// opens a question exposing a live random draw as one of its own
+// arguments; answering it opens a second question; answering that one
+// closes it), then reconstructs current state from two
+// independently-constructed Managers - simulating two different processes,
+// neither sharing any in-memory state with the live execution or with each
+// other - and checks the reconstructed global state against two oracles
+// that never pass through session_runtime_starts/session_runtime_turns, the
+// rows reconstruction itself reads:
+//   - the live random draw, read from session_interactions.interaction_payload
+//     (written directly from Start's own live OpenQuestionOutput, never read
+//     by reconstructCurrentSnapshot);
+//   - the plain Go answer values this test itself passed to AnswerInteraction,
+//     not anything decoded from a persisted row.
+//
+// The third Turn's expected value is only reachable if replay correctly
+// threaded the second Turn's answer through first, so this also covers a
+// later live AnswerInteraction depending on correct replay of an earlier
+// one. This is also this WORK's process-loss-recovery proof: reconstruction
+// never depends on any particular process's memory, only on durable state.
 func TestReconstructCurrentSnapshot_Integration(t *testing.T) {
 	db := testdb.OpenSessionDB(t)
 
-	definition := answerableDefinition(1, 4)
-	m, sessionUUID, hostUUID, interactionUUID := startedAnswerableSession(t, db, definition)
+	definition := replayObservableDefinition(1, 4)
+	m := New(db, nil, stubStartPinnedGameReader{definition: definition})
 
-	answerResult, err := m.AnswerInteraction(context.Background(), interactionUUID, hostUUID, engine.NumberValue{Value: 42})
+	fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
+	hostUUID := uuid.NewString()
+	hostActorID := testfixtures.SeedActor(t, db, fx.SessionID, hostUUID)
+	require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
+	testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
+
+	startResult, err := m.Start(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(hostUUID), IdempotencyKey(uuid.NewString()))
 	require.NoError(t, err)
-	require.Equal(t, AnswerInteractionOutcomeAnswered, answerResult.Outcome)
+	require.Equal(t, StartOutcomeStarted, startResult.Outcome)
 
-	sessionID := sessionIDForUUID(t, db, sessionUUID)
+	sessionID := fx.SessionID
 
-	// Read back exactly what a real process-loss recovery would have:
-	// durable state only, nothing retained from the live execution above.
-	var startRow struct {
-		Seed           int64  `gorm:"column:seed"`
-		RootParameters []byte `gorm:"column:root_parameters"`
+	// The live random draw: read from Q1's own interaction_payload, captured
+	// directly from Start's live OpenQuestionOutput - a table
+	// reconstructCurrentSnapshot never reads, and a value that never passes
+	// through session_runtime_starts.seed on this side of the comparison.
+	var firstRow struct {
+		UUID               string `gorm:"column:uuid"`
+		InteractionPayload []byte `gorm:"column:interaction_payload"`
 	}
-	require.NoError(t, db.Raw(`SELECT seed, root_parameters FROM session_runtime_starts WHERE session_id = ?`, sessionID).Scan(&startRow).Error)
-	seed := uint64(startRow.Seed)
-	rootParameters, err := decodeRootParameters(startRow.RootParameters)
+	require.NoError(t, db.Raw(`SELECT uuid, interaction_payload FROM session_interactions WHERE session_id = ? AND engine_slot = ?`, sessionID, replayObservableSlot).Scan(&firstRow).Error)
+	require.NotEmpty(t, firstRow.UUID, "Start's own first Turn must open Q1")
+
+	var firstWire interactionPayloadWire
+	require.NoError(t, json.Unmarshal(firstRow.InteractionPayload, &firstWire))
+	firstArguments, err := engineservice.DecodeValue(firstWire.Arguments)
 	require.NoError(t, err)
+	firstArgumentsRecord, ok := firstArguments.(engine.RecordValue)
+	require.True(t, ok)
+	liveRandomField, ok := firstArgumentsRecord.FieldByName(replayRandomArgName)
+	require.True(t, ok, "Q1's live interaction_payload must carry the random argument")
+	liveRandomValue, ok := liveRandomField.Value.(engine.NumberValue)
+	require.True(t, ok)
 
-	var interactionRow struct {
-		EnginePath      []byte `gorm:"column:engine_path"`
-		EngineSlot      string `gorm:"column:engine_slot"`
-		Kind            string `gorm:"column:kind"`
-		ResponsePayload []byte `gorm:"column:response_payload"`
-	}
-	require.NoError(t, db.Raw(`SELECT engine_path, engine_slot, kind, response_payload FROM session_interactions WHERE uuid = ?`, string(interactionUUID)).Scan(&interactionRow).Error)
+	answer1, err := m.AnswerInteraction(context.Background(), InteractionUUID(firstRow.UUID), UserUUID(hostUUID), engine.NumberValue{Value: 111})
+	require.NoError(t, err)
+	require.Equal(t, AnswerInteractionOutcomeAnswered, answer1.Outcome)
 
-	var respondentActorID uint
-	require.NoError(t, db.Raw(`SELECT actor_id FROM session_runtime_turns WHERE session_id = ? AND sequence = 2`, sessionID).Scan(&respondentActorID).Error)
-	require.NotZero(t, respondentActorID)
+	var secondUUID string
+	require.NoError(t, db.Raw(`SELECT uuid FROM session_interactions WHERE session_id = ? AND engine_slot = ?`, sessionID, replayObservableSlot2).Scan(&secondUUID).Error)
+	require.NotEmpty(t, secondUUID, "answering Q1 must open Q2")
+
+	answer2, err := m.AnswerInteraction(context.Background(), InteractionUUID(secondUUID), UserUUID(hostUUID), engine.NumberValue{Value: 222})
+	require.NoError(t, err)
+	require.Equal(t, AnswerInteractionOutcomeAnswered, answer2.Outcome)
+
+	var turnCount int64
+	require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_turns WHERE session_id = ?`, sessionID).Scan(&turnCount).Error)
+	require.Equal(t, int64(3), turnCount, "Start plus two answers must commit three RuntimeTurns")
 
 	compiledProgram, diagnostics := engineservice.Compile(definition)
 	require.False(t, diagnostics.HasErrors())
 
-	// Independently replay the same durable inputs by hand - this is
-	// deliberately not a call to reconstructCurrentSnapshot - to obtain the
-	// state the original live execution actually produced.
-	snapshot, startSignal, err := engineservice.NewSnapshot(compiledProgram, engine.InitializationInput{RootParameters: rootParameters, Seed: seed})
-	require.NoError(t, err)
-	drain1 := runtimeturn.Drain(compiledProgram, snapshot, startSignal)
-	require.NoError(t, drain1.Err)
+	assertReconstructedState := func(t *testing.T, snapshot engine.Snapshot) {
+		t.Helper()
 
-	path, err := decodeEnginePath(interactionRow.EnginePath)
-	require.NoError(t, err)
-	signalKind, err := answerSignalKind(interactionRow.Kind)
-	require.NoError(t, err)
-	answerValue, err := engineservice.DecodeValue(interactionRow.ResponsePayload)
-	require.NoError(t, err)
-	answerSignal := engine.Signal{
-		Kind:       signalKind,
-		Path:       path,
-		Slot:       interactionRow.EngineSlot,
-		Respondent: engine.UserID(strconv.FormatUint(uint64(respondentActorID), 10)),
-		Answer:     answerValue,
+		nField, ok := snapshot.GlobalState.FieldByName("n")
+		require.True(t, ok)
+		nValue, ok := nField.Value.(engine.NumberValue)
+		require.True(t, ok)
+		require.Equal(t, liveRandomValue.Value, nValue.Value, "reconstructed global.n must match the value live execution actually drew and exposed, not merely a value re-derived from the persisted seed by the same code path replay itself uses")
+
+		aField, ok := snapshot.GlobalState.FieldByName("a")
+		require.True(t, ok)
+		aValue, ok := aField.Value.(engine.NumberValue)
+		require.True(t, ok)
+		require.Equal(t, float64(111), aValue.Value, "reconstructed global.a must match the literal answer this test submitted for Q1")
+
+		bField, ok := snapshot.GlobalState.FieldByName("b")
+		require.True(t, ok)
+		bValue, ok := bField.Value.(engine.NumberValue)
+		require.True(t, ok)
+		require.Equal(t, float64(222), bValue.Value, "reconstructed global.b must match the literal answer this test submitted for Q2 - only reachable if replay correctly threaded Q1's answer through first")
 	}
-	drain2 := runtimeturn.Drain(compiledProgram, drain1.Snapshot, answerSignal)
-	require.NoError(t, drain2.Err)
-
-	expectedEncoded, err := engineservice.EncodeSnapshot(drain2.Snapshot)
-	require.NoError(t, err)
 
 	// Two separate, freshly constructed Managers - neither sharing any
 	// in-memory state with the live execution above or with each other -
 	// each reconstruct purely from durable state.
 	processA := New(db, nil, stubStartPinnedGameReader{definition: definition})
-	actualA, err := processA.reconstructCurrentSnapshot(context.Background(), db, compiledProgram, sessionID)
+	snapshotA, err := processA.reconstructCurrentSnapshot(context.Background(), db, compiledProgram, sessionID)
 	require.NoError(t, err)
-	actualAEncoded, err := engineservice.EncodeSnapshot(actualA)
-	require.NoError(t, err)
-	require.JSONEq(t, string(expectedEncoded), string(actualAEncoded), "reconstruction must match the state produced by the original live execution")
+	assertReconstructedState(t, snapshotA)
 
 	processB := New(db, nil, stubStartPinnedGameReader{definition: definition})
-	actualB, err := processB.reconstructCurrentSnapshot(context.Background(), db, compiledProgram, sessionID)
+	snapshotB, err := processB.reconstructCurrentSnapshot(context.Background(), db, compiledProgram, sessionID)
 	require.NoError(t, err)
-	actualBEncoded, err := engineservice.EncodeSnapshot(actualB)
+	assertReconstructedState(t, snapshotB)
+
+	encodedA, err := engineservice.EncodeSnapshot(snapshotA)
 	require.NoError(t, err)
-	require.JSONEq(t, string(expectedEncoded), string(actualBEncoded), "a second independent reconstruction (simulating process-loss recovery, no shared cache) must produce identical current state")
+	encodedB, err := engineservice.EncodeSnapshot(snapshotB)
+	require.NoError(t, err)
+	require.JSONEq(t, string(encodedA), string(encodedB), "two independent reconstructions (simulating process-loss recovery, no shared cache) must produce identical current state")
 }

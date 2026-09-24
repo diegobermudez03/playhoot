@@ -356,3 +356,139 @@ func dualQuestionDefinition(playersMin, playersMax int) program.Definition {
 		},
 	}
 }
+
+// replayObservableQuestionName/replayObservableSlot/replayObservableSlot2/
+// replayRandomArgName name replayObservableDefinition's own declarations.
+const (
+	replayObservableQuestionName = "PickNumber"
+	replayObservableSlot         = "Q1"
+	replayObservableSlot2        = "Q2"
+	replayRandomArgName          = "n"
+)
+
+// replayObservableDefinition builds a real, engineservice.Compile-able
+// Definition designed specifically so a test can verify replay
+// reconstruction against values the live execution actually produced,
+// rather than against values re-derived from the same durable rows replay
+// itself reads (which would only prove replay is consistent with itself,
+// not that it matches live execution).
+//
+// At Start it draws a random number and exposes it as the first opened
+// question's own "n" argument - captured live into
+// session_interactions.interaction_payload through the ordinary
+// OpenQuestionOutput capture path, a channel entirely independent of
+// session_runtime_starts.seed. Once that question is answered, the
+// response is stored into global state ("a") and a second question is
+// opened; once that one is answered too, its response is stored into
+// global state ("b"). A reconstructed Snapshot's global state can then be
+// compared directly against the plain Go values a test passed to
+// AnswerInteraction, with no decoding of any persisted row on either side -
+// and the third Turn only produces a meaningful "b" if replay correctly
+// threaded the second Turn's answer through first.
+func replayObservableDefinition(playersMin, playersMax int) program.Definition {
+	recipient := program.IndexExpression{
+		Target: program.ReferenceExpression{Name: "players"},
+		Index:  program.NumberLiteralExpression{Value: "0"},
+	}
+	numberType := program.BuiltinTypeReference{Type: program.BuiltinTypeNumber}
+	return program.Definition{
+		Metadata:     program.Metadata{ID: "replay-observable", Name: "ReplayObservable"},
+		RootWorkflow: "Main",
+		Players:      program.PlayerPolicy{Min: playersMin, Max: playersMax},
+		Questions: []program.QuestionDeclaration{
+			{
+				Name:         replayObservableQuestionName,
+				Parameters:   []program.FieldDeclaration{{Name: replayRandomArgName, Type: numberType}},
+				ResponseType: numberType,
+			},
+		},
+		GlobalState: program.StateDeclaration{
+			Fields: []program.StateFieldDeclaration{
+				{Name: "n", Type: numberType, Initializer: program.NumberLiteralExpression{Value: "0"}},
+				{Name: "a", Type: numberType, Initializer: program.NumberLiteralExpression{Value: "0"}},
+				{Name: "b", Type: numberType, Initializer: program.NumberLiteralExpression{Value: "0"}},
+			},
+		},
+		Workflows: []program.WorkflowDeclaration{
+			{
+				Name: "Main",
+				Parameters: []program.FieldDeclaration{
+					{Name: "players", Type: program.ListTypeReference{Element: program.BuiltinTypeReference{Type: program.BuiltinTypeUser}}},
+				},
+				ResultType:   program.BuiltinTypeReference{Type: program.BuiltinTypeUnit},
+				InitialState: "Start",
+				QuestionSlots: []program.QuestionSlotDeclaration{
+					{Name: replayObservableSlot, Question: replayObservableQuestionName},
+					{Name: replayObservableSlot2, Question: replayObservableQuestionName},
+				},
+				States: []program.WorkflowStateDeclaration{
+					{
+						Name: "Start",
+						Transitions: []program.TransitionDeclaration{
+							{
+								Name:   "Started",
+								Signal: program.SignalPattern{Source: program.NamedSignalSource{Name: "WorkflowStarted"}},
+								Operations: program.Block{Operations: []program.Operation{
+									program.DrawRandomOperation{
+										Name: "drawn",
+										Generator: program.RandomIntegerGenerator{
+											Minimum: program.NumberLiteralExpression{Value: "1"},
+											Maximum: program.NumberLiteralExpression{Value: "1000000"},
+										},
+									},
+									program.SetOperation{
+										Target: program.FieldTarget{Target: program.NameTarget{Name: "global"}, Field: "n"},
+										Value:  program.ReferenceExpression{Name: "drawn"},
+									},
+									program.OpenQuestionOperation{
+										Slot:      replayObservableSlot,
+										Recipient: recipient,
+										Arguments: []program.CallArgument{
+											{Name: replayRandomArgName, Value: program.ReferenceExpression{Name: "drawn"}},
+										},
+									},
+								}},
+								Control: program.StayControl{},
+							},
+							{
+								Name: "FirstAnswered",
+								Signal: program.SignalPattern{
+									Source:   program.QuestionAnsweredSignalSource{Slot: replayObservableSlot},
+									Bindings: []program.SignalBinding{{Field: "answer", Name: "response"}},
+								},
+								Operations: program.Block{Operations: []program.Operation{
+									program.SetOperation{
+										Target: program.FieldTarget{Target: program.NameTarget{Name: "global"}, Field: "a"},
+										Value:  program.ReferenceExpression{Name: "response"},
+									},
+									program.OpenQuestionOperation{
+										Slot:      replayObservableSlot2,
+										Recipient: recipient,
+										Arguments: []program.CallArgument{
+											{Name: replayRandomArgName, Value: program.ReferenceExpression{Name: "response"}},
+										},
+									},
+								}},
+								Control: program.StayControl{},
+							},
+							{
+								Name: "SecondAnswered",
+								Signal: program.SignalPattern{
+									Source:   program.QuestionAnsweredSignalSource{Slot: replayObservableSlot2},
+									Bindings: []program.SignalBinding{{Field: "answer", Name: "response2"}},
+								},
+								Operations: program.Block{Operations: []program.Operation{
+									program.SetOperation{
+										Target: program.FieldTarget{Target: program.NameTarget{Name: "global"}, Field: "b"},
+										Value:  program.ReferenceExpression{Name: "response2"},
+									},
+								}},
+								Control: program.StayControl{},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
