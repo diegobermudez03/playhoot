@@ -6,7 +6,7 @@ This is the structured form a human fills out to describe a game they want built
 
 The blocks exist so that (a) the human gives everything the AI actually needs, not just a vague pitch, and (b) the AI has unambiguous answers to the specific questions that map directly onto this platform's model (turns, state, actions, prompts, UI, assets) instead of having to guess. **Answer every block.** If a block genuinely doesn't apply to your game, write "N/A" and say why — don't just skip it, since a skipped block is indistinguishable from a forgotten one.
 
-If you don't know the answer to something technical (e.g. "should this be a task group or one child per player?"), describe the *intent* in plain language instead and let the AI figure out the mechanism — just don't leave the intent itself vague.
+If you don't know the answer to something technical (e.g. "should this wait for everyone or just a quorum?"), describe the *intent* in plain language instead and let the AI figure out the mechanism — just don't leave the intent itself vague.
 
 ---
 
@@ -82,12 +82,7 @@ List every place the game involves chance (dice, shuffles, random draws, random 
 
 ## 11. Sub-processes / parallel structure
 
-If any part of the game is naturally its own independent sub-process — a mini-game inside the main game, something that runs once per player in parallel, a delegated task with its own outcome that the main game waits on — describe it:
-
-- **What is it, and what triggers starting one**
-- **Is there exactly one at a time, one per player, or a runtime-determined number of them?**
-- **What outcome does it report back, and what does the main game do with that outcome?**
-- **Does the main game need to wait for *all* of them, just the *first*, or some quorum, before continuing?**
+This platform has no separate "sub-process" or "spawn an independent task and wait for its own outcome" capability — every game is one flat process, start to finish. If part of your game looks like a mini-game running inside the main game, a per-player delegated task, or "N independent things happening in parallel that each report a result back," it isn't buildable as a genuinely separate process here; describe the *intent* anyway (what's happening, per player or otherwise, and what the main game does once it's resolved) and expect it to be modeled as ordinary shared state plus a multi-respondent prompt (see block 8, "Group interactions") rather than as its own process.
 
 ## 12. UI and screens
 

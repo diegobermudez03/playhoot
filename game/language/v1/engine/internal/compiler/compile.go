@@ -113,10 +113,10 @@ func (ds Diagnostics) HasErrors() bool {
 // function must be compiled before any resource Value evaluates, since
 // a resource's Value may call one; every resource must be evaluated
 // before global state initializers or invariants compile, since both
-// may reference resources; and every workflow's declared ResultType must
-// be known before any workflow's body compiles, since a child or
-// task-group slot's completion signal may reference any workflow's
-// (including its own) ResultType.
+// may reference resources; and every workflow's declared ResultType and
+// Parameters are precomputed once, before any workflow's own body
+// compiles, so compiling that body can reuse the result instead of
+// compiling — and diagnosing — the same declarations a second time.
 func Compile(def program.Definition) (engine.Program, Diagnostics) {
 	resourceValues := make(map[string]engine.Value)
 

@@ -66,10 +66,8 @@ func (CompleteControl) isWorkflowControl() {}
 // normally represent it as a successful result via a user-declared enum or
 // union through CompleteControl instead of overloading FailControl.
 //
-// When the failing workflow is a child, its parent observes this outcome
-// through ChildFailedSignalSource. When it is the root workflow, there is
-// no parent to notify; a future session layer may observe the root's
-// terminal outcome.
+// There is no parent to notify; a session layer may observe the workflow
+// instance's terminal outcome.
 type FailControl struct {
 	Error Expression
 }

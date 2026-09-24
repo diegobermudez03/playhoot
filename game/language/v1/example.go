@@ -41,9 +41,8 @@ type gameSession struct {
 	// this internally (see Snapshot.Root.QuestionSlots), but it doesn't
 	// hand us a nice "waiting on this" map — that's session-layer
 	// bookkeeping we own, driven by the OpenQuestionOutput values Step
-	// gives us. Keyed here by slot name for simplicity; a real consumer
-	// would probably also need the workflow instance Path once there are
-	// child workflows involved.
+	// gives us. Keyed here by slot name, since there is exactly one
+	// workflow instance for the whole game.
 	pendingQuestions map[string]engine.OpenQuestionOutput
 }
 
@@ -191,9 +190,6 @@ func (s *gameSession) HandleUserIntent(actor engine.UserID, intent string, field
 		Intent: intent,
 		Actor:  actor,
 		Fields: fields,
-		// Path would be set here too, if this intent targets a child
-		// workflow instance rather than the root - left as the zero
-		// value (root) in this draft.
 	})
 }
 

@@ -66,8 +66,8 @@ package program
 // # Purity, determinism, and relationship to effects
 //
 // A projection body is pure: it must not mutate global or workflow-local
-// state, open or close questions, schedule or cancel timers, spawn or
-// cancel child workflows, emit effects, change workflow control, perform
+// state, open or close questions, schedule or cancel timers, open or
+// cancel ask groups, emit effects, change workflow control, perform
 // external I/O, read wall-clock time, or use operating-system randomness.
 // Given the same compiled program version, snapshot, viewer, and
 // arguments, a projection must always return the same result, and only a

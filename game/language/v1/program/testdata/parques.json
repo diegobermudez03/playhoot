@@ -339,8 +339,6 @@
       "question_slots": [],
       "ask_group_slots": [],
       "timer_slots": [],
-      "child_slots": [],
-      "task_group_slots": [],
       "presentations": [],
       "initial_state": "Setup",
       "global_transitions": [],

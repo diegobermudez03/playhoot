@@ -15,7 +15,7 @@ Your output is always exactly one JSON object: a `program.Definition`. Nothing e
 
 A game here is a **deterministic, signal-driven, turn/step-based state machine**, not a continuous simulation. Concretely:
 
-- The whole game is a tree of **workflow instances** (finite-state machines), each reacting to one **signal** at a time, one at a time, all the way down. There is no continuous time, no physics, no "every frame" tick, no concurrent execution within one game instance.
+- The whole game is exactly one **workflow instance** (a finite-state machine) for its whole lifetime, reacting to one **signal** at a time. There is no continuous time, no physics, no "every frame" tick, no concurrent execution within one game instance.
 - Everything that changes state does so inside a **transition**: match a signal, optionally check a guard, run a bounded list of operations, then decide what happens next (stay, move to another state, or end). There are no `on_enter`/`on_exit`/mount/unmount hooks on a state — if something needs to happen when a state is entered, put it in the transition's own operations, not in the destination state.
 - Randomness only happens through an explicit `draw_random` operation, backed by a seed the platform supplies once per game instance. There is no other source of randomness, and no way to read a real clock, the network, or any external data mid-game.
 - Time only enters through explicit signals: a scheduled timer *output* is a request for the surrounding application to actually wait and deliver a `timer_expired` signal back later. The engine itself never waits for anything.
@@ -29,9 +29,9 @@ If the description you're given requires continuous motion/physics, an always-on
 - **Recursive/self-referential types and resources are not supported.** A named type that refers back to itself (directly, or through a list/map/optional), and a resource whose value depends on itself (directly or through another resource), are compile errors, not something to work around with a trick.
 - **Match cases are never required to be exhaustive.** A `match` (expression, operation, or control) that doesn't cover every case is legal — it just means "nothing happens" / "no result" for the uncovered cases. If a design needs exhaustiveness, cover every case explicitly yourself; nothing enforces it for you.
 - **No arbitrary code.** Every computation is one of the fixed `Expression`/`Operation` variants below — no user-defined control flow beyond `if`, `for_each` (bounded), and `match`, no external function calls, no reflection.
-- **Bounded execution.** One step's operations, one loop's iterations, how deep the child-workflow tree can nest, and how many interaction slots (pending questions/timers/children/groups) one workflow instance can hold at once are all capped by the executing application (generous defaults: 10,000 operations, 10,000 loop iterations, depth 8, 256 active slots per instance). Don't design a mechanic that depends on unbounded recursion, unbounded fan-out, or a loop with no natural termination.
+- **Bounded execution.** One step's operations, one loop's iterations, and how many interaction slots (pending questions/timers/ask groups) one workflow instance can hold at once are all capped by the executing application (generous defaults: 10,000 operations, 10,000 loop iterations, 256 active slots per instance). Don't design a mechanic that depends on unbounded fan-out or a loop with no natural termination.
 - **No built-in asset type.** Images, sounds, and any other binary/external asset are referenced only as opaque string values — see "Asset references" below.
-- **Structured concurrency, not free-form async.** A child workflow, an ask group, or a task group is always owned by exactly one parent, is always spawned into a statically named slot declared up front (never a dynamic/computed slot name), and — the one non-obvious rule — a parent that completes automatically discards every child/group it still owns, without needing them to be individually joined or cancelled first. Use this model (slots declared per workflow, one child per named slot, or a task group for a runtime-determined number of homogeneous children) for anything resembling a sub-process, mini-game, or "wait for N players to do something."
+- **One flat workflow instance, no nesting.** A game is exactly one workflow instance for its whole lifetime — there is no child workflow, no task group, no way to spawn a separate instance. An ask group is not a nested-execution construct: it collects answers from multiple recipients into one pending group within the same instance, always owned by exactly one workflow and always opened into a statically named slot declared up front. Use an ask group (with a completion policy — all responses, first response, or a quorum) for anything resembling "wait for N players to do something"; there is no mechanism for a runtime-determined number of independent sub-processes.
 
 Everything else — types, state, workflows, questions, UI — is described in detail below.
 
@@ -51,7 +51,7 @@ Design (and it's fine to also *emit*) roughly in this order, since each layer on
 10. **`user_intents`** — typed actions a player can submit unprompted (e.g. "Roll", "PlayCard").
 11. **`questions`** — reusable request contracts a workflow can open and later receive a validated answer to.
 12. **`effects`** — purely cosmetic, client-facing presentation events (an animation, a sound cue) — never authoritative.
-13. **`workflows`** (plus `root_workflow` naming which one starts the game) — the actual state machines: parameters, local state, slots (question/ask-group/timer/child-workflow/task-group), presentations, states, and transitions.
+13. **`workflows`** (plus `root_workflow` naming which one starts the game) — the actual state machines: parameters, local state, slots (question/ask-group/timer), presentations, states, and transitions.
 
 ## 3. JSON encoding rules (read this before writing any JSON)
 
@@ -138,16 +138,9 @@ Design (and it's fine to also *emit*) roughly in this order, since each layer on
 | `emit_effect` | `effect`: string, `recipients`: Expression (list of `user`), `arguments`: [CallArgument] |
 | `schedule_timer` | `slot`: string, `delay_milliseconds`: Expression |
 | `cancel_timer` | `slot`: string |
-| `spawn_child_workflow` | `slot`: string, `arguments`: [CallArgument] |
-| `cancel_child_workflow` | `slot`: string, `reason`: Expression |
 | `open_ask_group` | `slot`: string, `recipients`: Expression (list of `user`), `arguments`: [CallArgument], `completion`: AskGroupCompletionPolicy |
 | `finalize_ask_group` | `slot`: string |
 | `cancel_ask_group` | `slot`: string |
-| `begin_task_group` | `slot`: string, `completion`: TaskGroupCompletionPolicy |
-| `spawn_task_group_child` | `slot`: string, `key`: Expression (must match the slot's declared key type), `arguments`: [CallArgument] |
-| `seal_task_group` | `slot`: string (mandatory before the same transition ends — see structured-concurrency notes) |
-| `finalize_task_group` | `slot`: string |
-| `cancel_task_group` | `slot`: string, `reason`: Expression |
 | `draw_random` | `name`: string (binds the drawn value for later operations in the same block), `generator`: RandomGenerator |
 
 `AssignmentTarget`: `{"kind": "name", "name": string}` \| `{"kind": "field", "target": AssignmentTarget, "field": string}` \| `{"kind": "index", "target": AssignmentTarget, "index": Expression}`.
@@ -155,8 +148,6 @@ Design (and it's fine to also *emit*) roughly in this order, since each layer on
 `RandomGenerator`: `{"kind": "random_integer", "minimum": Expression, "maximum": Expression}` (inclusive integer range) \| `{"kind": "random_element", "collection": Expression}` \| `{"kind": "random_shuffle", "collection": Expression}`.
 
 `AskGroupCompletionPolicy`: `{"kind": "all_responses"}` \| `{"kind": "first_response"}` \| `{"kind": "quorum", "count": Expression}`.
-
-`TaskGroupCompletionPolicy`: `{"kind": "all_terminal"}` \| `{"kind": "first_terminal"}` \| `{"kind": "quorum_terminal", "count": Expression}`.
 
 ### Workflow control (`WorkflowControl`) — how a transition ends
 
@@ -178,9 +169,7 @@ Design (and it's fine to also *emit*) roughly in this order, since each layer on
 | `user_intent` | `intent`: string (names a declared user intent) |
 | `question_answered` | `slot`: string (names a question slot) |
 | `timer_expired` | `slot`: string (names a timer slot) |
-| `child_completed` / `child_failed` / `child_cancelled` | `slot`: string (names a child-workflow slot) |
 | `ask_group_completed` | `slot`: string |
-| `task_group_completed` | `slot`: string |
 
 A `SignalPattern` (used as a transition's `signal`, never null) is `{"source": SignalSource, "bindings": [{"field": string, "name": string}, ...]}` — `bindings` extracts named fields from the signal's payload into new local names usable in the guard/operations.
 
@@ -259,8 +248,6 @@ WorkflowDeclaration = {
   "question_slots": [QuestionSlotDeclaration],
   "ask_group_slots": [AskGroupSlotDeclaration],
   "timer_slots": [TimerSlotDeclaration],
-  "child_slots": [ChildWorkflowSlotDeclaration],
-  "task_group_slots": [TaskGroupSlotDeclaration],
   "presentations": [PresentationDeclaration],
   "initial_state": string,
   "global_transitions": [TransitionDeclaration],
@@ -273,8 +260,6 @@ QuestionSlotDeclaration      = { "name": string, "question": string, "presentati
 AskGroupSlotDeclaration      = { "name": string, "question": string, "presentation": QuestionPresentationDeclaration | null }
 QuestionPresentationDeclaration = { "slot": string, "projection": string, "projection_arguments": [CallArgument], "view": string }
 TimerSlotDeclaration         = { "name": string }
-ChildWorkflowSlotDeclaration = { "name": string, "workflow": string }
-TaskGroupSlotDeclaration     = { "name": string, "workflow": string, "key_type": TypeReference }
 
 PresentationDeclaration = { "name": string, "slot": string, "targets": Expression, "projection": string, "projection_arguments": [CallArgument], "view": string }
 ```

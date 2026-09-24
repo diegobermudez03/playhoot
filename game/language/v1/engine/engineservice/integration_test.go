@@ -13,7 +13,7 @@ import (
 // headless game: state (global attempts/rolled), rules (a guess must
 // match the authoritative roll, capped at 3 attempts), turns (repeated
 // "Guess" signals), and randomness (an authoritative dice roll drawn
-// once at startup) — with no questions, timers, or child workflows.
+// once at startup) — with no questions or timers.
 func TestIntegration_HeadlessGuessTheRollGame(t *testing.T) {
 	globalRolled := program.FieldExpression{Target: program.ReferenceExpression{Name: "global"}, Field: "rolled"}
 	globalAttempts := program.FieldExpression{Target: program.ReferenceExpression{Name: "global"}, Field: "attempts"}

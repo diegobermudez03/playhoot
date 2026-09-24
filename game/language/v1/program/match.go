@@ -156,11 +156,11 @@ type MatchExpressionCase struct {
 // existing synchronous operation — including nested IfOperation,
 // ForEachOperation, or MatchOperation, drawing deterministic random
 // values with DrawRandomOperation, or opening questions, scheduling
-// timers, spawning children, and emitting effects through their existing
-// operations — but a Body cannot itself choose the transition's workflow
-// control; that remains the transition's separate, final phase. Bindings
-// introduced by the selected pattern or created inside Body do not escape
-// the case.
+// timers, opening ask groups, and emitting effects through their
+// existing operations — but a Body cannot itself choose the transition's
+// workflow control; that remains the transition's separate, final phase.
+// Bindings introduced by the selected pattern or created inside Body do
+// not escape the case.
 //
 // MatchOperation produces no value and participates in the same atomic
 // transition model as every other Operation: if a selected case's Body

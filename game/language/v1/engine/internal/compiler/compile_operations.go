@@ -13,8 +13,7 @@ import (
 // operation, so a caller compiling a Transition's top-level Block can
 // pass it on to Control.
 //
-// An operation this compiler does not support (spawning a child or
-// task, or an ask-group/task-group operation — see engine.Operation's
+// An operation this compiler does not support (see engine.Operation's
 // doc comment) is diagnosed and simply omitted from the compiled Block.
 func (c *compiler) compileBlock(block program.Block, scope exprScope, path string, ctx *workflowContext) (engine.Block, exprScope) {
 	ops := make([]engine.Operation, 0, len(block.Operations))

@@ -6,8 +6,8 @@ package program
 // A function receives immutable Parameters, evaluates exactly one
 // expression Body, and returns that expression's result as ResultType. It
 // has no operation block: it cannot mutate state, suspend, open a
-// question, schedule a timer, spawn a workflow, emit an effect, or change
-// workflow control, and it performs no external I/O.
+// question, schedule a timer, emit an effect, or change workflow
+// control, and it performs no external I/O.
 //
 // Given the same parameter values, the same immutable resources, and the
 // same compiled program version, a function must always produce the same

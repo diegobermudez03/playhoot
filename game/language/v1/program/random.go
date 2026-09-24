@@ -86,9 +86,7 @@ func (RandomShuffleGenerator) isRandomGenerator() {}
 //
 // Every game snapshot conceptually owns one authoritative random stream
 // that every DrawRandomOperation in the game draws from — there are no
-// per-client, per-workflow, per-task, or otherwise manually named random
-// streams, and child workflows and task-group children draw from the same
-// stream as their parent rather than an independent one. Given the same
+// per-client or otherwise manually named random streams. Given the same
 // compiled program, input snapshot, input signal, and execution limits,
 // the future engine must always generate the same random values and the
 // same resulting commit; randomness must never depend on wall-clock time,
@@ -124,8 +122,8 @@ func (RandomShuffleGenerator) isRandomGenerator() {}
 // handles the request is what executes DrawRandomOperation, and the
 // client never supplies the authoritative random values themselves. The
 // resulting value may then be stored in authoritative state, exposed
-// through a projection, emitted through a transient effect, passed to a
-// child workflow, or returned as a workflow result.
+// through a projection, emitted through a transient effect, or returned
+// as a workflow result.
 //
 // # Prohibited contexts
 //

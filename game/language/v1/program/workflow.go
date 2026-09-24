@@ -67,8 +67,8 @@ type WorkflowDeclaration struct {
 	// transition for the same signal; a global transition only applies
 	// when the current state has none for that signal. Global transitions
 	// are intended for cross-cutting concerns such as cancellation,
-	// parent cancellation, session shutdown, participant unavailability,
-	// or workflow-wide deadlines. This package does not implement that
+	// session shutdown, participant unavailability, or workflow-wide
+	// deadlines. This package does not implement that
 	// resolution order or reject signals with no matching transition.
 	GlobalTransitions []TransitionDeclaration
 

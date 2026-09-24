@@ -11,8 +11,8 @@ package program
 // the future engine compiler.
 //
 // All operations in a Block are synchronous: none may suspend execution,
-// wait for user input, start a timer, spawn a workflow, or emit network
-// traffic. The future engine executes an entire transition's block
+// wait for user input, start a timer, or emit network traffic. The
+// future engine executes an entire transition's block
 // atomically — if a later operation fails, no partial mutation made by
 // earlier operations in the same block should become committed. This
 // package only declares the operations; it does not implement atomicity or

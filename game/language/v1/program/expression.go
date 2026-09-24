@@ -292,8 +292,8 @@ func (ConditionalExpression) isExpression() {}
 // arguments.
 //
 // CallExpression represents pure calls only; it must not be used for
-// mutating state, spawning workflows, asking users, scheduling timers, or
-// emitting UI effects. Those are modeled as operations. The future
+// mutating state, asking users, scheduling timers, or emitting UI
+// effects. Those are modeled as operations. The future
 // compiler validates function existence, missing or unknown arguments,
 // duplicate arguments, argument types, and whether the target is a
 // built-in or user-declared pure function.

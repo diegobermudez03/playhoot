@@ -502,7 +502,7 @@ func TestSignalPattern_DecodeNull_IsStructuralError(t *testing.T) {
 	}
 }
 
-// --- ask-group and task-group completion policies ---
+// --- ask-group completion policies ---
 
 func TestAskGroupCompletionPolicy_AllVariants_RoundTrip(t *testing.T) {
 	variants := []program.AskGroupCompletionPolicy{

@@ -24,8 +24,8 @@ package program
 //
 // Every list-query expression is pure: it cannot mutate global,
 // workflow-local, or view-local state, open questions, schedule timers,
-// spawn workflows, emit effects, draw random values, or perform external
-// I/O — the future compiler is responsible for validating that every
+// emit effects, draw random values, or perform external I/O — the
+// future compiler is responsible for validating that every
 // called function or built-in used inside a query is itself pure. Query
 // expressions are deterministic: given the same compiled program, input
 // values, and immutable resources, the same query always produces the
@@ -53,10 +53,10 @@ package program
 // filtered or transformed list, a boolean quantification, a count, or the
 // first matching item). Use ForEachOperation when the game needs to
 // execute synchronous operations per element (mutating state, emitting
-// effects, opening interactions, spawning task-group children). No
-// list-query expression contains an operation block, and this package
-// adds no operation variant for list queries — pure collection
-// transformation remains part of the expression model only.
+// effects, opening interactions). No list-query expression contains an
+// operation block, and this package adds no operation variant for list
+// queries — pure collection transformation remains part of the
+// expression model only.
 //
 // # Relationship to built-in and pattern-matching constructs
 //

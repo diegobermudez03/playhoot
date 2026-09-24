@@ -32,11 +32,11 @@ package program
 // Given the same global state, the same immutable resources, and the same
 // compiled program version, an invariant must always produce the same
 // boolean result. It must not mutate state, open or close questions,
-// schedule or cancel timers, spawn or cancel child workflows, emit
-// effects, read wall-clock time, use operating-system randomness, or
-// access network, database, or other external state — the Expression-only
-// body naturally rules out operations, but purity of any called functions
-// or built-ins is a future compiler concern.
+// schedule or cancel timers, open or cancel ask groups, emit effects,
+// read wall-clock time, use operating-system randomness, or access
+// network, database, or other external state — the Expression-only body
+// naturally rules out operations, but purity of any called functions or
+// built-ins is a future compiler concern.
 //
 // # Evaluation timing
 //
@@ -56,12 +56,11 @@ package program
 // If any invariant evaluates to false for a candidate snapshot, the future
 // engine treats the entire step as a rejected execution error, not an
 // authored outcome: the original snapshot remains unchanged, and no
-// workflow state change, state mutation, question, timer, child workflow,
+// workflow state change, state mutation, question, timer, ask group,
 // effect, or projection update from that step is committed. In particular,
 // an invariant violation must never execute FailControl or CancelControl,
-// must never produce a child-failure or child-cancellation signal, and
-// must never transition the workflow into another authored state — the
-// workflow simply remains at its previous state because the candidate
+// and must never transition the workflow into another authored state —
+// the workflow simply remains at its previous state because the candidate
 // transition never commits. This package declares invariants only; it
 // implements none of this checking or rejection behavior, and adds no
 // repair operations, fallback values, corrective workflow controls,
@@ -75,10 +74,10 @@ package program
 // InvariantDeclaration represents only authored global invariants:
 // game-specific rules over authored global state and immutable resources,
 // declared by the game author. It is distinct from engine structural
-// invariants (for example, that every child workflow has exactly one
-// parent, or that a completed child result is never silently discarded),
-// which the future engine enforces internally and which have no
-// source-language declaration in this package.
+// invariants (for example, that an occupied interaction slot always has
+// exactly one pending occupant, or that exactly one workflow instance
+// exists for the whole game), which the future engine enforces internally
+// and which have no source-language declaration in this package.
 //
 // # Ordering
 //

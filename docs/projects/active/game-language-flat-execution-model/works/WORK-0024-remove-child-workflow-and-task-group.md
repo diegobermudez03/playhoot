@@ -1,8 +1,8 @@
 # WORK-0024: Remove Child Workflow and Task Group
 
-Status: IMPLEMENTING
+Status: DONE
 Created: 2026-09-24
-Last status change: 2026-09-24 (READY -> IMPLEMENTING; DRAFT -> READY, human-approved, same day)
+Last status change: 2026-09-24 (IMPLEMENTING -> DONE; independent review APPROVED after three fix/re-review passes)
 
 Related decisions:
 - GAME-ADR-0026 (Flat Workflow Execution Model, Keyed Interaction Slots, and Engine-Owned Interaction Addressing - Decisions 1 and 6 specifically)
@@ -97,7 +97,15 @@ Exact file/function boundaries inside `internal/compiler`/`internal/runtime` for
 
 ## Completion Record
 
-Not yet DONE. Independent review has not yet occurred.
+DONE (2026-09-24). Three independent review passes were required (CHANGES_REQUIRED/DECISION_REQUIRED, then CHANGES_REQUIRED, then CHANGES_REQUIRED again) before reaching a clean state - each pass's own fresh repository-wide sweep found a further, shrinking set of stale documentation/comments the previous pass's narrower sweep had missed, entirely in `.md`/doc-comment prose describing Child Workflow/Task Group as still-current capability; no additional code-behavior defect was ever found beyond the original implementation. The one DECISION_REQUIRED finding (a forced, verified-behavior-preserving Session Runtime edit the WORK had predicted wouldn't be needed, plus a resulting untested `MaxSteps` bound) was resolved by explicit human decision, non-materially - see "Human Resolution" above. See the three dated Completion Record sections above ("Independent Review", "Human Resolution", "Independent Re-Review", "Second Independent Re-Review") for the full itemized history; not restated here.
+
+Final verification (closing pass): `go build ./...`, `go vet ./...` clean; a repository-wide grep sweep (both identifiers and comment prose, `.go` and `.md`, covering every pattern any of the three review passes used) found zero remaining live reference to any removed construct outside historical/decision-record text; `go test ./game/language/v1/... -count=1` all pass; `go test ./game/... -count=1` against real Postgres (`playhoot-postgres-1`) - all pass except the already-known, pre-existing, out-of-scope `getgame` JSONB-whitespace defect (`TestRepoGetGameCurrentVersion`), explicitly excepted by this WORK's own Acceptance Criteria; `game/session/...` passes in full, confirming GAME-ADR-0026's finding (as clarified by the Human Resolution) that no Session Runtime *design* depended on the removed constructs.
+
+Documentation synchronized: `game/README.md`, `game/language/v1/engine/README.md`, `game/language/v1/engine/LOGICAL_CONTRACT.md`, `game/language/v1/engine/IMPLEMENTATION.md`, `game/language/v1/program/README.md`, `game/language/v1/program/IMPLEMENTATION.md`, `game/language/v1/program/DEFINITION.md`, `game/language/v1/program/GAME_BRIEF.md`, `game/docs/FLOWS.md`, plus doc-comment fixes across `game/language/v1/program/{control,workflow,ask_group,invariant,projection,random,list_query_expression,match,expression,function,operation}.go`, `game/language/v1/engine/internal/compiler/{compile,compile_operations}.go`, `game/language/v1/engine/internal/runtime/step.go`, `game/language/v1/example.go`, and test-file section comments (`engineservice/integration_test.go`, `program/internal/codec/execution_test.go`). `game/CURRENT_STATE.md` was checked and contained no reference to the removed constructs.
+
+Deviations from the approved WORK: the 4 mechanical Session Runtime edits, accepted non-materially by explicit human decision (see "Human Resolution" above) - not a material deviation from approved scope/design, since the review verified zero behavior change.
+
+Follow-up not part of this WORK's own closure (recorded, not silently dropped): `Commit.InternalSignals`/`runtimeturn.Drain`'s pending-signal loop is now dead in practice; old pre-commit encoded Definitions no longer decode (no actual persisted data affected); non-root workflow declarations can compile but never run; `runtimeturn.MaxSteps` has no currently-reachable test (accepted limitation per Human Resolution); a small number of NON_BLOCKING documentation wording nits (`engine/commit.go`'s `Trace` doc, "each instance" phrasing in `workflow.go`/`timer.go`, `program/README.md`'s `KeyedTimerSlot` path-in-key note, `session-runtime-v1/internal/AI_CONTEXT.md`'s stale resume text, `session-runtime-v1/works/WORK-0006`'s "GAME-ADR-0026 (PROPOSED)" mention). None block this Project's own completion criteria; several are natural candidates for WORK-0025/0026/0027 to sweep up as they touch the same areas.
 
 ### Implementation Report (2026-09-24)
 
@@ -142,6 +150,85 @@ Known limitations:
 - Session Runtime needed a minimal, mechanical change (four files) despite this WORK's own doc predicting zero Session Runtime change — recorded here rather than silently correcting that prediction after the fact.
 - `Commit.InternalSignals`/`runtimeturn.Drain`'s `MaxSteps`-cascade path has no fixture left to exercise it (its only producer, spawning, is gone); documented in place as an accepted, intentional coverage gap rather than silently dropped.
 - `gofmt -l`'s CRLF-driven whole-repository output (see Verification performed) was not otherwise investigated or fixed — normalizing repository-wide line endings is unrelated to this WORK's scope and was not attempted.
+
+Ready for independent review:
+YES.
+
+### Independent Review (2026-09-24)
+
+Verdict: DECISION_REQUIRED, plus REQUIRED_FIX and NON_BLOCKING findings. Full report held in this session's conversation record, not duplicated here.
+
+REQUIRED_FIX findings applied in this same pass (all non-material documentation/comment/testdata synchronization and one formatting fix - none touch approved scope/design):
+- `game/language/v1/program/DEFINITION.md`: removed every remaining child-workflow/task-group mention (bounded-execution depth limit, structured-concurrency bullet, workflow-shape ordering list, the `spawn_child_workflow`/`cancel_child_workflow`/`begin_task_group`/`spawn_task_group_child`/`seal_task_group`/`finalize_task_group`/`cancel_task_group` operation rows, `TaskGroupCompletionPolicy`, the `child_completed`/`child_failed`/`child_cancelled`/`task_group_completed` signal-source rows, `child_slots`/`task_group_slots` from the `WorkflowDeclaration` JSON shape and their declaration types) - an AI author following this doc today would otherwise produce JSON the strict decoder now rejects.
+- `game/language/v1/program/testdata/parques.json`: removed the two now-unknown `child_slots`/`task_group_slots` keys a strict decode would reject.
+- `game/language/v1/engine/IMPLEMENTATION.md`: removed `compile_task_groups.go`/`task_group.go` from the file-organization lists, corrected the `step.go`/`Step`-commit-sequence description (no more instance-tree/`Path` walk or child/task-group slot sweep - only `clearedAskGroupSlots`), removed `TaskGroupCompletionPolicy` from the sealed-interface catalog, removed `task_group.go` as the "big enough for its own file" precedent.
+- `game/language/v1/program/IMPLEMENTATION.md`: replaced the `child_workflow.go` file-organization example with `ask_group.go`.
+- `game/language/v1/program/GAME_BRIEF.md`: reworded the technical-uncertainty example (was "task group or one child per player?"); rewrote section 11 ("Sub-processes / parallel structure") to state plainly that independent sub-processes with their own reportable outcome are not buildable, redirecting to section 8's group-interaction model, instead of asking a human author to describe a capability that no longer exists.
+- `game/docs/FLOWS.md`: corrected the `AnswerInteraction` bullet - `Slot` is decoded from `engine_slot`; `engine_path` stays persisted but is always the fixed empty-path encoding, since `engine.Signal` no longer has a `Path` field to address a nested instance with.
+- `game/language/v1/program/control.go`: `FailControl`'s doc comment no longer describes a parent observing failure through `ChildFailedSignalSource`.
+- `game/language/v1/engine/internal/compiler/compile.go`: `Compile`'s ordering-rationale doc comment no longer justifies precomputing every workflow's `ResultType` by a cross-workflow child/task-group reference; corrected to the actual reason (verified by inspection - `workflowResultTypes`/`workflowParameterTypes` are only ever looked up by a workflow's own name) - reuse avoidance, not cross-workflow ordering.
+- `game/language/v1/engine/internal/compiler/compile_operations.go`: removed the stale "spawning a child or task" example from the unsupported-operation doc comment.
+- `game/language/v1/example.go`: removed the two stale "workflow instance Path"/"child workflows involved" comments (`pendingQuestions`'s doc comment, `HandleUserIntent`'s signal literal).
+- `game/language/v1/engine/engineservice/integration_test.go`: removed "or child workflows" from a test's doc comment.
+- `game/language/v1/engine/internal/runtime/execute.go`: removed a trailing blank line at EOF (the one real `gofmt` regression the review found, isolated from the pre-existing repository-wide CRLF noise by reviewing the committed LF blob directly).
+
+DECISION_REQUIRED finding (not resolved by this pass - routed to the human, per `docs/ai/protocols/IMPLEMENTATION_REVIEW.md`; implementation of the affected portion is paused pending that decision, though the review found no behavior change from it):
+
+- WORK-0024's own "Out of Scope" section says "Any Session Runtime (`game/session`) change" is out of scope, and its Constraints say a discovered need for one should be raised as a DISCOVERY, not silently worked around. The implementation nonetheless mechanically edited 4 Session Runtime production files (`interaction_capture.go`, `internal/runtimeturn/runtimeturn.go`, `step_answer_interaction.go`, `replay.go`) and 3 test files, because they referenced the now-removed `engine.Signal.Path`/`PathStep` - the build would not otherwise compile. The review verified this is genuinely behavior-preserving (the new `emptyEnginePath = []byte("[]")` constant is byte-identical to what the old encoder always produced for every real, non-nested call site), but it is a scope/Acceptance-Criterion deviation as written (Acceptance Criteria required `go test ./game/session/... ` to pass "unmodified"), reported after the fact rather than escalated as a DISCOVERY during implementation. It also left `runtimeturn.MaxSteps` (the accepted `MAX_STEPS_PER_RUNTIME_TURN` bound) with no reachable test, since its only producer (spawning) is gone - the review confirmed this is a real, unavoidable coverage gap under the current design, not something this pass could fix without a decision on how to address it. See this session's independent-review report for the full open question.
+
+Verification re-run after this fix pass:
+- `go build ./...`, `go vet ./...` - clean, repository-wide.
+- `gofmt -l` on the changed `execute.go`, checked against its LF-normalized committed form (the CRLF working tree otherwise makes `gofmt -l` flag the whole pre-existing repository, a known, unrelated environment condition) - clean.
+- `go test ./game/language/v1/... -count=1` - all pass, including `program/internal/codec` (which decodes the edited `parques.json`).
+- `go test ./game/... -count=1` against real Postgres (`playhoot-postgres-1`) - all pass except the already-known, pre-existing, out-of-scope `getgame` JSONB-whitespace comparison defect (`TestRepoGetGameCurrentVersion/returns_game_with_current_version`), confirmed unrelated (this pass touched no `game/management` code). `game/session/...` passes in full.
+
+Ready for independent review:
+YES for the applied REQUIRED_FIX items. The DECISION_REQUIRED finding remains open and gates this WORK's closure until the human resolves it.
+
+### Human Resolution (2026-09-24, HUMAN-APPROVED)
+
+Both open items from `internal/HUMAN_REVIEW.md` resolved, non-materially, same day:
+
+1. The 4 mechanical Session Runtime edits (`interaction_capture.go`, `internal/runtimeturn/runtimeturn.go`, `step_answer_interaction.go`, `replay.go`) are accepted as within WORK-0024's scope, on the review's verified basis that they are a forced, behavior-preserving consequence of the in-scope `engine.Signal.Path` removal (byte-identical `engine_path` encoding for every real call site), not a Session Runtime design change. WORK-0024's own "Out of Scope: Any Session Runtime (`game/session`) change" statement is treated as clarified, not violated in substance - the WORK's own prediction that no Session Runtime change would be needed was simply incomplete, not its actual approved scope/design. No re-sequencing into WORK-0027 required.
+2. `runtimeturn.MaxSteps` (`MAX_STEPS_PER_RUNTIME_TURN`) having no currently-reachable test is accepted as a known, explicit limitation, not something this WORK must fix. The bound remains enforced in code (`Drain`'s loop still checks it every iteration); it will be revisited if/when a future WORK (0025/0026/0027, or later) reintroduces a way to produce a multi-Turn internal-signal cascade. No synthetic/fixture-level test is required now.
+
+Per `docs/ai/protocols/IMPLEMENTATION_REVIEW.md`'s Decision Required / Reapproval Loop, this acceptance is non-material and genuinely clarifies an accepted limitation inside the existing approved contract - WORK-0024 is not returned to DRAFT for this resolution.
+
+### Independent Re-Review (2026-09-24)
+
+Verdict: CHANGES_REQUIRED. Confirmed every REQUIRED_FIX from the first review was applied correctly, confirmed the Human Resolution above genuinely and accurately resolves the DECISION_REQUIRED finding (not re-litigated), and confirmed `go build`/`go vet`/`gofmt`/`go test ./game/language/v1/...`/`go test ./game/... ` (real Postgres) all clean except the known pre-existing out-of-scope `getgame` defect. But a fresh repository-wide sweep found further live doc comments neither the original implementation nor the first fix pass caught, still describing removed constructs as current capability. All REQUIRED_FIX, all non-material comment/doc wording, applied in this same pass:
+
+- `game/language/v1/program/DEFINITION.md:18` - "tree of workflow instances... all the way down" contradicted the file's own new "one flat workflow instance" bullet 16 lines later; reworded to match.
+- `game/language/v1/program/README.md`'s Disconnect/Reconnect Contract section - dropped the stale `ParentCancelled` signal-source mention (removed from the compiler's named-signal catalog by this WORK) and the "never as an implicit broadcast to nested instances" clause.
+- `game/language/v1/program/invariant.go` - removed "spawn or cancel child workflows"/"child workflow"/"child-failure or child-cancellation signal" from three doc-comment lists (replaced with the still-live "ask group" equivalents where a like-for-like existed), and replaced the stale "every child workflow has exactly one parent..." structural-invariant example with an accurate one (occupied-slot/single-instance invariants).
+- `game/language/v1/program/projection.go` - same "spawn or cancel child workflows" -> "open or cancel ask groups" fix in its purity list.
+- `game/language/v1/program/random.go` - removed "child workflows and task-group children draw from the same stream as their parent" (no longer a meaningful distinction with one instance) and "passed to a child workflow" from the random-result-destination list.
+- `game/language/v1/program/list_query_expression.go` - "spawning task-group children" removed from ForEachOperation's example use list.
+- `game/language/v1/program/match.go` - "spawning children" replaced with "opening ask groups" in MatchOperation's example operation list.
+- `game/language/v1/program/expression.go` - "spawning workflows" removed from CallExpression's prohibited-use list (no such operation exists any more).
+- `game/language/v1/engine/IMPLEMENTATION.md` - corrected `CheckSnapshotCompatibility`'s description (it is two flat checks against the one root instance, not "a recursive walk of the snapshot's whole instance tree").
+- `game/language/v1/engine/internal/runtime/step.go` - `ErrSignalRejected`'s doc comment no longer describes `signal.Path` addressing or "recursive cleanup"; restated as "a signal delivered after the one workflow instance has already terminated."
+- `game/README.md`'s Failure Classification section - "workflow depth" removed from the safety-limit-violation example list (replaced with still-live `Limits` fields: execution budget/loop iteration/active interaction slot count).
+- `game/language/v1/program/internal/codec/execution_test.go` - a section-header comment ("ask-group and task-group completion policies") corrected; only an ask-group test exists under it.
+
+Re-verified after this pass: `go build ./...`, `go vet ./...` clean; `go test ./game/... -count=1` against real Postgres - identical result to every prior pass (only the known pre-existing out-of-scope `getgame` defect fails; `game/session/...` passes in full).
+
+Ready for independent review:
+YES.
+
+### Second Independent Re-Review (2026-09-24)
+
+Verdict: CHANGES_REQUIRED. Confirmed every fix from the prior pass, confirmed Acceptance Criteria/Constraints otherwise satisfied, ran a broad fresh sweep (identifiers and comment prose, across both `.go` and `.md`) - found five more one-phrase stale mentions in `program` root doc comments, all a continuation of the exact class of defect already being fixed (a capability list naming "spawn a workflow"/"spawn workflows" as something an operation-less context cannot do, implying it exists elsewhere; two "parent cancellation"/"parent termination" mentions). All applied in this same pass, each a one-phrase removal with no other wording change:
+
+- `game/language/v1/program/workflow.go` - `GlobalTransitions`' doc comment: removed "parent cancellation" from its cross-cutting-concerns example list.
+- `game/language/v1/program/ask_group.go` - `CancelAskGroupOperation`'s doc comment: removed "preparing for parent termination" from its intended-use list.
+- `game/language/v1/program/function.go` - `FunctionDeclaration`'s doc comment: removed "spawn a workflow" from its cannot-do list.
+- `game/language/v1/program/list_query_expression.go:27` - the list-query purity doc comment: removed "spawn workflows" (a second, earlier occurrence in the same file than the one the first re-review already fixed at line 55).
+- `game/language/v1/program/operation.go` - `Block`'s doc comment: removed "spawn a workflow" from its synchronous-operations list.
+
+Two NON_BLOCKING observations from this pass were left unapplied, per the protocol (NON_BLOCKING suggestions do not automatically become current scope): `engine/commit.go`'s `Trace` doc comment saying it explains "which instance and transition were selected" (harmless with one instance, mildly implies more than one could exist); `program/workflow.go`/`program/timer.go`'s "each instance of the enclosing workflow" phrasing (not wrong - a declaration is still per-instance - but could read more plainly once WORK-0025 revisits these docs anyway).
+
+Re-verified after this pass: `go build ./...`, `go vet ./...` clean; a targeted grep for the exact fixed phrases (`spawn (a|the) workflow`, `parent cancellation`, `parent termination`, `preparing for parent`) across all `.go` files returns zero hits; `go test ./game/... -count=1` against real Postgres - identical result to every prior pass (only the known pre-existing out-of-scope `getgame` defect fails; `game/session/...` passes in full).
 
 Ready for independent review:
 YES.

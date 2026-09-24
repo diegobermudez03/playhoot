@@ -2,7 +2,7 @@
 
 Status: ACTIVE
 Created: 2026-09-24
-Last updated: 2026-09-24
+Last updated: 2026-09-24 (WORK-0024 closed DONE)
 
 ## Goal
 
@@ -18,14 +18,15 @@ Implement `game/docs/decisions/GAME-ADR-0026-flat-workflow-execution-model-and-k
 
 ## Current Work
 
-- **WORK-0024** (Remove Child Workflow and Task Group) - IMPLEMENTING, implementation complete and self-reported ready for independent review (see its own Completion Record). Not yet DONE.
-- WORK-0025/0026/0027 are PLANNED - each is drafted for real (design filled in, moved to DRAFT) once the WORK immediately before it is READY or DONE, matching this repository's established just-in-time drafting practice (see `session-runtime-v1`'s own PROJECT.md for precedent).
+- **WORK-0024** (Remove Child Workflow and Task Group) - DONE (2026-09-24). Three independent review passes were needed before a clean APPROVED state (each found a shrinking set of stale documentation/doc-comment references the previous pass's narrower sweep missed; no code-behavior defect beyond the original implementation was ever found). The one DECISION_REQUIRED finding (a forced, verified-behavior-preserving Session Runtime edit, plus a resulting untested `MaxSteps` bound) was resolved by explicit human decision, non-materially - see WORK-0024's own Completion Record.
+- **WORK-0025** (Keyed Question/Ask Group/Presentation Slots) is next - PLANNED, not yet drafted for real.
+- WORK-0026/0027 remain PLANNED - each is drafted for real (design filled in, moved to DRAFT) once the WORK immediately before it is READY or DONE, matching this repository's established just-in-time drafting practice (see `session-runtime-v1`'s own PROJECT.md for precedent).
 
 ## Work
 
 | Order | Work | Status |
 |------:|------|--------|
-| 1 | WORK-0024 — Remove Child Workflow and Task Group | IMPLEMENTING |
+| 1 | WORK-0024 — Remove Child Workflow and Task Group | DONE |
 | 2 | WORK-0025 — Keyed Question/Ask Group/Presentation Slots | PLANNED |
 | 3 | WORK-0026 — Engine-Owned Interaction Addressing (`InteractionID`, unified answer signal, `Kind`) | PLANNED |
 | 4 | WORK-0027 — Session Runtime Interaction-Addressing Rework | PLANNED |

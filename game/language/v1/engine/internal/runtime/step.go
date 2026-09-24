@@ -632,13 +632,11 @@ func Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal, limi
 // to each should switch on Code (or use errors.Is against these
 // sentinels) rather than treating "rejected" as one category:
 //
-//   - ErrSignalRejected means the addressing was fine (the targeted
-//     instance exists and is still running) but nothing in that
-//     instance's compiled Workflow was ever willing to react to this
-//     signal at all — no transition's SignalSource matched it, or the
-//     one that matched had a false Guard. This is the outcome for a
-//     signal.Path naming an instance that no longer exists (already
-//     terminated, or discarded by recursive cleanup) too.
+//   - ErrSignalRejected means nothing in the instance's compiled
+//     Workflow was ever willing to react to this signal at all — no
+//     transition's SignalSource matched it, or the one that matched had
+//     a false Guard. This is also the outcome for a signal delivered
+//     after the one workflow instance has already terminated.
 //   - ErrInputRejected means addressing AND matching both succeeded —
 //     something was clearly willing to react to a signal of this
 //     shape — but authoritative, kind-specific validation rejected the

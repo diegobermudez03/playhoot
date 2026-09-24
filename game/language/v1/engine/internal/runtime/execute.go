@@ -784,4 +784,3 @@ func (ctx *execContext) execEmitEffect(o engine.EmitEffectOperation, scope engin
 	ctx.outputs = append(ctx.outputs, engine.EmitEffectOutput{Effect: o.Effect, Recipients: recipients, Arguments: args})
 	return nil
 }
-

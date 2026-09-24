@@ -179,8 +179,8 @@ func (FinalizeAskGroupOperation) isOperation() {}
 // named slot without producing an AskGroupCompletedSignalSource signal.
 //
 // It is intended for workflow cleanup, participant or session
-// cancellation, abandoning a phase, preparing for parent termination, or
-// superseding the interaction through explicit game logic. When
+// cancellation, abandoning a phase, or superseding the interaction
+// through explicit game logic. When
 // cancelling a collecting group, every pending question closes, every
 // accepted response so far is discarded, and the slot is cleared — no
 // completion signal is produced.
