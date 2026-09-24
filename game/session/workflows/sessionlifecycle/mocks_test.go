@@ -379,33 +379,33 @@ func (mr *MockstartRepoAPIMockRecorder) CreateInteraction(ctx, tx, sessionID, se
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateInteraction", reflect.TypeOf((*MockstartRepoAPI)(nil).CreateInteraction), ctx, tx, sessionID, sessionActorID, kind, enginePath, engineSlot, interactionPayload, openedByTurnID)
 }
 
-// CreateRuntimeStep mocks base method.
-func (m *MockstartRepoAPI) CreateRuntimeStep(ctx context.Context, tx *gorm.DB, runtimeTurnID uint, stepIndex int, commitPayload []byte) error {
+// CreateRuntimeStart mocks base method.
+func (m *MockstartRepoAPI) CreateRuntimeStart(ctx context.Context, tx *gorm.DB, sessionID uint, seed uint64, rootParameters []byte) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateRuntimeStep", ctx, tx, runtimeTurnID, stepIndex, commitPayload)
+	ret := m.ctrl.Call(m, "CreateRuntimeStart", ctx, tx, sessionID, seed, rootParameters)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
-// CreateRuntimeStep indicates an expected call of CreateRuntimeStep.
-func (mr *MockstartRepoAPIMockRecorder) CreateRuntimeStep(ctx, tx, runtimeTurnID, stepIndex, commitPayload any) *gomock.Call {
+// CreateRuntimeStart indicates an expected call of CreateRuntimeStart.
+func (mr *MockstartRepoAPIMockRecorder) CreateRuntimeStart(ctx, tx, sessionID, seed, rootParameters any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateRuntimeStep", reflect.TypeOf((*MockstartRepoAPI)(nil).CreateRuntimeStep), ctx, tx, runtimeTurnID, stepIndex, commitPayload)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateRuntimeStart", reflect.TypeOf((*MockstartRepoAPI)(nil).CreateRuntimeStart), ctx, tx, sessionID, seed, rootParameters)
 }
 
 // CreateRuntimeTurn mocks base method.
-func (m *MockstartRepoAPI) CreateRuntimeTurn(ctx context.Context, tx *gorm.DB, sessionID uint, sequence uint64, sourceKind string, sourceInteractionID, actorID *uint, snapshotPayload []byte, snapshotFormatVersion int) (uint, error) {
+func (m *MockstartRepoAPI) CreateRuntimeTurn(ctx context.Context, tx *gorm.DB, sessionID uint, sequence uint64, sourceKind string, sourceInteractionID, actorID *uint) (uint, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateRuntimeTurn", ctx, tx, sessionID, sequence, sourceKind, sourceInteractionID, actorID, snapshotPayload, snapshotFormatVersion)
+	ret := m.ctrl.Call(m, "CreateRuntimeTurn", ctx, tx, sessionID, sequence, sourceKind, sourceInteractionID, actorID)
 	ret0, _ := ret[0].(uint)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // CreateRuntimeTurn indicates an expected call of CreateRuntimeTurn.
-func (mr *MockstartRepoAPIMockRecorder) CreateRuntimeTurn(ctx, tx, sessionID, sequence, sourceKind, sourceInteractionID, actorID, snapshotPayload, snapshotFormatVersion any) *gomock.Call {
+func (mr *MockstartRepoAPIMockRecorder) CreateRuntimeTurn(ctx, tx, sessionID, sequence, sourceKind, sourceInteractionID, actorID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateRuntimeTurn", reflect.TypeOf((*MockstartRepoAPI)(nil).CreateRuntimeTurn), ctx, tx, sessionID, sequence, sourceKind, sourceInteractionID, actorID, snapshotPayload, snapshotFormatVersion)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateRuntimeTurn", reflect.TypeOf((*MockstartRepoAPI)(nil).CreateRuntimeTurn), ctx, tx, sessionID, sequence, sourceKind, sourceInteractionID, actorID)
 }
 
 // FindActor mocks base method.
@@ -575,33 +575,19 @@ func (mr *MockanswerInteractionRepoAPIMockRecorder) CreateInteraction(ctx, tx, s
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateInteraction", reflect.TypeOf((*MockanswerInteractionRepoAPI)(nil).CreateInteraction), ctx, tx, sessionID, sessionActorID, kind, enginePath, engineSlot, interactionPayload, openedByTurnID)
 }
 
-// CreateRuntimeStep mocks base method.
-func (m *MockanswerInteractionRepoAPI) CreateRuntimeStep(ctx context.Context, tx *gorm.DB, runtimeTurnID uint, stepIndex int, commitPayload []byte) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateRuntimeStep", ctx, tx, runtimeTurnID, stepIndex, commitPayload)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// CreateRuntimeStep indicates an expected call of CreateRuntimeStep.
-func (mr *MockanswerInteractionRepoAPIMockRecorder) CreateRuntimeStep(ctx, tx, runtimeTurnID, stepIndex, commitPayload any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateRuntimeStep", reflect.TypeOf((*MockanswerInteractionRepoAPI)(nil).CreateRuntimeStep), ctx, tx, runtimeTurnID, stepIndex, commitPayload)
-}
-
 // CreateRuntimeTurn mocks base method.
-func (m *MockanswerInteractionRepoAPI) CreateRuntimeTurn(ctx context.Context, tx *gorm.DB, sessionID uint, sequence uint64, sourceKind string, sourceInteractionID, actorID *uint, snapshotPayload []byte, snapshotFormatVersion int) (uint, error) {
+func (m *MockanswerInteractionRepoAPI) CreateRuntimeTurn(ctx context.Context, tx *gorm.DB, sessionID uint, sequence uint64, sourceKind string, sourceInteractionID, actorID *uint) (uint, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateRuntimeTurn", ctx, tx, sessionID, sequence, sourceKind, sourceInteractionID, actorID, snapshotPayload, snapshotFormatVersion)
+	ret := m.ctrl.Call(m, "CreateRuntimeTurn", ctx, tx, sessionID, sequence, sourceKind, sourceInteractionID, actorID)
 	ret0, _ := ret[0].(uint)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // CreateRuntimeTurn indicates an expected call of CreateRuntimeTurn.
-func (mr *MockanswerInteractionRepoAPIMockRecorder) CreateRuntimeTurn(ctx, tx, sessionID, sequence, sourceKind, sourceInteractionID, actorID, snapshotPayload, snapshotFormatVersion any) *gomock.Call {
+func (mr *MockanswerInteractionRepoAPIMockRecorder) CreateRuntimeTurn(ctx, tx, sessionID, sequence, sourceKind, sourceInteractionID, actorID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateRuntimeTurn", reflect.TypeOf((*MockanswerInteractionRepoAPI)(nil).CreateRuntimeTurn), ctx, tx, sessionID, sequence, sourceKind, sourceInteractionID, actorID, snapshotPayload, snapshotFormatVersion)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateRuntimeTurn", reflect.TypeOf((*MockanswerInteractionRepoAPI)(nil).CreateRuntimeTurn), ctx, tx, sessionID, sequence, sourceKind, sourceInteractionID, actorID)
 }
 
 // FindActor mocks base method.
@@ -634,6 +620,36 @@ func (mr *MockanswerInteractionRepoAPIMockRecorder) FindInteractionByUUID(ctx, t
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindInteractionByUUID", reflect.TypeOf((*MockanswerInteractionRepoAPI)(nil).FindInteractionByUUID), ctx, tx, interactionUUID)
 }
 
+// GetInteractionByID mocks base method.
+func (m *MockanswerInteractionRepoAPI) GetInteractionByID(ctx context.Context, tx *gorm.DB, interactionID uint) (*repo.Interaction, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetInteractionByID", ctx, tx, interactionID)
+	ret0, _ := ret[0].(*repo.Interaction)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetInteractionByID indicates an expected call of GetInteractionByID.
+func (mr *MockanswerInteractionRepoAPIMockRecorder) GetInteractionByID(ctx, tx, interactionID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetInteractionByID", reflect.TypeOf((*MockanswerInteractionRepoAPI)(nil).GetInteractionByID), ctx, tx, interactionID)
+}
+
+// GetRuntimeStart mocks base method.
+func (m *MockanswerInteractionRepoAPI) GetRuntimeStart(ctx context.Context, tx *gorm.DB, sessionID uint) (*repo.RuntimeStart, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetRuntimeStart", ctx, tx, sessionID)
+	ret0, _ := ret[0].(*repo.RuntimeStart)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetRuntimeStart indicates an expected call of GetRuntimeStart.
+func (mr *MockanswerInteractionRepoAPIMockRecorder) GetRuntimeStart(ctx, tx, sessionID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRuntimeStart", reflect.TypeOf((*MockanswerInteractionRepoAPI)(nil).GetRuntimeStart), ctx, tx, sessionID)
+}
+
 // GetRuntimeTurn mocks base method.
 func (m *MockanswerInteractionRepoAPI) GetRuntimeTurn(ctx context.Context, tx *gorm.DB, turnID uint) (*repo.RuntimeTurn, error) {
 	m.ctrl.T.Helper()
@@ -647,6 +663,21 @@ func (m *MockanswerInteractionRepoAPI) GetRuntimeTurn(ctx context.Context, tx *g
 func (mr *MockanswerInteractionRepoAPIMockRecorder) GetRuntimeTurn(ctx, tx, turnID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRuntimeTurn", reflect.TypeOf((*MockanswerInteractionRepoAPI)(nil).GetRuntimeTurn), ctx, tx, turnID)
+}
+
+// ListRuntimeTurns mocks base method.
+func (m *MockanswerInteractionRepoAPI) ListRuntimeTurns(ctx context.Context, tx *gorm.DB, sessionID uint) ([]repo.RuntimeTurnRecord, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListRuntimeTurns", ctx, tx, sessionID)
+	ret0, _ := ret[0].([]repo.RuntimeTurnRecord)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListRuntimeTurns indicates an expected call of ListRuntimeTurns.
+func (mr *MockanswerInteractionRepoAPIMockRecorder) ListRuntimeTurns(ctx, tx, sessionID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListRuntimeTurns", reflect.TypeOf((*MockanswerInteractionRepoAPI)(nil).ListRuntimeTurns), ctx, tx, sessionID)
 }
 
 // ResolveSessionForInteraction mocks base method.

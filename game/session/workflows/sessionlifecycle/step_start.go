@@ -22,10 +22,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// runtimeTurnSnapshotFormatVersion is session_runtime_turns.
-// snapshot_format_version's starting value.
-const runtimeTurnSnapshotFormatVersion = 1
-
 // startSourceKind is the source_kind label persisted on Start's own
 // RuntimeTurn. There is no exhaustive enum of source_kind values yet, so
 // this is a plain string.
@@ -52,8 +48,8 @@ type startRepoAPI interface {
 	FindActor(ctx context.Context, tx *gorm.DB, sessionID uint, userUUID string) (*internalrepo.Actor, error)
 	ListActiveParticipantsForRoster(ctx context.Context, tx *gorm.DB, sessionID uint) ([]internalrepo.RosterParticipant, error)
 	SetSessionRunning(ctx context.Context, tx *gorm.DB, sessionID uint, startedAt time.Time) error
-	CreateRuntimeTurn(ctx context.Context, tx *gorm.DB, sessionID uint, sequence uint64, sourceKind string, sourceInteractionID *uint, actorID *uint, snapshotPayload []byte, snapshotFormatVersion int) (uint, error)
-	CreateRuntimeStep(ctx context.Context, tx *gorm.DB, runtimeTurnID uint, stepIndex int, commitPayload []byte) error
+	CreateRuntimeTurn(ctx context.Context, tx *gorm.DB, sessionID uint, sequence uint64, sourceKind string, sourceInteractionID *uint, actorID *uint) (uint, error)
+	CreateRuntimeStart(ctx context.Context, tx *gorm.DB, sessionID uint, seed uint64, rootParameters []byte) error
 	SetCurrentTurn(ctx context.Context, tx *gorm.DB, sessionID uint, currentTurnID uint) error
 }
 
@@ -229,11 +225,13 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 		players[i] = engine.UserValue{ID: engine.UserID(strconv.FormatUint(uint64(p.ActorID), 10))}
 	}
 
+	seed := drawSeed()
+	rootParameters := map[string]engine.Value{
+		"players": engine.ListValue{ElementType: engine.UserType{}, Elements: players},
+	}
 	snapshot, startSignal, err := engineservice.NewSnapshot(compiledProgram, engine.InitializationInput{
-		RootParameters: map[string]engine.Value{
-			"players": engine.ListValue{ElementType: engine.UserType{}, Elements: players},
-		},
-		Seed: drawSeed(),
+		RootParameters: rootParameters,
+		Seed:           seed,
 	})
 	if err != nil {
 		// Everything downstream of a successful compile that fails is
@@ -246,22 +244,16 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 		return m.terminalizeStartFatal(ctx, tx, lockedSession, requestID, now, session.TerminalReasonRuntimeExecutionFailed)
 	}
 
-	snapshotPayload, err := engineservice.EncodeSnapshot(drainResult.Snapshot)
+	encodedRootParameters, err := encodeRootParameters(rootParameters)
 	if err != nil {
-		return StartResult{}, fmt.Errorf("encoding start snapshot: %s", err)
+		return StartResult{}, fmt.Errorf("encoding start root parameters: %s", err)
 	}
-	turnID, err := m.startRepo.CreateRuntimeTurn(ctx, tx, lockedSession.ID, 1, startSourceKind, nil, nil, snapshotPayload, runtimeTurnSnapshotFormatVersion)
+	turnID, err := m.startRepo.CreateRuntimeTurn(ctx, tx, lockedSession.ID, 1, startSourceKind, nil, nil)
 	if err != nil {
 		return StartResult{}, err
 	}
-	for i, step := range drainResult.Steps {
-		stepPayload, err := json.Marshal(step)
-		if err != nil {
-			return StartResult{}, fmt.Errorf("encoding start runtime step %d: %s", i, err)
-		}
-		if err := m.startRepo.CreateRuntimeStep(ctx, tx, turnID, i, stepPayload); err != nil {
-			return StartResult{}, err
-		}
+	if err := m.startRepo.CreateRuntimeStart(ctx, tx, lockedSession.ID, seed, encodedRootParameters); err != nil {
+		return StartResult{}, err
 	}
 	if err := captureInteractions(ctx, tx, m.startRepo, compiledProgram, lockedSession.ID, turnID, drainResult.Steps); err != nil {
 		return StartResult{}, err
@@ -293,8 +285,8 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 // completed - and replayable - outcome, so a Start that already fatally
 // terminalized the Session is never re-attempted on a same-token retry.
 // started_at is left at its canonical NULL - the Session never actually
-// ran. No session_runtime_turns/steps/state row is written, and no
-// runtime-failure diagnostic entity exists yet.
+// ran. No session_runtime_turns/session_runtime_starts row is written, and
+// no runtime-failure diagnostic entity exists yet.
 func (m *Manager) terminalizeStartFatal(ctx context.Context, tx *gorm.DB, lockedSession *sessionlock.Session, requestID uint, terminalAt time.Time, terminalReason string) (StartResult, error) {
 	if err := m.startRepo.SetSessionTerminal(ctx, tx, lockedSession.ID, terminalAt, terminalReason); err != nil {
 		return StartResult{}, err

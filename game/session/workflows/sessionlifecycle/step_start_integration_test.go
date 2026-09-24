@@ -51,9 +51,9 @@ func TestManagerStart_Integration(t *testing.T) {
 		require.Equal(t, uint64(1), turn.Sequence)
 		require.NotZero(t, turn.ID)
 
-		var stepCount int64
-		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_steps WHERE runtime_turn_id = ?`, turn.ID).Scan(&stepCount).Error)
-		require.Equal(t, int64(1), stepCount)
+		var startCount int64
+		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_starts WHERE session_id = ?`, fx.SessionID).Scan(&startCount).Error)
+		require.Equal(t, int64(1), startCount, "Start's Seed/RootParameters must be durably captured atomically with Turn 1")
 
 		var currentTurnID uint
 		require.NoError(t, db.Raw(`SELECT current_turn_id FROM sessions WHERE id = ?`, fx.SessionID).Scan(&currentTurnID).Error)

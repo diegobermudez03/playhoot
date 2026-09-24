@@ -67,6 +67,27 @@ func (r *Repo) FindInteractionByUUID(ctx context.Context, tx *gorm.DB, interacti
 	return &row, nil
 }
 
+// GetInteractionByID loads interactionID's persisted facts by internal id -
+// the id a RuntimeTurn's own source_interaction_id references - for
+// rebuilding the engine.Signal that interaction's response drove, during
+// replay reconstruction.
+func (r *Repo) GetInteractionByID(ctx context.Context, tx *gorm.DB, interactionID uint) (*Interaction, error) {
+	var row Interaction
+	result := tx.WithContext(ctx).Raw(`
+		SELECT id, uuid, session_id, session_actor_id, kind, engine_path, engine_slot,
+			response_payload, state, opened_by_turn_id, closed_by_turn_id
+		FROM session_interactions
+		WHERE id = ?
+	`, interactionID).Scan(&row)
+	if result.Error != nil {
+		return nil, fmt.Errorf("getting interaction: %s", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return nil, nil
+	}
+	return &row, nil
+}
+
 type interactionInsert struct {
 	ID                 uint   `gorm:"column:id"`
 	UUID               string `gorm:"column:uuid"`

@@ -2,7 +2,6 @@ package sessionlifecycle
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -33,8 +32,10 @@ type answerInteractionRepoAPI interface {
 	FindInteractionByUUID(ctx context.Context, tx *gorm.DB, interactionUUID string) (*internalrepo.Interaction, error)
 	FindActor(ctx context.Context, tx *gorm.DB, sessionID uint, userUUID string) (*internalrepo.Actor, error)
 	GetRuntimeTurn(ctx context.Context, tx *gorm.DB, turnID uint) (*internalrepo.RuntimeTurn, error)
-	CreateRuntimeTurn(ctx context.Context, tx *gorm.DB, sessionID uint, sequence uint64, sourceKind string, sourceInteractionID *uint, actorID *uint, snapshotPayload []byte, snapshotFormatVersion int) (uint, error)
-	CreateRuntimeStep(ctx context.Context, tx *gorm.DB, runtimeTurnID uint, stepIndex int, commitPayload []byte) error
+	GetRuntimeStart(ctx context.Context, tx *gorm.DB, sessionID uint) (*internalrepo.RuntimeStart, error)
+	ListRuntimeTurns(ctx context.Context, tx *gorm.DB, sessionID uint) ([]internalrepo.RuntimeTurnRecord, error)
+	GetInteractionByID(ctx context.Context, tx *gorm.DB, interactionID uint) (*internalrepo.Interaction, error)
+	CreateRuntimeTurn(ctx context.Context, tx *gorm.DB, sessionID uint, sequence uint64, sourceKind string, sourceInteractionID *uint, actorID *uint) (uint, error)
 	SetCurrentTurn(ctx context.Context, tx *gorm.DB, sessionID uint, currentTurnID uint) error
 	CloseAnsweredInteraction(ctx context.Context, tx *gorm.DB, interactionID uint, responsePayload []byte, closedByTurnID uint) error
 	SetSessionTerminal(ctx context.Context, tx *gorm.DB, sessionID uint, terminalAt time.Time, terminalReason string) error
@@ -149,10 +150,6 @@ func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessio
 		monitoring.Alert(ctx, "session current_turn_id does not resolve to a runtime turn")
 		return AnswerInteractionResult{}, fmt.Errorf("session %d current_turn_id %d does not resolve to a runtime turn", lockedSession.ID, *lockedSession.CurrentTurnID)
 	}
-	snapshot, err := engineservice.DecodeSnapshot(currentTurn.SnapshotPayload)
-	if err != nil {
-		return AnswerInteractionResult{}, fmt.Errorf("decoding current runtime turn snapshot: %s", err)
-	}
 
 	now := time.Now().UTC()
 
@@ -176,6 +173,14 @@ func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessio
 			lockedSession.UUID, lockedSession.GameDefinitionUUID,
 		))
 		return m.terminalizeAnswerInteractionFatal(ctx, tx, lockedSession, now, session.TerminalReasonRuntimeStateInvalid)
+	}
+
+	// Current authoritative Runtime state is never loaded from a persisted
+	// Snapshot (none exists) - it is deterministically reconstructed by
+	// replaying every durable cause committed so far.
+	snapshot, err := m.reconstructCurrentSnapshot(ctx, tx, compiledProgram, lockedSession.ID)
+	if err != nil {
+		return AnswerInteractionResult{}, fmt.Errorf("reconstructing current runtime state: %s", err)
 	}
 
 	path, err := decodeEnginePath(interaction.EnginePath)
@@ -207,23 +212,10 @@ func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessio
 		return m.terminalizeAnswerInteractionFatal(ctx, tx, lockedSession, now, session.TerminalReasonRuntimeExecutionFailed)
 	}
 
-	snapshotPayload, err := engineservice.EncodeSnapshot(drainResult.Snapshot)
-	if err != nil {
-		return AnswerInteractionResult{}, fmt.Errorf("encoding answer interaction snapshot: %s", err)
-	}
 	actorID := actor.ID
-	turnID, err := m.answerInteractionRepo.CreateRuntimeTurn(ctx, tx, lockedSession.ID, currentTurn.Sequence+1, answerInteractionSourceKind, &interaction.ID, &actorID, snapshotPayload, runtimeTurnSnapshotFormatVersion)
+	turnID, err := m.answerInteractionRepo.CreateRuntimeTurn(ctx, tx, lockedSession.ID, currentTurn.Sequence+1, answerInteractionSourceKind, &interaction.ID, &actorID)
 	if err != nil {
 		return AnswerInteractionResult{}, err
-	}
-	for i, step := range drainResult.Steps {
-		stepPayload, err := json.Marshal(step)
-		if err != nil {
-			return AnswerInteractionResult{}, fmt.Errorf("encoding answer interaction runtime step %d: %s", i, err)
-		}
-		if err := m.answerInteractionRepo.CreateRuntimeStep(ctx, tx, turnID, i, stepPayload); err != nil {
-			return AnswerInteractionResult{}, err
-		}
 	}
 	// engineservice.Step clears an accepted answer's own slot internally,
 	// before the transition's own operations run, and produces no Output

@@ -24,26 +24,14 @@ const MaxSteps = 20
 var ErrStepBoundExceeded = errors.New("runtimeturn: exceeded max steps per runtime turn")
 
 // StepTrace is one actual engine.Step call's outcome within a drained
-// RuntimeTurn.
-//
-// Workflow/TransitionName/StateBefore/StateAfter/OperationCount are
-// session_runtime_steps.commit_payload's persisted shape - technical
-// execution trace only, never authoritative gameplay - so they marshal
-// with encoding/json directly. Path and Outputs are not part
-// of that persisted shape (both carry engine.Value-typed data requiring
-// engineservice.EncodeValue, not plain encoding/json); they exist for a
-// caller that needs this Step's declarative Outputs against the instance
-// Path that produced them - session_interactions capture, in particular -
-// so both are excluded from JSON with json:"-".
+// RuntimeTurn, held only in memory for the duration of that Turn's
+// processing - a caller that needs this Step's declarative Outputs against
+// the instance Workflow/Path that produced them, session_interactions
+// capture (interaction_capture.go) in particular.
 type StepTrace struct {
-	Workflow       string `json:"workflow"`
-	TransitionName string `json:"transition_name"`
-	StateBefore    string `json:"state_before"`
-	StateAfter     string `json:"state_after"`
-	OperationCount int    `json:"operation_count"`
-
-	Path    []engine.PathStep `json:"-"`
-	Outputs []engine.Output   `json:"-"`
+	Workflow string
+	Path     []engine.PathStep
+	Outputs  []engine.Output
 }
 
 // Result is Drain's outcome.
@@ -100,13 +88,9 @@ func Drain(p engine.Program, snapshot engine.Snapshot, initialSignal engine.Sign
 		}
 		current = commit.Snapshot
 		steps = append(steps, StepTrace{
-			Workflow:       commit.Trace.Workflow,
-			TransitionName: commit.Trace.TransitionName,
-			StateBefore:    commit.Trace.StateBefore,
-			StateAfter:     commit.Trace.StateAfter,
-			OperationCount: commit.Trace.OperationCount,
-			Path:           commit.Trace.Path,
-			Outputs:        commit.Outputs,
+			Workflow: commit.Trace.Workflow,
+			Path:     commit.Trace.Path,
+			Outputs:  commit.Outputs,
 		})
 		pending = append(pending, commit.InternalSignals...)
 	}

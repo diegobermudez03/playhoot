@@ -65,7 +65,7 @@ classDiagram
 
 ## Session Runtime Tables
 
-Status: this replaces the pre-Slice-1 `sessions`/`session_players`/`session_states`/`join_codes` shape - see WORK-0001's Data/Migration Impact. Slice 2 (WORK-0003) added `session_runtime_turns`/`session_runtime_steps` and `sessions.current_turn_id` (GAME-ADR-0023 - a logical, non-DB-enforced pointer to the current authoritative RuntimeTurn, colocated on `sessions` rather than a separate `session_runtime_state` table). Slice 3 (WORK-0004) added `session_interactions`. The full accepted design (including the not-yet-implemented timer/failure tables) remains recorded in `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md`.
+Status: this replaces the pre-Slice-1 `sessions`/`session_players`/`session_states`/`join_codes` shape - see WORK-0001's Data/Migration Impact. Slice 2 (WORK-0003) added `session_runtime_turns`/`session_runtime_steps` and `sessions.current_turn_id` (GAME-ADR-0023 - a logical, non-DB-enforced pointer to the current authoritative RuntimeTurn, colocated on `sessions` rather than a separate `session_runtime_state` table). Slice 3 (WORK-0004) added `session_interactions`. WORK-0019 (replay-first persistence, GAME-ADR-0024) then removed `session_runtime_turns.snapshot_payload`/`snapshot_format_version` and `session_runtime_steps` in full, and added `session_runtime_starts` (Start's durable `Seed`/`RootParameters`) and `session_cause_events` (an unpopulated satellite table for a future RuntimeTurn cause with no existing normalized home) plus `session_runtime_turns.source_cause_event_id` - current/historical Runtime state is derived by deterministic replay, never loaded from a persisted Snapshot. The full accepted design (including the not-yet-implemented timer/failure tables) remains recorded in `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md`.
 
 ```mermaid
 classDiagram
@@ -124,16 +124,24 @@ classDiagram
         source_kind
         source_interaction_id
         source_timer_obligation_id
+        source_cause_event_id
         actor_id
-        snapshot_payload
-        snapshot_format_version
         created_at
     }
-    class session_runtime_steps {
+    class session_runtime_starts {
         id
+        session_id
+        seed
+        root_parameters
+        created_at
+    }
+    class session_cause_events {
+        id
+        session_id
         runtime_turn_id
-        step_index
-        commit_payload
+        cause_kind
+        actor_id
+        payload
         created_at
     }
     class session_interactions {
@@ -160,7 +168,10 @@ classDiagram
     sessions "0..1" --> "*" session_requests : "session_requests.session_id -> sessions.id"
     sessions "1" --> "*" session_runtime_turns : "session_runtime_turns.session_id -> sessions.id"
     session_runtime_turns "0..1" --> "*" sessions : "sessions.current_turn_id -> session_runtime_turns.id (logical, non-DB-enforced)"
-    session_runtime_turns "1" --> "*" session_runtime_steps : "session_runtime_steps.runtime_turn_id -> session_runtime_turns.id"
+    sessions "0..1" --> "1" session_runtime_starts : "session_runtime_starts.session_id -> sessions.id (one row per Session that completes Start)"
+    sessions "1" --> "*" session_cause_events : "session_cause_events.session_id -> sessions.id (unpopulated - no cause using it is implemented yet)"
+    session_runtime_turns "0..1" --> "0..1" session_cause_events : "session_cause_events.runtime_turn_id -> session_runtime_turns.id (1:1, unpopulated)"
+    session_cause_events "0..1 causes" --> "*" session_runtime_turns : "session_runtime_turns.source_cause_event_id -> session_cause_events.id (unpopulated)"
     sessions "1" --> "*" session_interactions : "session_interactions.session_id -> sessions.id"
     session_actors "1" --> "*" session_interactions : "session_interactions.session_actor_id -> session_actors.id"
     session_runtime_turns "1 opens" --> "*" session_interactions : "session_interactions.opened_by_turn_id -> session_runtime_turns.id"
@@ -168,7 +179,7 @@ classDiagram
     session_interactions "0..1 causes" --> "*" session_runtime_turns : "session_runtime_turns.source_interaction_id -> session_interactions.id"
 ```
 
-`phase` is `LOBBY | RUNNING | TERMINAL` in the currently implemented behavior (Create/Join/Leave/Start/AnswerInteraction). `started_at` is set only once Start commits a Session's first RuntimeTurn; it remains `NULL` for a Session still in `LOBBY` or one that fatally terminalized before ever running (`terminal_reason` = `RUNTIME_STATE_INVALID` or `RUNTIME_EXECUTION_FAILED`). `session_runtime_turns.source_interaction_id`/`actor_id` are populated by AnswerInteraction's own caused Turn; `source_timer_obligation_id` is always `NULL` in the currently implemented behavior (Slice 5 populates it for its own cause). `sequence` currently reaches 2 for a Session with one answered interaction (Start's first Turn, then AnswerInteraction's); no later slice that would advance it further is implemented yet. `session_interactions.kind` is `QUESTION | ASK_GROUP`; `state` is `ACTIVE | CLOSED | TERMINATED` in this codebase's own chosen vocabulary (`CLOSED` for ordinary Turn-produced closure, `TERMINATED` for this slice's own narrow terminal-cleanup closure - `closed_by_turn_id` `NULL` + `closure_reason = SESSION_TERMINATED`); GAME-ADR-0019 leaves the exact enum naming an implementation-planning detail. `engine_path`/`interaction_payload`/`response_payload` are JSONB, encoding `engine.Value`-typed data through `engineservice.EncodeValue`/`DecodeValue`, never plain `encoding/json`.
+`phase` is `LOBBY | RUNNING | TERMINAL` in the currently implemented behavior (Create/Join/Leave/Start/AnswerInteraction). `started_at` is set only once Start commits a Session's first RuntimeTurn; it remains `NULL` for a Session still in `LOBBY` or one that fatally terminalized before ever running (`terminal_reason` = `RUNTIME_STATE_INVALID` or `RUNTIME_EXECUTION_FAILED`). `session_runtime_turns` carries no Snapshot of any kind (WORK-0019, GAME-ADR-0024): it is the ordered replay-input envelope only - `source_interaction_id`/`actor_id` are populated by AnswerInteraction's own caused Turn; `source_timer_obligation_id`/`source_cause_event_id` are always `NULL` in the currently implemented behavior (a future WORK populates each for its own cause). `sequence` currently reaches 2 for a Session with one answered interaction (Start's first Turn, then AnswerInteraction's); no later slice that would advance it further is implemented yet. Current authoritative Runtime state is never loaded from a persisted Snapshot - it is deterministically reconstructed by replaying pinned Game semantics plus `session_runtime_starts`' `seed`/`root_parameters` through the ordered `session_runtime_turns` log (`sessionlifecycle.reconstructCurrentSnapshot`), with no ephemeral cache of any kind. `session_runtime_starts` holds exactly one row per Session that completes Start; `seed` stores `InitializationInput.Seed`'s `uint64` bit pattern reinterpreted as a signed `BIGINT` (PostgreSQL has no unsigned 64-bit type); `root_parameters` is JSONB, encoding an `engine.Value`-typed record through `engineservice.EncodeValue`/`DecodeValue`. `session_cause_events` exists in the schema (the shared satellite table a future RuntimeTurn cause with no existing normalized home - UserIntent, SessionCancelled, UserDisconnected/UserReconnected - writes into) but is not yet populated by any implemented capability. `session_interactions.kind` is `QUESTION | ASK_GROUP`; `state` is `ACTIVE | CLOSED | TERMINATED` in this codebase's own chosen vocabulary (`CLOSED` for ordinary Turn-produced closure, `TERMINATED` for this slice's own narrow terminal-cleanup closure - `closed_by_turn_id` `NULL` + `closure_reason = SESSION_TERMINATED`); GAME-ADR-0019 leaves the exact enum naming an implementation-planning detail. `engine_path`/`interaction_payload`/`response_payload` are JSONB, encoding `engine.Value`-typed data through `engineservice.EncodeValue`/`DecodeValue`, never plain `encoding/json`.
 
 ## Relationship Types
 
@@ -187,8 +198,11 @@ Logical persisted references:
 - `join_codes.session_id -> sessions.id`
 - `session_requests.session_id -> sessions.id`
 - `session_runtime_turns.session_id -> sessions.id`
-- `session_runtime_steps.runtime_turn_id -> session_runtime_turns.id`
 - `sessions.current_turn_id -> session_runtime_turns.id` (GAME-ADR-0023)
+- `session_runtime_starts.session_id -> sessions.id` (one row per Session that completes Start)
+- `session_cause_events.session_id -> sessions.id` (unpopulated - no cause using it is implemented yet)
+- `session_cause_events.runtime_turn_id -> session_runtime_turns.id` (1:1, unpopulated)
+- `session_runtime_turns.source_cause_event_id -> session_cause_events.id` (nullable, unpopulated)
 - `session_interactions.session_id -> sessions.id`
 - `session_interactions.session_actor_id -> session_actors.id`
 - `session_interactions.opened_by_turn_id -> session_runtime_turns.id`

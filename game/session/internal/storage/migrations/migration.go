@@ -27,15 +27,22 @@ func MigrateTables(db *gorm.DB) error {
 		migration20260908000004JoinCodes(),
 		migration20260908000005SessionRequests(),
 
-		// RuntimeTurn/RuntimeStep tables and the sessions.current_turn_id
-		// pointer to the current one.
+		// session_runtime_turns (the ordered replay-input envelope every
+		// committed RuntimeTurn is recorded against) and the
+		// sessions.current_turn_id pointer to the current one.
 		migration20260919000000SessionRuntimeTurns(),
-		migration20260919000001SessionRuntimeSteps(),
 		migration20260919000002SessionsCurrentTurnID(),
 
 		// session_interactions - the durable Interaction entity a committed
 		// RuntimeTurn opens (from an engine.OpenQuestionOutput) and resolves.
 		migration20260919000003SessionInteractions(),
+
+		// Start's durable Seed/RootParameters, and the shared
+		// session_cause_events satellite table plus
+		// session_runtime_turns.source_cause_event_id for a future
+		// RuntimeTurn cause with no existing normalized home.
+		migration20260922000000SessionRuntimeStarts(),
+		migration20260922000001SessionCauseEvents(),
 	})
 
 	return migrator.Migrate()

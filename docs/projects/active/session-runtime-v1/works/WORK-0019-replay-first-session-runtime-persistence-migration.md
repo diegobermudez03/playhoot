@@ -1,8 +1,8 @@
 # WORK-0019: Replay-First Session Runtime Persistence Migration
 
-Status: READY
+Status: IMPLEMENTING
 Created: 2026-09-20
-Last status change: 2026-09-22 (HUMAN-AUTHORIZED DRAFT -> READY; all 5 Blockers resolved HUMAN-APPROVED, spec sections filled in - see Blockers section for full resolution history)
+Last status change: 2026-09-23 (READY -> IMPLEMENTING; implementation pass completed, awaiting independent review - see Completion Record)
 
 Related decisions:
 - GAME-ADR-0024 (Replay-First Session Runtime Persistence - the accepted direction this WORK implements)
@@ -145,4 +145,20 @@ Status: **ALL RESOLVED, HUMAN-APPROVED (2026-09-22)** - see each item's own Reso
 
 ## Completion Record
 
-Not yet DONE. Status: READY (human-authorized 2026-09-22). All 5 Blockers are HUMAN-APPROVED (see Blockers section) and this spec's template sections are filled in accordingly. Implementation has not started - next step is the Codebase Agent implementation/review handoff per `docs/ai/protocols/IMPLEMENTATION_REVIEW.md`.
+Not yet DONE - independent review has not been performed. Status: IMPLEMENTING (2026-09-23).
+
+Implemented: `session_runtime_turns.snapshot_payload`/`snapshot_format_version` removed (edited in place into the existing migration, per the approved Blocker 5 exception); `session_runtime_steps` removed in full (table, migration file, `CreateRuntimeStep`, both call sites, and the now-dead `StepTrace` fields that existed only to feed its persisted trace - `StepTrace.Workflow`/`Path`/`Outputs` remain, since `captureInteractions` still consumes them in memory); a new `session_runtime_starts` table durably persists Start's `Seed`/`RootParameters`, written atomically with Turn 1; a new `session_cause_events` table plus `session_runtime_turns.source_cause_event_id` exist in the schema, unpopulated (no owning capability yet); a new `reconstructCurrentSnapshot` capability (`replay.go`) deterministically rebuilds current authoritative Runtime state by replaying Start's persisted initialization through the ordered `session_runtime_turns` log, with no cache of any kind; `AnswerInteraction`'s current-state-load path now calls it instead of decoding a stored Snapshot. `Start`'s own idempotent-replay path was already snapshot-free (it replays a stored JSON outcome, never a Snapshot) and needed no change.
+
+Local implementation decisions: `session_runtime_starts.seed` stores `InitializationInput.Seed`'s `uint64` bit pattern reinterpreted as a signed `BIGINT` (PostgreSQL has no unsigned 64-bit type; the Go conversion is exact and lossless both ways); `root_parameters` is encoded by wrapping the `RootParameters` map in a nameless `engine.RecordValue`, the same technique `interaction_capture.go` already uses for `OpenQuestionOutput.Arguments`; `session_cause_events.runtime_turn_id` and `session_runtime_starts.session_id` each carry a unique index enforcing the 1:1 relationship the design describes, even though nothing populates either yet. Following direct human feedback during implementation, `reconstructCurrentSnapshot`/`loadReplaySignal` were changed from standalone functions taking a repository interface as a parameter into `*Manager` methods using its own `answerInteractionRepo` field, and the purely computational replay step (building an `engine.Signal` from an already-fetched interaction) was split out into a genuinely pure helper, `buildAnswerSignal` - matching this package's existing convention (`runtimeturn.Drain`) of keeping deterministic computation free of any dependency capable of external-world I/O.
+
+Deviations from the approved WORK: None.
+
+Discoveries: None.
+
+Verification performed: `go build ./...`, `go vet ./...`, and `gofmt -l` (changed/new files) are clean; `go test ./... -count=1` passes, including the new `TestReconstructCurrentSnapshot_Integration` (`replay_integration_test.go`), which reconstructs a two-Turn Session's state (Start opens a question, `AnswerInteraction` answers and closes it) purely from durable state and compares it against an independently-computed expected `Snapshot`, then repeats the reconstruction from two separately-constructed `Manager`s to demonstrate no reliance on any one process's memory.
+
+Known limitations: this sandbox has no reachable Postgres/Docker engine (confirmed: `docker ps` cannot reach the daemon, and `127.0.0.1:5432` refuses a connection), so every repository-integration/concurrency test - including this WORK's own new replay-reconstruction test and the existing `TestManagerStart_Integration`/`TestManagerAnswerInteraction_Integration` suites - self-skips rather than actually running against real Postgres, the same limitation recorded by every prior checkpoint in this Project's history. Real-Postgres execution of these tests remains an open verification gap before this WORK can close, exactly like every WORK before it that hit the same sandbox limitation.
+
+Documentation synchronized: `game/docs/DATA_MODEL.md` (schema diagram, relationships, and prose updated for the removed/added tables and columns), `game/CURRENT_STATE.md` (Session Runtime row updated to describe replay-based reconstruction and the new tables), `game/docs/FLOWS.md` (Start/AnswerInteraction sequence diagrams, implemented-behavior bullets, and evidence lists updated).
+
+Ready for independent review: YES, conditioned on real-Postgres verification of the (self-skipped, in this sandbox) repository-integration/concurrency tests before final closure.
