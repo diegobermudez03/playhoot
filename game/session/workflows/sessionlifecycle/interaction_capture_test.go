@@ -11,33 +11,18 @@ import (
 	"gorm.io/gorm"
 )
 
-// questionAskGroupProgram builds a minimal hand-assembled engine.Program
-// declaring one QuestionSlot and one AskGroupSlot on its "Main" workflow,
-// for testing captureInteractions' kind resolution without a real compile.
-func questionAskGroupProgram() engine.Program {
-	return engine.Program{
-		Workflows: map[string]engine.Workflow{
-			"Main": {
-				Name:          "Main",
-				QuestionSlots: []engine.QuestionSlot{{Name: "Q", Question: "PickNumber"}},
-				AskGroupSlots: []engine.AskGroupSlot{{Name: "AG", Question: "PickNumber"}},
-			},
-		},
-	}
-}
-
 // createInteractionCall/closeActiveInteractionCall record one
 // fakeInteractionCaptureRepo call, for assertions.
 type createInteractionCall struct {
 	sessionID, sessionActorID, openedByTurnID uint
-	kind, engineSlot                          string
-	enginePath, interactionPayload            []byte
+	kind                                      string
+	engineInteractionID                       uint64
+	interactionPayload                        []byte
 }
 
 type closeActiveInteractionCall struct {
 	sessionID, sessionActorID, closedByTurnID uint
-	enginePath                                []byte
-	engineSlot                                string
+	engineInteractionID                       uint64
 }
 
 // fakeInteractionCaptureRepo is a narrow, hand-rolled interactionCaptureRepoAPI
@@ -48,13 +33,13 @@ type fakeInteractionCaptureRepo struct {
 	closes  []closeActiveInteractionCall
 }
 
-func (f *fakeInteractionCaptureRepo) CreateInteraction(ctx context.Context, tx *gorm.DB, sessionID uint, sessionActorID uint, kind string, enginePath []byte, engineSlot string, interactionPayload []byte, openedByTurnID uint) (uint, error) {
-	f.creates = append(f.creates, createInteractionCall{sessionID, sessionActorID, openedByTurnID, kind, engineSlot, enginePath, interactionPayload})
+func (f *fakeInteractionCaptureRepo) CreateInteraction(ctx context.Context, tx *gorm.DB, sessionID uint, sessionActorID uint, kind string, engineInteractionID uint64, interactionPayload []byte, openedByTurnID uint) (uint, error) {
+	f.creates = append(f.creates, createInteractionCall{sessionID, sessionActorID, openedByTurnID, kind, engineInteractionID, interactionPayload})
 	return uint(len(f.creates)), nil
 }
 
-func (f *fakeInteractionCaptureRepo) CloseActiveInteraction(ctx context.Context, tx *gorm.DB, sessionID uint, enginePath []byte, engineSlot string, sessionActorID uint, closedByTurnID uint) error {
-	f.closes = append(f.closes, closeActiveInteractionCall{sessionID, sessionActorID, closedByTurnID, enginePath, engineSlot})
+func (f *fakeInteractionCaptureRepo) CloseActiveInteraction(ctx context.Context, tx *gorm.DB, sessionID uint, engineInteractionID uint64, sessionActorID uint, closedByTurnID uint) error {
+	f.closes = append(f.closes, closeActiveInteractionCall{sessionID, sessionActorID, closedByTurnID, engineInteractionID})
 	return nil
 }
 
@@ -63,30 +48,30 @@ func TestCaptureInteractions(t *testing.T) {
 		repo := &fakeInteractionCaptureRepo{}
 		steps := []runtimeturn.StepTrace{
 			{Workflow: "Main", Outputs: []engine.Output{
-				engine.OpenQuestionOutput{Slot: "Q", Recipient: engine.UserID("7"), Question: "PickNumber"},
+				engine.OpenQuestionOutput{Slot: "Q", Recipient: engine.UserID("7"), Question: "PickNumber", InteractionID: 42, Kind: engine.InteractionKindQuestion},
 			}},
 		}
 
-		err := captureInteractions(context.Background(), nil, repo, questionAskGroupProgram(), 1, 10, steps)
+		err := captureInteractions(context.Background(), nil, repo, 1, 10, steps)
 		require.NoError(t, err)
 		require.Empty(t, repo.closes)
 		require.Len(t, repo.creates, 1)
 		require.Equal(t, session.InteractionKindQuestion, repo.creates[0].kind)
 		require.Equal(t, uint(1), repo.creates[0].sessionID)
 		require.Equal(t, uint(7), repo.creates[0].sessionActorID)
-		require.Equal(t, "Q", repo.creates[0].engineSlot)
+		require.Equal(t, uint64(42), repo.creates[0].engineInteractionID)
 		require.Equal(t, uint(10), repo.creates[0].openedByTurnID)
 	})
 
-	t.Run("open_question_output_on_an_ask_group_slot_creates_an_active_ask_group_interaction", func(t *testing.T) {
+	t.Run("open_question_output_with_ask_group_kind_creates_an_active_ask_group_interaction", func(t *testing.T) {
 		repo := &fakeInteractionCaptureRepo{}
 		steps := []runtimeturn.StepTrace{
 			{Workflow: "Main", Outputs: []engine.Output{
-				engine.OpenQuestionOutput{Slot: "AG", Recipient: engine.UserID("3"), Question: "PickNumber"},
+				engine.OpenQuestionOutput{Slot: "AG", Recipient: engine.UserID("3"), Question: "PickNumber", InteractionID: 43, Kind: engine.InteractionKindAskGroup},
 			}},
 		}
 
-		err := captureInteractions(context.Background(), nil, repo, questionAskGroupProgram(), 1, 10, steps)
+		err := captureInteractions(context.Background(), nil, repo, 1, 10, steps)
 		require.NoError(t, err)
 		require.Len(t, repo.creates, 1)
 		require.Equal(t, session.InteractionKindAskGroup, repo.creates[0].kind)
@@ -96,55 +81,55 @@ func TestCaptureInteractions(t *testing.T) {
 		repo := &fakeInteractionCaptureRepo{}
 		steps := []runtimeturn.StepTrace{
 			{Workflow: "Main", Outputs: []engine.Output{
-				engine.CloseQuestionOutput{Slot: "Q", Recipient: engine.UserID("7")},
+				engine.CloseQuestionOutput{Slot: "Q", Recipient: engine.UserID("7"), InteractionID: 42},
 			}},
 		}
 
-		err := captureInteractions(context.Background(), nil, repo, questionAskGroupProgram(), 1, 11, steps)
+		err := captureInteractions(context.Background(), nil, repo, 1, 11, steps)
 		require.NoError(t, err)
 		require.Empty(t, repo.creates)
 		require.Len(t, repo.closes, 1)
 		require.Equal(t, uint(1), repo.closes[0].sessionID)
 		require.Equal(t, uint(7), repo.closes[0].sessionActorID)
-		require.Equal(t, "Q", repo.closes[0].engineSlot)
+		require.Equal(t, uint64(42), repo.closes[0].engineInteractionID)
 		require.Equal(t, uint(11), repo.closes[0].closedByTurnID)
 	})
 
-	t.Run("open_then_close_in_one_step_use_the_same_engine_path", func(t *testing.T) {
+	t.Run("open_then_close_in_one_step_use_the_same_interaction_id", func(t *testing.T) {
 		repo := &fakeInteractionCaptureRepo{}
 		steps := []runtimeturn.StepTrace{
 			{Workflow: "Main", Outputs: []engine.Output{
-				engine.OpenQuestionOutput{Slot: "Q", Recipient: engine.UserID("1"), Question: "PickNumber"},
-				engine.CloseQuestionOutput{Slot: "Q", Recipient: engine.UserID("2")},
+				engine.OpenQuestionOutput{Slot: "Q", Recipient: engine.UserID("1"), Question: "PickNumber", InteractionID: 99, Kind: engine.InteractionKindQuestion},
+				engine.CloseQuestionOutput{Slot: "Q", Recipient: engine.UserID("2"), InteractionID: 99},
 			}},
 		}
 
-		err := captureInteractions(context.Background(), nil, repo, questionAskGroupProgram(), 1, 12, steps)
+		err := captureInteractions(context.Background(), nil, repo, 1, 12, steps)
 		require.NoError(t, err)
 		require.Len(t, repo.creates, 1)
 		require.Len(t, repo.closes, 1)
-		require.Equal(t, repo.creates[0].enginePath, repo.closes[0].enginePath, "both outputs came from the same Step, addressing the same (and only) instance")
+		require.Equal(t, repo.creates[0].engineInteractionID, repo.closes[0].engineInteractionID, "both outputs came from the same Step, addressing the same occurrence")
 	})
 
 	t.Run("steps_with_no_outputs_are_skipped", func(t *testing.T) {
 		repo := &fakeInteractionCaptureRepo{}
 		steps := []runtimeturn.StepTrace{{Workflow: "Main"}}
 
-		err := captureInteractions(context.Background(), nil, repo, questionAskGroupProgram(), 1, 13, steps)
+		err := captureInteractions(context.Background(), nil, repo, 1, 13, steps)
 		require.NoError(t, err)
 		require.Empty(t, repo.creates)
 		require.Empty(t, repo.closes)
 	})
 
-	t.Run("output_on_an_undeclared_slot_fails", func(t *testing.T) {
+	t.Run("an_unknown_interaction_kind_fails", func(t *testing.T) {
 		repo := &fakeInteractionCaptureRepo{}
 		steps := []runtimeturn.StepTrace{
 			{Workflow: "Main", Outputs: []engine.Output{
-				engine.OpenQuestionOutput{Slot: "Missing", Recipient: engine.UserID("7"), Question: "PickNumber"},
+				engine.OpenQuestionOutput{Slot: "Q", Recipient: engine.UserID("7"), Question: "PickNumber", InteractionID: 1, Kind: engine.InteractionKind(99)},
 			}},
 		}
 
-		err := captureInteractions(context.Background(), nil, repo, questionAskGroupProgram(), 1, 10, steps)
+		err := captureInteractions(context.Background(), nil, repo, 1, 10, steps)
 		require.Error(t, err)
 		require.Empty(t, repo.creates)
 	})
@@ -153,11 +138,11 @@ func TestCaptureInteractions(t *testing.T) {
 		repo := &fakeInteractionCaptureRepo{}
 		steps := []runtimeturn.StepTrace{
 			{Workflow: "Main", Outputs: []engine.Output{
-				engine.OpenQuestionOutput{Slot: "Q", Recipient: engine.UserID("not-a-number"), Question: "PickNumber"},
+				engine.OpenQuestionOutput{Slot: "Q", Recipient: engine.UserID("not-a-number"), Question: "PickNumber", InteractionID: 1, Kind: engine.InteractionKindQuestion},
 			}},
 		}
 
-		err := captureInteractions(context.Background(), nil, repo, questionAskGroupProgram(), 1, 10, steps)
+		err := captureInteractions(context.Background(), nil, repo, 1, 10, steps)
 		require.Error(t, err)
 		require.Empty(t, repo.creates)
 	})

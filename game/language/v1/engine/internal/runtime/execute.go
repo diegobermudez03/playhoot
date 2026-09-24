@@ -53,6 +53,22 @@ type execContext struct {
 	// engine.Commit.InternalSignals only if the whole step succeeds, for
 	// a later Step call to apply.
 	internalSignals []engine.Signal
+
+	// nextInteractionID is the candidate copy of engine.Snapshot.NextInteractionID
+	// — initialized from it once, up front, then consumed and
+	// incremented once per opened Question/Ask Group occurrence (ordinary
+	// or keyed) within this step, exactly like random above advances for
+	// DrawRandomOperation.
+	nextInteractionID engine.InteractionID
+}
+
+// assignInteractionID returns ctx's current candidate InteractionID and
+// consumes it, so a single step that opens several occurrences assigns
+// each a distinct, increasing value.
+func (ctx *execContext) assignInteractionID() engine.InteractionID {
+	id := ctx.nextInteractionID
+	ctx.nextInteractionID++
+	return id
 }
 
 // findQuestionSlot returns the index of the question slot named name in
@@ -808,17 +824,20 @@ func (ctx *execContext) execOpenQuestion(o engine.OpenQuestionOperation, scope e
 	}
 
 	recipient := recipientV.(engine.UserValue).ID
+	id := ctx.assignInteractionID()
 	ctx.questionSlots[idx] = engine.QuestionSlotInstance{
 		Name:    o.Slot,
-		Pending: &engine.PendingQuestion{Recipient: recipient, Arguments: args},
+		Pending: &engine.PendingQuestion{Recipient: recipient, Arguments: args, InteractionID: id},
 	}
 
 	slotDecl, _ := ctx.questionSlotDeclaration(o.Slot)
 	ctx.outputs = append(ctx.outputs, engine.OpenQuestionOutput{
-		Slot:      o.Slot,
-		Recipient: recipient,
-		Question:  slotDecl.Question,
-		Arguments: args,
+		Slot:          o.Slot,
+		Recipient:     recipient,
+		Question:      slotDecl.Question,
+		Arguments:     args,
+		InteractionID: id,
+		Kind:          engine.InteractionKindQuestion,
 	})
 	return nil
 }
@@ -837,7 +856,7 @@ func (ctx *execContext) execCloseQuestion(o engine.CloseQuestionOperation) error
 		return nil
 	}
 	ctx.questionSlots[idx] = engine.QuestionSlotInstance{Name: o.Slot}
-	ctx.outputs = append(ctx.outputs, engine.CloseQuestionOutput{Slot: o.Slot, Recipient: pending.Recipient})
+	ctx.outputs = append(ctx.outputs, engine.CloseQuestionOutput{Slot: o.Slot, Recipient: pending.Recipient, InteractionID: pending.InteractionID})
 	return nil
 }
 
@@ -949,17 +968,20 @@ func (ctx *execContext) execOpenKeyedQuestion(o engine.OpenKeyedQuestionOperatio
 	}
 
 	recipient := recipientV.(engine.UserValue).ID
+	id := ctx.assignInteractionID()
 	pending := append(append([]engine.KeyedPendingQuestion{}, ctx.keyedQuestionSlots[idx].Pending...),
-		engine.KeyedPendingQuestion{Key: key, Recipient: recipient, Arguments: args})
+		engine.KeyedPendingQuestion{Key: key, Recipient: recipient, Arguments: args, InteractionID: id})
 	ctx.keyedQuestionSlots[idx] = engine.KeyedQuestionSlotInstance{Name: o.Slot, Pending: pending}
 
 	slotDecl, _ := ctx.keyedQuestionSlotDeclaration(o.Slot)
 	ctx.outputs = append(ctx.outputs, engine.OpenKeyedQuestionOutput{
-		Slot:      o.Slot,
-		Key:       key,
-		Recipient: recipient,
-		Question:  slotDecl.Question,
-		Arguments: args,
+		Slot:          o.Slot,
+		Key:           key,
+		Recipient:     recipient,
+		Question:      slotDecl.Question,
+		Arguments:     args,
+		InteractionID: id,
+		Kind:          engine.InteractionKindQuestion,
 	})
 	return nil
 }
@@ -981,12 +1003,12 @@ func (ctx *execContext) execCloseKeyedQuestion(o engine.CloseKeyedQuestionOperat
 	if !occupied {
 		return nil
 	}
-	recipient := ctx.keyedQuestionSlots[idx].Pending[pIdx].Recipient
+	closed := ctx.keyedQuestionSlots[idx].Pending[pIdx]
 	ctx.keyedQuestionSlots[idx] = engine.KeyedQuestionSlotInstance{
 		Name:    o.Slot,
 		Pending: removeKeyedQuestionPending(ctx.keyedQuestionSlots[idx].Pending, pIdx),
 	}
-	ctx.outputs = append(ctx.outputs, engine.CloseKeyedQuestionOutput{Slot: o.Slot, Key: key, Recipient: recipient})
+	ctx.outputs = append(ctx.outputs, engine.CloseKeyedQuestionOutput{Slot: o.Slot, Key: key, Recipient: closed.Recipient, InteractionID: closed.InteractionID})
 	return nil
 }
 

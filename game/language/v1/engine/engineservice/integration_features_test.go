@@ -111,8 +111,14 @@ func TestIntegration_QuestionAnsweredBeforeTimeout(t *testing.T) {
 	if len(commit.Outputs) != 2 { // open question + schedule timer
 		t.Fatalf("got %d outputs, want 2: %+v", len(commit.Outputs), commit.Outputs)
 	}
+	var askID engine.InteractionID
+	for _, o := range commit.Outputs {
+		if oq, ok := o.(engine.OpenQuestionOutput); ok {
+			askID = oq.InteractionID
+		}
+	}
 
-	commit, err = engineservice.Step(p, commit.Snapshot, engine.Signal{Kind: engine.SignalKindQuestionAnswered, Slot: "Ask", Respondent: player, Answer: engine.BoolValue{Value: true}}, engine.DefaultLimits())
+	commit, err = engineservice.Step(p, commit.Snapshot, engine.Signal{Kind: engine.SignalKindInteractionAnswered, InteractionID: askID, Respondent: player, Answer: engine.BoolValue{Value: true}}, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error answering: %v", err)
 	}
@@ -152,8 +158,10 @@ func TestIntegration_TimerFiresBeforeAnswer(t *testing.T) {
 		t.Fatalf("got outcome %+v, want \"timed_out\"", commit.Snapshot.Root.Outcome)
 	}
 
-	// A late answer must now be rejected — the question was closed.
-	_, err = engineservice.Step(p, commit.Snapshot, engine.Signal{Kind: engine.SignalKindQuestionAnswered, Slot: "Ask", Respondent: player, Answer: engine.BoolValue{Value: true}}, engine.DefaultLimits())
+	// A late answer must now be rejected — the workflow already
+	// terminated, so any InteractionID is rejected before even being
+	// resolved.
+	_, err = engineservice.Step(p, commit.Snapshot, engine.Signal{Kind: engine.SignalKindInteractionAnswered, Respondent: player, Answer: engine.BoolValue{Value: true}}, engine.DefaultLimits())
 	if err != engineservice.ErrSignalRejected {
 		t.Fatalf("expected the terminated workflow to reject a late answer, got %v", err)
 	}
@@ -217,17 +225,18 @@ func TestIntegration_AskGroupOpenAnswerJoin(t *testing.T) {
 	if len(commit.Outputs) != 2 {
 		t.Fatalf("got %d outputs, want 2", len(commit.Outputs))
 	}
+	pollID := commit.Outputs[0].(engine.OpenQuestionOutput).InteractionID
 
-	commit, err = engineservice.Step(p, commit.Snapshot, engine.Signal{Kind: engine.SignalKindAskGroupAnswered, Slot: "Poll", Respondent: askAlice, Answer: engine.BoolValue{Value: true}}, engine.DefaultLimits())
+	commit, err = engineservice.Step(p, commit.Snapshot, engine.Signal{Kind: engine.SignalKindInteractionAnswered, InteractionID: pollID, Respondent: askAlice, Answer: engine.BoolValue{Value: true}}, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error answering: %v", err)
 	}
-	commit, err = engineservice.Step(p, commit.Snapshot, engine.Signal{Kind: engine.SignalKindAskGroupAnswered, Slot: "Poll", Respondent: askBob, Answer: engine.BoolValue{Value: false}}, engine.DefaultLimits())
+	commit, err = engineservice.Step(p, commit.Snapshot, engine.Signal{Kind: engine.SignalKindInteractionAnswered, InteractionID: pollID, Respondent: askBob, Answer: engine.BoolValue{Value: false}}, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error answering: %v", err)
 	}
 
-	commit, err = engineservice.Step(p, commit.Snapshot, engine.Signal{Kind: engine.SignalKindAskGroupCompleted, Slot: "Poll"}, engine.DefaultLimits())
+	commit, err = engineservice.Step(p, commit.Snapshot, engine.Signal{Kind: engine.SignalKindInteractionCompleted, InteractionID: pollID}, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error joining: %v", err)
 	}

@@ -17,19 +17,6 @@ const (
 	// parameters.
 	SignalKindIntent
 
-	// SignalKindQuestionAnswered identifies a submitted answer to the
-	// pending question in the workflow slot named Slot: Respondent is
-	// the answering user and Answer the submitted value.
-	//
-	// Per program.QuestionAnsweredSignalSource, only a validated answer
-	// ever reaches a workflow as a signal — engineservice.Step verifies
-	// Respondent against the slot's pending recipient, validates
-	// Answer against the question's response type and Validation
-	// expression, and rejects a stale, duplicate, unauthorized, or
-	// invalid submission before any transition is even considered; see
-	// ErrInputRejected.
-	SignalKindQuestionAnswered
-
 	// SignalKindTimerExpired identifies the expiration of the pending
 	// timer in the workflow slot named Slot.
 	//
@@ -39,62 +26,52 @@ const (
 	// considered; see ErrInputRejected.
 	SignalKindTimerExpired
 
-	// SignalKindAskGroupAnswered identifies a submitted answer to the
-	// ask group collecting in the workflow slot named Slot: Respondent
-	// is the answering user and Answer the submitted value.
-	//
-	// Unlike every other SignalKind, this one never itself selects or
-	// runs a transition — per program.AskGroupCompletedSignalSource,
-	// an ask group "never produces a signal per individual answer".
-	// engineservice.Step instead validates Respondent is a current,
-	// not-yet-answered recipient of the slot's still-collecting group,
-	// validates Answer against the question's response type and
-	// Validation expression exactly as for SignalKindQuestionAnswered,
-	// and, if accepted, records the answer and re-evaluates the group's
-	// completion policy — all as one atomic Commit with no transition
-	// selected. A stale, duplicate, unauthorized, or invalid submission
-	// is rejected; see ErrInputRejected.
-	SignalKindAskGroupAnswered
-
-	// SignalKindAskGroupCompleted identifies that the ask group in the
-	// slot named Slot is completed-awaiting-join — its completion
-	// policy was satisfied naturally, or a FinalizeAskGroupOperation
-	// forced it. Signal carries no payload of its own; engineservice.Step
-	// reads the group's durable "responses", "respondents", and
-	// "missing" data directly from the slot. A stale or duplicate
-	// delivery once the slot has already been joined and cleared is
-	// rejected; see program.AskGroupCompletedSignalSource and
-	// ErrInputRejected.
-	SignalKindAskGroupCompleted
-
-	// SignalKindKeyedQuestionAnswered identifies a submitted answer to
-	// the pending question at the keyed workflow slot named Slot's
-	// occurrence Key — Respondent is the answering user and Answer the
-	// submitted value — generalizing SignalKindQuestionAnswered to a
-	// (slot, key) occurrence. Validation/rejection rules are identical
-	// to SignalKindQuestionAnswered, applied to that one occurrence.
-	SignalKindKeyedQuestionAnswered
-
 	// SignalKindKeyedTimerExpired identifies the expiration of the
 	// pending timer at the keyed workflow slot named Slot's occurrence
 	// Key, generalizing SignalKindTimerExpired to a (slot, key)
 	// occurrence.
 	SignalKindKeyedTimerExpired
 
-	// SignalKindKeyedAskGroupAnswered identifies a submitted answer to
-	// the ask group collecting at the keyed workflow slot named Slot's
-	// occurrence Key, generalizing SignalKindAskGroupAnswered to a
-	// (slot, key) occurrence. Like SignalKindAskGroupAnswered, this
-	// never itself selects or runs a transition — see that constant's
-	// doc comment for the shared atomic record-and-reevaluate behavior,
-	// scoped to this one occurrence.
-	SignalKindKeyedAskGroupAnswered
+	// SignalKindInteractionAnswered identifies a submitted answer to
+	// the Question or Ask Group occurrence addressed by InteractionID:
+	// Respondent is the answering user and Answer the submitted value.
+	// The engine resolves InteractionID alone to the underlying slot
+	// (ordinary or keyed) and occurrence Key, and to whether it behaves
+	// as a Question or an Ask Group — a caller never supplies Slot,
+	// Key, or its own classification of which kind of interaction it
+	// is answering.
+	//
+	// For a Question occurrence: engineservice.Step verifies Respondent
+	// against the occurrence's pending recipient, validates Answer
+	// against the question's response type and Validation expression,
+	// and rejects a stale, duplicate, unauthorized, invalid, or
+	// unresolvable-InteractionID submission before any transition is
+	// even considered; see ErrInputRejected.
+	//
+	// For an Ask Group occurrence: unlike every other SignalKind, this
+	// one never itself selects or runs a transition when answering an
+	// Ask Group — per program.AskGroupCompletedSignalSource, an ask
+	// group "never produces a signal per individual answer".
+	// engineservice.Step instead validates Respondent is a current,
+	// not-yet-answered recipient of the occurrence's still-collecting
+	// group, validates Answer the same way, and, if accepted, records
+	// the answer and re-evaluates the group's completion policy — all
+	// as one atomic Commit with no transition selected.
+	SignalKindInteractionAnswered
 
-	// SignalKindKeyedAskGroupCompleted identifies that the ask-group
-	// occurrence at the keyed workflow slot named Slot's Key is
-	// completed-awaiting-join, generalizing SignalKindAskGroupCompleted
-	// to a (slot, key) occurrence.
-	SignalKindKeyedAskGroupCompleted
+	// SignalKindInteractionCompleted identifies that the Ask Group
+	// occurrence addressed by InteractionID is completed-awaiting-join
+	// — its completion policy was satisfied naturally, or a
+	// Finalize(Keyed)AskGroupOperation forced it. Signal carries no
+	// other payload; engineservice.Step reads the group's durable
+	// "responses", "respondents", and "missing" data directly from the
+	// resolved occurrence. A stale, duplicate, or unresolvable-
+	// InteractionID delivery (already joined and cleared, or unknown)
+	// is rejected; see program.AskGroupCompletedSignalSource and
+	// ErrInputRejected. Never produced for a Question occurrence — a
+	// Question's own SignalKindInteractionAnswered is what selects its
+	// transition directly.
+	SignalKindInteractionCompleted
 )
 
 // Signal is one runtime input to engineservice.Step: something that
@@ -116,8 +93,18 @@ type Signal struct {
 	Intent string
 	Actor  UserID
 
-	Slot       string
-	Key        Value
+	// Slot and Key address a timer occurrence for
+	// SignalKindTimerExpired/SignalKindKeyedTimerExpired only. Every
+	// other SignalKind is addressed by InteractionID instead — see
+	// SignalKindInteractionAnswered/SignalKindInteractionCompleted.
+	Slot string
+	Key  Value
+
+	// InteractionID addresses the Question or Ask Group occurrence a
+	// SignalKindInteractionAnswered/SignalKindInteractionCompleted
+	// signal targets. Meaningless for every other SignalKind.
+	InteractionID InteractionID
+
 	Respondent UserID
 	Answer     Value
 

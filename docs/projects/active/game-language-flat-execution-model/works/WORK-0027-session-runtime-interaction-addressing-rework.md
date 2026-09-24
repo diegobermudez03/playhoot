@@ -1,8 +1,8 @@
 # WORK-0027: Session Runtime Interaction-Addressing Rework
 
-Status: DRAFT
+Status: DONE
 Created: 2026-09-24
-Last status change: 2026-09-24 (PLANNED -> DRAFT)
+Last status change: 2026-09-24 (IMPLEMENTING -> DONE, independent review APPROVED after one fix pass, applied to WORK-0026's own commit.go - see this WORK's own Completion Record; READY -> IMPLEMENTING; DRAFT -> READY, human-approved "Approved, start")
 
 Related decisions:
 - GAME-ADR-0026 (Flat Workflow Execution Model, Keyed Interaction Slots, and Engine-Owned Interaction Addressing)
@@ -113,4 +113,50 @@ None. The migration-shape question this Project's own `PROJECT.md` flagged as a 
 
 ## Completion Record
 
-Not started. DRAFT.
+DONE (2026-09-24). Implemented together with WORK-0026 as one combined change, reviewed together, one REQUIRED_FIX applied (in WORK-0026's own `engine/commit.go` - nothing in this WORK's own diff needed a fix), then closed - all the same day. See "Implementation Report" below and WORK-0026's own "Independent Review" section for the full review record (shared, since both were reviewed as one combined implementation).
+
+### Implementation Report (2026-09-24)
+
+Work status: IMPLEMENTING
+
+Implemented:
+- `interaction_capture.go`: `resolveInteractionKind`/`emptyEnginePath` removed entirely; `captureInteractions` dropped its `compiledProgram` parameter and now reads `Kind`/`InteractionID` directly off `engine.OpenQuestionOutput`/`CloseQuestionOutput`, translating `Kind` via a new `interactionKindLabel` helper.
+- `step_answer_interaction.go`: `AnswerInteraction` builds `engine.Signal{Kind: engine.SignalKindInteractionAnswered, InteractionID: ..., Respondent: ..., Answer: ...}` directly from the persisted `engine_interaction_id`; `answerSignalKind` removed.
+- `step_start.go`: updated `captureInteractions` call site (dropped the now-removed `compiledProgram` argument).
+- `replay.go`: `buildAnswerSignal`/`loadReplaySignal` reworked the same way; no longer calls a `Kind`-to-`SignalKind` mapping function.
+- `internal/repo/interaction.go`: `Interaction`/`interactionInsert` migrated from `EnginePath []byte`/`EngineSlot string` to `EngineInteractionID uint64`; `CreateInteraction`/`CloseActiveInteraction`/`FindInteractionByUUID`/`GetInteractionByID` SQL updated to the new column.
+- New migration `game/session/internal/storage/migrations/20260924000000_session_interactions_engine_interaction_id.go`: drops `engine_path`/`engine_slot` and the old active-slot unique index, adds `engine_interaction_id BIGINT NOT NULL`, and a new unique index `session_interactions_active_interaction_key` on `(session_id, engine_interaction_id) WHERE state='ACTIVE'`, with a full rollback. Registered in `migration.go`. Follows the drop-then-recreate precedent at `20260908000000_drop_legacy_session_schema.go` exactly, per this WORK's own Approved Design. `session_timer_obligations` untouched.
+- Tests: `interaction_capture_test.go` rewritten (dropped the Program-lookup fixture entirely, fakes now use `engineInteractionID uint64`); `replay_fixture_test.go` updated to use `SignalKindInteractionAnswered`/`InteractionID`; `replay_integration_test.go`/`step_answer_interaction_integration_test.go`/`step_start_integration_test.go` updated (creation-order queries replacing `engine_slot`-keyed lookups, since that column no longer exists); `mocks_test.go` regenerated.
+- Documentation: `game/docs/decisions/GAME-ADR-0007-...md` gained an "Implemented by" cross-reference section (historical Decision text unedited); `GAME-ADR-0026-...md`'s "Implemented by" section extended; `SESSION_RUNTIME_PERSISTENCE_MODEL.md`/`DATA_MODEL.md`/`FLOWS.md` updated wherever they described `engine_path`/`engine_slot` as `session_interactions`' identity; `docs/projects/active/session-runtime-v1/PROJECT.md`'s pause note resolved (its original "Paused" reasoning preserved as historical record, followed by a new "Unblocked" section). `game/CURRENT_STATE.md` needed no change - it never described `engine_path`/`engine_slot` as this identity.
+
+Local implementation decisions:
+- One migration file, not several.
+- `CloseActiveInteraction` keeps `session_actor_id` as a defense-in-depth co-predicate alongside `engine_interaction_id = ?`, per this WORK's own suggestion.
+- The repo-layer `EngineInteractionID` is a plain `uint64`, not an `engine.InteractionID`-typed field - keeps `internal/repo` free of an `engine` package dependency, consistent with its existing style; call sites in `sessionlifecycle` do the `uint64(...)`/`engine.InteractionID(...)` conversions.
+
+Deviations from the approved WORK:
+- None.
+
+Discoveries:
+- None requiring escalation. `go test ./game/language/v1/...` was transiently failing to compile early in this implementation pass, since WORK-0026's own test-file fixes were still in progress concurrently in the same repository checkout - resolved on its own once that concurrent pass completed; no session-side action was needed.
+
+Verification performed:
+- `go build ./...`, `go vet ./...` - clean, repository-wide.
+- `go test . -run TestNoInternalDocCitationsInComments` - passes (2 citation violations in the new migration file/its registration comment were found and fixed during this pass).
+- `go test ./game/language/v1/... -count=1` - passes, unmodified by this WORK.
+- `go test ./game/session/... -count=1` against real Postgres (`playhoot-postgres-1`) - all packages pass, including `TestReconstructCurrentSnapshot_Integration` (the existing 3-turn live-vs-replay round-trip test, adapted to the new signal/column shape rather than rewritten - it already satisfied the "prove live execution and replay reconstruction agree ... through at least one multi-turn sequence" Acceptance Criterion, so no new test was needed).
+- `go test ./... -count=1` against real Postgres - only the already-known, pre-existing, out-of-scope `getgame` JSONB-whitespace defect fails.
+
+Documentation synchronized: see "Implemented" above for the full list.
+
+Known limitations:
+- None beyond what Approved Design already scoped out (`session_timer_obligations`, keyed-slot Session Runtime support, constructing the Ask Group completed-awaiting-join signal).
+
+Ready for independent review:
+YES (together with WORK-0026, per that WORK's own Human Resolution - both close together).
+
+### Independent Review (2026-09-24)
+
+Reviewed together with WORK-0026 as one combined implementation - see WORK-0026's own "Independent Review" section for the full record (verdict, verification performed, and the one REQUIRED_FIX, which landed entirely in `engine/commit.go`, not in any file this WORK owns). Nothing in this WORK's own diff (`interaction_capture.go`, `step_answer_interaction.go`, `replay.go`, `internal/repo/interaction.go`, the new migration, or its documentation updates) required a fix - the reviewer explicitly confirmed the migration is a genuine drop-then-recreate, `resolveInteractionKind` is fully removed repo-wide, and `game/docs/decisions/GAME-ADR-0007-...md`/`SESSION_RUNTIME_PERSISTENCE_MODEL.md`/`DATA_MODEL.md`/`FLOWS.md`/`session-runtime-v1/PROJECT.md`'s pause-note resolution (including the concurrent-edit collision noted in this Project's `AI_CONTEXT.md`) are all synchronized and internally coherent.
+
+No unresolved REQUIRED_FIX or DECISION_REQUIRED finding remains for either WORK. Closed to DONE.

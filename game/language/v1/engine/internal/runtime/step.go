@@ -113,13 +113,16 @@ const (
 	ExecutionErrorInvalidTimerDelay
 
 	// ExecutionErrorInputRejected marks a Step call for a
-	// SignalKindQuestionAnswered, SignalKindTimerExpired,
-	// SignalKindAskGroupCompleted, or any of their keyed counterparts
-	// that did not pass authoritative validation: the targeted slot (or
-	// (slot, key) occurrence) was already empty (stale or duplicate),
-	// the answer's respondent did not match the slot's pending recipient
-	// (unauthorized), or the submitted answer failed response-type or
-	// Validation checks (invalid). See ErrInputRejected.
+	// SignalKindInteractionAnswered, SignalKindInteractionCompleted,
+	// SignalKindTimerExpired, or SignalKindKeyedTimerExpired that did
+	// not pass authoritative validation: the InteractionID (or (slot,
+	// key) timer occurrence) did not address anything currently pending
+	// (unknown, stale, or duplicate), the answer's respondent did not
+	// match the occurrence's pending recipient or was not one of its
+	// still-unanswered recipients (unauthorized), a
+	// SignalKindInteractionCompleted did not address an occurrence
+	// currently completed-awaiting-join, or the submitted answer failed
+	// response-type or Validation checks (invalid). See ErrInputRejected.
 	ExecutionErrorInputRejected
 
 	// ExecutionErrorDuplicateRecipient marks an OpenAskGroupOperation
@@ -327,10 +330,11 @@ func NewSnapshot(p engine.Program, input engine.InitializationInput) (engine.Sna
 	}
 
 	snapshot := engine.Snapshot{
-		GlobalState: globalState,
-		Root:        rootInstance,
-		Random:      engine.RandomState{State: input.Seed},
-		Sequence:    0,
+		GlobalState:       globalState,
+		Root:              rootInstance,
+		Random:            engine.RandomState{State: input.Seed},
+		Sequence:          0,
+		NextInteractionID: 1,
 	}
 	return snapshot, engine.Signal{Name: "WorkflowStarted"}, nil
 }
@@ -466,23 +470,45 @@ func Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal, limi
 		return engine.Commit{}, ErrSignalRejected
 	}
 
+	target := snapshot.Root
+	if target.Outcome != nil {
+		return engine.Commit{}, ErrSignalRejected
+	}
+
+	// SignalKindInteractionAnswered/SignalKindInteractionCompleted
+	// address a Question or Ask Group occurrence by InteractionID alone
+	// — resolve it once, up front, to the underlying slot (ordinary or
+	// keyed) and occurrence Key it addresses, so every existing
+	// Slot(+Key)-addressed helper below can be reused unchanged against
+	// a local resolved copy of signal. An ID that addresses nothing
+	// currently pending (unknown, stale, or already answered/closed) is
+	// rejected immediately — the same authoritative-validation outcome
+	// as any other stale input; see ErrInputRejected.
+	resolved := signal
+	var occ resolvedInteraction
+	switch signal.Kind {
+	case engine.SignalKindInteractionAnswered, engine.SignalKindInteractionCompleted:
+		var ok bool
+		occ, ok = resolveInteractionID(target, signal.InteractionID)
+		if !ok {
+			return engine.Commit{}, ErrInputRejected
+		}
+		resolved.Slot = occ.slot
+		resolved.Key = occ.key
+	}
+
 	// Per program.AskGroupCompletedSignalSource's documented "never
-	// produces a signal per individual answer", a submitted answer to a
-	// still-collecting ask group never itself selects or runs a
+	// produces a signal per individual answer", a submitted answer
+	// addressing an Ask Group occurrence never itself selects or runs a
 	// transition — it only records the answer and re-evaluates the
 	// group's completion policy. This is handled entirely separately
 	// from the transition-selection flow below. The keyed variant is the
 	// identical behavior scoped to one (slot, key) occurrence.
-	if signal.Kind == engine.SignalKindAskGroupAnswered {
-		return stepAskGroupAnswer(p, snapshot, signal)
-	}
-	if signal.Kind == engine.SignalKindKeyedAskGroupAnswered {
-		return stepKeyedAskGroupAnswer(p, snapshot, signal)
-	}
-
-	target := snapshot.Root
-	if target.Outcome != nil {
-		return engine.Commit{}, ErrSignalRejected
+	if signal.Kind == engine.SignalKindInteractionAnswered && occ.askGroup {
+		if occ.keyed {
+			return stepKeyedAskGroupAnswer(p, snapshot, resolved)
+		}
+		return stepAskGroupAnswer(p, snapshot, resolved)
 	}
 
 	workflow, ok := p.Workflows[target.Workflow]
@@ -490,35 +516,46 @@ func Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal, limi
 		return engine.Commit{}, newExecutionError(ExecutionErrorUnknown, "engineservice: workflow %q is not compiled", target.Workflow)
 	}
 
-	// Per program.QuestionAnsweredSignalSource and
-	// program.TimerExpiredSignalSource, a signal of these kinds only
-	// exists once authoritative validation accepts it — a stale,
-	// duplicate, unauthorized, or invalid submission is rejected here,
-	// before any transition is even considered.
+	// A signal of these kinds only exists once authoritative validation
+	// accepts it — a stale, duplicate, unauthorized, or invalid
+	// submission is rejected here, before any transition is even
+	// considered. SignalKindInteractionAnswered only reaches here for a
+	// Question occurrence — an Ask Group occurrence already returned
+	// above. SignalKindInteractionCompleted only ever addresses an Ask
+	// Group occurrence; occ.askGroup false here means the InteractionID
+	// resolved to a Question, which SignalKindInteractionCompleted never
+	// validly addresses.
 	switch signal.Kind {
-	case engine.SignalKindQuestionAnswered:
-		if err := validateQuestionAnswer(p, target, signal); err != nil {
-			return engine.Commit{}, err
+	case engine.SignalKindInteractionAnswered:
+		if occ.keyed {
+			if err := validateKeyedQuestionAnswer(p, target, resolved); err != nil {
+				return engine.Commit{}, err
+			}
+		} else {
+			if err := validateQuestionAnswer(p, target, resolved); err != nil {
+				return engine.Commit{}, err
+			}
 		}
 	case engine.SignalKindTimerExpired:
 		if err := validateTimerExpiration(target, signal); err != nil {
-			return engine.Commit{}, err
-		}
-	case engine.SignalKindAskGroupCompleted:
-		if err := validateAskGroupCompletion(target, signal); err != nil {
-			return engine.Commit{}, err
-		}
-	case engine.SignalKindKeyedQuestionAnswered:
-		if err := validateKeyedQuestionAnswer(p, target, signal); err != nil {
 			return engine.Commit{}, err
 		}
 	case engine.SignalKindKeyedTimerExpired:
 		if err := validateKeyedTimerExpiration(target, signal); err != nil {
 			return engine.Commit{}, err
 		}
-	case engine.SignalKindKeyedAskGroupCompleted:
-		if err := validateKeyedAskGroupCompletion(target, signal); err != nil {
-			return engine.Commit{}, err
+	case engine.SignalKindInteractionCompleted:
+		if !occ.askGroup {
+			return engine.Commit{}, ErrInputRejected
+		}
+		if occ.keyed {
+			if err := validateKeyedAskGroupCompletion(target, resolved); err != nil {
+				return engine.Commit{}, err
+			}
+		} else {
+			if err := validateAskGroupCompletion(target, resolved); err != nil {
+				return engine.Commit{}, err
+			}
 		}
 	}
 
@@ -527,13 +564,13 @@ func Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal, limi
 		return engine.Commit{}, newExecutionError(ExecutionErrorUnknown, "engineservice: workflow %q has no state named %q", workflow.Name, target.State)
 	}
 
-	transition, ok := selectTransition(state, workflow, signal)
+	transition, ok := selectTransition(state, workflow, resolved, occ)
 	if !ok {
 		return engine.Commit{}, ErrSignalRejected
 	}
 
 	scope := instanceBaseScope(target, snapshot.GlobalState)
-	fields := signalSchemaFields(p, workflow, target, signal)
+	fields := signalSchemaFields(p, workflow, target, resolved, occ)
 	for _, b := range transition.Signal.Bindings {
 		scope = extendScope(scope, b.Name, fields[b.Field])
 	}
@@ -561,36 +598,37 @@ func Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal, limi
 		keyedQuestionSlots: append([]engine.KeyedQuestionSlotInstance{}, target.KeyedQuestionSlots...),
 		keyedTimerSlots:    append([]engine.KeyedTimerSlotInstance{}, target.KeyedTimerSlots...),
 		keyedAskGroupSlots: append([]engine.KeyedAskGroupSlotInstance{}, target.KeyedAskGroupSlots...),
+		nextInteractionID:  snapshot.NextInteractionID,
 	}
 
 	// Accepting a validated answer, expiration, or ask-group completion
 	// clears its slot, atomic with everything else this step does — if
-	// the step fails for any other reason below, this candidate
-	// clearing is discarded along with it, and the slot remains
-	// occupied. The keyed variants clear only the one (slot, key) entry
-	// that was accepted, leaving every other key's occurrence under the
-	// same slot untouched.
+	// the step fails for any other reason below, this candidate clearing
+	// is discarded along with it, and the slot remains occupied. The
+	// keyed variants clear only the one (slot, key) entry that was
+	// accepted, leaving every other key's occurrence under the same slot
+	// untouched. SignalKindInteractionCompleted only reaches here for an
+	// Ask Group occurrence — the Question case was already rejected
+	// above.
 	switch signal.Kind {
-	case engine.SignalKindQuestionAnswered:
-		if idx, ok := ctx.findQuestionSlot(signal.Slot); ok {
-			ctx.questionSlots[idx] = engine.QuestionSlotInstance{Name: signal.Slot}
+	case engine.SignalKindInteractionAnswered:
+		if occ.keyed {
+			if idx, ok := ctx.findKeyedQuestionSlot(resolved.Slot); ok {
+				if pIdx, ok := findKeyedQuestionPending(ctx.keyedQuestionSlots[idx].Pending, resolved.Key); ok {
+					ctx.keyedQuestionSlots[idx] = engine.KeyedQuestionSlotInstance{
+						Name:    resolved.Slot,
+						Pending: removeKeyedQuestionPending(ctx.keyedQuestionSlots[idx].Pending, pIdx),
+					}
+				}
+			}
+		} else {
+			if idx, ok := ctx.findQuestionSlot(resolved.Slot); ok {
+				ctx.questionSlots[idx] = engine.QuestionSlotInstance{Name: resolved.Slot}
+			}
 		}
 	case engine.SignalKindTimerExpired:
 		if idx, ok := ctx.findTimerSlot(signal.Slot); ok {
 			ctx.timerSlots[idx] = engine.TimerSlotInstance{Name: signal.Slot}
-		}
-	case engine.SignalKindAskGroupCompleted:
-		if idx, ok := ctx.findAskGroupSlot(signal.Slot); ok {
-			ctx.askGroupSlots[idx] = engine.AskGroupSlotInstance{Name: signal.Slot}
-		}
-	case engine.SignalKindKeyedQuestionAnswered:
-		if idx, ok := ctx.findKeyedQuestionSlot(signal.Slot); ok {
-			if pIdx, ok := findKeyedQuestionPending(ctx.keyedQuestionSlots[idx].Pending, signal.Key); ok {
-				ctx.keyedQuestionSlots[idx] = engine.KeyedQuestionSlotInstance{
-					Name:    signal.Slot,
-					Pending: removeKeyedQuestionPending(ctx.keyedQuestionSlots[idx].Pending, pIdx),
-				}
-			}
 		}
 	case engine.SignalKindKeyedTimerExpired:
 		if idx, ok := ctx.findKeyedTimerSlot(signal.Slot); ok {
@@ -602,14 +640,20 @@ func Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal, limi
 				ctx.keyedTimerSlots[idx] = engine.KeyedTimerSlotInstance{Name: signal.Slot, Pending: result}
 			}
 		}
-	case engine.SignalKindKeyedAskGroupCompleted:
-		if idx, ok := ctx.findKeyedAskGroupSlot(signal.Slot); ok {
-			if pIdx, ok := findKeyedAskGroupPending(ctx.keyedAskGroupSlots[idx].Pending, signal.Key); ok {
-				pending := ctx.keyedAskGroupSlots[idx].Pending
-				result := make([]engine.KeyedPendingAskGroup, 0, len(pending)-1)
-				result = append(result, pending[:pIdx]...)
-				result = append(result, pending[pIdx+1:]...)
-				ctx.keyedAskGroupSlots[idx] = engine.KeyedAskGroupSlotInstance{Name: signal.Slot, Pending: result}
+	case engine.SignalKindInteractionCompleted:
+		if occ.keyed {
+			if idx, ok := ctx.findKeyedAskGroupSlot(resolved.Slot); ok {
+				if pIdx, ok := findKeyedAskGroupPending(ctx.keyedAskGroupSlots[idx].Pending, resolved.Key); ok {
+					pending := ctx.keyedAskGroupSlots[idx].Pending
+					result := make([]engine.KeyedPendingAskGroup, 0, len(pending)-1)
+					result = append(result, pending[:pIdx]...)
+					result = append(result, pending[pIdx+1:]...)
+					ctx.keyedAskGroupSlots[idx] = engine.KeyedAskGroupSlotInstance{Name: resolved.Slot, Pending: result}
+				}
+			}
+		} else {
+			if idx, ok := ctx.findAskGroupSlot(resolved.Slot); ok {
+				ctx.askGroupSlots[idx] = engine.AskGroupSlotInstance{Name: resolved.Slot}
 			}
 		}
 	}
@@ -686,10 +730,11 @@ func Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal, limi
 
 	commit := engine.Commit{
 		Snapshot: engine.Snapshot{
-			GlobalState: ctx.global,
-			Root:        newRoot,
-			Random:      ctx.random,
-			Sequence:    snapshot.Sequence + 1,
+			GlobalState:       ctx.global,
+			Root:              newRoot,
+			Random:            ctx.random,
+			Sequence:          snapshot.Sequence + 1,
+			NextInteractionID: ctx.nextInteractionID,
 		},
 		InternalSignals: ctx.internalSignals,
 		Outputs:         ctx.outputs,
@@ -741,14 +786,15 @@ var ErrSignalRejected = &ExecutionError{
 	Message: "engineservice: signal was rejected: no transition matched, or its guard was false",
 }
 
-// ErrInputRejected is returned by Step for a SignalKindQuestionAnswered,
-// SignalKindTimerExpired, SignalKindAskGroupCompleted, or any of their
-// keyed counterparts that failed authoritative validation — see
-// ExecutionErrorInputRejected. Because an accepted answer or expiration
-// clears its slot (or (slot, key) occurrence) atomically with the rest
-// of the step that handles it, a duplicate delivery of the same input
-// always finds it already empty and is rejected here too — "stale" and
-// "duplicate" are the same check.
+// ErrInputRejected is returned by Step for a
+// SignalKindInteractionAnswered, SignalKindInteractionCompleted,
+// SignalKindTimerExpired, or SignalKindKeyedTimerExpired that failed
+// authoritative validation — see ExecutionErrorInputRejected. Because an
+// accepted answer or expiration clears its slot (or (slot, key)
+// occurrence) atomically with the rest of the step that handles it, a
+// duplicate delivery of the same input always finds it already empty
+// and is rejected here too — "stale" and "duplicate" are the same
+// check.
 var ErrInputRejected = &ExecutionError{
 	Code:    ExecutionErrorInputRejected,
 	Message: "engineservice: input was rejected: stale, duplicate, unauthorized, or invalid",
@@ -1012,8 +1058,14 @@ func validateKeyedAskGroupCompletion(instance engine.WorkflowInstance, signal en
 // schema exposes for binding — see engineservice's compileSignalSource
 // for the matching compile-time schema each SignalKind resolves to. An
 // ask-group-completion signal carries no payload of its own; its fields
-// come from instance's own slot, read before Step clears it.
-func signalSchemaFields(p engine.Program, workflow engine.Workflow, instance engine.WorkflowInstance, signal engine.Signal) map[string]engine.Value {
+// come from instance's own slot, read before Step clears it. occ is the
+// same InteractionID resolution Step already performed for signal —
+// this only ever reaches here for a Question occurrence
+// (SignalKindInteractionAnswered) or an Ask Group occurrence
+// (SignalKindInteractionCompleted); an Ask Group's own per-answer
+// signal is handled entirely separately by stepAskGroupAnswer/
+// stepKeyedAskGroupAnswer and never reaches this function.
+func signalSchemaFields(p engine.Program, workflow engine.Workflow, instance engine.WorkflowInstance, signal engine.Signal, occ resolvedInteraction) map[string]engine.Value {
 	switch signal.Kind {
 	case engine.SignalKindIntent:
 		fields := make(map[string]engine.Value, len(signal.Fields)+1)
@@ -1022,23 +1074,29 @@ func signalSchemaFields(p engine.Program, workflow engine.Workflow, instance eng
 		}
 		fields["actor"] = engine.UserValue{ID: signal.Actor}
 		return fields
-	case engine.SignalKindQuestionAnswered:
-		return map[string]engine.Value{"respondent": engine.UserValue{ID: signal.Respondent}, "answer": signal.Answer}
-	case engine.SignalKindAskGroupCompleted:
-		slot, _ := findInstanceAskGroupSlot(instance, signal.Slot)
-		return askGroupCompletionFields(p, workflow, slot.Pending, signal.Slot)
-	case engine.SignalKindKeyedQuestionAnswered:
-		return map[string]engine.Value{"key": signal.Key, "respondent": engine.UserValue{ID: signal.Respondent}, "answer": signal.Answer}
+	case engine.SignalKindInteractionAnswered:
+		fields := map[string]engine.Value{"respondent": engine.UserValue{ID: signal.Respondent}, "answer": signal.Answer}
+		if occ.keyed {
+			fields["key"] = signal.Key
+		}
+		return fields
 	case engine.SignalKindKeyedTimerExpired:
 		return map[string]engine.Value{"key": signal.Key}
-	case engine.SignalKindKeyedAskGroupCompleted:
-		slot, _ := findInstanceKeyedAskGroupSlot(instance, signal.Slot)
+	case engine.SignalKindInteractionCompleted:
 		var pending *engine.PendingAskGroup
-		if pIdx, ok := findKeyedAskGroupPending(slot.Pending, signal.Key); ok {
-			pending = &slot.Pending[pIdx].PendingAskGroup
+		if occ.keyed {
+			slot, _ := findInstanceKeyedAskGroupSlot(instance, signal.Slot)
+			if pIdx, ok := findKeyedAskGroupPending(slot.Pending, signal.Key); ok {
+				pending = &slot.Pending[pIdx].PendingAskGroup
+			}
+		} else {
+			slot, _ := findInstanceAskGroupSlot(instance, signal.Slot)
+			pending = slot.Pending
 		}
 		fields := askGroupCompletionFields(p, workflow, pending, signal.Slot)
-		fields["key"] = signal.Key
+		if occ.keyed {
+			fields["key"] = signal.Key
+		}
 		return fields
 	default:
 		return signal.Fields
@@ -1058,15 +1116,18 @@ func workflowStateByName(workflow engine.Workflow, name string) (engine.Workflow
 // selectTransition implements state-local transition precedence with
 // global-transition fallback: it returns the current state's own
 // transition for signal if one exists, and only otherwise falls back to
-// checking workflow.GlobalTransitions.
-func selectTransition(state engine.WorkflowState, workflow engine.Workflow, signal engine.Signal) (engine.Transition, bool) {
+// checking workflow.GlobalTransitions. occ is Step's own InteractionID
+// resolution for signal, needed to disambiguate an
+// InteractionAnswered/InteractionCompleted signal between its ordinary
+// and keyed SignalSource — see signalMatchesSource.
+func selectTransition(state engine.WorkflowState, workflow engine.Workflow, signal engine.Signal, occ resolvedInteraction) (engine.Transition, bool) {
 	for _, t := range state.Transitions {
-		if signalMatchesSource(t.Signal.Source, signal) {
+		if signalMatchesSource(t.Signal.Source, signal, occ) {
 			return t, true
 		}
 	}
 	for _, t := range workflow.GlobalTransitions {
-		if signalMatchesSource(t.Signal.Source, signal) {
+		if signalMatchesSource(t.Signal.Source, signal, occ) {
 			return t, true
 		}
 	}
@@ -1074,24 +1135,34 @@ func selectTransition(state engine.WorkflowState, workflow engine.Workflow, sign
 }
 
 // signalMatchesSource reports whether signal is what source matches.
-func signalMatchesSource(source engine.SignalSource, signal engine.Signal) bool {
+// occ.keyed disambiguates an InteractionAnswered/InteractionCompleted
+// signal between its ordinary and keyed SignalSource: since slot names
+// are only checked for duplicates within their own declaration kind
+// (an ordinary and a keyed slot may share a name), Slot alone would not
+// otherwise be enough once both families collapse onto the same
+// SignalKind — occ.askGroup is not needed here, since Step already
+// separates Ask-Group-occurrence answering into stepAskGroupAnswer/
+// stepKeyedAskGroupAnswer before this is ever reached, and already
+// rejects an InteractionCompleted signal that did not resolve to an
+// Ask Group occurrence.
+func signalMatchesSource(source engine.SignalSource, signal engine.Signal, occ resolvedInteraction) bool {
 	switch s := source.(type) {
 	case engine.NamedSignalSource:
 		return signal.Kind == engine.SignalKindNamed && s.Name == signal.Name
 	case engine.UserIntentSignalSource:
 		return signal.Kind == engine.SignalKindIntent && s.Intent == signal.Intent
 	case engine.QuestionAnsweredSignalSource:
-		return signal.Kind == engine.SignalKindQuestionAnswered && s.Slot == signal.Slot
+		return signal.Kind == engine.SignalKindInteractionAnswered && !occ.keyed && s.Slot == signal.Slot
 	case engine.TimerExpiredSignalSource:
 		return signal.Kind == engine.SignalKindTimerExpired && s.Slot == signal.Slot
 	case engine.AskGroupCompletedSignalSource:
-		return signal.Kind == engine.SignalKindAskGroupCompleted && s.Slot == signal.Slot
+		return signal.Kind == engine.SignalKindInteractionCompleted && !occ.keyed && s.Slot == signal.Slot
 	case engine.KeyedQuestionAnsweredSignalSource:
-		return signal.Kind == engine.SignalKindKeyedQuestionAnswered && s.Slot == signal.Slot
+		return signal.Kind == engine.SignalKindInteractionAnswered && occ.keyed && s.Slot == signal.Slot
 	case engine.KeyedTimerExpiredSignalSource:
 		return signal.Kind == engine.SignalKindKeyedTimerExpired && s.Slot == signal.Slot
 	case engine.KeyedAskGroupCompletedSignalSource:
-		return signal.Kind == engine.SignalKindKeyedAskGroupCompleted && s.Slot == signal.Slot
+		return signal.Kind == engine.SignalKindInteractionCompleted && occ.keyed && s.Slot == signal.Slot
 	default:
 		return false
 	}

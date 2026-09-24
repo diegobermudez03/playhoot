@@ -48,10 +48,10 @@ func TestReplayObservableDefinitionFixture(t *testing.T) {
 	require.Equal(t, nValue.Value, nField.Value.(engine.NumberValue).Value, "global.n must equal the same drawn value exposed as the question argument")
 
 	answerSignal1 := engine.Signal{
-		Kind:       engine.SignalKindQuestionAnswered,
-		Slot:       replayObservableSlot,
-		Respondent: engine.UserID(strconv.FormatUint(1, 10)),
-		Answer:     engine.NumberValue{Value: 111},
+		Kind:          engine.SignalKindInteractionAnswered,
+		InteractionID: openQ1.InteractionID,
+		Respondent:    engine.UserID(strconv.FormatUint(1, 10)),
+		Answer:        engine.NumberValue{Value: 111},
 	}
 	drain2 := runtimeturn.Drain(compiledProgram, drain1.Snapshot, answerSignal1)
 	require.NoError(t, drain2.Err, "%v", drain2.Err)
@@ -68,10 +68,10 @@ func TestReplayObservableDefinitionFixture(t *testing.T) {
 	require.Equal(t, float64(111), aField.Value.(engine.NumberValue).Value)
 
 	answerSignal2 := engine.Signal{
-		Kind:       engine.SignalKindQuestionAnswered,
-		Slot:       replayObservableSlot2,
-		Respondent: engine.UserID(strconv.FormatUint(1, 10)),
-		Answer:     engine.NumberValue{Value: 222},
+		Kind:          engine.SignalKindInteractionAnswered,
+		InteractionID: openQ2.InteractionID,
+		Respondent:    engine.UserID(strconv.FormatUint(1, 10)),
+		Answer:        engine.NumberValue{Value: 222},
 	}
 	drain3 := runtimeturn.Drain(compiledProgram, drain2.Snapshot, answerSignal2)
 	require.NoError(t, drain3.Err, "%v", drain3.Err)

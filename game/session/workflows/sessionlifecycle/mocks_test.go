@@ -351,32 +351,32 @@ func (m *MockstartRepoAPI) EXPECT() *MockstartRepoAPIMockRecorder {
 }
 
 // CloseActiveInteraction mocks base method.
-func (m *MockstartRepoAPI) CloseActiveInteraction(ctx context.Context, tx *gorm.DB, sessionID uint, enginePath []byte, engineSlot string, sessionActorID, closedByTurnID uint) error {
+func (m *MockstartRepoAPI) CloseActiveInteraction(ctx context.Context, tx *gorm.DB, sessionID uint, engineInteractionID uint64, sessionActorID, closedByTurnID uint) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CloseActiveInteraction", ctx, tx, sessionID, enginePath, engineSlot, sessionActorID, closedByTurnID)
+	ret := m.ctrl.Call(m, "CloseActiveInteraction", ctx, tx, sessionID, engineInteractionID, sessionActorID, closedByTurnID)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // CloseActiveInteraction indicates an expected call of CloseActiveInteraction.
-func (mr *MockstartRepoAPIMockRecorder) CloseActiveInteraction(ctx, tx, sessionID, enginePath, engineSlot, sessionActorID, closedByTurnID any) *gomock.Call {
+func (mr *MockstartRepoAPIMockRecorder) CloseActiveInteraction(ctx, tx, sessionID, engineInteractionID, sessionActorID, closedByTurnID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CloseActiveInteraction", reflect.TypeOf((*MockstartRepoAPI)(nil).CloseActiveInteraction), ctx, tx, sessionID, enginePath, engineSlot, sessionActorID, closedByTurnID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CloseActiveInteraction", reflect.TypeOf((*MockstartRepoAPI)(nil).CloseActiveInteraction), ctx, tx, sessionID, engineInteractionID, sessionActorID, closedByTurnID)
 }
 
 // CreateInteraction mocks base method.
-func (m *MockstartRepoAPI) CreateInteraction(ctx context.Context, tx *gorm.DB, sessionID, sessionActorID uint, kind string, enginePath []byte, engineSlot string, interactionPayload []byte, openedByTurnID uint) (uint, error) {
+func (m *MockstartRepoAPI) CreateInteraction(ctx context.Context, tx *gorm.DB, sessionID, sessionActorID uint, kind string, engineInteractionID uint64, interactionPayload []byte, openedByTurnID uint) (uint, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateInteraction", ctx, tx, sessionID, sessionActorID, kind, enginePath, engineSlot, interactionPayload, openedByTurnID)
+	ret := m.ctrl.Call(m, "CreateInteraction", ctx, tx, sessionID, sessionActorID, kind, engineInteractionID, interactionPayload, openedByTurnID)
 	ret0, _ := ret[0].(uint)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // CreateInteraction indicates an expected call of CreateInteraction.
-func (mr *MockstartRepoAPIMockRecorder) CreateInteraction(ctx, tx, sessionID, sessionActorID, kind, enginePath, engineSlot, interactionPayload, openedByTurnID any) *gomock.Call {
+func (mr *MockstartRepoAPIMockRecorder) CreateInteraction(ctx, tx, sessionID, sessionActorID, kind, engineInteractionID, interactionPayload, openedByTurnID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateInteraction", reflect.TypeOf((*MockstartRepoAPI)(nil).CreateInteraction), ctx, tx, sessionID, sessionActorID, kind, enginePath, engineSlot, interactionPayload, openedByTurnID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateInteraction", reflect.TypeOf((*MockstartRepoAPI)(nil).CreateInteraction), ctx, tx, sessionID, sessionActorID, kind, engineInteractionID, interactionPayload, openedByTurnID)
 }
 
 // CreateRuntimeStart mocks base method.
@@ -519,17 +519,17 @@ func (m *MockanswerInteractionRepoAPI) EXPECT() *MockanswerInteractionRepoAPIMoc
 }
 
 // CloseActiveInteraction mocks base method.
-func (m *MockanswerInteractionRepoAPI) CloseActiveInteraction(ctx context.Context, tx *gorm.DB, sessionID uint, enginePath []byte, engineSlot string, sessionActorID, closedByTurnID uint) error {
+func (m *MockanswerInteractionRepoAPI) CloseActiveInteraction(ctx context.Context, tx *gorm.DB, sessionID uint, engineInteractionID uint64, sessionActorID, closedByTurnID uint) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CloseActiveInteraction", ctx, tx, sessionID, enginePath, engineSlot, sessionActorID, closedByTurnID)
+	ret := m.ctrl.Call(m, "CloseActiveInteraction", ctx, tx, sessionID, engineInteractionID, sessionActorID, closedByTurnID)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // CloseActiveInteraction indicates an expected call of CloseActiveInteraction.
-func (mr *MockanswerInteractionRepoAPIMockRecorder) CloseActiveInteraction(ctx, tx, sessionID, enginePath, engineSlot, sessionActorID, closedByTurnID any) *gomock.Call {
+func (mr *MockanswerInteractionRepoAPIMockRecorder) CloseActiveInteraction(ctx, tx, sessionID, engineInteractionID, sessionActorID, closedByTurnID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CloseActiveInteraction", reflect.TypeOf((*MockanswerInteractionRepoAPI)(nil).CloseActiveInteraction), ctx, tx, sessionID, enginePath, engineSlot, sessionActorID, closedByTurnID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CloseActiveInteraction", reflect.TypeOf((*MockanswerInteractionRepoAPI)(nil).CloseActiveInteraction), ctx, tx, sessionID, engineInteractionID, sessionActorID, closedByTurnID)
 }
 
 // CloseAllActiveInteractionsForSession mocks base method.
@@ -561,18 +561,18 @@ func (mr *MockanswerInteractionRepoAPIMockRecorder) CloseAnsweredInteraction(ctx
 }
 
 // CreateInteraction mocks base method.
-func (m *MockanswerInteractionRepoAPI) CreateInteraction(ctx context.Context, tx *gorm.DB, sessionID, sessionActorID uint, kind string, enginePath []byte, engineSlot string, interactionPayload []byte, openedByTurnID uint) (uint, error) {
+func (m *MockanswerInteractionRepoAPI) CreateInteraction(ctx context.Context, tx *gorm.DB, sessionID, sessionActorID uint, kind string, engineInteractionID uint64, interactionPayload []byte, openedByTurnID uint) (uint, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateInteraction", ctx, tx, sessionID, sessionActorID, kind, enginePath, engineSlot, interactionPayload, openedByTurnID)
+	ret := m.ctrl.Call(m, "CreateInteraction", ctx, tx, sessionID, sessionActorID, kind, engineInteractionID, interactionPayload, openedByTurnID)
 	ret0, _ := ret[0].(uint)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // CreateInteraction indicates an expected call of CreateInteraction.
-func (mr *MockanswerInteractionRepoAPIMockRecorder) CreateInteraction(ctx, tx, sessionID, sessionActorID, kind, enginePath, engineSlot, interactionPayload, openedByTurnID any) *gomock.Call {
+func (mr *MockanswerInteractionRepoAPIMockRecorder) CreateInteraction(ctx, tx, sessionID, sessionActorID, kind, engineInteractionID, interactionPayload, openedByTurnID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateInteraction", reflect.TypeOf((*MockanswerInteractionRepoAPI)(nil).CreateInteraction), ctx, tx, sessionID, sessionActorID, kind, enginePath, engineSlot, interactionPayload, openedByTurnID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateInteraction", reflect.TypeOf((*MockanswerInteractionRepoAPI)(nil).CreateInteraction), ctx, tx, sessionID, sessionActorID, kind, engineInteractionID, interactionPayload, openedByTurnID)
 }
 
 // CreateRuntimeTurn mocks base method.

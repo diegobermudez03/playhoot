@@ -79,16 +79,16 @@ func TestManagerStart_Integration(t *testing.T) {
 		require.NoError(t, db.Raw(`SELECT id FROM session_runtime_turns WHERE session_id = ?`, fx.SessionID).Scan(&turn).Error)
 
 		var row struct {
-			SessionActorID uint   `gorm:"column:session_actor_id"`
-			Kind           string `gorm:"column:kind"`
-			EngineSlot     string `gorm:"column:engine_slot"`
-			State          string `gorm:"column:state"`
-			OpenedByTurnID uint   `gorm:"column:opened_by_turn_id"`
+			SessionActorID      uint   `gorm:"column:session_actor_id"`
+			Kind                string `gorm:"column:kind"`
+			EngineInteractionID uint64 `gorm:"column:engine_interaction_id"`
+			State               string `gorm:"column:state"`
+			OpenedByTurnID      uint   `gorm:"column:opened_by_turn_id"`
 		}
-		require.NoError(t, db.Raw(`SELECT session_actor_id, kind, engine_slot, state, opened_by_turn_id FROM session_interactions WHERE session_id = ?`, fx.SessionID).Scan(&row).Error)
+		require.NoError(t, db.Raw(`SELECT session_actor_id, kind, engine_interaction_id, state, opened_by_turn_id FROM session_interactions WHERE session_id = ?`, fx.SessionID).Scan(&row).Error)
 		require.Equal(t, hostActorID, row.SessionActorID, "the only active Participant is players[0], the question's Recipient")
 		require.Equal(t, session.InteractionKindQuestion, row.Kind)
-		require.Equal(t, answerableSlot, row.EngineSlot)
+		require.NotZero(t, row.EngineInteractionID, "the engine's own assigned InteractionID must be persisted")
 		require.Equal(t, session.InteractionStateActive, row.State)
 		require.Equal(t, turn.ID, row.OpenedByTurnID)
 	})

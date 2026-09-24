@@ -1,8 +1,8 @@
 # WORK-0026: Engine-Owned Interaction Addressing
 
-Status: DRAFT
+Status: DONE
 Created: 2026-09-24
-Last status change: 2026-09-24 (PLANNED -> DRAFT)
+Last status change: 2026-09-24 (IMPLEMENTING -> DONE, independent review APPROVED after one fix pass; READY -> IMPLEMENTING; DRAFT -> READY, human-approved "Approved, start")
 
 Related decisions:
 - GAME-ADR-0026 (Flat Workflow Execution Model, Keyed Interaction Slots, and Engine-Owned Interaction Addressing - Decisions 3, 4, and 5)
@@ -131,4 +131,54 @@ None. The one material sequencing question found while drafting was resolved by 
 
 ## Completion Record
 
-Not started. DRAFT.
+DONE (2026-09-24). Implemented, reviewed together with WORK-0027 (both implemented as one combined change), one REQUIRED_FIX applied and re-verified, then closed - all the same day. See "Implementation Report" and "Independent Review" below.
+
+### Implementation Report (2026-09-24)
+
+Work status: IMPLEMENTING
+
+Implemented:
+- `engine`: new `engine/interaction.go` - `InteractionID` (a `uint64`-based defined type, zero reserved as "no interaction") and `InteractionKind` (`InteractionKindQuestion`/`InteractionKindAskGroup`). `Snapshot` gained `NextInteractionID` (`snapshot.go`). `PendingQuestion`, `KeyedPendingQuestion`, and `PendingAskGroup` (so `KeyedPendingAskGroup` inherits it through embedding) each gained an `InteractionID` field (`instance.go`). `OpenQuestionOutput`/`OpenKeyedQuestionOutput` gained `InteractionID`/`Kind`; `CloseQuestionOutput`/`CloseKeyedQuestionOutput` gained `InteractionID` (`output.go`). `Signal` gained `InteractionID`; `SignalKindQuestionAnswered`/`SignalKindAskGroupAnswered`/`SignalKindKeyedQuestionAnswered`/`SignalKindKeyedAskGroupAnswered` collapsed into one `SignalKindInteractionAnswered`; `SignalKindAskGroupCompleted`/`SignalKindKeyedAskGroupCompleted` collapsed into one `SignalKindInteractionCompleted` (`signal.go`).
+- `internal/runtime`: `execContext` gained a `nextInteractionID` counter and `assignInteractionID()` (`execute.go`), consumed by `execOpenQuestion`/`execOpenKeyedQuestion`/`execOpenAskGroup`/`execOpenKeyedAskGroup`, which now also propagate `InteractionID`/`Kind` onto their `Output`s (`execute.go`, `ask_group.go`); every `Close*Output`-producing path (`execCloseQuestion`, `execFinalizeAskGroup`, `execCancelAskGroup`, and their keyed counterparts, plus `stepAskGroupAnswer`/`stepKeyedAskGroupAnswer`'s own missing-recipient closes) now propagates the occurrence's already-assigned `InteractionID`. New `internal/runtime/interaction.go` - `resolvedInteraction`/`resolveInteractionID`: a linear scan over all four pending-occurrence collections (mirroring the existing keyed-slot linear-search precedent) resolving a caller's `InteractionID` to its underlying slot/key/family. `step.go`'s `Step` resolves `SignalKindInteractionAnswered`/`SignalKindInteractionCompleted` once, up front, into a local `resolved` copy of the signal with `Slot`/`Key` populated from that resolution - every existing Slot(+Key)-parameterized helper (`validateQuestionAnswer`/`validateKeyedQuestionAnswer`/`validateAskGroupCompletion`/`validateKeyedAskGroupCompletion`, the accept-and-clear switch, `signalSchemaFields`) is reused unchanged, just called with `resolved` instead of receiving `Slot`/`Key` directly from the caller. `signalMatchesSource`/`selectTransition` additionally take the resolved `occ.keyed` flag, since slot names are only checked for duplicates within their own declaration kind (an ordinary and a keyed slot may share a name) - needed once both families' answer signals collapse onto one `SignalKind`. `NewSnapshot` now seeds `NextInteractionID` at 1.
+- `internal/codec`: `snapshot.go`'s wire struct gained `next_interaction_id`; `instance.go`'s `pendingQuestionWire`/`pendingAskGroupWire`/`keyedPendingQuestionWire`/`keyedPendingAskGroupWire` each gained `interaction_id`, wired through every encode/decode function that touches them (including the `keyedPendingAskGroupWire`/`pendingAskGroupWire` JSON round-trip reuse).
+- `game/language/v1/example.go`: `gameSession.pendingQuestions` rekeyed from `map[string]OpenQuestionOutput` (by Slot) to `map[engine.InteractionID]OpenQuestionOutput`; `QuestionAnswered` now takes an `InteractionID` parameter instead of a slot name.
+- Every in-package test referencing a removed `SignalKind` or the old `Output` shape updated across `engine/internal/runtime/{interaction_exec_test.go,ask_group_exec_test.go,keyed_interaction_exec_test.go,keyed_ask_group_exec_test.go}` and `engine/engineservice/{helpers_test.go,integration_features_test.go,integration_keyed_question_test.go,keyed_codec_test.go,codec_test.go}`.
+- Documentation: `engine/README.md` (new "Answering an Interaction" section; "Keyed Interaction Slots" corrected to stop describing `Signal.Key`/removed `SignalKind`s as the caller-facing answer address; Outputs table updated), `engine/IMPLEMENTATION.md` (`interaction.go` added to file organization; `Step`'s commit-sequence description gained the resolution step).
+
+Local implementation decisions:
+- `InteractionID` zero is reserved to mean "no interaction," never assigned by `assignInteractionID` (which starts counting from `NewSnapshot`'s seeded `1`) - matches this WORK's own Approved Design.
+- `signalMatchesSource`/`selectTransition` take the resolved `occ resolvedInteraction` as an explicit parameter rather than re-deriving keyed-ness from a second slot lookup inside `signalMatchesSource` itself - avoids a redundant lookup and keeps the resolution single-sourced from `Step`'s own one-time call to `resolveInteractionID`.
+- `CloseQuestionOutput`/`CloseKeyedQuestionOutput` gained `InteractionID` even though GAME-ADR-0026's own Consequences text only explicitly mentions the *opened* Output gaining it - see this WORK's own Approved Design for why leaving `Close*Output` un-augmented would keep exactly the leak this WORK removes, just moved to the closing side.
+
+Deviations from the approved WORK:
+- None.
+
+Discoveries:
+- None new. (WORK-0026's own drafting-time discovery - the Session Runtime combined-implementation necessity - is recorded above under "Human Resolution", not here, since it was resolved before implementation began.)
+
+Verification performed:
+- `go build ./...`, `go vet ./...` - clean, repository-wide.
+- `go test ./game/language/v1/... -count=1` - all pass, including new tests: `TestExec_InteractionIDAssignmentIsDeterministicAndNeverReused` (replay-determinism and never-reused proof, `internal/runtime/interaction_exec_test.go`) and `TestCodec_InteractionIDRoundTrips` (Snapshot round-trip proof through the real `NewSnapshot`/`Step` pipeline with genuinely non-zero assigned IDs, `engineservice/codec_test.go`) - the latter written specifically because of this Project's own WORK-0025 precedent (a HIGH-severity bug where new pending-occurrence state was never wired into the Snapshot codec).
+- `go test . -run TestNoInternalDocCitationsInComments` - passes.
+- `go test ./game/... -count=1` against real Postgres (`playhoot-postgres-1`) - passes except the already-known, pre-existing, out-of-scope `getgame` JSONB-whitespace defect; `game/session/...` passes, confirming the combined WORK-0026+WORK-0027 implementation (see WORK-0027's own Verification for its half).
+
+Documentation synchronized: see "Implemented" above for the full list.
+
+Known limitations:
+- None beyond what Approved Design already scoped out (Timer, Presentation).
+
+Ready for independent review:
+YES (pending WORK-0027's own completion, per Human Resolution - both close together).
+
+### Independent Review (2026-09-24)
+
+A fresh independent review was performed per `docs/ai/protocols/IMPLEMENTATION_REVIEW.md`, covering WORK-0026 and WORK-0027 together as one combined implementation (per this WORK's own Human Resolution). The reviewer read the actual current code directly (engine, `internal/runtime`, `internal/codec`, and the Session Runtime side covered under WORK-0027), ran its own fresh `go build`/`go vet`/test verification (including real Postgres) rather than trusting either WORK's self-report, and specifically scrutinized the Snapshot codec against this Project's own WORK-0025 precedent (a HIGH-severity bug where new persisted state was never wired into `internal/codec`) - confirming `NextInteractionID` and every pending occurrence's `InteractionID` (including the `KeyedPendingAskGroup` path, which round-trips through a JSON re-marshal/unmarshal reuse) are correctly wired into both encode and decode, and that this is proven behaviorally (via `TestCodec_KeyedSlotsRoundTrip` and `TestCodec_InteractionIDRoundTrips` continuing execution against decoded state), not merely structurally.
+
+Verdict: CHANGES_REQUIRED, one REQUIRED_FIX, no DECISION_REQUIRED findings.
+
+Finding and fix:
+1. **(LOW, REQUIRED_FIX)** `engine/commit.go`'s `Trace.TransitionName` doc comment still named the removed `SignalKindAskGroupAnswered` constant, violating this WORK's own Acceptance Criterion that no removed `SignalKind` constant or reference to it remains anywhere in the repository - the one place a repo-wide grep for all six removed constants found a live (non-historical-document) hit. **Fixed**: reworded to name `SignalKindInteractionAnswered` addressing an Ask Group occurrence instead.
+
+The reviewer also noted one NON_BLOCKING documentation-drift observation, not required for this WORK's own closure since the document wasn't named in either WORK's Documentation Impact section: `game/docs/decisions/GAME-ADR-0024-replay-first-session-runtime-persistence.md`'s replay-input audit still named `SignalKindQuestionAnswered`/`session_interactions.engine_path`/`engine_slot` (its `SignalKindTimerExpired`/`session_timer_obligations` entry remains accurate, Timer being unaffected). Resolved anyway, mirroring the same "Implemented by" cross-reference pattern already used for GAME-ADR-0007's identical staleness, since it was a trivial, directly-analogous fix.
+
+Re-verified after applying the fix: `go build ./...`, `go vet ./...`, `go test . -run TestNoInternalDocCitationsInComments`, a repo-wide grep for all six removed `SignalKind` constants (zero remaining Go-code hits), and `go test ./... -count=1` against real Postgres (`playhoot-postgres-1`) - clean except the already-known, pre-existing, out-of-scope `getgame` JSONB-whitespace defect. No unresolved REQUIRED_FIX or DECISION_REQUIRED finding remains for either WORK. Closed to DONE.

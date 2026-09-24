@@ -127,19 +127,15 @@ func (m *Manager) loadReplaySignal(ctx context.Context, tx *gorm.DB, turn intern
 // fields and its respondent's actor id - the same construction AnswerInteraction
 // itself performs for the response it is currently processing.
 func buildAnswerSignal(interaction *internalrepo.Interaction, actorID uint) (engine.Signal, error) {
-	signalKind, err := answerSignalKind(interaction.Kind)
-	if err != nil {
-		return engine.Signal{}, err
-	}
 	answer, err := engineservice.DecodeValue(interaction.ResponsePayload)
 	if err != nil {
 		return engine.Signal{}, fmt.Errorf("decoding interaction response: %s", err)
 	}
 	return engine.Signal{
-		Kind:       signalKind,
-		Slot:       interaction.EngineSlot,
-		Respondent: engine.UserID(strconv.FormatUint(uint64(actorID), 10)),
-		Answer:     answer,
+		Kind:          engine.SignalKindInteractionAnswered,
+		InteractionID: engine.InteractionID(interaction.EngineInteractionID),
+		Respondent:    engine.UserID(strconv.FormatUint(uint64(actorID), 10)),
+		Answer:        answer,
 	}, nil
 }
 

@@ -255,7 +255,7 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 	if err := m.startRepo.CreateRuntimeStart(ctx, tx, lockedSession.ID, seed, encodedRootParameters); err != nil {
 		return StartResult{}, err
 	}
-	if err := captureInteractions(ctx, tx, m.startRepo, compiledProgram, lockedSession.ID, turnID, drainResult.Steps); err != nil {
+	if err := captureInteractions(ctx, tx, m.startRepo, lockedSession.ID, turnID, drainResult.Steps); err != nil {
 		return StartResult{}, err
 	}
 	if err := m.startRepo.SetCurrentTurn(ctx, tx, lockedSession.ID, turnID); err != nil {

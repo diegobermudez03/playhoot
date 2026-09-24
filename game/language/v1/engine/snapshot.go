@@ -60,4 +60,13 @@ type Snapshot struct {
 	// a future engineservice.Step increments it by exactly one per
 	// committed Commit.
 	Sequence uint64
+
+	// NextInteractionID is the InteractionID that will be assigned to
+	// the next opened Question or Ask Group occurrence, the same
+	// category of durable, replay-safe counter as Sequence.
+	// engineservice.NewSnapshot always starts it at 1 (0 is reserved —
+	// see InteractionID); a future engineservice.Step consumes and
+	// increments it once per opened occurrence, so a single Step that
+	// opens several occurrences assigns each a distinct, increasing ID.
+	NextInteractionID InteractionID
 }

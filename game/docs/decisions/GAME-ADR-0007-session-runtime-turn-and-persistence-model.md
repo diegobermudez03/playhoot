@@ -107,3 +107,7 @@ Rejected for now. Interaction UUID already provides a natural external identity 
 ## Implementation Impact
 
 Future implementation work must align Session Runtime migrations, persistence, and RUNNING-phase execution with this accepted model. No migration, production code, or WORK is authorized by this record.
+
+### Implemented by
+
+`docs/projects/active/game-language-flat-execution-model/works/WORK-0027-session-runtime-interaction-addressing-rework.md` supersedes `session_interactions`' `(engine_path, engine_slot)` identity recorded above: that WORK replaces it outright with the Game Language engine's own assigned interaction identity, following this repository's established pre-launch schema-replacement precedent. `session_timer_obligations` keeps `engine_path`/`engine_slot` exactly as originally recorded above - Timer occurrences are unaffected by that WORK.

@@ -137,11 +137,64 @@ func TestExec_OpenQuestionOccupiesSlotAndProducesOutput(t *testing.T) {
 	if !ok || out.Slot != "Ask" || out.Recipient != player || out.Question != "Confirm" {
 		t.Fatalf("got %+v", commit.Outputs[0])
 	}
+	if out.Kind != engine.InteractionKindQuestion {
+		t.Fatalf("expected InteractionKindQuestion, got %v", out.Kind)
+	}
+	if out.InteractionID != slot.Pending.InteractionID {
+		t.Fatalf("expected the Output's InteractionID to match the pending occurrence's own, got %v vs %v", out.InteractionID, slot.Pending.InteractionID)
+	}
+	if commit.Snapshot.NextInteractionID != out.InteractionID+1 {
+		t.Fatalf("expected NextInteractionID to advance past the just-assigned id, got %v after assigning %v", commit.Snapshot.NextInteractionID, out.InteractionID)
+	}
 
 	// The original snapshot's slot must remain untouched.
 	origSlot, _ := findInstanceQuestionSlot(snap.Root, "Ask")
 	if origSlot.Pending != nil {
 		t.Fatal("original snapshot's question slot was mutated")
+	}
+}
+
+// TestExec_InteractionIDAssignmentIsDeterministicAndNeverReused proves
+// InteractionID's core replay-determinism requirement: replaying the
+// identical signal against the identical starting Snapshot reproduces
+// the identical InteractionID assignment, and opening several
+// occurrences in sequence never reuses one.
+func TestExec_InteractionIDAssignmentIsDeterministicAndNeverReused(t *testing.T) {
+	p := questionDemoProgram()
+	snap := questionDemoSnapshot()
+
+	commitA, err := runtime.Step(p, snap, engine.Signal{Name: "Open"}, engine.DefaultLimits())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	commitB, err := runtime.Step(p, snap, engine.Signal{Name: "Open"}, engine.DefaultLimits())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	idA := commitA.Outputs[0].(engine.OpenQuestionOutput).InteractionID
+	idB := commitB.Outputs[0].(engine.OpenQuestionOutput).InteractionID
+	if idA != idB {
+		t.Fatalf("expected replaying the identical signal against the identical starting snapshot to assign the identical InteractionID, got %v vs %v", idA, idB)
+	}
+	if commitA.Snapshot.NextInteractionID != commitB.Snapshot.NextInteractionID {
+		t.Fatalf("expected NextInteractionID to advance identically across both replays, got %v vs %v", commitA.Snapshot.NextInteractionID, commitB.Snapshot.NextInteractionID)
+	}
+
+	// Close it (without answering, so the workflow keeps running) and
+	// open a second occurrence in the same slot from the resulting
+	// snapshot — its id must be strictly greater than the first's,
+	// never reused, even though it reoccupies the identical slot.
+	closed, err := runtime.Step(p, commitA.Snapshot, engine.Signal{Name: "Close"}, engine.DefaultLimits())
+	if err != nil {
+		t.Fatalf("unexpected error closing: %v", err)
+	}
+	reopened, err := runtime.Step(p, closed.Snapshot, engine.Signal{Name: "Open"}, engine.DefaultLimits())
+	if err != nil {
+		t.Fatalf("unexpected error reopening: %v", err)
+	}
+	idC := reopened.Outputs[0].(engine.OpenQuestionOutput).InteractionID
+	if idC <= idA {
+		t.Fatalf("expected the reopened occurrence's InteractionID (%v) to be strictly greater than the first's (%v), never reused", idC, idA)
 	}
 }
 
@@ -195,7 +248,7 @@ func TestExec_QuestionAnsweredAcceptedClearsSlotAndDispatches(t *testing.T) {
 	snap := questionDemoSnapshot()
 	snap.Root.QuestionSlots[0] = engine.QuestionSlotInstance{Name: "Ask", Pending: &engine.PendingQuestion{Recipient: player}}
 
-	commit, err := runtime.Step(p, snap, engine.Signal{Kind: engine.SignalKindQuestionAnswered, Slot: "Ask", Respondent: player, Answer: engine.BoolValue{Value: true}}, engine.DefaultLimits())
+	commit, err := runtime.Step(p, snap, engine.Signal{Kind: engine.SignalKindInteractionAnswered, InteractionID: 0, Respondent: player, Answer: engine.BoolValue{Value: true}}, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -213,7 +266,7 @@ func TestExec_QuestionAnsweredWrongRespondentRejected(t *testing.T) {
 	snap := questionDemoSnapshot()
 	snap.Root.QuestionSlots[0] = engine.QuestionSlotInstance{Name: "Ask", Pending: &engine.PendingQuestion{Recipient: player}}
 
-	_, err := runtime.Step(p, snap, engine.Signal{Kind: engine.SignalKindQuestionAnswered, Slot: "Ask", Respondent: other, Answer: engine.BoolValue{Value: true}}, engine.DefaultLimits())
+	_, err := runtime.Step(p, snap, engine.Signal{Kind: engine.SignalKindInteractionAnswered, InteractionID: 0, Respondent: other, Answer: engine.BoolValue{Value: true}}, engine.DefaultLimits())
 	if err != runtime.ErrInputRejected {
 		t.Fatalf("expected runtime.ErrInputRejected for an unauthorized respondent, got %v", err)
 	}
@@ -223,7 +276,7 @@ func TestExec_QuestionAnsweredStaleOrDuplicateRejected(t *testing.T) {
 	p := questionDemoProgram()
 	snap := questionDemoSnapshot() // Ask starts empty: this answer is stale/duplicate
 
-	_, err := runtime.Step(p, snap, engine.Signal{Kind: engine.SignalKindQuestionAnswered, Slot: "Ask", Respondent: player, Answer: engine.BoolValue{Value: true}}, engine.DefaultLimits())
+	_, err := runtime.Step(p, snap, engine.Signal{Kind: engine.SignalKindInteractionAnswered, InteractionID: 0, Respondent: player, Answer: engine.BoolValue{Value: true}}, engine.DefaultLimits())
 	if err != runtime.ErrInputRejected {
 		t.Fatalf("expected runtime.ErrInputRejected for a stale/duplicate answer, got %v", err)
 	}
@@ -234,7 +287,7 @@ func TestExec_QuestionAnsweredDuplicateAfterAcceptanceRejected(t *testing.T) {
 	snap := questionDemoSnapshot()
 	snap.Root.QuestionSlots[0] = engine.QuestionSlotInstance{Name: "Ask", Pending: &engine.PendingQuestion{Recipient: player}}
 
-	answer := engine.Signal{Kind: engine.SignalKindQuestionAnswered, Slot: "Ask", Respondent: player, Answer: engine.BoolValue{Value: true}}
+	answer := engine.Signal{Kind: engine.SignalKindInteractionAnswered, InteractionID: 0, Respondent: player, Answer: engine.BoolValue{Value: true}}
 	commit, err := runtime.Step(p, snap, answer, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error on first delivery: %v", err)
@@ -256,7 +309,7 @@ func TestExec_QuestionAnsweredFailingValidationRejected(t *testing.T) {
 	snap := questionDemoSnapshot()
 	snap.Root.QuestionSlots[0] = engine.QuestionSlotInstance{Name: "Ask", Pending: &engine.PendingQuestion{Recipient: player}}
 
-	_, err := runtime.Step(p, snap, engine.Signal{Kind: engine.SignalKindQuestionAnswered, Slot: "Ask", Respondent: player, Answer: engine.BoolValue{Value: false}}, engine.DefaultLimits())
+	_, err := runtime.Step(p, snap, engine.Signal{Kind: engine.SignalKindInteractionAnswered, InteractionID: 0, Respondent: player, Answer: engine.BoolValue{Value: false}}, engine.DefaultLimits())
 	if err != runtime.ErrInputRejected {
 		t.Fatalf("expected runtime.ErrInputRejected for an answer failing Validation, got %v", err)
 	}

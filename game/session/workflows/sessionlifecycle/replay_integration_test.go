@@ -65,7 +65,7 @@ func TestReconstructCurrentSnapshot_Integration(t *testing.T) {
 		UUID               string `gorm:"column:uuid"`
 		InteractionPayload []byte `gorm:"column:interaction_payload"`
 	}
-	require.NoError(t, db.Raw(`SELECT uuid, interaction_payload FROM session_interactions WHERE session_id = ? AND engine_slot = ?`, sessionID, replayObservableSlot).Scan(&firstRow).Error)
+	require.NoError(t, db.Raw(`SELECT uuid, interaction_payload FROM session_interactions WHERE session_id = ? ORDER BY id ASC LIMIT 1`, sessionID).Scan(&firstRow).Error)
 	require.NotEmpty(t, firstRow.UUID, "Start's own first Turn must open Q1")
 
 	var firstWire interactionPayloadWire
@@ -84,7 +84,7 @@ func TestReconstructCurrentSnapshot_Integration(t *testing.T) {
 	require.Equal(t, AnswerInteractionOutcomeAnswered, answer1.Outcome)
 
 	var secondUUID string
-	require.NoError(t, db.Raw(`SELECT uuid FROM session_interactions WHERE session_id = ? AND engine_slot = ?`, sessionID, replayObservableSlot2).Scan(&secondUUID).Error)
+	require.NoError(t, db.Raw(`SELECT uuid FROM session_interactions WHERE session_id = ? ORDER BY id DESC LIMIT 1`, sessionID).Scan(&secondUUID).Error)
 	require.NotEmpty(t, secondUUID, "answering Q1 must open Q2")
 
 	answer2, err := m.AnswerInteraction(context.Background(), InteractionUUID(secondUUID), UserUUID(hostUUID), engine.NumberValue{Value: 222})

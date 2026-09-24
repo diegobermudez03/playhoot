@@ -187,8 +187,7 @@ classDiagram
         session_id
         session_actor_id
         kind
-        engine_path
-        engine_slot
+        engine_interaction_id
         interaction_payload
         response_payload
         state

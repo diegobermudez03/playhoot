@@ -200,9 +200,14 @@ func TestManagerAnswerInteraction_Integration(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, StartOutcomeStarted, startResult.Outcome)
 
-		var primaryUUID, secondaryUUID string
-		require.NoError(t, db.Raw(`SELECT uuid FROM session_interactions WHERE session_id = ? AND engine_slot = ?`, fx.SessionID, dualPrimarySlot).Scan(&primaryUUID).Error)
-		require.NoError(t, db.Raw(`SELECT uuid FROM session_interactions WHERE session_id = ? AND engine_slot = ?`, fx.SessionID, dualSecondarySlot).Scan(&secondaryUUID).Error)
+		// dualQuestionDefinition's "Started" transition opens Q1 (dualPrimarySlot)
+		// then Q2 (dualSecondarySlot) as two sequential OpenQuestionOutputs
+		// within the same Step, so captureInteractions persists them in that
+		// same order - the first-created row is Q1, the second is Q2.
+		var interactionUUIDs []string
+		require.NoError(t, db.Raw(`SELECT uuid FROM session_interactions WHERE session_id = ? ORDER BY id ASC`, fx.SessionID).Scan(&interactionUUIDs).Error)
+		require.Len(t, interactionUUIDs, 2, "Start must open both Q1 and Q2")
+		primaryUUID, secondaryUUID := interactionUUIDs[0], interactionUUIDs[1]
 		require.NotEmpty(t, primaryUUID)
 		require.NotEmpty(t, secondaryUUID)
 

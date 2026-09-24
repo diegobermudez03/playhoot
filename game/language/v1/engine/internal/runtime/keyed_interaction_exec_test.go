@@ -187,13 +187,21 @@ func openKeyedQuestion(p engine.Program, snap engine.Snapshot, key string, recip
 	}, engine.DefaultLimits())
 }
 
+// keyedQuestionInteractionID looks up the InteractionID currently
+// assigned to snap's "Quiz" slot occurrence at key, or the zero value
+// (never a real assignment) if that key was never opened.
+func keyedQuestionInteractionID(snap engine.Snapshot, key string) engine.InteractionID {
+	slot, _ := findInstanceKeyedQuestionSlot(snap.Root, "Quiz")
+	entry, _ := findKeyedQuestionPendingByKey(slot.Pending, key)
+	return entry.InteractionID
+}
+
 func answerKeyedQuestion(p engine.Program, snap engine.Snapshot, key string, respondent engine.UserID, answer bool) (engine.Commit, error) {
 	return runtime.Step(p, snap, engine.Signal{
-		Kind:       engine.SignalKindKeyedQuestionAnswered,
-		Slot:       "Quiz",
-		Key:        engine.StringValue{Value: key},
-		Respondent: respondent,
-		Answer:     engine.BoolValue{Value: answer},
+		Kind:          engine.SignalKindInteractionAnswered,
+		InteractionID: keyedQuestionInteractionID(snap, key),
+		Respondent:    respondent,
+		Answer:        engine.BoolValue{Value: answer},
 	}, engine.DefaultLimits())
 }
 

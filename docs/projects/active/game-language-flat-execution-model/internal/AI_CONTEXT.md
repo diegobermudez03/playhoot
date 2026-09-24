@@ -1,12 +1,12 @@
 Process: Project (`docs/projects/active/game-language-flat-execution-model/`)
 Topic: Game Language flat execution model (removal of Child Workflow/Task Group; keyed interaction slots; engine-owned interaction addressing)
-Current stage: WORK-0024/WORK-0025 DONE (2026-09-24, full history in their own Completion Records). WORK-0026 (Engine-Owned Interaction Addressing) and WORK-0027 (Session Runtime Interaction-Addressing Rework) are both drafted for real (DRAFT, 2026-09-24) - drafting WORK-0026 surfaced they cannot be implemented independently (see WORK-0026's own Human Resolution), so both are drafted together and will be implemented/closed together. Neither is READY yet.
-Current execution surface: CODEBASE AGENT (design/drafting, per `docs/ai/protocols/FEATURE_DEVELOPMENT.md`; human explicitly requested "proceed with 0026")
+Current stage: All four of this Project's WORK items are DONE (2026-09-24): WORK-0024/WORK-0025 earlier the same day; WORK-0026 (Engine-Owned Interaction Addressing) and WORK-0027 (Session Runtime Interaction-Addressing Rework) just now, implemented together in one combined pass, reviewed together, one REQUIRED_FIX applied, closed. This Project's own Completion Criteria all appear met - see `../PROJECT.md`'s own "Completion Criteria" section.
+Current execution surface: CODEBASE AGENT (all WORK closed; about to report final summary to the human)
 Parent process: this Project itself.
-Related durable artifacts: `../PROJECT.md` (Work table/Current Work/Ordering/Material Decisions/Tracked Follow-Ups all updated to reflect WORK-0026/0027 DRAFT), `../works/WORK-0026-engine-owned-interaction-addressing.md` and `../works/WORK-0027-session-runtime-interaction-addressing-rework.md` (both full DRAFT specs, `../works/WORK-0025-keyed-interaction-slots.md`/`../works/WORK-0024-remove-child-workflow-and-task-group.md` (both DONE, full history in their own files).
-Blocked by: nothing material. Awaiting human review/approval of both DRAFT specs (DRAFT -> READY requires explicit human authorization per `docs/ai/protocols/FEATURE_DEVELOPMENT.md` - a Codebase Agent must not self-approve).
-Next action: human reviews WORK-0026/WORK-0027's DRAFT specs (particularly WORK-0026's Human Resolution and WORK-0027's proposed migration-shape resolution) and, if acceptable, approves both DRAFT -> READY; a Codebase Agent then implements both together in one combined pass per `docs/ai/protocols/IMPLEMENTATION_REVIEW.md`.
-Last durable checkpoint: this pass (2026-09-24) - WORK-0026/WORK-0027 drafted for real. See "What happened this pass" below for the material design content and the sequencing problem found and resolved.
+Related durable artifacts: `../PROJECT.md` (Work table/Completion Criteria updated to reflect all four WORK DONE), `../works/WORK-0026-...md`/`../works/WORK-0027-...md` (both DONE, full Implementation Report + Independent Review in their own Completion Records), `HUMAN_REVIEW.md` (this directory - all records RESOLVED), `../works/WORK-0025-...md`/`../works/WORK-0024-...md` (both DONE, full history in their own files), `docs/projects/active/session-runtime-v1/PROJECT.md` (its own pause note resolved, confirming this Project's third Completion Criterion).
+Blocked by: nothing. This Project is functionally complete.
+Next action: none required from a Codebase Agent. Moving this Project's directory to `docs/projects/completed/` (per `docs/ai/protocols/FEATURE_DEVELOPMENT.md`'s own closure guidance) is left for explicit human confirmation, not done unilaterally here - see `../PROJECT.md`'s own note on this.
+Last durable checkpoint: this pass (2026-09-24) - WORK-0026/WORK-0027 reviewed, fixed, and closed DONE; this Project's Completion Criteria confirmed met. See "What happened this pass" below.
 Last updated: 2026-09-24
 
 # Resume Context
@@ -27,8 +27,28 @@ Both WORK-0026 and WORK-0027 were then drafted for real (PLANNED -> DRAFT), each
 
 `../PROJECT.md` was updated throughout: Work table, Current Work, Ordering/Dependencies, Material Decisions (WORK-0027's migration shape now has a proposed resolution, pending READY-time confirmation), and two new Tracked Follow-Ups found while drafting (`session_timer_obligations.engine_path`'s identical pre-existing dead weight, unaffected by this WORK; Session Runtime never constructing the Ask Group completed-awaiting-join signal, a pre-existing unrelated gap).
 
+## What happened after drafting: implementation (2026-09-24, same day)
+
+The human reviewed both DRAFT specs and replied "Approved, start." Both WORKs moved DRAFT -> READY -> IMPLEMENTING. Implementation proceeded as two parallel efforts against the same combined design: the engine/program side (`engine.InteractionID`/`InteractionKind`, the collapsed `SignalKindInteractionAnswered`/`SignalKindInteractionCompleted`, `internal/runtime`'s resolution logic, the Snapshot codec) done directly; the Session Runtime side (`step_answer_interaction.go`/`replay.go`/`interaction_capture.go`/`internal/repo/interaction.go`, the new `session_interactions` migration) delegated to and completed by a background agent working from WORK-0027's own Approved Design. Both sides were spot-checked directly against the actual resulting code (not just the agent's own report) before being treated as complete.
+
+New tests were added specifically to avoid repeating WORK-0025's own history: `TestExec_InteractionIDAssignmentIsDeterministicAndNeverReused` (replay-determinism/never-reused proof) and `TestCodec_InteractionIDRoundTrips` (a Snapshot round-trip test through the real `NewSnapshot`/`Step` pipeline, proving genuinely non-zero assigned IDs survive persistence - the same class of test WORK-0025's own HIGH-severity finding showed was necessary).
+
+One real gap was found and fixed during this pass, before it ever reached a review: `NewSnapshot` was not actually seeding `Snapshot.NextInteractionID` to `1` as this WORK's own Approved Design specified - caught by the new determinism test failing when run as part of the full suite (a hand-rolled test snapshot's zero-valued counter exposed the omission). Fixed directly, not treated as a review finding.
+
+A minor file-editing collision occurred in `docs/projects/active/session-runtime-v1/PROJECT.md`: both this session and the background agent updated its pause note concurrently, briefly producing a duplicated/inconsistent "Unblocked" section. Resolved by restoring the original "Paused" section as historical record (this file's own established convention - see e.g. "Restructuring"/"Drift Correction" sections earlier in that file) followed by one clean "Unblocked" section, so every existing cross-reference to "Paused (2026-09-24)" still resolves.
+
+`go build`/`go vet`/`go test ./... -count=1` against real Postgres all pass, repository-wide, except the already-known, pre-existing, out-of-scope `getgame` JSONB-whitespace defect. The doc-citation standards test passes. Both WORKs' own Completion Records carried a full Implementation Report.
+
+## What happened after implementation: combined independent review and closure (2026-09-24, same day)
+
+A fresh independent review (no memory of the implementation) was performed covering WORK-0026 and WORK-0027 together, per WORK-0026's own Human Resolution that they are one combined change. It read the actual current code directly, ran its own fresh build/vet/test verification (not trusting either self-report), and specifically scrutinized the Snapshot codec against WORK-0025's own precedent (a HIGH-severity bug class from earlier the same day) - confirming `NextInteractionID` and every pending occurrence's `InteractionID`, including the `KeyedPendingAskGroup` JSON-re-marshal path, round-trip correctly and are proven behaviorally, not just structurally.
+
+Verdict: CHANGES_REQUIRED, one REQUIRED_FIX (a stale doc-comment in `engine/commit.go` still naming a removed `SignalKind` constant, violating WORK-0026's own explicit Acceptance Criterion), no DECISION_REQUIRED findings. Fixed directly, along with one NON_BLOCKING documentation-drift note (`GAME-ADR-0024` had the same kind of staleness `GAME-ADR-0007` was already fixed for) resolved as a trivial analogous fix. Re-verified clean: `go build`/`go vet`/the doc-citation standards test/a repo-wide grep for all six removed `SignalKind` constants (zero remaining Go-code hits)/`go test ./... -count=1` against real Postgres. Both WORKs closed to DONE, each recording the shared review in their own Completion Record (WORK-0026's in full, WORK-0027's by reference).
+
+With WORK-0026/WORK-0027 both DONE, all four of this Project's WORK items are now DONE, and all three of `../PROJECT.md`'s own Completion Criteria are met (confirmed there explicitly, each struck through with a "Met" note). This Project is functionally complete but has not been moved to `docs/projects/completed/` - that step is left for explicit human confirmation.
+
 ## What is NOT done
 
-- Neither WORK-0026 nor WORK-0027 is READY - only a human may authorize DRAFT -> READY (`docs/work/README.md`). Both need human review, in particular: WORK-0026's Human Resolution (combined-implementation decision) and WORK-0027's proposed migration-shape resolution.
-- No implementation has started on either WORK.
-- The `program/ask_group.go` NON_BLOCKING doc drift and the two new Tracked Follow-Ups found this pass (all in `../PROJECT.md`) remain unfixed, deliberately - all outside these WORKs' own scope.
+- This Project's directory has not been moved to `docs/projects/completed/` - a human decision, not made unilaterally here.
+- The `program/ask_group.go` NON_BLOCKING doc drift and the two Tracked Follow-Ups found while drafting WORK-0026/0027 (all recorded in `../PROJECT.md`'s "Tracked Follow-Ups") remain unfixed, deliberately - all outside any of this Project's WORK items' own scope.
+- The full outcome (four WORKs DONE, this Project's Completion Criteria met, the one fix applied, the Tracked Follow-Ups) has not yet been summarized to the human within this conversation.

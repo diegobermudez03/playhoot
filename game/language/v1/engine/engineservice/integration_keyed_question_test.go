@@ -137,9 +137,22 @@ func TestIntegration_AsynchronousQuizWithKeyedQuestionSlot(t *testing.T) {
 		}
 		snap = commit.Snapshot
 	}
+	interactionID := func(key string) engine.InteractionID {
+		for _, s := range snap.Root.KeyedQuestionSlots {
+			if s.Name != "Q" {
+				continue
+			}
+			for _, p := range s.Pending {
+				if p.Key.(engine.StringValue).Value == key {
+					return p.InteractionID
+				}
+			}
+		}
+		return 0
+	}
 	answer := func(key string, respondent engine.UserID, value float64) {
 		commit, err = engineservice.Step(p, snap, engine.Signal{
-			Kind: engine.SignalKindKeyedQuestionAnswered, Slot: "Q", Key: engine.StringValue{Value: key}, Respondent: respondent, Answer: engine.NumberValue{Value: value},
+			Kind: engine.SignalKindInteractionAnswered, InteractionID: interactionID(key), Respondent: respondent, Answer: engine.NumberValue{Value: value},
 		}, engine.DefaultLimits())
 		if err != nil {
 			t.Fatalf("unexpected error answering key %q: %v", key, err)

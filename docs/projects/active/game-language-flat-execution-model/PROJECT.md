@@ -1,8 +1,8 @@
 # Project: Game Language Flat Execution Model
 
-Status: ACTIVE
+Status: ACTIVE (all WORK DONE; Completion Criteria appear satisfied - see "Completion Criteria" below; not yet moved to `docs/projects/completed/`, pending human confirmation)
 Created: 2026-09-24
-Last updated: 2026-09-24 (WORK-0026/0027 drafted for real, DRAFT, to be implemented together)
+Last updated: 2026-09-24 (WORK-0026/0027 independent review APPROVED after one fix pass, both closed DONE - all four of this Project's WORK items are now DONE)
 
 ## Goal
 
@@ -20,7 +20,7 @@ Implement `game/docs/decisions/GAME-ADR-0026-flat-workflow-execution-model-and-k
 
 - **WORK-0024** (Remove Child Workflow and Task Group) - DONE (2026-09-24). Three independent review passes were needed before a clean APPROVED state (each found a shrinking set of stale documentation/doc-comment references the previous pass's narrower sweep missed; no code-behavior defect beyond the original implementation was ever found). The one DECISION_REQUIRED finding (a forced, verified-behavior-preserving Session Runtime edit, plus a resulting untested `MaxSteps` bound) was resolved by explicit human decision, non-materially - see WORK-0024's own Completion Record.
 - **WORK-0025** (Keyed Question, Ask Group, and Timer Slots) - DONE (2026-09-24). Two independent review passes were needed: the first found one HIGH-severity bug (the Snapshot codec never persisted keyed-slot state - fixed, with a comprehensive round-trip test) plus several lower-severity findings, all fixed; the second, fresh pass re-verified every fix directly and reached a clean APPROVED verdict. Timer's keyed slot is included, finally implementing the long-unimplemented GAME-ADR-0012; Presentation's keyed capability is deferred, per Human Resolution. See its own Completion Record for full history.
-- **WORK-0026** (Engine-Owned Interaction Addressing) and **WORK-0027** (Session Runtime Interaction-Addressing Rework) are both DRAFT (2026-09-24), drafted together rather than just-in-time one-at-a-time: drafting WORK-0026 surfaced that it cannot be implemented independently of WORK-0027 without leaving `game/session/...` unable to compile (no durable `InteractionID` exists for it to answer with until WORK-0027's own persistence rework lands) - see WORK-0026's own Human Resolution. Both WORKs are reviewed against their own separate accepted scope but implemented and closed together, in one combined pass. Neither is READY yet - pending human approval.
+- **WORK-0026** (Engine-Owned Interaction Addressing) and **WORK-0027** (Session Runtime Interaction-Addressing Rework) - DONE (2026-09-24). Drafted, approved READY, and implemented together in one combined pass - see WORK-0026's own Human Resolution for why they could not be implemented independently. Reviewed together as one combined change; one REQUIRED_FIX (a stale doc-comment reference to a removed `SignalKind` constant in `engine/commit.go`) applied and re-verified. See WORK-0026's own Completion Record for the full review history.
 
 ## Work
 
@@ -28,8 +28,8 @@ Implement `game/docs/decisions/GAME-ADR-0026-flat-workflow-execution-model-and-k
 |------:|------|--------|
 | 1 | WORK-0024 — Remove Child Workflow and Task Group | DONE |
 | 2 | WORK-0025 — Keyed Question, Ask Group, and Timer Slots | DONE |
-| 3 | WORK-0026 — Engine-Owned Interaction Addressing (`InteractionID`, unified answer signal, `Kind`) | DRAFT |
-| 4 | WORK-0027 — Session Runtime Interaction-Addressing Rework | DRAFT |
+| 3 | WORK-0026 — Engine-Owned Interaction Addressing (`InteractionID`, unified answer signal, `Kind`) | DONE |
+| 4 | WORK-0027 — Session Runtime Interaction-Addressing Rework | DONE |
 
 ## Ordering / Dependencies
 
@@ -40,7 +40,7 @@ Implement `game/docs/decisions/GAME-ADR-0026-flat-workflow-execution-model-and-k
 
 ## Material Decisions Needing Human Input
 
-- WORK-0027's `session_interactions` migration shape is now proposed (replace `engine_path`/`engine_slot` outright, following `session-runtime-v1`'s WORK-0001 pre-launch-schema-replacement precedent) - see WORK-0027's own Approved Design. Recorded here as still awaiting explicit human confirmation at DRAFT -> READY, not yet a closed question.
+- WORK-0027's `session_interactions` migration shape is confirmed (2026-09-24, approved alongside READY): replace `engine_path`/`engine_slot` outright, following `session-runtime-v1`'s WORK-0001 pre-launch-schema-replacement precedent - see WORK-0027's own Approved Design.
 
 ## Tracked Follow-Ups (Non-Blocking)
 
@@ -52,6 +52,8 @@ Implement `game/docs/decisions/GAME-ADR-0026-flat-workflow-execution-model-and-k
 
 This Project is complete when:
 
-1. WORK-0024 through WORK-0027 are each DONE, or explicitly moved out of scope with human confirmation.
-2. `go build ./...`/`go vet ./...`/the full test suite pass with Child Workflow/Task Group fully removed from `program`/`engine`/`internal/compiler`/`internal/runtime`, and no reference to either remains in canonical documentation as a current (non-historical) capability.
-3. `session-runtime-v1`'s Phase 1 is confirmed unblocked (its own PROJECT.md's pause note is resolved).
+1. ~~WORK-0024 through WORK-0027 are each DONE, or explicitly moved out of scope with human confirmation.~~ **Met (2026-09-24)** - all four DONE.
+2. ~~`go build ./...`/`go vet ./...`/the full test suite pass with Child Workflow/Task Group fully removed from `program`/`engine`/`internal/compiler`/`internal/runtime`, and no reference to either remains in canonical documentation as a current (non-historical) capability.~~ **Met** - confirmed by WORK-0024's own three-pass review; unaffected by WORK-0026/0027.
+3. ~~`session-runtime-v1`'s Phase 1 is confirmed unblocked (its own PROJECT.md's pause note is resolved).~~ **Met (2026-09-24)** - see that Project's own "Unblocked (2026-09-24)" section.
+
+All three criteria are now met. This Project has not yet been moved to `docs/projects/completed/` - per `docs/ai/protocols/FEATURE_DEVELOPMENT.md`'s own closure guidance, that step (and confirming no further slice/follow-up belongs here first - see "Tracked Follow-Ups" above, none of which block this Project's own completion) is left for explicit human confirmation rather than done unilaterally here.

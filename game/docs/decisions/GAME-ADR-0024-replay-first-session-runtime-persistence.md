@@ -105,3 +105,7 @@ Rejected as an authoritative mechanism. An ephemeral, non-durable, best-effort i
 ## Implementation Impact
 
 Future implementation work must align Session Runtime migrations and RUNNING-phase execution with this model, per WORK-0019 once it reaches READY. No migration, production code, or WORK beyond WORK-0019's own creation is authorized by this record.
+
+### Implemented by
+
+`docs/projects/active/game-language-flat-execution-model/works/WORK-0026-engine-owned-interaction-addressing.md`/`WORK-0027-session-runtime-interaction-addressing-rework.md` superseded this record's "Complete replay-input categories" audit entry for `SignalKindQuestionAnswered`: that signal kind no longer exists (collapsed into `SignalKindInteractionAnswered`), and its replay-input content is now durable in `session_interactions` as `response_payload`/`engine_interaction_id`/`session_actor_id`, not `engine_path`/`engine_slot`. The `SignalKindTimerExpired`/`session_timer_obligations` entry immediately below it is unaffected - Timer was out of scope for both WORKs and still uses `engine_path`/`engine_slot`/`engine_key` exactly as originally recorded above.

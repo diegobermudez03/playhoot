@@ -41,9 +41,10 @@ type gameSession struct {
 	// this internally (see Snapshot.Root.QuestionSlots), but it doesn't
 	// hand us a nice "waiting on this" map — that's session-layer
 	// bookkeeping we own, driven by the OpenQuestionOutput values Step
-	// gives us. Keyed here by slot name, since there is exactly one
-	// workflow instance for the whole game.
-	pendingQuestions map[string]engine.OpenQuestionOutput
+	// gives us. Keyed here by InteractionID, the engine-assigned address
+	// a caller answers/correlates against — never Slot, which is purely
+	// informational now (see OpenQuestionOutput's own doc comment).
+	pendingQuestions map[engine.InteractionID]engine.OpenQuestionOutput
 }
 
 // newGameSession is the "Definition -> compiled Program -> initial
@@ -96,7 +97,7 @@ func newGameSession() (*gameSession, error) {
 	session := &gameSession{
 		program:          compiledProgram,
 		snapshot:         snap,
-		pendingQuestions: map[string]engine.OpenQuestionOutput{},
+		pendingQuestions: map[engine.InteractionID]engine.OpenQuestionOutput{},
 	}
 
 	// startSignal is mandatory: it is what gets the root workflow
@@ -138,12 +139,12 @@ func (s *gameSession) applyStep(signal engine.Signal) error {
 			// Remembered so a later answer (arriving as a websocket
 			// message, an HTTP request, whatever) can be matched back to
 			// what it's an answer to.
-			s.pendingQuestions[o.Slot] = o
+			s.pendingQuestions[o.InteractionID] = o
 			// ... also actually deliver the question to o.Recipient
 			// through whatever real transport this consumer uses.
 
 		case engine.CloseQuestionOutput:
-			delete(s.pendingQuestions, o.Slot)
+			delete(s.pendingQuestions, o.InteractionID)
 
 		case engine.ActivatePresentationOutput, engine.UpdatePresentationOutput, engine.RemovePresentationOutput:
 			// ... push o.Model / removal to o.Recipient's client.
@@ -195,28 +196,34 @@ func (s *gameSession) HandleUserIntent(actor engine.UserID, intent string, field
 
 // QuestionAnswered is called whenever a player responds to a question we
 // previously opened (see the OpenQuestionOutput handling above).
-func (s *gameSession) QuestionAnswered(respondent engine.UserID, slot string, answer engine.Value) error {
+// interactionID is the InteractionID that opened it (see
+// OpenQuestionOutput.InteractionID) — a real consumer would have
+// resolved this from whatever the client's answer message referenced
+// (a stored, previously-delivered handle), never a slot name.
+func (s *gameSession) QuestionAnswered(respondent engine.UserID, interactionID engine.InteractionID, answer engine.Value) error {
 	// A real implementation should confirm respondent actually matches
 	// pending.Recipient, and reject/no-op if nothing is pending for this
-	// slot (the player answered something we no longer care about, e.g.
-	// after a timeout already closed it).
-	pending, ok := s.pendingQuestions[slot]
+	// interaction (the player answered something we no longer care
+	// about, e.g. after a timeout already closed it).
+	pending, ok := s.pendingQuestions[interactionID]
 	if !ok {
-		return fmt.Errorf("no pending question for slot %q", slot)
+		return fmt.Errorf("no pending question for interaction %v", interactionID)
 	}
 	if pending.Recipient != respondent {
-		return fmt.Errorf("slot %q is not awaiting an answer from %q", slot, respondent)
+		return fmt.Errorf("interaction %v is not awaiting an answer from %q", interactionID, respondent)
 	}
 
 	// Step itself re-validates all of this (authorized respondent,
 	// response type, any Validation expression) before ever accepting
 	// it — see ErrInputRejected in README.md — so this session-layer
-	// check is just to fail fast, not the real authority.
+	// check is just to fail fast, not the real authority. The engine
+	// resolves interactionID to the underlying slot/key itself; this
+	// consumer never needs to know or supply one.
 	err := s.applyStep(engine.Signal{
-		Kind:       engine.SignalKindQuestionAnswered,
-		Slot:       slot,
-		Respondent: respondent,
-		Answer:     answer,
+		Kind:          engine.SignalKindInteractionAnswered,
+		InteractionID: interactionID,
+		Respondent:    respondent,
+		Answer:        answer,
 	})
 	if err != nil {
 		return err
@@ -225,7 +232,7 @@ func (s *gameSession) QuestionAnswered(respondent engine.UserID, slot string, an
 	// Cleared only once Step actually accepted the answer; applyStep's
 	// own CloseQuestionOutput handling also clears this whenever the
 	// engine closes the slot on its own.
-	delete(s.pendingQuestions, slot)
+	delete(s.pendingQuestions, interactionID)
 	return nil
 }
 

@@ -82,7 +82,15 @@ func askGroupSnapshot(recipients []engine.UserID) engine.Snapshot {
 }
 
 func answerAskGroup(p engine.Program, snap engine.Snapshot, respondent engine.UserID, answer bool) (engine.Commit, error) {
-	return runtime.Step(p, snap, engine.Signal{Kind: engine.SignalKindAskGroupAnswered, Slot: "Ask", Respondent: respondent, Answer: engine.BoolValue{Value: answer}}, engine.DefaultLimits())
+	id := snap.Root.AskGroupSlots[0].Pending.InteractionID
+	return runtime.Step(p, snap, engine.Signal{Kind: engine.SignalKindInteractionAnswered, InteractionID: id, Respondent: respondent, Answer: engine.BoolValue{Value: answer}}, engine.DefaultLimits())
+}
+
+// joinAskGroup submits the completed-awaiting-join signal for the Ask
+// Group occurrence currently pending in snap's "Ask" slot.
+func joinAskGroup(p engine.Program, snap engine.Snapshot) (engine.Commit, error) {
+	id := snap.Root.AskGroupSlots[0].Pending.InteractionID
+	return runtime.Step(p, snap, engine.Signal{Kind: engine.SignalKindInteractionCompleted, InteractionID: id}, engine.DefaultLimits())
 }
 
 func TestExec_OpenAskGroupAllResponses_CompletesWhenEveryoneAnswers(t *testing.T) {
@@ -129,7 +137,7 @@ func TestExec_OpenAskGroupAllResponses_CompletesWhenEveryoneAnswers(t *testing.T
 		t.Fatalf("expected acceptance-order responses, got %+v", pending.Responses)
 	}
 
-	commit, err = runtime.Step(p, snap, engine.Signal{Kind: engine.SignalKindAskGroupCompleted, Slot: "Ask"}, engine.DefaultLimits())
+	commit, err = joinAskGroup(p, snap)
 	if err != nil {
 		t.Fatalf("unexpected error joining: %v", err)
 	}
@@ -151,7 +159,7 @@ func TestExec_OpenAskGroupAllResponses_EmptyRecipientsCompletesImmediately(t *te
 		t.Fatalf("expected an all-responses group with no recipients to complete immediately, got %+v", pending)
 	}
 
-	_, err = runtime.Step(p, commit.Snapshot, engine.Signal{Kind: engine.SignalKindAskGroupCompleted, Slot: "Ask"}, engine.DefaultLimits())
+	_, err = joinAskGroup(p, commit.Snapshot)
 	if err != nil {
 		t.Fatalf("unexpected error joining: %v", err)
 	}
@@ -421,7 +429,7 @@ func TestExec_JoinBindsResponsesRespondentsAndMissing(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	commit, err = runtime.Step(p, commit.Snapshot, engine.Signal{Kind: engine.SignalKindAskGroupCompleted, Slot: "Ask"}, engine.DefaultLimits())
+	commit, err = joinAskGroup(p, commit.Snapshot)
 	if err != nil {
 		t.Fatalf("unexpected error joining: %v", err)
 	}
@@ -435,25 +443,26 @@ func TestExec_JoinStaleOrDuplicateRejected(t *testing.T) {
 	p := askGroupProgram(engine.AskGroupAllResponsesPolicy{}, engine.UnitType{}, engine.StayControl{})
 	snap := askGroupSnapshot([]engine.UserID{askAlice})
 
-	// Not even opened yet.
-	_, err := runtime.Step(p, snap, engine.Signal{Kind: engine.SignalKindAskGroupCompleted, Slot: "Ask"}, engine.DefaultLimits())
+	// Not even opened yet: no occurrence anywhere holds this ID.
+	_, err := runtime.Step(p, snap, engine.Signal{Kind: engine.SignalKindInteractionCompleted, InteractionID: 0}, engine.DefaultLimits())
 	if err != runtime.ErrInputRejected {
 		t.Fatalf("expected runtime.ErrInputRejected joining an unopened slot, got %v", err)
 	}
 
 	commit, _ := runtime.Step(p, snap, engine.Signal{Name: "Open"}, engine.DefaultLimits())
 	// Collecting, not yet completed.
-	_, err = runtime.Step(p, commit.Snapshot, engine.Signal{Kind: engine.SignalKindAskGroupCompleted, Slot: "Ask"}, engine.DefaultLimits())
+	_, err = joinAskGroup(p, commit.Snapshot)
 	if err != runtime.ErrInputRejected {
 		t.Fatalf("expected runtime.ErrInputRejected joining a still-collecting slot, got %v", err)
 	}
 
 	commit, _ = answerAskGroup(p, commit.Snapshot, askAlice, true) // completes naturally
-	commit, err = runtime.Step(p, commit.Snapshot, engine.Signal{Kind: engine.SignalKindAskGroupCompleted, Slot: "Ask"}, engine.DefaultLimits())
+	id := commit.Snapshot.Root.AskGroupSlots[0].Pending.InteractionID
+	commit, err = joinAskGroup(p, commit.Snapshot)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	_, err = runtime.Step(p, commit.Snapshot, engine.Signal{Kind: engine.SignalKindAskGroupCompleted, Slot: "Ask"}, engine.DefaultLimits())
+	_, err = runtime.Step(p, commit.Snapshot, engine.Signal{Kind: engine.SignalKindInteractionCompleted, InteractionID: id}, engine.DefaultLimits())
 	if err != runtime.ErrInputRejected {
 		t.Fatalf("expected runtime.ErrInputRejected for a duplicate join, got %v", err)
 	}

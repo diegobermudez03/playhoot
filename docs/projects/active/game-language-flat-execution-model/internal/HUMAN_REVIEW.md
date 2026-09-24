@@ -1,4 +1,4 @@
-Status: Two records in this file. WORK-0025's own section (below) is RESOLVED, kept as historical record. WORK-0026/WORK-0027's section (bottom of this file) is AWAITING HUMAN REVIEW: both WORKs are DRAFT, pending explicit DRAFT -> READY approval.
+Status: Two records in this file, both RESOLVED, kept as historical record. WORK-0026/WORK-0027's section (bottom of this file) was approved verbatim ("Approved, start", 2026-09-24) - both moved DRAFT -> READY -> IMPLEMENTING; implementation is combined per WORK-0026's own Human Resolution.
 
 # WORK-0025 — Two Design Blockers (2026-09-24)
 
@@ -36,7 +36,7 @@ WORK-0025 stays DRAFT. No implementation should proceed on either Blocker until 
 
 # WORK-0026 / WORK-0027 — Combined Drafting, Pending READY Approval (2026-09-24)
 
-Status: AWAITING HUMAN REVIEW.
+Status: RESOLVED (2026-09-24) - approved verbatim ("Approved, start"). Both WORKs moved DRAFT -> READY -> IMPLEMENTING; implemented together per the combined-implementation decision below.
 
 Process: drafting `WORK-0026-engine-owned-interaction-addressing.md` for real (PLANNED -> DRAFT), per this Project's just-in-time drafting practice, following the human's instruction "proceed with 0026." Design was checked directly against the actual current `engine.Signal`/`engine.Output`/`engine.Snapshot`/`internal/runtime` code and against `game/session/workflows/sessionlifecycle`'s actual consumption of it, not only against GAME-ADR-0026's prose. No production code was implemented by this pass - design-drafting only.
 

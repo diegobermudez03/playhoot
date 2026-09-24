@@ -55,10 +55,12 @@ type QuestionSlotInstance struct {
 // PendingQuestion is one concrete, in-flight question instance: the
 // user it was opened for and the arguments captured when it opened —
 // see program.OpenQuestionOperation. engineservice.Step is what creates
-// one.
+// one. InteractionID is assigned once at open time from
+// Snapshot.NextInteractionID and never changes afterward.
 type PendingQuestion struct {
-	Recipient UserID
-	Arguments []FieldValue
+	Recipient     UserID
+	Arguments     []FieldValue
+	InteractionID InteractionID
 }
 
 // AskGroupSlotInstance is the runtime occupancy of one declared
@@ -79,6 +81,12 @@ type PendingAskGroup struct {
 	// the whole group when it was opened — see
 	// program.OpenAskGroupOperation's documented "shared arguments".
 	Arguments []FieldValue
+
+	// InteractionID addresses this whole group occurrence — assigned
+	// once at open time and shared by every recipient's own
+	// OpenQuestionOutput for it, since the group, not any one
+	// recipient's question, is what a caller answers/completes against.
+	InteractionID InteractionID
 
 	// Responses holds every accepted answer, in the order each was
 	// accepted — this is both the durable record used to compute
@@ -149,11 +157,14 @@ type KeyedQuestionSlotInstance struct {
 }
 
 // KeyedPendingQuestion is one concrete, in-flight question occurrence at
-// a specific Key — see program.OpenKeyedQuestionOperation.
+// a specific Key — see program.OpenKeyedQuestionOperation. InteractionID
+// is assigned once at open time and never changes afterward, exactly
+// like PendingQuestion's own.
 type KeyedPendingQuestion struct {
-	Key       Value
-	Recipient UserID
-	Arguments []FieldValue
+	Key           Value
+	Recipient     UserID
+	Arguments     []FieldValue
+	InteractionID InteractionID
 }
 
 // KeyedAskGroupSlotInstance is the runtime occupancy of one declared

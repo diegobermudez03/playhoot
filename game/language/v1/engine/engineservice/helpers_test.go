@@ -191,7 +191,8 @@ func askGroupSnapshot(recipients []engine.UserID) engine.Snapshot {
 }
 
 func answerAskGroup(p engine.Program, snap engine.Snapshot, respondent engine.UserID, answer bool) (engine.Commit, error) {
-	return engineservice.Step(p, snap, engine.Signal{Kind: engine.SignalKindAskGroupAnswered, Slot: "Ask", Respondent: respondent, Answer: engine.BoolValue{Value: answer}}, engine.DefaultLimits())
+	id := snap.Root.AskGroupSlots[0].Pending.InteractionID
+	return engineservice.Step(p, snap, engine.Signal{Kind: engine.SignalKindInteractionAnswered, InteractionID: id, Respondent: respondent, Answer: engine.BoolValue{Value: answer}}, engine.DefaultLimits())
 }
 
 // questionDemoProgram builds a hand-assembled engine.Program (bypassing

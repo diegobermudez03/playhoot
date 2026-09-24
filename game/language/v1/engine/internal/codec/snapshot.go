@@ -7,10 +7,11 @@ import (
 )
 
 type snapshotWire struct {
-	GlobalState json.RawMessage `json:"global_state"`
-	Root        json.RawMessage `json:"root"`
-	Random      randomStateWire `json:"random"`
-	Sequence    uint64          `json:"sequence"`
+	GlobalState       json.RawMessage `json:"global_state"`
+	Root              json.RawMessage `json:"root"`
+	Random            randomStateWire `json:"random"`
+	Sequence          uint64          `json:"sequence"`
+	NextInteractionID uint64          `json:"next_interaction_id"`
 }
 
 type randomStateWire struct {
@@ -28,10 +29,11 @@ func EncodeSnapshot(path string, snapshot engine.Snapshot) (json.RawMessage, err
 		return nil, err
 	}
 	return json.Marshal(snapshotWire{
-		GlobalState: global,
-		Root:        root,
-		Random:      randomStateWire{State: snapshot.Random.State},
-		Sequence:    snapshot.Sequence,
+		GlobalState:       global,
+		Root:              root,
+		Random:            randomStateWire{State: snapshot.Random.State},
+		Sequence:          snapshot.Sequence,
+		NextInteractionID: uint64(snapshot.NextInteractionID),
 	})
 }
 
@@ -65,9 +67,10 @@ func DecodeSnapshot(path string, data []byte) (engine.Snapshot, error) {
 	}
 
 	return engine.Snapshot{
-		GlobalState: global,
-		Root:        root,
-		Random:      engine.RandomState{State: w.Random.State},
-		Sequence:    w.Sequence,
+		GlobalState:       global,
+		Root:              root,
+		Random:            engine.RandomState{State: w.Random.State},
+		Sequence:          w.Sequence,
+		NextInteractionID: engine.InteractionID(w.NextInteractionID),
 	}, nil
 }

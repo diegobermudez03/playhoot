@@ -183,15 +183,11 @@ func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessio
 		return AnswerInteractionResult{}, fmt.Errorf("reconstructing current runtime state: %s", err)
 	}
 
-	signalKind, err := answerSignalKind(interaction.Kind)
-	if err != nil {
-		return AnswerInteractionResult{}, err
-	}
 	signal := engine.Signal{
-		Kind:       signalKind,
-		Slot:       interaction.EngineSlot,
-		Respondent: engine.UserID(strconv.FormatUint(uint64(actor.ID), 10)),
-		Answer:     answer,
+		Kind:          engine.SignalKindInteractionAnswered,
+		InteractionID: engine.InteractionID(interaction.EngineInteractionID),
+		Respondent:    engine.UserID(strconv.FormatUint(uint64(actor.ID), 10)),
+		Answer:        answer,
 	}
 
 	drainResult := runtimeturn.Drain(compiledProgram, snapshot, signal)
@@ -218,13 +214,13 @@ func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessio
 	// *different* slot ever does. The answered interaction is therefore
 	// closed directly by its already-known id instead of being discovered
 	// through captured Outputs. This runs before captureInteractions so an
-	// authored transition that reopens this same (session, path, slot,
-	// actor) key within the same Turn finds it already closed, not still
-	// occupying the active-slot uniqueness constraint.
+	// authored transition that reopens this same (session, InteractionID)
+	// key within the same Turn finds it already closed, not still occupying
+	// the active-interaction uniqueness constraint.
 	if err := m.answerInteractionRepo.CloseAnsweredInteraction(ctx, tx, interaction.ID, responsePayload, turnID); err != nil {
 		return AnswerInteractionResult{}, err
 	}
-	if err := captureInteractions(ctx, tx, m.answerInteractionRepo, compiledProgram, lockedSession.ID, turnID, drainResult.Steps); err != nil {
+	if err := captureInteractions(ctx, tx, m.answerInteractionRepo, lockedSession.ID, turnID, drainResult.Steps); err != nil {
 		return AnswerInteractionResult{}, err
 	}
 	if err := m.answerInteractionRepo.SetCurrentTurn(ctx, tx, lockedSession.ID, turnID); err != nil {
@@ -247,17 +243,4 @@ func (m *Manager) terminalizeAnswerInteractionFatal(ctx context.Context, tx *gor
 		return AnswerInteractionResult{}, err
 	}
 	return AnswerInteractionResult{Outcome: AnswerInteractionOutcomeRuntimeExecutionFailed, SessionUUID: SessionUUID(lockedSession.UUID)}, nil
-}
-
-// answerSignalKind maps a persisted session_interactions.kind to the
-// engine.SignalKind a response to it must be constructed as.
-func answerSignalKind(interactionKind string) (engine.SignalKind, error) {
-	switch interactionKind {
-	case session.InteractionKindQuestion:
-		return engine.SignalKindQuestionAnswered, nil
-	case session.InteractionKindAskGroup:
-		return engine.SignalKindAskGroupAnswered, nil
-	default:
-		return 0, fmt.Errorf("unknown interaction kind %q", interactionKind)
-	}
 }

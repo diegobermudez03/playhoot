@@ -127,6 +127,44 @@ func TestCodec_PendingQuestionRoundTrips(t *testing.T) {
 	}
 }
 
+// TestCodec_InteractionIDRoundTrips proves NextInteractionID and a
+// pending occurrence's own InteractionID both survive Snapshot
+// encode/decode with their real, engine-assigned (non-zero) values —
+// the same class of round-trip proof this Project's own history
+// records as necessary for a new Snapshot field to actually be safe
+// across persistence.
+func TestCodec_InteractionIDRoundTrips(t *testing.T) {
+	p, diags := engineservice.Compile(questionWithTimeoutDefinition())
+	if diags.HasErrors() {
+		t.Fatalf("unexpected compile errors: %v", diags)
+	}
+	snap, startSignal, err := engineservice.NewSnapshot(p, engine.InitializationInput{RootParameters: map[string]engine.Value{"player": engine.UserValue{ID: player}}})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	commit, err := engineservice.Step(p, snap, startSignal, engine.DefaultLimits())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	pending := commit.Snapshot.Root.QuestionSlots[0].Pending
+	if pending == nil || pending.InteractionID == 0 {
+		t.Fatalf("expected a real, non-zero InteractionID to be assigned, got %+v", pending)
+	}
+	if commit.Snapshot.NextInteractionID == 0 {
+		t.Fatal("expected NextInteractionID to have advanced past zero")
+	}
+
+	decoded := roundTripSnapshot(t, commit.Snapshot)
+	assertSnapshotsEqual(t, commit.Snapshot, decoded)
+	decodedPending := decoded.Root.QuestionSlots[0].Pending
+	if decodedPending == nil || decodedPending.InteractionID != pending.InteractionID {
+		t.Fatalf("InteractionID lost or changed across round trip: got %+v, want %v", decodedPending, pending.InteractionID)
+	}
+	if decoded.NextInteractionID != commit.Snapshot.NextInteractionID {
+		t.Fatalf("NextInteractionID lost or changed across round trip: got %v, want %v", decoded.NextInteractionID, commit.Snapshot.NextInteractionID)
+	}
+}
+
 func TestCodec_TerminalOutcomeRoundTrips(t *testing.T) {
 	p := counterProgram()
 	commit, err := engineservice.Step(p, counterSnapshot(3), engine.Signal{Name: "Finish"}, engine.DefaultLimits())

@@ -238,9 +238,9 @@ const (
 // immediately at Start (Slot "AG", a bare number response, completing once
 // every recipient has answered). Answering an ask-group member never
 // selects or runs a workflow transition and never produces InternalSignals
-// (the engine's own documented behavior for SignalKindAskGroupAnswered), so
-// unlike answerableDefinition this fixture needs no transition at all
-// beyond the one that opens the group.
+// (the engine's own documented behavior for SignalKindInteractionAnswered
+// against an Ask Group occurrence), so unlike answerableDefinition this
+// fixture needs no transition at all beyond the one that opens the group.
 func askGroupAnswerableDefinition(playersMin, playersMax int) program.Definition {
 	return program.Definition{
 		Metadata:     program.Metadata{ID: "ask-group-answerable", Name: "AskGroupAnswerable"},

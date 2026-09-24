@@ -120,6 +120,22 @@ func TestCodec_KeyedSlotsRoundTrip(t *testing.T) {
 		}
 		snap = commit.Snapshot
 	}
+	questionID := func(key string) engine.InteractionID {
+		for _, p := range snap.Root.KeyedQuestionSlots[0].Pending {
+			if p.Key.(engine.StringValue).Value == key {
+				return p.InteractionID
+			}
+		}
+		return 0
+	}
+	askGroupID := func(key string) engine.InteractionID {
+		for _, p := range snap.Root.KeyedAskGroupSlots[0].Pending {
+			if p.Key.(engine.StringValue).Value == key {
+				return p.InteractionID
+			}
+		}
+		return 0
+	}
 
 	step(engine.Signal{Kind: engine.SignalKindIntent, Intent: "OpenQ", Fields: map[string]engine.Value{"key": engine.StringValue{Value: "k1"}, "recipient": engine.UserValue{ID: userA}}})
 	step(engine.Signal{Kind: engine.SignalKindIntent, Intent: "OpenQ", Fields: map[string]engine.Value{"key": engine.StringValue{Value: "k2"}, "recipient": engine.UserValue{ID: userB}}})
@@ -128,7 +144,7 @@ func TestCodec_KeyedSlotsRoundTrip(t *testing.T) {
 		"recipients": engine.ListValue{ElementType: engine.UserType{}, Elements: []engine.Value{engine.UserValue{ID: userA}, engine.UserValue{ID: userB}}},
 	}})
 	commit, err = engineservice.Step(p, snap, engine.Signal{
-		Kind: engine.SignalKindKeyedAskGroupAnswered, Slot: "G", Key: engine.StringValue{Value: "team1"}, Respondent: userA, Answer: engine.BoolValue{Value: true},
+		Kind: engine.SignalKindInteractionAnswered, InteractionID: askGroupID("team1"), Respondent: userA, Answer: engine.BoolValue{Value: true},
 	}, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error answering the ask group's first response: %v", err)
@@ -170,14 +186,14 @@ func TestCodec_KeyedSlotsRoundTrip(t *testing.T) {
 	// The restored state must be genuinely usable, not merely
 	// inspectable: continue driving the game directly from decoded.
 	snap = decoded
-	step(engine.Signal{Kind: engine.SignalKindKeyedQuestionAnswered, Slot: "Q", Key: engine.StringValue{Value: "k2"}, Respondent: userB, Answer: engine.BoolValue{Value: true}})
+	step(engine.Signal{Kind: engine.SignalKindInteractionAnswered, InteractionID: questionID("k2"), Respondent: userB, Answer: engine.BoolValue{Value: true}})
 	qSlotAfter := snap.Root.KeyedQuestionSlots[0]
 	if len(qSlotAfter.Pending) != 1 || qSlotAfter.Pending[0].Key.(engine.StringValue).Value != "k1" {
 		t.Fatalf("expected only k1 to remain pending after answering k2 post-decode, got %+v", qSlotAfter)
 	}
 
 	commit, err = engineservice.Step(p, snap, engine.Signal{
-		Kind: engine.SignalKindKeyedAskGroupAnswered, Slot: "G", Key: engine.StringValue{Value: "team1"}, Respondent: userB, Answer: engine.BoolValue{Value: false},
+		Kind: engine.SignalKindInteractionAnswered, InteractionID: askGroupID("team1"), Respondent: userB, Answer: engine.BoolValue{Value: false},
 	}, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error completing the ask group post-decode: %v", err)

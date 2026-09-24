@@ -47,9 +47,10 @@ type Trace struct {
 
 	// TransitionName is the Name of the Transition selected — see
 	// Transition.Name. Empty when no ordinary transition was selected
-	// (currently, only a SignalKindAskGroupAnswered Step, which never
-	// selects one at all — see program.AskGroupCompletedSignalSource's
-	// documented "never produces a signal per individual answer").
+	// (currently, only a SignalKindInteractionAnswered Step addressing an
+	// Ask Group occurrence, which never selects one at all — see
+	// program.AskGroupCompletedSignalSource's documented "never produces
+	// a signal per individual answer").
 	TransitionName string
 
 	// GuardEvaluated reports whether the selected transition declared a

@@ -51,11 +51,13 @@ func (ctx *execContext) execOpenAskGroup(o engine.OpenAskGroupOperation, scope e
 		return err
 	}
 
+	id := ctx.assignInteractionID()
 	pending := &engine.PendingAskGroup{
 		Recipients:     recipients,
 		Arguments:      args,
 		CompletionKind: kind,
 		QuorumCount:    quorum,
+		InteractionID:  id,
 	}
 	if askGroupPolicySatisfied(*pending) {
 		pending.Completed = true
@@ -64,7 +66,10 @@ func (ctx *execContext) execOpenAskGroup(o engine.OpenAskGroupOperation, scope e
 
 	slotDecl, _ := ctx.askGroupSlotDeclaration(o.Slot)
 	for _, r := range recipients {
-		ctx.outputs = append(ctx.outputs, engine.OpenQuestionOutput{Slot: o.Slot, Recipient: r, Question: slotDecl.Question, Arguments: args})
+		ctx.outputs = append(ctx.outputs, engine.OpenQuestionOutput{
+			Slot: o.Slot, Recipient: r, Question: slotDecl.Question, Arguments: args,
+			InteractionID: id, Kind: engine.InteractionKindAskGroup,
+		})
 	}
 	return nil
 }
@@ -128,7 +133,7 @@ func (ctx *execContext) execFinalizeAskGroup(o engine.FinalizeAskGroupOperation)
 	updated.Completed = true
 	ctx.askGroupSlots[idx] = engine.AskGroupSlotInstance{Name: o.Slot, Pending: &updated}
 	for _, r := range missingAskGroupRecipients(updated) {
-		ctx.outputs = append(ctx.outputs, engine.CloseQuestionOutput{Slot: o.Slot, Recipient: r})
+		ctx.outputs = append(ctx.outputs, engine.CloseQuestionOutput{Slot: o.Slot, Recipient: r, InteractionID: updated.InteractionID})
 	}
 	return nil
 }
@@ -155,7 +160,7 @@ func (ctx *execContext) execCancelAskGroup(o engine.CancelAskGroupOperation) err
 	}
 
 	for _, r := range missingAskGroupRecipients(*pending) {
-		ctx.outputs = append(ctx.outputs, engine.CloseQuestionOutput{Slot: o.Slot, Recipient: r})
+		ctx.outputs = append(ctx.outputs, engine.CloseQuestionOutput{Slot: o.Slot, Recipient: r, InteractionID: pending.InteractionID})
 	}
 	ctx.askGroupSlots[idx] = engine.AskGroupSlotInstance{Name: o.Slot}
 	return nil
@@ -218,7 +223,8 @@ func (ctx *execContext) execOpenKeyedAskGroup(o engine.OpenKeyedAskGroupOperatio
 		return err
 	}
 
-	group := engine.PendingAskGroup{Recipients: recipients, Arguments: args, CompletionKind: kind, QuorumCount: quorum}
+	id := ctx.assignInteractionID()
+	group := engine.PendingAskGroup{Recipients: recipients, Arguments: args, CompletionKind: kind, QuorumCount: quorum, InteractionID: id}
 	if askGroupPolicySatisfied(group) {
 		group.Completed = true
 	}
@@ -230,7 +236,10 @@ func (ctx *execContext) execOpenKeyedAskGroup(o engine.OpenKeyedAskGroupOperatio
 
 	slotDecl, _ := ctx.keyedAskGroupSlotDeclaration(o.Slot)
 	for _, r := range recipients {
-		ctx.outputs = append(ctx.outputs, engine.OpenKeyedQuestionOutput{Slot: o.Slot, Key: key, Recipient: r, Question: slotDecl.Question, Arguments: args})
+		ctx.outputs = append(ctx.outputs, engine.OpenKeyedQuestionOutput{
+			Slot: o.Slot, Key: key, Recipient: r, Question: slotDecl.Question, Arguments: args,
+			InteractionID: id, Kind: engine.InteractionKindAskGroup,
+		})
 	}
 	return nil
 }
@@ -265,7 +274,7 @@ func (ctx *execContext) execFinalizeKeyedAskGroup(o engine.FinalizeKeyedAskGroup
 	pending[pIdx] = entry
 	ctx.keyedAskGroupSlots[idx] = engine.KeyedAskGroupSlotInstance{Name: o.Slot, Pending: pending}
 	for _, r := range missingAskGroupRecipients(entry.PendingAskGroup) {
-		ctx.outputs = append(ctx.outputs, engine.CloseKeyedQuestionOutput{Slot: o.Slot, Key: key, Recipient: r})
+		ctx.outputs = append(ctx.outputs, engine.CloseKeyedQuestionOutput{Slot: o.Slot, Key: key, Recipient: r, InteractionID: entry.InteractionID})
 	}
 	return nil
 }
@@ -297,7 +306,7 @@ func (ctx *execContext) execCancelKeyedAskGroup(o engine.CancelKeyedAskGroupOper
 	}
 
 	for _, r := range missingAskGroupRecipients(entry.PendingAskGroup) {
-		ctx.outputs = append(ctx.outputs, engine.CloseKeyedQuestionOutput{Slot: o.Slot, Key: key, Recipient: r})
+		ctx.outputs = append(ctx.outputs, engine.CloseKeyedQuestionOutput{Slot: o.Slot, Key: key, Recipient: r, InteractionID: entry.InteractionID})
 	}
 	pending := ctx.keyedAskGroupSlots[idx].Pending
 	result := make([]engine.KeyedPendingAskGroup, 0, len(pending)-1)
@@ -337,14 +346,16 @@ func missingAskGroupRecipients(pending engine.PendingAskGroup) []engine.UserID {
 	return missing
 }
 
-// stepAskGroupAnswer implements SignalKindAskGroupAnswered's documented
-// behavior: unlike every other Step path, an accepted answer never
+// stepAskGroupAnswer implements SignalKindInteractionAnswered's
+// documented behavior when it addresses an ordinary Ask Group
+// occurrence: unlike every other Step path, an accepted answer never
 // selects or runs a transition — it only records the answer against the
 // targeted ask-group slot's PendingAskGroup and re-evaluates its
 // completion policy, as one atomic Commit. A rejected answer (stale
 // slot, unauthorized or duplicate respondent, or an invalid value)
 // returns ErrInputRejected and leaves snapshot unchanged, exactly like
-// any other rejected input.
+// any other rejected input. Called with signal already resolved: Slot
+// set from the occurrence Step's own InteractionID resolution found.
 func stepAskGroupAnswer(p engine.Program, snapshot engine.Snapshot, signal engine.Signal) (engine.Commit, error) {
 	target := snapshot.Root
 	if target.Outcome != nil {
@@ -399,7 +410,7 @@ func stepAskGroupAnswer(p engine.Program, snapshot engine.Snapshot, signal engin
 	if askGroupPolicySatisfied(updated) {
 		updated.Completed = true
 		for _, r := range missingAskGroupRecipients(updated) {
-			outputs = append(outputs, engine.CloseQuestionOutput{Slot: signal.Slot, Recipient: r})
+			outputs = append(outputs, engine.CloseQuestionOutput{Slot: signal.Slot, Recipient: r, InteractionID: updated.InteractionID})
 		}
 	}
 
@@ -410,10 +421,11 @@ func stepAskGroupAnswer(p engine.Program, snapshot engine.Snapshot, signal engin
 
 	return engine.Commit{
 		Snapshot: engine.Snapshot{
-			GlobalState: snapshot.GlobalState,
-			Root:        newTarget,
-			Random:      snapshot.Random,
-			Sequence:    snapshot.Sequence + 1,
+			GlobalState:       snapshot.GlobalState,
+			Root:              newTarget,
+			Random:            snapshot.Random,
+			Sequence:          snapshot.Sequence + 1,
+			NextInteractionID: snapshot.NextInteractionID,
 		},
 		Outputs: outputs,
 		Trace: engine.Trace{
@@ -426,13 +438,16 @@ func stepAskGroupAnswer(p engine.Program, snapshot engine.Snapshot, signal engin
 	}, nil
 }
 
-// stepKeyedAskGroupAnswer implements SignalKindKeyedAskGroupAnswered's
-// documented behavior — the keyed generalization of stepAskGroupAnswer,
-// scoped to the one (slot, key) occurrence signal.Key addresses: like
-// its ordinary counterpart, it never selects or runs a transition, only
-// records the answer against that occurrence's PendingAskGroup and
-// re-evaluates its completion policy, as one atomic Commit. Every other
-// key's occurrence under the same slot is untouched.
+// stepKeyedAskGroupAnswer implements SignalKindInteractionAnswered's
+// documented behavior when it addresses a keyed Ask Group occurrence —
+// the keyed generalization of stepAskGroupAnswer, scoped to the one
+// (slot, key) occurrence signal.Key addresses: like its ordinary
+// counterpart, it never selects or runs a transition, only records the
+// answer against that occurrence's PendingAskGroup and re-evaluates its
+// completion policy, as one atomic Commit. Every other key's occurrence
+// under the same slot is untouched. Called with signal already
+// resolved: Slot/Key set from the occurrence Step's own InteractionID
+// resolution found.
 func stepKeyedAskGroupAnswer(p engine.Program, snapshot engine.Snapshot, signal engine.Signal) (engine.Commit, error) {
 	target := snapshot.Root
 	if target.Outcome != nil {
@@ -491,7 +506,7 @@ func stepKeyedAskGroupAnswer(p engine.Program, snapshot engine.Snapshot, signal 
 	if askGroupPolicySatisfied(updated) {
 		updated.Completed = true
 		for _, r := range missingAskGroupRecipients(updated) {
-			outputs = append(outputs, engine.CloseKeyedQuestionOutput{Slot: signal.Slot, Key: signal.Key, Recipient: r})
+			outputs = append(outputs, engine.CloseKeyedQuestionOutput{Slot: signal.Slot, Key: signal.Key, Recipient: r, InteractionID: updated.InteractionID})
 		}
 	}
 
@@ -504,10 +519,11 @@ func stepKeyedAskGroupAnswer(p engine.Program, snapshot engine.Snapshot, signal 
 
 	return engine.Commit{
 		Snapshot: engine.Snapshot{
-			GlobalState: snapshot.GlobalState,
-			Root:        newTarget,
-			Random:      snapshot.Random,
-			Sequence:    snapshot.Sequence + 1,
+			GlobalState:       snapshot.GlobalState,
+			Root:              newTarget,
+			Random:            snapshot.Random,
+			Sequence:          snapshot.Sequence + 1,
+			NextInteractionID: snapshot.NextInteractionID,
 		},
 		Outputs: outputs,
 		Trace: engine.Trace{

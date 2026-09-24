@@ -18,8 +18,8 @@ import (
 // answerInteractionRepoAPI, so every RuntimeTurn-producing step captures
 // interactions the same way.
 type interactionCaptureRepoAPI interface {
-	CreateInteraction(ctx context.Context, tx *gorm.DB, sessionID uint, sessionActorID uint, kind string, enginePath []byte, engineSlot string, interactionPayload []byte, openedByTurnID uint) (uint, error)
-	CloseActiveInteraction(ctx context.Context, tx *gorm.DB, sessionID uint, enginePath []byte, engineSlot string, sessionActorID uint, closedByTurnID uint) error
+	CreateInteraction(ctx context.Context, tx *gorm.DB, sessionID uint, sessionActorID uint, kind string, engineInteractionID uint64, interactionPayload []byte, openedByTurnID uint) (uint, error)
+	CloseActiveInteraction(ctx context.Context, tx *gorm.DB, sessionID uint, engineInteractionID uint64, sessionActorID uint, closedByTurnID uint) error
 }
 
 // captureInteractions durably records every engine.OpenQuestionOutput/
@@ -28,11 +28,10 @@ type interactionCaptureRepoAPI interface {
 // turnID. Every step that persists a RuntimeTurn must call this so a
 // question/ask-group instance a Turn opens is never left unrecorded.
 //
-// compiledProgram resolves each OpenQuestionOutput's Slot to QUESTION vs
-// ASK_GROUP by looking up the owning Workflow's QuestionSlots/AskGroupSlots
-// - the only place that distinction is available, since OpenQuestionOutput
-// itself carries no such discriminator.
-func captureInteractions(ctx context.Context, tx *gorm.DB, repo interactionCaptureRepoAPI, compiledProgram engine.Program, sessionID uint, turnID uint, steps []runtimeturn.StepTrace) error {
+// Each Output already carries its own engine-assigned InteractionID and Kind
+// (QUESTION vs ASK_GROUP) directly - no compiled Program lookup is needed to
+// classify what was opened.
+func captureInteractions(ctx context.Context, tx *gorm.DB, repo interactionCaptureRepoAPI, sessionID uint, turnID uint, steps []runtimeturn.StepTrace) error {
 	for _, step := range steps {
 		if len(step.Outputs) == 0 {
 			continue
@@ -44,7 +43,7 @@ func captureInteractions(ctx context.Context, tx *gorm.DB, repo interactionCaptu
 				if err != nil {
 					return fmt.Errorf("parsing interaction recipient: %s", err)
 				}
-				kind, err := resolveInteractionKind(compiledProgram, step.Workflow, o.Slot)
+				kind, err := interactionKindLabel(o.Kind)
 				if err != nil {
 					return err
 				}
@@ -52,7 +51,7 @@ func captureInteractions(ctx context.Context, tx *gorm.DB, repo interactionCaptu
 				if err != nil {
 					return fmt.Errorf("encoding interaction payload: %s", err)
 				}
-				if _, err := repo.CreateInteraction(ctx, tx, sessionID, actorID, kind, emptyEnginePath, o.Slot, payload, turnID); err != nil {
+				if _, err := repo.CreateInteraction(ctx, tx, sessionID, actorID, kind, uint64(o.InteractionID), payload, turnID); err != nil {
 					return err
 				}
 			case engine.CloseQuestionOutput:
@@ -66,7 +65,7 @@ func captureInteractions(ctx context.Context, tx *gorm.DB, repo interactionCaptu
 				if err != nil {
 					return fmt.Errorf("parsing interaction recipient: %s", err)
 				}
-				if err := repo.CloseActiveInteraction(ctx, tx, sessionID, emptyEnginePath, o.Slot, actorID, turnID); err != nil {
+				if err := repo.CloseActiveInteraction(ctx, tx, sessionID, uint64(o.InteractionID), actorID, turnID); err != nil {
 					return err
 				}
 			}
@@ -75,26 +74,19 @@ func captureInteractions(ctx context.Context, tx *gorm.DB, repo interactionCaptu
 	return nil
 }
 
-// resolveInteractionKind determines whether slotName on workflowName is a
-// QuestionSlot or an AskGroupSlot, read directly off the compiled
-// engine.Program's own slot declarations - the only place this distinction
-// is available.
-func resolveInteractionKind(p engine.Program, workflowName, slotName string) (string, error) {
-	workflow, ok := p.Workflows[workflowName]
-	if !ok {
-		return "", fmt.Errorf("resolving interaction kind: unknown workflow %q", workflowName)
+// interactionKindLabel translates an engine.InteractionKind into the
+// persisted session_interactions.kind label - a plain, closed translation,
+// since InteractionKind is the engine's own exhaustive classification of
+// what it just opened.
+func interactionKindLabel(kind engine.InteractionKind) (string, error) {
+	switch kind {
+	case engine.InteractionKindQuestion:
+		return session.InteractionKindQuestion, nil
+	case engine.InteractionKindAskGroup:
+		return session.InteractionKindAskGroup, nil
+	default:
+		return "", fmt.Errorf("translating interaction kind: unknown engine.InteractionKind %d", kind)
 	}
-	for _, s := range workflow.QuestionSlots {
-		if s.Name == slotName {
-			return session.InteractionKindQuestion, nil
-		}
-	}
-	for _, s := range workflow.AskGroupSlots {
-		if s.Name == slotName {
-			return session.InteractionKindAskGroup, nil
-		}
-	}
-	return "", fmt.Errorf("resolving interaction kind: workflow %q declares no question/ask-group slot %q", workflowName, slotName)
 }
 
 // parseActorID recovers the internal SessionActorID an engine.UserID
@@ -108,12 +100,6 @@ func parseActorID(recipient engine.UserID) (uint, error) {
 	}
 	return uint(id), nil
 }
-
-// emptyEnginePath is session_interactions.engine_path's persisted value for
-// every interaction: a Session runs exactly one workflow instance, so there
-// is no tree-addressing information left to encode. This is byte-identical
-// to what this column has always held for every interaction ever captured.
-var emptyEnginePath = []byte("[]")
 
 // interactionPayloadWire is interaction_payload's wire shape. Arguments is
 // engine.Value-typed data (each engine.FieldValue's Value), so it is

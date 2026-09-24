@@ -105,13 +105,21 @@ func openKeyedAskGroup(p engine.Program, snap engine.Snapshot, key string) (engi
 	return runtime.Step(p, snap, engine.Signal{Kind: engine.SignalKindIntent, Intent: "Open", Fields: map[string]engine.Value{"key": engine.StringValue{Value: key}}}, engine.DefaultLimits())
 }
 
+// keyedAskGroupInteractionID looks up the InteractionID currently
+// assigned to snap's "Team" slot occurrence at key, or the zero value
+// (never a real assignment) if that key was never opened.
+func keyedAskGroupInteractionID(snap engine.Snapshot, key string) engine.InteractionID {
+	slot, _ := findInstanceKeyedAskGroupSlot(snap.Root, "Team")
+	entry, _ := findKeyedAskGroupPendingByKey(slot.Pending, key)
+	return entry.InteractionID
+}
+
 func answerKeyedAskGroup(p engine.Program, snap engine.Snapshot, key string, respondent engine.UserID, answer bool) (engine.Commit, error) {
 	return runtime.Step(p, snap, engine.Signal{
-		Kind:       engine.SignalKindKeyedAskGroupAnswered,
-		Slot:       "Team",
-		Key:        engine.StringValue{Value: key},
-		Respondent: respondent,
-		Answer:     engine.BoolValue{Value: answer},
+		Kind:          engine.SignalKindInteractionAnswered,
+		InteractionID: keyedAskGroupInteractionID(snap, key),
+		Respondent:    respondent,
+		Answer:        engine.BoolValue{Value: answer},
 	}, engine.DefaultLimits())
 }
 
@@ -259,7 +267,7 @@ func TestExec_KeyedAskGroupJoin_BindsKeyAndCompletesTheRightOccurrence(t *testin
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	commit, err = runtime.Step(p, commit.Snapshot, engine.Signal{Kind: engine.SignalKindKeyedAskGroupCompleted, Slot: "Team", Key: engine.StringValue{Value: "team_a"}}, engine.DefaultLimits())
+	commit, err = runtime.Step(p, commit.Snapshot, engine.Signal{Kind: engine.SignalKindInteractionCompleted, InteractionID: keyedAskGroupInteractionID(commit.Snapshot, "team_a")}, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error joining: %v", err)
 	}

@@ -108,13 +108,21 @@ Rationale and alternatives are recorded in `game/docs/decisions/GAME-ADR-0011-ga
 
 Question, Ask Group, and Timer each have a compiled keyed counterpart — `KeyedQuestionSlot`/`KeyedAskGroupSlot`/`KeyedTimerSlot`, with runtime occupancy tracked in `KeyedQuestionSlotInstance`/`KeyedAskGroupSlotInstance`/`KeyedTimerSlotInstance` — holding several independent, simultaneously pending occurrences per slot at once, addressed by an authored key (any compiled `Type`, exactly like a `MapType` key) instead of the ordinary families' one-occurrence-per-slot limit.
 
-Occupancy identity is `(slot, key)`: opening/scheduling into an already-occupied tuple is an atomic `ExecutionErrorSlotOccupied`, exactly like the ordinary families' occupied-slot behavior, scoped to one key — a different key under the same slot is entirely unaffected. `Signal.Key` addresses which occurrence a `KeyedQuestionAnsweredSignalSource`/`KeyedTimerExpiredSignalSource`/`KeyedAskGroupCompletedSignalSource`-sourced transition is reacting to, and is exposed as the bound `"key"` schema field. `SignalKindKeyedAskGroupAnswered` mirrors `SignalKindAskGroupAnswered`'s own "never selects a transition, only records the answer and re-evaluates completion" behavior, scoped to one `(slot, key)` occurrence.
+Occupancy identity is `(slot, key)`: opening/scheduling into an already-occupied tuple is an atomic `ExecutionErrorSlotOccupied`, exactly like the ordinary families' occupied-slot behavior, scoped to one key — a different key under the same slot is entirely unaffected. Internally, an authored transition still reacts to a specific slot's `KeyedQuestionAnsweredSignalSource`/`KeyedTimerExpiredSignalSource`/`KeyedAskGroupCompletedSignalSource`, and the occurrence's key is exposed as the bound `"key"` schema field — but see "Answering an Interaction" below for how a *caller* (outside the compiled workflow) actually addresses one of these occurrences; it is never by `Slot`+`Key` directly, except for Timer.
 
 `OpenKeyedQuestionOutput`/`CloseKeyedQuestionOutput`/`ScheduleKeyedTimerOutput`/`CancelKeyedTimerOutput` are the keyed counterparts of their ordinary `Output` equivalents, each carrying an additional `Key` field — see "Outputs" below. A keyed ask group's per-recipient opened questions reuse `OpenKeyedQuestionOutput`/`CloseKeyedQuestionOutput`, exactly like an ordinary ask group already reuses `OpenQuestionOutput`/`CloseQuestionOutput`.
 
 Presentation has no keyed family — deliberately deferred pending a concrete demonstrated need, since its fully declarative, no-open/close-operation shape would need a materially different mechanism than the other three.
 
 Rationale and alternatives for the original Timer case are recorded in `game/docs/decisions/GAME-ADR-0012-game-language-keyed-timer-slots.md`; the generalization to Question/Ask Group/Presentation (and the decision to defer Presentation) is recorded in `game/docs/decisions/GAME-ADR-0026-flat-workflow-execution-model-and-keyed-interaction-slots.md`.
+
+### Answering an Interaction
+
+Every opened Question or Ask Group occurrence (ordinary or keyed) is assigned an `InteractionID` — a unique, monotonically increasing identity the engine assigns itself as part of `Snapshot`'s own deterministic state, carried on the `OpenQuestionOutput`/`OpenKeyedQuestionOutput` that opened it (and on the matching `Close*Output` that closes it) alongside an explicit `Kind` (`InteractionKindQuestion` or `InteractionKindAskGroup`), so a caller never needs the compiled `Program` to classify what it just received.
+
+Answering one is always `Signal{Kind: SignalKindInteractionAnswered, InteractionID: id, Respondent: ..., Answer: ...}` — never a `Slot`, a `Key`, or the caller's own classification of what kind of interaction it is. The engine resolves `InteractionID` alone to the underlying slot (ordinary or keyed), its occurrence `Key` if any, and whether it behaves as a Question (selects and runs a matching transition directly) or an Ask Group (never selects a transition per individual answer — it only records the answer and re-evaluates the group's completion policy, exactly like the ordinary/keyed families already did). Once an Ask Group occurrence is completed-awaiting-join, joining it is `Signal{Kind: SignalKindInteractionCompleted, InteractionID: id}` — Question occurrences never produce this signal, since answering one already selects its own transition directly.
+
+`InteractionID` values are never reused for the lifetime of a `Snapshot`, even after their occurrence closes — a stale, unknown, or already-answered `InteractionID` is rejected the same way a stale `Slot`(+`Key`) submission always was; see `ErrInputRejected`. Timer is not part of this scheme — `SignalKindTimerExpired`/`SignalKindKeyedTimerExpired` keep `Signal.Slot`(+`Key`) addressing unchanged, since a caller does not "answer" a timer the way it answers a Question.
 
 ### `Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal, limits engine.Limits) (engine.Commit, error)`
 
@@ -161,12 +169,12 @@ Evaluates a single compiled `Expression` against an arbitrary `Scope`, using the
 
 | Output | Meaning |
 | --- | --- |
-| `OpenQuestionOutput` | a question was opened for one recipient in a named slot |
-| `CloseQuestionOutput` | a pending question in a named slot was closed |
+| `OpenQuestionOutput` | a question was opened for one recipient in a named slot, carrying its `InteractionID`/`Kind` |
+| `CloseQuestionOutput` | a pending question in a named slot was closed, carrying the same `InteractionID` it opened with |
 | `ScheduleTimerOutput` | a timer should fire after `DelayMilliseconds` — you own real scheduling and must deliver the matching `TimerExpiredSignalSource` signal back through `Step` when it fires |
 | `CancelTimerOutput` | a pending timer was cancelled |
-| `OpenKeyedQuestionOutput` | a question was opened for one recipient at a named keyed slot's `Key` occurrence |
-| `CloseKeyedQuestionOutput` | a pending question at a named keyed slot's `Key` occurrence was closed |
+| `OpenKeyedQuestionOutput` | a question was opened for one recipient at a named keyed slot's `Key` occurrence, carrying its `InteractionID`/`Kind` |
+| `CloseKeyedQuestionOutput` | a pending question at a named keyed slot's `Key` occurrence was closed, carrying the same `InteractionID` it opened with |
 | `ScheduleKeyedTimerOutput` | a timer at a named keyed slot's `Key` occurrence should fire after `DelayMilliseconds` |
 | `CancelKeyedTimerOutput` | a pending timer at a named keyed slot's `Key` occurrence was cancelled |
 | `EmitEffectOutput` | a presentation-only client effect (animation, sound) fired for one or more recipients — losing this changes nothing about authoritative state |

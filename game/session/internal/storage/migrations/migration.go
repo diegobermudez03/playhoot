@@ -43,6 +43,12 @@ func MigrateTables(db *gorm.DB) error {
 		// RuntimeTurn cause with no existing normalized home.
 		migration20260922000000SessionRuntimeStarts(),
 		migration20260922000001SessionCauseEvents(),
+
+		// Replaces session_interactions' (engine_path, engine_slot) identity
+		// with the Game Language engine's own assigned engine_interaction_id.
+		// session_timer_obligations is unaffected - Timer occurrences keep
+		// engine_path/engine_slot addressing unchanged.
+		migration20260924000000SessionInteractionsEngineInteractionID(),
 	})
 
 	return migrator.Migrate()

@@ -18,20 +18,38 @@ type Output interface {
 // OpenQuestionOutput reports that the question named Question was
 // opened for Recipient in the workflow slot Slot, with the given
 // Arguments as its captured parameters.
+//
+// InteractionID addresses this occurrence for answering — see
+// SignalKindInteractionAnswered — and never changes for its lifetime.
+// Kind reports whether this occurrence behaves as an ordinary Question
+// or as one recipient's own opened question within an Ask Group (see
+// below); a caller never needs the compiled Program to tell the two
+// apart. When an Ask Group opens for several recipients, every
+// recipient's own OpenQuestionOutput for that occurrence carries the
+// same InteractionID — the group, not any one recipient's question, is
+// the addressable occurrence.
 type OpenQuestionOutput struct {
-	Slot      string
-	Recipient UserID
-	Question  string
-	Arguments []FieldValue
+	Slot          string
+	Recipient     UserID
+	Question      string
+	Arguments     []FieldValue
+	InteractionID InteractionID
+	Kind          InteractionKind
 }
 
 func (OpenQuestionOutput) isOutput() {}
 
 // CloseQuestionOutput reports that the pending question in the workflow
 // slot Slot, previously opened for Recipient, was closed.
+//
+// InteractionID is the same value OpenQuestionOutput carried when this
+// occurrence opened — a caller that tracks occurrences by InteractionID
+// never needs Slot/Recipient to correlate this closure with the
+// occurrence it already knows about.
 type CloseQuestionOutput struct {
-	Slot      string
-	Recipient UserID
+	Slot          string
+	Recipient     UserID
+	InteractionID InteractionID
 }
 
 func (CloseQuestionOutput) isOutput() {}
@@ -41,13 +59,17 @@ func (CloseQuestionOutput) isOutput() {}
 // with the given Arguments as its captured parameters, generalizing
 // OpenQuestionOutput to a (slot, key) occurrence. Reused for a keyed
 // ask-group's per-recipient opened questions, exactly like
-// OpenQuestionOutput is already reused for an ordinary ask group's.
+// OpenQuestionOutput is already reused for an ordinary ask group's. See
+// OpenQuestionOutput's doc comment for InteractionID/Kind's meaning,
+// unchanged here beyond the added Key.
 type OpenKeyedQuestionOutput struct {
-	Slot      string
-	Key       Value
-	Recipient UserID
-	Question  string
-	Arguments []FieldValue
+	Slot          string
+	Key           Value
+	Recipient     UserID
+	Question      string
+	Arguments     []FieldValue
+	InteractionID InteractionID
+	Kind          InteractionKind
 }
 
 func (OpenKeyedQuestionOutput) isOutput() {}
@@ -55,11 +77,13 @@ func (OpenKeyedQuestionOutput) isOutput() {}
 // CloseKeyedQuestionOutput reports that the pending question at the
 // keyed workflow slot Slot's occurrence Key, previously opened for
 // Recipient, was closed, generalizing CloseQuestionOutput to a (slot,
-// key) occurrence.
+// key) occurrence. See CloseQuestionOutput's doc comment for
+// InteractionID's meaning.
 type CloseKeyedQuestionOutput struct {
-	Slot      string
-	Key       Value
-	Recipient UserID
+	Slot          string
+	Key           Value
+	Recipient     UserID
+	InteractionID InteractionID
 }
 
 func (CloseKeyedQuestionOutput) isOutput() {}

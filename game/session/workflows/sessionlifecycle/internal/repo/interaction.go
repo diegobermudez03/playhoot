@@ -12,17 +12,16 @@ import (
 // Interaction is the persisted session_interactions record for one opened
 // question/ask-group instance.
 type Interaction struct {
-	ID              uint
-	UUID            string
-	SessionID       uint
-	SessionActorID  uint
-	Kind            string
-	EnginePath      []byte
-	EngineSlot      string
-	ResponsePayload []byte
-	State           string
-	OpenedByTurnID  uint
-	ClosedByTurnID  *uint
+	ID                  uint
+	UUID                string
+	SessionID           uint
+	SessionActorID      uint
+	Kind                string
+	EngineInteractionID uint64
+	ResponsePayload     []byte
+	State               string
+	OpenedByTurnID      uint
+	ClosedByTurnID      *uint
 }
 
 // ResolveSessionForInteraction is an unlocked, pre-transaction lookup: it
@@ -53,7 +52,7 @@ func (r *Repo) ResolveSessionForInteraction(ctx context.Context, interactionUUID
 func (r *Repo) FindInteractionByUUID(ctx context.Context, tx *gorm.DB, interactionUUID string) (*Interaction, error) {
 	var row Interaction
 	result := tx.WithContext(ctx).Raw(`
-		SELECT id, uuid, session_id, session_actor_id, kind, engine_path, engine_slot,
+		SELECT id, uuid, session_id, session_actor_id, kind, engine_interaction_id,
 			response_payload, state, opened_by_turn_id, closed_by_turn_id
 		FROM session_interactions
 		WHERE uuid = ?
@@ -74,7 +73,7 @@ func (r *Repo) FindInteractionByUUID(ctx context.Context, tx *gorm.DB, interacti
 func (r *Repo) GetInteractionByID(ctx context.Context, tx *gorm.DB, interactionID uint) (*Interaction, error) {
 	var row Interaction
 	result := tx.WithContext(ctx).Raw(`
-		SELECT id, uuid, session_id, session_actor_id, kind, engine_path, engine_slot,
+		SELECT id, uuid, session_id, session_actor_id, kind, engine_interaction_id,
 			response_payload, state, opened_by_turn_id, closed_by_turn_id
 		FROM session_interactions
 		WHERE id = ?
@@ -89,16 +88,15 @@ func (r *Repo) GetInteractionByID(ctx context.Context, tx *gorm.DB, interactionI
 }
 
 type interactionInsert struct {
-	ID                 uint   `gorm:"column:id"`
-	UUID               string `gorm:"column:uuid"`
-	SessionID          uint   `gorm:"column:session_id"`
-	SessionActorID     uint   `gorm:"column:session_actor_id"`
-	Kind               string `gorm:"column:kind"`
-	EnginePath         []byte `gorm:"column:engine_path"`
-	EngineSlot         string `gorm:"column:engine_slot"`
-	InteractionPayload []byte `gorm:"column:interaction_payload"`
-	State              string `gorm:"column:state"`
-	OpenedByTurnID     uint   `gorm:"column:opened_by_turn_id"`
+	ID                  uint   `gorm:"column:id"`
+	UUID                string `gorm:"column:uuid"`
+	SessionID           uint   `gorm:"column:session_id"`
+	SessionActorID      uint   `gorm:"column:session_actor_id"`
+	Kind                string `gorm:"column:kind"`
+	EngineInteractionID uint64 `gorm:"column:engine_interaction_id"`
+	InteractionPayload  []byte `gorm:"column:interaction_payload"`
+	State               string `gorm:"column:state"`
+	OpenedByTurnID      uint   `gorm:"column:opened_by_turn_id"`
 }
 
 func (interactionInsert) TableName() string { return "session_interactions" }
@@ -106,17 +104,16 @@ func (interactionInsert) TableName() string { return "session_interactions" }
 // CreateInteraction persists a newly opened ACTIVE interaction, captured
 // from an engine.OpenQuestionOutput belonging to the committed RuntimeTurn
 // openedByTurnID.
-func (r *Repo) CreateInteraction(ctx context.Context, tx *gorm.DB, sessionID uint, sessionActorID uint, kind string, enginePath []byte, engineSlot string, interactionPayload []byte, openedByTurnID uint) (uint, error) {
+func (r *Repo) CreateInteraction(ctx context.Context, tx *gorm.DB, sessionID uint, sessionActorID uint, kind string, engineInteractionID uint64, interactionPayload []byte, openedByTurnID uint) (uint, error) {
 	row := interactionInsert{
-		UUID:               uuid.NewString(),
-		SessionID:          sessionID,
-		SessionActorID:     sessionActorID,
-		Kind:               kind,
-		EnginePath:         enginePath,
-		EngineSlot:         engineSlot,
-		InteractionPayload: interactionPayload,
-		State:              session.InteractionStateActive,
-		OpenedByTurnID:     openedByTurnID,
+		UUID:                uuid.NewString(),
+		SessionID:           sessionID,
+		SessionActorID:      sessionActorID,
+		Kind:                kind,
+		EngineInteractionID: engineInteractionID,
+		InteractionPayload:  interactionPayload,
+		State:               session.InteractionStateActive,
+		OpenedByTurnID:      openedByTurnID,
 	}
 	if err := tx.WithContext(ctx).Create(&row).Error; err != nil {
 		return 0, fmt.Errorf("creating interaction: %s", err)
@@ -125,17 +122,19 @@ func (r *Repo) CreateInteraction(ctx context.Context, tx *gorm.DB, sessionID uin
 }
 
 // CloseActiveInteraction closes the currently ACTIVE interaction matching
-// (sessionID, enginePath, engineSlot, sessionActorID) - the same key an
-// engine.CloseQuestionOutput's (Path, Slot, Recipient) identifies - as
-// Turn-produced closure. A CloseQuestionOutput with no currently-ACTIVE
-// match is a no-op (CloseQuestionOperation's own documented "closing an
-// already empty slot is an idempotent no-op").
-func (r *Repo) CloseActiveInteraction(ctx context.Context, tx *gorm.DB, sessionID uint, enginePath []byte, engineSlot string, sessionActorID uint, closedByTurnID uint) error {
+// engineInteractionID - the same engine.InteractionID an
+// engine.CloseQuestionOutput carries - as Turn-produced closure.
+// sessionID/sessionActorID are kept as defense-in-depth co-predicates
+// (engineInteractionID is already unique on its own - InteractionID values
+// are never reused for the lifetime of a Snapshot). A CloseQuestionOutput
+// with no currently-ACTIVE match is a no-op (CloseQuestionOperation's own
+// documented "closing an already empty slot is an idempotent no-op").
+func (r *Repo) CloseActiveInteraction(ctx context.Context, tx *gorm.DB, sessionID uint, engineInteractionID uint64, sessionActorID uint, closedByTurnID uint) error {
 	if err := tx.WithContext(ctx).Exec(`
 		UPDATE session_interactions
 		SET state = ?, closed_by_turn_id = ?
-		WHERE session_id = ? AND engine_path = ?::jsonb AND engine_slot = ? AND session_actor_id = ? AND state = ?
-	`, session.InteractionStateClosed, closedByTurnID, sessionID, enginePath, engineSlot, sessionActorID, session.InteractionStateActive).Error; err != nil {
+		WHERE session_id = ? AND engine_interaction_id = ? AND session_actor_id = ? AND state = ?
+	`, session.InteractionStateClosed, closedByTurnID, sessionID, engineInteractionID, sessionActorID, session.InteractionStateActive).Error; err != nil {
 		return fmt.Errorf("closing interaction: %s", err)
 	}
 	return nil
@@ -143,7 +142,7 @@ func (r *Repo) CloseActiveInteraction(ctx context.Context, tx *gorm.DB, sessionI
 
 // CloseAnsweredInteraction closes interactionID directly by id and persists
 // its accepted response payload, as Turn-produced closure. This is separate
-// from CloseActiveInteraction's (Path, Slot, Recipient)-matched closure:
+// from CloseActiveInteraction's InteractionID-matched closure:
 // engineservice.Step clears an accepted answer's own slot internally,
 // before the transition's own authored operations run, and never produces a
 // CloseQuestionOutput for that closure - so the one specific interaction

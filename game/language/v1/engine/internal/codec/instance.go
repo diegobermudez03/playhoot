@@ -26,8 +26,9 @@ type questionSlotWire struct {
 }
 
 type pendingQuestionWire struct {
-	Recipient string           `json:"recipient"`
-	Arguments []fieldValueWire `json:"arguments,omitempty"`
+	Recipient     string           `json:"recipient"`
+	Arguments     []fieldValueWire `json:"arguments,omitempty"`
+	InteractionID uint64           `json:"interaction_id"`
 }
 
 type askGroupSlotWire struct {
@@ -42,6 +43,7 @@ type pendingAskGroupWire struct {
 	Completed      bool                   `json:"completed,omitempty"`
 	CompletionKind int                    `json:"completion_kind"`
 	QuorumCount    int                    `json:"quorum_count,omitempty"`
+	InteractionID  uint64                 `json:"interaction_id"`
 }
 
 type askGroupResponseWire struct {
@@ -60,9 +62,10 @@ type keyedQuestionSlotWire struct {
 }
 
 type keyedPendingQuestionWire struct {
-	Key       json.RawMessage  `json:"key"`
-	Recipient string           `json:"recipient"`
-	Arguments []fieldValueWire `json:"arguments,omitempty"`
+	Key           json.RawMessage  `json:"key"`
+	Recipient     string           `json:"recipient"`
+	Arguments     []fieldValueWire `json:"arguments,omitempty"`
+	InteractionID uint64           `json:"interaction_id"`
 }
 
 type keyedAskGroupSlotWire struct {
@@ -78,6 +81,7 @@ type keyedPendingAskGroupWire struct {
 	Completed      bool                   `json:"completed,omitempty"`
 	CompletionKind int                    `json:"completion_kind"`
 	QuorumCount    int                    `json:"quorum_count,omitempty"`
+	InteractionID  uint64                 `json:"interaction_id"`
 }
 
 type keyedTimerSlotWire struct {
@@ -254,7 +258,7 @@ func encodeQuestionSlots(path string, slots []engine.QuestionSlotInstance) ([]qu
 			if err != nil {
 				return nil, err
 			}
-			raw, err := json.Marshal(pendingQuestionWire{Recipient: string(s.Pending.Recipient), Arguments: args})
+			raw, err := json.Marshal(pendingQuestionWire{Recipient: string(s.Pending.Recipient), Arguments: args, InteractionID: uint64(s.Pending.InteractionID)})
 			if err != nil {
 				return nil, err
 			}
@@ -279,7 +283,7 @@ func decodeQuestionSlots(path string, wire []questionSlotWire) ([]engine.Questio
 			if err != nil {
 				return nil, err
 			}
-			pending = &engine.PendingQuestion{Recipient: engine.UserID(pw.Recipient), Arguments: args}
+			pending = &engine.PendingQuestion{Recipient: engine.UserID(pw.Recipient), Arguments: args, InteractionID: engine.InteractionID(pw.InteractionID)}
 		}
 		result[i] = engine.QuestionSlotInstance{Name: s.Name, Pending: pending}
 	}
@@ -323,6 +327,7 @@ func encodePendingAskGroup(path string, p engine.PendingAskGroup) (json.RawMessa
 	return json.Marshal(pendingAskGroupWire{
 		Recipients: recipients, Arguments: args, Responses: responses,
 		Completed: p.Completed, CompletionKind: int(p.CompletionKind), QuorumCount: p.QuorumCount,
+		InteractionID: uint64(p.InteractionID),
 	})
 }
 
@@ -367,6 +372,7 @@ func decodePendingAskGroup(path string, data json.RawMessage) (engine.PendingAsk
 	return engine.PendingAskGroup{
 		Recipients: recipients, Arguments: nilIfEmpty(args), Responses: responses,
 		Completed: w.Completed, CompletionKind: engine.AskGroupCompletionKind(w.CompletionKind), QuorumCount: w.QuorumCount,
+		InteractionID: engine.InteractionID(w.InteractionID),
 	}, nil
 }
 
@@ -385,7 +391,7 @@ func encodeKeyedQuestionSlots(path string, slots []engine.KeyedQuestionSlotInsta
 			if err != nil {
 				return nil, err
 			}
-			pending[j] = keyedPendingQuestionWire{Key: key, Recipient: string(p.Recipient), Arguments: args}
+			pending[j] = keyedPendingQuestionWire{Key: key, Recipient: string(p.Recipient), Arguments: args, InteractionID: uint64(p.InteractionID)}
 		}
 		result[i] = keyedQuestionSlotWire{Name: s.Name, Pending: pending}
 	}
@@ -407,7 +413,7 @@ func decodeKeyedQuestionSlots(path string, wire []keyedQuestionSlotWire) ([]engi
 			if err != nil {
 				return nil, err
 			}
-			pending[j] = engine.KeyedPendingQuestion{Key: key, Recipient: engine.UserID(p.Recipient), Arguments: args}
+			pending[j] = engine.KeyedPendingQuestion{Key: key, Recipient: engine.UserID(p.Recipient), Arguments: args, InteractionID: engine.InteractionID(p.InteractionID)}
 		}
 		result[i] = engine.KeyedQuestionSlotInstance{Name: s.Name, Pending: pending}
 	}
@@ -436,6 +442,7 @@ func encodeKeyedAskGroupSlots(path string, slots []engine.KeyedAskGroupSlotInsta
 			pending[j] = keyedPendingAskGroupWire{
 				Key: key, Recipients: base.Recipients, Arguments: base.Arguments, Responses: base.Responses,
 				Completed: base.Completed, CompletionKind: base.CompletionKind, QuorumCount: base.QuorumCount,
+				InteractionID: base.InteractionID,
 			}
 		}
 		result[i] = keyedAskGroupSlotWire{Name: s.Name, Pending: pending}
@@ -457,6 +464,7 @@ func decodeKeyedAskGroupSlots(path string, wire []keyedAskGroupSlotWire) ([]engi
 			raw, err := json.Marshal(pendingAskGroupWire{
 				Recipients: p.Recipients, Arguments: p.Arguments, Responses: p.Responses,
 				Completed: p.Completed, CompletionKind: p.CompletionKind, QuorumCount: p.QuorumCount,
+				InteractionID: p.InteractionID,
 			})
 			if err != nil {
 				return nil, err
