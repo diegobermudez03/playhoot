@@ -215,6 +215,27 @@ func (c *compiler) compileOperation(op program.Operation, scope exprScope, path 
 	case program.CancelAskGroupOperation:
 		return c.compileCancelAskGroup(o, scope, path, ctx)
 
+	case program.OpenKeyedQuestionOperation:
+		return c.compileOpenKeyedQuestion(o, scope, path, ctx)
+
+	case program.CloseKeyedQuestionOperation:
+		return c.compileCloseKeyedQuestion(o, scope, path, ctx)
+
+	case program.ScheduleKeyedTimerOperation:
+		return c.compileScheduleKeyedTimer(o, scope, path, ctx)
+
+	case program.CancelKeyedTimerOperation:
+		return c.compileCancelKeyedTimer(o, scope, path, ctx)
+
+	case program.OpenKeyedAskGroupOperation:
+		return c.compileOpenKeyedAskGroup(o, scope, path, ctx)
+
+	case program.FinalizeKeyedAskGroupOperation:
+		return c.compileFinalizeKeyedAskGroup(o, scope, path, ctx)
+
+	case program.CancelKeyedAskGroupOperation:
+		return c.compileCancelKeyedAskGroup(o, scope, path, ctx)
+
 	default:
 		c.addf(path, "operation %T is not yet supported by this compiler", op)
 		return nil, scope, false
@@ -379,6 +400,139 @@ func (c *compiler) compileCancelTimer(o program.CancelTimerOperation, scope expr
 		return nil, scope, false
 	}
 	return engine.CancelTimerOperation{Slot: o.Slot}, scope, true
+}
+
+// compileSlotKey compiles key against a keyed slot's declared keyType,
+// diagnosing a static type mismatch — shared by every keyed
+// question/ask-group/timer operation's own Key field. keyType is nil
+// when the owning slot itself failed to resolve (an undeclared-slot
+// diagnostic was already reported by the caller); in that case this
+// still compiles key for whatever other diagnostics it can produce, but
+// reports no further key/keyType mismatch on top of the already-reported
+// undeclared-slot error.
+func (c *compiler) compileSlotKey(key program.Expression, keyType engine.Type, scope exprScope, path string) (engine.Expression, bool) {
+	compiled, compiledType := c.compileExpression(key, scope, path)
+	if compiledType == nil {
+		return compiled, false
+	}
+	if keyType != nil && !keyType.Equal(compiledType) {
+		c.addf(path, "key is statically %s, but the slot's declared key type is %s", describeType(compiledType), describeType(keyType))
+		return compiled, false
+	}
+	return compiled, true
+}
+
+// compileOpenKeyedQuestion compiles one program.OpenKeyedQuestionOperation:
+// Slot must name a keyed question slot declared on the enclosing
+// workflow, Key must be statically compatible with the slot's declared
+// KeyType, Recipient must be statically user, and Arguments must match
+// the slot's question's declared parameters exactly (see
+// checkCallArguments) — the keyed generalization of compileOpenQuestion.
+func (c *compiler) compileOpenKeyedQuestion(o program.OpenKeyedQuestionOperation, scope exprScope, path string, ctx *workflowContext) (engine.Operation, exprScope, bool) {
+	entry, slotOK := ctx.keyedQuestionSlots[o.Slot]
+	if !slotOK {
+		c.addf(path+".slot", "reference to undeclared keyed question slot %q", o.Slot)
+	}
+
+	var keyType engine.Type
+	if slotOK {
+		keyType = entry.keyType
+	}
+	key, keyOK := c.compileSlotKey(o.Key, keyType, scope, path+".key")
+
+	recipient, recipientType := c.compileExpression(o.Recipient, scope, path+".recipient")
+	ok := keyOK && recipientType != nil
+	if recipientType != nil && !isUser(recipientType) {
+		c.addf(path+".recipient", "recipient must be statically user, but it is %s", describeType(recipientType))
+		ok = false
+	}
+
+	args, argTypes, argsOK := c.compileCallArguments(o.Arguments, scope, path)
+	if !argsOK {
+		ok = false
+	}
+	if slotOK {
+		if question, qOK := c.compiledQuestions[entry.decl.Question]; qOK {
+			if !c.checkCallArguments(question.Parameters, args, argTypes, path) {
+				ok = false
+			}
+		}
+	}
+
+	if !slotOK || !ok {
+		return nil, scope, false
+	}
+	return engine.OpenKeyedQuestionOperation{Slot: o.Slot, Key: key, Recipient: recipient, Arguments: args}, scope, true
+}
+
+// compileCloseKeyedQuestion compiles one program.CloseKeyedQuestionOperation:
+// Slot must name a keyed question slot declared on the enclosing
+// workflow, and Key must be statically compatible with the slot's
+// declared KeyType — the keyed generalization of compileCloseQuestion.
+func (c *compiler) compileCloseKeyedQuestion(o program.CloseKeyedQuestionOperation, scope exprScope, path string, ctx *workflowContext) (engine.Operation, exprScope, bool) {
+	entry, slotOK := ctx.keyedQuestionSlots[o.Slot]
+	if !slotOK {
+		c.addf(path+".slot", "reference to undeclared keyed question slot %q", o.Slot)
+	}
+	var keyType engine.Type
+	if slotOK {
+		keyType = entry.keyType
+	}
+	key, keyOK := c.compileSlotKey(o.Key, keyType, scope, path+".key")
+	if !slotOK || !keyOK {
+		return nil, scope, false
+	}
+	return engine.CloseKeyedQuestionOperation{Slot: o.Slot, Key: key}, scope, true
+}
+
+// compileScheduleKeyedTimer compiles one program.ScheduleKeyedTimerOperation:
+// Slot must name a keyed timer slot declared on the enclosing workflow,
+// Key must be statically compatible with the slot's declared KeyType,
+// and DelayMilliseconds must be statically number — the keyed
+// generalization of compileScheduleTimer.
+func (c *compiler) compileScheduleKeyedTimer(o program.ScheduleKeyedTimerOperation, scope exprScope, path string, ctx *workflowContext) (engine.Operation, exprScope, bool) {
+	entry, slotOK := ctx.keyedTimerSlots[o.Slot]
+	if !slotOK {
+		c.addf(path+".slot", "reference to undeclared keyed timer slot %q", o.Slot)
+	}
+	var keyType engine.Type
+	if slotOK {
+		keyType = entry.keyType
+	}
+	key, keyOK := c.compileSlotKey(o.Key, keyType, scope, path+".key")
+
+	delay, delayType := c.compileExpression(o.DelayMilliseconds, scope, path+".delay_milliseconds")
+	if delayType == nil {
+		return nil, scope, false
+	}
+	if !isNumber(delayType) {
+		c.addf(path+".delay_milliseconds", "delay must be statically number, but it is %s", describeType(delayType))
+		return nil, scope, false
+	}
+	if !slotOK || !keyOK {
+		return nil, scope, false
+	}
+	return engine.ScheduleKeyedTimerOperation{Slot: o.Slot, Key: key, DelayMilliseconds: delay}, scope, true
+}
+
+// compileCancelKeyedTimer compiles one program.CancelKeyedTimerOperation:
+// Slot must name a keyed timer slot declared on the enclosing workflow,
+// and Key must be statically compatible with the slot's declared
+// KeyType — the keyed generalization of compileCancelTimer.
+func (c *compiler) compileCancelKeyedTimer(o program.CancelKeyedTimerOperation, scope exprScope, path string, ctx *workflowContext) (engine.Operation, exprScope, bool) {
+	entry, slotOK := ctx.keyedTimerSlots[o.Slot]
+	if !slotOK {
+		c.addf(path+".slot", "reference to undeclared keyed timer slot %q", o.Slot)
+	}
+	var keyType engine.Type
+	if slotOK {
+		keyType = entry.keyType
+	}
+	key, keyOK := c.compileSlotKey(o.Key, keyType, scope, path+".key")
+	if !slotOK || !keyOK {
+		return nil, scope, false
+	}
+	return engine.CancelKeyedTimerOperation{Slot: o.Slot, Key: key}, scope, true
 }
 
 // compileEmitEffect compiles one program.EmitEffectOperation: Effect

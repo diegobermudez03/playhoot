@@ -190,3 +190,194 @@ func decodeTimerSlotDeclarations(path string, items []json.RawMessage) ([]progra
 	}
 	return result, nil
 }
+
+// --- program.KeyedQuestionSlotDeclaration ---
+
+type wireKeyedQuestionSlotDeclaration struct {
+	Name         string          `json:"name"`
+	Question     string          `json:"question"`
+	KeyType      json.RawMessage `json:"key_type"`
+	Presentation json.RawMessage `json:"presentation"`
+}
+
+func encodeKeyedQuestionSlotDeclaration(path string, value program.KeyedQuestionSlotDeclaration) (json.RawMessage, error) {
+	keyType, err := encodeTypeReference(pathField(path, "key_type"), value.KeyType)
+	if err != nil {
+		return nil, err
+	}
+	presentation, err := encodeQuestionPresentationDeclaration(pathField(path, "presentation"), value.Presentation)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(wireKeyedQuestionSlotDeclaration{Name: value.Name, Question: value.Question, KeyType: keyType, Presentation: presentation})
+}
+
+func decodeKeyedQuestionSlotDeclaration(path string, data json.RawMessage) (program.KeyedQuestionSlotDeclaration, error) {
+	var wire wireKeyedQuestionSlotDeclaration
+	if err := decodeOrdinaryObject(path, data, &wire); err != nil {
+		return program.KeyedQuestionSlotDeclaration{}, err
+	}
+	keyType, err := decodeTypeReference(pathField(path, "key_type"), wire.KeyType)
+	if err != nil {
+		return program.KeyedQuestionSlotDeclaration{}, err
+	}
+	presentation, err := decodeQuestionPresentationDeclaration(pathField(path, "presentation"), wire.Presentation)
+	if err != nil {
+		return program.KeyedQuestionSlotDeclaration{}, err
+	}
+	return program.KeyedQuestionSlotDeclaration{Name: wire.Name, Question: wire.Question, KeyType: keyType, Presentation: presentation}, nil
+}
+
+func encodeKeyedQuestionSlotDeclarations(path string, items []program.KeyedQuestionSlotDeclaration) ([]json.RawMessage, error) {
+	if items == nil {
+		return nil, nil
+	}
+	result := make([]json.RawMessage, len(items))
+	for i, item := range items {
+		raw, err := encodeKeyedQuestionSlotDeclaration(pathIndex(path, i), item)
+		if err != nil {
+			return nil, err
+		}
+		result[i] = raw
+	}
+	return result, nil
+}
+
+func decodeKeyedQuestionSlotDeclarations(path string, items []json.RawMessage) ([]program.KeyedQuestionSlotDeclaration, error) {
+	if items == nil {
+		return nil, nil
+	}
+	result := make([]program.KeyedQuestionSlotDeclaration, len(items))
+	for i, raw := range items {
+		item, err := decodeKeyedQuestionSlotDeclaration(pathIndex(path, i), raw)
+		if err != nil {
+			return nil, err
+		}
+		result[i] = item
+	}
+	return result, nil
+}
+
+// --- program.KeyedAskGroupSlotDeclaration ---
+
+type wireKeyedAskGroupSlotDeclaration struct {
+	Name         string          `json:"name"`
+	Question     string          `json:"question"`
+	KeyType      json.RawMessage `json:"key_type"`
+	Presentation json.RawMessage `json:"presentation"`
+}
+
+func encodeKeyedAskGroupSlotDeclaration(path string, value program.KeyedAskGroupSlotDeclaration) (json.RawMessage, error) {
+	keyType, err := encodeTypeReference(pathField(path, "key_type"), value.KeyType)
+	if err != nil {
+		return nil, err
+	}
+	presentation, err := encodeQuestionPresentationDeclaration(pathField(path, "presentation"), value.Presentation)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(wireKeyedAskGroupSlotDeclaration{Name: value.Name, Question: value.Question, KeyType: keyType, Presentation: presentation})
+}
+
+func decodeKeyedAskGroupSlotDeclaration(path string, data json.RawMessage) (program.KeyedAskGroupSlotDeclaration, error) {
+	var wire wireKeyedAskGroupSlotDeclaration
+	if err := decodeOrdinaryObject(path, data, &wire); err != nil {
+		return program.KeyedAskGroupSlotDeclaration{}, err
+	}
+	keyType, err := decodeTypeReference(pathField(path, "key_type"), wire.KeyType)
+	if err != nil {
+		return program.KeyedAskGroupSlotDeclaration{}, err
+	}
+	presentation, err := decodeQuestionPresentationDeclaration(pathField(path, "presentation"), wire.Presentation)
+	if err != nil {
+		return program.KeyedAskGroupSlotDeclaration{}, err
+	}
+	return program.KeyedAskGroupSlotDeclaration{Name: wire.Name, Question: wire.Question, KeyType: keyType, Presentation: presentation}, nil
+}
+
+func encodeKeyedAskGroupSlotDeclarations(path string, items []program.KeyedAskGroupSlotDeclaration) ([]json.RawMessage, error) {
+	if items == nil {
+		return nil, nil
+	}
+	result := make([]json.RawMessage, len(items))
+	for i, item := range items {
+		raw, err := encodeKeyedAskGroupSlotDeclaration(pathIndex(path, i), item)
+		if err != nil {
+			return nil, err
+		}
+		result[i] = raw
+	}
+	return result, nil
+}
+
+func decodeKeyedAskGroupSlotDeclarations(path string, items []json.RawMessage) ([]program.KeyedAskGroupSlotDeclaration, error) {
+	if items == nil {
+		return nil, nil
+	}
+	result := make([]program.KeyedAskGroupSlotDeclaration, len(items))
+	for i, raw := range items {
+		item, err := decodeKeyedAskGroupSlotDeclaration(pathIndex(path, i), raw)
+		if err != nil {
+			return nil, err
+		}
+		result[i] = item
+	}
+	return result, nil
+}
+
+// --- program.KeyedTimerSlotDeclaration ---
+
+type wireKeyedTimerSlotDeclaration struct {
+	Name    string          `json:"name"`
+	KeyType json.RawMessage `json:"key_type"`
+}
+
+func encodeKeyedTimerSlotDeclaration(path string, value program.KeyedTimerSlotDeclaration) (json.RawMessage, error) {
+	keyType, err := encodeTypeReference(pathField(path, "key_type"), value.KeyType)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(wireKeyedTimerSlotDeclaration{Name: value.Name, KeyType: keyType})
+}
+
+func decodeKeyedTimerSlotDeclaration(path string, data json.RawMessage) (program.KeyedTimerSlotDeclaration, error) {
+	var wire wireKeyedTimerSlotDeclaration
+	if err := decodeOrdinaryObject(path, data, &wire); err != nil {
+		return program.KeyedTimerSlotDeclaration{}, err
+	}
+	keyType, err := decodeTypeReference(pathField(path, "key_type"), wire.KeyType)
+	if err != nil {
+		return program.KeyedTimerSlotDeclaration{}, err
+	}
+	return program.KeyedTimerSlotDeclaration{Name: wire.Name, KeyType: keyType}, nil
+}
+
+func encodeKeyedTimerSlotDeclarations(path string, items []program.KeyedTimerSlotDeclaration) ([]json.RawMessage, error) {
+	if items == nil {
+		return nil, nil
+	}
+	result := make([]json.RawMessage, len(items))
+	for i, item := range items {
+		raw, err := encodeKeyedTimerSlotDeclaration(pathIndex(path, i), item)
+		if err != nil {
+			return nil, err
+		}
+		result[i] = raw
+	}
+	return result, nil
+}
+
+func decodeKeyedTimerSlotDeclarations(path string, items []json.RawMessage) ([]program.KeyedTimerSlotDeclaration, error) {
+	if items == nil {
+		return nil, nil
+	}
+	result := make([]program.KeyedTimerSlotDeclaration, len(items))
+	for i, raw := range items {
+		item, err := decodeKeyedTimerSlotDeclaration(pathIndex(path, i), raw)
+		if err != nil {
+			return nil, err
+		}
+		result[i] = item
+	}
+	return result, nil
+}

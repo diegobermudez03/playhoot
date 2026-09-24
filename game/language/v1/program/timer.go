@@ -85,3 +85,80 @@ type CancelTimerOperation struct {
 }
 
 func (CancelTimerOperation) isOperation() {}
+
+// KeyedTimerSlotDeclaration declares a statically named, durable timer
+// location owned by each instance of the enclosing workflow, generalizing
+// TimerSlotDeclaration to hold several independent, simultaneously
+// pending timers at once, addressed by an authored key rather than at
+// most one pending timer per slot.
+//
+// Conceptual identity is (slot, key): at most one timer may be pending
+// per exact (Name, key) tuple. Different keys under the same slot have
+// fully independent timers — scheduling "disconnect_timeout" for key
+// "P1" never affects, or is affected by, "disconnect_timeout" for key
+// "P2".
+//
+// This package does not validate timer-slot name uniqueness within a
+// workflow; it preserves duplicates so the future compiler can report
+// them deterministically.
+type KeyedTimerSlotDeclaration struct {
+	Name string
+
+	// KeyType is the authored type every key value for this slot must
+	// match. It may be any TypeReference usable as a map key (see
+	// MapTypeReference) — this package places no additional restriction
+	// on it.
+	KeyType TypeReference
+}
+
+// ScheduleKeyedTimerOperation schedules a timer at the named workflow
+// keyed slot's authored Key, to fire after DelayMilliseconds evaluates,
+// generalizing ScheduleTimerOperation to a (slot, key) occurrence
+// instead of a slot-wide one.
+//
+// The operation evaluates Key (which must eventually compile to the
+// slot's declared KeyType) and DelayMilliseconds, and records a pending
+// logical timer at (Slot, Key); it creates a declarative scheduling
+// output only after the enclosing transition commits, exactly like
+// ScheduleTimerOperation. Scheduling into an already-occupied (slot,
+// key) is an execution error: the future engine must fail the entire
+// transition atomically, leaving the previous pending timer and every
+// other pending mutation or output unchanged — there is no implicit
+// replacement, reset, extension, or coalescing. A workflow must
+// explicitly cancel an existing timer with CancelKeyedTimerOperation
+// before scheduling another one into the same (slot, key). A different
+// key under the same Slot is entirely independent and unaffected.
+//
+// Slot is a static, source-level name, not a runtime expression. Key
+// must be statically compatible with the slot's declared KeyType.
+// DelayMilliseconds must eventually compile to number; the future engine
+// additionally requires the evaluated delay to be a finite, non-negative
+// integer number of milliseconds within configured limits.
+type ScheduleKeyedTimerOperation struct {
+	Slot              string
+	Key               Expression
+	DelayMilliseconds Expression
+}
+
+func (ScheduleKeyedTimerOperation) isOperation() {}
+
+// CancelKeyedTimerOperation cancels the currently pending timer at the
+// named workflow keyed slot's authored Key, if one exists, without
+// producing a KeyedTimerExpiredSignalSource signal, generalizing
+// CancelTimerOperation to a (slot, key) occurrence instead of a
+// slot-wide one.
+//
+// The operation clears the logical timer at (Slot, Key) and creates a
+// declarative cancellation output after commit when necessary; it is
+// idempotent when (slot, key) is already empty. After cancellation,
+// (slot, key) may be scheduled again. A different key under the same
+// Slot is entirely unaffected.
+//
+// Slot is a static, source-level name, not a runtime expression. Key
+// must be statically compatible with the slot's declared KeyType.
+type CancelKeyedTimerOperation struct {
+	Slot string
+	Key  Expression
+}
+
+func (CancelKeyedTimerOperation) isOperation() {}

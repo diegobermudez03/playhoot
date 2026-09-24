@@ -36,6 +36,56 @@ type CloseQuestionOutput struct {
 
 func (CloseQuestionOutput) isOutput() {}
 
+// OpenKeyedQuestionOutput reports that the question named Question was
+// opened for Recipient at the keyed workflow slot Slot's occurrence Key,
+// with the given Arguments as its captured parameters, generalizing
+// OpenQuestionOutput to a (slot, key) occurrence. Reused for a keyed
+// ask-group's per-recipient opened questions, exactly like
+// OpenQuestionOutput is already reused for an ordinary ask group's.
+type OpenKeyedQuestionOutput struct {
+	Slot      string
+	Key       Value
+	Recipient UserID
+	Question  string
+	Arguments []FieldValue
+}
+
+func (OpenKeyedQuestionOutput) isOutput() {}
+
+// CloseKeyedQuestionOutput reports that the pending question at the
+// keyed workflow slot Slot's occurrence Key, previously opened for
+// Recipient, was closed, generalizing CloseQuestionOutput to a (slot,
+// key) occurrence.
+type CloseKeyedQuestionOutput struct {
+	Slot      string
+	Key       Value
+	Recipient UserID
+}
+
+func (CloseKeyedQuestionOutput) isOutput() {}
+
+// ScheduleKeyedTimerOutput reports that a timer was scheduled at the
+// keyed workflow slot Slot's occurrence Key, to fire after
+// DelayMilliseconds, generalizing ScheduleTimerOutput to a (slot, key)
+// occurrence.
+type ScheduleKeyedTimerOutput struct {
+	Slot              string
+	Key               Value
+	DelayMilliseconds float64
+}
+
+func (ScheduleKeyedTimerOutput) isOutput() {}
+
+// CancelKeyedTimerOutput reports that the pending timer at the keyed
+// workflow slot Slot's occurrence Key was cancelled, generalizing
+// CancelTimerOutput to a (slot, key) occurrence.
+type CancelKeyedTimerOutput struct {
+	Slot string
+	Key  Value
+}
+
+func (CancelKeyedTimerOutput) isOutput() {}
+
 // ScheduleTimerOutput reports that a timer was scheduled in the
 // workflow slot Slot, to fire after DelayMilliseconds. The engine
 // itself does not schedule anything — see LOGICAL_CONTRACT.md — an

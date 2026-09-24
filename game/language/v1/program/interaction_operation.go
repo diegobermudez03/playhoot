@@ -47,6 +47,63 @@ type CloseQuestionOperation struct {
 
 func (CloseQuestionOperation) isOperation() {}
 
+// OpenKeyedQuestionOperation opens one concrete instance of the question
+// associated with the named workflow keyed slot, at the authored Key,
+// generalizing OpenQuestionOperation to a (slot, key) occurrence instead
+// of a slot-wide one.
+//
+// Conceptually, the operation evaluates Key (which must eventually
+// compile to the slot's declared KeyType), evaluates Recipient, evaluates
+// every entry of Arguments in declaration order, and opens the question
+// at (Slot, Key), recording the target user and captured arguments. It
+// does not wait for the user, does not suspend the transition, and does
+// not by itself change the workflow's state. Opening an already-occupied
+// (slot, key) is an execution error that must fail the entire transition
+// atomically, with no partial state changes or outputs committed — there
+// is no implicit replacement policy, so an occupied (slot, key) must be
+// explicitly closed with CloseKeyedQuestionOperation before it can be
+// reopened. A different key under the same Slot is entirely independent
+// and unaffected.
+//
+// Slot is a static, source-level name, not a runtime expression. The
+// future compiler validates that Slot exists in the current workflow as
+// a keyed question slot, that Key is statically compatible with the
+// slot's declared KeyType, that Recipient has type User, and that
+// Arguments matches the slot's question parameters (no missing, unknown,
+// or duplicate arguments, with compatible types).
+type OpenKeyedQuestionOperation struct {
+	Slot      string
+	Key       Expression
+	Recipient Expression
+	Arguments []CallArgument
+}
+
+func (OpenKeyedQuestionOperation) isOperation() {}
+
+// CloseKeyedQuestionOperation closes the pending question instance at the
+// named workflow keyed slot's authored Key, without producing a
+// question-answer signal, generalizing CloseQuestionOperation to a
+// (slot, key) occurrence instead of a slot-wide one.
+//
+// It is used for the same reasons as CloseQuestionOperation (cleanup,
+// workflow cancellation, participant disconnection, abandoning an
+// interaction, closing stale client-facing UI), scoped to one (slot,
+// key) occurrence. Closing an already-empty (slot, key) is an idempotent
+// no-op. After it closes, later client responses for the old occurrence
+// are rejected, and (slot, key) may be opened again; a different key
+// under the same Slot is entirely unaffected.
+//
+// Slot is a static, source-level name, not a runtime expression. The
+// future compiler validates that Slot exists in the current workflow as
+// a keyed question slot and that Key is statically compatible with the
+// slot's declared KeyType.
+type CloseKeyedQuestionOperation struct {
+	Slot string
+	Key  Expression
+}
+
+func (CloseKeyedQuestionOperation) isOperation() {}
+
 // EmitEffectOperation emits one instance of the named EffectDeclaration to
 // Recipients with the given Arguments.
 //

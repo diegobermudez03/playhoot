@@ -87,3 +87,7 @@ Rejected as out of scope for this record. GAME-ADR-0008 already accepted the V1 
 ## Implementation Impact
 
 Future implementation must design the concrete `KeyedTimerSlot<Key>` declaration/operations/signal source in `program`, corresponding compiler/engine support, the `session_timer_obligations.engine_key` migration, and Session Runtime's construction of the correct keyed expiration signal on recovery. No compiler, engine, program, migration, or Session Runtime code, and no WORK, is authorized by this record.
+
+### Implemented by
+
+`docs/projects/active/game-language-flat-execution-model/works/WORK-0025-keyed-interaction-slots.md` implements this record's `program`/`engine`/compiler/runtime portion (`KeyedTimerSlotDeclaration`, `ScheduleKeyedTimerOperation`/`CancelKeyedTimerOperation`, `KeyedTimerExpiredSignalSource`), alongside the Question/Ask Group generalization GAME-ADR-0026 accepted. The Session Runtime persistence consequence (`session_timer_obligations.engine_key`) recorded above remains unimplemented, out of that WORK's own scope.

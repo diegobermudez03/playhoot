@@ -101,9 +101,10 @@ const (
 	// empty list.
 	ExecutionErrorEmptyRandomCollection
 
-	// ExecutionErrorSlotOccupied marks an OpenQuestionOperation or
-	// ScheduleTimerOperation targeting a slot that already holds a
-	// pending question or timer.
+	// ExecutionErrorSlotOccupied marks an OpenQuestionOperation,
+	// ScheduleTimerOperation, OpenAskGroupOperation, or any of their
+	// keyed counterparts targeting a slot (or (slot, key) occurrence)
+	// that already holds a pending question, timer, or ask group.
 	ExecutionErrorSlotOccupied
 
 	// ExecutionErrorInvalidTimerDelay marks a ScheduleTimerOperation
@@ -112,12 +113,13 @@ const (
 	ExecutionErrorInvalidTimerDelay
 
 	// ExecutionErrorInputRejected marks a Step call for a
-	// SignalKindQuestionAnswered or SignalKindTimerExpired Signal that
-	// did not pass authoritative validation: the targeted slot was
-	// already empty (stale or duplicate), the answer's respondent did
-	// not match the slot's pending recipient (unauthorized), or the
-	// submitted answer failed response-type or Validation checks
-	// (invalid). See ErrInputRejected.
+	// SignalKindQuestionAnswered, SignalKindTimerExpired,
+	// SignalKindAskGroupCompleted, or any of their keyed counterparts
+	// that did not pass authoritative validation: the targeted slot (or
+	// (slot, key) occurrence) was already empty (stale or duplicate),
+	// the answer's respondent did not match the slot's pending recipient
+	// (unauthorized), or the submitted answer failed response-type or
+	// Validation checks (invalid). See ErrInputRejected.
 	ExecutionErrorInputRejected
 
 	// ExecutionErrorDuplicateRecipient marks an OpenAskGroupOperation
@@ -293,13 +295,16 @@ func NewSnapshot(p engine.Program, input engine.InitializationInput) (engine.Sna
 	}
 
 	rootInstance := engine.WorkflowInstance{
-		Workflow:      p.RootWorkflow,
-		State:         root.InitialState,
-		Parameters:    params,
-		LocalState:    engine.RecordValue{TypeName: "local", Fields: localFields},
-		QuestionSlots: newQuestionSlotInstances(root.QuestionSlots),
-		AskGroupSlots: newAskGroupSlotInstances(root.AskGroupSlots),
-		TimerSlots:    newTimerSlotInstances(root.TimerSlots),
+		Workflow:           p.RootWorkflow,
+		State:              root.InitialState,
+		Parameters:         params,
+		LocalState:         engine.RecordValue{TypeName: "local", Fields: localFields},
+		QuestionSlots:      newQuestionSlotInstances(root.QuestionSlots),
+		AskGroupSlots:      newAskGroupSlotInstances(root.AskGroupSlots),
+		TimerSlots:         newTimerSlotInstances(root.TimerSlots),
+		KeyedQuestionSlots: newKeyedQuestionSlotInstances(root.KeyedQuestionSlots),
+		KeyedAskGroupSlots: newKeyedAskGroupSlotInstances(root.KeyedAskGroupSlots),
+		KeyedTimerSlots:    newKeyedTimerSlotInstances(root.KeyedTimerSlots),
 	}
 
 	globalFields, err := evaluateStateFields(p, p.GlobalState, engine.Scope{})
@@ -399,6 +404,30 @@ func newTimerSlotInstances(slots []string) []engine.TimerSlotInstance {
 	return result
 }
 
+func newKeyedQuestionSlotInstances(slots []engine.KeyedQuestionSlot) []engine.KeyedQuestionSlotInstance {
+	result := make([]engine.KeyedQuestionSlotInstance, len(slots))
+	for i, s := range slots {
+		result[i] = engine.KeyedQuestionSlotInstance{Name: s.Name}
+	}
+	return result
+}
+
+func newKeyedAskGroupSlotInstances(slots []engine.KeyedAskGroupSlot) []engine.KeyedAskGroupSlotInstance {
+	result := make([]engine.KeyedAskGroupSlotInstance, len(slots))
+	for i, s := range slots {
+		result[i] = engine.KeyedAskGroupSlotInstance{Name: s.Name}
+	}
+	return result
+}
+
+func newKeyedTimerSlotInstances(slots []engine.KeyedTimerSlot) []engine.KeyedTimerSlotInstance {
+	result := make([]engine.KeyedTimerSlotInstance, len(slots))
+	for i, s := range slots {
+		result[i] = engine.KeyedTimerSlotInstance{Name: s.Name}
+	}
+	return result
+}
+
 // Step applies exactly one Signal to snapshot and returns the atomic
 // result as an engine.Commit.
 //
@@ -442,9 +471,13 @@ func Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal, limi
 	// still-collecting ask group never itself selects or runs a
 	// transition — it only records the answer and re-evaluates the
 	// group's completion policy. This is handled entirely separately
-	// from the transition-selection flow below.
+	// from the transition-selection flow below. The keyed variant is the
+	// identical behavior scoped to one (slot, key) occurrence.
 	if signal.Kind == engine.SignalKindAskGroupAnswered {
 		return stepAskGroupAnswer(p, snapshot, signal)
+	}
+	if signal.Kind == engine.SignalKindKeyedAskGroupAnswered {
+		return stepKeyedAskGroupAnswer(p, snapshot, signal)
 	}
 
 	target := snapshot.Root
@@ -473,6 +506,18 @@ func Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal, limi
 		}
 	case engine.SignalKindAskGroupCompleted:
 		if err := validateAskGroupCompletion(target, signal); err != nil {
+			return engine.Commit{}, err
+		}
+	case engine.SignalKindKeyedQuestionAnswered:
+		if err := validateKeyedQuestionAnswer(p, target, signal); err != nil {
+			return engine.Commit{}, err
+		}
+	case engine.SignalKindKeyedTimerExpired:
+		if err := validateKeyedTimerExpiration(target, signal); err != nil {
+			return engine.Commit{}, err
+		}
+	case engine.SignalKindKeyedAskGroupCompleted:
+		if err := validateKeyedAskGroupCompletion(target, signal); err != nil {
 			return engine.Commit{}, err
 		}
 	}
@@ -504,22 +549,27 @@ func Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal, limi
 	}
 
 	ctx := &execContext{
-		program:       p,
-		workflow:      workflow,
-		global:        snapshot.GlobalState,
-		local:         target.LocalState,
-		random:        snapshot.Random,
-		limits:        limits,
-		questionSlots: append([]engine.QuestionSlotInstance{}, target.QuestionSlots...),
-		timerSlots:    append([]engine.TimerSlotInstance{}, target.TimerSlots...),
-		askGroupSlots: append([]engine.AskGroupSlotInstance{}, target.AskGroupSlots...),
+		program:            p,
+		workflow:           workflow,
+		global:             snapshot.GlobalState,
+		local:              target.LocalState,
+		random:             snapshot.Random,
+		limits:             limits,
+		questionSlots:      append([]engine.QuestionSlotInstance{}, target.QuestionSlots...),
+		timerSlots:         append([]engine.TimerSlotInstance{}, target.TimerSlots...),
+		askGroupSlots:      append([]engine.AskGroupSlotInstance{}, target.AskGroupSlots...),
+		keyedQuestionSlots: append([]engine.KeyedQuestionSlotInstance{}, target.KeyedQuestionSlots...),
+		keyedTimerSlots:    append([]engine.KeyedTimerSlotInstance{}, target.KeyedTimerSlots...),
+		keyedAskGroupSlots: append([]engine.KeyedAskGroupSlotInstance{}, target.KeyedAskGroupSlots...),
 	}
 
 	// Accepting a validated answer, expiration, or ask-group completion
 	// clears its slot, atomic with everything else this step does — if
 	// the step fails for any other reason below, this candidate
 	// clearing is discarded along with it, and the slot remains
-	// occupied.
+	// occupied. The keyed variants clear only the one (slot, key) entry
+	// that was accepted, leaving every other key's occurrence under the
+	// same slot untouched.
 	switch signal.Kind {
 	case engine.SignalKindQuestionAnswered:
 		if idx, ok := ctx.findQuestionSlot(signal.Slot); ok {
@@ -532,6 +582,35 @@ func Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal, limi
 	case engine.SignalKindAskGroupCompleted:
 		if idx, ok := ctx.findAskGroupSlot(signal.Slot); ok {
 			ctx.askGroupSlots[idx] = engine.AskGroupSlotInstance{Name: signal.Slot}
+		}
+	case engine.SignalKindKeyedQuestionAnswered:
+		if idx, ok := ctx.findKeyedQuestionSlot(signal.Slot); ok {
+			if pIdx, ok := findKeyedQuestionPending(ctx.keyedQuestionSlots[idx].Pending, signal.Key); ok {
+				ctx.keyedQuestionSlots[idx] = engine.KeyedQuestionSlotInstance{
+					Name:    signal.Slot,
+					Pending: removeKeyedQuestionPending(ctx.keyedQuestionSlots[idx].Pending, pIdx),
+				}
+			}
+		}
+	case engine.SignalKindKeyedTimerExpired:
+		if idx, ok := ctx.findKeyedTimerSlot(signal.Slot); ok {
+			if pIdx, ok := findKeyedTimerPending(ctx.keyedTimerSlots[idx].Pending, signal.Key); ok {
+				pending := ctx.keyedTimerSlots[idx].Pending
+				result := make([]engine.KeyedPendingTimer, 0, len(pending)-1)
+				result = append(result, pending[:pIdx]...)
+				result = append(result, pending[pIdx+1:]...)
+				ctx.keyedTimerSlots[idx] = engine.KeyedTimerSlotInstance{Name: signal.Slot, Pending: result}
+			}
+		}
+	case engine.SignalKindKeyedAskGroupCompleted:
+		if idx, ok := ctx.findKeyedAskGroupSlot(signal.Slot); ok {
+			if pIdx, ok := findKeyedAskGroupPending(ctx.keyedAskGroupSlots[idx].Pending, signal.Key); ok {
+				pending := ctx.keyedAskGroupSlots[idx].Pending
+				result := make([]engine.KeyedPendingAskGroup, 0, len(pending)-1)
+				result = append(result, pending[:pIdx]...)
+				result = append(result, pending[pIdx+1:]...)
+				ctx.keyedAskGroupSlots[idx] = engine.KeyedAskGroupSlotInstance{Name: signal.Slot, Pending: result}
+			}
 		}
 	}
 
@@ -562,16 +641,20 @@ func Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal, limi
 	newTarget.QuestionSlots = ctx.questionSlots
 	newTarget.TimerSlots = ctx.timerSlots
 	newTarget.AskGroupSlots = ctx.askGroupSlots
+	newTarget.KeyedQuestionSlots = ctx.keyedQuestionSlots
+	newTarget.KeyedTimerSlots = ctx.keyedTimerSlots
+	newTarget.KeyedAskGroupSlots = ctx.keyedAskGroupSlots
 	if outcome.changed {
 		newTarget.State = outcome.state
 	}
 	if outcome.outcome != nil {
 		newTarget.Outcome = outcome.outcome
 		// Once this instance reaches a terminal outcome, every ask-group
-		// slot it owns — collecting or awaiting-join — is discarded:
-		// nothing can ever join a slot belonging to an instance that no
-		// longer runs any transitions.
+		// slot it owns — collecting or awaiting-join, ordinary or keyed
+		// — is discarded: nothing can ever join a slot belonging to an
+		// instance that no longer runs any transitions.
 		newTarget.AskGroupSlots = clearedAskGroupSlots(newTarget.AskGroupSlots)
+		newTarget.KeyedAskGroupSlots = clearedKeyedAskGroupSlots(newTarget.KeyedAskGroupSlots)
 
 		ctx.outputs = append(ctx.outputs, engine.WorkflowCompletedOutput{
 			Workflow: workflow.Name,
@@ -658,12 +741,13 @@ var ErrSignalRejected = &ExecutionError{
 	Message: "engineservice: signal was rejected: no transition matched, or its guard was false",
 }
 
-// ErrInputRejected is returned by Step for a SignalKindQuestionAnswered
-// or SignalKindTimerExpired Signal that failed authoritative
-// validation — see ExecutionErrorInputRejected. Because an accepted
-// answer or expiration clears its slot atomically with the rest of the
-// step that handles it, a duplicate delivery of the same input always
-// finds the slot already empty and is rejected here too — "stale" and
+// ErrInputRejected is returned by Step for a SignalKindQuestionAnswered,
+// SignalKindTimerExpired, SignalKindAskGroupCompleted, or any of their
+// keyed counterparts that failed authoritative validation — see
+// ExecutionErrorInputRejected. Because an accepted answer or expiration
+// clears its slot (or (slot, key) occurrence) atomically with the rest
+// of the step that handles it, a duplicate delivery of the same input
+// always finds it already empty and is rejected here too — "stale" and
 // "duplicate" are the same check.
 var ErrInputRejected = &ExecutionError{
 	Code:    ExecutionErrorInputRejected,
@@ -761,6 +845,18 @@ func clearedAskGroupSlots(slots []engine.AskGroupSlotInstance) []engine.AskGroup
 	return cleared
 }
 
+// clearedKeyedAskGroupSlots returns a copy of slots with every (slot,
+// key) occurrence discarded — the keyed generalization of
+// clearedAskGroupSlots, applied when the owning instance reaches a
+// terminal outcome.
+func clearedKeyedAskGroupSlots(slots []engine.KeyedAskGroupSlotInstance) []engine.KeyedAskGroupSlotInstance {
+	cleared := make([]engine.KeyedAskGroupSlotInstance, len(slots))
+	for i, s := range slots {
+		cleared[i] = engine.KeyedAskGroupSlotInstance{Name: s.Name}
+	}
+	return cleared
+}
+
 func workflowQuestionSlot(workflow engine.Workflow, name string) (engine.QuestionSlot, bool) {
 	for _, s := range workflow.QuestionSlots {
 		if s.Name == name {
@@ -768,6 +864,148 @@ func workflowQuestionSlot(workflow engine.Workflow, name string) (engine.Questio
 		}
 	}
 	return engine.QuestionSlot{}, false
+}
+
+func workflowKeyedQuestionSlot(workflow engine.Workflow, name string) (engine.KeyedQuestionSlot, bool) {
+	for _, s := range workflow.KeyedQuestionSlots {
+		if s.Name == name {
+			return s, true
+		}
+	}
+	return engine.KeyedQuestionSlot{}, false
+}
+
+func workflowKeyedAskGroupSlot(workflow engine.Workflow, name string) (engine.KeyedAskGroupSlot, bool) {
+	for _, s := range workflow.KeyedAskGroupSlots {
+		if s.Name == name {
+			return s, true
+		}
+	}
+	return engine.KeyedAskGroupSlot{}, false
+}
+
+// findInstanceKeyedQuestionSlot returns instance's keyed question slot
+// named name, if any.
+func findInstanceKeyedQuestionSlot(instance engine.WorkflowInstance, name string) (engine.KeyedQuestionSlotInstance, bool) {
+	for _, s := range instance.KeyedQuestionSlots {
+		if s.Name == name {
+			return s, true
+		}
+	}
+	return engine.KeyedQuestionSlotInstance{}, false
+}
+
+// findInstanceKeyedTimerSlot returns instance's keyed timer slot named
+// name, if any.
+func findInstanceKeyedTimerSlot(instance engine.WorkflowInstance, name string) (engine.KeyedTimerSlotInstance, bool) {
+	for _, s := range instance.KeyedTimerSlots {
+		if s.Name == name {
+			return s, true
+		}
+	}
+	return engine.KeyedTimerSlotInstance{}, false
+}
+
+// findInstanceKeyedAskGroupSlot returns instance's keyed ask-group slot
+// named name, if any.
+func findInstanceKeyedAskGroupSlot(instance engine.WorkflowInstance, name string) (engine.KeyedAskGroupSlotInstance, bool) {
+	for _, s := range instance.KeyedAskGroupSlots {
+		if s.Name == name {
+			return s, true
+		}
+	}
+	return engine.KeyedAskGroupSlotInstance{}, false
+}
+
+func findInstanceKeyedAskGroupSlotIndex(instance engine.WorkflowInstance, name string) (int, bool) {
+	for i, s := range instance.KeyedAskGroupSlots {
+		if s.Name == name {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+// validateKeyedQuestionAnswer implements
+// program.KeyedQuestionAnsweredSignalSource's documented acceptance
+// rule, scoped to the specific (slot, key) occurrence signal.Key
+// addresses — the keyed generalization of validateQuestionAnswer, with
+// the identical narrow "reopened (slot, key)" gap.
+func validateKeyedQuestionAnswer(p engine.Program, instance engine.WorkflowInstance, signal engine.Signal) error {
+	slot, ok := findInstanceKeyedQuestionSlot(instance, signal.Slot)
+	if !ok {
+		return ErrInputRejected
+	}
+	pIdx, ok := findKeyedQuestionPending(slot.Pending, signal.Key)
+	if !ok {
+		return ErrInputRejected
+	}
+	pending := slot.Pending[pIdx]
+	if pending.Recipient != signal.Respondent {
+		return ErrInputRejected
+	}
+
+	workflow, ok := p.Workflows[instance.Workflow]
+	if !ok {
+		return newExecutionError(ExecutionErrorUnknown, "engineservice: workflow %q is not compiled", instance.Workflow)
+	}
+	slotDecl, ok := workflowKeyedQuestionSlot(workflow, signal.Slot)
+	if !ok {
+		return newExecutionError(ExecutionErrorUnknown, "engineservice: workflow %q has no keyed question slot named %q", instance.Workflow, signal.Slot)
+	}
+	question, ok := p.Questions[slotDecl.Question]
+	if !ok {
+		return newExecutionError(ExecutionErrorUnknown, "engineservice: question %q is not compiled", slotDecl.Question)
+	}
+
+	if signal.Answer == nil || !signal.Answer.Validate(question.ResponseType) {
+		return ErrInputRejected
+	}
+	if question.Validation != nil {
+		bindings := map[string]engine.Value{"respondent": engine.UserValue{ID: signal.Respondent}, "answer": signal.Answer}
+		for _, arg := range pending.Arguments {
+			bindings[arg.Name] = arg.Value
+		}
+		v, err := Evaluate(p, question.Validation, engine.Scope{Bindings: bindings})
+		if err != nil {
+			return err
+		}
+		if !v.(engine.BoolValue).Value {
+			return ErrInputRejected
+		}
+	}
+	return nil
+}
+
+// validateKeyedTimerExpiration implements
+// program.KeyedTimerExpiredSignalSource's documented acceptance rule,
+// scoped to the specific (slot, key) occurrence signal.Key addresses —
+// the keyed generalization of validateTimerExpiration.
+func validateKeyedTimerExpiration(instance engine.WorkflowInstance, signal engine.Signal) error {
+	slot, ok := findInstanceKeyedTimerSlot(instance, signal.Slot)
+	if !ok {
+		return ErrInputRejected
+	}
+	if _, ok := findKeyedTimerPending(slot.Pending, signal.Key); !ok {
+		return ErrInputRejected
+	}
+	return nil
+}
+
+// validateKeyedAskGroupCompletion implements
+// program.KeyedAskGroupCompletedSignalSource's acceptance rule, scoped
+// to the specific (slot, key) occurrence signal.Key addresses — the
+// keyed generalization of validateAskGroupCompletion.
+func validateKeyedAskGroupCompletion(instance engine.WorkflowInstance, signal engine.Signal) error {
+	slot, ok := findInstanceKeyedAskGroupSlot(instance, signal.Slot)
+	if !ok {
+		return ErrInputRejected
+	}
+	pIdx, ok := findKeyedAskGroupPending(slot.Pending, signal.Key)
+	if !ok || !slot.Pending[pIdx].Completed {
+		return ErrInputRejected
+	}
+	return nil
 }
 
 // signalSchemaFields builds the field-name-to-value map a Signal's
@@ -789,6 +1027,19 @@ func signalSchemaFields(p engine.Program, workflow engine.Workflow, instance eng
 	case engine.SignalKindAskGroupCompleted:
 		slot, _ := findInstanceAskGroupSlot(instance, signal.Slot)
 		return askGroupCompletionFields(p, workflow, slot.Pending, signal.Slot)
+	case engine.SignalKindKeyedQuestionAnswered:
+		return map[string]engine.Value{"key": signal.Key, "respondent": engine.UserValue{ID: signal.Respondent}, "answer": signal.Answer}
+	case engine.SignalKindKeyedTimerExpired:
+		return map[string]engine.Value{"key": signal.Key}
+	case engine.SignalKindKeyedAskGroupCompleted:
+		slot, _ := findInstanceKeyedAskGroupSlot(instance, signal.Slot)
+		var pending *engine.PendingAskGroup
+		if pIdx, ok := findKeyedAskGroupPending(slot.Pending, signal.Key); ok {
+			pending = &slot.Pending[pIdx].PendingAskGroup
+		}
+		fields := askGroupCompletionFields(p, workflow, pending, signal.Slot)
+		fields["key"] = signal.Key
+		return fields
 	default:
 		return signal.Fields
 	}
@@ -835,6 +1086,12 @@ func signalMatchesSource(source engine.SignalSource, signal engine.Signal) bool 
 		return signal.Kind == engine.SignalKindTimerExpired && s.Slot == signal.Slot
 	case engine.AskGroupCompletedSignalSource:
 		return signal.Kind == engine.SignalKindAskGroupCompleted && s.Slot == signal.Slot
+	case engine.KeyedQuestionAnsweredSignalSource:
+		return signal.Kind == engine.SignalKindKeyedQuestionAnswered && s.Slot == signal.Slot
+	case engine.KeyedTimerExpiredSignalSource:
+		return signal.Kind == engine.SignalKindKeyedTimerExpired && s.Slot == signal.Slot
+	case engine.KeyedAskGroupCompletedSignalSource:
+		return signal.Kind == engine.SignalKindKeyedAskGroupCompleted && s.Slot == signal.Slot
 	default:
 		return false
 	}

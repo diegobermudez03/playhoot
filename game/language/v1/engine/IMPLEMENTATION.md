@@ -70,7 +70,7 @@ Every expression-compiling function threads an `exprScope` (a `map[string]engine
 
 ### `Step`'s commit sequence
 
-Inside `Step` (`step.go`), once a transition's guard passes and its operations have run without exceeding any `Limits`, every compiled `Invariant` is checked against the resulting global state — atomically; a violation aborts the whole `Step` with `ExecutionErrorInvariantViolation` and no `Commit` is produced. Only after that does the new target instance get built, and if this instance's own control just produced a terminal `WorkflowOutcome`, its ask-group slots (running or terminal-awaiting-join) are discarded wholesale via `clearedAskGroupSlots`, and exactly one `engine.WorkflowCompletedOutput` is appended to the commit's outputs — the one place a caller finds out the whole game instance ended.
+Inside `Step` (`step.go`), once a transition's guard passes and its operations have run without exceeding any `Limits`, every compiled `Invariant` is checked against the resulting global state — atomically; a violation aborts the whole `Step` with `ExecutionErrorInvariantViolation` and no `Commit` is produced. Only after that does the new target instance get built, and if this instance's own control just produced a terminal `WorkflowOutcome`, its ordinary and keyed ask-group slots (running or terminal-awaiting-join) are discarded wholesale via `clearedAskGroupSlots`/`clearedKeyedAskGroupSlots`, and exactly one `engine.WorkflowCompletedOutput` is appended to the commit's outputs — the one place a caller finds out the whole game instance ended.
 
 ### Two error sentinels vs. one error type
 

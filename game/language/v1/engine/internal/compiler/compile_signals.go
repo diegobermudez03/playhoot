@@ -151,6 +151,42 @@ func (c *compiler) compileSignalSource(source program.SignalSource, path string,
 			"missing":     engine.ListType{Element: engine.UserType{}},
 		}
 
+	case program.KeyedQuestionAnsweredSignalSource:
+		entry, ok := ctx.keyedQuestionSlots[s.Slot]
+		if !ok {
+			c.addf(path+".slot", "reference to undeclared keyed question slot %q", s.Slot)
+			return engine.KeyedQuestionAnsweredSignalSource{Slot: s.Slot}, map[string]engine.Type{}
+		}
+		return engine.KeyedQuestionAnsweredSignalSource{Slot: s.Slot}, map[string]engine.Type{
+			"key":        entry.keyType,
+			"respondent": engine.UserType{},
+			"answer":     c.questionResponseType(entry.decl.Question, path),
+		}
+
+	case program.KeyedTimerExpiredSignalSource:
+		entry, ok := ctx.keyedTimerSlots[s.Slot]
+		if !ok {
+			c.addf(path+".slot", "reference to undeclared keyed timer slot %q", s.Slot)
+			return engine.KeyedTimerExpiredSignalSource{Slot: s.Slot}, map[string]engine.Type{}
+		}
+		return engine.KeyedTimerExpiredSignalSource{Slot: s.Slot}, map[string]engine.Type{
+			"key": entry.keyType,
+		}
+
+	case program.KeyedAskGroupCompletedSignalSource:
+		entry, ok := ctx.keyedAskGroupSlots[s.Slot]
+		if !ok {
+			c.addf(path+".slot", "reference to undeclared keyed ask-group slot %q", s.Slot)
+			return engine.KeyedAskGroupCompletedSignalSource{Slot: s.Slot}, map[string]engine.Type{}
+		}
+		responseType := c.questionResponseType(entry.decl.Question, path)
+		return engine.KeyedAskGroupCompletedSignalSource{Slot: s.Slot}, map[string]engine.Type{
+			"key":         entry.keyType,
+			"responses":   engine.MapType{Key: engine.UserType{}, Value: responseType},
+			"respondents": engine.ListType{Element: engine.UserType{}},
+			"missing":     engine.ListType{Element: engine.UserType{}},
+		}
+
 	default:
 		c.addf(path, "unsupported signal source")
 		return nil, map[string]engine.Type{}

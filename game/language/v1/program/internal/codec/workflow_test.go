@@ -404,6 +404,7 @@ func TestExactJSON_WorkflowDeclaration(t *testing.T) {
 	expectedKeys := []string{
 		"name", "parameters", "result_type", "local_state", "question_slots",
 		"ask_group_slots", "timer_slots",
+		"keyed_question_slots", "keyed_ask_group_slots", "keyed_timer_slots",
 		"presentations", "initial_state", "global_transitions", "states",
 	}
 	if len(obj) != len(expectedKeys) {

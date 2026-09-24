@@ -7,14 +7,17 @@ import (
 )
 
 type workflowInstanceWire struct {
-	Workflow      string             `json:"workflow"`
-	State         string             `json:"state"`
-	Parameters    []fieldValueWire   `json:"parameters,omitempty"`
-	LocalState    json.RawMessage    `json:"local_state"`
-	Outcome       json.RawMessage    `json:"outcome,omitempty"`
-	QuestionSlots []questionSlotWire `json:"question_slots,omitempty"`
-	AskGroupSlots []askGroupSlotWire `json:"ask_group_slots,omitempty"`
-	TimerSlots    []timerSlotWire    `json:"timer_slots,omitempty"`
+	Workflow           string                  `json:"workflow"`
+	State              string                  `json:"state"`
+	Parameters         []fieldValueWire        `json:"parameters,omitempty"`
+	LocalState         json.RawMessage         `json:"local_state"`
+	Outcome            json.RawMessage         `json:"outcome,omitempty"`
+	QuestionSlots      []questionSlotWire      `json:"question_slots,omitempty"`
+	AskGroupSlots      []askGroupSlotWire      `json:"ask_group_slots,omitempty"`
+	TimerSlots         []timerSlotWire         `json:"timer_slots,omitempty"`
+	KeyedQuestionSlots []keyedQuestionSlotWire `json:"keyed_question_slots,omitempty"`
+	KeyedAskGroupSlots []keyedAskGroupSlotWire `json:"keyed_ask_group_slots,omitempty"`
+	KeyedTimerSlots    []keyedTimerSlotWire    `json:"keyed_timer_slots,omitempty"`
 }
 
 type questionSlotWire struct {
@@ -49,6 +52,41 @@ type askGroupResponseWire struct {
 type timerSlotWire struct {
 	Name    string `json:"name"`
 	Pending bool   `json:"pending,omitempty"`
+}
+
+type keyedQuestionSlotWire struct {
+	Name    string                     `json:"name"`
+	Pending []keyedPendingQuestionWire `json:"pending,omitempty"`
+}
+
+type keyedPendingQuestionWire struct {
+	Key       json.RawMessage  `json:"key"`
+	Recipient string           `json:"recipient"`
+	Arguments []fieldValueWire `json:"arguments,omitempty"`
+}
+
+type keyedAskGroupSlotWire struct {
+	Name    string                     `json:"name"`
+	Pending []keyedPendingAskGroupWire `json:"pending,omitempty"`
+}
+
+type keyedPendingAskGroupWire struct {
+	Key            json.RawMessage        `json:"key"`
+	Recipients     []string               `json:"recipients,omitempty"`
+	Arguments      []fieldValueWire       `json:"arguments,omitempty"`
+	Responses      []askGroupResponseWire `json:"responses,omitempty"`
+	Completed      bool                   `json:"completed,omitempty"`
+	CompletionKind int                    `json:"completion_kind"`
+	QuorumCount    int                    `json:"quorum_count,omitempty"`
+}
+
+type keyedTimerSlotWire struct {
+	Name    string                  `json:"name"`
+	Pending []keyedPendingTimerWire `json:"pending,omitempty"`
+}
+
+type keyedPendingTimerWire struct {
+	Key json.RawMessage `json:"key"`
 }
 
 type workflowOutcomeWire struct {
@@ -91,15 +129,31 @@ func EncodeWorkflowInstance(path string, instance engine.WorkflowInstance) (json
 		timerSlots[i] = timerSlotWire{Name: s.Name, Pending: s.Pending}
 	}
 
+	keyedQuestionSlots, err := encodeKeyedQuestionSlots(path, instance.KeyedQuestionSlots)
+	if err != nil {
+		return nil, err
+	}
+	keyedAskGroupSlots, err := encodeKeyedAskGroupSlots(path, instance.KeyedAskGroupSlots)
+	if err != nil {
+		return nil, err
+	}
+	keyedTimerSlots, err := encodeKeyedTimerSlots(path, instance.KeyedTimerSlots)
+	if err != nil {
+		return nil, err
+	}
+
 	return json.Marshal(workflowInstanceWire{
-		Workflow:      instance.Workflow,
-		State:         instance.State,
-		Parameters:    params,
-		LocalState:    localState,
-		Outcome:       outcome,
-		QuestionSlots: questionSlots,
-		AskGroupSlots: askGroupSlots,
-		TimerSlots:    timerSlots,
+		Workflow:           instance.Workflow,
+		State:              instance.State,
+		Parameters:         params,
+		LocalState:         localState,
+		Outcome:            outcome,
+		QuestionSlots:      questionSlots,
+		AskGroupSlots:      askGroupSlots,
+		TimerSlots:         timerSlots,
+		KeyedQuestionSlots: keyedQuestionSlots,
+		KeyedAskGroupSlots: keyedAskGroupSlots,
+		KeyedTimerSlots:    keyedTimerSlots,
 	})
 }
 
@@ -142,15 +196,31 @@ func DecodeWorkflowInstance(path string, data json.RawMessage) (engine.WorkflowI
 		timerSlots = append(timerSlots, engine.TimerSlotInstance{Name: s.Name, Pending: s.Pending})
 	}
 
+	keyedQuestionSlots, err := decodeKeyedQuestionSlots(path, w.KeyedQuestionSlots)
+	if err != nil {
+		return engine.WorkflowInstance{}, err
+	}
+	keyedAskGroupSlots, err := decodeKeyedAskGroupSlots(path, w.KeyedAskGroupSlots)
+	if err != nil {
+		return engine.WorkflowInstance{}, err
+	}
+	keyedTimerSlots, err := decodeKeyedTimerSlots(path, w.KeyedTimerSlots)
+	if err != nil {
+		return engine.WorkflowInstance{}, err
+	}
+
 	return engine.WorkflowInstance{
-		Workflow:      w.Workflow,
-		State:         w.State,
-		Parameters:    nilIfEmpty(params),
-		LocalState:    localRecord,
-		Outcome:       outcome,
-		QuestionSlots: nilIfEmpty(questionSlots),
-		AskGroupSlots: nilIfEmpty(askGroupSlots),
-		TimerSlots:    timerSlots,
+		Workflow:           w.Workflow,
+		State:              w.State,
+		Parameters:         nilIfEmpty(params),
+		LocalState:         localRecord,
+		Outcome:            outcome,
+		QuestionSlots:      nilIfEmpty(questionSlots),
+		AskGroupSlots:      nilIfEmpty(askGroupSlots),
+		TimerSlots:         timerSlots,
+		KeyedQuestionSlots: nilIfEmpty(keyedQuestionSlots),
+		KeyedAskGroupSlots: nilIfEmpty(keyedAskGroupSlots),
+		KeyedTimerSlots:    nilIfEmpty(keyedTimerSlots),
 	}, nil
 }
 
@@ -298,4 +368,140 @@ func decodePendingAskGroup(path string, data json.RawMessage) (engine.PendingAsk
 		Recipients: recipients, Arguments: nilIfEmpty(args), Responses: responses,
 		Completed: w.Completed, CompletionKind: engine.AskGroupCompletionKind(w.CompletionKind), QuorumCount: w.QuorumCount,
 	}, nil
+}
+
+func encodeKeyedQuestionSlots(path string, slots []engine.KeyedQuestionSlotInstance) ([]keyedQuestionSlotWire, error) {
+	result := make([]keyedQuestionSlotWire, len(slots))
+	for i, s := range slots {
+		spath := pathIndex(pathField(path, "keyed_question_slots"), i)
+		pending := make([]keyedPendingQuestionWire, len(s.Pending))
+		for j, p := range s.Pending {
+			ppath := pathIndex(spath, j)
+			key, err := EncodeValue(pathField(ppath, "key"), p.Key)
+			if err != nil {
+				return nil, err
+			}
+			args, err := encodeFieldValues(ppath, p.Arguments)
+			if err != nil {
+				return nil, err
+			}
+			pending[j] = keyedPendingQuestionWire{Key: key, Recipient: string(p.Recipient), Arguments: args}
+		}
+		result[i] = keyedQuestionSlotWire{Name: s.Name, Pending: pending}
+	}
+	return result, nil
+}
+
+func decodeKeyedQuestionSlots(path string, wire []keyedQuestionSlotWire) ([]engine.KeyedQuestionSlotInstance, error) {
+	result := make([]engine.KeyedQuestionSlotInstance, len(wire))
+	for i, s := range wire {
+		spath := pathIndex(pathField(path, "keyed_question_slots"), i)
+		pending := make([]engine.KeyedPendingQuestion, len(s.Pending))
+		for j, p := range s.Pending {
+			ppath := pathIndex(spath, j)
+			key, err := DecodeValue(pathField(ppath, "key"), p.Key)
+			if err != nil {
+				return nil, err
+			}
+			args, err := decodeFieldValues(ppath, p.Arguments)
+			if err != nil {
+				return nil, err
+			}
+			pending[j] = engine.KeyedPendingQuestion{Key: key, Recipient: engine.UserID(p.Recipient), Arguments: args}
+		}
+		result[i] = engine.KeyedQuestionSlotInstance{Name: s.Name, Pending: pending}
+	}
+	return result, nil
+}
+
+func encodeKeyedAskGroupSlots(path string, slots []engine.KeyedAskGroupSlotInstance) ([]keyedAskGroupSlotWire, error) {
+	result := make([]keyedAskGroupSlotWire, len(slots))
+	for i, s := range slots {
+		spath := pathIndex(pathField(path, "keyed_ask_group_slots"), i)
+		pending := make([]keyedPendingAskGroupWire, len(s.Pending))
+		for j, p := range s.Pending {
+			ppath := pathIndex(spath, j)
+			key, err := EncodeValue(pathField(ppath, "key"), p.Key)
+			if err != nil {
+				return nil, err
+			}
+			raw, err := encodePendingAskGroup(ppath, p.PendingAskGroup)
+			if err != nil {
+				return nil, err
+			}
+			var base pendingAskGroupWire
+			if err := json.Unmarshal(raw, &base); err != nil {
+				return nil, err
+			}
+			pending[j] = keyedPendingAskGroupWire{
+				Key: key, Recipients: base.Recipients, Arguments: base.Arguments, Responses: base.Responses,
+				Completed: base.Completed, CompletionKind: base.CompletionKind, QuorumCount: base.QuorumCount,
+			}
+		}
+		result[i] = keyedAskGroupSlotWire{Name: s.Name, Pending: pending}
+	}
+	return result, nil
+}
+
+func decodeKeyedAskGroupSlots(path string, wire []keyedAskGroupSlotWire) ([]engine.KeyedAskGroupSlotInstance, error) {
+	result := make([]engine.KeyedAskGroupSlotInstance, len(wire))
+	for i, s := range wire {
+		spath := pathIndex(pathField(path, "keyed_ask_group_slots"), i)
+		pending := make([]engine.KeyedPendingAskGroup, len(s.Pending))
+		for j, p := range s.Pending {
+			ppath := pathIndex(spath, j)
+			key, err := DecodeValue(pathField(ppath, "key"), p.Key)
+			if err != nil {
+				return nil, err
+			}
+			raw, err := json.Marshal(pendingAskGroupWire{
+				Recipients: p.Recipients, Arguments: p.Arguments, Responses: p.Responses,
+				Completed: p.Completed, CompletionKind: p.CompletionKind, QuorumCount: p.QuorumCount,
+			})
+			if err != nil {
+				return nil, err
+			}
+			base, err := decodePendingAskGroup(ppath, raw)
+			if err != nil {
+				return nil, err
+			}
+			pending[j] = engine.KeyedPendingAskGroup{Key: key, PendingAskGroup: base}
+		}
+		result[i] = engine.KeyedAskGroupSlotInstance{Name: s.Name, Pending: pending}
+	}
+	return result, nil
+}
+
+func encodeKeyedTimerSlots(path string, slots []engine.KeyedTimerSlotInstance) ([]keyedTimerSlotWire, error) {
+	result := make([]keyedTimerSlotWire, len(slots))
+	for i, s := range slots {
+		spath := pathIndex(pathField(path, "keyed_timer_slots"), i)
+		pending := make([]keyedPendingTimerWire, len(s.Pending))
+		for j, p := range s.Pending {
+			key, err := EncodeValue(pathField(pathIndex(spath, j), "key"), p.Key)
+			if err != nil {
+				return nil, err
+			}
+			pending[j] = keyedPendingTimerWire{Key: key}
+		}
+		result[i] = keyedTimerSlotWire{Name: s.Name, Pending: pending}
+	}
+	return result, nil
+}
+
+func decodeKeyedTimerSlots(path string, wire []keyedTimerSlotWire) ([]engine.KeyedTimerSlotInstance, error) {
+	result := make([]engine.KeyedTimerSlotInstance, len(wire))
+	for i, s := range wire {
+		spath := pathIndex(pathField(path, "keyed_timer_slots"), i)
+		pending := make([]engine.KeyedPendingTimer, len(s.Pending))
+		for j, p := range s.Pending {
+			key, err := DecodeValue(pathField(pathIndex(spath, j), "key"), p.Key)
+			if err != nil {
+				return nil, err
+			}
+			pending[j] = engine.KeyedPendingTimer{Key: key}
+		}
+		result[i] = engine.KeyedTimerSlotInstance{Name: s.Name, Pending: pending}
+	}
+	return result, nil
 }

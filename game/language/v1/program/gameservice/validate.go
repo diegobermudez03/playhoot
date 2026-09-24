@@ -436,6 +436,19 @@ func (v *validator) validateWorkflows() {
 		for j, slot := range w.AskGroupSlots {
 			v.validateQuestionPresentation(slot.Presentation, fmt.Sprintf("%s.ask_group_slots[%d].presentation", path, j))
 		}
+		for j, slot := range w.KeyedQuestionSlots {
+			slotPath := fmt.Sprintf("%s.keyed_question_slots[%d]", path, j)
+			v.validateTypeReference(slot.KeyType, slotPath+".key_type")
+			v.validateQuestionPresentation(slot.Presentation, slotPath+".presentation")
+		}
+		for j, slot := range w.KeyedAskGroupSlots {
+			slotPath := fmt.Sprintf("%s.keyed_ask_group_slots[%d]", path, j)
+			v.validateTypeReference(slot.KeyType, slotPath+".key_type")
+			v.validateQuestionPresentation(slot.Presentation, slotPath+".presentation")
+		}
+		for j, slot := range w.KeyedTimerSlots {
+			v.validateTypeReference(slot.KeyType, fmt.Sprintf("%s.keyed_timer_slots[%d].key_type", path, j))
+		}
 
 		for j, p := range w.Presentations {
 			v.validatePresentation(p, fmt.Sprintf("%s.presentations[%d]", path, j))
@@ -565,6 +578,30 @@ func (v *validator) validateOperation(op program.Operation, path string) {
 	case program.CancelAskGroupOperation:
 	case program.DrawRandomOperation:
 		v.validateRandomGenerator(o.Generator, path+".generator")
+	case program.OpenKeyedQuestionOperation:
+		v.validateExpression(o.Key, path+".key")
+		v.validateExpression(o.Recipient, path+".recipient")
+		for i, arg := range o.Arguments {
+			v.validateExpression(arg.Value, fmt.Sprintf("%s.arguments[%d].value", path, i))
+		}
+	case program.CloseKeyedQuestionOperation:
+		v.validateExpression(o.Key, path+".key")
+	case program.ScheduleKeyedTimerOperation:
+		v.validateExpression(o.Key, path+".key")
+		v.validateNumberExpression(o.DelayMilliseconds, path+".delay_milliseconds")
+	case program.CancelKeyedTimerOperation:
+		v.validateExpression(o.Key, path+".key")
+	case program.OpenKeyedAskGroupOperation:
+		v.validateExpression(o.Key, path+".key")
+		v.validateExpression(o.Recipients, path+".recipients")
+		for i, arg := range o.Arguments {
+			v.validateExpression(arg.Value, fmt.Sprintf("%s.arguments[%d].value", path, i))
+		}
+		v.validateAskGroupCompletionPolicy(o.Completion, path+".completion")
+	case program.FinalizeKeyedAskGroupOperation:
+		v.validateExpression(o.Key, path+".key")
+	case program.CancelKeyedAskGroupOperation:
+		v.validateExpression(o.Key, path+".key")
 	}
 }
 

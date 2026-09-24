@@ -33,7 +33,33 @@ type workflowContext struct {
 	askGroupSlots map[string]program.AskGroupSlotDeclaration
 	timerSlots    map[string]bool
 
+	// keyedQuestionSlots, keyedAskGroupSlots, and keyedTimerSlots register
+	// each keyed slot's declaration together with its own
+	// already-compiled KeyType — computed once, in
+	// compileKeyedQuestionSlots/compileKeyedAskGroupSlots/compileKeyedTimerSlots,
+	// so compile_signals.go and compile_operations.go can resolve a
+	// keyed slot's Key expression's expected type without recompiling
+	// the same TypeReference a second time.
+	keyedQuestionSlots map[string]keyedQuestionSlotEntry
+	keyedAskGroupSlots map[string]keyedAskGroupSlotEntry
+	keyedTimerSlots    map[string]keyedTimerSlotEntry
+
 	stateNames map[string]bool
+}
+
+type keyedQuestionSlotEntry struct {
+	decl    program.KeyedQuestionSlotDeclaration
+	keyType engine.Type
+}
+
+type keyedAskGroupSlotEntry struct {
+	decl    program.KeyedAskGroupSlotDeclaration
+	keyType engine.Type
+}
+
+type keyedTimerSlotEntry struct {
+	decl    program.KeyedTimerSlotDeclaration
+	keyType engine.Type
 }
 
 // registerWorkflowNamespace walks c.definition.Workflows in source
@@ -115,11 +141,14 @@ func (c *compiler) compileWorkflows(p engine.Program) map[string]engine.Workflow
 // registered before any GotoControl can be validated against them.
 func (c *compiler) compileWorkflowDeclaration(w program.WorkflowDeclaration, path string, p engine.Program) engine.Workflow {
 	ctx := &workflowContext{
-		resultType:    c.workflowResultTypes[w.Name],
-		questionSlots: map[string]program.QuestionSlotDeclaration{},
-		askGroupSlots: map[string]program.AskGroupSlotDeclaration{},
-		timerSlots:    map[string]bool{},
-		stateNames:    map[string]bool{},
+		resultType:         c.workflowResultTypes[w.Name],
+		questionSlots:      map[string]program.QuestionSlotDeclaration{},
+		askGroupSlots:      map[string]program.AskGroupSlotDeclaration{},
+		timerSlots:         map[string]bool{},
+		keyedQuestionSlots: map[string]keyedQuestionSlotEntry{},
+		keyedAskGroupSlots: map[string]keyedAskGroupSlotEntry{},
+		keyedTimerSlots:    map[string]keyedTimerSlotEntry{},
+		stateNames:         map[string]bool{},
 	}
 
 	// Local state initializers may see the workflow's own parameters
@@ -144,6 +173,9 @@ func (c *compiler) compileWorkflowDeclaration(w program.WorkflowDeclaration, pat
 	questionSlots := c.compileQuestionSlots(w, path, ctx)
 	askGroupSlots := c.compileAskGroupSlots(w, path, ctx)
 	timerSlots := c.compileTimerSlots(w, path, ctx)
+	keyedQuestionSlots := c.compileKeyedQuestionSlots(w, path, ctx)
+	keyedAskGroupSlots := c.compileKeyedAskGroupSlots(w, path, ctx)
+	keyedTimerSlots := c.compileKeyedTimerSlots(w, path, ctx)
 
 	presentations := c.compilePresentations(w.Presentations, path+".presentations", ctx.baseScope)
 
@@ -183,17 +215,20 @@ func (c *compiler) compileWorkflowDeclaration(w program.WorkflowDeclaration, pat
 	}
 
 	return engine.Workflow{
-		Name:              w.Name,
-		Parameters:        params,
-		ResultType:        ctx.resultType,
-		LocalState:        localState,
-		QuestionSlots:     questionSlots,
-		AskGroupSlots:     askGroupSlots,
-		TimerSlots:        timerSlots,
-		Presentations:     presentations,
-		InitialState:      w.InitialState,
-		GlobalTransitions: globalTransitions,
-		States:            states,
+		Name:               w.Name,
+		Parameters:         params,
+		ResultType:         ctx.resultType,
+		LocalState:         localState,
+		QuestionSlots:      questionSlots,
+		AskGroupSlots:      askGroupSlots,
+		TimerSlots:         timerSlots,
+		KeyedQuestionSlots: keyedQuestionSlots,
+		KeyedAskGroupSlots: keyedAskGroupSlots,
+		KeyedTimerSlots:    keyedTimerSlots,
+		Presentations:      presentations,
+		InitialState:       w.InitialState,
+		GlobalTransitions:  globalTransitions,
+		States:             states,
 	}
 }
 

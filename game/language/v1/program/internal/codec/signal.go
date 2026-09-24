@@ -32,6 +32,21 @@ type wireAskGroupCompletedSignalSource struct {
 	Slot string `json:"slot"`
 }
 
+type wireKeyedQuestionAnsweredSignalSource struct {
+	Kind string `json:"kind"`
+	Slot string `json:"slot"`
+}
+
+type wireKeyedTimerExpiredSignalSource struct {
+	Kind string `json:"kind"`
+	Slot string `json:"slot"`
+}
+
+type wireKeyedAskGroupCompletedSignalSource struct {
+	Kind string `json:"kind"`
+	Slot string `json:"slot"`
+}
+
 // encodeSignalSource encodes value as its JSON wire representation, or as
 // JSON null when value is a nil interface or a typed nil pointer.
 func encodeSignalSource(path string, value program.SignalSource) (json.RawMessage, error) {
@@ -47,6 +62,12 @@ func encodeSignalSource(path string, value program.SignalSource) (json.RawMessag
 			return json.Marshal(wireTimerExpiredSignalSource{Kind: "timer_expired", Slot: v.Slot})
 		case program.AskGroupCompletedSignalSource:
 			return json.Marshal(wireAskGroupCompletedSignalSource{Kind: "ask_group_completed", Slot: v.Slot})
+		case program.KeyedQuestionAnsweredSignalSource:
+			return json.Marshal(wireKeyedQuestionAnsweredSignalSource{Kind: "keyed_question_answered", Slot: v.Slot})
+		case program.KeyedTimerExpiredSignalSource:
+			return json.Marshal(wireKeyedTimerExpiredSignalSource{Kind: "keyed_timer_expired", Slot: v.Slot})
+		case program.KeyedAskGroupCompletedSignalSource:
+			return json.Marshal(wireKeyedAskGroupCompletedSignalSource{Kind: "keyed_ask_group_completed", Slot: v.Slot})
 		default:
 			return nil, fmt.Errorf("%s: unsupported program.SignalSource implementation %T", path, value)
 		}
@@ -88,6 +109,24 @@ func decodeSignalSource(path string, data json.RawMessage) (program.SignalSource
 				return nil, err
 			}
 			return program.AskGroupCompletedSignalSource{Slot: wire.Slot}, nil
+		case "keyed_question_answered":
+			var wire wireKeyedQuestionAnsweredSignalSource
+			if err := strictDecodeInto(path, raw, &wire); err != nil {
+				return nil, err
+			}
+			return program.KeyedQuestionAnsweredSignalSource{Slot: wire.Slot}, nil
+		case "keyed_timer_expired":
+			var wire wireKeyedTimerExpiredSignalSource
+			if err := strictDecodeInto(path, raw, &wire); err != nil {
+				return nil, err
+			}
+			return program.KeyedTimerExpiredSignalSource{Slot: wire.Slot}, nil
+		case "keyed_ask_group_completed":
+			var wire wireKeyedAskGroupCompletedSignalSource
+			if err := strictDecodeInto(path, raw, &wire); err != nil {
+				return nil, err
+			}
+			return program.KeyedAskGroupCompletedSignalSource{Slot: wire.Slot}, nil
 		default:
 			return nil, newDecodeError(path, fmt.Sprintf("unsupported signal source kind %q", kind), nil)
 		}

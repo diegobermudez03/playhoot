@@ -66,6 +66,35 @@ const (
 	// rejected; see program.AskGroupCompletedSignalSource and
 	// ErrInputRejected.
 	SignalKindAskGroupCompleted
+
+	// SignalKindKeyedQuestionAnswered identifies a submitted answer to
+	// the pending question at the keyed workflow slot named Slot's
+	// occurrence Key — Respondent is the answering user and Answer the
+	// submitted value — generalizing SignalKindQuestionAnswered to a
+	// (slot, key) occurrence. Validation/rejection rules are identical
+	// to SignalKindQuestionAnswered, applied to that one occurrence.
+	SignalKindKeyedQuestionAnswered
+
+	// SignalKindKeyedTimerExpired identifies the expiration of the
+	// pending timer at the keyed workflow slot named Slot's occurrence
+	// Key, generalizing SignalKindTimerExpired to a (slot, key)
+	// occurrence.
+	SignalKindKeyedTimerExpired
+
+	// SignalKindKeyedAskGroupAnswered identifies a submitted answer to
+	// the ask group collecting at the keyed workflow slot named Slot's
+	// occurrence Key, generalizing SignalKindAskGroupAnswered to a
+	// (slot, key) occurrence. Like SignalKindAskGroupAnswered, this
+	// never itself selects or runs a transition — see that constant's
+	// doc comment for the shared atomic record-and-reevaluate behavior,
+	// scoped to this one occurrence.
+	SignalKindKeyedAskGroupAnswered
+
+	// SignalKindKeyedAskGroupCompleted identifies that the ask-group
+	// occurrence at the keyed workflow slot named Slot's Key is
+	// completed-awaiting-join, generalizing SignalKindAskGroupCompleted
+	// to a (slot, key) occurrence.
+	SignalKindKeyedAskGroupCompleted
 )
 
 // Signal is one runtime input to engineservice.Step: something that
@@ -88,6 +117,7 @@ type Signal struct {
 	Actor  UserID
 
 	Slot       string
+	Key        Value
 	Respondent UserID
 	Answer     Value
 

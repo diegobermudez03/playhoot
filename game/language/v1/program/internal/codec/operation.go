@@ -203,6 +203,54 @@ type wireDrawRandomOperation struct {
 	Generator json.RawMessage `json:"generator"`
 }
 
+type wireOpenKeyedQuestionOperation struct {
+	Kind      string             `json:"kind"`
+	Slot      string             `json:"slot"`
+	Key       json.RawMessage    `json:"key"`
+	Recipient json.RawMessage    `json:"recipient"`
+	Arguments []wireCallArgument `json:"arguments"`
+}
+
+type wireCloseKeyedQuestionOperation struct {
+	Kind string          `json:"kind"`
+	Slot string          `json:"slot"`
+	Key  json.RawMessage `json:"key"`
+}
+
+type wireScheduleKeyedTimerOperation struct {
+	Kind              string          `json:"kind"`
+	Slot              string          `json:"slot"`
+	Key               json.RawMessage `json:"key"`
+	DelayMilliseconds json.RawMessage `json:"delay_milliseconds"`
+}
+
+type wireCancelKeyedTimerOperation struct {
+	Kind string          `json:"kind"`
+	Slot string          `json:"slot"`
+	Key  json.RawMessage `json:"key"`
+}
+
+type wireOpenKeyedAskGroupOperation struct {
+	Kind       string             `json:"kind"`
+	Slot       string             `json:"slot"`
+	Key        json.RawMessage    `json:"key"`
+	Recipients json.RawMessage    `json:"recipients"`
+	Arguments  []wireCallArgument `json:"arguments"`
+	Completion json.RawMessage    `json:"completion"`
+}
+
+type wireFinalizeKeyedAskGroupOperation struct {
+	Kind string          `json:"kind"`
+	Slot string          `json:"slot"`
+	Key  json.RawMessage `json:"key"`
+}
+
+type wireCancelKeyedAskGroupOperation struct {
+	Kind string          `json:"kind"`
+	Slot string          `json:"slot"`
+	Key  json.RawMessage `json:"key"`
+}
+
 // --- match-operation case helpers ---
 
 func encodeMatchOperationCases(path string, cases []program.MatchOperationCase) ([]wireMatchOperationCase, error) {
@@ -416,6 +464,72 @@ func encodeOperation(path string, value program.Operation) (json.RawMessage, err
 				return nil, err
 			}
 			return json.Marshal(wireDrawRandomOperation{Kind: "draw_random", Name: v.Name, Generator: generator})
+		case program.OpenKeyedQuestionOperation:
+			key, err := encodeExpression(pathField(path, "key"), v.Key)
+			if err != nil {
+				return nil, err
+			}
+			recipient, err := encodeExpression(pathField(path, "recipient"), v.Recipient)
+			if err != nil {
+				return nil, err
+			}
+			arguments, err := encodeCallArguments(pathField(path, "arguments"), v.Arguments)
+			if err != nil {
+				return nil, err
+			}
+			return json.Marshal(wireOpenKeyedQuestionOperation{Kind: "open_keyed_question", Slot: v.Slot, Key: key, Recipient: recipient, Arguments: arguments})
+		case program.CloseKeyedQuestionOperation:
+			key, err := encodeExpression(pathField(path, "key"), v.Key)
+			if err != nil {
+				return nil, err
+			}
+			return json.Marshal(wireCloseKeyedQuestionOperation{Kind: "close_keyed_question", Slot: v.Slot, Key: key})
+		case program.ScheduleKeyedTimerOperation:
+			key, err := encodeExpression(pathField(path, "key"), v.Key)
+			if err != nil {
+				return nil, err
+			}
+			delay, err := encodeExpression(pathField(path, "delay_milliseconds"), v.DelayMilliseconds)
+			if err != nil {
+				return nil, err
+			}
+			return json.Marshal(wireScheduleKeyedTimerOperation{Kind: "schedule_keyed_timer", Slot: v.Slot, Key: key, DelayMilliseconds: delay})
+		case program.CancelKeyedTimerOperation:
+			key, err := encodeExpression(pathField(path, "key"), v.Key)
+			if err != nil {
+				return nil, err
+			}
+			return json.Marshal(wireCancelKeyedTimerOperation{Kind: "cancel_keyed_timer", Slot: v.Slot, Key: key})
+		case program.OpenKeyedAskGroupOperation:
+			key, err := encodeExpression(pathField(path, "key"), v.Key)
+			if err != nil {
+				return nil, err
+			}
+			recipients, err := encodeExpression(pathField(path, "recipients"), v.Recipients)
+			if err != nil {
+				return nil, err
+			}
+			arguments, err := encodeCallArguments(pathField(path, "arguments"), v.Arguments)
+			if err != nil {
+				return nil, err
+			}
+			completion, err := encodeAskGroupCompletionPolicy(pathField(path, "completion"), v.Completion)
+			if err != nil {
+				return nil, err
+			}
+			return json.Marshal(wireOpenKeyedAskGroupOperation{Kind: "open_keyed_ask_group", Slot: v.Slot, Key: key, Recipients: recipients, Arguments: arguments, Completion: completion})
+		case program.FinalizeKeyedAskGroupOperation:
+			key, err := encodeExpression(pathField(path, "key"), v.Key)
+			if err != nil {
+				return nil, err
+			}
+			return json.Marshal(wireFinalizeKeyedAskGroupOperation{Kind: "finalize_keyed_ask_group", Slot: v.Slot, Key: key})
+		case program.CancelKeyedAskGroupOperation:
+			key, err := encodeExpression(pathField(path, "key"), v.Key)
+			if err != nil {
+				return nil, err
+			}
+			return json.Marshal(wireCancelKeyedAskGroupOperation{Kind: "cancel_keyed_ask_group", Slot: v.Slot, Key: key})
 		default:
 			return nil, fmt.Errorf("%s: unsupported program.Operation implementation %T", path, value)
 		}
@@ -669,6 +783,100 @@ func decodeOperation(path string, data json.RawMessage) (program.Operation, erro
 				return nil, err
 			}
 			return program.DrawRandomOperation{Name: wire.Name, Generator: generator}, nil
+		case "open_keyed_question":
+			var wire wireOpenKeyedQuestionOperation
+			if err := strictDecodeInto(path, raw, &wire); err != nil {
+				return nil, err
+			}
+			key, err := decodeExpression(pathField(path, "key"), wire.Key)
+			if err != nil {
+				return nil, err
+			}
+			recipient, err := decodeExpression(pathField(path, "recipient"), wire.Recipient)
+			if err != nil {
+				return nil, err
+			}
+			arguments, err := decodeCallArguments(pathField(path, "arguments"), wire.Arguments)
+			if err != nil {
+				return nil, err
+			}
+			return program.OpenKeyedQuestionOperation{Slot: wire.Slot, Key: key, Recipient: recipient, Arguments: arguments}, nil
+		case "close_keyed_question":
+			var wire wireCloseKeyedQuestionOperation
+			if err := strictDecodeInto(path, raw, &wire); err != nil {
+				return nil, err
+			}
+			key, err := decodeExpression(pathField(path, "key"), wire.Key)
+			if err != nil {
+				return nil, err
+			}
+			return program.CloseKeyedQuestionOperation{Slot: wire.Slot, Key: key}, nil
+		case "schedule_keyed_timer":
+			var wire wireScheduleKeyedTimerOperation
+			if err := strictDecodeInto(path, raw, &wire); err != nil {
+				return nil, err
+			}
+			key, err := decodeExpression(pathField(path, "key"), wire.Key)
+			if err != nil {
+				return nil, err
+			}
+			delay, err := decodeExpression(pathField(path, "delay_milliseconds"), wire.DelayMilliseconds)
+			if err != nil {
+				return nil, err
+			}
+			return program.ScheduleKeyedTimerOperation{Slot: wire.Slot, Key: key, DelayMilliseconds: delay}, nil
+		case "cancel_keyed_timer":
+			var wire wireCancelKeyedTimerOperation
+			if err := strictDecodeInto(path, raw, &wire); err != nil {
+				return nil, err
+			}
+			key, err := decodeExpression(pathField(path, "key"), wire.Key)
+			if err != nil {
+				return nil, err
+			}
+			return program.CancelKeyedTimerOperation{Slot: wire.Slot, Key: key}, nil
+		case "open_keyed_ask_group":
+			var wire wireOpenKeyedAskGroupOperation
+			if err := strictDecodeInto(path, raw, &wire); err != nil {
+				return nil, err
+			}
+			key, err := decodeExpression(pathField(path, "key"), wire.Key)
+			if err != nil {
+				return nil, err
+			}
+			recipients, err := decodeExpression(pathField(path, "recipients"), wire.Recipients)
+			if err != nil {
+				return nil, err
+			}
+			arguments, err := decodeCallArguments(pathField(path, "arguments"), wire.Arguments)
+			if err != nil {
+				return nil, err
+			}
+			completion, err := decodeAskGroupCompletionPolicy(pathField(path, "completion"), wire.Completion)
+			if err != nil {
+				return nil, err
+			}
+			return program.OpenKeyedAskGroupOperation{Slot: wire.Slot, Key: key, Recipients: recipients, Arguments: arguments, Completion: completion}, nil
+		case "finalize_keyed_ask_group":
+			var wire wireFinalizeKeyedAskGroupOperation
+			if err := strictDecodeInto(path, raw, &wire); err != nil {
+				return nil, err
+			}
+			key, err := decodeExpression(pathField(path, "key"), wire.Key)
+			if err != nil {
+				return nil, err
+			}
+			return program.FinalizeKeyedAskGroupOperation{Slot: wire.Slot, Key: key}, nil
+		case "cancel_keyed_ask_group":
+			var wire wireCancelKeyedAskGroupOperation
+			if err := strictDecodeInto(path, raw, &wire); err != nil {
+				return nil, err
+			}
+			key, err := decodeExpression(pathField(path, "key"), wire.Key)
+			if err != nil {
+				return nil, err
+			}
+			return program.CancelKeyedAskGroupOperation{Slot: wire.Slot, Key: key}, nil
 		default:
 			return nil, newDecodeError(path, fmt.Sprintf("unsupported operation kind %q", kind), nil)
 		}

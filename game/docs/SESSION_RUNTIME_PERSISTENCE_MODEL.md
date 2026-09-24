@@ -331,7 +331,7 @@ Cardinality notes:
 - Ordinary `TimerSlot` timer: `engine_path = ...`, `engine_slot = ...`, `engine_key = NULL`.
 - Keyed timer: `engine_path = ...`, `engine_slot = ...`, `engine_key = <serialized authored key>`.
 
-`engine_key` is internal Session/engine routing metadata only - it exists so Session Runtime can reconstruct the correct `KeyedTimerExpired(slot)` signal (carrying the authored `key`) on recovery. It must never be exposed directly to Coordinator/frontend merely because it is persisted. The concrete serialized/typed representation of `engine_key` is not frozen by this document; it depends on the not-yet-designed keyed-timer-slot compiler/engine implementation.
+`engine_key` is internal Session/engine routing metadata only - it exists so Session Runtime can reconstruct the correct `KeyedTimerExpiredSignalSource` signal (carrying the authored `engine.Value` key) on recovery. It must never be exposed directly to Coordinator/frontend merely because it is persisted. The Game Language compiler/engine side of keyed timer slots (`KeyedTimerSlotDeclaration`, an arbitrary compiled `KeyType`) is implemented; `engine_key`'s own concrete serialized column representation on this table is not frozen by this document, since no Session Runtime capability persists it yet.
 
 ## Process-Agnostic Recovery
 
@@ -437,7 +437,7 @@ Logical cross-domain references (no database FK, different bounded context):
 - Whether/how a future compiler/engine-build change is tracked beyond the existing pinned `program.Metadata.LanguageVersion`, for replay-compatibility purposes (see GAME-ADR-0024's still-open versioning question).
 - The idempotency JSON canonicalization/comparison algorithm for `session_requests`.
 - The exhaustive `source_kind` and interaction/terminal-reason enums.
-- The concrete `KeyedTimerSlot<Key>` declaration/operation/signal-source design and the serialized/typed representation of `engine_key` (see GAME-ADR-0012).
+- `engine_key`'s serialized/typed column representation on `session_timer_obligations` (see GAME-ADR-0012) - the Game Language `KeyedTimerSlotDeclaration` design itself is implemented, only its Session Runtime persistence encoding remains open.
 - The exact enumeration of renewal-triggering operations for `activity_expires_at` and the concrete `inactivity_ttl` configuration surface (see GAME-ADR-0014).
 - The exact SQL types/column names, indexing, and any uniqueness constraint for `session_runtime_failures`; the concrete `diagnostic_payload` JSON schema/version; the exhaustive `failure_kind`/`source_kind` enums; and the large-diagnostic-payload retention/compaction strategy (see GAME-ADR-0017).
 - The exact SQL lock anchor/statement used to implement RUNNING (and LOBBY) per-Session serialization (see GAME-ADR-0018).

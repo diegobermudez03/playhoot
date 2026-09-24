@@ -14,6 +14,10 @@ type Workflow struct {
 	AskGroupSlots []AskGroupSlot
 	TimerSlots    []string
 
+	KeyedQuestionSlots []KeyedQuestionSlot
+	KeyedAskGroupSlots []KeyedAskGroupSlot
+	KeyedTimerSlots    []KeyedTimerSlot
+
 	// Presentations are this workflow's workflow-level presentations,
 	// active for the lifetime of a workflow instance.
 	Presentations []Presentation
@@ -47,6 +51,33 @@ type AskGroupSlot struct {
 	Name         string
 	Question     string
 	Presentation *QuestionPresentation
+}
+
+// KeyedQuestionSlot is the compiled representation of one
+// program.KeyedQuestionSlotDeclaration. The compiler guarantees Question
+// names a declared program.QuestionDeclaration.
+type KeyedQuestionSlot struct {
+	Name         string
+	Question     string
+	KeyType      Type
+	Presentation *QuestionPresentation
+}
+
+// KeyedAskGroupSlot is the compiled representation of one
+// program.KeyedAskGroupSlotDeclaration. The compiler guarantees Question
+// names a declared program.QuestionDeclaration.
+type KeyedAskGroupSlot struct {
+	Name         string
+	Question     string
+	KeyType      Type
+	Presentation *QuestionPresentation
+}
+
+// KeyedTimerSlot is the compiled representation of one
+// program.KeyedTimerSlotDeclaration.
+type KeyedTimerSlot struct {
+	Name    string
+	KeyType Type
 }
 
 // QuestionPresentation is the compiled representation of one

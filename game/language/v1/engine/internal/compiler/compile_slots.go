@@ -29,7 +29,7 @@ func (c *compiler) compileQuestionSlots(w program.WorkflowDeclaration, path stri
 		}
 		var pres *engine.QuestionPresentation
 		if s.Presentation != nil {
-			pres = c.compileQuestionPresentation(*s.Presentation, s.Question, ctx.baseScope[globalScopeRootName].(engine.RecordType), sPath+".presentation")
+			pres = c.compileQuestionPresentation(*s.Presentation, s.Question, ctx.baseScope[globalScopeRootName].(engine.RecordType), nil, sPath+".presentation")
 		}
 		result = append(result, engine.QuestionSlot{Name: s.Name, Question: s.Question, Presentation: pres})
 	}
@@ -58,7 +58,7 @@ func (c *compiler) compileAskGroupSlots(w program.WorkflowDeclaration, path stri
 		}
 		var pres *engine.QuestionPresentation
 		if s.Presentation != nil {
-			pres = c.compileQuestionPresentation(*s.Presentation, s.Question, ctx.baseScope[globalScopeRootName].(engine.RecordType), sPath+".presentation")
+			pres = c.compileQuestionPresentation(*s.Presentation, s.Question, ctx.baseScope[globalScopeRootName].(engine.RecordType), nil, sPath+".presentation")
 		}
 		result = append(result, engine.AskGroupSlot{Name: s.Name, Question: s.Question, Presentation: pres})
 	}
@@ -86,12 +86,101 @@ func (c *compiler) compileTimerSlots(w program.WorkflowDeclaration, path string,
 	return result
 }
 
+func (c *compiler) compileKeyedQuestionSlots(w program.WorkflowDeclaration, path string, ctx *workflowContext) []engine.KeyedQuestionSlot {
+	prefix := path + ".keyed_question_slots"
+	result := make([]engine.KeyedQuestionSlot, 0, len(w.KeyedQuestionSlots))
+	seen := make(map[string]int, len(w.KeyedQuestionSlots))
+	for i, s := range w.KeyedQuestionSlots {
+		sPath := fmt.Sprintf("%s[%d]", prefix, i)
+		if s.Name == "" {
+			c.addf(sPath, "keyed question slot has an empty name")
+			continue
+		}
+		if first, ok := seen[s.Name]; ok {
+			c.addf(sPath, "duplicate keyed question slot name %q (first declared at %s[%d])", s.Name, prefix, first)
+			continue
+		}
+		seen[s.Name] = i
+
+		if !c.questionExists(s.Question) {
+			c.addf(sPath+".question", "reference to undeclared question %q", s.Question)
+		}
+		keyType := c.compileTypeReference(s.KeyType, sPath+".key_type")
+		ctx.keyedQuestionSlots[s.Name] = keyedQuestionSlotEntry{decl: s, keyType: keyType}
+
+		var pres *engine.QuestionPresentation
+		if s.Presentation != nil {
+			pres = c.compileQuestionPresentation(*s.Presentation, s.Question, ctx.baseScope[globalScopeRootName].(engine.RecordType), keyType, sPath+".presentation")
+		}
+		result = append(result, engine.KeyedQuestionSlot{Name: s.Name, Question: s.Question, KeyType: keyType, Presentation: pres})
+	}
+	return result
+}
+
+func (c *compiler) compileKeyedAskGroupSlots(w program.WorkflowDeclaration, path string, ctx *workflowContext) []engine.KeyedAskGroupSlot {
+	prefix := path + ".keyed_ask_group_slots"
+	result := make([]engine.KeyedAskGroupSlot, 0, len(w.KeyedAskGroupSlots))
+	seen := make(map[string]int, len(w.KeyedAskGroupSlots))
+	for i, s := range w.KeyedAskGroupSlots {
+		sPath := fmt.Sprintf("%s[%d]", prefix, i)
+		if s.Name == "" {
+			c.addf(sPath, "keyed ask-group slot has an empty name")
+			continue
+		}
+		if first, ok := seen[s.Name]; ok {
+			c.addf(sPath, "duplicate keyed ask-group slot name %q (first declared at %s[%d])", s.Name, prefix, first)
+			continue
+		}
+		seen[s.Name] = i
+
+		if !c.questionExists(s.Question) {
+			c.addf(sPath+".question", "reference to undeclared question %q", s.Question)
+		}
+		keyType := c.compileTypeReference(s.KeyType, sPath+".key_type")
+		ctx.keyedAskGroupSlots[s.Name] = keyedAskGroupSlotEntry{decl: s, keyType: keyType}
+
+		var pres *engine.QuestionPresentation
+		if s.Presentation != nil {
+			pres = c.compileQuestionPresentation(*s.Presentation, s.Question, ctx.baseScope[globalScopeRootName].(engine.RecordType), keyType, sPath+".presentation")
+		}
+		result = append(result, engine.KeyedAskGroupSlot{Name: s.Name, Question: s.Question, KeyType: keyType, Presentation: pres})
+	}
+	return result
+}
+
+func (c *compiler) compileKeyedTimerSlots(w program.WorkflowDeclaration, path string, ctx *workflowContext) []engine.KeyedTimerSlot {
+	prefix := path + ".keyed_timer_slots"
+	result := make([]engine.KeyedTimerSlot, 0, len(w.KeyedTimerSlots))
+	seen := make(map[string]int, len(w.KeyedTimerSlots))
+	for i, s := range w.KeyedTimerSlots {
+		sPath := fmt.Sprintf("%s[%d]", prefix, i)
+		if s.Name == "" {
+			c.addf(sPath, "keyed timer slot has an empty name")
+			continue
+		}
+		if first, ok := seen[s.Name]; ok {
+			c.addf(sPath, "duplicate keyed timer slot name %q (first declared at %s[%d])", s.Name, prefix, first)
+			continue
+		}
+		seen[s.Name] = i
+		keyType := c.compileTypeReference(s.KeyType, sPath+".key_type")
+		ctx.keyedTimerSlots[s.Name] = keyedTimerSlotEntry{decl: s, keyType: keyType}
+		result = append(result, engine.KeyedTimerSlot{Name: s.Name, KeyType: keyType})
+	}
+	return result
+}
+
 // compileQuestionPresentation compiles one
 // program.QuestionPresentationDeclaration. Per its documented argument
 // scope, ProjectionArguments may reference the referenced question's own
 // captured parameters, the implicit "recipient" (User), "global", and
 // "resources" — never workflow parameters, "local", or signal bindings.
-func (c *compiler) compileQuestionPresentation(pres program.QuestionPresentationDeclaration, questionName string, globalType engine.RecordType, path string) *engine.QuestionPresentation {
+// keyType is non-nil only when compiling against a keyed slot
+// (KeyedQuestionSlotDeclaration/KeyedAskGroupSlotDeclaration), in which
+// case ProjectionArguments' scope gains one additional implicit binding,
+// "key" — see KeyedQuestionSlotDeclaration's doc comment. An ordinary
+// (non-keyed) slot passes keyType nil, leaving the scope unchanged.
+func (c *compiler) compileQuestionPresentation(pres program.QuestionPresentationDeclaration, questionName string, globalType engine.RecordType, keyType engine.Type, path string) *engine.QuestionPresentation {
 	if !c.presentationSlotExists(pres.Slot) {
 		c.addf(path+".slot", "reference to undeclared presentation slot %q", pres.Slot)
 	}
@@ -100,6 +189,9 @@ func (c *compiler) compileQuestionPresentation(pres program.QuestionPresentation
 		resourcesScopeRootName: c.resourcesType,
 		globalScopeRootName:    globalType,
 		"recipient":            engine.UserType{},
+	}
+	if keyType != nil {
+		scope["key"] = keyType
 	}
 	if q, ok := c.questionByName(questionName); ok {
 		for _, p := range q.Parameters {

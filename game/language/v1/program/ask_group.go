@@ -198,3 +198,123 @@ type CancelAskGroupOperation struct {
 }
 
 func (CancelAskGroupOperation) isOperation() {}
+
+// KeyedAskGroupSlotDeclaration declares a statically named, durable,
+// workflow-owned location for a coordinated multi-user interaction,
+// generalizing AskGroupSlotDeclaration to hold several independent,
+// simultaneously-collecting ask-group occurrences at once, addressed by
+// an authored key rather than at most one occurrence per slot.
+//
+// Conceptual identity is (slot, key): at most one ask-group occurrence
+// per exact (Name, key) tuple. Different keys under the same slot are
+// fully independent — a group collecting for key "team_a" never affects,
+// or is affected by, a group collecting for key "team_b" under the same
+// slot. This is what a game needs when the same multi-user collection
+// mechanism must run independently per team, group, or object — for
+// example, each team simultaneously voting within its own group.
+//
+// Every existing AskGroupCompletionPolicy variant (AllResponses,
+// FirstResponse, Quorum) is reused unchanged, evaluated independently
+// per (slot, key) occurrence — this is not a new completion-policy
+// concept.
+//
+// This package does not validate ask-group slot-name uniqueness within a
+// workflow, that Question refers to an existing question declaration, or
+// presentation references; it preserves duplicate and invalid
+// declarations so the future compiler can report them deterministically.
+type KeyedAskGroupSlotDeclaration struct {
+	Name     string
+	Question string
+
+	// KeyType is the authored type every key value for this slot must
+	// match. It may be any TypeReference usable as a map key (see
+	// MapTypeReference) — this package places no additional restriction
+	// on it.
+	KeyType TypeReference
+
+	// Presentation reuses QuestionPresentationDeclaration unchanged,
+	// exactly like AskGroupSlotDeclaration's own Presentation field —
+	// see KeyedQuestionSlotDeclaration's doc comment for how its scope
+	// gains an implicit "key" binding when compiled against a keyed
+	// slot.
+	Presentation *QuestionPresentationDeclaration
+}
+
+// OpenKeyedAskGroupOperation opens one ask-group occurrence at the
+// statically declared workflow-owned keyed slot's authored Key, sending
+// the question associated with that slot to every user produced by
+// Recipients, generalizing OpenAskGroupOperation to a (slot, key)
+// occurrence instead of a slot-wide one.
+//
+// Semantics otherwise mirror OpenAskGroupOperation exactly (shared
+// Arguments evaluated once for the whole group, Completion evaluated and
+// captured once at open time, one pending question instance created per
+// recipient), scoped to the (Slot, Key) occurrence. Opening into an
+// already-occupied (slot, key) is an execution error: the future engine
+// must reject the entire
+// transition atomically, opening no questions, mounting no
+// presentations, and leaving the (slot, key)'s existing contents and
+// every other pending mutation or output unchanged — there is no
+// implicit replacement, reset, cancellation, result discard, or merge.
+// A different key under the same Slot is entirely independent and
+// unaffected.
+//
+// Slot is a static, source-level name, not a runtime expression. Key
+// must be statically compatible with the slot's declared KeyType. The
+// future compiler validates that Slot and the question it references
+// exist, the shape of Completion, and Arguments against the question's
+// parameters; the future runtime additionally validates recipient
+// uniqueness, dynamic quorum validity, and (slot, key) occupancy.
+type OpenKeyedAskGroupOperation struct {
+	Slot       string
+	Key        Expression
+	Recipients Expression
+	Arguments  []CallArgument
+	Completion AskGroupCompletionPolicy
+}
+
+func (OpenKeyedAskGroupOperation) isOperation() {}
+
+// FinalizeKeyedAskGroupOperation forces the currently collecting
+// ask-group occurrence at the named workflow keyed slot's authored Key
+// to complete using only the accepted responses received so far,
+// generalizing FinalizeAskGroupOperation to a (slot, key) occurrence
+// instead of a slot-wide one.
+//
+// Semantics otherwise mirror FinalizeAskGroupOperation exactly (explicit
+// deadline handling composed with a keyed timer slot, idempotent no-op
+// once completed-awaiting-join for the same answer-versus-deadline race
+// safety, execution error if (slot, key) is empty), scoped to the
+// (Slot, Key) occurrence. A different key under the same Slot is
+// entirely unaffected.
+//
+// Slot is a static, source-level name, not a runtime expression. Key
+// must be statically compatible with the slot's declared KeyType.
+type FinalizeKeyedAskGroupOperation struct {
+	Slot string
+	Key  Expression
+}
+
+func (FinalizeKeyedAskGroupOperation) isOperation() {}
+
+// CancelKeyedAskGroupOperation abandons the currently collecting
+// ask-group occurrence at the named workflow keyed slot's authored Key,
+// without producing a KeyedAskGroupCompletedSignalSource signal,
+// generalizing CancelAskGroupOperation to a (slot, key) occurrence
+// instead of a slot-wide one.
+//
+// Semantics otherwise mirror CancelAskGroupOperation exactly
+// (idempotent no-op on an empty (slot, key), execution error on a
+// completed-awaiting-join (slot, key), which must be joined explicitly
+// through KeyedAskGroupCompletedSignalSource rather than silently
+// discarded). A different key under the same Slot is entirely
+// unaffected.
+//
+// Slot is a static, source-level name, not a runtime expression. Key
+// must be statically compatible with the slot's declared KeyType.
+type CancelKeyedAskGroupOperation struct {
+	Slot string
+	Key  Expression
+}
+
+func (CancelKeyedAskGroupOperation) isOperation() {}

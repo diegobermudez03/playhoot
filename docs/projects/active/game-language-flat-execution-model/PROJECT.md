@@ -2,7 +2,7 @@
 
 Status: ACTIVE
 Created: 2026-09-24
-Last updated: 2026-09-24 (WORK-0024 closed DONE)
+Last updated: 2026-09-24 (WORK-0025 DONE, independent review APPROVED)
 
 ## Goal
 
@@ -19,28 +19,32 @@ Implement `game/docs/decisions/GAME-ADR-0026-flat-workflow-execution-model-and-k
 ## Current Work
 
 - **WORK-0024** (Remove Child Workflow and Task Group) - DONE (2026-09-24). Three independent review passes were needed before a clean APPROVED state (each found a shrinking set of stale documentation/doc-comment references the previous pass's narrower sweep missed; no code-behavior defect beyond the original implementation was ever found). The one DECISION_REQUIRED finding (a forced, verified-behavior-preserving Session Runtime edit, plus a resulting untested `MaxSteps` bound) was resolved by explicit human decision, non-materially - see WORK-0024's own Completion Record.
-- **WORK-0025** (Keyed Question/Ask Group/Presentation Slots) is next - PLANNED, not yet drafted for real.
-- WORK-0026/0027 remain PLANNED - each is drafted for real (design filled in, moved to DRAFT) once the WORK immediately before it is READY or DONE, matching this repository's established just-in-time drafting practice (see `session-runtime-v1`'s own PROJECT.md for precedent).
+- **WORK-0025** (Keyed Question, Ask Group, and Timer Slots) - DONE (2026-09-24). Two independent review passes were needed: the first found one HIGH-severity bug (the Snapshot codec never persisted keyed-slot state - fixed, with a comprehensive round-trip test) plus several lower-severity findings, all fixed; the second, fresh pass re-verified every fix directly and reached a clean APPROVED verdict. Timer's keyed slot is included, finally implementing the long-unimplemented GAME-ADR-0012; Presentation's keyed capability is deferred, per Human Resolution. See its own Completion Record for full history.
+- WORK-0026 (Engine-Owned Interaction Addressing) is the next WORK to draft for real (design filled in, moved to DRAFT), per this repository's established just-in-time drafting practice (see `session-runtime-v1`'s own PROJECT.md for precedent). WORK-0027 remains PLANNED until WORK-0026 is READY/DONE.
 
 ## Work
 
 | Order | Work | Status |
 |------:|------|--------|
 | 1 | WORK-0024 — Remove Child Workflow and Task Group | DONE |
-| 2 | WORK-0025 — Keyed Question/Ask Group/Presentation Slots | PLANNED |
+| 2 | WORK-0025 — Keyed Question, Ask Group, and Timer Slots | DONE |
 | 3 | WORK-0026 — Engine-Owned Interaction Addressing (`InteractionID`, unified answer signal, `Kind`) | PLANNED |
 | 4 | WORK-0027 — Session Runtime Interaction-Addressing Rework | PLANNED |
 
 ## Ordering / Dependencies
 
 - **WORK-0024** removes `Signal.Path`/`PathStep`/`WorkflowCompletedOutput.Path` and the nested-instance tree entirely, since only one workflow instance exists once Child Workflows/Task Groups are gone. It depends on nothing and can start immediately.
-- **WORK-0025** adds keyed families for Question/Ask Group/Presentation slots (Timer's own keyed family remains GAME-ADR-0012's separate, still-unimplemented scope, but the two are expected to share an implementation approach once either is built). It does not depend on WORK-0024 (Path/keyed-slots are independent axes) but is sequenced after it to keep each WORK's diff small and reviewable against a settled instance model.
+- **WORK-0025** adds keyed families for Question, Ask Group, and Timer slots (Presentation's keyed capability deferred, per Human Resolution) - DONE. It does not depend on WORK-0024 (Path/keyed-slots are independent axes) but is sequenced after it to keep each WORK's diff small and reviewable against a settled instance model.
 - **WORK-0026** replaces `Slot`(+`Key`) as the caller-facing answer address with an engine-owned `InteractionID`, unifies the Question/Ask-Group answer signal, and adds an explicit `Kind` to the interaction-opened Output. It depends on WORK-0025, since a caller-facing ID scheme should account for keyed occurrences from the start rather than being redesigned again once keying exists.
 - **WORK-0027** reworks `game/session/workflows/sessionlifecycle`'s `interaction_capture.go`/`replay.go`/answer-signal construction to consume `InteractionID` instead of encoding/decoding `engine_path`/`engine_slot`, and updates the `session_interactions` persistence shape accordingly (GAME-ADR-0007 follow-up). It depends on WORK-0026 and is what unblocks `session-runtime-v1`'s Phase 1 (WORK-0006 onward) to resume.
 
 ## Material Decisions Needing Human Input
 
 - WORK-0027's exact `session_interactions` migration shape (replace `engine_path`/`engine_slot` outright, or add `interaction_id` alongside and deprecate the old columns) is not yet decided - deferred to when that WORK is drafted for real, per this repository's standard-compliance-migration precedent (see `session-runtime-v1`'s WORK-0001 history for the analogous prior case).
+
+## Tracked Follow-Ups (Non-Blocking)
+
+- `game/language/v1/program/ask_group.go`'s ordinary (non-keyed) `AskGroupSlotDeclaration` doc comment (~lines 24-35) claims presentation mounting happens per recipient; this is false against the current runtime (`deriveActivePresentations` never walks `AskGroupSlots`/`KeyedAskGroupSlots`) and predates this Project entirely. Found as a NON_BLOCKING finding during WORK-0025's independent re-review; not fixed there since it is an unrelated pre-existing file outside that WORK's scope. Worth a trivial standalone fix whenever this file is next touched.
 
 ## Completion Criteria
 

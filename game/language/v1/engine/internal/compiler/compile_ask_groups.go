@@ -99,3 +99,96 @@ func (c *compiler) compileCancelAskGroup(o program.CancelAskGroupOperation, scop
 	}
 	return engine.CancelAskGroupOperation{Slot: o.Slot}, scope, true
 }
+
+// compileOpenKeyedAskGroup compiles one program.OpenKeyedAskGroupOperation:
+// Slot must name a keyed ask-group slot declared on the enclosing
+// workflow, Key must be statically compatible with the slot's declared
+// KeyType, Recipients must be statically list<user>, Arguments must
+// match the slot's question's declared parameters exactly, and
+// Completion must compile to a valid policy — the keyed generalization
+// of compileOpenAskGroup.
+func (c *compiler) compileOpenKeyedAskGroup(o program.OpenKeyedAskGroupOperation, scope exprScope, path string, ctx *workflowContext) (engine.Operation, exprScope, bool) {
+	entry, slotOK := ctx.keyedAskGroupSlots[o.Slot]
+	if !slotOK {
+		c.addf(path+".slot", "reference to undeclared keyed ask-group slot %q", o.Slot)
+	}
+	var keyType engine.Type
+	if slotOK {
+		keyType = entry.keyType
+	}
+	key, keyOK := c.compileSlotKey(o.Key, keyType, scope, path+".key")
+
+	recipients, recipientsType := c.compileExpression(o.Recipients, scope, path+".recipients")
+	ok := keyOK && recipientsType != nil
+	if recipientsType != nil {
+		lt, isList := recipientsType.(engine.ListType)
+		if !isList || !isUser(lt.Element) {
+			c.addf(path+".recipients", "recipients must be statically list<user>, but it is %s", describeType(recipientsType))
+			ok = false
+		}
+	}
+
+	args, argTypes, argsOK := c.compileCallArguments(o.Arguments, scope, path)
+	if !argsOK {
+		ok = false
+	}
+	if slotOK {
+		if question, qOK := c.compiledQuestions[entry.decl.Question]; qOK {
+			if !c.checkCallArguments(question.Parameters, args, argTypes, path) {
+				ok = false
+			}
+		}
+	}
+
+	completion, compOK := c.compileAskGroupCompletionPolicy(o.Completion, scope, path+".completion")
+	if !compOK {
+		ok = false
+	}
+
+	if !slotOK || !ok {
+		return nil, scope, false
+	}
+	return engine.OpenKeyedAskGroupOperation{Slot: o.Slot, Key: key, Recipients: recipients, Arguments: args, Completion: completion}, scope, true
+}
+
+// compileFinalizeKeyedAskGroup compiles one
+// program.FinalizeKeyedAskGroupOperation: Slot must name a keyed
+// ask-group slot declared on the enclosing workflow, and Key must be
+// statically compatible with the slot's declared KeyType — the keyed
+// generalization of compileFinalizeAskGroup.
+func (c *compiler) compileFinalizeKeyedAskGroup(o program.FinalizeKeyedAskGroupOperation, scope exprScope, path string, ctx *workflowContext) (engine.Operation, exprScope, bool) {
+	entry, slotOK := ctx.keyedAskGroupSlots[o.Slot]
+	if !slotOK {
+		c.addf(path+".slot", "reference to undeclared keyed ask-group slot %q", o.Slot)
+	}
+	var keyType engine.Type
+	if slotOK {
+		keyType = entry.keyType
+	}
+	key, keyOK := c.compileSlotKey(o.Key, keyType, scope, path+".key")
+	if !slotOK || !keyOK {
+		return nil, scope, false
+	}
+	return engine.FinalizeKeyedAskGroupOperation{Slot: o.Slot, Key: key}, scope, true
+}
+
+// compileCancelKeyedAskGroup compiles one
+// program.CancelKeyedAskGroupOperation: Slot must name a keyed
+// ask-group slot declared on the enclosing workflow, and Key must be
+// statically compatible with the slot's declared KeyType — the keyed
+// generalization of compileCancelAskGroup.
+func (c *compiler) compileCancelKeyedAskGroup(o program.CancelKeyedAskGroupOperation, scope exprScope, path string, ctx *workflowContext) (engine.Operation, exprScope, bool) {
+	entry, slotOK := ctx.keyedAskGroupSlots[o.Slot]
+	if !slotOK {
+		c.addf(path+".slot", "reference to undeclared keyed ask-group slot %q", o.Slot)
+	}
+	var keyType engine.Type
+	if slotOK {
+		keyType = entry.keyType
+	}
+	key, keyOK := c.compileSlotKey(o.Key, keyType, scope, path+".key")
+	if !slotOK || !keyOK {
+		return nil, scope, false
+	}
+	return engine.CancelKeyedAskGroupOperation{Slot: o.Slot, Key: key}, scope, true
+}

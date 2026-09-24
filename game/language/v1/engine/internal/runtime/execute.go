@@ -34,6 +34,14 @@ type execContext struct {
 	timerSlots    []engine.TimerSlotInstance
 	askGroupSlots []engine.AskGroupSlotInstance
 
+	// keyedQuestionSlots, keyedTimerSlots, and keyedAskGroupSlots are the
+	// keyed-family candidate copies, mirroring questionSlots/timerSlots/
+	// askGroupSlots above but holding zero or more simultaneously
+	// occupied (slot, key) entries per slot instead of at most one.
+	keyedQuestionSlots []engine.KeyedQuestionSlotInstance
+	keyedTimerSlots    []engine.KeyedTimerSlotInstance
+	keyedAskGroupSlots []engine.KeyedAskGroupSlotInstance
+
 	// outputs accumulates every declarative engine.Output produced so
 	// far. Per LOGICAL_CONTRACT.md, the engine only ever describes what
 	// should happen; ctx.outputs becomes engine.Commit.Outputs only if
@@ -104,6 +112,98 @@ func (ctx *execContext) askGroupSlotDeclaration(name string) (engine.AskGroupSlo
 	return engine.AskGroupSlot{}, false
 }
 
+// findKeyedQuestionSlot returns the index of the keyed question slot
+// named name in ctx.keyedQuestionSlots, if any.
+func (ctx *execContext) findKeyedQuestionSlot(name string) (int, bool) {
+	for i, s := range ctx.keyedQuestionSlots {
+		if s.Name == name {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+// findKeyedQuestionPending returns the index within
+// ctx.keyedQuestionSlots[slotIdx].Pending of the entry whose Key equals
+// key, if any — the (slot, key) occupancy lookup every keyed-question
+// operation and signal-validation path shares.
+func findKeyedQuestionPending(pending []engine.KeyedPendingQuestion, key engine.Value) (int, bool) {
+	for i, p := range pending {
+		if p.Key.Equal(key) {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+// keyedQuestionSlotDeclaration returns the compiled engine.KeyedQuestionSlot
+// named name on ctx.workflow, if any.
+func (ctx *execContext) keyedQuestionSlotDeclaration(name string) (engine.KeyedQuestionSlot, bool) {
+	for _, s := range ctx.workflow.KeyedQuestionSlots {
+		if s.Name == name {
+			return s, true
+		}
+	}
+	return engine.KeyedQuestionSlot{}, false
+}
+
+// findKeyedTimerSlot returns the index of the keyed timer slot named
+// name in ctx.keyedTimerSlots, if any.
+func (ctx *execContext) findKeyedTimerSlot(name string) (int, bool) {
+	for i, s := range ctx.keyedTimerSlots {
+		if s.Name == name {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+// findKeyedTimerPending returns the index within
+// ctx.keyedTimerSlots[slotIdx].Pending of the entry whose Key equals
+// key, if any.
+func findKeyedTimerPending(pending []engine.KeyedPendingTimer, key engine.Value) (int, bool) {
+	for i, p := range pending {
+		if p.Key.Equal(key) {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+// findKeyedAskGroupSlot returns the index of the keyed ask-group slot
+// named name in ctx.keyedAskGroupSlots, if any.
+func (ctx *execContext) findKeyedAskGroupSlot(name string) (int, bool) {
+	for i, s := range ctx.keyedAskGroupSlots {
+		if s.Name == name {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+// findKeyedAskGroupPending returns the index within
+// ctx.keyedAskGroupSlots[slotIdx].Pending of the entry whose Key equals
+// key, if any.
+func findKeyedAskGroupPending(pending []engine.KeyedPendingAskGroup, key engine.Value) (int, bool) {
+	for i, p := range pending {
+		if p.Key.Equal(key) {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+// keyedAskGroupSlotDeclaration returns the compiled engine.KeyedAskGroupSlot
+// named name on ctx.workflow, if any.
+func (ctx *execContext) keyedAskGroupSlotDeclaration(name string) (engine.KeyedAskGroupSlot, bool) {
+	for _, s := range ctx.workflow.KeyedAskGroupSlots {
+		if s.Name == name {
+			return s, true
+		}
+	}
+	return engine.KeyedAskGroupSlot{}, false
+}
+
 // evalCallArguments evaluates args in order into their captured values.
 func evalCallArguments(ctx *execContext, args []engine.CallArgument, scope engine.Scope) ([]engine.FieldValue, error) {
 	result := make([]engine.FieldValue, len(args))
@@ -134,8 +234,9 @@ func (ctx *execContext) consumeOp() error {
 
 // activeSlotCount counts every occupied interaction slot on ctx's
 // candidate instance state — pending questions, pending timers, and
-// collecting or awaiting-join ask groups — toward
-// Limits.MaxActiveSlotsPerInstance.
+// collecting or awaiting-join ask groups, ordinary and keyed alike (each
+// occupied (slot, key) tuple counts as one occupied slot, exactly like
+// one occupied ordinary slot) — toward Limits.MaxActiveSlotsPerInstance.
 func (ctx *execContext) activeSlotCount() int {
 	count := 0
 	for _, s := range ctx.questionSlots {
@@ -152,6 +253,15 @@ func (ctx *execContext) activeSlotCount() int {
 		if s.Pending != nil {
 			count++
 		}
+	}
+	for _, s := range ctx.keyedQuestionSlots {
+		count += len(s.Pending)
+	}
+	for _, s := range ctx.keyedTimerSlots {
+		count += len(s.Pending)
+	}
+	for _, s := range ctx.keyedAskGroupSlots {
+		count += len(s.Pending)
 	}
 	return count
 }
@@ -358,6 +468,27 @@ func execOperation(ctx *execContext, op engine.Operation, scope engine.Scope) (e
 
 	case engine.CancelAskGroupOperation:
 		return scope, ctx.execCancelAskGroup(o)
+
+	case engine.OpenKeyedQuestionOperation:
+		return scope, ctx.execOpenKeyedQuestion(o, scope)
+
+	case engine.CloseKeyedQuestionOperation:
+		return scope, ctx.execCloseKeyedQuestion(o, scope)
+
+	case engine.ScheduleKeyedTimerOperation:
+		return scope, ctx.execScheduleKeyedTimer(o, scope)
+
+	case engine.CancelKeyedTimerOperation:
+		return scope, ctx.execCancelKeyedTimer(o, scope)
+
+	case engine.OpenKeyedAskGroupOperation:
+		return scope, ctx.execOpenKeyedAskGroup(o, scope)
+
+	case engine.FinalizeKeyedAskGroupOperation:
+		return scope, ctx.execFinalizeKeyedAskGroup(o, scope)
+
+	case engine.CancelKeyedAskGroupOperation:
+		return scope, ctx.execCancelKeyedAskGroup(o, scope)
 
 	case engine.MatchOperation:
 		v, err := Evaluate(ctx.program, o.Value, scope)
@@ -782,5 +913,153 @@ func (ctx *execContext) execEmitEffect(o engine.EmitEffectOperation, scope engin
 	}
 
 	ctx.outputs = append(ctx.outputs, engine.EmitEffectOutput{Effect: o.Effect, Recipients: recipients, Arguments: args})
+	return nil
+}
+
+// execOpenKeyedQuestion evaluates o.Key, o.Recipient, and o.Arguments,
+// then occupies the (o.Slot, key) tuple in ctx's candidate instance
+// state, producing an OpenKeyedQuestionOutput. Opening an already
+// occupied (slot, key) fails the entire transition atomically, exactly
+// like execOpenQuestion's occupied-slot check, scoped to the one key —
+// see program.OpenKeyedQuestionOperation.
+func (ctx *execContext) execOpenKeyedQuestion(o engine.OpenKeyedQuestionOperation, scope engine.Scope) error {
+	idx, ok := ctx.findKeyedQuestionSlot(o.Slot)
+	if !ok {
+		return newExecutionError(ExecutionErrorUnknown, "engineservice: keyed question slot %q not found", o.Slot)
+	}
+
+	key, err := Evaluate(ctx.program, o.Key, scope)
+	if err != nil {
+		return err
+	}
+	if _, occupied := findKeyedQuestionPending(ctx.keyedQuestionSlots[idx].Pending, key); occupied {
+		return newExecutionError(ExecutionErrorSlotOccupied, "engineservice: keyed question slot %q is already occupied for this key", o.Slot)
+	}
+	if err := ctx.checkActiveSlotLimit(); err != nil {
+		return err
+	}
+
+	recipientV, err := Evaluate(ctx.program, o.Recipient, scope)
+	if err != nil {
+		return err
+	}
+	args, err := evalCallArguments(ctx, o.Arguments, scope)
+	if err != nil {
+		return err
+	}
+
+	recipient := recipientV.(engine.UserValue).ID
+	pending := append(append([]engine.KeyedPendingQuestion{}, ctx.keyedQuestionSlots[idx].Pending...),
+		engine.KeyedPendingQuestion{Key: key, Recipient: recipient, Arguments: args})
+	ctx.keyedQuestionSlots[idx] = engine.KeyedQuestionSlotInstance{Name: o.Slot, Pending: pending}
+
+	slotDecl, _ := ctx.keyedQuestionSlotDeclaration(o.Slot)
+	ctx.outputs = append(ctx.outputs, engine.OpenKeyedQuestionOutput{
+		Slot:      o.Slot,
+		Key:       key,
+		Recipient: recipient,
+		Question:  slotDecl.Question,
+		Arguments: args,
+	})
+	return nil
+}
+
+// execCloseKeyedQuestion evaluates o.Key and clears the (o.Slot, key)
+// tuple in ctx's candidate instance state, if occupied, producing a
+// CloseKeyedQuestionOutput. Closing an already empty (slot, key) is an
+// idempotent no-op — see program.CloseKeyedQuestionOperation.
+func (ctx *execContext) execCloseKeyedQuestion(o engine.CloseKeyedQuestionOperation, scope engine.Scope) error {
+	idx, ok := ctx.findKeyedQuestionSlot(o.Slot)
+	if !ok {
+		return newExecutionError(ExecutionErrorUnknown, "engineservice: keyed question slot %q not found", o.Slot)
+	}
+	key, err := Evaluate(ctx.program, o.Key, scope)
+	if err != nil {
+		return err
+	}
+	pIdx, occupied := findKeyedQuestionPending(ctx.keyedQuestionSlots[idx].Pending, key)
+	if !occupied {
+		return nil
+	}
+	recipient := ctx.keyedQuestionSlots[idx].Pending[pIdx].Recipient
+	ctx.keyedQuestionSlots[idx] = engine.KeyedQuestionSlotInstance{
+		Name:    o.Slot,
+		Pending: removeKeyedQuestionPending(ctx.keyedQuestionSlots[idx].Pending, pIdx),
+	}
+	ctx.outputs = append(ctx.outputs, engine.CloseKeyedQuestionOutput{Slot: o.Slot, Key: key, Recipient: recipient})
+	return nil
+}
+
+// removeKeyedQuestionPending returns a copy of pending with the entry at
+// index i removed, preserving the relative order of every other entry —
+// shared by execCloseKeyedQuestion and Step's own accept-and-clear path.
+func removeKeyedQuestionPending(pending []engine.KeyedPendingQuestion, i int) []engine.KeyedPendingQuestion {
+	result := make([]engine.KeyedPendingQuestion, 0, len(pending)-1)
+	result = append(result, pending[:i]...)
+	return append(result, pending[i+1:]...)
+}
+
+// execScheduleKeyedTimer evaluates o.Key and o.DelayMilliseconds,
+// validates the delay is a finite, non-negative integer, and occupies
+// the (o.Slot, key) tuple in ctx's candidate instance state, producing a
+// ScheduleKeyedTimerOutput. Scheduling into an already occupied (slot,
+// key) fails the entire transition atomically — see
+// program.ScheduleKeyedTimerOperation.
+func (ctx *execContext) execScheduleKeyedTimer(o engine.ScheduleKeyedTimerOperation, scope engine.Scope) error {
+	idx, ok := ctx.findKeyedTimerSlot(o.Slot)
+	if !ok {
+		return newExecutionError(ExecutionErrorUnknown, "engineservice: keyed timer slot %q not found", o.Slot)
+	}
+
+	key, err := Evaluate(ctx.program, o.Key, scope)
+	if err != nil {
+		return err
+	}
+	if _, occupied := findKeyedTimerPending(ctx.keyedTimerSlots[idx].Pending, key); occupied {
+		return newExecutionError(ExecutionErrorSlotOccupied, "engineservice: keyed timer slot %q is already occupied for this key", o.Slot)
+	}
+	if err := ctx.checkActiveSlotLimit(); err != nil {
+		return err
+	}
+
+	delayV, err := Evaluate(ctx.program, o.DelayMilliseconds, scope)
+	if err != nil {
+		return err
+	}
+	delay := delayV.(engine.NumberValue).Value
+	if i, ok := intIndex(delay); !ok || i < 0 {
+		return newExecutionError(ExecutionErrorInvalidTimerDelay,
+			"engineservice: timer delay must be a non-negative integer number of milliseconds, got %v", delay)
+	}
+
+	pending := append(append([]engine.KeyedPendingTimer{}, ctx.keyedTimerSlots[idx].Pending...), engine.KeyedPendingTimer{Key: key})
+	ctx.keyedTimerSlots[idx] = engine.KeyedTimerSlotInstance{Name: o.Slot, Pending: pending}
+	ctx.outputs = append(ctx.outputs, engine.ScheduleKeyedTimerOutput{Slot: o.Slot, Key: key, DelayMilliseconds: delay})
+	return nil
+}
+
+// execCancelKeyedTimer evaluates o.Key and clears the (o.Slot, key)
+// tuple in ctx's candidate instance state, if occupied, producing a
+// CancelKeyedTimerOutput. Cancelling an already empty (slot, key) is an
+// idempotent no-op — see program.CancelKeyedTimerOperation.
+func (ctx *execContext) execCancelKeyedTimer(o engine.CancelKeyedTimerOperation, scope engine.Scope) error {
+	idx, ok := ctx.findKeyedTimerSlot(o.Slot)
+	if !ok {
+		return newExecutionError(ExecutionErrorUnknown, "engineservice: keyed timer slot %q not found", o.Slot)
+	}
+	key, err := Evaluate(ctx.program, o.Key, scope)
+	if err != nil {
+		return err
+	}
+	pIdx, occupied := findKeyedTimerPending(ctx.keyedTimerSlots[idx].Pending, key)
+	if !occupied {
+		return nil
+	}
+	pending := ctx.keyedTimerSlots[idx].Pending
+	result := make([]engine.KeyedPendingTimer, 0, len(pending)-1)
+	result = append(result, pending[:pIdx]...)
+	result = append(result, pending[pIdx+1:]...)
+	ctx.keyedTimerSlots[idx] = engine.KeyedTimerSlotInstance{Name: o.Slot, Pending: result}
+	ctx.outputs = append(ctx.outputs, engine.CancelKeyedTimerOutput{Slot: o.Slot, Key: key})
 	return nil
 }

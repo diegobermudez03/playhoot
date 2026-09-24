@@ -128,6 +128,48 @@ func deriveActivePresentations(p engine.Program, workflow engine.Workflow, insta
 		}
 	}
 
+	// Every occupied (slot, key) entry of a keyed question slot mounts
+	// its own presentation independently, exactly like an ordinary
+	// QuestionSlotInstance's single Pending above — one occupant per
+	// entry, keyed additionally by Key in the projection scope (see
+	// KeyedQuestionSlotDeclaration's documented "key" implicit binding).
+	// Keyed ask-group slots have no presentation-derivation path here,
+	// mirroring ordinary AskGroupSlotInstance's own presentation
+	// handling, which this function likewise never derives.
+	for _, slot := range instance.KeyedQuestionSlots {
+		slotDecl, ok := workflowKeyedQuestionSlot(workflow, slot.Name)
+		if !ok || slotDecl.Presentation == nil {
+			continue
+		}
+		pres := slotDecl.Presentation
+
+		for _, entry := range slot.Pending {
+			qScope := engine.Scope{Bindings: map[string]engine.Value{
+				globalScopeRootName: global,
+				"recipient":         engine.UserValue{ID: entry.Recipient},
+				"key":               entry.Key,
+			}}
+			for _, arg := range entry.Arguments {
+				qScope = extendScope(qScope, arg.Name, arg.Value)
+			}
+			argValues, err := evaluateArguments(p, pres.ProjectionArguments, qScope)
+			if err != nil {
+				return nil, err
+			}
+			projection, ok := p.Projections[pres.Projection]
+			if !ok {
+				return nil, newExecutionError(ExecutionErrorUnknown, "engineservice: projection %q is not compiled", pres.Projection)
+			}
+			model, err := evaluateProjectionModel(p, projection, argValues, global, entry.Recipient)
+			if err != nil {
+				return nil, err
+			}
+			if err := addOccupant(presentationKey{Slot: pres.Slot, Recipient: entry.Recipient}, slot.Name, pres.View, model); err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	return entries, nil
 }
 

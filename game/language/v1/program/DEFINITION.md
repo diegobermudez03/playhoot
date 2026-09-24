@@ -51,7 +51,7 @@ Design (and it's fine to also *emit*) roughly in this order, since each layer on
 10. **`user_intents`** — typed actions a player can submit unprompted (e.g. "Roll", "PlayCard").
 11. **`questions`** — reusable request contracts a workflow can open and later receive a validated answer to.
 12. **`effects`** — purely cosmetic, client-facing presentation events (an animation, a sound cue) — never authoritative.
-13. **`workflows`** (plus `root_workflow` naming which one starts the game) — the actual state machines: parameters, local state, slots (question/ask-group/timer), presentations, states, and transitions.
+13. **`workflows`** (plus `root_workflow` naming which one starts the game) — the actual state machines: parameters, local state, slots (question/ask-group/timer, and their keyed families for several independent simultaneous occurrences per slot), presentations, states, and transitions.
 
 ## 3. JSON encoding rules (read this before writing any JSON)
 
@@ -141,6 +141,13 @@ Design (and it's fine to also *emit*) roughly in this order, since each layer on
 | `open_ask_group` | `slot`: string, `recipients`: Expression (list of `user`), `arguments`: [CallArgument], `completion`: AskGroupCompletionPolicy |
 | `finalize_ask_group` | `slot`: string |
 | `cancel_ask_group` | `slot`: string |
+| `open_keyed_question` | `slot`: string, `key`: Expression (must match the slot's declared `key_type`), `recipient`: Expression (must be statically `user`), `arguments`: [CallArgument] |
+| `close_keyed_question` | `slot`: string, `key`: Expression |
+| `schedule_keyed_timer` | `slot`: string, `key`: Expression, `delay_milliseconds`: Expression |
+| `cancel_keyed_timer` | `slot`: string, `key`: Expression |
+| `open_keyed_ask_group` | `slot`: string, `key`: Expression, `recipients`: Expression (list of `user`), `arguments`: [CallArgument], `completion`: AskGroupCompletionPolicy |
+| `finalize_keyed_ask_group` | `slot`: string, `key`: Expression |
+| `cancel_keyed_ask_group` | `slot`: string, `key`: Expression |
 | `draw_random` | `name`: string (binds the drawn value for later operations in the same block), `generator`: RandomGenerator |
 
 `AssignmentTarget`: `{"kind": "name", "name": string}` \| `{"kind": "field", "target": AssignmentTarget, "field": string}` \| `{"kind": "index", "target": AssignmentTarget, "index": Expression}`.
@@ -170,6 +177,9 @@ Design (and it's fine to also *emit*) roughly in this order, since each layer on
 | `question_answered` | `slot`: string (names a question slot) |
 | `timer_expired` | `slot`: string (names a timer slot) |
 | `ask_group_completed` | `slot`: string |
+| `keyed_question_answered` | `slot`: string (names a keyed question slot) — binds `"key"` (the slot's `key_type`), `"respondent"`, `"answer"` |
+| `keyed_timer_expired` | `slot`: string (names a keyed timer slot) — binds `"key"` |
+| `keyed_ask_group_completed` | `slot`: string (names a keyed ask-group slot) — binds `"key"`, `"responses"`, `"respondents"`, `"missing"` |
 
 A `SignalPattern` (used as a transition's `signal`, never null) is `{"source": SignalSource, "bindings": [{"field": string, "name": string}, ...]}` — `bindings` extracts named fields from the signal's payload into new local names usable in the guard/operations.
 
@@ -248,6 +258,9 @@ WorkflowDeclaration = {
   "question_slots": [QuestionSlotDeclaration],
   "ask_group_slots": [AskGroupSlotDeclaration],
   "timer_slots": [TimerSlotDeclaration],
+  "keyed_question_slots": [KeyedQuestionSlotDeclaration],
+  "keyed_ask_group_slots": [KeyedAskGroupSlotDeclaration],
+  "keyed_timer_slots": [KeyedTimerSlotDeclaration],
   "presentations": [PresentationDeclaration],
   "initial_state": string,
   "global_transitions": [TransitionDeclaration],
@@ -261,6 +274,19 @@ AskGroupSlotDeclaration      = { "name": string, "question": string, "presentati
 QuestionPresentationDeclaration = { "slot": string, "projection": string, "projection_arguments": [CallArgument], "view": string }
 TimerSlotDeclaration         = { "name": string }
 
+KeyedQuestionSlotDeclaration = { "name": string, "question": string, "key_type": TypeReference, "presentation": QuestionPresentationDeclaration | null }
+KeyedAskGroupSlotDeclaration = { "name": string, "question": string, "key_type": TypeReference, "presentation": QuestionPresentationDeclaration | null }
+KeyedTimerSlotDeclaration    = { "name": string, "key_type": TypeReference }
+// A keyed slot's QuestionPresentationDeclaration.projection_arguments may
+// additionally reference an implicit "key" binding (typed key_type),
+// alongside the ordinary implicit "recipient" binding. The engine's
+// one-active-presentation-per-slot-per-user rule still applies per user,
+// not per key: two simultaneously pending keyed occurrences that target
+// the same recipient AND the same presentation slot is an execution
+// error, exactly like two ordinary presentations colliding on one user's
+// slot already is. Design around this by using a different presentation
+// slot name per independent simultaneous view one recipient needs.
+
 PresentationDeclaration = { "name": string, "slot": string, "targets": Expression, "projection": string, "projection_arguments": [CallArgument], "view": string }
 ```
 
@@ -272,6 +298,6 @@ Convention to follow: the human brief you're given lists every asset with a **st
 
 ## 6. What happens to your output
 
-Your JSON is decoded strictly (`gameservice.DecodeJSON`) — any unknown field, wrong `"kind"`, or structurally wrong shape fails immediately with a path-pointing error (e.g. `$.workflows[0].states[2].transitions[0].control`). It is then checked against the language's own rules (`gameservice.Validate` — type/operator compatibility, duplicate names) and finally compiled by the engine (name resolution, full type checking, structured-concurrency and UI-binding validation). If you're given error output from any of these stages, treat the `Path` as pointing exactly at the offending part of the JSON you produced, and fix that node without regenerating the whole definition from scratch.
+Your JSON is decoded strictly (`gameservice.DecodeJSON`) — any unknown field, wrong `"kind"`, or structurally wrong shape fails immediately with a path-pointing error (e.g. `$.workflows[0].states[2].transitions[0].control`). It is then checked against the language's own rules (`gameservice.Validate` — type/operator compatibility, duplicate names) and finally compiled by the engine (name resolution, full type checking, keyed-slot key-type and UI-binding validation). If you're given error output from any of these stages, treat the `Path` as pointing exactly at the offending part of the JSON you produced, and fix that node without regenerating the whole definition from scratch.
 
 `gameservice.Validate` passing does **not** guarantee the definition compiles — it never resolves references, scope, or exhaustiveness. Don't treat a clean `Validate` pass as proof you're done; expect compiler feedback as a normal part of getting a definition right, the same way you'd expect a real compiler's errors when writing any other program.

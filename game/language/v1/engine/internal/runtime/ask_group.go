@@ -161,6 +161,152 @@ func (ctx *execContext) execCancelAskGroup(o engine.CancelAskGroupOperation) err
 	return nil
 }
 
+// findKeyedAskGroupPendingSlice is a small convenience over
+// findKeyedAskGroupPending taking the slot index directly, used by the
+// three keyed ask-group operations below.
+func (ctx *execContext) findKeyedAskGroupPendingSlice(slotIdx int, key engine.Value) (int, bool) {
+	return findKeyedAskGroupPending(ctx.keyedAskGroupSlots[slotIdx].Pending, key)
+}
+
+// execOpenKeyedAskGroup evaluates o.Key, o.Recipients, o.Arguments, and
+// o.Completion, then occupies the (o.Slot, key) tuple in ctx's candidate
+// instance state, producing one OpenKeyedQuestionOutput per recipient —
+// the keyed generalization of execOpenAskGroup, sharing its own
+// recipient-uniqueness/quorum-resolution/immediate-completion behavior
+// exactly, scoped to one key. See program.OpenKeyedAskGroupOperation.
+func (ctx *execContext) execOpenKeyedAskGroup(o engine.OpenKeyedAskGroupOperation, scope engine.Scope) error {
+	idx, ok := ctx.findKeyedAskGroupSlot(o.Slot)
+	if !ok {
+		return newExecutionError(ExecutionErrorUnknown, "engineservice: keyed ask-group slot %q not found", o.Slot)
+	}
+
+	key, err := Evaluate(ctx.program, o.Key, scope)
+	if err != nil {
+		return err
+	}
+	if _, occupied := ctx.findKeyedAskGroupPendingSlice(idx, key); occupied {
+		return newExecutionError(ExecutionErrorSlotOccupied, "engineservice: keyed ask-group slot %q is already occupied for this key", o.Slot)
+	}
+	if err := ctx.checkActiveSlotLimit(); err != nil {
+		return err
+	}
+
+	recipientsV, err := Evaluate(ctx.program, o.Recipients, scope)
+	if err != nil {
+		return err
+	}
+	elements := recipientsV.(engine.ListValue).Elements
+	recipients := make([]engine.UserID, len(elements))
+	seen := make(map[engine.UserID]bool, len(elements))
+	for i, el := range elements {
+		id := el.(engine.UserValue).ID
+		if seen[id] {
+			return newExecutionError(ExecutionErrorDuplicateRecipient,
+				"engineservice: keyed ask-group slot %q recipients contains a duplicate identity", o.Slot)
+		}
+		seen[id] = true
+		recipients[i] = id
+	}
+
+	args, err := evalCallArguments(ctx, o.Arguments, scope)
+	if err != nil {
+		return err
+	}
+
+	kind, quorum, err := ctx.resolveAskGroupCompletion(o.Completion, len(recipients), scope)
+	if err != nil {
+		return err
+	}
+
+	group := engine.PendingAskGroup{Recipients: recipients, Arguments: args, CompletionKind: kind, QuorumCount: quorum}
+	if askGroupPolicySatisfied(group) {
+		group.Completed = true
+	}
+	entry := engine.KeyedPendingAskGroup{Key: key, PendingAskGroup: group}
+	ctx.keyedAskGroupSlots[idx] = engine.KeyedAskGroupSlotInstance{
+		Name:    o.Slot,
+		Pending: append(append([]engine.KeyedPendingAskGroup{}, ctx.keyedAskGroupSlots[idx].Pending...), entry),
+	}
+
+	slotDecl, _ := ctx.keyedAskGroupSlotDeclaration(o.Slot)
+	for _, r := range recipients {
+		ctx.outputs = append(ctx.outputs, engine.OpenKeyedQuestionOutput{Slot: o.Slot, Key: key, Recipient: r, Question: slotDecl.Question, Arguments: args})
+	}
+	return nil
+}
+
+// execFinalizeKeyedAskGroup evaluates o.Key and forces the (o.Slot, key)
+// occurrence to complete using only its accepted responses so far,
+// producing one CloseKeyedQuestionOutput per recipient left without an
+// accepted answer — the keyed generalization of execFinalizeAskGroup,
+// sharing its own idempotent-once-completed/execution-error-if-empty
+// behavior exactly, scoped to one key. See
+// program.FinalizeKeyedAskGroupOperation.
+func (ctx *execContext) execFinalizeKeyedAskGroup(o engine.FinalizeKeyedAskGroupOperation, scope engine.Scope) error {
+	idx, ok := ctx.findKeyedAskGroupSlot(o.Slot)
+	if !ok {
+		return newExecutionError(ExecutionErrorUnknown, "engineservice: keyed ask-group slot %q not found", o.Slot)
+	}
+	key, err := Evaluate(ctx.program, o.Key, scope)
+	if err != nil {
+		return err
+	}
+	pIdx, occupied := ctx.findKeyedAskGroupPendingSlice(idx, key)
+	if !occupied {
+		return newExecutionError(ExecutionErrorUnknown, "engineservice: keyed ask-group slot %q is empty for this key", o.Slot)
+	}
+	entry := ctx.keyedAskGroupSlots[idx].Pending[pIdx]
+	if entry.Completed {
+		return nil
+	}
+
+	entry.Completed = true
+	pending := append([]engine.KeyedPendingAskGroup{}, ctx.keyedAskGroupSlots[idx].Pending...)
+	pending[pIdx] = entry
+	ctx.keyedAskGroupSlots[idx] = engine.KeyedAskGroupSlotInstance{Name: o.Slot, Pending: pending}
+	for _, r := range missingAskGroupRecipients(entry.PendingAskGroup) {
+		ctx.outputs = append(ctx.outputs, engine.CloseKeyedQuestionOutput{Slot: o.Slot, Key: key, Recipient: r})
+	}
+	return nil
+}
+
+// execCancelKeyedAskGroup evaluates o.Key and abandons the (o.Slot, key)
+// occurrence: every accepted response so far is discarded, the (slot,
+// key) tuple is cleared, and one CloseKeyedQuestionOutput is produced
+// per recipient who never had an accepted answer — the keyed
+// generalization of execCancelAskGroup, sharing its own
+// idempotent-when-empty/execution-error-if-awaiting-join behavior
+// exactly, scoped to one key. See program.CancelKeyedAskGroupOperation.
+func (ctx *execContext) execCancelKeyedAskGroup(o engine.CancelKeyedAskGroupOperation, scope engine.Scope) error {
+	idx, ok := ctx.findKeyedAskGroupSlot(o.Slot)
+	if !ok {
+		return newExecutionError(ExecutionErrorUnknown, "engineservice: keyed ask-group slot %q not found", o.Slot)
+	}
+	key, err := Evaluate(ctx.program, o.Key, scope)
+	if err != nil {
+		return err
+	}
+	pIdx, occupied := ctx.findKeyedAskGroupPendingSlice(idx, key)
+	if !occupied {
+		return nil
+	}
+	entry := ctx.keyedAskGroupSlots[idx].Pending[pIdx]
+	if entry.Completed {
+		return newExecutionError(ExecutionErrorAskGroupNotJoined,
+			"engineservice: keyed ask-group slot %q holds a terminal outcome that must be joined before it can be cancelled", o.Slot)
+	}
+
+	for _, r := range missingAskGroupRecipients(entry.PendingAskGroup) {
+		ctx.outputs = append(ctx.outputs, engine.CloseKeyedQuestionOutput{Slot: o.Slot, Key: key, Recipient: r})
+	}
+	pending := ctx.keyedAskGroupSlots[idx].Pending
+	result := make([]engine.KeyedPendingAskGroup, 0, len(pending)-1)
+	result = append(result, pending[:pIdx]...)
+	result = append(result, pending[pIdx+1:]...)
+	ctx.keyedAskGroupSlots[idx] = engine.KeyedAskGroupSlotInstance{Name: o.Slot, Pending: result}
+	return nil
+}
+
 // askGroupPolicySatisfied reports whether pending's CompletionKind is
 // satisfied by its current Responses — see engine.AskGroupCompletionKind.
 func askGroupPolicySatisfied(pending engine.PendingAskGroup) bool {
@@ -261,6 +407,100 @@ func stepAskGroupAnswer(p engine.Program, snapshot engine.Snapshot, signal engin
 	newSlots[idx] = engine.AskGroupSlotInstance{Name: signal.Slot, Pending: &updated}
 	newTarget := target
 	newTarget.AskGroupSlots = newSlots
+
+	return engine.Commit{
+		Snapshot: engine.Snapshot{
+			GlobalState: snapshot.GlobalState,
+			Root:        newTarget,
+			Random:      snapshot.Random,
+			Sequence:    snapshot.Sequence + 1,
+		},
+		Outputs: outputs,
+		Trace: engine.Trace{
+			Workflow:    target.Workflow,
+			StateBefore: target.State,
+			StateAfter:  target.State,
+			Outputs:     outputs,
+		},
+		ConsumedSignal: signal,
+	}, nil
+}
+
+// stepKeyedAskGroupAnswer implements SignalKindKeyedAskGroupAnswered's
+// documented behavior — the keyed generalization of stepAskGroupAnswer,
+// scoped to the one (slot, key) occurrence signal.Key addresses: like
+// its ordinary counterpart, it never selects or runs a transition, only
+// records the answer against that occurrence's PendingAskGroup and
+// re-evaluates its completion policy, as one atomic Commit. Every other
+// key's occurrence under the same slot is untouched.
+func stepKeyedAskGroupAnswer(p engine.Program, snapshot engine.Snapshot, signal engine.Signal) (engine.Commit, error) {
+	target := snapshot.Root
+	if target.Outcome != nil {
+		return engine.Commit{}, ErrSignalRejected
+	}
+	workflow, ok := p.Workflows[target.Workflow]
+	if !ok {
+		return engine.Commit{}, newExecutionError(ExecutionErrorUnknown, "engineservice: workflow %q is not compiled", target.Workflow)
+	}
+
+	slotIdx, ok := findInstanceKeyedAskGroupSlotIndex(target, signal.Slot)
+	if !ok {
+		return engine.Commit{}, newExecutionError(ExecutionErrorUnknown, "engineservice: workflow %q has no keyed ask-group slot named %q", target.Workflow, signal.Slot)
+	}
+	pIdx, ok := findKeyedAskGroupPending(target.KeyedAskGroupSlots[slotIdx].Pending, signal.Key)
+	if !ok {
+		return engine.Commit{}, ErrInputRejected
+	}
+	entry := target.KeyedAskGroupSlots[slotIdx].Pending[pIdx]
+	if entry.Completed {
+		return engine.Commit{}, ErrInputRejected
+	}
+	if !containsUserID(entry.Recipients, signal.Respondent) || hasAskGroupResponse(entry.Responses, signal.Respondent) {
+		return engine.Commit{}, ErrInputRejected
+	}
+
+	slotDecl, ok := workflowKeyedAskGroupSlot(workflow, signal.Slot)
+	if !ok {
+		return engine.Commit{}, newExecutionError(ExecutionErrorUnknown, "engineservice: workflow %q has no keyed ask-group slot named %q", target.Workflow, signal.Slot)
+	}
+	question, ok := p.Questions[slotDecl.Question]
+	if !ok {
+		return engine.Commit{}, newExecutionError(ExecutionErrorUnknown, "engineservice: question %q is not compiled", slotDecl.Question)
+	}
+	if signal.Answer == nil || !signal.Answer.Validate(question.ResponseType) {
+		return engine.Commit{}, ErrInputRejected
+	}
+	if question.Validation != nil {
+		bindings := map[string]engine.Value{"respondent": engine.UserValue{ID: signal.Respondent}, "answer": signal.Answer}
+		for _, arg := range entry.Arguments {
+			bindings[arg.Name] = arg.Value
+		}
+		v, err := Evaluate(p, question.Validation, engine.Scope{Bindings: bindings})
+		if err != nil {
+			return engine.Commit{}, err
+		}
+		if !v.(engine.BoolValue).Value {
+			return engine.Commit{}, ErrInputRejected
+		}
+	}
+
+	updated := entry.PendingAskGroup
+	updated.Responses = append(append([]engine.AskGroupResponse{}, entry.Responses...), engine.AskGroupResponse{Respondent: signal.Respondent, Answer: signal.Answer})
+
+	var outputs []engine.Output
+	if askGroupPolicySatisfied(updated) {
+		updated.Completed = true
+		for _, r := range missingAskGroupRecipients(updated) {
+			outputs = append(outputs, engine.CloseKeyedQuestionOutput{Slot: signal.Slot, Key: signal.Key, Recipient: r})
+		}
+	}
+
+	newPending := append([]engine.KeyedPendingAskGroup{}, target.KeyedAskGroupSlots[slotIdx].Pending...)
+	newPending[pIdx] = engine.KeyedPendingAskGroup{Key: signal.Key, PendingAskGroup: updated}
+	newSlots := append([]engine.KeyedAskGroupSlotInstance{}, target.KeyedAskGroupSlots...)
+	newSlots[slotIdx] = engine.KeyedAskGroupSlotInstance{Name: signal.Slot, Pending: newPending}
+	newTarget := target
+	newTarget.KeyedAskGroupSlots = newSlots
 
 	return engine.Commit{
 		Snapshot: engine.Snapshot{

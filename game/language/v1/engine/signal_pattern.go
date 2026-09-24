@@ -54,6 +54,36 @@ type AskGroupCompletedSignalSource struct {
 
 func (AskGroupCompletedSignalSource) isSignalSource() {}
 
+// KeyedQuestionAnsweredSignalSource matches the signal produced when a
+// validated answer is accepted for a pending occurrence of the named
+// KeyedQuestionSlot Slot, generalizing QuestionAnsweredSignalSource to a
+// (slot, key) occurrence — see Signal.Key for which occurrence.
+type KeyedQuestionAnsweredSignalSource struct {
+	Slot string
+}
+
+func (KeyedQuestionAnsweredSignalSource) isSignalSource() {}
+
+// KeyedTimerExpiredSignalSource matches the signal produced when a
+// pending timer of the named KeyedTimerSlot Slot expires, generalizing
+// TimerExpiredSignalSource to a (slot, key) occurrence — see Signal.Key
+// for which occurrence.
+type KeyedTimerExpiredSignalSource struct {
+	Slot string
+}
+
+func (KeyedTimerExpiredSignalSource) isSignalSource() {}
+
+// KeyedAskGroupCompletedSignalSource matches the signal produced when an
+// occurrence of the named KeyedAskGroupSlot Slot completes, generalizing
+// AskGroupCompletedSignalSource to a (slot, key) occurrence — see
+// Signal.Key for which occurrence.
+type KeyedAskGroupCompletedSignalSource struct {
+	Slot string
+}
+
+func (KeyedAskGroupCompletedSignalSource) isSignalSource() {}
+
 // SignalBinding binds Field from a matched signal's schema (see
 // SignalSource) to the immutable lexical name Name, in scope for the
 // enclosing Transition's Guard and Control.

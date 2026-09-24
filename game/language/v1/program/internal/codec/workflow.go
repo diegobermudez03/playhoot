@@ -187,23 +187,27 @@ func decodeWorkflowStateDeclarations(path string, items []json.RawMessage) ([]pr
 // --- program.WorkflowDeclaration ---
 
 type wireWorkflowDeclaration struct {
-	Name              string                 `json:"name"`
-	Parameters        []wireFieldDeclaration `json:"parameters"`
-	ResultType        json.RawMessage        `json:"result_type"`
-	LocalState        json.RawMessage        `json:"local_state"`
-	QuestionSlots     []json.RawMessage      `json:"question_slots"`
-	AskGroupSlots     []json.RawMessage      `json:"ask_group_slots"`
-	TimerSlots        []json.RawMessage      `json:"timer_slots"`
-	Presentations     []json.RawMessage      `json:"presentations"`
-	InitialState      string                 `json:"initial_state"`
-	GlobalTransitions []json.RawMessage      `json:"global_transitions"`
-	States            []json.RawMessage      `json:"states"`
+	Name               string                 `json:"name"`
+	Parameters         []wireFieldDeclaration `json:"parameters"`
+	ResultType         json.RawMessage        `json:"result_type"`
+	LocalState         json.RawMessage        `json:"local_state"`
+	QuestionSlots      []json.RawMessage      `json:"question_slots"`
+	AskGroupSlots      []json.RawMessage      `json:"ask_group_slots"`
+	TimerSlots         []json.RawMessage      `json:"timer_slots"`
+	KeyedQuestionSlots []json.RawMessage      `json:"keyed_question_slots"`
+	KeyedAskGroupSlots []json.RawMessage      `json:"keyed_ask_group_slots"`
+	KeyedTimerSlots    []json.RawMessage      `json:"keyed_timer_slots"`
+	Presentations      []json.RawMessage      `json:"presentations"`
+	InitialState       string                 `json:"initial_state"`
+	GlobalTransitions  []json.RawMessage      `json:"global_transitions"`
+	States             []json.RawMessage      `json:"states"`
 }
 
 // encodeWorkflowDeclaration encodes value, an ordinary (non-interface)
-// struct, as its JSON wire representation, using the canonical field order
-// name, parameters, result_type, local_state, question_slots,
-// ask_group_slots, timer_slots, presentations, initial_state,
+// struct, as its JSON wire representation, using the canonical field
+// order name, parameters, result_type, local_state, question_slots,
+// ask_group_slots, timer_slots, keyed_question_slots,
+// keyed_ask_group_slots, keyed_timer_slots, presentations, initial_state,
 // global_transitions, states.
 func encodeWorkflowDeclaration(path string, value program.WorkflowDeclaration) (json.RawMessage, error) {
 	parameters, err := encodeFieldDeclarations(pathField(path, "parameters"), value.Parameters)
@@ -230,6 +234,18 @@ func encodeWorkflowDeclaration(path string, value program.WorkflowDeclaration) (
 	if err != nil {
 		return nil, err
 	}
+	keyedQuestionSlots, err := encodeKeyedQuestionSlotDeclarations(pathField(path, "keyed_question_slots"), value.KeyedQuestionSlots)
+	if err != nil {
+		return nil, err
+	}
+	keyedAskGroupSlots, err := encodeKeyedAskGroupSlotDeclarations(pathField(path, "keyed_ask_group_slots"), value.KeyedAskGroupSlots)
+	if err != nil {
+		return nil, err
+	}
+	keyedTimerSlots, err := encodeKeyedTimerSlotDeclarations(pathField(path, "keyed_timer_slots"), value.KeyedTimerSlots)
+	if err != nil {
+		return nil, err
+	}
 	presentations, err := encodePresentationDeclarations(pathField(path, "presentations"), value.Presentations)
 	if err != nil {
 		return nil, err
@@ -243,17 +259,20 @@ func encodeWorkflowDeclaration(path string, value program.WorkflowDeclaration) (
 		return nil, err
 	}
 	return json.Marshal(wireWorkflowDeclaration{
-		Name:              value.Name,
-		Parameters:        parameters,
-		ResultType:        resultType,
-		LocalState:        localState,
-		QuestionSlots:     questionSlots,
-		AskGroupSlots:     askGroupSlots,
-		TimerSlots:        timerSlots,
-		Presentations:     presentations,
-		InitialState:      value.InitialState,
-		GlobalTransitions: globalTransitions,
-		States:            states,
+		Name:               value.Name,
+		Parameters:         parameters,
+		ResultType:         resultType,
+		LocalState:         localState,
+		QuestionSlots:      questionSlots,
+		AskGroupSlots:      askGroupSlots,
+		TimerSlots:         timerSlots,
+		KeyedQuestionSlots: keyedQuestionSlots,
+		KeyedAskGroupSlots: keyedAskGroupSlots,
+		KeyedTimerSlots:    keyedTimerSlots,
+		Presentations:      presentations,
+		InitialState:       value.InitialState,
+		GlobalTransitions:  globalTransitions,
+		States:             states,
 	})
 }
 
@@ -290,6 +309,18 @@ func decodeWorkflowDeclaration(path string, data json.RawMessage) (program.Workf
 	if err != nil {
 		return program.WorkflowDeclaration{}, err
 	}
+	keyedQuestionSlots, err := decodeKeyedQuestionSlotDeclarations(pathField(path, "keyed_question_slots"), wire.KeyedQuestionSlots)
+	if err != nil {
+		return program.WorkflowDeclaration{}, err
+	}
+	keyedAskGroupSlots, err := decodeKeyedAskGroupSlotDeclarations(pathField(path, "keyed_ask_group_slots"), wire.KeyedAskGroupSlots)
+	if err != nil {
+		return program.WorkflowDeclaration{}, err
+	}
+	keyedTimerSlots, err := decodeKeyedTimerSlotDeclarations(pathField(path, "keyed_timer_slots"), wire.KeyedTimerSlots)
+	if err != nil {
+		return program.WorkflowDeclaration{}, err
+	}
 	presentations, err := decodePresentationDeclarations(pathField(path, "presentations"), wire.Presentations)
 	if err != nil {
 		return program.WorkflowDeclaration{}, err
@@ -303,17 +334,20 @@ func decodeWorkflowDeclaration(path string, data json.RawMessage) (program.Workf
 		return program.WorkflowDeclaration{}, err
 	}
 	return program.WorkflowDeclaration{
-		Name:              wire.Name,
-		Parameters:        parameters,
-		ResultType:        resultType,
-		LocalState:        localState,
-		QuestionSlots:     questionSlots,
-		AskGroupSlots:     askGroupSlots,
-		TimerSlots:        timerSlots,
-		Presentations:     presentations,
-		InitialState:      wire.InitialState,
-		GlobalTransitions: globalTransitions,
-		States:            states,
+		Name:               wire.Name,
+		Parameters:         parameters,
+		ResultType:         resultType,
+		LocalState:         localState,
+		QuestionSlots:      questionSlots,
+		AskGroupSlots:      askGroupSlots,
+		TimerSlots:         timerSlots,
+		KeyedQuestionSlots: keyedQuestionSlots,
+		KeyedAskGroupSlots: keyedAskGroupSlots,
+		KeyedTimerSlots:    keyedTimerSlots,
+		Presentations:      presentations,
+		InitialState:       wire.InitialState,
+		GlobalTransitions:  globalTransitions,
+		States:             states,
 	}, nil
 }
 

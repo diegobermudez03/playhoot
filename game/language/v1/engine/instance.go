@@ -38,6 +38,10 @@ type WorkflowInstance struct {
 	QuestionSlots []QuestionSlotInstance
 	AskGroupSlots []AskGroupSlotInstance
 	TimerSlots    []TimerSlotInstance
+
+	KeyedQuestionSlots []KeyedQuestionSlotInstance
+	KeyedAskGroupSlots []KeyedAskGroupSlotInstance
+	KeyedTimerSlots    []KeyedTimerSlotInstance
 }
 
 // QuestionSlotInstance is the runtime occupancy of one declared
@@ -127,6 +131,67 @@ type AskGroupResponse struct {
 type TimerSlotInstance struct {
 	Name    string
 	Pending bool
+}
+
+// KeyedQuestionSlotInstance is the runtime occupancy of one declared
+// KeyedQuestionSlot: zero or more simultaneously pending questions, one
+// per occupied key. At most one entry in Pending ever shares the same
+// Key (compared via Value.Equal) — this is the (slot, key) occupancy
+// invariant KeyedQuestionSlotDeclaration documents, generalizing
+// QuestionSlotInstance's single-Pending shape to a per-key collection.
+// Pending is searched linearly by key equality, mirroring how
+// MapValue.Entries is already searched elsewhere in this package — an
+// arbitrary authored key type has no cheaper canonical hash to bucket
+// by.
+type KeyedQuestionSlotInstance struct {
+	Name    string
+	Pending []KeyedPendingQuestion
+}
+
+// KeyedPendingQuestion is one concrete, in-flight question occurrence at
+// a specific Key — see program.OpenKeyedQuestionOperation.
+type KeyedPendingQuestion struct {
+	Key       Value
+	Recipient UserID
+	Arguments []FieldValue
+}
+
+// KeyedAskGroupSlotInstance is the runtime occupancy of one declared
+// KeyedAskGroupSlot: zero or more simultaneously collecting or
+// completed-awaiting-join ask-group occurrences, one per occupied key.
+// See KeyedQuestionSlotInstance's doc comment for the shared (slot,
+// key)-occupancy/linear-search rationale.
+type KeyedAskGroupSlotInstance struct {
+	Name    string
+	Pending []KeyedPendingAskGroup
+}
+
+// KeyedPendingAskGroup is one concrete, in-flight ask-group occurrence
+// at a specific Key — see program.OpenKeyedAskGroupOperation. It embeds
+// PendingAskGroup unchanged: a keyed occurrence's own collection
+// semantics (Recipients, Arguments, Responses, Completed,
+// CompletionKind, QuorumCount) are identical to an ordinary ask group's,
+// only the addressing gains a Key.
+type KeyedPendingAskGroup struct {
+	Key Value
+	PendingAskGroup
+}
+
+// KeyedTimerSlotInstance is the runtime occupancy of one declared
+// KeyedTimerSlot: zero or more simultaneously pending timers, one per
+// occupied key. See KeyedQuestionSlotInstance's doc comment for the
+// shared (slot, key)-occupancy/linear-search rationale, and
+// TimerSlotInstance's doc comment for why only pending-or-not is
+// recorded, never a deadline.
+type KeyedTimerSlotInstance struct {
+	Name    string
+	Pending []KeyedPendingTimer
+}
+
+// KeyedPendingTimer is one concrete, in-flight timer occurrence at a
+// specific Key — see program.ScheduleKeyedTimerOperation.
+type KeyedPendingTimer struct {
+	Key Value
 }
 
 // WorkflowOutcomeKind identifies which terminal outcome a

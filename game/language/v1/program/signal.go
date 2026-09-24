@@ -117,6 +117,69 @@ type AskGroupCompletedSignalSource struct {
 
 func (AskGroupCompletedSignalSource) isSignalSource() {}
 
+// KeyedQuestionAnsweredSignalSource matches the signal produced when a
+// validated answer is accepted for a pending occurrence of the named
+// keyed question slot owned by the current workflow (see
+// KeyedQuestionSlotDeclaration), generalizing QuestionAnsweredSignalSource
+// to a (slot, key) occurrence instead of a slot-wide one.
+//
+// The signal schema exposed to a matching transition is conceptually the
+// reserved fields "key" (typed as the slot's declared KeyType — which
+// (slot, key) occurrence this answer belongs to), "respondent" (the
+// answering User), and "answer" (the submitted value, typed as the
+// slot's question's response type). Only validated answers reach a
+// workflow this way, exactly per QuestionAnsweredSignalSource's
+// documented validation rule, applied to the specific (slot, key)
+// occurrence the answer targets.
+type KeyedQuestionAnsweredSignalSource struct {
+	Slot string
+}
+
+func (KeyedQuestionAnsweredSignalSource) isSignalSource() {}
+
+// KeyedTimerExpiredSignalSource matches the signal produced when a
+// pending timer of the named keyed timer slot owned by the current
+// workflow (see KeyedTimerSlotDeclaration) expires, generalizing
+// TimerExpiredSignalSource to a (slot, key) occurrence instead of a
+// slot-wide one.
+//
+// The signal schema exposes exactly one field: "key" (typed as the
+// slot's declared KeyType) — which (slot, key) occurrence expired. Only
+// a timer instance that is still the current, uncancelled pending timer
+// for its exact (slot, key) at expiration time produces this signal;
+// stale, cancelled, or superseded deliveries never do, exactly per
+// TimerExpiredSignalSource's documented rule, applied to the specific
+// (slot, key) occurrence.
+type KeyedTimerExpiredSignalSource struct {
+	Slot string
+}
+
+func (KeyedTimerExpiredSignalSource) isSignalSource() {}
+
+// KeyedAskGroupCompletedSignalSource matches the signal produced when an
+// occurrence of the named keyed ask-group slot owned by the current
+// workflow (see KeyedAskGroupSlotDeclaration) completes, whether by
+// satisfying its AskGroupCompletionPolicy naturally or through
+// FinalizeKeyedAskGroupOperation, generalizing
+// AskGroupCompletedSignalSource to a (slot, key) occurrence instead of a
+// slot-wide one.
+//
+// The signal schema exposes exactly four fields: "key" (typed as the
+// slot's declared KeyType — which (slot, key) occurrence completed),
+// plus "responses", "respondents", and "missing" with the identical
+// shapes and semantics AskGroupCompletedSignalSource already documents,
+// scoped to this one (slot, key) occurrence's own recipients and
+// answers.
+//
+// Handling this signal is how a workflow joins a keyed ask-group (slot,
+// key) occurrence, exactly per AskGroupCompletedSignalSource's
+// documented join semantics, applied per (slot, key).
+type KeyedAskGroupCompletedSignalSource struct {
+	Slot string
+}
+
+func (KeyedAskGroupCompletedSignalSource) isSignalSource() {}
+
 // SignalBinding binds Field from a matched signal's payload to the
 // immutable lexical name Name.
 type SignalBinding struct {

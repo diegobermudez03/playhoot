@@ -48,6 +48,21 @@ type WorkflowDeclaration struct {
 	// semantics.
 	TimerSlots []TimerSlotDeclaration
 
+	// KeyedQuestionSlots declares the statically named keyed question
+	// slots owned by each instance of this workflow. See
+	// KeyedQuestionSlotDeclaration for its semantics.
+	KeyedQuestionSlots []KeyedQuestionSlotDeclaration
+
+	// KeyedAskGroupSlots declares the statically named keyed ask-group
+	// slots owned by each instance of this workflow. See
+	// KeyedAskGroupSlotDeclaration for its semantics.
+	KeyedAskGroupSlots []KeyedAskGroupSlotDeclaration
+
+	// KeyedTimerSlots declares the statically named keyed timer slots
+	// owned by each instance of this workflow. See
+	// KeyedTimerSlotDeclaration for its semantics.
+	KeyedTimerSlots []KeyedTimerSlotDeclaration
+
 	// Presentations declares this workflow's workflow-level presentations,
 	// each active for the entire lifetime of a workflow instance —
 	// created when the instance is created, remaining active across every
@@ -106,6 +121,64 @@ type QuestionSlotDeclaration struct {
 	// supported client or testing mechanism; nil is never treated as an
 	// implicit default presentation. See QuestionPresentationDeclaration
 	// for its semantics.
+	Presentation *QuestionPresentationDeclaration
+}
+
+// KeyedQuestionSlotDeclaration declares a statically named, durable
+// interaction location owned by each instance of the enclosing workflow,
+// generalizing QuestionSlotDeclaration to hold several independent,
+// simultaneously-pending question occurrences at once, addressed by an
+// authored key rather than at most one occurrence per slot.
+//
+// Conceptual identity is (slot, key): at most one pending question per
+// exact (Name, key) tuple. Different keys under the same slot are fully
+// independent and may be simultaneously pending — opening a question for
+// key "P1" never contends with, or is affected by, a question opened for
+// key "P2" under the same slot. Opening into an already-occupied (slot,
+// key) is an execution error, atomic for the whole enclosing transition,
+// mirroring the existing ordinary QuestionSlotDeclaration's occupied-slot
+// rule exactly: there is no implicit replacement, reset, or coalescing.
+//
+// This is what a game needs when the same question mechanism must run
+// independently per player, team, or object — for example, each player
+// progressing through their own self-paced quiz at their own pace — where
+// a single ordinary QuestionSlotDeclaration would force every occurrence
+// to contend for the same one pending location.
+//
+// This package does not validate slot-name uniqueness within a workflow
+// or that Question refers to an existing question declaration; it
+// preserves duplicates so the future compiler can report them
+// deterministically.
+type KeyedQuestionSlotDeclaration struct {
+	Name     string
+	Question string
+
+	// KeyType is the authored type every key value for this slot must
+	// match. It may be any TypeReference usable as a map key (see
+	// MapTypeReference) — this package places no additional restriction
+	// on it.
+	KeyType TypeReference
+
+	// Presentation optionally connects each occupied (slot, key)
+	// occurrence's pending question to a presentation slot, projection,
+	// and view — reusing QuestionPresentationDeclaration unchanged. When
+	// compiled against a keyed slot, its ProjectionArguments scope gains
+	// one additional implicit binding, "key" (typed KeyType), alongside
+	// the existing implicit "recipient" binding, so the mounted view can
+	// distinguish which key's occurrence it is showing. A nil
+	// Presentation means every occurrence of this slot has no
+	// automatically mounted authored client view, exactly like the
+	// ordinary QuestionSlotDeclaration's own nil-Presentation semantics.
+	//
+	// The future engine's presentation-slot occupancy rule (at most one
+	// active presentation per PresentationSlotDeclaration per user) still
+	// applies per user, not per key: two simultaneously pending keyed
+	// occurrences that both target the same recipient and the same
+	// Presentation.Slot is an execution error, exactly as two ordinary
+	// presentations targeting the same user on the same slot already is.
+	// A design needing two independent, simultaneously visible
+	// presentations for one recipient must use two different
+	// PresentationSlotDeclaration names.
 	Presentation *QuestionPresentationDeclaration
 }
 

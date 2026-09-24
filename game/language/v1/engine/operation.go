@@ -217,6 +217,62 @@ type CancelTimerOperation struct {
 
 func (CancelTimerOperation) isOperation() {}
 
+// OpenKeyedQuestionOperation opens one concrete instance of the question
+// associated with the named workflow keyed slot Slot's occurrence Key,
+// for Recipient, with Arguments captured as that occurrence's
+// parameters, generalizing OpenQuestionOperation to a (slot, key)
+// occurrence. The compiler guarantees Key is statically compatible with
+// the slot's declared KeyType, Recipient is statically user, and
+// Arguments matches the slot's question's declared parameters exactly.
+// Opening an already occupied (slot, key) is an execution error that
+// fails the transition atomically — see program.OpenKeyedQuestionOperation.
+type OpenKeyedQuestionOperation struct {
+	Slot      string
+	Key       Expression
+	Recipient Expression
+	Arguments []CallArgument
+}
+
+func (OpenKeyedQuestionOperation) isOperation() {}
+
+// CloseKeyedQuestionOperation closes the pending question instance at
+// the named workflow keyed slot Slot's occurrence Key, if any, without
+// producing a KeyedQuestionAnsweredSignalSource signal, generalizing
+// CloseQuestionOperation to a (slot, key) occurrence. Closing an already
+// empty (slot, key) is an idempotent no-op.
+type CloseKeyedQuestionOperation struct {
+	Slot string
+	Key  Expression
+}
+
+func (CloseKeyedQuestionOperation) isOperation() {}
+
+// ScheduleKeyedTimerOperation schedules a timer at the named workflow
+// keyed timer slot Slot's occurrence Key, to fire after
+// DelayMilliseconds evaluates, generalizing ScheduleTimerOperation to a
+// (slot, key) occurrence. Scheduling into an already occupied (slot,
+// key) is an execution error that fails the transition atomically — see
+// program.ScheduleKeyedTimerOperation.
+type ScheduleKeyedTimerOperation struct {
+	Slot              string
+	Key               Expression
+	DelayMilliseconds Expression
+}
+
+func (ScheduleKeyedTimerOperation) isOperation() {}
+
+// CancelKeyedTimerOperation cancels the currently pending timer at the
+// named workflow keyed timer slot Slot's occurrence Key, if any, without
+// producing a KeyedTimerExpiredSignalSource signal, generalizing
+// CancelTimerOperation to a (slot, key) occurrence. Cancelling an
+// already empty (slot, key) is an idempotent no-op.
+type CancelKeyedTimerOperation struct {
+	Slot string
+	Key  Expression
+}
+
+func (CancelKeyedTimerOperation) isOperation() {}
+
 // EmitEffectOperation emits one instance of the named effect Effect to
 // Recipients with the given Arguments. The compiler guarantees
 // Recipients is statically list<user> and Arguments matches Effect's
