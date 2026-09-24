@@ -1,6 +1,8 @@
-Status: RESOLVED (2026-09-24) — Blocker 1 accepted as recommended (Timer included); Blocker 2 NOT accepted as recommended (Presentation's keyed capability deferred, not implemented). See WORK-0025's own "Human Resolution" section for the recorded decision. Kept here as the historical record of what was asked.
+Status: Two records in this file. WORK-0025's own section (below) is RESOLVED, kept as historical record. WORK-0026/WORK-0027's section (bottom of this file) is AWAITING HUMAN REVIEW: both WORKs are DRAFT, pending explicit DRAFT -> READY approval.
 
 # WORK-0025 — Two Design Blockers (2026-09-24)
+
+Status: RESOLVED (2026-09-24) — Blocker 1 accepted as recommended (Timer included); Blocker 2 NOT accepted as recommended (Presentation's keyed capability deferred, not implemented). See WORK-0025's own "Human Resolution" section for the recorded decision. Kept here as the historical record of what was asked.
 
 Process: drafting `WORK-0025-keyed-interaction-slots.md` for real (PLANNED -> DRAFT), following this Project's just-in-time drafting practice, immediately after WORK-0024 closed DONE. Design was checked directly against the actual current code (`program`/`engine`/`internal/compiler`/`internal/runtime`'s Question/AskGroup/Timer/Presentation implementations), not only against GAME-ADR-0012/0026's prose. No production code was implemented by this session - this is design-drafting only, exactly as WORK-0025's own status (DRAFT, not READY) requires.
 
@@ -29,3 +31,31 @@ Two Blockers were left explicitly unresolved, per this Project's Blocker practic
 ## Next action
 
 WORK-0025 stays DRAFT. No implementation should proceed on either Blocker until resolved. Once both are resolved: WORK-0025's Approved Design/Scope/Acceptance Criteria are revised to reflect the resolutions (if either recommendation is rejected, the corresponding family is removed from this WORK's scope rather than left half-specified), the WORK moves DRAFT -> READY, and a Codebase Agent implements it per `docs/ai/protocols/IMPLEMENTATION_REVIEW.md`.
+
+(WORK-0025 subsequently completed - implemented, independently reviewed twice, and closed DONE the same day. See its own Completion Record.)
+
+# WORK-0026 / WORK-0027 — Combined Drafting, Pending READY Approval (2026-09-24)
+
+Status: AWAITING HUMAN REVIEW.
+
+Process: drafting `WORK-0026-engine-owned-interaction-addressing.md` for real (PLANNED -> DRAFT), per this Project's just-in-time drafting practice, following the human's instruction "proceed with 0026." Design was checked directly against the actual current `engine.Signal`/`engine.Output`/`engine.Snapshot`/`internal/runtime` code and against `game/session/workflows/sessionlifecycle`'s actual consumption of it, not only against GAME-ADR-0026's prose. No production code was implemented by this pass - design-drafting only.
+
+## What changed
+
+While drafting WORK-0026, a sequencing problem was found that this Project's tracking had not previously identified: `game/session/workflows/sessionlifecycle` (already-shipped, DONE Session Runtime code) constructs its answer signal directly from `Signal.Slot`. WORK-0026 alone would leave it unable to compile, with no small bridging edit available, since it has no durable `InteractionID` to construct the new signal with - capturing one into `session_interactions` is WORK-0027's own persistence rework.
+
+This was escalated before drafting further (via a direct question, answered immediately, not left as a WORK-file Blocker): should WORK-0026 and WORK-0027 be implemented together in one combined pass (recommended), should WORK-0026 also grow a throwaway interim persistence bridge, or should a temporarily broken `game/session/...` build be accepted?
+
+**Decision: implement WORK-0026 and WORK-0027 together, in one combined pass.** Recorded in full in WORK-0026's own "Human Resolution (2026-09-24, HUMAN-APPROVED)" section - not repeated here. Both WORKs were then drafted for real, each independently reviewable against its own scope, but neither implemented/reviewed/closed without the other.
+
+WORK-0027's own long-standing open Material Decision (this Project's `PROJECT.md`, `session_interactions`' exact migration shape) was also resolved by this pass, proposing "replace `engine_path`/`engine_slot` outright" - following `session-runtime-v1`'s own WORK-0001 precedent for a pre-launch schema replacement (drop-then-recreate via new migration files) - rather than leaving it open a second time now that WORK-0027 is actually being drafted for real, per that Material Decision's own stated deferral condition.
+
+## Please confirm or correct
+
+1. **The combined-implementation decision above** (WORK-0026 and WORK-0027 land together, not sequentially) - already acted on when drafting both WORKs, but the human should confirm this reasoning holds before approving READY, since it is what makes WORK-0026's Acceptance Criteria (`go test ./game/session/... -count=1` passing) only meaningful against the *combined* implementation, not WORK-0026 read in isolation.
+2. **WORK-0027's proposed migration approach** - replace `engine_path`/`engine_slot` outright via new migrations (old historical migration files untouched), under the same pre-launch/no-data-to-preserve assumption WORK-0001 already used. If a production deployment/data-preservation requirement now exists for `session_interactions` that didn't when WORK-0001 set this precedent, say so - WORK-0027 states it must return to DRAFT rather than proceed under a wrong assumption.
+3. **Two new Tracked Follow-Ups found while drafting** (recorded in this Project's `PROJECT.md`, not blocking): `session_timer_obligations.engine_path`'s identical pre-existing dead weight (left alone - Timer is out of scope for both WORKs); Session Runtime never constructing the Ask Group completed-awaiting-join signal (a pre-existing, unrelated gap - not fixed by either WORK). No action needed unless the human disagrees these should stay deferred.
+
+## Next action
+
+Both WORK-0026 and WORK-0027 stay DRAFT. Once the human confirms (or corrects) the above, both move DRAFT -> READY together, and a Codebase Agent implements them together in one combined pass per `docs/ai/protocols/IMPLEMENTATION_REVIEW.md`.
