@@ -9,7 +9,7 @@ Related decisions:
 
 Canonical context:
 - `game/docs/decisions/GAME-ADR-0026-flat-workflow-execution-model-and-keyed-interaction-slots.md`
-- `docs/projects/active/game-language-flat-execution-model/works/WORK-0025-keyed-interaction-slots.md` (DONE - landed first, so a caller-facing ID scheme accounts for keyed occurrences from the start)
+- `docs/projects/completed/game-language-flat-execution-model/works/WORK-0025-keyed-interaction-slots.md` (DONE - landed first, so a caller-facing ID scheme accounts for keyed occurrences from the start)
 - `game/language/v1/engine/{signal.go,output.go,snapshot.go,instance.go,commit.go}` - the compiled/runtime shapes this WORK changes
 - `game/language/v1/engine/internal/runtime/{execute.go,ask_group.go,step.go}` - where opening/answering/closing a Question or Ask Group occurrence is implemented today
 - `game/language/v1/engine/internal/codec/instance.go` - the Snapshot persistence wire format this WORK must extend (see Constraints - WORK-0025's own Completion Record records a HIGH-severity bug where new pending-occurrence state was implemented but never wired into this file)

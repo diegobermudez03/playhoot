@@ -9,7 +9,7 @@ Related decisions:
 - GAME-ADR-0007 (Session Runtime Turn Architecture and Persistence Model - `session_interactions`' `(engine_path, engine_slot)` identity is superseded in part by this WORK; a follow-up cross-reference note is owned here, not a rewrite of GAME-ADR-0007 itself)
 
 Canonical context:
-- `docs/projects/active/game-language-flat-execution-model/works/WORK-0026-engine-owned-interaction-addressing.md` (DRAFT, implemented together with this WORK in one combined pass - see its own Human Resolution)
+- `docs/projects/completed/game-language-flat-execution-model/works/WORK-0026-engine-owned-interaction-addressing.md` (DRAFT, implemented together with this WORK in one combined pass - see its own Human Resolution)
 - `game/session/workflows/sessionlifecycle/interaction_capture.go` (`captureInteractions`, `resolveInteractionKind` - removed by this WORK)
 - `game/session/workflows/sessionlifecycle/step_answer_interaction.go` (`answerSignalKind`, `AnswerInteraction`'s signal construction - reworked)
 - `game/session/workflows/sessionlifecycle/replay.go` (`buildAnswerSignal`, `loadReplaySignal` - reworked)

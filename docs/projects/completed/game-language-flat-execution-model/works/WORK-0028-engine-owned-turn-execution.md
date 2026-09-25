@@ -1,8 +1,8 @@
 # WORK-0028: Engine-Owned Turn Execution (Replay and Step-Chain Draining)
 
-Status: IMPLEMENTING
+Status: DONE
 Created: 2026-09-24
-Last status change: 2026-09-24 (implementation complete, self-reported ready for independent review - see Completion Record; READY -> IMPLEMENTING; DRAFT -> READY, GAME-ADR-0027 ACCEPTED, human-approved "Approved, proceed"; PLANNED -> DRAFT, design filled in)
+Last status change: 2026-09-24 (IMPLEMENTING -> DONE, independent review APPROVED with one NON_BLOCKING finding, fixed same-session; READY -> IMPLEMENTING; DRAFT -> READY, GAME-ADR-0027 ACCEPTED, human-approved "Approved, proceed"; PLANNED -> DRAFT, design filled in)
 
 Related decisions:
 - GAME-ADR-0027 (Engine-Owned Turn Execution — Replay and Step-Chain Draining Move Inside `engineservice`) — PROPOSED. This WORK cannot move DRAFT -> READY until GAME-ADR-0027 is ACCEPTED.
@@ -163,11 +163,11 @@ type Limits struct {
 
 ## Completion Record
 
-Not yet DONE. Independent review has not yet occurred.
+DONE (2026-09-24). Independent review by a fresh agent (no access to this session's own context) - APPROVED, one NON_BLOCKING finding, fixed same-session, re-verified. See "Implementation Report" and "Independent Review" below.
 
 ### Implementation Report (2026-09-24)
 
-Work: `docs/projects/active/game-language-flat-execution-model/works/WORK-0028-engine-owned-turn-execution.md`
+Work: `docs/projects/completed/game-language-flat-execution-model/works/WORK-0028-engine-owned-turn-execution.md`
 
 Work status: IMPLEMENTING
 
@@ -213,3 +213,14 @@ Known limitations:
 
 Ready for independent review:
 YES.
+
+### Independent Review (2026-09-24)
+
+A fresh agent, with no access to this session's own context, reviewed this WORK per `docs/ai/protocols/IMPLEMENTATION_REVIEW.md`. It read GAME-ADR-0027 and the actual current code directly (not this self-report), ran its own fresh `go build`/`go vet`/`gofmt -l` (confirming the whole-repo `gofmt -l` output is pre-existing CRLF line-ending noise from a Windows checkout, not a real formatting defect - verified via `gofmt -d` showing only line-ending diffs), the `TestNoInternalDocCitationsInComments` lint, the full `game/language/v1/...` suite, and the full repository suite against real Postgres. It specifically verified: `ErrReplayDivergence`'s `fmt.Errorf` wrapping uses `%w` only on the sentinel and `%s` (not `%w`) on the underlying cause at all three call sites, keeping it structurally exclusive from `ErrSignalRejected`/`ErrInputRejected` via `errors.Is`; the new `TestStartTurn_MatchesLiveNewSnapshotAndStep`/`TestAdvanceTurn_MatchesLiveExecutionAcrossMultipleTurns` tests each independently hold a live `Snapshot` via direct `internal/runtime.NewSnapshot`/`Step` calls and compare against `StartTurn`/`AdvanceTurn`'s output - a genuine independent comparison, not the new API compared against itself; `TestReconstructCurrentSnapshot_Integration` still validates against a live-observed random draw read from a channel `AdvanceTurn`'s own replay never touches, using two independently-constructed Managers, matching its own doc comment's claim; `Manager.Start`/`AnswerInteraction`'s signatures and result types are byte-for-byte unchanged (confirmed via diff); GAME-ADR-0019/0024/0027's historical text is unedited, gaining only appended "Implemented by" sections.
+
+Verdict: APPROVED, one NON_BLOCKING finding, no REQUIRED_FIX or DECISION_REQUIRED findings.
+
+Finding and fix:
+1. **(LOW, NON_BLOCKING)** `game/session/workflows/sessionlifecycle/replay_integration_test.go`'s explanatory comment on the live-random-draw oracle still named the deleted `reconstructCurrentSnapshot` function ("a table `reconstructCurrentSnapshot` never reads") - the one surviving mention the reviewer's own repo-wide grep found, purely explanatory and not affecting behavior, test validity, or the doc-citation lint. **Fixed anyway**: reworded to name `loadPriorSignals` (the function that actually replaced it) instead.
+
+Re-verified after applying the fix: `go build ./...`, `go vet ./...` - clean. No unresolved REQUIRED_FIX or DECISION_REQUIRED finding remains. Closed to DONE.

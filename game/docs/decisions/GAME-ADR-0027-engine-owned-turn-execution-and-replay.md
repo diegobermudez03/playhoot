@@ -103,8 +103,8 @@ Considered, then rejected once actually verified against the code rather than as
 
 ## Implementation Impact
 
-Owned by a new WORK under `docs/projects/active/game-language-flat-execution-model/`. No migration, production code, or implementation is authorized directly by this record.
+Owned by a new WORK under `docs/projects/completed/game-language-flat-execution-model/`. No migration, production code, or implementation is authorized directly by this record.
 
 ### Implemented by
 
-`docs/projects/active/game-language-flat-execution-model/works/WORK-0028-engine-owned-turn-execution.md` implements this record in full: `engineservice.Step`/`NewSnapshot` removed; `engineservice.StartTurn`/`AdvanceTurn` added; `engine.Limits.MaxStepsPerTurn` (defaulted to 20) and `ExecutionErrorStepChainExceeded` added; `engineservice.ErrReplayDivergence` added; `game/session/workflows/sessionlifecycle/internal/runtimeturn` deleted in full; `reconstructCurrentSnapshot`/`replayTurn` deleted from `replay.go`; `captureInteractions` takes `[]engine.Output` directly. Zero new persistence was required, confirming this record's own claim.
+`docs/projects/completed/game-language-flat-execution-model/works/WORK-0028-engine-owned-turn-execution.md` implements this record in full: `engineservice.Step`/`NewSnapshot` removed; `engineservice.StartTurn`/`AdvanceTurn` added; `engine.Limits.MaxStepsPerTurn` (defaulted to 20) and `ExecutionErrorStepChainExceeded` added; `engineservice.ErrReplayDivergence` added; `game/session/workflows/sessionlifecycle/internal/runtimeturn` deleted in full; `reconstructCurrentSnapshot`/`replayTurn` deleted from `replay.go`; `captureInteractions` takes `[]engine.Output` directly. Zero new persistence was required, confirming this record's own claim.

@@ -90,4 +90,4 @@ Future implementation must design the concrete `KeyedTimerSlot<Key>` declaration
 
 ### Implemented by
 
-`docs/projects/active/game-language-flat-execution-model/works/WORK-0025-keyed-interaction-slots.md` implements this record's `program`/`engine`/compiler/runtime portion (`KeyedTimerSlotDeclaration`, `ScheduleKeyedTimerOperation`/`CancelKeyedTimerOperation`, `KeyedTimerExpiredSignalSource`), alongside the Question/Ask Group generalization GAME-ADR-0026 accepted. The Session Runtime persistence consequence (`session_timer_obligations.engine_key`) recorded above remains unimplemented, out of that WORK's own scope.
+`docs/projects/completed/game-language-flat-execution-model/works/WORK-0025-keyed-interaction-slots.md` implements this record's `program`/`engine`/compiler/runtime portion (`KeyedTimerSlotDeclaration`, `ScheduleKeyedTimerOperation`/`CancelKeyedTimerOperation`, `KeyedTimerExpiredSignalSource`), alongside the Question/Ask Group generalization GAME-ADR-0026 accepted. The Session Runtime persistence consequence (`session_timer_obligations.engine_key`) recorded above remains unimplemented, out of that WORK's own scope.

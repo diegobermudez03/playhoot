@@ -109,7 +109,7 @@ Follow-up not part of this WORK's own closure (recorded, not silently dropped): 
 
 ### Implementation Report (2026-09-24)
 
-Work: `docs/projects/active/game-language-flat-execution-model/works/WORK-0024-remove-child-workflow-and-task-group.md`
+Work: `docs/projects/completed/game-language-flat-execution-model/works/WORK-0024-remove-child-workflow-and-task-group.md`
 
 Work status: IMPLEMENTING
 

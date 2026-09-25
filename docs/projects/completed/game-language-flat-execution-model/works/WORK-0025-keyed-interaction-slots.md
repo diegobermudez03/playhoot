@@ -11,7 +11,7 @@ Related decisions:
 Canonical context:
 - `game/docs/decisions/GAME-ADR-0026-flat-workflow-execution-model-and-keyed-interaction-slots.md`
 - `game/docs/decisions/GAME-ADR-0012-game-language-keyed-timer-slots.md` (the accepted semantics this WORK extends and implements: identity `(slot, key)`, atomic-failure-on-occupied-tuple, explicit-cancel-before-reschedule, key exposed to authored logic, no implicit reset/replace/coalesce)
-- `docs/projects/active/game-language-flat-execution-model/works/WORK-0024-remove-child-workflow-and-task-group.md` (DONE - landed first, per this Project's Ordering)
+- `docs/projects/completed/game-language-flat-execution-model/works/WORK-0024-remove-child-workflow-and-task-group.md` (DONE - landed first, per this Project's Ordering)
 - `game/language/v1/program/{workflow.go,interaction_operation.go,timer.go,ask_group.go,presentation.go,signal.go}` - the existing ordinary (non-keyed) declarations/operations/signal sources this WORK generalizes, read in full while drafting this WORK
 - `game/language/v1/engine/{workflow.go,instance.go,output.go,signal.go}` and `internal/compiler/{compile_slots.go,compile_signals.go}` and `internal/runtime/{execute.go,ask_group.go,presentation.go}` - the compiled/runtime counterparts this WORK's design was checked against
 
@@ -232,7 +232,7 @@ DONE (2026-09-24). Implemented, reviewed, fixed, and independently re-reviewed t
 
 ### Implementation Report (2026-09-24)
 
-Work: `docs/projects/active/game-language-flat-execution-model/works/WORK-0025-keyed-interaction-slots.md`
+Work: `docs/projects/completed/game-language-flat-execution-model/works/WORK-0025-keyed-interaction-slots.md`
 
 Work status: IMPLEMENTING
 

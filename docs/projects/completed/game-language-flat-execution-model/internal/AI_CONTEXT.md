@@ -1,4 +1,4 @@
-Process: Project (`docs/projects/active/game-language-flat-execution-model/`)
+Process: Project (`docs/projects/completed/game-language-flat-execution-model/`)
 Topic: Game Language flat execution model (removal of Child Workflow/Task Group; keyed interaction slots; engine-owned interaction addressing)
 Current stage: All four of this Project's WORK items are DONE (2026-09-24): WORK-0024/WORK-0025 earlier the same day; WORK-0026 (Engine-Owned Interaction Addressing) and WORK-0027 (Session Runtime Interaction-Addressing Rework) just now, implemented together in one combined pass, reviewed together, one REQUIRED_FIX applied, closed. This Project's own Completion Criteria all appear met - see `../PROJECT.md`'s own "Completion Criteria" section.
 Current execution surface: CODEBASE AGENT (all WORK closed; about to report final summary to the human)

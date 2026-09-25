@@ -58,8 +58,8 @@ func TestReconstructCurrentSnapshot_Integration(t *testing.T) {
 
 	// The live random draw: read from Q1's own interaction_payload, captured
 	// directly from Start's live OpenQuestionOutput - a table
-	// reconstructCurrentSnapshot never reads, and a value that never passes
-	// through session_runtime_starts.seed on this side of the comparison.
+	// loadPriorSignals never reads, and a value that never passes through
+	// session_runtime_starts.seed on this side of the comparison.
 	var firstRow struct {
 		UUID               string `gorm:"column:uuid"`
 		InteractionPayload []byte `gorm:"column:interaction_payload"`
