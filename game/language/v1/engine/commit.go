@@ -1,6 +1,6 @@
 package engine
 
-// Commit is the atomic result of one engineservice.Step call.
+// Commit is the atomic result of one Step call.
 //
 // Per LOGICAL_CONTRACT.md, a Commit represents, as a single unit:
 //

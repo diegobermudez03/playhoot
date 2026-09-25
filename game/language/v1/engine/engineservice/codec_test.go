@@ -5,6 +5,7 @@ import (
 
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine"
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine/engineservice"
+	"github.com/diegobermudez03/playhoot/game/language/v1/engine/internal/runtime"
 	"github.com/diegobermudez03/playhoot/game/language/v1/program"
 )
 
@@ -99,7 +100,7 @@ func TestCodec_SimpleSnapshotRoundTrips(t *testing.T) {
 
 func TestCodec_AskGroupRoundTrips(t *testing.T) {
 	p := askGroupProgram(engine.AskGroupAllResponsesPolicy{}, engine.UnitType{}, engine.StayControl{})
-	commit, _ := engineservice.Step(p, askGroupSnapshot([]engine.UserID{askAlice, askBob}), engine.Signal{Name: "Open"}, engine.DefaultLimits())
+	commit, _ := runtime.Step(p, askGroupSnapshot([]engine.UserID{askAlice, askBob}), engine.Signal{Name: "Open"}, engine.DefaultLimits())
 	commit, err := answerAskGroup(p, commit.Snapshot, askAlice, true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -115,7 +116,7 @@ func TestCodec_AskGroupRoundTrips(t *testing.T) {
 
 func TestCodec_PendingQuestionRoundTrips(t *testing.T) {
 	p := questionDemoProgram()
-	commit, err := engineservice.Step(p, questionDemoSnapshot(), engine.Signal{Name: "Open"}, engine.DefaultLimits())
+	commit, err := runtime.Step(p, questionDemoSnapshot(), engine.Signal{Name: "Open"}, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -138,11 +139,11 @@ func TestCodec_InteractionIDRoundTrips(t *testing.T) {
 	if diags.HasErrors() {
 		t.Fatalf("unexpected compile errors: %v", diags)
 	}
-	snap, startSignal, err := engineservice.NewSnapshot(p, engine.InitializationInput{RootParameters: map[string]engine.Value{"player": engine.UserValue{ID: player}}})
+	snap, startSignal, err := runtime.NewSnapshot(p, engine.InitializationInput{RootParameters: map[string]engine.Value{"player": engine.UserValue{ID: player}}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	commit, err := engineservice.Step(p, snap, startSignal, engine.DefaultLimits())
+	commit, err := runtime.Step(p, snap, startSignal, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -167,7 +168,7 @@ func TestCodec_InteractionIDRoundTrips(t *testing.T) {
 
 func TestCodec_TerminalOutcomeRoundTrips(t *testing.T) {
 	p := counterProgram()
-	commit, err := engineservice.Step(p, counterSnapshot(3), engine.Signal{Name: "Finish"}, engine.DefaultLimits())
+	commit, err := runtime.Step(p, counterSnapshot(3), engine.Signal{Name: "Finish"}, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -299,7 +300,7 @@ func TestIntegration_PersistRestoreContinueMatchesUninterruptedExecution(t *test
 		t.Fatalf("unexpected incompatibility on a freshly compiled program: %v", err)
 	}
 
-	snapDirect, startSignal, err := engineservice.NewSnapshot(p, engine.InitializationInput{})
+	snapDirect, startSignal, err := runtime.NewSnapshot(p, engine.InitializationInput{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -309,13 +310,13 @@ func TestIntegration_PersistRestoreContinueMatchesUninterruptedExecution(t *test
 	finish := engine.Signal{Kind: engine.SignalKindIntent, Intent: "Finish"}
 	signals := []engine.Signal{startSignal, increment, increment, increment, finish}
 	for _, sig := range signals {
-		commit, err := engineservice.Step(p, snapDirect, sig, engine.DefaultLimits())
+		commit, err := runtime.Step(p, snapDirect, sig, engine.DefaultLimits())
 		if err != nil {
 			t.Fatalf("unexpected error (direct): %v", err)
 		}
 		snapDirect = commit.Snapshot
 
-		commit, err = engineservice.Step(p, snapPersisted, sig, engine.DefaultLimits())
+		commit, err = runtime.Step(p, snapPersisted, sig, engine.DefaultLimits())
 		if err != nil {
 			t.Fatalf("unexpected error (persisted): %v", err)
 		}

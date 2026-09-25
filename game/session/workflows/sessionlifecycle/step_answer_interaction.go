@@ -12,7 +12,6 @@ import (
 	"github.com/diegobermudez03/playhoot/game/session"
 	"github.com/diegobermudez03/playhoot/game/session/internal/sessionlock"
 	internalrepo "github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/repo"
-	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/runtimeturn"
 	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/monitoring"
 	"github.com/diegobermudez03/playhoot/utils"
@@ -98,7 +97,7 @@ func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessio
 	}
 
 	// A missing actor is indistinguishable from "not this interaction's
-	// recipient" for this purpose - rejected the same way engineservice.Step
+	// recipient" for this purpose - rejected the same way the engine itself
 	// would reject an unauthorized Respondent, without needing to reach the
 	// engine at all.
 	actor, err := m.answerInteractionRepo.FindActor(ctx, tx, lockedSession.ID, string(userUUID))
@@ -176,9 +175,10 @@ func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessio
 	}
 
 	// Current authoritative Runtime state is never loaded from a persisted
-	// Snapshot (none exists) - it is deterministically reconstructed by
-	// replaying every durable cause committed so far.
-	snapshot, err := m.reconstructCurrentSnapshot(ctx, tx, compiledProgram, lockedSession.ID)
+	// Snapshot (none exists), and this package never reconstructs one
+	// itself - engineservice.AdvanceTurn internally replays every durable
+	// cause committed so far, given only the ordered signal log below.
+	input, priorSignals, err := m.loadPriorSignals(ctx, tx, lockedSession.ID)
 	if err != nil {
 		return AnswerInteractionResult{}, fmt.Errorf("reconstructing current runtime state: %s", err)
 	}
@@ -190,14 +190,20 @@ func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessio
 		Answer:        answer,
 	}
 
-	drainResult := runtimeturn.Drain(compiledProgram, snapshot, signal)
-	if drainResult.Err != nil {
-		// A rejection of the response itself - never a rejection of an
-		// engine-internally-generated internal signal - is an ordinary
-		// declined outcome: no RuntimeTurn, no Snapshot mutation, Session
-		// stays RUNNING.
-		if drainResult.FailedOnInitialSignal &&
-			(errors.Is(drainResult.Err, engineservice.ErrSignalRejected) || errors.Is(drainResult.Err, engineservice.ErrInputRejected)) {
+	outputs, err := engineservice.AdvanceTurn(compiledProgram, input, priorSignals, signal, engine.DefaultLimits())
+	if err != nil {
+		if errors.Is(err, engineservice.ErrReplayDivergence) {
+			// Every element of priorSignals already succeeded once - it is
+			// durable specifically because it did - so failing to replay it
+			// identically is a data-integrity condition, never an ordinary
+			// decline.
+			monitoring.Alert(ctx, fmt.Sprintf("session %d: %s", lockedSession.ID, err))
+			return AnswerInteractionResult{}, fmt.Errorf("reconstructing current runtime state: %s", err)
+		}
+		// A rejection of the response itself is an ordinary declined
+		// outcome: no RuntimeTurn, no Snapshot mutation, Session stays
+		// RUNNING.
+		if errors.Is(err, engineservice.ErrSignalRejected) || errors.Is(err, engineservice.ErrInputRejected) {
 			return AnswerInteractionResult{Outcome: AnswerInteractionOutcomeRejected, SessionUUID: SessionUUID(lockedSession.UUID)}, nil
 		}
 		return m.terminalizeAnswerInteractionFatal(ctx, tx, lockedSession, now, session.TerminalReasonRuntimeExecutionFailed)
@@ -208,8 +214,8 @@ func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessio
 	if err != nil {
 		return AnswerInteractionResult{}, err
 	}
-	// engineservice.Step clears an accepted answer's own slot internally,
-	// before the transition's own operations run, and produces no Output
+	// The engine clears an accepted answer's own slot internally, before
+	// the transition's own operations run, and produces no Output
 	// recording that closure - only an authored CloseQuestionOperation on a
 	// *different* slot ever does. The answered interaction is therefore
 	// closed directly by its already-known id instead of being discovered
@@ -220,7 +226,7 @@ func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessio
 	if err := m.answerInteractionRepo.CloseAnsweredInteraction(ctx, tx, interaction.ID, responsePayload, turnID); err != nil {
 		return AnswerInteractionResult{}, err
 	}
-	if err := captureInteractions(ctx, tx, m.answerInteractionRepo, lockedSession.ID, turnID, drainResult.Steps); err != nil {
+	if err := captureInteractions(ctx, tx, m.answerInteractionRepo, lockedSession.ID, turnID, outputs); err != nil {
 		return AnswerInteractionResult{}, err
 	}
 	if err := m.answerInteractionRepo.SetCurrentTurn(ctx, tx, lockedSession.ID, turnID); err != nil {

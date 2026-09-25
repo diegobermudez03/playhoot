@@ -160,7 +160,7 @@ type MatchOperationCase struct {
 // DrawRandomOperation draws one value from Generator and introduces it
 // as the immutable lexical binding Name, behaving lexically like the
 // binding LetOperation introduces. Drawing advances the enclosing
-// engineservice.Step call's candidate RandomState; per
+// Step call's candidate RandomState; per
 // program.DrawRandomOperation's documented atomicity, that advancement
 // is rolled back, along with every other candidate change, if the step
 // fails for any reason.

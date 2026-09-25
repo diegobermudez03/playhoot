@@ -17,7 +17,7 @@ import (
 // itself contains; a binding named "resources" in scope is shadowed, not
 // merged with p.Resources. Every nested evaluation this package performs
 // — a called engine.Function's body (evalCall), or, once
-// engineservice.NewSnapshot's initial-state construction reaches
+// NewSnapshot's initial-state construction reaches
 // invariants, "global" together with "resources" — carries this same
 // guarantee forward.
 //

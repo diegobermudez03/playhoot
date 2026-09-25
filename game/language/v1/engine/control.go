@@ -2,7 +2,7 @@ package engine
 
 // WorkflowControl is the compiled representation of one
 // program.WorkflowControl: the single result of a workflow transition,
-// evaluated by engineservice.Step after that transition's operation
+// evaluated by Step after that transition's operation
 // block finishes.
 //
 // WorkflowControl is a closed interface, mirroring program's own

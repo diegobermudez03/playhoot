@@ -23,7 +23,7 @@ Extended (2026-09-24, WORK-0028): also implement `game/docs/decisions/GAME-ADR-0
 - **WORK-0024** (Remove Child Workflow and Task Group) - DONE (2026-09-24). Three independent review passes were needed before a clean APPROVED state (each found a shrinking set of stale documentation/doc-comment references the previous pass's narrower sweep missed; no code-behavior defect beyond the original implementation was ever found). The one DECISION_REQUIRED finding (a forced, verified-behavior-preserving Session Runtime edit, plus a resulting untested `MaxSteps` bound) was resolved by explicit human decision, non-materially - see WORK-0024's own Completion Record.
 - **WORK-0025** (Keyed Question, Ask Group, and Timer Slots) - DONE (2026-09-24). Two independent review passes were needed: the first found one HIGH-severity bug (the Snapshot codec never persisted keyed-slot state - fixed, with a comprehensive round-trip test) plus several lower-severity findings, all fixed; the second, fresh pass re-verified every fix directly and reached a clean APPROVED verdict. Timer's keyed slot is included, finally implementing the long-unimplemented GAME-ADR-0012; Presentation's keyed capability is deferred, per Human Resolution. See its own Completion Record for full history.
 - **WORK-0026** (Engine-Owned Interaction Addressing) and **WORK-0027** (Session Runtime Interaction-Addressing Rework) - DONE (2026-09-24). Drafted, approved READY, and implemented together in one combined pass - see WORK-0026's own Human Resolution for why they could not be implemented independently. Reviewed together as one combined change; one REQUIRED_FIX (a stale doc-comment reference to a removed `SignalKind` constant in `engine/commit.go`) applied and re-verified. See WORK-0026's own Completion Record for the full review history.
-- **WORK-0028** (Engine-Owned Turn Execution) - DRAFT. Found during a post-closure audit explicitly requested to verify this Project actually achieved its own "consumer/caller should know nothing about engine internals" goal: `sessionlifecycle`'s own `internal/runtimeturn` package reimplements the engine's step-chaining loop (GAME-ADR-0019's `MaxSteps` bound, enforced caller-side) and `replay.go`'s `reconstructCurrentSnapshot`/`replayTurn` reimplement GAME-ADR-0024's replay mechanism - both on top of `engineservice.Step`, both requiring `sessionlifecycle` to hold and thread an `engine.Snapshot` through hand-rolled loops. Blocked on GAME-ADR-0027 (PROPOSED) reaching ACCEPTED before this WORK can move DRAFT -> READY.
+- **WORK-0028** (Engine-Owned Turn Execution) - IMPLEMENTING, implementation complete and self-reported ready for independent review (2026-09-24, human-approved "Approved, proceed"). Found during a post-closure audit explicitly requested to verify this Project actually achieved its own "consumer/caller should know nothing about engine internals" goal: `sessionlifecycle`'s own `internal/runtimeturn` package reimplemented the engine's step-chaining loop (GAME-ADR-0019's `MaxSteps` bound, enforced caller-side) and `replay.go`'s `reconstructCurrentSnapshot`/`replayTurn` reimplemented GAME-ADR-0024's replay mechanism - both on top of `engineservice.Step`, both requiring `sessionlifecycle` to hold and thread an `engine.Snapshot` through hand-rolled loops. `engineservice.Step`/`NewSnapshot` (confirmed one-line pass-throughs to `internal/runtime`, needed by no one once `sessionlifecycle` stopped calling them) were also removed - `engineservice`'s public surface now carries no "Step" vocabulary at all, per GAME-ADR-0027. See WORK-0028's own Completion Record for the full Implementation Report.
 
 ## Work
 
@@ -33,7 +33,7 @@ Extended (2026-09-24, WORK-0028): also implement `game/docs/decisions/GAME-ADR-0
 | 2 | WORK-0025 — Keyed Question, Ask Group, and Timer Slots | DONE |
 | 3 | WORK-0026 — Engine-Owned Interaction Addressing (`InteractionID`, unified answer signal, `Kind`) | DONE |
 | 4 | WORK-0027 — Session Runtime Interaction-Addressing Rework | DONE |
-| 5 | WORK-0028 — Engine-Owned Turn Execution (Replay and Step-Chain Draining) | DRAFT |
+| 5 | WORK-0028 — Engine-Owned Turn Execution (Replay and Step-Chain Draining) | IMPLEMENTING |
 
 ## Ordering / Dependencies
 
@@ -46,7 +46,7 @@ Extended (2026-09-24, WORK-0028): also implement `game/docs/decisions/GAME-ADR-0
 ## Material Decisions Needing Human Input
 
 - WORK-0027's `session_interactions` migration shape is confirmed (2026-09-24, approved alongside READY): replace `engine_path`/`engine_slot` outright, following `session-runtime-v1`'s WORK-0001 pre-launch-schema-replacement precedent - see WORK-0027's own Approved Design.
-- GAME-ADR-0027 needs explicit human ACCEPT/reject before WORK-0028 can move DRAFT -> READY.
+- ~~GAME-ADR-0027 needs explicit human ACCEPT/reject before WORK-0028 can move DRAFT -> READY.~~ **Resolved (2026-09-24)** - ACCEPTED, human-approved "Approved, proceed".
 - Whether `session-runtime-v1`'s WORK-0006 should wait for WORK-0028 to land first (see this WORK's own recommendation in "Ordering / Dependencies" above) is a sequencing call for whoever resumes WORK-0006, not decided here.
 
 ## Tracked Follow-Ups (Non-Blocking)

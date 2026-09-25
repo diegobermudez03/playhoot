@@ -363,15 +363,18 @@ const (
 	replayObservableQuestionName = "PickNumber"
 	replayObservableSlot         = "Q1"
 	replayObservableSlot2        = "Q2"
+	replayObservableSlot3        = "Q3"
 	replayRandomArgName          = "n"
 )
 
 // replayObservableDefinition builds a real, engineservice.Compile-able
-// Definition designed specifically so a test can verify replay
-// reconstruction against values the live execution actually produced,
+// Definition designed specifically so a test can verify AdvanceTurn's
+// internal replay against values the live execution actually produced,
 // rather than against values re-derived from the same durable rows replay
 // itself reads (which would only prove replay is consistent with itself,
-// not that it matches live execution).
+// not that it matches live execution) - entirely through Outputs, since
+// engineservice never hands a caller an engine.Snapshot to inspect
+// directly.
 //
 // At Start it draws a random number and exposes it as the first opened
 // question's own "n" argument - captured live into
@@ -379,12 +382,12 @@ const (
 // OpenQuestionOutput capture path, a channel entirely independent of
 // session_runtime_starts.seed. Once that question is answered, the
 // response is stored into global state ("a") and a second question is
-// opened; once that one is answered too, its response is stored into
-// global state ("b"). A reconstructed Snapshot's global state can then be
-// compared directly against the plain Go values a test passed to
-// AnswerInteraction, with no decoding of any persisted row on either side -
-// and the third Turn only produces a meaningful "b" if replay correctly
-// threaded the second Turn's answer through first.
+// opened, exposing "a" as its own argument. Once that one is answered too,
+// its response is stored into global state ("b") and a third question is
+// opened, exposing "b" as its own argument - the only way a test can
+// observe "b" without reading global state directly, and only reachable
+// if AdvanceTurn's internal replay correctly threaded the second Turn's
+// answer through first.
 func replayObservableDefinition(playersMin, playersMax int) program.Definition {
 	recipient := program.IndexExpression{
 		Target: program.ReferenceExpression{Name: "players"},
@@ -407,6 +410,7 @@ func replayObservableDefinition(playersMin, playersMax int) program.Definition {
 				{Name: "n", Type: numberType, Initializer: program.NumberLiteralExpression{Value: "0"}},
 				{Name: "a", Type: numberType, Initializer: program.NumberLiteralExpression{Value: "0"}},
 				{Name: "b", Type: numberType, Initializer: program.NumberLiteralExpression{Value: "0"}},
+				{Name: "c", Type: numberType, Initializer: program.NumberLiteralExpression{Value: "0"}},
 			},
 		},
 		Workflows: []program.WorkflowDeclaration{
@@ -420,6 +424,7 @@ func replayObservableDefinition(playersMin, playersMax int) program.Definition {
 				QuestionSlots: []program.QuestionSlotDeclaration{
 					{Name: replayObservableSlot, Question: replayObservableQuestionName},
 					{Name: replayObservableSlot2, Question: replayObservableQuestionName},
+					{Name: replayObservableSlot3, Question: replayObservableQuestionName},
 				},
 				States: []program.WorkflowStateDeclaration{
 					{
@@ -481,6 +486,27 @@ func replayObservableDefinition(playersMin, playersMax int) program.Definition {
 									program.SetOperation{
 										Target: program.FieldTarget{Target: program.NameTarget{Name: "global"}, Field: "b"},
 										Value:  program.ReferenceExpression{Name: "response2"},
+									},
+									program.OpenQuestionOperation{
+										Slot:      replayObservableSlot3,
+										Recipient: recipient,
+										Arguments: []program.CallArgument{
+											{Name: replayRandomArgName, Value: program.ReferenceExpression{Name: "response2"}},
+										},
+									},
+								}},
+								Control: program.StayControl{},
+							},
+							{
+								Name: "ThirdAnswered",
+								Signal: program.SignalPattern{
+									Source:   program.QuestionAnsweredSignalSource{Slot: replayObservableSlot3},
+									Bindings: []program.SignalBinding{{Field: "answer", Name: "response3"}},
+								},
+								Operations: program.Block{Operations: []program.Operation{
+									program.SetOperation{
+										Target: program.FieldTarget{Target: program.NameTarget{Name: "global"}, Field: "c"},
+										Value:  program.ReferenceExpression{Name: "response3"},
 									},
 								}},
 								Control: program.StayControl{},

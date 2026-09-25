@@ -63,12 +63,12 @@ type Program struct {
 
 	// GlobalState holds the compiled fields of
 	// program.Definition.GlobalState, in declaration order.
-	// engineservice.NewSnapshot evaluates these once per new game
+	// NewSnapshot evaluates these once per new game
 	// instance to build that instance's initial global state.
 	GlobalState []StateField
 
 	// Invariants holds every compiled program.InvariantDeclaration.
-	// engineservice.NewSnapshot evaluates every one of these against a
+	// NewSnapshot evaluates every one of these against a
 	// new game instance's initial global state and rejects
 	// initialization atomically if any is false or fails to evaluate.
 	Invariants []Invariant
@@ -76,7 +76,7 @@ type Program struct {
 	// Questions holds every compiled program.QuestionDeclaration, keyed
 	// by declared name. A workflow's OpenQuestionOperation validates its
 	// Arguments against the named entry's Parameters at compile time;
-	// engineservice.Step evaluates its Validation, if any, against a
+	// Step evaluates its Validation, if any, against a
 	// submitted answer before ever producing a
 	// QuestionAnsweredSignalSource signal.
 	Questions map[string]Question
@@ -107,7 +107,7 @@ type Program struct {
 	// semantically validated — see engineservice's compile_workflows.go.
 	Workflows map[string]Workflow
 
-	// RootWorkflow names the Workflow engineservice.NewSnapshot uses to
+	// RootWorkflow names the Workflow NewSnapshot uses to
 	// start a new game instance. The compiler guarantees it names an
 	// entry in Workflows.
 	RootWorkflow string

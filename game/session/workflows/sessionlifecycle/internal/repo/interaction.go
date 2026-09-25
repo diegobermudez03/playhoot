@@ -142,11 +142,11 @@ func (r *Repo) CloseActiveInteraction(ctx context.Context, tx *gorm.DB, sessionI
 
 // CloseAnsweredInteraction closes interactionID directly by id and persists
 // its accepted response payload, as Turn-produced closure. This is separate
-// from CloseActiveInteraction's InteractionID-matched closure:
-// engineservice.Step clears an accepted answer's own slot internally,
-// before the transition's own authored operations run, and never produces a
-// CloseQuestionOutput for that closure - so the one specific interaction
-// AnswerInteraction targeted must be closed directly by its already-known
+// from CloseActiveInteraction's InteractionID-matched closure: the engine
+// clears an accepted answer's own slot internally, before the transition's
+// own authored operations run, and never produces a CloseQuestionOutput for
+// that closure - so the one specific interaction AnswerInteraction targeted
+// must be closed directly by its already-known
 // id, not discovered via captured Outputs.
 func (r *Repo) CloseAnsweredInteraction(ctx context.Context, tx *gorm.DB, interactionID uint, responsePayload []byte, closedByTurnID uint) error {
 	if err := tx.WithContext(ctx).Exec(`

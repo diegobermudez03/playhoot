@@ -9,7 +9,6 @@ import (
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine"
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine/engineservice"
 	"github.com/diegobermudez03/playhoot/game/session"
-	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/runtimeturn"
 	"gorm.io/gorm"
 )
 
@@ -23,51 +22,51 @@ type interactionCaptureRepoAPI interface {
 }
 
 // captureInteractions durably records every engine.OpenQuestionOutput/
-// CloseQuestionOutput produced anywhere within a just-drained RuntimeTurn
-// (steps, in Step-call order) as session_interactions rows opened/closed by
-// turnID. Every step that persists a RuntimeTurn must call this so a
-// question/ask-group instance a Turn opens is never left unrecorded.
+// CloseQuestionOutput produced by a just-processed RuntimeTurn as
+// session_interactions rows opened/closed by turnID. Every step that
+// persists a RuntimeTurn must call this so a question/ask-group instance a
+// Turn opens is never left unrecorded.
+//
+// outputs is the flat, ordered Output list engineservice.StartTurn/
+// AdvanceTurn already return for one Turn - this package has no reason to
+// know, and never needs to know, how many internal engine Steps produced
+// them.
 //
 // Each Output already carries its own engine-assigned InteractionID and Kind
 // (QUESTION vs ASK_GROUP) directly - no compiled Program lookup is needed to
 // classify what was opened.
-func captureInteractions(ctx context.Context, tx *gorm.DB, repo interactionCaptureRepoAPI, sessionID uint, turnID uint, steps []runtimeturn.StepTrace) error {
-	for _, step := range steps {
-		if len(step.Outputs) == 0 {
-			continue
-		}
-		for _, output := range step.Outputs {
-			switch o := output.(type) {
-			case engine.OpenQuestionOutput:
-				actorID, err := parseActorID(o.Recipient)
-				if err != nil {
-					return fmt.Errorf("parsing interaction recipient: %s", err)
-				}
-				kind, err := interactionKindLabel(o.Kind)
-				if err != nil {
-					return err
-				}
-				payload, err := encodeInteractionPayload(o.Question, o.Arguments)
-				if err != nil {
-					return fmt.Errorf("encoding interaction payload: %s", err)
-				}
-				if _, err := repo.CreateInteraction(ctx, tx, sessionID, actorID, kind, uint64(o.InteractionID), payload, turnID); err != nil {
-					return err
-				}
-			case engine.CloseQuestionOutput:
-				// Only ever produced by an authored CloseQuestionOperation
-				// explicitly closing a still-pending question without an
-				// answer (cleanup, cancellation, abandonment). Answering a
-				// question never reaches here: the engine clears an accepted
-				// answer's own slot internally, before the transition's own
-				// operations run, and produces no Output for that closure.
-				actorID, err := parseActorID(o.Recipient)
-				if err != nil {
-					return fmt.Errorf("parsing interaction recipient: %s", err)
-				}
-				if err := repo.CloseActiveInteraction(ctx, tx, sessionID, uint64(o.InteractionID), actorID, turnID); err != nil {
-					return err
-				}
+func captureInteractions(ctx context.Context, tx *gorm.DB, repo interactionCaptureRepoAPI, sessionID uint, turnID uint, outputs []engine.Output) error {
+	for _, output := range outputs {
+		switch o := output.(type) {
+		case engine.OpenQuestionOutput:
+			actorID, err := parseActorID(o.Recipient)
+			if err != nil {
+				return fmt.Errorf("parsing interaction recipient: %s", err)
+			}
+			kind, err := interactionKindLabel(o.Kind)
+			if err != nil {
+				return err
+			}
+			payload, err := encodeInteractionPayload(o.Question, o.Arguments)
+			if err != nil {
+				return fmt.Errorf("encoding interaction payload: %s", err)
+			}
+			if _, err := repo.CreateInteraction(ctx, tx, sessionID, actorID, kind, uint64(o.InteractionID), payload, turnID); err != nil {
+				return err
+			}
+		case engine.CloseQuestionOutput:
+			// Only ever produced by an authored CloseQuestionOperation
+			// explicitly closing a still-pending question without an
+			// answer (cleanup, cancellation, abandonment). Answering a
+			// question never reaches here: the engine clears an accepted
+			// answer's own slot internally, before the transition's own
+			// operations run, and produces no Output for that closure.
+			actorID, err := parseActorID(o.Recipient)
+			if err != nil {
+				return fmt.Errorf("parsing interaction recipient: %s", err)
+			}
+			if err := repo.CloseActiveInteraction(ctx, tx, sessionID, uint64(o.InteractionID), actorID, turnID); err != nil {
+				return err
 			}
 		}
 	}

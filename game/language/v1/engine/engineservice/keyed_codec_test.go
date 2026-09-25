@@ -5,6 +5,7 @@ import (
 
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine"
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine/engineservice"
+	"github.com/diegobermudez03/playhoot/game/language/v1/engine/internal/runtime"
 	"github.com/diegobermudez03/playhoot/game/language/v1/program"
 )
 
@@ -99,11 +100,11 @@ func keyedSnapshotProgram() engine.Program {
 // only inspectable.
 func TestCodec_KeyedSlotsRoundTrip(t *testing.T) {
 	p := keyedSnapshotProgram()
-	snap, startSignal, err := engineservice.NewSnapshot(p, engine.InitializationInput{Seed: 1})
+	snap, startSignal, err := runtime.NewSnapshot(p, engine.InitializationInput{Seed: 1})
 	if err != nil {
 		t.Fatalf("unexpected NewSnapshot error: %v", err)
 	}
-	commit, err := engineservice.Step(p, snap, startSignal, engine.DefaultLimits())
+	commit, err := runtime.Step(p, snap, startSignal, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error applying WorkflowStarted: %v", err)
 	}
@@ -114,7 +115,7 @@ func TestCodec_KeyedSlotsRoundTrip(t *testing.T) {
 
 	step := func(s engine.Signal) {
 		t.Helper()
-		commit, err = engineservice.Step(p, snap, s, engine.DefaultLimits())
+		commit, err = runtime.Step(p, snap, s, engine.DefaultLimits())
 		if err != nil {
 			t.Fatalf("unexpected error applying %+v: %v", s, err)
 		}
@@ -143,7 +144,7 @@ func TestCodec_KeyedSlotsRoundTrip(t *testing.T) {
 		"key":        engine.StringValue{Value: "team1"},
 		"recipients": engine.ListValue{ElementType: engine.UserType{}, Elements: []engine.Value{engine.UserValue{ID: userA}, engine.UserValue{ID: userB}}},
 	}})
-	commit, err = engineservice.Step(p, snap, engine.Signal{
+	commit, err = runtime.Step(p, snap, engine.Signal{
 		Kind: engine.SignalKindInteractionAnswered, InteractionID: askGroupID("team1"), Respondent: userA, Answer: engine.BoolValue{Value: true},
 	}, engine.DefaultLimits())
 	if err != nil {
@@ -192,7 +193,7 @@ func TestCodec_KeyedSlotsRoundTrip(t *testing.T) {
 		t.Fatalf("expected only k1 to remain pending after answering k2 post-decode, got %+v", qSlotAfter)
 	}
 
-	commit, err = engineservice.Step(p, snap, engine.Signal{
+	commit, err = runtime.Step(p, snap, engine.Signal{
 		Kind: engine.SignalKindInteractionAnswered, InteractionID: askGroupID("team1"), Respondent: userB, Answer: engine.BoolValue{Value: false},
 	}, engine.DefaultLimits())
 	if err != nil {

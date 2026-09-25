@@ -57,22 +57,23 @@ func (l *lobby) CanStart() bool {
 	return l.program.Players.Max == 0 || len(l.users) <= l.program.Players.Max
 }
 
-// StartGame freezes the lobby membership into the root workflow parameters and
-// creates the first engine Snapshot. The compiled Program must already have a
-// root workflow parameter compatible with:
+// StartGame freezes the lobby membership into the root workflow parameters,
+// ready to hand to engineservice.StartTurn for the session's first turn. The
+// compiled Program must already have a root workflow parameter compatible
+// with:
 //
 //	parameters: [{ name: "players", type: list<user> }]
 //
 // From this point on, users are ordinary engine values. The definition can
 // store them in global state, use them as presentation targets, ask questions
 // to them, check turn ownership, and bind the actor of user intents.
-func (l *lobby) StartGame(seed uint64) (engine.Snapshot, engine.Signal, error) {
+func (l *lobby) StartGame(seed uint64) (engine.InitializationInput, error) {
 	if !l.CanStart() {
 		max := "unbounded"
 		if l.program.Players.Max > 0 {
 			max = fmt.Sprintf("%d", l.program.Players.Max)
 		}
-		return engine.Snapshot{}, engine.Signal{}, fmt.Errorf(
+		return engine.InitializationInput{}, fmt.Errorf(
 			"cannot start game with %d players; need %d-%s",
 			len(l.users),
 			l.program.Players.Min,
@@ -85,7 +86,7 @@ func (l *lobby) StartGame(seed uint64) (engine.Snapshot, engine.Signal, error) {
 		playerValues = append(playerValues, engine.UserValue{ID: user})
 	}
 
-	return engineservice.NewSnapshot(l.program, engine.InitializationInput{
+	return engine.InitializationInput{
 		RootParameters: map[string]engine.Value{
 			"players": engine.ListValue{
 				ElementType: engine.UserType{},
@@ -93,7 +94,7 @@ func (l *lobby) StartGame(seed uint64) (engine.Snapshot, engine.Signal, error) {
 			},
 		},
 		Seed: seed,
-	})
+	}, nil
 }
 
 func exampleUsersSetup(compiledProgram engine.Program) error {
@@ -105,16 +106,11 @@ func exampleUsersSetup(compiledProgram engine.Program) error {
 		return err
 	}
 
-	snapshot, startSignal, err := l.StartGame(12345)
+	start, err := l.StartGame(12345)
 	if err != nil {
 		return err
 	}
 
-	commit, err := engineservice.Step(compiledProgram, snapshot, startSignal, engine.DefaultLimits())
-	if err != nil {
-		return err
-	}
-
-	_ = commit.Snapshot
-	return nil
+	_, err = engineservice.StartTurn(compiledProgram, start, engine.DefaultLimits())
+	return err
 }

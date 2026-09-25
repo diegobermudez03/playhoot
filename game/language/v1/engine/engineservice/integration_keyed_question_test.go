@@ -5,13 +5,14 @@ import (
 
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine"
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine/engineservice"
+	"github.com/diegobermudez03/playhoot/game/language/v1/engine/internal/runtime"
 	"github.com/diegobermudez03/playhoot/game/language/v1/program"
 )
 
 // TestIntegration_AsynchronousQuizWithKeyedQuestionSlot exercises the
-// full engineservice.Compile -> engineservice.NewSnapshot ->
-// engineservice.Step pipeline for an asynchronous, self-paced quiz: two
-// players each progress through their own independent question at their
+// full engineservice.Compile -> NewSnapshot -> Step pipeline for an
+// asynchronous, self-paced quiz: two players each progress through
+// their own independent question at their
 // own pace (opened and answered in either order), and the game only
 // completes once both have answered — proving the keyed family's whole
 // author-facing-JSON-shape-through-execution pipeline composes
@@ -114,11 +115,11 @@ func TestIntegration_AsynchronousQuizWithKeyedQuestionSlot(t *testing.T) {
 		t.Fatalf("unexpected compile errors: %v", diags)
 	}
 
-	snap, startSignal, err := engineservice.NewSnapshot(p, engine.InitializationInput{Seed: 1})
+	snap, startSignal, err := runtime.NewSnapshot(p, engine.InitializationInput{Seed: 1})
 	if err != nil {
-		t.Fatalf("unexpected engineservice.NewSnapshot error: %v", err)
+		t.Fatalf("unexpected NewSnapshot error: %v", err)
 	}
-	commit, err := engineservice.Step(p, snap, startSignal, engine.DefaultLimits())
+	commit, err := runtime.Step(p, snap, startSignal, engine.DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error applying WorkflowStarted: %v", err)
 	}
@@ -128,7 +129,7 @@ func TestIntegration_AsynchronousQuizWithKeyedQuestionSlot(t *testing.T) {
 	const playerB = engine.UserID("player-b")
 
 	ask := func(key string, recipient engine.UserID) {
-		commit, err = engineservice.Step(p, snap, engine.Signal{
+		commit, err = runtime.Step(p, snap, engine.Signal{
 			Kind: engine.SignalKindIntent, Intent: "Ask",
 			Fields: map[string]engine.Value{"key": engine.StringValue{Value: key}, "recipient": engine.UserValue{ID: recipient}},
 		}, engine.DefaultLimits())
@@ -151,7 +152,7 @@ func TestIntegration_AsynchronousQuizWithKeyedQuestionSlot(t *testing.T) {
 		return 0
 	}
 	answer := func(key string, respondent engine.UserID, value float64) {
-		commit, err = engineservice.Step(p, snap, engine.Signal{
+		commit, err = runtime.Step(p, snap, engine.Signal{
 			Kind: engine.SignalKindInteractionAnswered, InteractionID: interactionID(key), Respondent: respondent, Answer: engine.NumberValue{Value: value},
 		}, engine.DefaultLimits())
 		if err != nil {

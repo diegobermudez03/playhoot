@@ -6,7 +6,7 @@ type SignalKind int
 const (
 	// SignalKindNamed is the zero value: Name identifies a named
 	// platform or lifecycle signal (see engineservice's named lifecycle
-	// signal catalog) — the only kind engineservice.NewSnapshot
+	// signal catalog) — the only kind NewSnapshot
 	// produces, as the "first lifecycle signal" LOGICAL_CONTRACT.md
 	// requires.
 	SignalKindNamed SignalKind = iota
@@ -41,7 +41,7 @@ const (
 	// Key, or its own classification of which kind of interaction it
 	// is answering.
 	//
-	// For a Question occurrence: engineservice.Step verifies Respondent
+	// For a Question occurrence: Step verifies Respondent
 	// against the occurrence's pending recipient, validates Answer
 	// against the question's response type and Validation expression,
 	// and rejects a stale, duplicate, unauthorized, invalid, or
@@ -52,7 +52,7 @@ const (
 	// one never itself selects or runs a transition when answering an
 	// Ask Group — per program.AskGroupCompletedSignalSource, an ask
 	// group "never produces a signal per individual answer".
-	// engineservice.Step instead validates Respondent is a current,
+	// Step instead validates Respondent is a current,
 	// not-yet-answered recipient of the occurrence's still-collecting
 	// group, validates Answer the same way, and, if accepted, records
 	// the answer and re-evaluates the group's completion policy — all
@@ -63,7 +63,7 @@ const (
 	// occurrence addressed by InteractionID is completed-awaiting-join
 	// — its completion policy was satisfied naturally, or a
 	// Finalize(Keyed)AskGroupOperation forced it. Signal carries no
-	// other payload; engineservice.Step reads the group's durable
+	// other payload; Step reads the group's durable
 	// "responses", "respondents", and "missing" data directly from the
 	// resolved occurrence. A stale, duplicate, or unresolvable-
 	// InteractionID delivery (already joined and cleared, or unknown)
@@ -74,7 +74,7 @@ const (
 	SignalKindInteractionCompleted
 )
 
-// Signal is one runtime input to engineservice.Step: something that
+// Signal is one runtime input to Step: something that
 // happened, together with whatever payload its schema exposes for
 // binding — see engine.SignalPattern and engine.SignalBinding. Which
 // fields are meaningful depends on Kind; see each SignalKind constant.

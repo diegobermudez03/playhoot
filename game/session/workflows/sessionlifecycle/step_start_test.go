@@ -17,9 +17,11 @@ import (
 // meaningfully. That business logic is proven instead by this package's
 // TestManagerStart_Integration* tests against a real disposable database.
 //
-// The RuntimeTurn-draining logic itself (the Step-bound/atomicity mechanism)
-// is proven independently, without a real DB, by internal/runtimeturn's own
-// TestDrain.
+// The Turn-draining logic itself (the Step-chain-bound/atomicity mechanism)
+// is proven independently, without a real DB, by engineservice's own
+// TestAdvanceTurn/TestStartTurn tests, since this package never
+// implements any part of that mechanism itself - it only supplies
+// engineservice with the durable signal log and reads back Outputs.
 func TestManagerStart(t *testing.T) {
 	m := &Manager{}
 

@@ -2,7 +2,7 @@ package engine
 
 // Workflow is the compiled representation of one
 // program.WorkflowDeclaration, fully resolved, semantically validated,
-// and executable by engineservice.Step — see Transition's doc comment
+// and executable by Step — see Transition's doc comment
 // for the compiled shape of one transition.
 type Workflow struct {
 	Name       string
@@ -27,7 +27,7 @@ type Workflow struct {
 	InitialState string
 
 	// GlobalTransitions are workflow-level fallback transitions that
-	// may apply from any current state. engineservice.Step gives a
+	// may apply from any current state. Step gives a
 	// state-local transition priority over a global one for the same
 	// signal.
 	GlobalTransitions []Transition

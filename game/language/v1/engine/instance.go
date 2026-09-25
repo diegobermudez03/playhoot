@@ -23,7 +23,7 @@ type WorkflowInstance struct {
 
 	// LocalState is this instance's mutable, workflow-local state,
 	// evaluated once at creation from its Workflow's declared
-	// LocalState and mutated in place by engineservice.Step's compiled
+	// LocalState and mutated in place by Step's compiled
 	// operations. Its TypeName is always the reserved scope root name
 	// "local" — never a name declared in Program.Types.
 	LocalState RecordValue
@@ -54,7 +54,7 @@ type QuestionSlotInstance struct {
 
 // PendingQuestion is one concrete, in-flight question instance: the
 // user it was opened for and the arguments captured when it opened —
-// see program.OpenQuestionOperation. engineservice.Step is what creates
+// see program.OpenQuestionOperation. Step is what creates
 // one. InteractionID is assigned once at open time from
 // Snapshot.NextInteractionID and never changes afterward.
 type PendingQuestion struct {

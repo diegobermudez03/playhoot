@@ -6,36 +6,35 @@ import (
 
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine"
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine/engineservice"
-	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/runtimeturn"
 	"github.com/stretchr/testify/require"
 )
 
 // TestReplayObservableDefinitionFixture proves replayObservableDefinition
 // itself behaves the way TestReconstructCurrentSnapshot_Integration relies
 // on: the random draw at Start is both exposed as Q1's own argument and
-// stored into global state under the same value, and each answer threads
-// into global state in turn, opening the next question only when expected.
-// It needs no database - it drives the fixture directly through
-// engineservice/internal/runtimeturn - so it exercises the fixture's
-// mechanics even in an environment with no reachable Postgres.
+// threaded into Q2's own argument once answered, and each subsequent
+// answer threads into the next opened question's argument in turn - all
+// observable purely through engineservice.StartTurn/AdvanceTurn's own
+// Outputs, since neither hands a caller an engine.Snapshot to inspect
+// directly. It needs no database - it drives the fixture directly through
+// engineservice - so it exercises the fixture's mechanics even in an
+// environment with no reachable Postgres.
 func TestReplayObservableDefinitionFixture(t *testing.T) {
 	def := replayObservableDefinition(1, 1)
 	compiledProgram, diagnostics := engineservice.Compile(def)
 	require.False(t, diagnostics.HasErrors(), "%v", diagnostics)
 
 	players := []engine.Value{engine.UserValue{ID: "1"}}
-	snapshot, startSignal, err := engineservice.NewSnapshot(compiledProgram, engine.InitializationInput{
+	start := engine.InitializationInput{
 		RootParameters: map[string]engine.Value{"players": engine.ListValue{ElementType: engine.UserType{}, Elements: players}},
 		Seed:           12345,
-	})
-	require.NoError(t, err)
+	}
 
-	drain1 := runtimeturn.Drain(compiledProgram, snapshot, startSignal)
-	require.NoError(t, drain1.Err)
-	require.Len(t, drain1.Steps, 1)
-	require.Len(t, drain1.Steps[0].Outputs, 1)
-	openQ1, ok := drain1.Steps[0].Outputs[0].(engine.OpenQuestionOutput)
-	require.True(t, ok, "%#v", drain1.Steps[0].Outputs[0])
+	outputs1, err := engineservice.StartTurn(compiledProgram, start, engine.DefaultLimits())
+	require.NoError(t, err)
+	require.Len(t, outputs1, 1)
+	openQ1, ok := outputs1[0].(engine.OpenQuestionOutput)
+	require.True(t, ok, "%#v", outputs1[0])
 	require.Equal(t, replayObservableSlot, openQ1.Slot)
 	require.Len(t, openQ1.Arguments, 1)
 	require.Equal(t, replayRandomArgName, openQ1.Arguments[0].Name)
@@ -43,29 +42,20 @@ func TestReplayObservableDefinitionFixture(t *testing.T) {
 	require.True(t, ok)
 	t.Logf("drawn n = %v", nValue.Value)
 
-	nField, ok := drain1.Snapshot.GlobalState.FieldByName("n")
-	require.True(t, ok)
-	require.Equal(t, nValue.Value, nField.Value.(engine.NumberValue).Value, "global.n must equal the same drawn value exposed as the question argument")
-
 	answerSignal1 := engine.Signal{
 		Kind:          engine.SignalKindInteractionAnswered,
 		InteractionID: openQ1.InteractionID,
 		Respondent:    engine.UserID(strconv.FormatUint(1, 10)),
 		Answer:        engine.NumberValue{Value: 111},
 	}
-	drain2 := runtimeturn.Drain(compiledProgram, drain1.Snapshot, answerSignal1)
-	require.NoError(t, drain2.Err, "%v", drain2.Err)
-	require.Len(t, drain2.Steps, 1)
-	require.Len(t, drain2.Steps[0].Outputs, 1)
-	openQ2, ok := drain2.Steps[0].Outputs[0].(engine.OpenQuestionOutput)
-	require.True(t, ok, "%#v", drain2.Steps[0].Outputs[0])
+	outputs2, err := engineservice.AdvanceTurn(compiledProgram, start, nil, answerSignal1, engine.DefaultLimits())
+	require.NoError(t, err, "%v", err)
+	require.Len(t, outputs2, 1)
+	openQ2, ok := outputs2[0].(engine.OpenQuestionOutput)
+	require.True(t, ok, "%#v", outputs2[0])
 	require.Equal(t, replayObservableSlot2, openQ2.Slot)
 	require.Len(t, openQ2.Arguments, 1)
-	require.Equal(t, float64(111), openQ2.Arguments[0].Value.(engine.NumberValue).Value)
-
-	aField, ok := drain2.Snapshot.GlobalState.FieldByName("a")
-	require.True(t, ok)
-	require.Equal(t, float64(111), aField.Value.(engine.NumberValue).Value)
+	require.Equal(t, float64(111), openQ2.Arguments[0].Value.(engine.NumberValue).Value, "global.a must equal the literal answer submitted for Q1, threaded into Q2's own argument")
 
 	answerSignal2 := engine.Signal{
 		Kind:          engine.SignalKindInteractionAnswered,
@@ -73,11 +63,12 @@ func TestReplayObservableDefinitionFixture(t *testing.T) {
 		Respondent:    engine.UserID(strconv.FormatUint(1, 10)),
 		Answer:        engine.NumberValue{Value: 222},
 	}
-	drain3 := runtimeturn.Drain(compiledProgram, drain2.Snapshot, answerSignal2)
-	require.NoError(t, drain3.Err, "%v", drain3.Err)
-	require.Empty(t, drain3.Steps[0].Outputs, "answering Q2 must not open a further question")
-
-	bField, ok := drain3.Snapshot.GlobalState.FieldByName("b")
-	require.True(t, ok)
-	require.Equal(t, float64(222), bField.Value.(engine.NumberValue).Value)
+	outputs3, err := engineservice.AdvanceTurn(compiledProgram, start, []engine.Signal{answerSignal1}, answerSignal2, engine.DefaultLimits())
+	require.NoError(t, err, "%v", err)
+	require.Len(t, outputs3, 1, "answering Q2 must open Q3")
+	openQ3, ok := outputs3[0].(engine.OpenQuestionOutput)
+	require.True(t, ok, "%#v", outputs3[0])
+	require.Equal(t, replayObservableSlot3, openQ3.Slot)
+	require.Len(t, openQ3.Arguments, 1)
+	require.Equal(t, float64(222), openQ3.Arguments[0].Value.(engine.NumberValue).Value, "global.b must equal the literal answer submitted for Q2, threaded into Q3's own argument - only reachable if AdvanceTurn's internal replay correctly threaded Q1's answer through first")
 }

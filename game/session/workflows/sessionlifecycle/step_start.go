@@ -15,7 +15,6 @@ import (
 	"github.com/diegobermudez03/playhoot/game/session/internal/idempotency"
 	"github.com/diegobermudez03/playhoot/game/session/internal/sessionlock"
 	internalrepo "github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/repo"
-	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/runtimeturn"
 	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/monitoring"
 	"github.com/diegobermudez03/playhoot/utils"
@@ -229,18 +228,13 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 	rootParameters := map[string]engine.Value{
 		"players": engine.ListValue{ElementType: engine.UserType{}, Elements: players},
 	}
-	snapshot, startSignal, err := engineservice.NewSnapshot(compiledProgram, engine.InitializationInput{
+	outputs, err := engineservice.StartTurn(compiledProgram, engine.InitializationInput{
 		RootParameters: rootParameters,
 		Seed:           seed,
-	})
+	}, engine.DefaultLimits())
 	if err != nil {
 		// Everything downstream of a successful compile that fails is
 		// treated as RUNTIME_EXECUTION_FAILED.
-		return m.terminalizeStartFatal(ctx, tx, lockedSession, requestID, now, session.TerminalReasonRuntimeExecutionFailed)
-	}
-
-	drainResult := runtimeturn.Drain(compiledProgram, snapshot, startSignal)
-	if drainResult.Err != nil {
 		return m.terminalizeStartFatal(ctx, tx, lockedSession, requestID, now, session.TerminalReasonRuntimeExecutionFailed)
 	}
 
@@ -255,7 +249,7 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 	if err := m.startRepo.CreateRuntimeStart(ctx, tx, lockedSession.ID, seed, encodedRootParameters); err != nil {
 		return StartResult{}, err
 	}
-	if err := captureInteractions(ctx, tx, m.startRepo, lockedSession.ID, turnID, drainResult.Steps); err != nil {
+	if err := captureInteractions(ctx, tx, m.startRepo, lockedSession.ID, turnID, outputs); err != nil {
 		return StartResult{}, err
 	}
 	if err := m.startRepo.SetCurrentTurn(ctx, tx, lockedSession.ID, turnID); err != nil {

@@ -30,9 +30,9 @@ const (
 // calls, rather than one shared repository interface - even though a single
 // concrete internal/repo.Repo currently satisfies all of them - so adding a
 // method for one step never forces every other step's interface, mock, and
-// test to change with it. The shared RuntimeTurn Step-draining/bound
-// execution mechanism lives in `internal/runtimeturn`, scoped to this
-// workflow package.
+// test to change with it. RuntimeTurn draining/bound execution is entirely
+// owned by `engineservice.StartTurn`/`AdvanceTurn` - this package never
+// implements any part of the engine's own execution model itself.
 //
 // Manager decides transaction scope itself by calling
 // utils.RunInDBTransaction directly, rather than holding a separate injected

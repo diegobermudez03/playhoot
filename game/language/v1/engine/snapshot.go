@@ -4,7 +4,7 @@ package engine
 // Snapshot for one new game instance of a Program.
 type InitializationInput struct {
 	// RootParameters supplies one argument value per the root
-	// workflow's declared Parameters, by name. engineservice.NewSnapshot
+	// workflow's declared Parameters, by name. NewSnapshot
 	// validates each against its declared Type with Value.Validate
 	// before trusting it, since these values come from outside the
 	// compiler's control.
@@ -26,7 +26,7 @@ type InitializationInput struct {
 // state, and declared runtime slots), deterministic random state, and
 // the current engine sequence.
 //
-// A Snapshot is never mutated in place. engineservice.Step takes a
+// A Snapshot is never mutated in place. Step takes a
 // Snapshot and produces a new one inside its returned Commit; the
 // original Snapshot value remains valid and unchanged. A Snapshot is
 // self-contained enough to stop and resume execution between any two
@@ -40,7 +40,7 @@ type InitializationInput struct {
 // the Program in hand.
 type Snapshot struct {
 	// GlobalState is this game instance's mutable global state,
-	// evaluated once by engineservice.NewSnapshot from
+	// evaluated once by NewSnapshot from
 	// Program.GlobalState and, until a future step adds operations that
 	// mutate it, unchanged for the instance's lifetime. Its TypeName is
 	// always the reserved scope root name "global" — see
@@ -56,16 +56,16 @@ type Snapshot struct {
 	Random RandomState
 
 	// Sequence is the number of steps committed against this game
-	// instance so far. engineservice.NewSnapshot always starts it at 0;
-	// a future engineservice.Step increments it by exactly one per
+	// instance so far. NewSnapshot always starts it at 0;
+	// a future Step increments it by exactly one per
 	// committed Commit.
 	Sequence uint64
 
 	// NextInteractionID is the InteractionID that will be assigned to
 	// the next opened Question or Ask Group occurrence, the same
 	// category of durable, replay-safe counter as Sequence.
-	// engineservice.NewSnapshot always starts it at 1 (0 is reserved —
-	// see InteractionID); a future engineservice.Step consumes and
+	// NewSnapshot always starts it at 1 (0 is reserved —
+	// see InteractionID); a future Step consumes and
 	// increments it once per opened occurrence, so a single Step that
 	// opens several occurrences assigns each a distinct, increasing ID.
 	NextInteractionID InteractionID

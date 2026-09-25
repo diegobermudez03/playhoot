@@ -20,6 +20,8 @@ Program + Snapshot + Signal
     → Commit
 ```
 
+`Snapshot`/`Commit`/`step` above are `engine`'s own internal logical model — `internal/runtime.NewSnapshot`/`Step` implement them directly, and every `Signal` a Turn requires (an implicit chain, when a Step's own operations produce further signals for the engine itself to apply) is drained through repeated internal `step` calls before a Turn is considered finished. `engineservice`'s actual public entry points are Turn-level (`StartTurn`/`AdvanceTurn`): a caller never constructs, holds, or reads a `Snapshot`, and never sees the internal `step`/`Commit` chaining directly — see `game/language/v1/engine/README.md`. `AdvanceTurn` reconstructs current state itself, by internally replaying every already-committed signal a caller supplies as an ordered log, rather than a caller ever holding a `Snapshot` across calls.
+
 Accepted Session Runtime root initialization contract, not yet implemented as a
 complete validated contract:
 

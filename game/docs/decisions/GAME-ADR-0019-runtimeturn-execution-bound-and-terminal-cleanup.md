@@ -118,3 +118,7 @@ Rejected. Retrying a Start that will deterministically fail again against the sa
 ## Implementation Impact
 
 None. No constant/configuration value, migration, terminal-cleanup transaction code, Start implementation, or diagnostic error-code implementation is authorized by this record. The exact constant name/location, closure-reason enum values, and stable error-code string remain implementation-planning decisions.
+
+### Implemented by
+
+`docs/projects/active/game-language-flat-execution-model/works/WORK-0028-engine-owned-turn-execution.md` (via `game/docs/decisions/GAME-ADR-0027-engine-owned-turn-execution-and-replay.md`) relocates this record's `MAX_STEPS_PER_RUNTIME_TURN` bound's mechanical enforcement from a `sessionlifecycle`-owned constant/loop to `engine.Limits.MaxStepsPerTurn` (defaulted to this record's own accepted value, 20), enforced inside `engineservice.StartTurn`/`AdvanceTurn` and surfaced as `ExecutionErrorStepChainExceeded`. This record's own accepted content - the bound's value, its status as Session-Runtime-configured (not authored-game) policy, its `RUNTIME_EXECUTION_FAILED` classification, its diagnostic-code requirement, and every terminal-cleanup/`base_turn_id` rule - is unaffected and restated by GAME-ADR-0027.

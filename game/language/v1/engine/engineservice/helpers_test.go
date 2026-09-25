@@ -2,7 +2,7 @@ package engineservice_test
 
 import (
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine"
-	"github.com/diegobermudez03/playhoot/game/language/v1/engine/engineservice"
+	"github.com/diegobermudez03/playhoot/game/language/v1/engine/internal/runtime"
 	"github.com/diegobermudez03/playhoot/game/language/v1/program"
 )
 
@@ -10,10 +10,13 @@ import (
 // package's tests: minimal program.TypeReference builders, and
 // hand-built program.Definition/engine.Program fixtures supporting
 // CheckSnapshotCompatibility and the cross-package
-// compile->initialize->step integration tests. They are local, rather
+// compile->initialize->turn integration tests. They are local, rather
 // than shared with engine/internal/compiler's or engine/internal/runtime's
 // own test fixtures of similar shape, because engineservice cannot
-// import those internal packages' test files.
+// import those internal packages' test files. Fixtures that need to hand-
+// drive a raw engine.Snapshot (never exposed by engineservice's own
+// StartTurn/AdvanceTurn) call engine/internal/runtime directly, the same
+// way this package's own StartTurn/AdvanceTurn do internally.
 
 func numberType() program.TypeReference {
 	return program.BuiltinTypeReference{Type: program.BuiltinTypeNumber}
@@ -192,7 +195,7 @@ func askGroupSnapshot(recipients []engine.UserID) engine.Snapshot {
 
 func answerAskGroup(p engine.Program, snap engine.Snapshot, respondent engine.UserID, answer bool) (engine.Commit, error) {
 	id := snap.Root.AskGroupSlots[0].Pending.InteractionID
-	return engineservice.Step(p, snap, engine.Signal{Kind: engine.SignalKindInteractionAnswered, InteractionID: id, Respondent: respondent, Answer: engine.BoolValue{Value: answer}}, engine.DefaultLimits())
+	return runtime.Step(p, snap, engine.Signal{Kind: engine.SignalKindInteractionAnswered, InteractionID: id, Respondent: respondent, Answer: engine.BoolValue{Value: answer}}, engine.DefaultLimits())
 }
 
 // questionDemoProgram builds a hand-assembled engine.Program (bypassing

@@ -8,83 +8,55 @@ import (
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine"
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine/engineservice"
 	internalrepo "github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/repo"
-	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/runtimeturn"
 	"github.com/diegobermudez03/playhoot/monitoring"
 	"gorm.io/gorm"
 )
 
-// reconstructCurrentSnapshot deterministically rebuilds sessionID's current
-// authoritative engine.Snapshot purely from durable state - Start's
-// persisted Seed/RootParameters and the ordered session_runtime_turns
-// replay-input log, replayed against compiledProgram. It never reads or
-// relies on a persisted Snapshot of any kind, and holds no cache of its own:
-// every call replays from scratch, so this always reflects durable state
-// even after total process loss. compiledProgram is the caller's
-// already-compiled pinned Definition, so this never recompiles it a second
-// time.
-func (m *Manager) reconstructCurrentSnapshot(ctx context.Context, tx *gorm.DB, compiledProgram engine.Program, sessionID uint) (engine.Snapshot, error) {
+// loadPriorSignals loads sessionID's Start record and every already-
+// committed session_runtime_turns row, in order, and returns the
+// engine.InitializationInput Start requires plus the ordered engine.Signal
+// each subsequent turn drove - exactly what engineservice.AdvanceTurn needs
+// to internally reconstruct current runtime state and process a new signal.
+// This package never reconstructs an engine.Snapshot itself; that mechanism
+// is entirely owned by engineservice.
+func (m *Manager) loadPriorSignals(ctx context.Context, tx *gorm.DB, sessionID uint) (engine.InitializationInput, []engine.Signal, error) {
 	start, err := m.answerInteractionRepo.GetRuntimeStart(ctx, tx, sessionID)
 	if err != nil {
-		return engine.Snapshot{}, err
+		return engine.InitializationInput{}, nil, err
 	}
 	if start == nil {
 		monitoring.Alert(ctx, fmt.Sprintf("session %d has no runtime start record", sessionID))
-		return engine.Snapshot{}, fmt.Errorf("reconstructing session %d snapshot: no runtime start record", sessionID)
+		return engine.InitializationInput{}, nil, fmt.Errorf("loading session %d prior signals: no runtime start record", sessionID)
 	}
 	rootParameters, err := decodeRootParameters(start.RootParameters)
 	if err != nil {
 		monitoring.Alert(ctx, fmt.Sprintf("session %d has an undecodable runtime start record: %s", sessionID, err))
-		return engine.Snapshot{}, fmt.Errorf("reconstructing session %d snapshot: decoding root parameters: %s", sessionID, err)
+		return engine.InitializationInput{}, nil, fmt.Errorf("loading session %d prior signals: decoding root parameters: %s", sessionID, err)
 	}
+	input := engine.InitializationInput{RootParameters: rootParameters, Seed: start.Seed}
 
 	turns, err := m.answerInteractionRepo.ListRuntimeTurns(ctx, tx, sessionID)
 	if err != nil {
-		return engine.Snapshot{}, err
+		return engine.InitializationInput{}, nil, err
 	}
 	if len(turns) == 0 {
 		monitoring.Alert(ctx, fmt.Sprintf("session %d has no committed runtime turns", sessionID))
-		return engine.Snapshot{}, fmt.Errorf("reconstructing session %d snapshot: no committed runtime turns", sessionID)
+		return engine.InitializationInput{}, nil, fmt.Errorf("loading session %d prior signals: no committed runtime turns", sessionID)
 	}
 
-	snapshot, startSignal, err := engineservice.NewSnapshot(compiledProgram, engine.InitializationInput{
-		RootParameters: rootParameters,
-		Seed:           start.Seed,
-	})
-	if err != nil {
-		monitoring.Alert(ctx, fmt.Sprintf("session %d: replaying start initialization diverged from its original commit: %s", sessionID, err))
-		return engine.Snapshot{}, fmt.Errorf("reconstructing session %d snapshot: replaying start initialization: %s", sessionID, err)
-	}
-	current, err := replayTurn(compiledProgram, snapshot, startSignal, turns[0])
-	if err != nil {
-		monitoring.Alert(ctx, err.Error())
-		return engine.Snapshot{}, err
-	}
-
+	// turns[0] is Start's own turn - its driving signal is the engine's own
+	// synthesized WorkflowStarted, which engineservice.AdvanceTurn already
+	// reproduces internally and never needs supplied. Only turns after it
+	// have an externally-driven signal to reconstruct.
+	priorSignals := make([]engine.Signal, 0, len(turns)-1)
 	for _, turn := range turns[1:] {
 		signal, err := m.loadReplaySignal(ctx, tx, turn)
 		if err != nil {
-			return engine.Snapshot{}, err
+			return engine.InitializationInput{}, nil, err
 		}
-		current, err = replayTurn(compiledProgram, current, signal, turn)
-		if err != nil {
-			monitoring.Alert(ctx, err.Error())
-			return engine.Snapshot{}, err
-		}
+		priorSignals = append(priorSignals, signal)
 	}
-	return current, nil
-}
-
-// replayTurn drains one already-committed turn's replay-input signal against
-// current and reports a data-integrity error if replaying it does not
-// reproduce the same successful commit live execution already made - the
-// pinned Definition and every durable input are immutable, so a replay of an
-// already-committed cause is expected to always succeed identically.
-func replayTurn(compiledProgram engine.Program, current engine.Snapshot, signal engine.Signal, turn internalrepo.RuntimeTurnRecord) (engine.Snapshot, error) {
-	drainResult := runtimeturn.Drain(compiledProgram, current, signal)
-	if drainResult.Err != nil {
-		return engine.Snapshot{}, fmt.Errorf("reconstructing runtime turn %d (sequence %d): replay diverged from its original commit: %s", turn.ID, turn.Sequence, drainResult.Err)
-	}
-	return drainResult.Snapshot, nil
+	return input, priorSignals, nil
 }
 
 // loadReplaySignal loads turn's own durable cause and rebuilds the

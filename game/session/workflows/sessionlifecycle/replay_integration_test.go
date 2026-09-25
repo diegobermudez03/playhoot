@@ -3,6 +3,7 @@ package sessionlifecycle
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"testing"
 	"time"
 
@@ -14,30 +15,28 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestReconstructCurrentSnapshot_Integration proves replay reconstruction
-// matches state the original live execution actually produced - not merely
-// state re-derived from the same durable rows replay itself reads, which
-// would only prove replay is consistent with itself.
+// TestReconstructCurrentSnapshot_Integration proves engineservice.AdvanceTurn's
+// internal replay matches state the original live execution actually
+// produced - not merely state re-derived from the same durable rows replay
+// itself reads, which would only prove replay is consistent with itself.
 //
 // It drives a real three-Turn Session through the ordinary Manager (Start
 // opens a question exposing a live random draw as one of its own
 // arguments; answering it opens a second question; answering that one
-// closes it), then reconstructs current state from two
+// opens a third), confirms the live random draw against an oracle that
+// never passes through session_runtime_starts/session_runtime_turns (the
+// rows AdvanceTurn's internal replay itself reads), then has two
 // independently-constructed Managers - simulating two different processes,
 // neither sharing any in-memory state with the live execution or with each
-// other - and checks the reconstructed global state against two oracles
-// that never pass through session_runtime_starts/session_runtime_turns, the
-// rows reconstruction itself reads:
-//   - the live random draw, read from session_interactions.interaction_payload
-//     (written directly from Start's own live OpenQuestionOutput, never read
-//     by reconstructCurrentSnapshot);
-//   - the plain Go answer values this test itself passed to AnswerInteraction,
-//     not anything decoded from a persisted row.
-//
-// The third Turn's expected value is only reachable if replay correctly
-// threaded the second Turn's answer through first, so this also covers a
-// later live AnswerInteraction depending on correct replay of an earlier
-// one. This is also this WORK's process-loss-recovery proof: reconstruction
+// other - independently load the same durable prior-signal log and apply
+// the same hypothetical next signal purely in memory (never committed).
+// Neither this package nor engineservice ever exposes an engine.Snapshot to
+// compare directly, so the proof is: both independent reconstructions must
+// load byte-identical InitializationInput/priorSignals from the same
+// durable data, and applying the same next signal to each must produce
+// byte-identical Outputs - which is only possible if AdvanceTurn's
+// internal replay is itself deterministic and reproduces live execution's
+// own result. This is also a process-loss-recovery proof: reconstruction
 // never depends on any particular process's memory, only on durable state.
 func TestReconstructCurrentSnapshot_Integration(t *testing.T) {
 	db := testdb.OpenSessionDB(t)
@@ -91,6 +90,11 @@ func TestReconstructCurrentSnapshot_Integration(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, AnswerInteractionOutcomeAnswered, answer2.Outcome)
 
+	var thirdUUID string
+	var thirdEngineInteractionID uint64
+	require.NoError(t, db.Raw(`SELECT uuid, engine_interaction_id FROM session_interactions WHERE session_id = ? ORDER BY id DESC LIMIT 1`, sessionID).Row().Scan(&thirdUUID, &thirdEngineInteractionID))
+	require.NotEmpty(t, thirdUUID, "answering Q2 must open Q3")
+
 	var turnCount int64
 	require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_turns WHERE session_id = ?`, sessionID).Scan(&turnCount).Error)
 	require.Equal(t, int64(3), turnCount, "Start plus two answers must commit three RuntimeTurns")
@@ -98,44 +102,65 @@ func TestReconstructCurrentSnapshot_Integration(t *testing.T) {
 	compiledProgram, diagnostics := engineservice.Compile(definition)
 	require.False(t, diagnostics.HasErrors())
 
-	assertReconstructedState := func(t *testing.T, snapshot engine.Snapshot) {
-		t.Helper()
-
-		nField, ok := snapshot.GlobalState.FieldByName("n")
-		require.True(t, ok)
-		nValue, ok := nField.Value.(engine.NumberValue)
-		require.True(t, ok)
-		require.Equal(t, liveRandomValue.Value, nValue.Value, "reconstructed global.n must match the value live execution actually drew and exposed, not merely a value re-derived from the persisted seed by the same code path replay itself uses")
-
-		aField, ok := snapshot.GlobalState.FieldByName("a")
-		require.True(t, ok)
-		aValue, ok := aField.Value.(engine.NumberValue)
-		require.True(t, ok)
-		require.Equal(t, float64(111), aValue.Value, "reconstructed global.a must match the literal answer this test submitted for Q1")
-
-		bField, ok := snapshot.GlobalState.FieldByName("b")
-		require.True(t, ok)
-		bValue, ok := bField.Value.(engine.NumberValue)
-		require.True(t, ok)
-		require.Equal(t, float64(222), bValue.Value, "reconstructed global.b must match the literal answer this test submitted for Q2 - only reachable if replay correctly threaded Q1's answer through first")
-	}
-
 	// Two separate, freshly constructed Managers - neither sharing any
 	// in-memory state with the live execution above or with each other -
-	// each reconstruct purely from durable state.
+	// each independently load the same durable prior-signal log.
 	processA := New(db, nil, stubStartPinnedGameReader{definition: definition})
-	snapshotA, err := processA.reconstructCurrentSnapshot(context.Background(), db, compiledProgram, sessionID)
+	inputA, priorSignalsA, err := processA.loadPriorSignals(context.Background(), db, sessionID)
 	require.NoError(t, err)
-	assertReconstructedState(t, snapshotA)
 
 	processB := New(db, nil, stubStartPinnedGameReader{definition: definition})
-	snapshotB, err := processB.reconstructCurrentSnapshot(context.Background(), db, compiledProgram, sessionID)
+	inputB, priorSignalsB, err := processB.loadPriorSignals(context.Background(), db, sessionID)
 	require.NoError(t, err)
-	assertReconstructedState(t, snapshotB)
 
-	encodedA, err := engineservice.EncodeSnapshot(snapshotA)
+	require.Equal(t, inputA, inputB, "two independent processes must load byte-identical InitializationInput from the same durable Start record")
+	require.Equal(t, priorSignalsA, priorSignalsB, "two independent processes must load a byte-identical prior-signal log from the same durable Turn rows")
+	require.Len(t, priorSignalsA, 2, "Q1's and Q2's answers, in order")
+	require.Equal(t, engine.NumberValue{Value: 111}, priorSignalsA[0].Answer, "the first prior signal must be Q1's own literal answer")
+	require.Equal(t, engine.NumberValue{Value: 222}, priorSignalsA[1].Answer, "the second prior signal must be Q2's own literal answer")
+
+	nField, ok := decodeLiveRandomFromInput(t, inputA)
+	require.True(t, ok)
+	require.Equal(t, liveRandomValue.Value, nField, "the reconstructed InitializationInput.Seed must reproduce the same random draw live execution actually exposed, not merely a value re-derived from itself")
+
+	// A hypothetical next signal - answering Q3 - is applied independently
+	// by each process purely in memory (never committed), to prove
+	// AdvanceTurn's internal replay reproduces the exact same result from
+	// the exact same durable data, regardless of which process computes
+	// it - only reachable if replay correctly threaded both prior answers
+	// through first.
+	answerQ3 := engine.Signal{
+		Kind:          engine.SignalKindInteractionAnswered,
+		InteractionID: engine.InteractionID(thirdEngineInteractionID),
+		Respondent:    engine.UserID(strconv.FormatUint(uint64(hostActorID), 10)),
+		Answer:        engine.NumberValue{Value: 333},
+	}
+	outputsA, err := engineservice.AdvanceTurn(compiledProgram, inputA, priorSignalsA, answerQ3, engine.DefaultLimits())
 	require.NoError(t, err)
-	encodedB, err := engineservice.EncodeSnapshot(snapshotB)
+	outputsB, err := engineservice.AdvanceTurn(compiledProgram, inputB, priorSignalsB, answerQ3, engine.DefaultLimits())
 	require.NoError(t, err)
-	require.JSONEq(t, string(encodedA), string(encodedB), "two independent reconstructions (simulating process-loss recovery, no shared cache) must produce identical current state")
+	require.Equal(t, outputsA, outputsB, "two independent reconstructions (simulating process-loss recovery, no shared cache) applying the same next signal must produce identical Outputs")
+}
+
+// decodeLiveRandomFromInput draws the same random value input's Seed
+// deterministically produces, purely by re-running a fresh StartTurn
+// against it and reading the value it exposes as Q1's own argument - the
+// same observable channel the live oracle above already used, so both
+// sides of the comparison go through Outputs only, never a Snapshot.
+func decodeLiveRandomFromInput(t *testing.T, input engine.InitializationInput) (float64, bool) {
+	t.Helper()
+	compiledProgram, diagnostics := engineservice.Compile(replayObservableDefinition(1, 4))
+	require.False(t, diagnostics.HasErrors())
+	outputs, err := engineservice.StartTurn(compiledProgram, input, engine.DefaultLimits())
+	require.NoError(t, err)
+	require.Len(t, outputs, 1)
+	openQ1, ok := outputs[0].(engine.OpenQuestionOutput)
+	if !ok {
+		return 0, false
+	}
+	n, ok := openQ1.Arguments[0].Value.(engine.NumberValue)
+	if !ok {
+		return 0, false
+	}
+	return n.Value, true
 }

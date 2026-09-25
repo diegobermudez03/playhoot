@@ -161,6 +161,12 @@ const (
 	// engine.Limits.MaxActiveSlotsPerInstance occupied slots. This
 	// guards against unbounded fan-out.
 	ExecutionErrorActiveSlotLimitExceeded
+
+	// ExecutionErrorStepChainExceeded marks a DrainSignal call whose
+	// signal could not reach quiescence within
+	// engine.Limits.MaxStepsPerTurn internally-chained Step calls. This
+	// guards against an unbounded internal-signal chain.
+	ExecutionErrorStepChainExceeded
 )
 
 // String names code for logs, diagnostics, and debugging — see
@@ -216,6 +222,8 @@ func (c ExecutionErrorCode) String() string {
 		return "presentation_slot_occupied"
 	case ExecutionErrorActiveSlotLimitExceeded:
 		return "active_slot_limit_exceeded"
+	case ExecutionErrorStepChainExceeded:
+		return "step_chain_exceeded"
 	default:
 		return "unknown"
 	}
@@ -752,6 +760,43 @@ func Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal, limi
 		ConsumedSignal: signal,
 	}
 	return commit, nil
+}
+
+// DrainSignal applies signal to snapshot via Step, then repeatedly
+// applies each of that Step's Commit.InternalSignals in FIFO order to
+// its own resulting Snapshot, until no InternalSignals remain — one
+// Turn's worth of execution, however many actual Step calls it
+// requires. Every actual Step call belonging to the chain (the initial
+// one plus every internal-signal-caused one) counts toward
+// limits.MaxStepsPerTurn; exceeding it returns
+// ExecutionErrorStepChainExceeded and snapshot remains valid and
+// unchanged, exactly like any other Step failure.
+//
+// Returns the final Snapshot and every Output produced across the whole
+// chain, in order — the same Outputs a caller would have collected by
+// draining the chain itself, one Step at a time.
+func DrainSignal(p engine.Program, snapshot engine.Snapshot, signal engine.Signal, limits engine.Limits) (engine.Snapshot, []engine.Output, error) {
+	pending := []engine.Signal{signal}
+	current := snapshot
+	var outputs []engine.Output
+	count := 0
+	for len(pending) > 0 {
+		if count >= limits.MaxStepsPerTurn {
+			return engine.Snapshot{}, nil, newExecutionError(ExecutionErrorStepChainExceeded,
+				"engineservice: exceeded the maximum of %d internally-chained steps for one turn", limits.MaxStepsPerTurn)
+		}
+		next := pending[0]
+		pending = pending[1:]
+		commit, err := Step(p, current, next, limits)
+		if err != nil {
+			return engine.Snapshot{}, nil, err
+		}
+		current = commit.Snapshot
+		outputs = append(outputs, commit.Outputs...)
+		pending = append(pending, commit.InternalSignals...)
+		count++
+	}
+	return current, outputs, nil
 }
 
 // ErrSignalRejected and ErrInputRejected are the two "stale signal"

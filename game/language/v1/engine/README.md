@@ -2,7 +2,7 @@ Wrote by AI, human dev notes added as `Dev note:`
 
 # game/language/v1/engine
 
-`engine` compiles a `program.Definition` into an immutable, executable `Program`, then runs it: it turns one runtime `Signal` plus one `Snapshot` into a new `Snapshot`, as one atomic `Commit`. It is a pure, deterministic simulation core — no database, no network, no real clock, no OS randomness. Everything it needs comes in as an explicit argument; everything it produces comes out as plain data.
+`engine` compiles a `program.Definition` into an immutable, executable `Program`, then runs it, one Turn at a time: given the durable log of every signal already applied plus one new signal, it returns that new Turn's declarative `Output`s. It is a pure, deterministic simulation core — no database, no network, no real clock, no OS randomness. Everything it needs comes in as an explicit argument; everything it produces comes out as plain data. A caller never holds or persists a `Snapshot` — replaying the durable log to reconstruct current state, and chaining any internal signal a Step produces, are both `engineservice`'s own concern, never the caller's (see `game/docs/decisions/GAME-ADR-0027-engine-owned-turn-execution-and-replay.md`).
 
 If you just want to *use* the engine, this document is for you. If you're going to modify `engine` itself, read `IMPLEMENTATION.md` instead.
 
@@ -18,16 +18,16 @@ import (
 )
 ```
 
-`engine` itself is a pure data package — `Program`, `Snapshot`, `Signal`, `Commit`, `Output`, `Value`, and everything else you read or construct. `engineservice` is where every actual operation lives: `Compile`, `NewSnapshot`, `Step`, `Evaluate`, plus `Snapshot` persistence. You will `import` both in any real caller, exactly the same relationship as `program`/`gameservice`.
+`engine` itself is a pure data package — `Program`, `Signal`, `Output`, `Value`, `InitializationInput`, `Limits`, and everything else you read or construct. `engineservice` is where every actual operation lives: `Compile`, `StartTurn`, `AdvanceTurn`, `Evaluate`. `Snapshot` also lives in `engine`, but it is an internal implementation detail of `StartTurn`/`AdvanceTurn` — a real caller never constructs, holds, or reads one. You will `import` both `engine` and `engineservice` in any real caller, exactly the same relationship as `program`/`gameservice`.
 
 The three internal packages behind `engineservice` (`internal/compiler`, `internal/runtime`, `internal/codec`) are not importable from outside `game/language/v1/engine` — Go's own `internal/` visibility rule enforces this. `engineservice` is the only supported way in.
 
 ## The three operations
 
 ```
-program.Definition                     -> engineservice.Compile        -> engine.Program, engineservice.Diagnostics
-engine.Program + InitializationInput   -> engineservice.NewSnapshot     -> engine.Snapshot, engine.Signal, error
-engine.Program + Snapshot + Signal     -> engineservice.Step            -> engine.Commit, error
+program.Definition                                                          -> engineservice.Compile      -> engine.Program, engineservice.Diagnostics
+engine.Program + InitializationInput                                        -> engineservice.StartTurn    -> []engine.Output, error
+engine.Program + InitializationInput + []Signal (prior) + Signal (new)      -> engineservice.AdvanceTurn  -> []engine.Output, error
 ```
 
 A typical caller's lifecycle:
@@ -39,21 +39,29 @@ if diags.HasErrors() {
     return diags
 }
 
-snap, startSignal, err := engineservice.NewSnapshot(p, engine.InitializationInput{
+start := engine.InitializationInput{
     RootParameters: map[string]engine.Value{ /* ... */ },
     Seed:           mySessionSeed, // your own source of real unpredictability, drawn once
-})
-if err != nil {
-    return err
 }
 
-commit, err := engineservice.Step(p, snap, startSignal, engine.DefaultLimits())
+outputs, err := engineservice.StartTurn(p, start, engine.DefaultLimits())
 if err != nil {
-    // snap is untouched; no Commit was produced; nothing was published.
     return err
 }
-snap = commit.Snapshot
-// persist snap, deliver commit.Outputs, and loop: Step again with the next Signal.
+// deliver outputs; durably append start's own record; no engine.Signal is
+// yours to construct or store for this first turn.
+
+// Later, for every subsequent turn: load start and every already-committed
+// signal back from your own durable storage, in order, then:
+outputs, err = engineservice.AdvanceTurn(p, start, priorSignals, newSignal, engine.DefaultLimits())
+if err != nil {
+    // nothing was published; if replaying priorSignals is what failed, err
+    // wraps engineservice.ErrReplayDivergence — a data-integrity condition,
+    // never an ordinary decline.
+    return err
+}
+// durably append newSignal to your own signal log, deliver outputs, and
+// loop: AdvanceTurn again with the next Signal.
 ```
 
 ### `Compile(def program.Definition) (engine.Program, engineservice.Diagnostics)`
@@ -72,13 +80,21 @@ Validates `def` and produces its immutable, executable representation. `Compile`
   └── Snapshot C  (table 3)
   ```
 
-### `NewSnapshot(p engine.Program, input engine.InitializationInput) (engine.Snapshot, engine.Signal, error)`
+### `StartTurn(p engine.Program, start engine.InitializationInput, limits engine.Limits) ([]engine.Output, error)`
 
-Creates the initial `Snapshot` for one new game instance of `p`: binds and validates `input.RootParameters` against the root workflow's declared parameters, evaluates its local state and declared slots (all empty), evaluates every global-state field, and checks every compiled invariant against the result — atomically. If anything fails (a bad parameter, a violated invariant), no `Snapshot` is returned at all.
+Performs a new game instance's mandatory first turn, entirely internally: binds and validates `start.RootParameters` against the root workflow's declared parameters, evaluates its local state and declared slots (all empty), evaluates every global-state field, checks every compiled invariant against the result, and applies the engine's own synthesized first lifecycle signal (matching a `WorkflowStarted` transition, if the root workflow declares one) to quiescence — atomically. If anything fails (a bad parameter, a violated invariant, the first signal itself failing), no `Output`s are returned at all.
 
-`input.Seed` seeds the instance's deterministic random state. The engine never reads OS randomness — if your game uses `DrawRandomOperation` anywhere, draw a real seed from your own legitimate entropy source once, when the session starts, and pass it here. Every random value the engine ever produces for that instance afterward is a deterministic function of that one seed plus every signal it's given.
+You never construct or see the synthesized first signal — it is a fixed, deterministic value with nothing for a caller to decide. Nor do you ever see the `Snapshot` this creates; it exists only inside this call.
 
-The returned `Signal` is the mandatory first input to `Step` — it is how the root workflow instance actually starts running (matching a `WorkflowStarted` transition, if the root workflow declares one). Don't discard it.
+`start.Seed` seeds the instance's deterministic random state. The engine never reads OS randomness — if your game uses `DrawRandomOperation` anywhere, draw a real seed from your own legitimate entropy source once, when the session starts, and pass it here. Every random value the engine ever produces for that instance afterward is a deterministic function of that one seed plus every signal it's given. Durably record `start` yourself (you will need it again for every `AdvanceTurn` call) — the engine does not persist anything.
+
+### `AdvanceTurn(p engine.Program, start engine.InitializationInput, priorSignals []engine.Signal, newSignal engine.Signal, limits engine.Limits) ([]engine.Output, error)`
+
+Processes one new turn for an already-started game instance. Internally, `AdvanceTurn` reconstructs current state by replaying `start`'s own initialization and every signal in `priorSignals`, in order, against a freshly initialized instance (discarding their `Output`s — you already durably recorded those the first time each one happened), then applies `newSignal` to quiescence exactly as a single internal transition would. It returns only `newSignal`'s own `Output`s.
+
+`priorSignals` is exactly the ordered log of every signal you have already durably recorded for this instance since it started (never including the implicit first signal `StartTurn` handles for you). You never construct, hold, or read a `Snapshot` to get this log — you already have it, because you recorded each `newSignal` yourself after every prior successful `AdvanceTurn` call.
+
+If replaying `start` or an element of `priorSignals` fails, the returned error wraps `engineservice.ErrReplayDivergence` — every one of those signals already succeeded once (that is why it is durable), so failing to reproduce it identically means your recorded log, the pinned `Program`, or the engine itself no longer agree with what actually happened; this is a data-integrity condition to alert on, never an ordinary decline. A failure of `newSignal` itself surfaces exactly as described below, structurally distinct from a replay divergence.
 
 ### Accepted Session Runtime Root Roster Contract
 
@@ -92,13 +108,13 @@ players: list<user>
 
 Session Runtime builds this value from active Participants at Start. Each `user` is the Session-local runtime identity derived from `SessionActorID`, not `Identity.UserUUID`.
 
-Session Runtime must initialize/load the pinned immutable Game definition/version, call `NewSnapshot`, process the mandatory first signal through `Step`, and persist the initial authoritative runtime state and durable consequences before delivering outputs outside its transaction.
+Session Runtime must initialize/load the pinned immutable Game definition/version, call `StartTurn`, and persist the initial authoritative runtime state and durable consequences before delivering outputs outside its transaction.
 
 Rationale and alternatives are recorded in `game/docs/decisions/GAME-ADR-0006-game-language-root-player-roster-contract.md`.
 
 ### Accepted Disconnect/Reconnect Delivery And Offline-Interaction Invariants
 
-Status: ACCEPTED DESIGN, NOT YET IMPLEMENTED. `UserDisconnected`/`UserReconnected` are accepted as standard `NamedSignalSource` platform/lifecycle signals exposing only `user: user`; nothing in this package's current `Step`/`Signal` handling implements them today. Session Runtime is accepted to deliver both to the one workflow instance a Session runs — there is no other instance to broadcast to, since the engine executes a Session's entire game logic as a single flat workflow instance (see `game/docs/decisions/GAME-ADR-0026-flat-workflow-execution-model-and-keyed-interaction-slots.md`). An authored game may declare no matching transition for either signal; that is an ordinary `ErrSignalRejected` outcome, not an error condition, and Session Runtime must not create a `RuntimeTurn` or infer any gameplay consequence from it.
+Status: ACCEPTED DESIGN, NOT YET IMPLEMENTED. `UserDisconnected`/`UserReconnected` are accepted as standard `NamedSignalSource` platform/lifecycle signals exposing only `user: user`; nothing in this package's current `AdvanceTurn`/`Signal` handling implements them today. Session Runtime is accepted to deliver both to the one workflow instance a Session runs — there is no other instance to broadcast to, since the engine executes a Session's entire game logic as a single flat workflow instance (see `game/docs/decisions/GAME-ADR-0026-flat-workflow-execution-model-and-keyed-interaction-slots.md`). An authored game may declare no matching transition for either signal; that is an ordinary `ErrSignalRejected` outcome, not an error condition, and Session Runtime must not create a `RuntimeTurn` or infer any gameplay consequence from it.
 
 Independently, Session Runtime opening an interaction/question for a SessionActor with no live transport connection must still produce the engine's normal `OpenQuestionOutput`/interaction behavior unconditionally — engine execution itself has no notion of connectivity, and this accepted invariant constrains the Session Runtime caller, not this package.
 
@@ -124,44 +140,24 @@ Answering one is always `Signal{Kind: SignalKindInteractionAnswered, Interaction
 
 `InteractionID` values are never reused for the lifetime of a `Snapshot`, even after their occurrence closes — a stale, unknown, or already-answered `InteractionID` is rejected the same way a stale `Slot`(+`Key`) submission always was; see `ErrInputRejected`. Timer is not part of this scheme — `SignalKindTimerExpired`/`SignalKindKeyedTimerExpired` keep `Signal.Slot`(+`Key`) addressing unchanged, since a caller does not "answer" a timer the way it answers a Question.
 
-### `Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal, limits engine.Limits) (engine.Commit, error)`
+### How a Turn is actually processed, internally
 
-Applies exactly one `Signal` to `snapshot` and returns the result as one atomic `Commit`. `Step` never mutates `snapshot` in place — on success, the new state is `commit.Snapshot`; on failure, `snapshot` is guaranteed unchanged, no `Commit` was produced, and nothing in it should be treated as published.
+Neither `StartTurn` nor `AdvanceTurn` exposes this — it's here so you understand what one call actually does, not because you need to drive it yourself. Internally, applying one signal ("one Step") to the instance: selects one matching transition, evaluates its guard, runs its operations (bounded by `limits`), applies its control result, checks every invariant, and recomputes affected presentations. A Turn may require more than one such internally-chained Step if a transition's own operations produce further signals for the engine itself to apply (currently never happens in practice — the engine runs a Session's game logic as one flat workflow instance, and nothing in it produces such a signal — but the mechanism exists and is bounded regardless: see `engine.Limits.MaxStepsPerTurn`, exceeding which returns `engineservice.ExecutionErrorStepChainExceeded`). `limits` also bounds the work any one internal Step may do — `engine.DefaultLimits()` is generous enough for ordinary turn-based logic while still failing a runaway transition (an unbounded loop, too many active interaction slots) deterministically instead of hanging.
 
-Internally, one successful `Step` call: selects one matching transition on the Session's one workflow instance, evaluates its guard, runs its operations (bounded by `limits`), applies its control result, checks every invariant, recomputes affected presentations, and returns everything as one `Commit`. The engine never runs more than one transition per `Step` call — it does not recursively chain transitions internally, even when a transition's own operations produce further signals (see `Commit.InternalSignals` below).
+#### When `StartTurn`/`AdvanceTurn` return an error instead
 
-`limits` bounds one `Step` call's work — `engine.DefaultLimits()` is generous enough for ordinary turn-based logic while still failing a runaway transition (an unbounded loop, too many active interaction slots) deterministically instead of hanging. Pass your own `engine.Limits` if you need tighter or looser bounds.
-
-#### Reading a `Commit`
-
-```go
-type Commit struct {
-    Snapshot        engine.Snapshot
-    Outputs         []engine.Output
-    InternalSignals []engine.Signal
-    Trace           engine.Trace
-    ConsumedSignal  engine.Signal
-}
-```
-
-- **`Snapshot`** — persist this; it's the new authoritative state.
-- **`Outputs`** — declarative, external actions to actually perform: open a question, schedule a timer, activate/update/remove a presentation, emit a client effect, report a workflow's completion. The engine never performs any of these itself (see "Outputs" below) — that's your job.
-- **`InternalSignals`** — signals the engine itself needs applied next, in a *separate* `Step` call. Feed each one back through `Step` yourself; the engine will never do this for you within the same call. Currently always empty: the engine runs a Session's game logic as one flat workflow instance, and nothing in it produces a signal that only another `Step` call can consume.
-- **`Trace`** — a debugging/explanation record of exactly what this one `Step` call did: which transition ran, its guard result, the state change, any terminal outcome, and how many operations it ran. Not consumed by anything downstream — it's for logs, replay verification, and tooling.
-- **`ConsumedSignal`** — the `signal` you passed in, echoed back for convenience.
-
-#### When `Step` returns an error instead
-
-Two of `Step`'s possible errors are *expected, non-bug outcomes*, not something to alert on: a stale or unmatched signal simply produced no `Commit`.
+Two possible errors on `newSignal` (or `StartTurn`'s own first signal) are *expected, non-bug outcomes*, not something to alert on: a stale or unmatched signal simply produced no `Output`s.
 
 - **`engineservice.ErrSignalRejected`** — nothing in the compiled workflow was willing to react to this signal at all (no transition matched, or the one that did had a false guard).
 - **`engineservice.ErrInputRejected`** — something *was* willing to react to a signal of this shape, but its concrete payload failed authoritative validation (a stale/duplicate answer, an unauthorized respondent, an answer that doesn't satisfy the question's response type or `Validation` expression, an expired timer that was already cancelled, and so on).
 
 Use `errors.Is(err, engineservice.ErrSignalRejected)` / `errors.Is(err, engineservice.ErrInputRejected)` to distinguish these from a real problem. Anything else is an `*engineservice.ExecutionError`, with a stable `.Code` (`engineservice.ExecutionErrorCode`) you can switch on or log — invariant violations, budget/limit overruns, division by zero, an occupied slot, and so on. See `internal/runtime/step.go`'s `ExecutionErrorCode` constants for the full, documented set; new codes are only ever appended, never renumbered or reused for a different meaning.
 
+`AdvanceTurn` has one more error category, structurally distinct from both of the above: `errors.Is(err, engineservice.ErrReplayDivergence)` means an already-committed element of `priorSignals` (or `start`'s own initialization) failed to reproduce its original result — always a data-integrity condition to alert on, never an ordinary decline, since every one of those signals already succeeded once.
+
 ### `Evaluate(p engine.Program, expr engine.Expression, scope engine.Scope) (engine.Value, error)`
 
-Evaluates a single compiled `Expression` against an arbitrary `Scope`, using the exact same pure-expression semantics `Step` uses internally for guards, operation values, and workflow control. Ordinary game execution never needs this directly — it exists for tooling, diagnostics, or anything that needs to evaluate an expression pulled out of a `Program` outside of a `Step` call.
+Evaluates a single compiled `Expression` against an arbitrary `Scope`, using the exact same pure-expression semantics `StartTurn`/`AdvanceTurn` use internally for guards, operation values, and workflow control. Ordinary game execution never needs this directly — it exists for tooling, diagnostics, or anything that needs to evaluate an expression pulled out of a `Program` outside of Turn processing.
 
 ## Outputs
 
@@ -171,7 +167,7 @@ Evaluates a single compiled `Expression` against an arbitrary `Scope`, using the
 | --- | --- |
 | `OpenQuestionOutput` | a question was opened for one recipient in a named slot, carrying its `InteractionID`/`Kind` |
 | `CloseQuestionOutput` | a pending question in a named slot was closed, carrying the same `InteractionID` it opened with |
-| `ScheduleTimerOutput` | a timer should fire after `DelayMilliseconds` — you own real scheduling and must deliver the matching `TimerExpiredSignalSource` signal back through `Step` when it fires |
+| `ScheduleTimerOutput` | a timer should fire after `DelayMilliseconds` — you own real scheduling and must deliver the matching `TimerExpiredSignalSource` signal back through `AdvanceTurn` when it fires |
 | `CancelTimerOutput` | a pending timer was cancelled |
 | `OpenKeyedQuestionOutput` | a question was opened for one recipient at a named keyed slot's `Key` occurrence, carrying its `InteractionID`/`Kind` |
 | `CloseKeyedQuestionOutput` | a pending question at a named keyed slot's `Key` occurrence was closed, carrying the same `InteractionID` it opened with |
@@ -187,26 +183,17 @@ Type-switch over `engine.Output` exhaustively; the set is closed the same way `p
 
 ## Determinism
 
-Given the same compiled `Program`, `Snapshot`, `Signal`, and `Limits`, `Step` always returns the same `Commit` (or the same error). The engine never reads the system clock, the network, environment variables, or OS randomness — time enters only through explicit signal data (e.g. a `TimerExpiredSignalSource` you deliver), and randomness only through the deterministic `RandomState` carried inside `Snapshot`, seeded once via `InitializationInput.Seed`. This is what makes replay, simulation, and debugging possible: the same recorded sequence of signals against the same initial snapshot always reaches the same final state.
+Given the same compiled `Program`, `InitializationInput`, prior signal log, new `Signal`, and `Limits`, `AdvanceTurn` always returns the same `Output`s (or the same error) — because it always reconstructs current state the same way, by replaying the same inputs. The engine never reads the system clock, the network, environment variables, or OS randomness — time enters only through explicit signal data (e.g. a `TimerExpiredSignalSource` you deliver), and randomness only through the engine's own deterministic random state, seeded once via `InitializationInput.Seed`. This is what makes replay, simulation, and debugging possible: the same recorded sequence of signals against the same initial input always reaches the same final state — and it is exactly what lets `AdvanceTurn` reconstruct that state from your durable log instead of you having to persist it directly.
 
 ## Concurrency
 
-A compiled `Program` is safe to share and read concurrently across any number of game instances. `engine`/`engineservice` do **not** serialize calls against the same `Snapshot` sequence for you — if two `Step` calls could race against the same game instance, your own session layer owns that ordering (locking, an actor per instance, optimistic concurrency, whatever fits). The engine only defines the deterministic result of one step in isolation.
+A compiled `Program` is safe to share and read concurrently across any number of game instances. `engine`/`engineservice` do **not** serialize calls against the same game instance for you — if two `AdvanceTurn` calls could race against the same instance's signal log, your own session layer owns that ordering (locking, an actor per instance, optimistic concurrency, whatever fits). The engine only defines the deterministic result of one turn in isolation.
 
-## Persisting a `Snapshot`
+## Persisting durable state
 
-```go
-data, err := engineservice.EncodeSnapshot(snap)
-// ... persist data ...
-restored, err := engineservice.DecodeSnapshot(data)
-if err := engineservice.CheckSnapshotCompatibility(p, restored); err != nil {
-    // restored references a workflow p doesn't compile — e.g. resuming
-    // against a newer Program version that dropped or renamed one.
-}
-```
+There is no `Snapshot` to persist — `StartTurn`/`AdvanceTurn` never return one. What you persist is exactly what you already pass in on the next call: `InitializationInput` (once, at Start) and every `newSignal` you have successfully processed since, in order. Append each `newSignal` to your own durable log right after `AdvanceTurn` accepts it, and load that whole log back (in order) as `priorSignals` on every later call. There is deliberately no codec needed for this — `InitializationInput` and `Signal` are already plain data your own storage format already knows how to represent, since you construct every `Signal` yourself from your own request data.
 
-- **`EncodeSnapshot`/`DecodeSnapshot`** — compact JSON, structurally strict on decode (`*engineservice.DecodeError` carries a path to exactly where decoding failed, same style as `Diagnostic.Path`).
-- **`CheckSnapshotCompatibility`** — call this after `DecodeSnapshot` (or after recompiling a `program.Definition` to a newer `Program` version) before resuming a persisted `Snapshot` against it. It's the same check `Step` itself makes internally, exposed standalone so you can validate once, up front, instead of discovering the mismatch mid-step.
+`engineservice.EncodeSnapshot`/`DecodeSnapshot`/`CheckSnapshotCompatibility` still exist, but they operate on the internal `Snapshot` type `StartTurn`/`AdvanceTurn` never expose — they exist for advanced/tooling use (an admin inspection view, or a future opt-in performance cache sitting in front of `AdvanceTurn`'s own internal replay), not for ordinary game execution.
 
 There is deliberately no codec for `Program` itself. A compiled `Program` is a pure, deterministic function of the `program.Definition` `Compile` was given — persist (or version-reference) the `Definition` through `program/gameservice`'s own codec, and recompile on load. Recompiling is cheap, deterministic, and avoids maintaining a second wire format for the same information.
 
@@ -216,11 +203,10 @@ There is deliberately no codec for `Program` itself. A compiled `Program` is a p
 
 - `Program.Metadata` — the game version's identity (carried over unchanged from `program.Definition.Metadata`).
 - `Program.Types`, `.Functions`, `.Resources`, `.Questions`, `.Effects`, `.Projections`, `.Views`, `.Workflows` — every one of `def`'s catalogs, compiled and keyed by declared name.
-- `Program.RootWorkflow` — the workflow name `NewSnapshot` starts.
-- `Snapshot.GlobalState`, `Snapshot.Root` (the one `WorkflowInstance` a Session runs) — inspect these to build your own read models, admin tooling, or debugging views, using the exported `Value` variants (`BoolValue`, `NumberValue`, `RecordValue`, ...) and `Value.Equal`/`.Validate`.
+- `Program.RootWorkflow` — the workflow name `StartTurn` starts.
 
 You will not typically construct `engine.Program`/`engine.Workflow`/`engine.Expression`/... values by hand in real code — those come from `Compile`. Building them directly (as the engine's own tests do, to exercise runtime behavior independently of the compiler) is a testing technique, not the intended integration path.
 
 ## What this package does not do
 
-No database, no session/room management, no HTTP/WebSocket/gRPC delivery, no real timer scheduling, no output publication, no signal ordering across concurrent requests, no retries. Every one of those belongs to an application/session layer you build on top of `engineservice` — the engine only ever defines the deterministic result of one `Compile`, one `NewSnapshot`, or one `Step` call.
+No database, no session/room management, no HTTP/WebSocket/gRPC delivery, no real timer scheduling, no output publication, no signal ordering across concurrent requests, no retries. Every one of those belongs to an application/session layer you build on top of `engineservice` — the engine only ever defines the deterministic result of one `Compile`, one `StartTurn`, or one `AdvanceTurn` call.

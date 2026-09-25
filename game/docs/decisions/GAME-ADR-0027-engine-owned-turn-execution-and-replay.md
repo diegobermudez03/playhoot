@@ -1,8 +1,8 @@
 # GAME-ADR-0027: Engine-Owned Turn Execution — Replay and Step-Chain Draining Move Inside `engineservice`
 
-Status: PROPOSED
+Status: ACCEPTED
 Created: 2026-09-24
-Last status change: 2026-09-24
+Last status change: 2026-09-24 (PROPOSED -> ACCEPTED, human-approved: "Approved, proceed")
 Supersedes: None
 Refines: GAME-ADR-0019 (RuntimeTurn Execution Bound and Terminal Cleanup) — only the *mechanical enforcement location* of the RuntimeTurn Step-chain bound changes; the bound's value, its status as Session Runtime platform policy (not an authored Game Language setting), its `RUNTIME_EXECUTION_FAILED` classification, its diagnostic-code requirement, and every terminal-cleanup/`base_turn_id` rule GAME-ADR-0019 establishes are unaffected and are restated here.
 Generalizes: GAME-ADR-0024 (Replay-First Session Runtime Persistence) — extends its "derived state is not truth" principle one step further: not only is a Snapshot never persisted, the *mechanics of deriving it* (replaying durable causes) are no longer the caller's own code either.
@@ -104,3 +104,7 @@ Considered, then rejected once actually verified against the code rather than as
 ## Implementation Impact
 
 Owned by a new WORK under `docs/projects/active/game-language-flat-execution-model/`. No migration, production code, or implementation is authorized directly by this record.
+
+### Implemented by
+
+`docs/projects/active/game-language-flat-execution-model/works/WORK-0028-engine-owned-turn-execution.md` implements this record in full: `engineservice.Step`/`NewSnapshot` removed; `engineservice.StartTurn`/`AdvanceTurn` added; `engine.Limits.MaxStepsPerTurn` (defaulted to 20) and `ExecutionErrorStepChainExceeded` added; `engineservice.ErrReplayDivergence` added; `game/session/workflows/sessionlifecycle/internal/runtimeturn` deleted in full; `reconstructCurrentSnapshot`/`replayTurn` deleted from `replay.go`; `captureInteractions` takes `[]engine.Output` directly. Zero new persistence was required, confirming this record's own claim.

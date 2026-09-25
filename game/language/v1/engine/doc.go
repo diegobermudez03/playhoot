@@ -14,8 +14,8 @@
 // # Core operations (owned by engineservice)
 //
 //	program.Definition                    -> engineservice.Compile     -> engine.Program, engineservice.Diagnostics
-//	engine.Program + InitializationInput  -> engineservice.NewSnapshot -> engine.Snapshot, error
-//	engine.Program + Snapshot + Signal    -> engineservice.Step        -> engine.Commit, error
+//	engine.Program + InitializationInput  -> NewSnapshot -> engine.Snapshot, error
+//	engine.Program + Snapshot + Signal    -> Step        -> engine.Commit, error
 //
 // This file, and the package as a whole, establish the engine's public
 // boundary: the plain data shapes above. Real language semantics —

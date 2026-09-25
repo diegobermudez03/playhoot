@@ -10,7 +10,7 @@ package engine
 // is a pure function of the current RandomState — see Next — advanced
 // only by a committed DrawRandomOperation, never by a fresh external
 // read. A step that fails for any reason does not advance RandomState;
-// see engineservice.Step's atomicity contract.
+// see Step's atomicity contract.
 type RandomState struct {
 	State uint64
 }

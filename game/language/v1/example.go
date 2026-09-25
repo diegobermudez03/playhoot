@@ -19,37 +19,41 @@ import (
 )
 
 // gameSession is a stand-in for whatever a real consumer would build:
-// something that owns one running game instance, persists its Snapshot
-// between calls, and translates between "stuff that happens in the
-// outside world" (a player answers a question, a timer really fires,
-// ...) and engine.Signal values fed into engineservice.Step.
+// something that owns one running game instance and translates between
+// "stuff that happens in the outside world" (a player answers a question,
+// a timer really fires, ...) and engine.Signal values fed into
+// engineservice.AdvanceTurn.
 //
-// A real implementation would NOT hold engine.Program/engine.Snapshot
-// directly in memory like this across requests — Program would be
-// compiled once and cached/shared, and Snapshot would be loaded from
-// persistence (see engineservice.DecodeSnapshot) at the start of every
-// call and saved again (engineservice.EncodeSnapshot) after every
-// successful Step. Keeping them as plain fields here is just to keep
-// this draft simple to read top to bottom.
+// Notice what this does NOT hold: an engine.Snapshot. engineservice owns
+// reconstructing whatever internal runtime state it needs, entirely on its
+// own, by internally replaying signals every call — a consumer only ever
+// supplies the durable input log itself (start + signals below), exactly
+// what it would persist instead of any Snapshot. A real implementation
+// would not hold that log in memory across requests either — it would
+// append each signal to durable storage as it happens
+// and load the ordered log back at the start of every call — but keeping
+// it as a plain slice here is just to keep this draft simple to read top
+// to bottom.
 type gameSession struct {
-	program  engine.Program
-	snapshot engine.Snapshot
+	program engine.Program
+	start   engine.InitializationInput
+	signals []engine.Signal
 
 	// pendingQuestions is how WE keep track of "what did we ask, and to
 	// whom", so that when an answer comes back from the outside world we
 	// know which engine.Signal to build. The engine itself already knows
-	// this internally (see Snapshot.Root.QuestionSlots), but it doesn't
-	// hand us a nice "waiting on this" map — that's session-layer
-	// bookkeeping we own, driven by the OpenQuestionOutput values Step
-	// gives us. Keyed here by InteractionID, the engine-assigned address
-	// a caller answers/correlates against — never Slot, which is purely
-	// informational now (see OpenQuestionOutput's own doc comment).
+	// this internally, but it doesn't hand us a nice "waiting on this" map
+	// — that's session-layer bookkeeping we own, driven by the
+	// OpenQuestionOutput values AdvanceTurn gives us. Keyed here by
+	// InteractionID, the engine-assigned address a caller answers/
+	// correlates against — never Slot, which is purely informational now
+	// (see OpenQuestionOutput's own doc comment).
 	pendingQuestions map[engine.InteractionID]engine.OpenQuestionOutput
 }
 
-// newGameSession is the "Definition -> compiled Program -> initial
-// Snapshot" pipeline: everything that happens once, when a game instance
-// is created.
+// newGameSession is the "Definition -> compiled Program -> first turn"
+// pipeline: everything that happens once, when a game instance is
+// created.
 func newGameSession() (*gameSession, error) {
 	// In real life this bytes slice would come from wherever game
 	// definitions are stored/authored (see program/DEFINITION.md) —
@@ -81,7 +85,7 @@ func newGameSession() (*gameSession, error) {
 		return nil, fmt.Errorf("compile errors: %v", diags)
 	}
 
-	snap, startSignal, err := engineservice.NewSnapshot(compiledProgram, engine.InitializationInput{
+	start := engine.InitializationInput{
 		RootParameters: map[string]engine.Value{
 			// whatever the root workflow's declared Parameters need, by name.
 		},
@@ -89,51 +93,59 @@ func newGameSession() (*gameSession, error) {
 		// here — never a hardcoded/predictable value. Left as the zero
 		// value in this draft.
 		Seed: 0,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("initializing snapshot: %w", err)
 	}
 
 	session := &gameSession{
 		program:          compiledProgram,
-		snapshot:         snap,
+		start:            start,
 		pendingQuestions: map[engine.InteractionID]engine.OpenQuestionOutput{},
 	}
 
-	// startSignal is mandatory: it is what gets the root workflow
-	// instance to run its first transition. It must be run through Step
-	// like any other signal, not discarded.
-	if err := session.applyStep(startSignal); err != nil {
-		return nil, fmt.Errorf("applying start signal: %w", err)
+	// StartTurn performs the mandatory first turn entirely internally —
+	// there is no signal for this consumer to construct or record: the
+	// engine's own synthesized first lifecycle signal is never a caller
+	// concern. s.signals stays empty until the first turn after this one.
+	outputs, err := engineservice.StartTurn(compiledProgram, start, engine.DefaultLimits())
+	if err != nil {
+		return nil, fmt.Errorf("starting session: %w", err)
+	}
+	if err := session.handleOutputs(outputs); err != nil {
+		return nil, err
 	}
 
 	return session, nil
 }
 
-// applyStep is the one place that actually calls engineservice.Step and
-// deals with everything a Commit can contain. Every other method below
-// (HandleUserIntent, QuestionAnswered, ...) just builds the right
-// engine.Signal for its situation and calls this.
-func (s *gameSession) applyStep(signal engine.Signal) error {
-	commit, err := engineservice.Step(s.program, s.snapshot, signal, engine.DefaultLimits())
+// applyTurn is the one place that actually calls engineservice.AdvanceTurn.
+// Every other method below (HandleUserIntent, QuestionAnswered, ...) just
+// builds the right engine.Signal for its situation and calls this.
+func (s *gameSession) applyTurn(signal engine.Signal) error {
+	outputs, err := engineservice.AdvanceTurn(s.program, s.start, s.signals, signal, engine.DefaultLimits())
 	if err != nil {
 		// ErrSignalRejected and ErrInputRejected are "expected, nothing
-		// happened" outcomes, not bugs (see README.md) — a real consumer
-		// should check for these specifically with errors.Is before
-		// treating something as a real failure to log/alert on. Either
-		// way, s.snapshot is guaranteed untouched and nothing was
-		// published, so it's safe to just return here.
-		return fmt.Errorf("step rejected/failed: %w", err)
+		// happened" outcomes for signal itself, not bugs (see README.md)
+		// — a real consumer should check for these specifically with
+		// errors.Is before treating something as a real failure to
+		// log/alert on. ErrReplayDivergence is different: it means
+		// s.signals (or the pinned Definition) no longer reproduces what
+		// actually happened before — a data-integrity condition a real
+		// consumer must alert loudly on, never treat as an ordinary
+		// decline.
+		return fmt.Errorf("turn rejected/failed: %w", err)
 	}
 
-	// A real consumer would persist commit.Snapshot here
-	// (engineservice.EncodeSnapshot -> storage) instead of just
-	// reassigning a field.
-	s.snapshot = commit.Snapshot
+	// A real consumer would durably append signal here — this is exactly
+	// what it would persist instead of any Snapshot — before or alongside
+	// acting on outputs.
+	s.signals = append(s.signals, signal)
 
-	// commit.Outputs are declarative: the engine never performs any of
-	// these itself (see README.md's Outputs table) — a consumer must.
-	for _, output := range commit.Outputs {
+	return s.handleOutputs(outputs)
+}
+
+// handleOutputs deals with everything one turn's Outputs can contain,
+// shared by newGameSession's first turn and every applyTurn call after it.
+func (s *gameSession) handleOutputs(outputs []engine.Output) error {
+	for _, output := range outputs {
 		switch o := output.(type) {
 		case engine.OpenQuestionOutput:
 			// Remembered so a later answer (arriving as a websocket
@@ -153,7 +165,7 @@ func (s *gameSession) applyStep(signal engine.Signal) error {
 			// ... a request to schedule a real timer: a consumer needs a
 			// real scheduler (a job queue, time.AfterFunc, whatever)
 			// that, when it fires, builds a SignalKindTimerExpired
-			// signal and runs it through applyStep.
+			// signal and runs it through applyTurn.
 
 		case engine.CancelTimerOutput:
 			// ... cancel whatever real timer was scheduled for this slot.
@@ -167,18 +179,6 @@ func (s *gameSession) applyStep(signal engine.Signal) error {
 			fmt.Println("game instance ended:", o.Outcome.Kind)
 		}
 	}
-
-	// commit.InternalSignals still need to be applied, each as its own
-	// Step call — Step never chains these itself.
-	for _, internal := range commit.InternalSignals {
-		if err := s.applyStep(internal); err != nil {
-			return fmt.Errorf("applying internal signal: %w", err)
-		}
-	}
-
-	// commit.Trace is informational only (logging/debugging/replay
-	// verification); nothing downstream needs to consume it here.
-
 	return nil
 }
 
@@ -186,7 +186,7 @@ func (s *gameSession) applyStep(signal engine.Signal) error {
 // the outside world (a button press, a command, ...) - the ordinary,
 // unprompted kind of input (see program.UserIntentDeclaration).
 func (s *gameSession) HandleUserIntent(actor engine.UserID, intent string, fields map[string]engine.Value) error {
-	return s.applyStep(engine.Signal{
+	return s.applyTurn(engine.Signal{
 		Kind:   engine.SignalKindIntent,
 		Intent: intent,
 		Actor:  actor,
@@ -213,13 +213,13 @@ func (s *gameSession) QuestionAnswered(respondent engine.UserID, interactionID e
 		return fmt.Errorf("interaction %v is not awaiting an answer from %q", interactionID, respondent)
 	}
 
-	// Step itself re-validates all of this (authorized respondent,
+	// The engine itself re-validates all of this (authorized respondent,
 	// response type, any Validation expression) before ever accepting
 	// it — see ErrInputRejected in README.md — so this session-layer
 	// check is just to fail fast, not the real authority. The engine
 	// resolves interactionID to the underlying slot/key itself; this
 	// consumer never needs to know or supply one.
-	err := s.applyStep(engine.Signal{
+	err := s.applyTurn(engine.Signal{
 		Kind:          engine.SignalKindInteractionAnswered,
 		InteractionID: interactionID,
 		Respondent:    respondent,
@@ -229,9 +229,9 @@ func (s *gameSession) QuestionAnswered(respondent engine.UserID, interactionID e
 		return err
 	}
 
-	// Cleared only once Step actually accepted the answer; applyStep's
-	// own CloseQuestionOutput handling also clears this whenever the
-	// engine closes the slot on its own.
+	// Cleared only once the turn actually accepted the answer;
+	// handleOutputs's own CloseQuestionOutput handling also clears this
+	// whenever the engine closes the slot on its own.
 	delete(s.pendingQuestions, interactionID)
 	return nil
 }
@@ -239,7 +239,7 @@ func (s *gameSession) QuestionAnswered(respondent engine.UserID, interactionID e
 // TimerExpired would be the analogous method for a real timer actually
 // firing (see ScheduleTimerOutput above) — sketched, not filled in.
 func (s *gameSession) TimerExpired(slot string) error {
-	return s.applyStep(engine.Signal{
+	return s.applyTurn(engine.Signal{
 		Kind: engine.SignalKindTimerExpired,
 		Slot: slot,
 	})

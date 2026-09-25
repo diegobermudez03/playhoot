@@ -36,7 +36,7 @@ This index is the Game decision family under the repository-wide routing model d
 | [GAME-ADR-0024](GAME-ADR-0024-replay-first-session-runtime-persistence.md) | Replay-First Session Runtime Persistence | ACCEPTED | 2026-09-20 | None | `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md`, `game/README.md` |
 | [GAME-ADR-0025](GAME-ADR-0025-role-aware-live-connections.md) | Role-Aware Live Connections — Admin and Participant | ACCEPTED | 2026-09-20 | None | `game/README.md` |
 | [GAME-ADR-0026](GAME-ADR-0026-flat-workflow-execution-model-and-keyed-interaction-slots.md) | Flat Workflow Execution Model, Keyed Interaction Slots, and Engine-Owned Interaction Addressing | ACCEPTED | 2026-09-24 | None | `game/README.md`, `game/language/v1/engine/LOGICAL_CONTRACT.md`, `game/language/v1/engine/README.md`, `game/language/v1/program/README.md`, `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md` |
-| [GAME-ADR-0027](GAME-ADR-0027-engine-owned-turn-execution-and-replay.md) | Engine-Owned Turn Execution — Replay and Step-Chain Draining Move Inside `engineservice` | PROPOSED | 2026-09-24 | None | `game/README.md`, `game/language/v1/engine/LOGICAL_CONTRACT.md`, `game/language/v1/engine/README.md`, `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md` |
+| [GAME-ADR-0027](GAME-ADR-0027-engine-owned-turn-execution-and-replay.md) | Engine-Owned Turn Execution — Replay and Step-Chain Draining Move Inside `engineservice` | ACCEPTED | 2026-09-24 | None | `game/README.md`, `game/language/v1/engine/LOGICAL_CONTRACT.md`, `game/language/v1/engine/README.md`, `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md` |
 
 Next Game ADR: `GAME-ADR-0028`.
 
