@@ -1,8 +1,8 @@
 # WORK-0006: Broaden Live Fan-Out — Effects and Presentations (UI) — Domain Half
 
-Status: DRAFT
+Status: DONE
 Created: 2026-09-20
-Last status change: 2026-09-24 (READY -> DRAFT: paused, and a first implementation pass reverted, pending `game/docs/decisions/GAME-ADR-0026-flat-workflow-execution-model-and-keyed-interaction-slots.md` (PROPOSED) - see "Paused (2026-09-24): Game Language Engine Redesign" below. Prior update: 2026-09-23, DRAFT -> READY, human-approved, immediately after the Domain/Play Split narrowed this WORK to the domain half only - the client-delivery half this WORK originally also described is deferred to a new, not-yet-drafted WORK that follows WORK-0020's Coordinator rebuild - see "Scope Correction (Domain/Play Split, 2026-09-23)" below. Prior update: 2026-09-20 Part C reconciliation, same day: Start-`Seed` persistence removed from this WORK's scope - see "Scope Correction (Part C Reconciliation, 2026-09-20)" below)
+Last status change: 2026-09-24 (IMPLEMENTING -> DONE, independent review APPROVED with one NON_BLOCKING finding, fixed same-session; DRAFT -> READY -> IMPLEMENTING, resumed: the human explicitly instructed resuming this WORK, with no unresolved blocker to raise first - both conditions the prior pause was waiting on were already satisfied by that point (GAME-ADR-0026 is accepted and implemented, and the recommended prerequisite `docs/projects/completed/game-language-flat-execution-model/works/WORK-0028-engine-owned-turn-execution.md` is DONE, landing `engineservice.StartTurn`/`AdvanceTurn` returning `[]engine.Output` directly to `sessionlifecycle`'s two call sites - exactly the surface this WORK needed settled before implementing once), and this WORK's own Blockers 1/2 were already RESOLVED, HUMAN-APPROVED on 2026-09-20 and unaffected by the pause. Prior update, same day: READY -> DRAFT: paused, and a first implementation pass reverted, pending GAME-ADR-0026 (then PROPOSED) - see "Paused (2026-09-24): Game Language Engine Redesign" below. Prior update: 2026-09-23, DRAFT -> READY, human-approved, immediately after the Domain/Play Split narrowed this WORK to the domain half only - the client-delivery half this WORK originally also described is deferred to a new, not-yet-drafted WORK that follows WORK-0020's Coordinator rebuild - see "Scope Correction (Domain/Play Split, 2026-09-23)" below. Prior update: 2026-09-20 Part C reconciliation, same day: Start-`Seed` persistence removed from this WORK's scope - see "Scope Correction (Part C Reconciliation, 2026-09-20)" below)
 
 Related decisions:
 - GAME-ADR-0002 (Session Runtime durable boundary, Live Session Coordinator responsibility boundary)
@@ -101,4 +101,58 @@ This WORK, and the rest of `session-runtime-v1`'s Phase 1, stay paused until GAM
 
 ## Completion Record
 
-Not yet DONE. Status: **DRAFT** (paused). Revised 2026-09-20 after human review changed the core mechanism from durable capture to direct return from `Manager` (reopening, narrowly, WORK-0005's Manager-signature constraint) and added the "Question/Presentation/Effect only" wire-protocol principle; further revised the same day (Part C reconciliation) to remove Start-Seed persistence from scope, moved to WORK-0019; further revised 2026-09-23 (Domain/Play Split) to remove the client-delivery half, which assumed a `play` package that no longer exists, then approved READY and implemented the same day; returned to DRAFT 2026-09-24 and its implementation reverted, paused pending `GAME-ADR-0026` - see "Paused (2026-09-24)" above.
+**DONE (2026-09-24).** Independent review by a fresh agent (no access to this session's own context) - APPROVED, one NON_BLOCKING finding (this WORK's own status-history wording), corrected in the same pass, no re-review required for a documentation-only correction.
+
+### Implementation Report (2026-09-24)
+
+Work: `docs/projects/active/session-runtime-v1/works/WORK-0006-broaden-live-fanout-effects-presentations.md`
+
+Work status: IMPLEMENTING
+
+Implemented:
+- `sessionlifecycle.StartResult`/`AnswerInteractionResult` gain an additive `Outputs []engine.Output` field (`types.go`), tagged `json:"-"` so it never enters the JSON payload `Start` persists for idempotent replay (an interface-typed slice `encoding/json` cannot decode back into concrete types).
+- New `clientFacingOutputs(outputs []engine.Output) []engine.Output` (`outputs.go`) selects exactly `EmitEffectOutput`/`ActivatePresentationOutput`/`UpdatePresentationOutput`/`RemovePresentationOutput`, in original order, out of a Turn's full Output list - excluding Question-kind Outputs (already durably captured by `captureInteractions`) and every Output kind this WORK does not own (timers, `WorkflowCompleted`).
+- `step_start.go`: the fresh-execution success path (`StartOutcomeStarted` after `engineservice.StartTurn` actually commits) sets `Outputs: clientFacingOutputs(outputs)`. Every other return path (the already-RUNNING short-circuit, every decline, both fatal-terminalization paths, every idempotency-replay path) leaves `Outputs` at its nil zero value, since none of them executed the engine.
+- `step_answer_interaction.go`: only the path that actually calls `engineservice.AdvanceTurn` and commits a new RuntimeTurn (`AnswerInteractionOutcomeAnswered`, non-replayed) sets `Outputs: clientFacingOutputs(outputs)`. Every declined/conflicting/replayed-equivalent-answer path leaves it nil.
+- New test fixture `presentationEffectDefinition` (`testutil_test.go`): a workflow-level Presentation (slot "hud") targeting the full player roster, projecting global `score`, mounted at Start (`ActivatePresentationOutput`) and recomputed when a Question-answer transition sets `score` (`UpdatePresentationOutput`), which also emits a client-facing Effect addressed to every player (`EmitEffectOutput`).
+- New integration test cases (real Postgres): `TestManagerStart_Integration/first_turn_returns_activated_presentations_in_memory` and `TestManagerAnswerInteraction_Integration/accepted_answer_returns_effect_and_updated_presentation_outputs`, asserting the returned `Outputs` against real engine-computed values (actual actor-ID-derived recipients, actual recomputed presentation models) rather than mocks.
+- New unit test `outputs_test.go` (`TestClientFacingOutputs`) proving the filter selects the right kinds, preserves order, and returns nil when nothing qualifies - independent of any database.
+- Documentation synchronized: `game/CURRENT_STATE.md` (Session Runtime row and Current Gaps), `game/docs/FLOWS.md` (both sequence diagrams and their "Implemented behavior" bullets) now describe `Start`/`AnswerInteraction` returning Effect/Presentation Outputs in memory, explicitly noting no live-transport Coordinator yet consumes them.
+
+Local implementation decisions:
+- Exact field/function naming (`Outputs`, `clientFacingOutputs`) - Implementation Freedom per the WORK's own text; no wire message or `play.Event` shape is introduced, since that remains explicitly out of this WORK's scope.
+- The WORK's own Scope/Context sections still reference `runtimeturn.Drain`/`drainResult.Steps[*].Outputs` - a mechanism removed by the already-completed, independent WORK-0028 (engine-owned turn execution). The actual call sites correctly use the current post-WORK-0028 surface (`outputs []engine.Output` returned directly by `engineservice.StartTurn`/`AdvanceTurn`); this pre-existing textual drift in the WORK's historical Scope section was left uncorrected, per this repository's Completed Work Immutability convention for approved-design text, since it does not change this WORK's actual approved outcome.
+
+Deviations from the approved WORK:
+- None.
+
+Discoveries:
+- None requiring escalation. One local, non-blocking finding from independent review, corrected in the same pass: this WORK's own "Last status change" line initially narrated a "READY -> IMPLEMENTING" transition without ever recording the DRAFT -> READY step that the human's explicit resumption instruction actually authorized - corrected to "DRAFT -> READY -> IMPLEMENTING" with accurate wording.
+
+Verification performed:
+- `go build ./...`, `go vet ./...` - clean, repository-wide.
+- `gofmt -l`/`gofmt -d` on every changed/new `.go` file - the flagged files are pure pre-existing CRLF-line-ending noise from this Windows checkout (confirmed via a line-ending-normalized diff), not a real formatting defect; consistent with the same finding already recorded by WORK-0028.
+- `go test ./game/session/... -count=1` - all pass, including the new integration tests, against the real `playhoot-postgres-1` container.
+- `go test . -run TestNoInternalDocCitationsInComments` - passes.
+- `go test ./... -count=1` against real Postgres - full repository suite green, no failures.
+
+Documentation synchronized:
+- `game/CURRENT_STATE.md`, `game/docs/FLOWS.md` - see Implemented above.
+- `docs/projects/active/session-runtime-v1/PROJECT.md` - updated alongside this closure (Current Work, WORK table, Capability Coverage).
+
+Known limitations:
+- None beyond what this WORK's own Approved Design already scoped out (client-facing wire delivery, timers, `WorkflowCompleted`, each owned elsewhere).
+
+Ready for independent review:
+YES.
+
+### Independent Review (2026-09-24)
+
+A fresh agent, with no access to this session's own context, reviewed this WORK per `docs/ai/protocols/IMPLEMENTATION_REVIEW.md`. It determined the actual change-set itself via `git status`/`git diff` (confirming it matched exactly the files this WORK's scope implies, no unrelated changes), read `game/language/v1/engine/output.go` directly to confirm `clientFacingOutputs` selects exactly the right closed set of Output kinds, traced every return path in `step_start.go`/`step_answer_interaction.go` to confirm `Outputs` is nil on every non-executing path, ran its own fresh `go build`/`go vet`/`gofmt -l`+`gofmt -d`/`TestNoInternalDocCitationsInComments`/the full `game/session` suite/the full repository suite against real Postgres, and read the new test fixture and integration assertions in full to confirm they are tied to real engine-computed values rather than tautological.
+
+Verdict: APPROVED, one NON_BLOCKING finding, no REQUIRED_FIX or DECISION_REQUIRED findings.
+
+Finding and fix:
+1. **(LOW, NON_BLOCKING)** This WORK's own "Last status change" narration described a "READY -> IMPLEMENTING" transition without recording that the DRAFT -> READY step happened via the human's explicit instruction to resume, in this same session. **Fixed anyway**: reworded to "DRAFT -> READY -> IMPLEMENTING" naming that authorization directly.
+
+Re-verified after applying the fix: no unresolved REQUIRED_FIX or DECISION_REQUIRED finding remains. Closed to DONE.

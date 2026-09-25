@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/diegobermudez03/playhoot/game/language/v1/engine"
 	"github.com/diegobermudez03/playhoot/game/session"
 	"github.com/diegobermudez03/playhoot/game/session/internal/testdb"
 	"github.com/diegobermudez03/playhoot/game/session/internal/testfixtures"
@@ -91,6 +92,29 @@ func TestManagerStart_Integration(t *testing.T) {
 		require.NotZero(t, row.EngineInteractionID, "the engine's own assigned InteractionID must be persisted")
 		require.Equal(t, session.InteractionStateActive, row.State)
 		require.Equal(t, turn.ID, row.OpenedByTurnID)
+	})
+
+	t.Run("first_turn_returns_activated_presentations_in_memory", func(t *testing.T) {
+		m := New(db, nil, stubStartPinnedGameReader{definition: presentationEffectDefinition(1, 4)})
+
+		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
+		hostUUID := uuid.NewString()
+		hostActorID := testfixtures.SeedActor(t, db, fx.SessionID, hostUUID)
+		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
+		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
+		testfixtures.SeedActiveParticipant(t, db, fx.SessionID, uuid.NewString(), "Player Two")
+
+		result, err := m.Start(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(hostUUID), "start-key-presentation")
+		require.NoError(t, err)
+		require.Equal(t, StartOutcomeStarted, result.Outcome)
+
+		require.Len(t, result.Outputs, 2, "one ActivatePresentationOutput per player, no OpenQuestionOutput returned")
+		for _, o := range result.Outputs {
+			activate, ok := o.(engine.ActivatePresentationOutput)
+			require.True(t, ok, "%T", o)
+			require.Equal(t, presentationEffectHudSlot, activate.Slot)
+			require.Equal(t, engine.NumberValue{Value: 0}, activate.Model, "score's initializer is 0")
+		}
 	})
 
 	t.Run("rejects_start_by_non_host", func(t *testing.T) {

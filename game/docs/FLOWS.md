@@ -123,6 +123,7 @@ sequenceDiagram
                     Mgr->>Repo: SetSessionRunning (phase, started_at, current_turn_id) / RevokeActiveJoinCode
                     Repo->>DB: phase=RUNNING, started_at, Turn 1, Seed/RootParameters, join_codes revoked, any opened session_interactions
                     Mgr->>Idem: Complete(STARTED)
+                    Mgr-->>Caller: StartResult.Outputs = clientFacingOutputs(outputs) - Effect/Presentation Outputs only, in memory
                 end
             end
         end
@@ -140,6 +141,7 @@ Implemented behavior:
 - The idempotency claim is attempted before any phase-based decision, so a same-token retry always replays its own recorded outcome first, regardless of the Session's current phase; only a token with no existing claim (a genuinely fresh command) falls through to a phase-based decision. A concurrent Start that observes the Session already `RUNNING` (a different token already won the lock race) reports `StartOutcomeStarted` directly - already-true current state, not a lobby-expiration decline. A fresh command against an already-`TERMINAL` Session reports the outcome its actual `terminal_reason` explains - `StartOutcomeLobbyExpired` only for lobby expiration, `StartOutcomeRuntimeInitFailed` for a Session terminalized by an earlier Start's own fatal path - never unconditionally the former.
 - The current-authoritative-Turn pointer is `sessions.current_turn_id`, not a separate `session_runtime_state` table (GAME-ADR-0023, refining GAME-ADR-0007) - every caller that needs it already holds the locked `sessions` row for per-Session serialization, so colocating it there is free; it is a logical, non-DB-enforced reference like every other reference in this schema.
 - `captureInteractions` (`interaction_capture.go`) walks the Turn's flat `[]engine.Output` (as `StartTurn`/`AdvanceTurn` return it - no per-Step grouping exists for this package to care about) in order and persists each `OpenQuestionOutput` as a new `ACTIVE` `session_interactions` row (`kind`/`engine_interaction_id` read directly off the Output's own `Kind`/`InteractionID` fields - no compiled `engine.Program` lookup is needed to classify what was opened) and each `CloseQuestionOutput` as a Turn-produced closure of the matching `ACTIVE` row (matched by `engine_interaction_id`) - shared unchanged between Start's own first Turn and AnswerInteraction's Turn, so no Turn-producing path can silently skip persisting an opened interaction.
+- `clientFacingOutputs` (`outputs.go`) selects the same Turn's `EmitEffectOutput`/`ActivatePresentationOutput`/`UpdatePresentationOutput`/`RemovePresentationOutput` values, in the same relative order, and `StartResult.Outputs` returns them directly - additive data only, computed fresh every call, never persisted (a future resync recomputes current Presentation state from the current Snapshot on demand instead of reading anything back). No caller outside this package consumes `Outputs` yet.
 
 Evidence:
 
@@ -202,7 +204,7 @@ sequenceDiagram
                     Mgr->>Mgr: captureInteractions(outputs) - any further OpenQuestionOutput/CloseQuestionOutput
                     Mgr->>Repo: SetCurrentTurn
                     Repo->>DB: Turn N+1, response_payload/state=CLOSED, current_turn_id advanced
-                    Mgr-->>Caller: AnswerInteractionOutcomeAnswered
+                    Mgr-->>Caller: AnswerInteractionOutcomeAnswered, Outputs = clientFacingOutputs(outputs)
                 end
             end
         end
@@ -218,6 +220,7 @@ Implemented behavior:
 - The engine clears an accepted answer's own question slot internally, before the transition's own authored operations run, and produces no `CloseQuestionOutput` for that closure - `captureInteractions` only ever catches an authored `CloseQuestionOperation` on some *other* slot. The specifically answered interaction is instead closed directly by its already-known id (`CloseAnsweredInteraction`), before `captureInteractions` runs, in the same transaction as the new RuntimeTurn - so an authored transition that reopens the exact same `InteractionID` it just answered never collides with the not-yet-closed old row.
 - A rejection of `newSignal` itself (`ErrSignalRejected`/`ErrInputRejected`) is an ordinary declined outcome: no RuntimeTurn, no Snapshot mutation, Session stays `RUNNING`. A failure to replay `priorSignals` (`ErrReplayDivergence`) is structurally distinct and always terminalizes the Session, the same as any other execution failure - every element of `priorSignals` already succeeded once, so failing to reproduce it is a data-integrity condition, never an ordinary decline. Any other failure, including exceeding the Step bound, terminalizes the Session `RUNTIME_EXECUTION_FAILED`/`RUNTIME_STATE_INVALID`, atomically closing every currently-`ACTIVE` `session_interactions` row for the Session in the same transaction (`closed_by_turn_id NULL`, `closure_reason = SESSION_TERMINATED`).
 - `session_runtime_turns.source_interaction_id`/`actor_id` are populated for AnswerInteraction's own caused Turn (never by Start's).
+- `AnswerInteractionResult.Outputs` carries the same accepted Turn's `clientFacingOutputs(outputs)` (Effect/Presentation Outputs only, in commit order) whenever `Outcome` is `Answered` and this call actually executed the engine; every declined/replayed/conflicting outcome leaves it empty, since no new RuntimeTurn committed.
 - Current authoritative Runtime state is never loaded from a persisted Snapshot - `engineservice.AdvanceTurn` deterministically rebuilds it internally, from Start's `InitializationInput` and every committed `session_runtime_turns` row `loadPriorSignals` (`replay.go`) supplies it, in sequence order (each later Turn's signal reconstructed by dispatching its own `source_kind` to the `engine.Signal` its durable cause implies - today, only `INTERACTION_RESPONSE` is dispatched this way; a future cause extends `loadReplaySignal` with its own case once its own owning WORK gives it a durable representation to reconstruct from). `sessionlifecycle` holds no cache of any kind and never constructs an `engine.Snapshot` itself (GAME-ADR-0027): every call's replay happens inside `engineservice`, from scratch, so a process-loss recovery reconstructs the exact same current state purely from durable state.
 
 Evidence:

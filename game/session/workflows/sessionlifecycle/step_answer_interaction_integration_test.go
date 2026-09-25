@@ -2,6 +2,7 @@ package sessionlifecycle
 
 import (
 	"context"
+	"strconv"
 	"testing"
 	"time"
 
@@ -75,6 +76,54 @@ func TestManagerAnswerInteraction_Integration(t *testing.T) {
 		require.NoError(t, db.Raw(`SELECT current_turn_id FROM sessions WHERE uuid = ?`, string(sessionUUID)).Scan(&currentTurnID).Error)
 		require.NoError(t, db.Raw(`SELECT closed_by_turn_id FROM session_interactions WHERE uuid = ?`, string(interactionUUID)).Scan(&closedByTurnID).Error)
 		require.Equal(t, currentTurnID, closedByTurnID, "current_turn_id must advance to the Turn that closed the interaction")
+	})
+
+	t.Run("accepted_answer_returns_effect_and_updated_presentation_outputs", func(t *testing.T) {
+		m := New(db, nil, stubStartPinnedGameReader{definition: presentationEffectDefinition(1, 4)})
+
+		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
+		hostUUIDStr := uuid.NewString()
+		hostActorID := testfixtures.SeedActor(t, db, fx.SessionID, hostUUIDStr)
+		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
+		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
+		playerTwoActorID := testfixtures.SeedActiveParticipant(t, db, fx.SessionID, uuid.NewString(), "Player Two")
+
+		startResult, err := m.Start(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(hostUUIDStr), IdempotencyKey(uuid.NewString()))
+		require.NoError(t, err)
+		require.Equal(t, StartOutcomeStarted, startResult.Outcome)
+
+		var interactionUUIDStr string
+		require.NoError(t, db.Raw(`SELECT uuid FROM session_interactions WHERE session_id = ? AND state = ?`, fx.SessionID, session.InteractionStateActive).Scan(&interactionUUIDStr).Error)
+		require.NotEmpty(t, interactionUUIDStr)
+
+		result, err := m.AnswerInteraction(context.Background(), InteractionUUID(interactionUUIDStr), UserUUID(hostUUIDStr), engine.NumberValue{Value: 42})
+		require.NoError(t, err)
+		require.Equal(t, AnswerInteractionOutcomeAnswered, result.Outcome)
+
+		var effects []engine.EmitEffectOutput
+		var updates []engine.UpdatePresentationOutput
+		for _, o := range result.Outputs {
+			switch v := o.(type) {
+			case engine.EmitEffectOutput:
+				effects = append(effects, v)
+			case engine.UpdatePresentationOutput:
+				updates = append(updates, v)
+			default:
+				t.Fatalf("unexpected Output kind returned: %T", o)
+			}
+		}
+		require.Len(t, effects, 1, "one EmitEffectOutput addressed to both players via a single Recipients list")
+		require.ElementsMatch(t, []engine.UserID{
+			engine.UserID(strconv.FormatUint(uint64(hostActorID), 10)),
+			engine.UserID(strconv.FormatUint(uint64(playerTwoActorID), 10)),
+		}, effects[0].Recipients)
+		require.Equal(t, presentationEffectName, effects[0].Effect)
+
+		require.Len(t, updates, 2, "one UpdatePresentationOutput per mounted Hud presentation")
+		for _, u := range updates {
+			require.Equal(t, presentationEffectHudSlot, u.Slot)
+			require.Equal(t, engine.NumberValue{Value: 42}, u.Model)
+		}
 	})
 
 	t.Run("rejects_answer_from_non_recipient", func(t *testing.T) {

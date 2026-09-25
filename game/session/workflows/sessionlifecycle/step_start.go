@@ -262,7 +262,7 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 		return StartResult{}, err
 	}
 
-	result := StartResult{Outcome: StartOutcomeStarted, SessionUUID: SessionUUID(lockedSession.UUID)}
+	result := StartResult{Outcome: StartOutcomeStarted, SessionUUID: SessionUUID(lockedSession.UUID), Outputs: clientFacingOutputs(outputs)}
 	responseBytes, err := json.Marshal(result)
 	if err != nil {
 		return StartResult{}, fmt.Errorf("marshaling start response payload: %s", err)

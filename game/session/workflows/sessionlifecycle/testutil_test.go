@@ -357,6 +357,107 @@ func dualQuestionDefinition(playersMin, playersMax int) program.Definition {
 	}
 }
 
+// presentationEffectQuestionName/presentationEffectSlot/
+// presentationEffectHudSlot/presentationEffectName name
+// presentationEffectDefinition's own declarations.
+const (
+	presentationEffectQuestionName = "PickNumber"
+	presentationEffectSlot         = "Q"
+	presentationEffectHudSlot      = "hud"
+	presentationEffectName         = "Celebrate"
+)
+
+// presentationEffectDefinition builds a real, engineservice.Compile-able
+// Definition declaring the accepted `players: list<user>` root roster
+// parameter, whose root workflow mounts a workflow-level presentation (slot
+// "hud") for every player, projecting global "score", and opens a Question
+// at players[0] immediately at Start. Answering it sets "score" to the
+// answer (causing every mounted Hud presentation to recompute and report an
+// UpdatePresentationOutput) and emits a client-facing effect addressed to
+// every player - for tests that need a Definition whose committed Turns
+// produce Effect/Presentation Outputs alongside an ordinary question.
+func presentationEffectDefinition(playersMin, playersMax int) program.Definition {
+	numberType := program.BuiltinTypeReference{Type: program.BuiltinTypeNumber}
+	return program.Definition{
+		Metadata:     program.Metadata{ID: "presentation-effect", Name: "PresentationEffect"},
+		RootWorkflow: "Main",
+		Players:      program.PlayerPolicy{Min: playersMin, Max: playersMax},
+		GlobalState: program.StateDeclaration{
+			Fields: []program.StateFieldDeclaration{
+				{Name: "score", Type: numberType, Initializer: program.NumberLiteralExpression{Value: "0"}},
+			},
+		},
+		Questions: []program.QuestionDeclaration{
+			{Name: presentationEffectQuestionName, ResponseType: numberType},
+		},
+		Effects: []program.EffectDeclaration{
+			{Name: presentationEffectName},
+		},
+		PresentationSlots: []program.PresentationSlotDeclaration{{Name: presentationEffectHudSlot}},
+		Projections: []program.ProjectionDeclaration{
+			{Name: "Score", ResultType: numberType, Body: program.FieldExpression{Target: program.ReferenceExpression{Name: "global"}, Field: "score"}},
+		},
+		Views: []program.ViewDeclaration{
+			{Name: "ScoreView", ModelType: numberType, Root: program.EmptyElement{}},
+		},
+		Workflows: []program.WorkflowDeclaration{
+			{
+				Name: "Main",
+				Parameters: []program.FieldDeclaration{
+					{Name: "players", Type: program.ListTypeReference{Element: program.BuiltinTypeReference{Type: program.BuiltinTypeUser}}},
+				},
+				ResultType:   program.BuiltinTypeReference{Type: program.BuiltinTypeUnit},
+				InitialState: "Start",
+				Presentations: []program.PresentationDeclaration{
+					{Name: "Hud", Slot: presentationEffectHudSlot, Targets: program.ReferenceExpression{Name: "players"}, Projection: "Score", View: "ScoreView"},
+				},
+				QuestionSlots: []program.QuestionSlotDeclaration{
+					{Name: presentationEffectSlot, Question: presentationEffectQuestionName},
+				},
+				States: []program.WorkflowStateDeclaration{
+					{
+						Name: "Start",
+						Transitions: []program.TransitionDeclaration{
+							{
+								Name:   "Started",
+								Signal: program.SignalPattern{Source: program.NamedSignalSource{Name: "WorkflowStarted"}},
+								Operations: program.Block{Operations: []program.Operation{
+									program.OpenQuestionOperation{
+										Slot: presentationEffectSlot,
+										Recipient: program.IndexExpression{
+											Target: program.ReferenceExpression{Name: "players"},
+											Index:  program.NumberLiteralExpression{Value: "0"},
+										},
+									},
+								}},
+								Control: program.StayControl{},
+							},
+							{
+								Name: "Answered",
+								Signal: program.SignalPattern{
+									Source:   program.QuestionAnsweredSignalSource{Slot: presentationEffectSlot},
+									Bindings: []program.SignalBinding{{Field: "answer", Name: "response"}},
+								},
+								Operations: program.Block{Operations: []program.Operation{
+									program.SetOperation{
+										Target: program.FieldTarget{Target: program.NameTarget{Name: "global"}, Field: "score"},
+										Value:  program.ReferenceExpression{Name: "response"},
+									},
+									program.EmitEffectOperation{
+										Effect:     presentationEffectName,
+										Recipients: program.ReferenceExpression{Name: "players"},
+									},
+								}},
+								Control: program.StayControl{},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
 // replayObservableQuestionName/replayObservableSlot/replayObservableSlot2/
 // replayRandomArgName name replayObservableDefinition's own declarations.
 const (

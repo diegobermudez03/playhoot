@@ -233,7 +233,7 @@ func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessio
 		return AnswerInteractionResult{}, err
 	}
 
-	return AnswerInteractionResult{Outcome: AnswerInteractionOutcomeAnswered, SessionUUID: SessionUUID(lockedSession.UUID)}, nil
+	return AnswerInteractionResult{Outcome: AnswerInteractionOutcomeAnswered, SessionUUID: SessionUUID(lockedSession.UUID), Outputs: clientFacingOutputs(outputs)}, nil
 }
 
 // terminalizeAnswerInteractionFatal performs AnswerInteraction's fatal path:

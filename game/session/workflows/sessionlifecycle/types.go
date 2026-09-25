@@ -6,7 +6,11 @@
 // requests.
 package sessionlifecycle
 
-import "time"
+import (
+	"time"
+
+	"github.com/diegobermudez03/playhoot/game/language/v1/engine"
+)
 
 // GameUUID is a public Game identity (Create's input).
 type GameUUID string
@@ -120,10 +124,15 @@ const (
 
 // StartResult is Start's logical outcome, also the shape persisted as the
 // idempotency record's replayable response payload. SessionUUID is only
-// populated when Outcome is StartOutcomeStarted.
+// populated when Outcome is StartOutcomeStarted. Outputs carries the first
+// committed RuntimeTurn's client-facing Effect/Presentation Outputs, in
+// commit order - populated only when this call actually executed the
+// engine, never persisted, and never present on a replayed retry. It is
+// excluded from the persisted idempotency payload.
 type StartResult struct {
-	Outcome     StartOutcome `json:"outcome"`
-	SessionUUID SessionUUID  `json:"session_uuid,omitempty"`
+	Outcome     StartOutcome    `json:"outcome"`
+	SessionUUID SessionUUID     `json:"session_uuid,omitempty"`
+	Outputs     []engine.Output `json:"-"`
 }
 
 // InteractionUUID is a session_interactions row's public identity.
@@ -160,8 +169,13 @@ const (
 // AnswerInteractionResult is AnswerInteraction's logical outcome.
 // SessionUUID is populated whenever the interaction's owning Session was
 // resolved (every outcome except an unresolved interactionUUID, reported as
-// session.ErrInteractionNotFound instead).
+// session.ErrInteractionNotFound instead). Outputs carries the committed
+// RuntimeTurn's client-facing Effect/Presentation Outputs, in commit order -
+// populated only for AnswerInteractionOutcomeAnswered when this call
+// actually executed the engine, never persisted, and never present on a
+// replayed or declined outcome.
 type AnswerInteractionResult struct {
 	Outcome     AnswerInteractionOutcome `json:"outcome"`
 	SessionUUID SessionUUID              `json:"session_uuid,omitempty"`
+	Outputs     []engine.Output          `json:"-"`
 }
