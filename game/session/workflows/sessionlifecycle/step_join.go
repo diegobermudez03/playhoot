@@ -10,6 +10,7 @@ import (
 	"github.com/diegobermudez03/playhoot/game/session"
 	"github.com/diegobermudez03/playhoot/game/session/internal/idempotency"
 	"github.com/diegobermudez03/playhoot/game/session/internal/sessionlock"
+	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/expiration"
 	internalrepo "github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/repo"
 	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/monitoring"
@@ -39,7 +40,7 @@ type gamePinnedDefinitionReader interface {
 // sessionlock/idempotency mechanism packages are called directly by this
 // step instead of through repository forwarding methods.
 type joinRepoAPI interface {
-	expirationStore
+	expiration.Store
 	ResolveSessionForJoinCode(ctx context.Context, joinCode uint) (*internalrepo.JoinCodeResolution, error)
 	FindActor(ctx context.Context, tx *gorm.DB, sessionID uint, userUUID string) (*internalrepo.Actor, error)
 	CreateActor(ctx context.Context, tx *gorm.DB, sessionID uint, userUUID string) (uint, error)
@@ -127,7 +128,7 @@ func (m *Manager) joinSessionInTx(ctx context.Context, tx *gorm.DB, sessionID ui
 	}
 
 	now := time.Now().UTC()
-	if _, err := materializeExpirationIfDue(ctx, tx, m.joinRepo, lockedSession, now); err != nil {
+	if _, err := expiration.MaterializeIfDue(ctx, tx, m.joinRepo, lockedSession, now); err != nil {
 		return JoinResult{}, err
 	}
 	if lockedSession.Phase != session.PhaseLobby {

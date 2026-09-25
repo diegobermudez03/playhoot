@@ -11,22 +11,21 @@ import (
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine/engineservice"
 	"github.com/diegobermudez03/playhoot/game/session"
 	"github.com/diegobermudez03/playhoot/game/session/internal/sessionlock"
+	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/clientoutputs"
+	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/interactions"
 	internalrepo "github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/repo"
+	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/replay"
 	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/monitoring"
 	"github.com/diegobermudez03/playhoot/utils"
 	"gorm.io/gorm"
 )
 
-// answerInteractionSourceKind is the source_kind label persisted on the
-// RuntimeTurn an accepted interaction response causes.
-const answerInteractionSourceKind = "INTERACTION_RESPONSE"
-
 // answerInteractionRepoAPI is AnswerInteraction's own narrow persistence
 // contract. The shared sessionlock mechanism package is called directly by
 // this step instead of through a repository forwarding method.
 type answerInteractionRepoAPI interface {
-	interactionCaptureRepoAPI
+	interactions.CaptureRepo
 	ResolveSessionForInteraction(ctx context.Context, interactionUUID string) (*uint, error)
 	FindInteractionByUUID(ctx context.Context, tx *gorm.DB, interactionUUID string) (*internalrepo.Interaction, error)
 	FindActor(ctx context.Context, tx *gorm.DB, sessionID uint, userUUID string) (*internalrepo.Actor, error)
@@ -178,7 +177,7 @@ func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessio
 	// Snapshot (none exists), and this package never reconstructs one
 	// itself - engineservice.AdvanceTurn internally replays every durable
 	// cause committed so far, given only the ordered signal log below.
-	input, priorSignals, err := m.loadPriorSignals(ctx, tx, lockedSession.ID)
+	input, priorSignals, err := replay.LoadPriorSignals(ctx, tx, m.answerInteractionRepo, lockedSession.ID)
 	if err != nil {
 		return AnswerInteractionResult{}, fmt.Errorf("reconstructing current runtime state: %s", err)
 	}
@@ -210,7 +209,7 @@ func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessio
 	}
 
 	actorID := actor.ID
-	turnID, err := m.answerInteractionRepo.CreateRuntimeTurn(ctx, tx, lockedSession.ID, currentTurn.Sequence+1, answerInteractionSourceKind, &interaction.ID, &actorID)
+	turnID, err := m.answerInteractionRepo.CreateRuntimeTurn(ctx, tx, lockedSession.ID, currentTurn.Sequence+1, replay.AnswerInteractionSourceKind, &interaction.ID, &actorID)
 	if err != nil {
 		return AnswerInteractionResult{}, err
 	}
@@ -226,14 +225,14 @@ func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessio
 	if err := m.answerInteractionRepo.CloseAnsweredInteraction(ctx, tx, interaction.ID, responsePayload, turnID); err != nil {
 		return AnswerInteractionResult{}, err
 	}
-	if err := captureInteractions(ctx, tx, m.answerInteractionRepo, lockedSession.ID, turnID, outputs); err != nil {
+	if err := interactions.Capture(ctx, tx, m.answerInteractionRepo, lockedSession.ID, turnID, outputs); err != nil {
 		return AnswerInteractionResult{}, err
 	}
 	if err := m.answerInteractionRepo.SetCurrentTurn(ctx, tx, lockedSession.ID, turnID); err != nil {
 		return AnswerInteractionResult{}, err
 	}
 
-	return AnswerInteractionResult{Outcome: AnswerInteractionOutcomeAnswered, SessionUUID: SessionUUID(lockedSession.UUID), Outputs: clientFacingOutputs(outputs)}, nil
+	return AnswerInteractionResult{Outcome: AnswerInteractionOutcomeAnswered, SessionUUID: SessionUUID(lockedSession.UUID), Outputs: clientoutputs.ClientFacing(outputs)}, nil
 }
 
 // terminalizeAnswerInteractionFatal performs AnswerInteraction's fatal path:

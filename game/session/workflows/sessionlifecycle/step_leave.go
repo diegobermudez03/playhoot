@@ -9,6 +9,7 @@ import (
 	"github.com/diegobermudez03/playhoot/game/session"
 	"github.com/diegobermudez03/playhoot/game/session/internal/idempotency"
 	"github.com/diegobermudez03/playhoot/game/session/internal/sessionlock"
+	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/expiration"
 	internalrepo "github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/repo"
 	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/utils"
@@ -28,7 +29,7 @@ const (
 // sessionlock/idempotency mechanism packages are called directly by this
 // step instead of through repository forwarding methods.
 type leaveRepoAPI interface {
-	expirationStore
+	expiration.Store
 	FindActor(ctx context.Context, tx *gorm.DB, sessionID uint, userUUID string) (*internalrepo.Actor, error)
 	FindParticipant(ctx context.Context, tx *gorm.DB, actorID uint) (*internalrepo.Participant, error)
 	DeactivateParticipant(ctx context.Context, tx *gorm.DB, participantID uint, leftAt time.Time) error
@@ -77,7 +78,7 @@ func (m *Manager) leaveSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 	}
 
 	now := time.Now().UTC()
-	if _, err := materializeExpirationIfDue(ctx, tx, m.leaveRepo, lockedSession, now); err != nil {
+	if _, err := expiration.MaterializeIfDue(ctx, tx, m.leaveRepo, lockedSession, now); err != nil {
 		return LeaveResult{}, err
 	}
 	if lockedSession.Phase != session.PhaseLobby {

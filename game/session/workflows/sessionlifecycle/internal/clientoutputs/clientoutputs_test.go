@@ -1,4 +1,4 @@
-package sessionlifecycle
+package clientoutputs
 
 import (
 	"testing"
@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestClientFacingOutputs(t *testing.T) {
+func TestClientFacing(t *testing.T) {
 	t.Run("selects_only_effect_and_presentation_outputs_in_order", func(t *testing.T) {
 		activate := engine.ActivatePresentationOutput{Slot: "hud", Recipient: "1", Name: "Hud", View: "HudView"}
 		effect := engine.EmitEffectOutput{Effect: "Celebrate", Recipients: []engine.UserID{"1", "2"}}
@@ -22,7 +22,7 @@ func TestClientFacingOutputs(t *testing.T) {
 			remove,
 		}
 
-		got := clientFacingOutputs(outputs)
+		got := ClientFacing(outputs)
 
 		require.Equal(t, []engine.Output{activate, effect, update, remove}, got)
 	})
@@ -30,10 +30,10 @@ func TestClientFacingOutputs(t *testing.T) {
 	t.Run("returns_nil_when_no_client_facing_output_is_present", func(t *testing.T) {
 		outputs := []engine.Output{engine.OpenQuestionOutput{InteractionID: 1, Recipient: "1"}}
 
-		require.Nil(t, clientFacingOutputs(outputs))
+		require.Nil(t, ClientFacing(outputs))
 	})
 
 	t.Run("returns_nil_for_no_outputs", func(t *testing.T) {
-		require.Nil(t, clientFacingOutputs(nil))
+		require.Nil(t, ClientFacing(nil))
 	})
 }

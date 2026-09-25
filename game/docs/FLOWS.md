@@ -62,7 +62,7 @@ sequenceDiagram
     Mgr->>Repo: ResolveActiveSessionForJoinCode(joinCode)
     Mgr->>GetDef: GetGameDefinition(pinned game_definition_uuid)
     Mgr->>Lock: LockByID(sessionID)
-    Mgr->>Mgr: materializeExpirationIfDue(lockedSession, now)
+    Mgr->>Mgr: expiration.MaterializeIfDue(lockedSession, now)
     Mgr->>Idem: Claim(JOIN, ...)
     Mgr->>Repo: FindActor/CreateActor, FindParticipant, CountActiveParticipants
     Mgr->>Mgr: admission decision (AlreadyJoined / players.max as JoinResult.Outcome values)
@@ -71,7 +71,7 @@ sequenceDiagram
 
     Caller->>Mgr: Leave(sessionUUID, userUUID, idempotencyKey)
     Mgr->>Lock: LockByUUID(sessionUUID)
-    Mgr->>Mgr: materializeExpirationIfDue(lockedSession, now)
+    Mgr->>Mgr: expiration.MaterializeIfDue(lockedSession, now)
     Mgr->>Idem: Claim(LEAVE, ...)
     Mgr->>Repo: FindActor / FindParticipant / DeactivateParticipant(...)
     Mgr->>Idem: Complete(...)
@@ -92,7 +92,7 @@ sequenceDiagram
 
     Caller->>Mgr: Start(sessionUUID, userUUID, idempotencyKey)
     Mgr->>Lock: LockByUUID(sessionUUID)
-    Mgr->>Mgr: materializeExpirationIfDue(lockedSession, now)
+    Mgr->>Mgr: expiration.MaterializeIfDue(lockedSession, now)
     Mgr->>Idem: Claim(START, ...)
     alt existing claim for this token
         Mgr->>Mgr: replay its recorded Outcome (Started/NotHost/NotEnoughPlayers/RuntimeInitFailed/LobbyExpired)
@@ -119,11 +119,11 @@ sequenceDiagram
                     Mgr->>Idem: Complete(RUNTIME_INIT_FAILED)
                 else quiescence reached within bound
                     Mgr->>Repo: CreateRuntimeTurn(sequence=1) / CreateRuntimeStart(seed, rootParameters)
-                    Mgr->>Mgr: captureInteractions(outputs) - persist any OpenQuestionOutput/CloseQuestionOutput
+                    Mgr->>Mgr: interactions.Capture(outputs) - persist any OpenQuestionOutput/CloseQuestionOutput
                     Mgr->>Repo: SetSessionRunning (phase, started_at, current_turn_id) / RevokeActiveJoinCode
                     Repo->>DB: phase=RUNNING, started_at, Turn 1, Seed/RootParameters, join_codes revoked, any opened session_interactions
                     Mgr->>Idem: Complete(STARTED)
-                    Mgr-->>Caller: StartResult.Outputs = clientFacingOutputs(outputs) - Effect/Presentation Outputs only, in memory
+                    Mgr-->>Caller: StartResult.Outputs = clientoutputs.ClientFacing(outputs) - Effect/Presentation Outputs only, in memory
                 end
             end
         end
@@ -133,19 +133,20 @@ sequenceDiagram
 Implemented behavior:
 
 - `Start` is a step on the same `sessionlifecycle.Manager`, reusing the identical lock/lazy-expiration/idempotency pattern as Create/Join/Leave, plus the existing `pinnedGameReader` dependency Join already established (no new Game Management capability).
-- RuntimeTurn Step-draining/bound execution (draining `Commit.InternalSignals` in FIFO order, the `engine.Limits.MaxStepsPerTurn = 20` bound) is entirely owned by `engineservice.StartTurn`/`AdvanceTurn` (`game/language/v1/engine/engineservice`), not by `sessionlifecycle` - this package never reconstructs an `engine.Snapshot` or implements any part of that mechanism itself (GAME-ADR-0027). `startSessionInTx` itself still owns Turn persistence and calls the shared `captureInteractions` (see below) to record any interaction the Turn opened. No intra-Turn Step trace is persisted (`session_runtime_steps` was removed by WORK-0019/GAME-ADR-0024 - it had no independent live-correctness purpose and no replay-input role).
+- RuntimeTurn Step-draining/bound execution (draining `Commit.InternalSignals` in FIFO order, the `engine.Limits.MaxStepsPerTurn = 20` bound) is entirely owned by `engineservice.StartTurn`/`AdvanceTurn` (`game/language/v1/engine/engineservice`), not by `sessionlifecycle` - this package never reconstructs an `engine.Snapshot` or implements any part of that mechanism itself (GAME-ADR-0027). `startSessionInTx` itself still owns Turn persistence and calls the shared `interactions.Capture` (see below) to record any interaction the Turn opened. No intra-Turn Step trace is persisted (`session_runtime_steps` was removed by WORK-0019/GAME-ADR-0024 - it had no independent live-correctness purpose and no replay-input role).
 - Start's own deterministic initialization is durably persisted, atomically with Turn 1: `CreateRuntimeStart` writes `session_runtime_starts` (`seed` - `InitializationInput.Seed`'s `uint64` bit pattern reinterpreted as a signed `BIGINT` - and `root_parameters`, the `players` roster encoded through `engineservice.EncodeValue`). This is what makes a `RUNNING` Session's current state replay-reconstructable after process loss, per GAME-ADR-0024 - no full `engine.Snapshot` is ever persisted anywhere.
 - `StartOutcomeStarted`/`LobbyExpired`/`NotHost`/`NotEnoughPlayers`/`RuntimeInitFailed` are all returned as `StartResult.Outcome` values alongside a `nil` error (GAME-ADR-0022), including the fatal `RuntimeInitFailed` case, which is recorded as the `START` idempotency claim's completed - and replayable - outcome exactly like any other decline.
 - Two distinct fatal-path terminal reasons are materialized directly `LOBBY -> TERMINAL` with `started_at` left `NULL` and no `session_runtime_turns`/`session_runtime_starts` row written: `RUNTIME_STATE_INVALID` (the pinned Definition unexpectedly fails to recompile - a data-integrity anomaly, since it already compiled at Create) and `RUNTIME_EXECUTION_FAILED` (everything else - a `StartTurn` execution error, an outright rejection of Start's own initial signal chain, or exceeding the 20-Step bound).
 - The `players` root roster is built from active Participants ordered by `joined_at` ascending (ties broken by internal actor id); each `engine.UserValue.ID` is the Participant's internal `session_actors.id`, never `Identity.UserUUID`.
 - The idempotency claim is attempted before any phase-based decision, so a same-token retry always replays its own recorded outcome first, regardless of the Session's current phase; only a token with no existing claim (a genuinely fresh command) falls through to a phase-based decision. A concurrent Start that observes the Session already `RUNNING` (a different token already won the lock race) reports `StartOutcomeStarted` directly - already-true current state, not a lobby-expiration decline. A fresh command against an already-`TERMINAL` Session reports the outcome its actual `terminal_reason` explains - `StartOutcomeLobbyExpired` only for lobby expiration, `StartOutcomeRuntimeInitFailed` for a Session terminalized by an earlier Start's own fatal path - never unconditionally the former.
 - The current-authoritative-Turn pointer is `sessions.current_turn_id`, not a separate `session_runtime_state` table (GAME-ADR-0023, refining GAME-ADR-0007) - every caller that needs it already holds the locked `sessions` row for per-Session serialization, so colocating it there is free; it is a logical, non-DB-enforced reference like every other reference in this schema.
-- `captureInteractions` (`interaction_capture.go`) walks the Turn's flat `[]engine.Output` (as `StartTurn`/`AdvanceTurn` return it - no per-Step grouping exists for this package to care about) in order and persists each `OpenQuestionOutput` as a new `ACTIVE` `session_interactions` row (`kind`/`engine_interaction_id` read directly off the Output's own `Kind`/`InteractionID` fields - no compiled `engine.Program` lookup is needed to classify what was opened) and each `CloseQuestionOutput` as a Turn-produced closure of the matching `ACTIVE` row (matched by `engine_interaction_id`) - shared unchanged between Start's own first Turn and AnswerInteraction's Turn, so no Turn-producing path can silently skip persisting an opened interaction.
-- `clientFacingOutputs` (`outputs.go`) selects the same Turn's `EmitEffectOutput`/`ActivatePresentationOutput`/`UpdatePresentationOutput`/`RemovePresentationOutput` values, in the same relative order, and `StartResult.Outputs` returns them directly - additive data only, computed fresh every call, never persisted (a future resync recomputes current Presentation state from the current Snapshot on demand instead of reading anything back). No caller outside this package consumes `Outputs` yet.
+- `interactions.Capture` (`internal/interactions/capture.go`) walks the Turn's flat `[]engine.Output` (as `StartTurn`/`AdvanceTurn` return it - no per-Step grouping exists for this package to care about) in order and persists each `OpenQuestionOutput` as a new `ACTIVE` `session_interactions` row (`kind`/`engine_interaction_id` read directly off the Output's own `Kind`/`InteractionID` fields - no compiled `engine.Program` lookup is needed to classify what was opened) and each `CloseQuestionOutput` as a Turn-produced closure of the matching `ACTIVE` row (matched by `engine_interaction_id`) - shared unchanged between Start's own first Turn and AnswerInteraction's Turn, so no Turn-producing path can silently skip persisting an opened interaction.
+- `clientoutputs.ClientFacing` (`internal/clientoutputs/clientoutputs.go`) selects the same Turn's `EmitEffectOutput`/`ActivatePresentationOutput`/`UpdatePresentationOutput`/`RemovePresentationOutput` values, in the same relative order, and `StartResult.Outputs` returns them directly - additive data only, computed fresh every call, never persisted (a future resync recomputes current Presentation state from the current Snapshot on demand instead of reading anything back). No caller outside this package consumes `Outputs` yet.
+- Behavior shared by two or more of this workflow's steps (lazy-expiration materialization, interaction capture, client-facing Output filtering, replay reconstruction) lives under `sessionlifecycle`'s own `internal/<mechanism-name>/` subpackages (`internal/expiration/`, `internal/interactions/`, `internal/clientoutputs/`, `internal/replay/`), sibling to `internal/repo/` - never inline in a `step_*.go` file, and never elevated to the domain-wide `game/session/internal/`.
 
 Evidence:
 
-- `game/session/workflows/sessionlifecycle/step_start.go`, `replay.go`, `interaction_capture.go`, `game/language/v1/engine/engineservice/runtime.go` (`StartTurn`/`AdvanceTurn`), `internal/repo/runtime_turn.go`, `internal/repo/runtime_start.go`, `internal/repo/interaction.go`, `internal/repo/session.go`'s `SetSessionRunning`, `internal/repo/participant.go`'s `ListActiveParticipantsForRoster`
+- `game/session/workflows/sessionlifecycle/step_start.go`, `internal/replay/replay.go`, `internal/interactions/capture.go`, `internal/clientoutputs/clientoutputs.go`, `internal/expiration/expiration.go`, `game/language/v1/engine/engineservice/runtime.go` (`StartTurn`/`AdvanceTurn`), `internal/repo/runtime_turn.go`, `internal/repo/runtime_start.go`, `internal/repo/interaction.go`, `internal/repo/session.go`'s `SetSessionRunning`, `internal/repo/participant.go`'s `ListActiveParticipantsForRoster`
 - `game/session/internal/storage/migrations/20260919000000_session_runtime_turns.go` (no Snapshot column - GAME-ADR-0024/WORK-0019); `sessions.current_turn_id` is added by `game/session/internal/storage/migrations/20260908000001_sessions.go`'s successor migration (see WORK-0003's revision record); `session_interactions` by `20260919000003_session_interactions.go` (identity migrated from `engine_path`/`engine_slot` to `engine_interaction_id` by `20260924000000_session_interactions_engine_interaction_id.go`); `session_runtime_starts` and `session_cause_events`/`session_runtime_turns.source_cause_event_id` by `game/session/internal/storage/migrations/2026092200000{0,1}_*.go`
 
 ## Answer Interaction (RUNNING-Phase RuntimeTurn)
@@ -201,10 +202,10 @@ sequenceDiagram
                 else newSignal accepted
                     Mgr->>Repo: CreateRuntimeTurn(sourceInteractionID, actorID)
                     Mgr->>Repo: CloseAnsweredInteraction(interactionID, responsePayload, turnID)
-                    Mgr->>Mgr: captureInteractions(outputs) - any further OpenQuestionOutput/CloseQuestionOutput
+                    Mgr->>Mgr: interactions.Capture(outputs) - any further OpenQuestionOutput/CloseQuestionOutput
                     Mgr->>Repo: SetCurrentTurn
                     Repo->>DB: Turn N+1, response_payload/state=CLOSED, current_turn_id advanced
-                    Mgr-->>Caller: AnswerInteractionOutcomeAnswered, Outputs = clientFacingOutputs(outputs)
+                    Mgr-->>Caller: AnswerInteractionOutcomeAnswered, Outputs = clientoutputs.ClientFacing(outputs)
                 end
             end
         end
@@ -217,15 +218,15 @@ Implemented behavior:
 - RUNNING-phase per-Session serialization reuses `sessionlock.LockByID` unchanged (GAME-ADR-0018) - the same primitive Create/Join/Leave/Start already use for LOBBY. Execution always reloads `sessions.current_turn_id` and reconstructs current authoritative state by replay after acquiring the lock, never trusting a pre-lock read or a persisted Snapshot (GAME-ADR-0024, WORK-0019) - `GetRuntimeTurn` is used only for the current Turn's `sequence`, to compute the next one.
 - Respondent authorization (the caller's resolved `SessionActorID` must equal the interaction's own `session_actor_id`) is checked directly against the persisted row before ever constructing an `engine.Signal`, the same rejection the engine would itself produce for an unauthorized `Respondent` - so an unauthorized caller never reaches the engine at all.
 - `engine.Signal` is constructed as `SignalKindInteractionAnswered` directly, with `InteractionID` set from the interaction's own persisted `engine_interaction_id` - the engine itself resolves which underlying slot (ordinary or keyed) and occurrence Key that `InteractionID` addresses, and whether it behaves as a Question or an Ask Group, so no `kind`-based branching is needed to pick a `SignalKind` any more.
-- The engine clears an accepted answer's own question slot internally, before the transition's own authored operations run, and produces no `CloseQuestionOutput` for that closure - `captureInteractions` only ever catches an authored `CloseQuestionOperation` on some *other* slot. The specifically answered interaction is instead closed directly by its already-known id (`CloseAnsweredInteraction`), before `captureInteractions` runs, in the same transaction as the new RuntimeTurn - so an authored transition that reopens the exact same `InteractionID` it just answered never collides with the not-yet-closed old row.
+- The engine clears an accepted answer's own question slot internally, before the transition's own authored operations run, and produces no `CloseQuestionOutput` for that closure - `interactions.Capture` only ever catches an authored `CloseQuestionOperation` on some *other* slot. The specifically answered interaction is instead closed directly by its already-known id (`CloseAnsweredInteraction`), before `interactions.Capture` runs, in the same transaction as the new RuntimeTurn - so an authored transition that reopens the exact same `InteractionID` it just answered never collides with the not-yet-closed old row.
 - A rejection of `newSignal` itself (`ErrSignalRejected`/`ErrInputRejected`) is an ordinary declined outcome: no RuntimeTurn, no Snapshot mutation, Session stays `RUNNING`. A failure to replay `priorSignals` (`ErrReplayDivergence`) is structurally distinct and always terminalizes the Session, the same as any other execution failure - every element of `priorSignals` already succeeded once, so failing to reproduce it is a data-integrity condition, never an ordinary decline. Any other failure, including exceeding the Step bound, terminalizes the Session `RUNTIME_EXECUTION_FAILED`/`RUNTIME_STATE_INVALID`, atomically closing every currently-`ACTIVE` `session_interactions` row for the Session in the same transaction (`closed_by_turn_id NULL`, `closure_reason = SESSION_TERMINATED`).
 - `session_runtime_turns.source_interaction_id`/`actor_id` are populated for AnswerInteraction's own caused Turn (never by Start's).
-- `AnswerInteractionResult.Outputs` carries the same accepted Turn's `clientFacingOutputs(outputs)` (Effect/Presentation Outputs only, in commit order) whenever `Outcome` is `Answered` and this call actually executed the engine; every declined/replayed/conflicting outcome leaves it empty, since no new RuntimeTurn committed.
+- `AnswerInteractionResult.Outputs` carries the same accepted Turn's `clientoutputs.ClientFacing(outputs)` (Effect/Presentation Outputs only, in commit order) whenever `Outcome` is `Answered` and this call actually executed the engine; every declined/replayed/conflicting outcome leaves it empty, since no new RuntimeTurn committed.
 - Current authoritative Runtime state is never loaded from a persisted Snapshot - `engineservice.AdvanceTurn` deterministically rebuilds it internally, from Start's `InitializationInput` and every committed `session_runtime_turns` row `loadPriorSignals` (`replay.go`) supplies it, in sequence order (each later Turn's signal reconstructed by dispatching its own `source_kind` to the `engine.Signal` its durable cause implies - today, only `INTERACTION_RESPONSE` is dispatched this way; a future cause extends `loadReplaySignal` with its own case once its own owning WORK gives it a durable representation to reconstruct from). `sessionlifecycle` holds no cache of any kind and never constructs an `engine.Snapshot` itself (GAME-ADR-0027): every call's replay happens inside `engineservice`, from scratch, so a process-loss recovery reconstructs the exact same current state purely from durable state.
 
 Evidence:
 
-- `game/session/workflows/sessionlifecycle/step_answer_interaction.go`, `replay.go`, `interaction_capture.go`, `game/language/v1/engine/engineservice/runtime.go` (`AdvanceTurn`), `internal/repo/interaction.go`, `internal/repo/runtime_start.go`
+- `game/session/workflows/sessionlifecycle/step_answer_interaction.go`, `internal/replay/replay.go`, `internal/interactions/capture.go`, `internal/clientoutputs/clientoutputs.go`, `game/language/v1/engine/engineservice/runtime.go` (`AdvanceTurn`), `internal/repo/interaction.go`, `internal/repo/runtime_start.go`
 - `game/session/internal/storage/migrations/20260919000003_session_interactions.go`, `2026092200000{0,1}_*.go` (`session_runtime_starts`/`session_cause_events`), `20260924000000_session_interactions_engine_interaction_id.go` (`engine_interaction_id` identity)
 - `game/session/workflows/sessionlifecycle/replay_integration_test.go` (`TestReconstructCurrentSnapshot_Integration` - proves replay reconstruction matches the state produced by the original live execution, checked against a live random draw and literal answer values never decoded from the rows replay itself reads, and is reproducible from two independent processes), `replay_fixture_test.go` (`TestReplayObservableDefinitionFixture` - a no-database sanity check of the fixture the integration test depends on)
 
@@ -240,7 +241,7 @@ Implemented behavior:
 
 Evidence:
 
-- `game/session/workflows/sessionlifecycle/` (`manager.go`, `step_create.go`, `step_join.go`, `step_leave.go`, `expiration.go`, `payload.go`, `internal/repo/`)
+- `game/session/workflows/sessionlifecycle/` (`manager.go`, `step_create.go`, `step_join.go`, `step_leave.go`, `internal/expiration/`, `internal/repo/`)
 - `game/session/internal/sessionlock/`, `game/session/internal/idempotency/` (shared cross-cutting mechanics, called directly by the Manager's steps)
 - `game/management/usecases/getgamedefinition/`
 

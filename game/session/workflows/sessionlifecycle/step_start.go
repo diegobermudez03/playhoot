@@ -14,7 +14,11 @@ import (
 	"github.com/diegobermudez03/playhoot/game/session"
 	"github.com/diegobermudez03/playhoot/game/session/internal/idempotency"
 	"github.com/diegobermudez03/playhoot/game/session/internal/sessionlock"
+	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/clientoutputs"
+	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/expiration"
+	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/interactions"
 	internalrepo "github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/repo"
+	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/replay"
 	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/monitoring"
 	"github.com/diegobermudez03/playhoot/utils"
@@ -42,8 +46,8 @@ const (
 // sessionlock/idempotency mechanism packages are called directly by this
 // step instead of through repository forwarding methods.
 type startRepoAPI interface {
-	expirationStore
-	interactionCaptureRepoAPI
+	expiration.Store
+	interactions.CaptureRepo
 	FindActor(ctx context.Context, tx *gorm.DB, sessionID uint, userUUID string) (*internalrepo.Actor, error)
 	ListActiveParticipantsForRoster(ctx context.Context, tx *gorm.DB, sessionID uint) ([]internalrepo.RosterParticipant, error)
 	SetSessionRunning(ctx context.Context, tx *gorm.DB, sessionID uint, startedAt time.Time) error
@@ -97,7 +101,7 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 	}
 
 	now := time.Now().UTC()
-	if _, err := materializeExpirationIfDue(ctx, tx, m.startRepo, lockedSession, now); err != nil {
+	if _, err := expiration.MaterializeIfDue(ctx, tx, m.startRepo, lockedSession, now); err != nil {
 		return StartResult{}, err
 	}
 
@@ -238,7 +242,7 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 		return m.terminalizeStartFatal(ctx, tx, lockedSession, requestID, now, session.TerminalReasonRuntimeExecutionFailed)
 	}
 
-	encodedRootParameters, err := encodeRootParameters(rootParameters)
+	encodedRootParameters, err := replay.EncodeRootParameters(rootParameters)
 	if err != nil {
 		return StartResult{}, fmt.Errorf("encoding start root parameters: %s", err)
 	}
@@ -249,7 +253,7 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 	if err := m.startRepo.CreateRuntimeStart(ctx, tx, lockedSession.ID, seed, encodedRootParameters); err != nil {
 		return StartResult{}, err
 	}
-	if err := captureInteractions(ctx, tx, m.startRepo, lockedSession.ID, turnID, outputs); err != nil {
+	if err := interactions.Capture(ctx, tx, m.startRepo, lockedSession.ID, turnID, outputs); err != nil {
 		return StartResult{}, err
 	}
 	if err := m.startRepo.SetCurrentTurn(ctx, tx, lockedSession.ID, turnID); err != nil {
@@ -262,7 +266,7 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 		return StartResult{}, err
 	}
 
-	result := StartResult{Outcome: StartOutcomeStarted, SessionUUID: SessionUUID(lockedSession.UUID), Outputs: clientFacingOutputs(outputs)}
+	result := StartResult{Outcome: StartOutcomeStarted, SessionUUID: SessionUUID(lockedSession.UUID), Outputs: clientoutputs.ClientFacing(outputs)}
 	responseBytes, err := json.Marshal(result)
 	if err != nil {
 		return StartResult{}, fmt.Errorf("marshaling start response payload: %s", err)

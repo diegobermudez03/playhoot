@@ -11,6 +11,8 @@ import (
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine/engineservice"
 	"github.com/diegobermudez03/playhoot/game/session/internal/testdb"
 	"github.com/diegobermudez03/playhoot/game/session/internal/testfixtures"
+	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/interactions"
+	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/replay"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
@@ -58,7 +60,7 @@ func TestReconstructCurrentSnapshot_Integration(t *testing.T) {
 
 	// The live random draw: read from Q1's own interaction_payload, captured
 	// directly from Start's live OpenQuestionOutput - a table
-	// loadPriorSignals never reads, and a value that never passes through
+	// replay.LoadPriorSignals never reads, and a value that never passes through
 	// session_runtime_starts.seed on this side of the comparison.
 	var firstRow struct {
 		UUID               string `gorm:"column:uuid"`
@@ -67,7 +69,7 @@ func TestReconstructCurrentSnapshot_Integration(t *testing.T) {
 	require.NoError(t, db.Raw(`SELECT uuid, interaction_payload FROM session_interactions WHERE session_id = ? ORDER BY id ASC LIMIT 1`, sessionID).Scan(&firstRow).Error)
 	require.NotEmpty(t, firstRow.UUID, "Start's own first Turn must open Q1")
 
-	var firstWire interactionPayloadWire
+	var firstWire interactions.PayloadWire
 	require.NoError(t, json.Unmarshal(firstRow.InteractionPayload, &firstWire))
 	firstArguments, err := engineservice.DecodeValue(firstWire.Arguments)
 	require.NoError(t, err)
@@ -106,11 +108,11 @@ func TestReconstructCurrentSnapshot_Integration(t *testing.T) {
 	// in-memory state with the live execution above or with each other -
 	// each independently load the same durable prior-signal log.
 	processA := New(db, nil, stubStartPinnedGameReader{definition: definition})
-	inputA, priorSignalsA, err := processA.loadPriorSignals(context.Background(), db, sessionID)
+	inputA, priorSignalsA, err := replay.LoadPriorSignals(context.Background(), db, processA.answerInteractionRepo, sessionID)
 	require.NoError(t, err)
 
 	processB := New(db, nil, stubStartPinnedGameReader{definition: definition})
-	inputB, priorSignalsB, err := processB.loadPriorSignals(context.Background(), db, sessionID)
+	inputB, priorSignalsB, err := replay.LoadPriorSignals(context.Background(), db, processB.answerInteractionRepo, sessionID)
 	require.NoError(t, err)
 
 	require.Equal(t, inputA, inputB, "two independent processes must load byte-identical InitializationInput from the same durable Start record")

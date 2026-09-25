@@ -1,4 +1,9 @@
-package sessionlifecycle
+// Package interactions durably records a committed RuntimeTurn's
+// engine.OpenQuestionOutput/CloseQuestionOutput values as
+// session_interactions rows, shared by sessionlifecycle's Start/
+// AnswerInteraction steps so every Turn-producing path captures
+// interactions the same way.
+package interactions
 
 import (
 	"context"
@@ -12,16 +17,13 @@ import (
 	"gorm.io/gorm"
 )
 
-// interactionCaptureRepoAPI is the narrow persistence contract
-// captureInteractions needs - satisfied by both startRepoAPI and
-// answerInteractionRepoAPI, so every RuntimeTurn-producing step captures
-// interactions the same way.
-type interactionCaptureRepoAPI interface {
+// CaptureRepo is the narrow persistence contract Capture needs.
+type CaptureRepo interface {
 	CreateInteraction(ctx context.Context, tx *gorm.DB, sessionID uint, sessionActorID uint, kind string, engineInteractionID uint64, interactionPayload []byte, openedByTurnID uint) (uint, error)
 	CloseActiveInteraction(ctx context.Context, tx *gorm.DB, sessionID uint, engineInteractionID uint64, sessionActorID uint, closedByTurnID uint) error
 }
 
-// captureInteractions durably records every engine.OpenQuestionOutput/
+// Capture durably records every engine.OpenQuestionOutput/
 // CloseQuestionOutput produced by a just-processed RuntimeTurn as
 // session_interactions rows opened/closed by turnID. Every step that
 // persists a RuntimeTurn must call this so a question/ask-group instance a
@@ -35,7 +37,7 @@ type interactionCaptureRepoAPI interface {
 // Each Output already carries its own engine-assigned InteractionID and Kind
 // (QUESTION vs ASK_GROUP) directly - no compiled Program lookup is needed to
 // classify what was opened.
-func captureInteractions(ctx context.Context, tx *gorm.DB, repo interactionCaptureRepoAPI, sessionID uint, turnID uint, outputs []engine.Output) error {
+func Capture(ctx context.Context, tx *gorm.DB, repo CaptureRepo, sessionID uint, turnID uint, outputs []engine.Output) error {
 	for _, output := range outputs {
 		switch o := output.(type) {
 		case engine.OpenQuestionOutput:
@@ -100,20 +102,21 @@ func parseActorID(recipient engine.UserID) (uint, error) {
 	return uint(id), nil
 }
 
-// interactionPayloadWire is interaction_payload's wire shape. Arguments is
-// engine.Value-typed data (each engine.FieldValue's Value), so it is
-// captured through engineservice.EncodeValue - reusing the engine's own
-// FieldValue-list encoding by wrapping Arguments in a nameless RecordValue,
-// rather than maintaining a second encoding for the same shape.
-type interactionPayloadWire struct {
+// PayloadWire is interaction_payload's wire shape.
+type PayloadWire struct {
 	Question  string          `json:"question"`
 	Arguments json.RawMessage `json:"arguments"`
 }
 
+// encodeInteractionPayload encodes question/arguments as PayloadWire's own
+// JSON shape. Arguments is engine.Value-typed data (each engine.FieldValue's
+// Value), so it is captured through engineservice.EncodeValue - reusing the
+// engine's own FieldValue-list encoding by wrapping Arguments in a nameless
+// RecordValue, rather than maintaining a second encoding for the same shape.
 func encodeInteractionPayload(question string, arguments []engine.FieldValue) ([]byte, error) {
 	encodedArguments, err := engineservice.EncodeValue(engine.RecordValue{Fields: arguments})
 	if err != nil {
 		return nil, fmt.Errorf("encoding interaction arguments: %s", err)
 	}
-	return json.Marshal(interactionPayloadWire{Question: question, Arguments: encodedArguments})
+	return json.Marshal(PayloadWire{Question: question, Arguments: encodedArguments})
 }

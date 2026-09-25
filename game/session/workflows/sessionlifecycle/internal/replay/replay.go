@@ -1,4 +1,10 @@
-package sessionlifecycle
+// Package replay reconstructs the durable signal log an already-running
+// Session's current authoritative runtime state derives from, shared by
+// sessionlifecycle's AnswerInteraction step (and any future step needing
+// current runtime state before driving a new signal). It never
+// reconstructs an engine.Snapshot itself; that mechanism is entirely owned
+// by engineservice.
+package replay
 
 import (
 	"context"
@@ -12,15 +18,25 @@ import (
 	"gorm.io/gorm"
 )
 
-// loadPriorSignals loads sessionID's Start record and every already-
+// AnswerInteractionSourceKind is the source_kind label persisted on the
+// RuntimeTurn an accepted interaction response causes - the one durable
+// cause LoadPriorSignals currently knows how to reconstruct a signal from.
+const AnswerInteractionSourceKind = "INTERACTION_RESPONSE"
+
+// Repo is the narrow persistence contract LoadPriorSignals needs.
+type Repo interface {
+	GetRuntimeStart(ctx context.Context, tx *gorm.DB, sessionID uint) (*internalrepo.RuntimeStart, error)
+	ListRuntimeTurns(ctx context.Context, tx *gorm.DB, sessionID uint) ([]internalrepo.RuntimeTurnRecord, error)
+	GetInteractionByID(ctx context.Context, tx *gorm.DB, interactionID uint) (*internalrepo.Interaction, error)
+}
+
+// LoadPriorSignals loads sessionID's Start record and every already-
 // committed session_runtime_turns row, in order, and returns the
 // engine.InitializationInput Start requires plus the ordered engine.Signal
 // each subsequent turn drove - exactly what engineservice.AdvanceTurn needs
 // to internally reconstruct current runtime state and process a new signal.
-// This package never reconstructs an engine.Snapshot itself; that mechanism
-// is entirely owned by engineservice.
-func (m *Manager) loadPriorSignals(ctx context.Context, tx *gorm.DB, sessionID uint) (engine.InitializationInput, []engine.Signal, error) {
-	start, err := m.answerInteractionRepo.GetRuntimeStart(ctx, tx, sessionID)
+func LoadPriorSignals(ctx context.Context, tx *gorm.DB, repo Repo, sessionID uint) (engine.InitializationInput, []engine.Signal, error) {
+	start, err := repo.GetRuntimeStart(ctx, tx, sessionID)
 	if err != nil {
 		return engine.InitializationInput{}, nil, err
 	}
@@ -28,14 +44,14 @@ func (m *Manager) loadPriorSignals(ctx context.Context, tx *gorm.DB, sessionID u
 		monitoring.Alert(ctx, fmt.Sprintf("session %d has no runtime start record", sessionID))
 		return engine.InitializationInput{}, nil, fmt.Errorf("loading session %d prior signals: no runtime start record", sessionID)
 	}
-	rootParameters, err := decodeRootParameters(start.RootParameters)
+	rootParameters, err := DecodeRootParameters(start.RootParameters)
 	if err != nil {
 		monitoring.Alert(ctx, fmt.Sprintf("session %d has an undecodable runtime start record: %s", sessionID, err))
 		return engine.InitializationInput{}, nil, fmt.Errorf("loading session %d prior signals: decoding root parameters: %s", sessionID, err)
 	}
 	input := engine.InitializationInput{RootParameters: rootParameters, Seed: start.Seed}
 
-	turns, err := m.answerInteractionRepo.ListRuntimeTurns(ctx, tx, sessionID)
+	turns, err := repo.ListRuntimeTurns(ctx, tx, sessionID)
 	if err != nil {
 		return engine.InitializationInput{}, nil, err
 	}
@@ -50,7 +66,7 @@ func (m *Manager) loadPriorSignals(ctx context.Context, tx *gorm.DB, sessionID u
 	// have an externally-driven signal to reconstruct.
 	priorSignals := make([]engine.Signal, 0, len(turns)-1)
 	for _, turn := range turns[1:] {
-		signal, err := m.loadReplaySignal(ctx, tx, turn)
+		signal, err := loadReplaySignal(ctx, tx, repo, turn)
 		if err != nil {
 			return engine.InitializationInput{}, nil, err
 		}
@@ -60,18 +76,18 @@ func (m *Manager) loadPriorSignals(ctx context.Context, tx *gorm.DB, sessionID u
 }
 
 // loadReplaySignal loads turn's own durable cause and rebuilds the
-// engine.Signal it drove. Only the cause kinds Start/AnswerInteraction can
-// actually produce are supported today; a cause with no case here has no
-// durable representation to reconstruct from yet.
-func (m *Manager) loadReplaySignal(ctx context.Context, tx *gorm.DB, turn internalrepo.RuntimeTurnRecord) (engine.Signal, error) {
+// engine.Signal it drove. Only the cause kinds a step can actually produce
+// are supported today; a cause with no case here has no durable
+// representation to reconstruct from yet.
+func loadReplaySignal(ctx context.Context, tx *gorm.DB, repo Repo, turn internalrepo.RuntimeTurnRecord) (engine.Signal, error) {
 	switch turn.SourceKind {
-	case answerInteractionSourceKind:
+	case AnswerInteractionSourceKind:
 		if turn.SourceInteractionID == nil || turn.ActorID == nil {
-			err := fmt.Errorf("reconstructing runtime turn %d: %s turn missing source_interaction_id/actor_id", turn.ID, answerInteractionSourceKind)
+			err := fmt.Errorf("reconstructing runtime turn %d: %s turn missing source_interaction_id/actor_id", turn.ID, AnswerInteractionSourceKind)
 			monitoring.Alert(ctx, err.Error())
 			return engine.Signal{}, err
 		}
-		interaction, err := m.answerInteractionRepo.GetInteractionByID(ctx, tx, *turn.SourceInteractionID)
+		interaction, err := repo.GetInteractionByID(ctx, tx, *turn.SourceInteractionID)
 		if err != nil {
 			return engine.Signal{}, err
 		}
@@ -96,8 +112,9 @@ func (m *Manager) loadReplaySignal(ctx context.Context, tx *gorm.DB, turn intern
 
 // buildAnswerSignal deterministically rebuilds the engine.Signal an accepted
 // interaction response drove, purely from that interaction's own durable
-// fields and its respondent's actor id - the same construction AnswerInteraction
-// itself performs for the response it is currently processing.
+// fields and its respondent's actor id - the same construction
+// AnswerInteraction itself performs for the response it is currently
+// processing.
 func buildAnswerSignal(interaction *internalrepo.Interaction, actorID uint) (engine.Signal, error) {
 	answer, err := engineservice.DecodeValue(interaction.ResponsePayload)
 	if err != nil {
@@ -111,13 +128,14 @@ func buildAnswerSignal(interaction *internalrepo.Interaction, actorID uint) (eng
 	}, nil
 }
 
-// encodeRootParameters encodes rootParameters (an
+// EncodeRootParameters encodes rootParameters (an
 // engine.InitializationInput.RootParameters value) as
 // session_runtime_starts.root_parameters, reusing the engine's own
 // FieldValue-list encoding by wrapping it in a nameless RecordValue - the
-// same technique interaction_capture.go already uses for an open question's
-// Arguments - rather than maintaining a second encoding for the same shape.
-func encodeRootParameters(rootParameters map[string]engine.Value) ([]byte, error) {
+// same technique the interactions package already uses for an open
+// question's Arguments - rather than maintaining a second encoding for the
+// same shape.
+func EncodeRootParameters(rootParameters map[string]engine.Value) ([]byte, error) {
 	fields := make([]engine.FieldValue, 0, len(rootParameters))
 	for name, value := range rootParameters {
 		fields = append(fields, engine.FieldValue{Name: name, Value: value})
@@ -125,10 +143,10 @@ func encodeRootParameters(rootParameters map[string]engine.Value) ([]byte, error
 	return engineservice.EncodeValue(engine.RecordValue{Fields: fields})
 }
 
-// decodeRootParameters decodes session_runtime_starts.root_parameters back
+// DecodeRootParameters decodes session_runtime_starts.root_parameters back
 // into an engine.InitializationInput.RootParameters value, the counterpart
-// to encodeRootParameters.
-func decodeRootParameters(data []byte) (map[string]engine.Value, error) {
+// to EncodeRootParameters.
+func DecodeRootParameters(data []byte) (map[string]engine.Value, error) {
 	value, err := engineservice.DecodeValue(data)
 	if err != nil {
 		return nil, err

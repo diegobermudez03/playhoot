@@ -112,6 +112,33 @@ not a flat sibling package per operation (`workflows/sessionlifecycle/{createses
 
 This does not mean every Session/aggregate-touching operation belongs on the Manager — see Workflow Controller vs Domain-Wide God Service above and Classifying Ambiguous Cases. Manager methods should follow `function-signatures.md` (explicit parameters over ceremonial `Input` structs).
 
+## Shared Cross-Step Behavior Within A Workflow Package
+
+A workflow package accumulates more than persistence contracts as it grows: pure/execution behavior genuinely shared by two or more of its steps (not one step's own private implementation detail) — for example, lazy-expiration materialization, an Output-capture mechanism, or a replay-reconstruction routine. Left as flat top-level files alongside `manager.go`/`step_*.go`, these accumulate into the same navigation problem Preferred Workflow Package Shape exists to prevent: a reader can no longer tell, from the file list alone, which files are a lifecycle step and which are shared internal machinery.
+
+Behavior genuinely used by two or more steps of the same workflow belongs under that workflow's own `internal/<mechanism-name>/` subpackage, sibling to `internal/repo/` — named for the mechanism/invariant it provides, the same naming discipline `repositories.md -> Sharing Rule` already requires for domain-wide shared persistence packages, applied one level down at the single-workflow scope. It is never elevated to the domain-wide `internal/` merely because it is shared within one workflow, and never merged into `internal/repo/` itself unless it is genuinely a persistence contract:
+
+```text
+workflows/sessionlifecycle/
+    manager.go
+    step_create.go
+    step_join.go
+    step_leave.go
+    step_start.go
+    step_answer_interaction.go
+    types.go
+    internal/
+        repo/
+            ...
+        expiration/     # lazy lobby-expiration materialization, shared by Join/Leave/Start
+        interactions/   # Output -> session_interactions capture, shared by Start/AnswerInteraction
+        replay/         # durable-signal-log replay reconstruction, shared by AnswerInteraction
+```
+
+A helper used by exactly one step stays in that step's own file — do not pre-emptively extract a subpackage for a single consumer. Extract only once genuine sharing across two or more steps exists, per Behavior Locality's own "optimize for comprehensibility, not maximizing DRY" principle above; do not extract merely because a helper *could* be reused someday.
+
+This does not change Workflow Grouping Does Not Imply A Shared Repository Contract: an extracted subpackage exposes the narrow interface/function shape its own mechanism actually needs, never a shared repository contract absorbing every step's persistence method.
+
 ## Use Cases And Workflows Remain Responsible For
 
 Use cases/workflows remain responsible for: loading required state, repository calls, transactions, coordinating several operations, calling domain behavior, persisting resulting state, translating relevant errors, monitoring/operational handling, and workflow progression/retries/compensation/persisted workflow state where applicable.
@@ -156,4 +183,5 @@ During code review, flag in particular:
 - a workflow controller accumulating an independent use case, query, or configuration capability merely because it touches the same aggregate — as opposed to a controller whose methods are all genuine lifecycle steps, which is the preferred shape (see Workflow Controller vs Domain-Wide God Service above);
 - a workflow split into one sibling package per verb instead of one package with per-step files (see Preferred Workflow Package Shape above);
 - a broad domain/workflow repository interface, or a `Common`/`General`/`Base` repository dumping ground, created to avoid repeating similar methods (see `repositories.md -> Sharing Rule` for the corresponding entity-CRUD-package version of this same concern);
-- a repository method deciding business/lifecycle policy (admission, expiration, idempotency replay meaning) instead of reporting facts and performing requested mutations (see Responsibility Categories above).
+- a repository method deciding business/lifecycle policy (admission, expiration, idempotency replay meaning) instead of reporting facts and performing requested mutations (see Responsibility Categories above);
+- behavior genuinely shared by two or more steps of the same workflow left as a flat top-level file in the workflow package instead of its own `internal/<mechanism-name>/` subpackage (see Shared Cross-Step Behavior Within A Workflow Package above) — and, conversely, a subpackage extracted for a helper only one step actually uses.
