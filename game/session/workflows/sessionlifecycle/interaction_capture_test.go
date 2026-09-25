@@ -47,7 +47,7 @@ func TestCaptureInteractions(t *testing.T) {
 	t.Run("open_question_output_creates_an_active_question_interaction", func(t *testing.T) {
 		repo := &fakeInteractionCaptureRepo{}
 		steps := []runtimeturn.StepTrace{
-			{Workflow: "Main", Outputs: []engine.Output{
+			{Outputs: []engine.Output{
 				engine.OpenQuestionOutput{Slot: "Q", Recipient: engine.UserID("7"), Question: "PickNumber", InteractionID: 42, Kind: engine.InteractionKindQuestion},
 			}},
 		}
@@ -66,7 +66,7 @@ func TestCaptureInteractions(t *testing.T) {
 	t.Run("open_question_output_with_ask_group_kind_creates_an_active_ask_group_interaction", func(t *testing.T) {
 		repo := &fakeInteractionCaptureRepo{}
 		steps := []runtimeturn.StepTrace{
-			{Workflow: "Main", Outputs: []engine.Output{
+			{Outputs: []engine.Output{
 				engine.OpenQuestionOutput{Slot: "AG", Recipient: engine.UserID("3"), Question: "PickNumber", InteractionID: 43, Kind: engine.InteractionKindAskGroup},
 			}},
 		}
@@ -80,7 +80,7 @@ func TestCaptureInteractions(t *testing.T) {
 	t.Run("close_question_output_closes_the_matching_active_interaction", func(t *testing.T) {
 		repo := &fakeInteractionCaptureRepo{}
 		steps := []runtimeturn.StepTrace{
-			{Workflow: "Main", Outputs: []engine.Output{
+			{Outputs: []engine.Output{
 				engine.CloseQuestionOutput{Slot: "Q", Recipient: engine.UserID("7"), InteractionID: 42},
 			}},
 		}
@@ -98,7 +98,7 @@ func TestCaptureInteractions(t *testing.T) {
 	t.Run("open_then_close_in_one_step_use_the_same_interaction_id", func(t *testing.T) {
 		repo := &fakeInteractionCaptureRepo{}
 		steps := []runtimeturn.StepTrace{
-			{Workflow: "Main", Outputs: []engine.Output{
+			{Outputs: []engine.Output{
 				engine.OpenQuestionOutput{Slot: "Q", Recipient: engine.UserID("1"), Question: "PickNumber", InteractionID: 99, Kind: engine.InteractionKindQuestion},
 				engine.CloseQuestionOutput{Slot: "Q", Recipient: engine.UserID("2"), InteractionID: 99},
 			}},
@@ -113,7 +113,7 @@ func TestCaptureInteractions(t *testing.T) {
 
 	t.Run("steps_with_no_outputs_are_skipped", func(t *testing.T) {
 		repo := &fakeInteractionCaptureRepo{}
-		steps := []runtimeturn.StepTrace{{Workflow: "Main"}}
+		steps := []runtimeturn.StepTrace{{}}
 
 		err := captureInteractions(context.Background(), nil, repo, 1, 13, steps)
 		require.NoError(t, err)
@@ -124,7 +124,7 @@ func TestCaptureInteractions(t *testing.T) {
 	t.Run("an_unknown_interaction_kind_fails", func(t *testing.T) {
 		repo := &fakeInteractionCaptureRepo{}
 		steps := []runtimeturn.StepTrace{
-			{Workflow: "Main", Outputs: []engine.Output{
+			{Outputs: []engine.Output{
 				engine.OpenQuestionOutput{Slot: "Q", Recipient: engine.UserID("7"), Question: "PickNumber", InteractionID: 1, Kind: engine.InteractionKind(99)},
 			}},
 		}
@@ -137,7 +137,7 @@ func TestCaptureInteractions(t *testing.T) {
 	t.Run("a_non_numeric_recipient_fails", func(t *testing.T) {
 		repo := &fakeInteractionCaptureRepo{}
 		steps := []runtimeturn.StepTrace{
-			{Workflow: "Main", Outputs: []engine.Output{
+			{Outputs: []engine.Output{
 				engine.OpenQuestionOutput{Slot: "Q", Recipient: engine.UserID("not-a-number"), Question: "PickNumber", InteractionID: 1, Kind: engine.InteractionKindQuestion},
 			}},
 		}

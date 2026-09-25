@@ -25,12 +25,10 @@ var ErrStepBoundExceeded = errors.New("runtimeturn: exceeded max steps per runti
 
 // StepTrace is one actual engine.Step call's outcome within a drained
 // RuntimeTurn, held only in memory for the duration of that Turn's
-// processing - a caller that needs this Step's declarative Outputs against
-// the instance Workflow/Path that produced them, session_interactions
-// capture (interaction_capture.go) in particular.
+// processing - a caller that needs this Step's declarative Outputs,
+// session_interactions capture (interaction_capture.go) in particular.
 type StepTrace struct {
-	Workflow string
-	Outputs  []engine.Output
+	Outputs []engine.Output
 }
 
 // Result is Drain's outcome.
@@ -87,8 +85,7 @@ func Drain(p engine.Program, snapshot engine.Snapshot, initialSignal engine.Sign
 		}
 		current = commit.Snapshot
 		steps = append(steps, StepTrace{
-			Workflow: commit.Trace.Workflow,
-			Outputs:  commit.Outputs,
+			Outputs: commit.Outputs,
 		})
 		pending = append(pending, commit.InternalSignals...)
 	}
