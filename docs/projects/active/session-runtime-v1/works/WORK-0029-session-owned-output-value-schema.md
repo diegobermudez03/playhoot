@@ -2,7 +2,7 @@
 
 Status: PLANNED
 Created: 2026-09-24
-Last status change: 2026-09-24 (created, human-directed - see Outcome)
+Last status change: 2026-09-24 (human-directed resequencing: this is the immediate next WORK to pick up and draft for real in this Project - overriding this WORK's own original "wait for WORK-0020" timing note below. The human wants to give design input on this WORK's own open questions (Scope section) directly to whichever session picks it up next, rather than have it designed unilaterally - a fresh Codebase/Conversational AI session resuming this Project should surface this WORK's open Scope questions to the human before drafting Approved Design, not decide them alone. Prior update, same day: created, human-directed - see Outcome)
 
 Related decisions:
 - None yet. May need a lightweight ADR/standard once the design questions below are actually resolved, if the resulting rule is judged reusable beyond this one boundary.
@@ -70,7 +70,7 @@ Not yet designed - PLANNED. Will include the normal `go build`/`go vet`/`go test
 
 ## Blockers
 
-1. **Timing dependency, not a design blocker**: this WORK is deliberately not drafted for real until a real consumer of `Outputs` exists (WORK-0020 onward), so its schema is driven by an actual wire/UI requirement rather than guessed.
+1. ~~Timing dependency: deliberately not drafted for real until a real consumer of `Outputs` exists (WORK-0020 onward), so its schema is driven by an actual wire/UI requirement rather than guessed.~~ **Overridden by explicit human direction (2026-09-24)**: the human wants this WORK drafted next regardless, ahead of WORK-0020, with their own design input on the open Scope questions above. Whoever resumes this Project next should ask the human for that input before drafting Approved Design, rather than deciding the open Scope questions alone - the human has not yet supplied that input in this document.
 
 ## Completion Record
 
