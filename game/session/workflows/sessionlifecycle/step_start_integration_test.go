@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine"
+	"github.com/diegobermudez03/playhoot/game/language/v1/program"
 	"github.com/diegobermudez03/playhoot/game/session"
 	"github.com/diegobermudez03/playhoot/game/session/internal/testdb"
 	"github.com/diegobermudez03/playhoot/game/session/internal/testfixtures"
@@ -115,6 +116,36 @@ func TestManagerStart_Integration(t *testing.T) {
 			require.Equal(t, presentationEffectHudSlot, activate.Slot)
 			require.Equal(t, engine.NumberValue{Value: 0}, activate.Model, "score's initializer is 0")
 		}
+	})
+
+	t.Run("first_turn_completing_the_game_terminalizes_session_immediately", func(t *testing.T) {
+		m := New(db, nil, stubStartPinnedGameReader{definition: startTriggersTerminationDefinition(program.CompleteControl{Result: program.UnitLiteralExpression{}}, 1, 4)})
+
+		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
+		hostUUID := uuid.NewString()
+		hostActorID := testfixtures.SeedActor(t, db, fx.SessionID, hostUUID)
+		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
+		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
+
+		result, err := m.Start(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(hostUUID), "start-key-terminates")
+		require.NoError(t, err)
+		require.Equal(t, StartOutcomeStarted, result.Outcome, "the first RuntimeTurn genuinely committed, even though the game ended immediately")
+		require.Equal(t, session.TerminalReasonGameCompleted, result.TerminalReason)
+
+		var row struct {
+			Phase          string     `gorm:"column:phase"`
+			StartedAt      *time.Time `gorm:"column:started_at"`
+			TerminalReason *string    `gorm:"column:terminal_reason"`
+		}
+		require.NoError(t, db.Raw(`SELECT phase, started_at, terminal_reason FROM sessions WHERE id = ?`, fx.SessionID).Scan(&row).Error)
+		require.Equal(t, session.PhaseTerminal, row.Phase)
+		require.NotNil(t, row.StartedAt, "the Session genuinely started and ran its first Turn before ending")
+		require.NotNil(t, row.TerminalReason)
+		require.Equal(t, session.TerminalReasonGameCompleted, *row.TerminalReason)
+
+		var turnCount int64
+		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_turns WHERE session_id = ?`, fx.SessionID).Scan(&turnCount).Error)
+		require.Equal(t, int64(1), turnCount, "Turn 1 is durably persisted even though the game ended on it")
 	})
 
 	t.Run("rejects_start_by_non_host", func(t *testing.T) {

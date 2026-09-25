@@ -187,7 +187,7 @@ func TestIntegration_AsynchronousQuizWithKeyedQuestionSlot(t *testing.T) {
 	// Player A can still independently answer their own still-pending
 	// question, and only now does the quiz complete.
 	answer("playerA", playerA, 3)
-	if snap.Root.Outcome == nil || snap.Root.Outcome.Kind != engine.WorkflowOutcomeCompleted {
+	if snap.Root.Outcome == nil || snap.Root.Outcome.Kind != engine.RunOutcomeCompleted {
 		t.Fatalf("expected the quiz to complete once both players answered, got %+v", snap.Root.Outcome)
 	}
 }

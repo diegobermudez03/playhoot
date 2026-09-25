@@ -731,11 +731,11 @@ func (ctx *execContext) drawRandom(generator engine.RandomGenerator, scope engin
 
 // controlOutcome is applyControl's result: either a state transition
 // (Goto sets Changed and State; Stay leaves Changed false) or a
-// terminal engine.WorkflowOutcome.
+// terminal engine.RunOutcome.
 type controlOutcome struct {
 	changed bool
 	state   string
-	outcome *engine.WorkflowOutcome
+	outcome *engine.RunOutcome
 }
 
 // applyControl evaluates control against scope, recursing through
@@ -754,21 +754,21 @@ func applyControl(p engine.Program, control engine.WorkflowControl, scope engine
 		if err != nil {
 			return controlOutcome{}, err
 		}
-		return controlOutcome{outcome: &engine.WorkflowOutcome{Kind: engine.WorkflowOutcomeCompleted, Result: v}}, nil
+		return controlOutcome{outcome: &engine.RunOutcome{Kind: engine.RunOutcomeCompleted, Result: v}}, nil
 
 	case engine.FailControl:
 		v, err := Evaluate(p, c.Error, scope)
 		if err != nil {
 			return controlOutcome{}, err
 		}
-		return controlOutcome{outcome: &engine.WorkflowOutcome{Kind: engine.WorkflowOutcomeFailed, Error: v.(engine.StringValue).Value}}, nil
+		return controlOutcome{outcome: &engine.RunOutcome{Kind: engine.RunOutcomeFailed, Error: v.(engine.StringValue).Value}}, nil
 
 	case engine.CancelControl:
 		v, err := Evaluate(p, c.Reason, scope)
 		if err != nil {
 			return controlOutcome{}, err
 		}
-		return controlOutcome{outcome: &engine.WorkflowOutcome{Kind: engine.WorkflowOutcomeCancelled, Reason: v.(engine.StringValue).Value}}, nil
+		return controlOutcome{outcome: &engine.RunOutcome{Kind: engine.RunOutcomeCancelled, Reason: v.(engine.StringValue).Value}}, nil
 
 	case engine.ConditionalControl:
 		v, err := Evaluate(p, c.Condition, scope)

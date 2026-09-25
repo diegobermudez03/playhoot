@@ -271,7 +271,7 @@ func TestExec_KeyedAskGroupJoin_BindsKeyAndCompletesTheRightOccurrence(t *testin
 	if err != nil {
 		t.Fatalf("unexpected error joining: %v", err)
 	}
-	if commit.Snapshot.Root.Outcome == nil || commit.Snapshot.Root.Outcome.Kind != engine.WorkflowOutcomeCompleted {
+	if commit.Snapshot.Root.Outcome == nil || commit.Snapshot.Root.Outcome.Kind != engine.RunOutcomeCompleted {
 		t.Fatalf("expected the Join transition to complete the workflow, got %+v", commit.Snapshot.Root.Outcome)
 	}
 	if got := commit.Snapshot.Root.Outcome.Result.(engine.StringValue).Value; got != "team_a" {

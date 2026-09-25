@@ -177,7 +177,7 @@ Evaluates a single compiled `Expression` against an arbitrary `Scope`, using the
 | `ActivatePresentationOutput` | a presentation was newly mounted for one recipient, with its view name and computed model |
 | `UpdatePresentationOutput` | an already-active presentation's computed model changed |
 | `RemovePresentationOutput` | an active presentation was unmounted |
-| `WorkflowCompletedOutput` | the one workflow instance a Session runs reached a terminal outcome (`Completed`/`Failed`/`Cancelled`) — this is the only way to observe the whole game instance ending, since there's no parent to notify through a signal |
+| `RunCompletedOutput` | the one instance a Session runs reached a terminal outcome (`Completed`/`Failed`/`Cancelled`) — this is the only way to observe the whole game instance ending, since there's no parent to notify through a signal |
 
 Type-switch over `engine.Output` exhaustively; the set is closed the same way `program.Expression`/`program.Operation` are — you can't add your own variant from outside the package.
 

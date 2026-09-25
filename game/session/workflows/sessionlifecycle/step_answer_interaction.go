@@ -2,6 +2,7 @@ package sessionlifecycle
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 	"github.com/diegobermudez03/playhoot/game/session"
 	"github.com/diegobermudez03/playhoot/game/session/internal/sessionlock"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/clientoutputs"
+	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/completion"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/interactions"
 	internalrepo "github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/repo"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/replay"
@@ -46,20 +48,26 @@ type answerInteractionRepoAPI interface {
 // waits its turn and then always reloads current authoritative state before
 // applying the response.
 //
-// answer is a typed engine.Value; decoding a transport-level payload into
-// one is the caller's responsibility.
+// answer is the caller's response payload, encoded in the same wire shape
+// this package already persists (see engineservice.EncodeValue/DecodeValue)
+// - callers never construct or import an engine-owned value type directly.
 //
 // No idempotency key is required: the interaction's own persisted state is
 // the dedup identity. A retried, semantically equivalent response replays
 // AnswerInteractionOutcomeAnswered without a second engine effect; a
 // conflicting different response against an already-resolved interaction is
 // rejected as AnswerInteractionOutcomeConflict.
-func (m *Manager) AnswerInteraction(ctx context.Context, interactionUUID InteractionUUID, userUUID UserUUID, answer engine.Value) (AnswerInteractionResult, error) {
+func (m *Manager) AnswerInteraction(ctx context.Context, interactionUUID InteractionUUID, userUUID UserUUID, answer json.RawMessage) (AnswerInteractionResult, error) {
 	defer logging.Step(ctx, "SessionLifecycle.AnswerInteraction").Close()
 	logging.LogFields(ctx,
 		logging.Field("interaction_uuid", string(interactionUUID)),
 		logging.Field("user_uuid", string(userUUID)),
 	)
+
+	decodedAnswer, err := engineservice.DecodeValue(answer)
+	if err != nil {
+		return AnswerInteractionResult{}, fmt.Errorf("decoding interaction response: %s", err)
+	}
 
 	sessionID, err := m.answerInteractionRepo.ResolveSessionForInteraction(ctx, string(interactionUUID))
 	if err != nil {
@@ -70,7 +78,7 @@ func (m *Manager) AnswerInteraction(ctx context.Context, interactionUUID Interac
 	}
 
 	return utils.RunInDBTransaction(ctx, m, func(ctx context.Context, tx *gorm.DB) (AnswerInteractionResult, error) {
-		return m.answerInteractionInTx(ctx, tx, *sessionID, interactionUUID, userUUID, answer)
+		return m.answerInteractionInTx(ctx, tx, *sessionID, interactionUUID, userUUID, decodedAnswer)
 	})
 }
 
@@ -123,7 +131,14 @@ func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessio
 				return AnswerInteractionResult{}, fmt.Errorf("decoding stored interaction response: %s", err)
 			}
 			if storedResponse.Equal(answer) {
-				return AnswerInteractionResult{Outcome: AnswerInteractionOutcomeAnswered, SessionUUID: SessionUUID(lockedSession.UUID)}, nil
+				// The original answer may have also terminalized the Session
+				// (a game-completion outcome, not a failure) - a replayed
+				// retry must still report that fact, not silently drop it.
+				var terminalReason string
+				if lockedSession.TerminalReason != nil {
+					terminalReason = *lockedSession.TerminalReason
+				}
+				return AnswerInteractionResult{Outcome: AnswerInteractionOutcomeAnswered, SessionUUID: SessionUUID(lockedSession.UUID), TerminalReason: terminalReason}, nil
 			}
 			return AnswerInteractionResult{Outcome: AnswerInteractionOutcomeConflict, SessionUUID: SessionUUID(lockedSession.UUID)}, nil
 		}
@@ -232,7 +247,17 @@ func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessio
 		return AnswerInteractionResult{}, err
 	}
 
-	return AnswerInteractionResult{Outcome: AnswerInteractionOutcomeAnswered, SessionUUID: SessionUUID(lockedSession.UUID), Outputs: clientoutputs.ClientFacing(outputs)}, nil
+	terminalReason, terminated := completion.Detect(outputs)
+	if terminated {
+		if err := m.answerInteractionRepo.SetSessionTerminal(ctx, tx, lockedSession.ID, now, terminalReason); err != nil {
+			return AnswerInteractionResult{}, err
+		}
+		if err := m.answerInteractionRepo.CloseAllActiveInteractionsForSession(ctx, tx, lockedSession.ID, session.InteractionClosureReasonSessionTerminated); err != nil {
+			return AnswerInteractionResult{}, err
+		}
+	}
+
+	return AnswerInteractionResult{Outcome: AnswerInteractionOutcomeAnswered, SessionUUID: SessionUUID(lockedSession.UUID), Outputs: clientoutputs.ClientFacing(outputs), TerminalReason: terminalReason}, nil
 }
 
 // terminalizeAnswerInteractionFatal performs AnswerInteraction's fatal path:

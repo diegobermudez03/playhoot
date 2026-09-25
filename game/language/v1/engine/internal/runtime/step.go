@@ -708,9 +708,8 @@ func Step(p engine.Program, snapshot engine.Snapshot, signal engine.Signal, limi
 		newTarget.AskGroupSlots = clearedAskGroupSlots(newTarget.AskGroupSlots)
 		newTarget.KeyedAskGroupSlots = clearedKeyedAskGroupSlots(newTarget.KeyedAskGroupSlots)
 
-		ctx.outputs = append(ctx.outputs, engine.WorkflowCompletedOutput{
-			Workflow: workflow.Name,
-			Outcome:  *outcome.outcome,
+		ctx.outputs = append(ctx.outputs, engine.RunCompletedOutput{
+			Outcome: *outcome.outcome,
 		})
 	}
 

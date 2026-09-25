@@ -33,7 +33,7 @@ type WorkflowInstance struct {
 	// CancelControl to it, Outcome is set and no further transition may
 	// apply to this instance — see program.WorkflowControl's variants
 	// for the outcomes they produce.
-	Outcome *WorkflowOutcome
+	Outcome *RunOutcome
 
 	QuestionSlots []QuestionSlotInstance
 	AskGroupSlots []AskGroupSlotInstance
@@ -205,44 +205,44 @@ type KeyedPendingTimer struct {
 	Key Value
 }
 
-// WorkflowOutcomeKind identifies which terminal outcome a
-// WorkflowOutcome represents.
-type WorkflowOutcomeKind int
+// RunOutcomeKind identifies which terminal outcome a RunOutcome
+// represents.
+type RunOutcomeKind int
 
 const (
-	// WorkflowOutcomeCompleted marks a workflow instance that completed
-	// successfully through CompleteControl.
-	WorkflowOutcomeCompleted WorkflowOutcomeKind = iota
+	// RunOutcomeCompleted marks an instance that completed successfully
+	// through CompleteControl.
+	RunOutcomeCompleted RunOutcomeKind = iota
 
-	// WorkflowOutcomeFailed marks a workflow instance that terminated
-	// through an authored FailControl.
-	WorkflowOutcomeFailed
+	// RunOutcomeFailed marks an instance that terminated through an
+	// authored FailControl.
+	RunOutcomeFailed
 
-	// WorkflowOutcomeCancelled marks a workflow instance that
-	// terminated through an authored CancelControl.
-	WorkflowOutcomeCancelled
+	// RunOutcomeCancelled marks an instance that terminated through an
+	// authored CancelControl.
+	RunOutcomeCancelled
 )
 
-func (k WorkflowOutcomeKind) String() string {
+func (k RunOutcomeKind) String() string {
 	switch k {
-	case WorkflowOutcomeCompleted:
+	case RunOutcomeCompleted:
 		return "completed"
-	case WorkflowOutcomeFailed:
+	case RunOutcomeFailed:
 		return "failed"
-	case WorkflowOutcomeCancelled:
+	case RunOutcomeCancelled:
 		return "cancelled"
 	default:
 		return "unknown"
 	}
 }
 
-// WorkflowOutcome is the terminal outcome of the one WorkflowInstance a
+// RunOutcome is the terminal outcome of the one WorkflowInstance a
 // Session runs. Only the field matching Kind is meaningful: Result for
-// WorkflowOutcomeCompleted, Error for WorkflowOutcomeFailed, Reason for
-// WorkflowOutcomeCancelled. A session layer observes it directly through
-// WorkflowCompletedOutput.
-type WorkflowOutcome struct {
-	Kind   WorkflowOutcomeKind
+// RunOutcomeCompleted, Error for RunOutcomeFailed, Reason for
+// RunOutcomeCancelled. A session layer observes it directly through
+// RunCompletedOutput.
+type RunOutcome struct {
+	Kind   RunOutcomeKind
 	Result Value
 	Error  string
 	Reason string

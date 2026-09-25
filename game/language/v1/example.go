@@ -173,9 +173,9 @@ func (s *gameSession) handleOutputs(outputs []engine.Output) error {
 		case engine.EmitEffectOutput:
 			// ... purely cosmetic, deliver-or-don't, never affects state.
 
-		case engine.WorkflowCompletedOutput:
-			// The one workflow instance just ended; this is the one
-			// place a session layer finds out the game is over.
+		case engine.RunCompletedOutput:
+			// The one instance just ended; this is the one place a
+			// session layer finds out the game is over.
 			fmt.Println("game instance ended:", o.Outcome.Kind)
 		}
 	}

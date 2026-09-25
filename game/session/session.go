@@ -34,6 +34,24 @@ const (
 	// having compiled successfully at Create - a durable state-integrity
 	// failure, not a game-execution failure.
 	TerminalReasonRuntimeStateInvalid = "RUNTIME_STATE_INVALID"
+
+	// TerminalReasonGameCompleted marks a Session terminated because the
+	// authored game itself finished as designed (an authored CompleteControl
+	// applied) - an ordinary, expected outcome, not a failure.
+	TerminalReasonGameCompleted = "GAME_COMPLETED"
+
+	// TerminalReasonGameFailed marks a Session terminated because the
+	// authored game's own logic determined a failure condition (an authored
+	// FailControl applied) - distinct from TerminalReasonRuntimeExecutionFailed,
+	// which marks an engine-execution malfunction rather than a deliberate
+	// authored outcome.
+	TerminalReasonGameFailed = "GAME_FAILED"
+
+	// TerminalReasonGameCancelled marks a Session terminated because the
+	// authored game's own logic abandoned the instance (an authored
+	// CancelControl applied) - distinct from any future session-lifecycle-level
+	// cancellation a host or operator initiates directly.
+	TerminalReasonGameCancelled = "GAME_CANCELLED"
 )
 
 // session_interactions.kind values: which of the engine's two

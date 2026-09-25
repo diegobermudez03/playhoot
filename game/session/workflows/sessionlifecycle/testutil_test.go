@@ -2,10 +2,29 @@ package sessionlifecycle
 
 import (
 	"context"
+	"encoding/json"
+	"testing"
+	"time"
 
+	"github.com/diegobermudez03/playhoot/game/language/v1/engine"
+	"github.com/diegobermudez03/playhoot/game/language/v1/engine/engineservice"
 	"github.com/diegobermudez03/playhoot/game/language/v1/program"
 	"github.com/diegobermudez03/playhoot/game/management"
+	"github.com/diegobermudez03/playhoot/game/session/internal/testfixtures"
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
+
+// numberAnswer encodes a bare engine.NumberValue in AnswerInteraction's own
+// wire shape, for tests submitting a plain numeric response - callers of
+// the real Manager never construct an engine.Value themselves.
+func numberAnswer(t *testing.T, value float64) json.RawMessage {
+	t.Helper()
+	encoded, err := engineservice.EncodeValue(engine.NumberValue{Value: value})
+	require.NoError(t, err)
+	return encoded
+}
 
 // compilableDefinitionForTest is a minimal Game Language definition that
 // compiles successfully, reused by integration tests that need Create to
@@ -456,6 +475,141 @@ func presentationEffectDefinition(playersMin, playersMax int) program.Definition
 			},
 		},
 	}
+}
+
+// terminationControlQuestionName/terminationControlSlot/
+// terminationControlBystanderSlot name
+// answerTriggersTerminationDefinition's own declarations.
+const (
+	terminationControlQuestionName  = "PickNumber"
+	terminationControlSlot          = "Q1"
+	terminationControlBystanderSlot = "Q2"
+)
+
+// answerTriggersTerminationDefinition builds a real, engineservice.Compile-able
+// Definition declaring the accepted `players: list<user>` root roster
+// parameter, whose root workflow opens a Question at players[0] (slot "Q1")
+// and a second, independent Question at players[1] (slot "Q2", a bystander
+// whose own interaction is never itself answered or explicitly closed) at
+// Start, and whose "Q1 answered" transition applies control - never an
+// ordinary CloseQuestionOperation - for tests proving Manager detects the
+// resulting engine.RunCompletedOutput, terminalizes the Session, and closes
+// the bystander's still-ACTIVE Q2 through terminal cleanup rather than
+// ordinary gameplay closure.
+func answerTriggersTerminationDefinition(control program.WorkflowControl, playersMin, playersMax int) program.Definition {
+	recipient0 := program.IndexExpression{Target: program.ReferenceExpression{Name: "players"}, Index: program.NumberLiteralExpression{Value: "0"}}
+	recipient1 := program.IndexExpression{Target: program.ReferenceExpression{Name: "players"}, Index: program.NumberLiteralExpression{Value: "1"}}
+	return program.Definition{
+		Metadata:     program.Metadata{ID: "answer-triggers-termination", Name: "AnswerTriggersTermination"},
+		RootWorkflow: "Main",
+		Players:      program.PlayerPolicy{Min: playersMin, Max: playersMax},
+		Questions: []program.QuestionDeclaration{
+			{Name: terminationControlQuestionName, ResponseType: program.BuiltinTypeReference{Type: program.BuiltinTypeNumber}},
+		},
+		Workflows: []program.WorkflowDeclaration{
+			{
+				Name: "Main",
+				Parameters: []program.FieldDeclaration{
+					{Name: "players", Type: program.ListTypeReference{Element: program.BuiltinTypeReference{Type: program.BuiltinTypeUser}}},
+				},
+				ResultType:   program.BuiltinTypeReference{Type: program.BuiltinTypeUnit},
+				InitialState: "Start",
+				QuestionSlots: []program.QuestionSlotDeclaration{
+					{Name: terminationControlSlot, Question: terminationControlQuestionName},
+					{Name: terminationControlBystanderSlot, Question: terminationControlQuestionName},
+				},
+				States: []program.WorkflowStateDeclaration{
+					{
+						Name: "Start",
+						Transitions: []program.TransitionDeclaration{
+							{
+								Name:   "Started",
+								Signal: program.SignalPattern{Source: program.NamedSignalSource{Name: "WorkflowStarted"}},
+								Operations: program.Block{Operations: []program.Operation{
+									program.OpenQuestionOperation{Slot: terminationControlSlot, Recipient: recipient0},
+									program.OpenQuestionOperation{Slot: terminationControlBystanderSlot, Recipient: recipient1},
+								}},
+								Control: program.StayControl{},
+							},
+							{
+								Name:    "Answered",
+								Signal:  program.SignalPattern{Source: program.QuestionAnsweredSignalSource{Slot: terminationControlSlot}},
+								Control: control,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+// startTriggersTerminationDefinition builds a real, engineservice.Compile-able
+// Definition declaring the accepted `players: list<user>` root roster
+// parameter, whose root workflow applies control immediately on its very
+// first (`WorkflowStarted`) transition, opening no question at all - for
+// tests proving Manager.Start's own first RuntimeTurn detects an immediate
+// engine.RunCompletedOutput and terminalizes the Session.
+func startTriggersTerminationDefinition(control program.WorkflowControl, playersMin, playersMax int) program.Definition {
+	return program.Definition{
+		Metadata:     program.Metadata{ID: "start-triggers-termination", Name: "StartTriggersTermination"},
+		RootWorkflow: "Main",
+		Players:      program.PlayerPolicy{Min: playersMin, Max: playersMax},
+		Workflows: []program.WorkflowDeclaration{
+			{
+				Name: "Main",
+				Parameters: []program.FieldDeclaration{
+					{Name: "players", Type: program.ListTypeReference{Element: program.BuiltinTypeReference{Type: program.BuiltinTypeUser}}},
+				},
+				ResultType:   program.BuiltinTypeReference{Type: program.BuiltinTypeUnit},
+				InitialState: "Start",
+				States: []program.WorkflowStateDeclaration{
+					{
+						Name: "Start",
+						Transitions: []program.TransitionDeclaration{
+							{
+								Name:    "Started",
+								Signal:  program.SignalPattern{Source: program.NamedSignalSource{Name: "WorkflowStarted"}},
+								Control: control,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+// startedTerminationControlSession seeds a LOBBY Session with two active
+// Participants (host plus one bystander), starts it against
+// answerTriggersTerminationDefinition(control, ...) (opening Q1 for the
+// host and Q2 for the bystander), and returns the resulting Manager, the
+// Session's/host's identities, the primary (host-answerable) interaction's
+// public UUID, and the bystander's own interaction UUID - the common setup
+// every termination-control AnswerInteraction test below builds on.
+func startedTerminationControlSession(t *testing.T, db *gorm.DB, control program.WorkflowControl) (m *Manager, sessionUUID SessionUUID, hostUUID UserUUID, primaryInteractionUUID, bystanderInteractionUUID InteractionUUID) {
+	t.Helper()
+
+	m = New(db, nil, stubStartPinnedGameReader{definition: answerTriggersTerminationDefinition(control, 2, 4)})
+
+	fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
+	hostUUIDStr := uuid.NewString()
+	hostActorID := testfixtures.SeedActor(t, db, fx.SessionID, hostUUIDStr)
+	require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
+	testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
+	testfixtures.SeedActiveParticipant(t, db, fx.SessionID, uuid.NewString(), "Bystander")
+
+	startResult, err := m.Start(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(hostUUIDStr), IdempotencyKey(uuid.NewString()))
+	require.NoError(t, err)
+	require.Equal(t, StartOutcomeStarted, startResult.Outcome)
+
+	var primaryUUIDStr, bystanderUUIDStr string
+	require.NoError(t, db.Raw(`SELECT uuid FROM session_interactions WHERE session_id = ? AND session_actor_id = ?`, fx.SessionID, hostActorID).Scan(&primaryUUIDStr).Error)
+	require.NotEmpty(t, primaryUUIDStr, "Start's own first Turn must open Q1 for the host")
+	require.NoError(t, db.Raw(`SELECT uuid FROM session_interactions WHERE session_id = ? AND session_actor_id != ?`, fx.SessionID, hostActorID).Scan(&bystanderUUIDStr).Error)
+	require.NotEmpty(t, bystanderUUIDStr, "Start's own first Turn must open Q2 for the bystander")
+
+	return m, SessionUUID(fx.SessionUUID), UserUUID(hostUUIDStr), InteractionUUID(primaryUUIDStr), InteractionUUID(bystanderUUIDStr)
 }
 
 // replayObservableQuestionName/replayObservableSlot/replayObservableSlot2/

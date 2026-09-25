@@ -74,7 +74,34 @@ The concern is legitimate, but current conditions do not justify acting on it.
 
 A LATER item should have a meaningful reevaluation trigger where possible.
 
-No items have yet been persisted under the Engineering Radar mechanism.
+### Game Language `Value`/`Type` Algebra May Be More General Than The Target Game Range Needs
+
+**Area**
+Game Language / Architecture
+
+**Current state / evidence**
+- `engine.Value` (`game/language/v1/engine/value.go`) is a closed interface with 11 variants (`Unit`/`Bool`/`Number`/`String`/`User`/`Enum`/`Record`/`Union`/`NewType`/`Optional`/`List`/`Map`), several recursive, each referencing engine's own separate `Type` algebra. `program/DEFINITION.md` places no depth/composition limit on how these nest.
+- The one real Definition in the repository (`game/language/v1/program/testdata/parques.json`) uses only a small subset - one `enum`, one flat `record`, one `list<record>` - no `map`/`optional`/`union`/`new_type` anywhere in any authored or example content today.
+- This rhymes with `game/docs/decisions/GAME-ADR-0026-flat-workflow-execution-model-and-keyed-interaction-slots.md`, which removed Child Workflows/Task Groups after an exhaustive audit across the full committed target-game range found zero real use - but the evidence here is weaker: only one simple example exists, and GAME-ADR-0026's own target-coverage table cites `Map` as plausibly load-bearing for per-player/per-object state in other committed-range games (UNO's discard pile, Poker's hand/fold state) that have not been authored yet.
+
+**Risk / opportunity**
+- If the generality is genuinely unneeded, it adds ongoing complexity cost to the compiler, the runtime, and (per `docs/projects/active/session-runtime-v1/works/WORK-0029-session-owned-output-value-schema.md`) to whatever session-owned mirror schema eventually has to represent it for a consumer/UI.
+- If it is needed (plausible for `Map`, less clear for `Union`/`NewType`), narrowing it now would be premature and costly to reverse.
+
+**Recommendation**
+- Do not act on this now. Once a second or third real Definition is authored (or WORK-0029 is drafted for real and needs to decide how much of the algebra its mirror schema must cover), revisit with concrete evidence one way or the other - the same kind of exhaustive target-range audit GAME-ADR-0026 itself performed, not a guess from a single simple example.
+
+**Why this horizon**
+- LATER: the concern is legitimate but the evidence is not yet conclusive enough to justify a redesign, and no current WORK is blocked on resolving it.
+
+**Reevaluate when**
+- A second real Definition is authored and its actual `Value`/`Type` usage is known, or `docs/projects/active/session-runtime-v1/works/WORK-0029-session-owned-output-value-schema.md` is drafted for real and needs to decide its own schema's coverage.
+
+**Next process**
+- `ARCHITECTURE_DISCUSSION`, if/when reevaluated.
+
+**Last reviewed**
+2026-09-24
 
 ## NOT NEEDED
 

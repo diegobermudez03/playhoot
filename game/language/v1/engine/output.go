@@ -184,17 +184,17 @@ type RemovePresentationOutput struct {
 
 func (RemovePresentationOutput) isOutput() {}
 
-// WorkflowCompletedOutput reports that the one workflow instance a
-// Session runs - running the compiled Workflow named Workflow - reached
-// Outcome as the terminal result of the transition that just committed.
-// This is how a session layer observes that directly, ending the game
-// instance.
+// RunCompletedOutput reports that the one instance a Session runs
+// reached Outcome as the terminal result of the transition that just
+// committed. This is how a session layer observes that directly, ending
+// the game instance. Which compiled workflow backed the instance is an
+// authoring/internal detail this Output does not carry - a caller never
+// needs it to react to the instance ending.
 //
-// Exactly one WorkflowCompletedOutput is ever produced per Step call,
-// for the transition control that terminated the instance.
-type WorkflowCompletedOutput struct {
-	Workflow string
-	Outcome  WorkflowOutcome
+// Exactly one RunCompletedOutput is ever produced per Step call, for the
+// transition control that terminated the instance.
+type RunCompletedOutput struct {
+	Outcome RunOutcome
 }
 
-func (WorkflowCompletedOutput) isOutput() {}
+func (RunCompletedOutput) isOutput() {}

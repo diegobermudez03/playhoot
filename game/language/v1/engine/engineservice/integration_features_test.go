@@ -39,7 +39,7 @@ func TestIntegration_CounterWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if commit.Snapshot.Root.Outcome == nil || commit.Snapshot.Root.Outcome.Kind != engine.WorkflowOutcomeCompleted {
+	if commit.Snapshot.Root.Outcome == nil || commit.Snapshot.Root.Outcome.Kind != engine.RunOutcomeCompleted {
 		t.Fatalf("expected completion, got %+v", commit.Snapshot.Root.Outcome)
 	}
 	if commit.Snapshot.Root.Outcome.Result.(engine.NumberValue).Value != 3 {

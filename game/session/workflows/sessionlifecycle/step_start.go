@@ -15,6 +15,7 @@ import (
 	"github.com/diegobermudez03/playhoot/game/session/internal/idempotency"
 	"github.com/diegobermudez03/playhoot/game/session/internal/sessionlock"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/clientoutputs"
+	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/completion"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/expiration"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/interactions"
 	internalrepo "github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/repo"
@@ -54,6 +55,7 @@ type startRepoAPI interface {
 	CreateRuntimeTurn(ctx context.Context, tx *gorm.DB, sessionID uint, sequence uint64, sourceKind string, sourceInteractionID *uint, actorID *uint) (uint, error)
 	CreateRuntimeStart(ctx context.Context, tx *gorm.DB, sessionID uint, seed uint64, rootParameters []byte) error
 	SetCurrentTurn(ctx context.Context, tx *gorm.DB, sessionID uint, currentTurnID uint) error
+	CloseAllActiveInteractionsForSession(ctx context.Context, tx *gorm.DB, sessionID uint, reason string) error
 }
 
 // startRequestPayload is START's meaningful-field idempotency payload.
@@ -262,11 +264,26 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 	if err := m.startRepo.SetSessionRunning(ctx, tx, lockedSession.ID, now); err != nil {
 		return StartResult{}, err
 	}
+
+	// A Definition may complete/fail/cancel its own root instance on its
+	// very first transition - the Session genuinely started (Turn 1
+	// committed, started_at set above) and immediately ended, rather than
+	// never having started at all.
+	terminalReason, terminated := completion.Detect(outputs)
+	if terminated {
+		if err := m.startRepo.SetSessionTerminal(ctx, tx, lockedSession.ID, now, terminalReason); err != nil {
+			return StartResult{}, err
+		}
+		if err := m.startRepo.CloseAllActiveInteractionsForSession(ctx, tx, lockedSession.ID, session.InteractionClosureReasonSessionTerminated); err != nil {
+			return StartResult{}, err
+		}
+	}
+
 	if err := m.startRepo.RevokeActiveJoinCode(ctx, tx, lockedSession.ID, now); err != nil {
 		return StartResult{}, err
 	}
 
-	result := StartResult{Outcome: StartOutcomeStarted, SessionUUID: SessionUUID(lockedSession.UUID), Outputs: clientoutputs.ClientFacing(outputs)}
+	result := StartResult{Outcome: StartOutcomeStarted, SessionUUID: SessionUUID(lockedSession.UUID), Outputs: clientoutputs.ClientFacing(outputs), TerminalReason: terminalReason}
 	responseBytes, err := json.Marshal(result)
 	if err != nil {
 		return StartResult{}, fmt.Errorf("marshaling start response payload: %s", err)

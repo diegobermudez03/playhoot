@@ -364,6 +364,20 @@ func (mr *MockstartRepoAPIMockRecorder) CloseActiveInteraction(ctx, tx, sessionI
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CloseActiveInteraction", reflect.TypeOf((*MockstartRepoAPI)(nil).CloseActiveInteraction), ctx, tx, sessionID, engineInteractionID, sessionActorID, closedByTurnID)
 }
 
+// CloseAllActiveInteractionsForSession mocks base method.
+func (m *MockstartRepoAPI) CloseAllActiveInteractionsForSession(ctx context.Context, tx *gorm.DB, sessionID uint, reason string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CloseAllActiveInteractionsForSession", ctx, tx, sessionID, reason)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CloseAllActiveInteractionsForSession indicates an expected call of CloseAllActiveInteractionsForSession.
+func (mr *MockstartRepoAPIMockRecorder) CloseAllActiveInteractionsForSession(ctx, tx, sessionID, reason any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CloseAllActiveInteractionsForSession", reflect.TypeOf((*MockstartRepoAPI)(nil).CloseAllActiveInteractionsForSession), ctx, tx, sessionID, reason)
+}
+
 // CreateInteraction mocks base method.
 func (m *MockstartRepoAPI) CreateInteraction(ctx context.Context, tx *gorm.DB, sessionID, sessionActorID uint, kind string, engineInteractionID uint64, interactionPayload []byte, openedByTurnID uint) (uint, error) {
 	m.ctrl.T.Helper()

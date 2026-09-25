@@ -174,7 +174,7 @@ func TestCodec_TerminalOutcomeRoundTrips(t *testing.T) {
 	}
 	decoded := roundTripSnapshot(t, commit.Snapshot)
 	assertSnapshotsEqual(t, commit.Snapshot, decoded)
-	if decoded.Root.Outcome == nil || decoded.Root.Outcome.Kind != engine.WorkflowOutcomeCompleted {
+	if decoded.Root.Outcome == nil || decoded.Root.Outcome.Kind != engine.RunOutcomeCompleted {
 		t.Fatalf("outcome lost across round trip: %+v", decoded.Root.Outcome)
 	}
 }
@@ -331,7 +331,7 @@ func TestIntegration_PersistRestoreContinueMatchesUninterruptedExecution(t *test
 	}
 
 	assertSnapshotsEqual(t, snapDirect, snapPersisted)
-	if snapDirect.Root.Outcome == nil || snapDirect.Root.Outcome.Kind != engine.WorkflowOutcomeCompleted {
+	if snapDirect.Root.Outcome == nil || snapDirect.Root.Outcome.Kind != engine.RunOutcomeCompleted {
 		t.Fatalf("expected the workflow to complete, got %+v", snapDirect.Root.Outcome)
 	}
 }

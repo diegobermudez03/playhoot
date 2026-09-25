@@ -119,7 +119,7 @@ func TestExec_TraceRecordsTransitionGuardStateAndOutputs(t *testing.T) {
 	if !tr.GuardEvaluated || !tr.GuardResult {
 		t.Fatalf("got GuardEvaluated=%v GuardResult=%v, want true/true", tr.GuardEvaluated, tr.GuardResult)
 	}
-	if tr.Outcome == nil || tr.Outcome.Kind != engine.WorkflowOutcomeCompleted {
+	if tr.Outcome == nil || tr.Outcome.Kind != engine.RunOutcomeCompleted {
 		t.Fatalf("got outcome %+v", tr.Outcome)
 	}
 	if !reflect.DeepEqual(tr.Outputs, commit.Outputs) {

@@ -67,8 +67,8 @@ type Trace struct {
 	StateAfter  string
 
 	// Outcome is nil unless this Step call's control produced a
-	// terminal outcome for the targeted instance — see WorkflowOutcome.
-	Outcome *WorkflowOutcome
+	// terminal outcome for the targeted instance — see RunOutcome.
+	Outcome *RunOutcome
 
 	// OperationCount is how many synchronous operations this Step call
 	// executed, toward Limits.MaxOperations.

@@ -35,8 +35,8 @@ type DisplayName string
 // executing it again.
 type IdempotencyKey string
 
-// CreatedSession is Create's logical outcome, also the shape persisted as
-// the idempotency record's replayable response payload.
+// CreatedSession is Create's logical outcome: the new Session's public
+// identity, its lobby JoinCode, and when that JoinCode expires.
 type CreatedSession struct {
 	SessionUUID    SessionUUID `json:"session_uuid"`
 	JoinCode       JoinCode    `json:"join_code"`
@@ -63,9 +63,8 @@ const (
 	JoinOutcomeAlreadyJoined JoinOutcome = "ALREADY_JOINED"
 )
 
-// JoinResult is Join's logical outcome, also the shape persisted as the
-// idempotency record's replayable response payload. SessionUUID/DisplayName
-// are only populated when Outcome is JoinOutcomeJoined.
+// JoinResult is Join's logical outcome. SessionUUID/DisplayName are only
+// populated when Outcome is JoinOutcomeJoined.
 type JoinResult struct {
 	Outcome     JoinOutcome `json:"outcome"`
 	SessionUUID SessionUUID `json:"session_uuid,omitempty"`
@@ -89,9 +88,8 @@ const (
 	LeaveOutcomeActorNotFound LeaveOutcome = "ACTOR_NOT_FOUND"
 )
 
-// LeaveResult is Leave's logical outcome, also the shape persisted as the
-// idempotency record's replayable response payload. SessionUUID is only
-// populated when Outcome is LeaveOutcomeLeft.
+// LeaveResult is Leave's logical outcome. SessionUUID is only populated
+// when Outcome is LeaveOutcomeLeft.
 type LeaveResult struct {
 	Outcome     LeaveOutcome `json:"outcome"`
 	SessionUUID SessionUUID  `json:"session_uuid,omitempty"`
@@ -122,17 +120,18 @@ const (
 	StartOutcomeRuntimeInitFailed StartOutcome = "RUNTIME_INIT_FAILED"
 )
 
-// StartResult is Start's logical outcome, also the shape persisted as the
-// idempotency record's replayable response payload. SessionUUID is only
-// populated when Outcome is StartOutcomeStarted. Outputs carries the first
-// committed RuntimeTurn's client-facing Effect/Presentation Outputs, in
-// commit order - populated only when this call actually executed the
-// engine, never persisted, and never present on a replayed retry. It is
-// excluded from the persisted idempotency payload.
+// StartResult is Start's logical outcome. SessionUUID is only populated
+// when Outcome is StartOutcomeStarted. Outputs carries the first committed
+// Turn's client-facing Effect/Presentation values, in commit order - empty
+// unless this call actually executed the engine, so never populated on a
+// replayed retry. TerminalReason is populated (one of
+// session.TerminalReasonGame*) whenever this same Turn also ended the
+// Session.
 type StartResult struct {
-	Outcome     StartOutcome    `json:"outcome"`
-	SessionUUID SessionUUID     `json:"session_uuid,omitempty"`
-	Outputs     []engine.Output `json:"-"`
+	Outcome        StartOutcome    `json:"outcome"`
+	SessionUUID    SessionUUID     `json:"session_uuid,omitempty"`
+	Outputs        []engine.Output `json:"-"`
+	TerminalReason string          `json:"terminal_reason,omitempty"`
 }
 
 // InteractionUUID is a session_interactions row's public identity.
@@ -170,12 +169,14 @@ const (
 // SessionUUID is populated whenever the interaction's owning Session was
 // resolved (every outcome except an unresolved interactionUUID, reported as
 // session.ErrInteractionNotFound instead). Outputs carries the committed
-// RuntimeTurn's client-facing Effect/Presentation Outputs, in commit order -
-// populated only for AnswerInteractionOutcomeAnswered when this call
-// actually executed the engine, never persisted, and never present on a
-// replayed or declined outcome.
+// Turn's client-facing Effect/Presentation values, in commit order -
+// populated only when Outcome is AnswerInteractionOutcomeAnswered and this
+// call actually executed the engine. TerminalReason is populated (one of
+// session.TerminalReasonGame*) whenever this same response also ended the
+// Session.
 type AnswerInteractionResult struct {
-	Outcome     AnswerInteractionOutcome `json:"outcome"`
-	SessionUUID SessionUUID              `json:"session_uuid,omitempty"`
-	Outputs     []engine.Output          `json:"-"`
+	Outcome        AnswerInteractionOutcome `json:"outcome"`
+	SessionUUID    SessionUUID              `json:"session_uuid,omitempty"`
+	Outputs        []engine.Output          `json:"-"`
+	TerminalReason string                   `json:"terminal_reason,omitempty"`
 }

@@ -138,7 +138,7 @@ func TestIntegration_HeadlessGuessTheRollGame(t *testing.T) {
 		t.Fatalf("unexpected error on correct guess: %v", err)
 	}
 	snap = commit.Snapshot
-	if snap.Root.Outcome == nil || snap.Root.Outcome.Kind != engine.WorkflowOutcomeCompleted {
+	if snap.Root.Outcome == nil || snap.Root.Outcome.Kind != engine.RunOutcomeCompleted {
 		t.Fatalf("expected the game to complete on a correct guess, got %+v", snap.Root.Outcome)
 	}
 	if !snap.Root.Outcome.Result.(engine.BoolValue).Value {

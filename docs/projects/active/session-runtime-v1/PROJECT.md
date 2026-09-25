@@ -44,7 +44,7 @@ Several currently-DRAFT WORKs (0006, 0007, 0010, 0011, 0012) mix a Session-Runti
 - **WORK-0006** (Broaden Live Fan-Out: Effects + Presentations, Domain Half) - **DONE (2026-09-24)**. `sessionlifecycle.Manager.Start`/`AnswerInteraction` additively return the committed Turn's Effect/Presentation Outputs in memory (`StartResult`/`AnswerInteractionResult.Outputs`), zero new durable persistence, no client-delivery wire code (that remains the not-yet-drafted play-half following WORK-0020). Independent review APPROVED after one NON_BLOCKING finding (this WORK's own status-history wording), fixed same-session.
 - **WORK-0019** (Replay-First Session Runtime Persistence Migration) - **DONE (2026-09-23)**. Implements GAME-ADR-0024. `session_runtime_turns`'s Snapshot columns and `session_runtime_steps` removed; `session_runtime_starts`/`session_cause_events` added; replay-based reconstruction (`reconstructCurrentSnapshot`) implemented and proven against real Postgres by a test comparing reconstructed state to values live execution actually produced (not merely re-derived from the same durable rows). Independent review APPROVED after two fix/re-review passes (a circular test and missing data-integrity alerts, both fixed). Moved to the front of Phase 1 - it defines the durable representation every future RuntimeTurn cause (UserIntent, SessionCancelled, TimerExpired) must satisfy, now including the shared `session_cause_events` table Blocker 3 fixed for them, and a `PROJECT.md`-documented requirement that each such WORK also extend `sessionlifecycle.replay.go`'s `loadReplaySignal`, not only add a table.
 - **Phase 1 (Session Runtime domain completion) resumed and its lead item (WORK-0006) is DONE** - see "Unblocked (2026-09-24)" above and WORK-0006's own Completion Record.
-- **WORK-0007** (Session Termination Live Notification, domain half) - DRAFT, Blockers 1-4 unresolved. Same domain/play split as WORK-0006, applied lightly (corrected stale `play` references; full Scope/Acceptance-Criteria split deferred until this WORK is actually drafted for real, per this Project's just-in-time practice).
+- **WORK-0007** (Game-Completion Termination Detection, domain half) - **DONE (2026-09-24)**. `sessionlifecycle.Manager.Start`/`AnswerInteraction` detect a `RunCompletedOutput` (the game's own instance reaching Completed/Failed/Cancelled - engine-renamed from `WorkflowCompletedOutput` as part of this WORK, see its own "Scope Addition") and terminalize the Session under one of three new `TerminalReasonGame*` values, closing any other still-`ACTIVE` interaction; no broadcast/transport code (that remains the not-yet-drafted play-half following WORK-0020). Independent review APPROVED, three NON_BLOCKING findings, two fixed same-session (an idempotent-replay gap; this PROJECT.md's own synchronization).
 - **WORK-0020** (Role-Aware Live Connections / Host Administration Channel) - DRAFT. Implements GAME-ADR-0025; Blockers 1-3 need human approval before READY. First WORK of Phase 2, and now explicitly the WORK that rebuilds the entire `play` Coordinator from scratch (both registries, both dispatch paths, `Deliver`) - its own file previously still described adding a registry to an implementation that had already been deleted; corrected 2026-09-23, see "Drift Correction" below.
 
 ## Drift Correction (2026-09-23): WORK-0006/0007/0010/0012/0020 Assumed `play` Still Existed
@@ -89,7 +89,7 @@ Reorganized 2026-09-21 into three inside-out phases (see Restructuring above). W
 |------:|------|--------|
 | 5 | WORK-0019 — Replay-First Session Runtime Persistence Migration (moved first - defines the durable model every cause below must satisfy) | DONE |
 | 6 | WORK-0006 — domain half only: `Manager` additively returns Effect/Presentation Outputs in memory | DONE |
-| 7 | WORK-0007 — domain half only: `WorkflowCompletedOutput` detection + termination | DRAFT |
+| 7 | WORK-0007 — domain half only: `RunCompletedOutput` detection + termination | DONE |
 | 8 | WORK-0012 — domain half: Timer persistence + `TimerExpired`-as-cause | PLANNED |
 | 9 | WORK-0013 — Keyed Timers (WORK-0012's compiler prerequisite) | PLANNED |
 | 10 | WORK-0018 — Game Language Disconnect/Reconnect Signal Support (unrelated parallel prerequisite, gates Phase 2's WORK-0015) | PLANNED |
@@ -107,6 +107,7 @@ Reorganized 2026-09-21 into three inside-out phases (see Restructuring above). W
 |------:|------|--------|
 | 17 | WORK-0020 — Role-Aware Live Connections / Host Administration Channel (registry foundation, first in this phase) | DRAFT |
 | — | WORK-0006/0007/0010/0011/0012 — play halves (not yet split into documents) | not started |
+| — | WORK-0029 — Session-Owned Output/Value Schema (decouple `game/session` from `engine`; the actual mapping a play-half consumer reads from) | PLANNED |
 | 18 | WORK-0008 — Live Lobby / Session Bootstrap | PLANNED |
 | 19 | WORK-0021 — Host Participant Spectator View | PLANNED |
 | — | WORK-0015 — Disconnect/Reconnect/Full Resync, play half | PLANNED |
@@ -117,7 +118,7 @@ Reorganized 2026-09-21 into three inside-out phases (see Restructuring above). W
 |------:|------|--------|
 | 20 | WORK-0009 — Client-Safe Game UI Manifest (independent read endpoint) | PLANNED |
 
-23 WORK total: 7 DONE, 0 IMPLEMENTING, 0 READY, 2 DRAFT, 14 PLANNED.
+24 WORK total: 8 DONE, 0 IMPLEMENTING, 0 READY, 1 DRAFT, 15 PLANNED.
 
 ## 2026-09-22 Addition: WORK-0022 (Abuse/Resource-Rate Limits)
 
@@ -152,7 +153,7 @@ Required to run a Session frontend end-to-end against the supported Game Languag
 | Client-safe UI/game definition | Does not exist | WORK-0009 (PLANNED) |
 | Per-viewer output | Partial (Question durably persisted; Presentation/Effect returned in memory, none yet delivered to a client) | WORK-0004 (question) + WORK-0006 (presentation/effect, DONE) |
 | Live transport (Create/Join/AnswerInteraction/Deliver) | **Reduced 2026-09-21 (Blocker 11), DONE as a skeleton**: real routes, real WS upgrade, centralized observability + trace/span IDs, no domain coupling - `play`/`play/sessionruntime` removed. Rebuilt by Phase 2's WORK-0020 onward, once Phase 1 completes | WORK-0005 (DONE, skeleton) |
-| **Engine Output handling (Presentations/Effects/Timers/WorkflowCompleted returned or persisted)** | Partial - Question Outputs are captured (persisted) and Effect/Presentation Outputs are now additionally returned to the caller in memory; timers and `WorkflowCompleted` are still neither persisted nor returned | WORK-0006's domain half (DONE); WORK-0007/0010/0011/0012's domain halves (Phase 1, DRAFT/PLANNED) |
+| **Engine Output handling (Presentations/Effects/Timers/RunCompleted returned or persisted)** | Partial - Question Outputs are captured (persisted), Effect/Presentation Outputs are returned to the caller in memory, and a `RunCompletedOutput` terminalizes the Session under a matching `TerminalReasonGame*` value; only timers are still neither persisted nor returned | WORK-0006/0007's domain halves (DONE); WORK-0010/0011/0012's domain halves (Phase 1, PLANNED) |
 | **Replay-input persistence** | DONE - `session_runtime_starts` durably persists Start's Seed/RootParameters; `session_runtime_turns` carries no Snapshot column | WORK-0019 |
 | **Deterministic runtime reconstruction (process-loss recovery without a stored Snapshot)** | DONE - `reconstructCurrentSnapshot` replays durable state with no cache of any kind, verified against real Postgres | WORK-0019 |
 | **Admin live connection** | Design accepted (GAME-ADR-0025); not implemented (no `play` exists at all today) | WORK-0020 (DRAFT, Phase 2) |
@@ -162,7 +163,7 @@ Required to run a Session frontend end-to-end against the supported Game Languag
 | **Host-as-Participant dual connection** | Design accepted; not implemented | WORK-0020 (DRAFT) |
 | **Host spectator view** | Design accepted (GAME-ADR-0025); not implemented | WORK-0021 (PLANNED) |
 | **Participant-count lobby fan-out** | Not implemented | WORK-0008 (PLANNED) |
-| Terminal notifications | Not implemented; must reach both connection roles | WORK-0007 (DRAFT), depends on WORK-0020; reused by WORK-0011/0012/0016 |
+| Terminal notifications | Detection/reason DONE (domain half, WORK-0007); the client-visible broadcast/close still not implemented - must reach both connection roles | WORK-0007 (DONE, domain half); play-half WORK not yet drafted, depends on WORK-0020; reused by WORK-0011/0012/0016 |
 | Manual cancellation | Not implemented | WORK-0011 (PLANNED) |
 | Timers | Not implemented in Session Runtime (engine-only) | WORK-0012 (PLANNED) |
 | Keyed timers | Does not exist in Game Language | WORK-0013 (PLANNED) |

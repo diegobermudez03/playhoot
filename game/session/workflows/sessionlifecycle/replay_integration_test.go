@@ -80,7 +80,7 @@ func TestReconstructCurrentSnapshot_Integration(t *testing.T) {
 	liveRandomValue, ok := liveRandomField.Value.(engine.NumberValue)
 	require.True(t, ok)
 
-	answer1, err := m.AnswerInteraction(context.Background(), InteractionUUID(firstRow.UUID), UserUUID(hostUUID), engine.NumberValue{Value: 111})
+	answer1, err := m.AnswerInteraction(context.Background(), InteractionUUID(firstRow.UUID), UserUUID(hostUUID), numberAnswer(t, 111))
 	require.NoError(t, err)
 	require.Equal(t, AnswerInteractionOutcomeAnswered, answer1.Outcome)
 
@@ -88,7 +88,7 @@ func TestReconstructCurrentSnapshot_Integration(t *testing.T) {
 	require.NoError(t, db.Raw(`SELECT uuid FROM session_interactions WHERE session_id = ? ORDER BY id DESC LIMIT 1`, sessionID).Scan(&secondUUID).Error)
 	require.NotEmpty(t, secondUUID, "answering Q1 must open Q2")
 
-	answer2, err := m.AnswerInteraction(context.Background(), InteractionUUID(secondUUID), UserUUID(hostUUID), engine.NumberValue{Value: 222})
+	answer2, err := m.AnswerInteraction(context.Background(), InteractionUUID(secondUUID), UserUUID(hostUUID), numberAnswer(t, 222))
 	require.NoError(t, err)
 	require.Equal(t, AnswerInteractionOutcomeAnswered, answer2.Outcome)
 

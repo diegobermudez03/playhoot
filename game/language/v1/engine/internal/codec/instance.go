@@ -93,7 +93,7 @@ type keyedPendingTimerWire struct {
 	Key json.RawMessage `json:"key"`
 }
 
-type workflowOutcomeWire struct {
+type runOutcomeWire struct {
 	Kind   int             `json:"kind"`
 	Result json.RawMessage `json:"result,omitempty"`
 	Error  string          `json:"error,omitempty"`
@@ -114,7 +114,7 @@ func EncodeWorkflowInstance(path string, instance engine.WorkflowInstance) (json
 
 	var outcome json.RawMessage
 	if instance.Outcome != nil {
-		outcome, err = encodeWorkflowOutcome(pathField(path, "outcome"), *instance.Outcome)
+		outcome, err = encodeRunOutcome(pathField(path, "outcome"), *instance.Outcome)
 		if err != nil {
 			return nil, err
 		}
@@ -178,9 +178,9 @@ func DecodeWorkflowInstance(path string, data json.RawMessage) (engine.WorkflowI
 	}
 	localRecord, _ := localState.(engine.RecordValue)
 
-	var outcome *engine.WorkflowOutcome
+	var outcome *engine.RunOutcome
 	if !isEmptyOrNull(w.Outcome) {
-		o, err := decodeWorkflowOutcome(pathField(path, "outcome"), w.Outcome)
+		o, err := decodeRunOutcome(pathField(path, "outcome"), w.Outcome)
 		if err != nil {
 			return engine.WorkflowInstance{}, err
 		}
@@ -228,24 +228,24 @@ func DecodeWorkflowInstance(path string, data json.RawMessage) (engine.WorkflowI
 	}, nil
 }
 
-func encodeWorkflowOutcome(path string, o engine.WorkflowOutcome) (json.RawMessage, error) {
+func encodeRunOutcome(path string, o engine.RunOutcome) (json.RawMessage, error) {
 	result, err := EncodeValue(pathField(path, "result"), o.Result)
 	if err != nil {
 		return nil, err
 	}
-	return json.Marshal(workflowOutcomeWire{Kind: int(o.Kind), Result: result, Error: o.Error, Reason: o.Reason})
+	return json.Marshal(runOutcomeWire{Kind: int(o.Kind), Result: result, Error: o.Error, Reason: o.Reason})
 }
 
-func decodeWorkflowOutcome(path string, data json.RawMessage) (engine.WorkflowOutcome, error) {
-	var w workflowOutcomeWire
+func decodeRunOutcome(path string, data json.RawMessage) (engine.RunOutcome, error) {
+	var w runOutcomeWire
 	if err := strictDecodeInto(path, data, &w); err != nil {
-		return engine.WorkflowOutcome{}, err
+		return engine.RunOutcome{}, err
 	}
 	result, err := DecodeValue(pathField(path, "result"), w.Result)
 	if err != nil {
-		return engine.WorkflowOutcome{}, err
+		return engine.RunOutcome{}, err
 	}
-	return engine.WorkflowOutcome{Kind: engine.WorkflowOutcomeKind(w.Kind), Result: result, Error: w.Error, Reason: w.Reason}, nil
+	return engine.RunOutcome{Kind: engine.RunOutcomeKind(w.Kind), Result: result, Error: w.Error, Reason: w.Reason}, nil
 }
 
 func encodeQuestionSlots(path string, slots []engine.QuestionSlotInstance) ([]questionSlotWire, error) {

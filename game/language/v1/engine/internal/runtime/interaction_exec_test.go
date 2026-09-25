@@ -252,7 +252,7 @@ func TestExec_QuestionAnsweredAcceptedClearsSlotAndDispatches(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if commit.Snapshot.Root.Outcome == nil || commit.Snapshot.Root.Outcome.Kind != engine.WorkflowOutcomeCompleted {
+	if commit.Snapshot.Root.Outcome == nil || commit.Snapshot.Root.Outcome.Kind != engine.RunOutcomeCompleted {
 		t.Fatalf("expected the Answered transition to run and complete, got %+v", commit.Snapshot.Root.Outcome)
 	}
 	slot, _ := findInstanceQuestionSlot(commit.Snapshot.Root, "Ask")
@@ -383,7 +383,7 @@ func TestExec_TimerExpiredAcceptedClearsSlotAndDispatches(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if commit.Snapshot.Root.Outcome == nil || commit.Snapshot.Root.Outcome.Kind != engine.WorkflowOutcomeCompleted {
+	if commit.Snapshot.Root.Outcome == nil || commit.Snapshot.Root.Outcome.Kind != engine.RunOutcomeCompleted {
 		t.Fatalf("expected the Expired transition to run and complete, got %+v", commit.Snapshot.Root.Outcome)
 	}
 	slot, _ := findInstanceTimerSlot(commit.Snapshot.Root, "Deadline")

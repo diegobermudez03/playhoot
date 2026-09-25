@@ -121,23 +121,23 @@ func TestStep_SequentialStepsCanStopAndResume(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if commit.Snapshot.Root.Outcome == nil || commit.Snapshot.Root.Outcome.Kind != engine.WorkflowOutcomeCompleted {
+	if commit.Snapshot.Root.Outcome == nil || commit.Snapshot.Root.Outcome.Kind != engine.RunOutcomeCompleted {
 		t.Fatalf("got %+v", commit.Snapshot.Root.Outcome)
 	}
 	if commit.Snapshot.Root.Outcome.Result.(engine.NumberValue).Value != 3 {
 		t.Fatalf("got result %v, want 3", commit.Snapshot.Root.Outcome.Result)
 	}
 
-	var completed *engine.WorkflowCompletedOutput
+	var completed *engine.RunCompletedOutput
 	for _, o := range commit.Outputs {
-		if c, ok := o.(engine.WorkflowCompletedOutput); ok {
+		if c, ok := o.(engine.RunCompletedOutput); ok {
 			completed = &c
 		}
 	}
 	if completed == nil {
-		t.Fatalf("expected a WorkflowCompletedOutput, got %+v", commit.Outputs)
+		t.Fatalf("expected a RunCompletedOutput, got %+v", commit.Outputs)
 	}
-	if completed.Workflow != "Counter" || completed.Outcome.Kind != engine.WorkflowOutcomeCompleted {
+	if completed.Outcome.Kind != engine.RunOutcomeCompleted {
 		t.Fatalf("got %+v", completed)
 	}
 }
@@ -170,7 +170,7 @@ func TestStep_GlobalTransitionFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if commit.Snapshot.Root.Outcome == nil || commit.Snapshot.Root.Outcome.Kind != engine.WorkflowOutcomeCancelled {
+	if commit.Snapshot.Root.Outcome == nil || commit.Snapshot.Root.Outcome.Kind != engine.RunOutcomeCancelled {
 		t.Fatalf("got %+v", commit.Snapshot.Root.Outcome)
 	}
 	if commit.Snapshot.Root.Outcome.Reason != "aborted" {
@@ -196,7 +196,7 @@ func TestStep_StateLocalTransitionTakesPrecedenceOverGlobal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if commit.Snapshot.Root.Outcome == nil || commit.Snapshot.Root.Outcome.Kind != engine.WorkflowOutcomeFailed {
+	if commit.Snapshot.Root.Outcome == nil || commit.Snapshot.Root.Outcome.Kind != engine.RunOutcomeFailed {
 		t.Fatalf("expected the state-local Fail to win over the global Cancel, got %+v", commit.Snapshot.Root.Outcome)
 	}
 }
