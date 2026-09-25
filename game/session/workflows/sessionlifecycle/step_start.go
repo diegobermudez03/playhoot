@@ -283,7 +283,12 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 		return StartResult{}, err
 	}
 
-	result := StartResult{Outcome: StartOutcomeStarted, SessionUUID: SessionUUID(lockedSession.UUID), Outputs: clientoutputs.ClientFacing(outputs), TerminalReason: terminalReason}
+	mappedOutputs, err := m.mapOutputs(ctx, tx, lockedSession.ID, clientoutputs.ClientFacing(outputs))
+	if err != nil {
+		return StartResult{}, fmt.Errorf("mapping client-facing outputs: %s", err)
+	}
+
+	result := StartResult{Outcome: StartOutcomeStarted, SessionUUID: SessionUUID(lockedSession.UUID), Outputs: mappedOutputs, TerminalReason: terminalReason}
 	responseBytes, err := json.Marshal(result)
 	if err != nil {
 		return StartResult{}, fmt.Errorf("marshaling start response payload: %s", err)

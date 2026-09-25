@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/diegobermudez03/playhoot/game/language/v1/engine"
 	"github.com/diegobermudez03/playhoot/game/language/v1/program"
 	"github.com/diegobermudez03/playhoot/game/session"
 	"github.com/diegobermudez03/playhoot/game/session/internal/testdb"
@@ -109,12 +108,12 @@ func TestManagerStart_Integration(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, StartOutcomeStarted, result.Outcome)
 
-		require.Len(t, result.Outputs, 2, "one ActivatePresentationOutput per player, no OpenQuestionOutput returned")
+		require.Len(t, result.Outputs, 2, "one PresentationActivated per player, no OpenQuestionOutput returned")
 		for _, o := range result.Outputs {
-			activate, ok := o.(engine.ActivatePresentationOutput)
+			activate, ok := o.(PresentationActivated)
 			require.True(t, ok, "%T", o)
 			require.Equal(t, presentationEffectHudSlot, activate.Slot)
-			require.Equal(t, engine.NumberValue{Value: 0}, activate.Model, "score's initializer is 0")
+			require.Equal(t, NumberValue{Value: 0}, activate.Model, "score's initializer is 0")
 		}
 	})
 

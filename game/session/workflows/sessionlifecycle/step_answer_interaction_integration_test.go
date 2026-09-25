@@ -2,11 +2,9 @@ package sessionlifecycle
 
 import (
 	"context"
-	"strconv"
 	"testing"
 	"time"
 
-	"github.com/diegobermudez03/playhoot/game/language/v1/engine"
 	"github.com/diegobermudez03/playhoot/game/language/v1/program"
 	"github.com/diegobermudez03/playhoot/game/session"
 	"github.com/diegobermudez03/playhoot/game/session/internal/testdb"
@@ -86,7 +84,8 @@ func TestManagerAnswerInteraction_Integration(t *testing.T) {
 		hostActorID := testfixtures.SeedActor(t, db, fx.SessionID, hostUUIDStr)
 		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
 		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
-		playerTwoActorID := testfixtures.SeedActiveParticipant(t, db, fx.SessionID, uuid.NewString(), "Player Two")
+		playerTwoUUIDStr := uuid.NewString()
+		testfixtures.SeedActiveParticipant(t, db, fx.SessionID, playerTwoUUIDStr, "Player Two")
 
 		startResult, err := m.Start(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(hostUUIDStr), IdempotencyKey(uuid.NewString()))
 		require.NoError(t, err)
@@ -100,29 +99,29 @@ func TestManagerAnswerInteraction_Integration(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, AnswerInteractionOutcomeAnswered, result.Outcome)
 
-		var effects []engine.EmitEffectOutput
-		var updates []engine.UpdatePresentationOutput
+		var effects []EffectEmitted
+		var updates []PresentationUpdated
 		for _, o := range result.Outputs {
 			switch v := o.(type) {
-			case engine.EmitEffectOutput:
+			case EffectEmitted:
 				effects = append(effects, v)
-			case engine.UpdatePresentationOutput:
+			case PresentationUpdated:
 				updates = append(updates, v)
 			default:
 				t.Fatalf("unexpected Output kind returned: %T", o)
 			}
 		}
-		require.Len(t, effects, 1, "one EmitEffectOutput addressed to both players via a single Recipients list")
-		require.ElementsMatch(t, []engine.UserID{
-			engine.UserID(strconv.FormatUint(uint64(hostActorID), 10)),
-			engine.UserID(strconv.FormatUint(uint64(playerTwoActorID), 10)),
+		require.Len(t, effects, 1, "one EffectEmitted addressed to both players via a single Recipients list")
+		require.ElementsMatch(t, []UserUUID{
+			UserUUID(hostUUIDStr),
+			UserUUID(playerTwoUUIDStr),
 		}, effects[0].Recipients)
 		require.Equal(t, presentationEffectName, effects[0].Effect)
 
-		require.Len(t, updates, 2, "one UpdatePresentationOutput per mounted Hud presentation")
+		require.Len(t, updates, 2, "one PresentationUpdated per mounted Hud presentation")
 		for _, u := range updates {
 			require.Equal(t, presentationEffectHudSlot, u.Slot)
-			require.Equal(t, engine.NumberValue{Value: 42}, u.Model)
+			require.Equal(t, NumberValue{Value: 42}, u.Model)
 		}
 	})
 

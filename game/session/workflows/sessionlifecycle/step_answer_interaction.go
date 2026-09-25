@@ -257,7 +257,12 @@ func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessio
 		}
 	}
 
-	return AnswerInteractionResult{Outcome: AnswerInteractionOutcomeAnswered, SessionUUID: SessionUUID(lockedSession.UUID), Outputs: clientoutputs.ClientFacing(outputs), TerminalReason: terminalReason}, nil
+	mappedOutputs, err := m.mapOutputs(ctx, tx, lockedSession.ID, clientoutputs.ClientFacing(outputs))
+	if err != nil {
+		return AnswerInteractionResult{}, fmt.Errorf("mapping client-facing outputs: %s", err)
+	}
+
+	return AnswerInteractionResult{Outcome: AnswerInteractionOutcomeAnswered, SessionUUID: SessionUUID(lockedSession.UUID), Outputs: mappedOutputs, TerminalReason: terminalReason}, nil
 }
 
 // terminalizeAnswerInteractionFatal performs AnswerInteraction's fatal path:

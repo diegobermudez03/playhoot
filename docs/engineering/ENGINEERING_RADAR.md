@@ -89,19 +89,19 @@ Game Language / Architecture
 - If it is needed (plausible for `Map`, less clear for `Union`/`NewType`), narrowing it now would be premature and costly to reverse.
 
 **Recommendation**
-- Do not act on this now. Once a second or third real Definition is authored (or WORK-0029 is drafted for real and needs to decide how much of the algebra its mirror schema must cover), revisit with concrete evidence one way or the other - the same kind of exhaustive target-range audit GAME-ADR-0026 itself performed, not a guess from a single simple example.
+- Do not act on this now. Once a second or third real Definition is authored, revisit with concrete evidence one way or the other - the same kind of exhaustive target-range audit GAME-ADR-0026 itself performed, not a guess from a single simple example.
 
 **Why this horizon**
 - LATER: the concern is legitimate but the evidence is not yet conclusive enough to justify a redesign, and no current WORK is blocked on resolving it.
 
 **Reevaluate when**
-- A second real Definition is authored and its actual `Value`/`Type` usage is known, or `docs/projects/active/session-runtime-v1/works/WORK-0029-session-owned-output-value-schema.md` is drafted for real and needs to decide its own schema's coverage.
+- A second real Definition is authored and its actual `Value`/`Type` usage is known.
 
 **Next process**
 - `ARCHITECTURE_DISCUSSION`, if/when reevaluated.
 
 **Last reviewed**
-2026-09-24
+2026-09-24 - reevaluated per this item's own trigger, `docs/projects/active/session-runtime-v1/works/WORK-0029-session-owned-output-value-schema.md` was drafted for real and had to decide its own mirror schema's coverage. Outcome: this item's own reasoning was applied directly - WORK-0029 does not narrow `engine`'s `Value`/`Type` algebra on the weaker single-Definition evidence available today (consistent with "do not act on this now" above), and its own session-owned mirror covers all 11 variants rather than only Parqués's subset, so no redesign pressure was created in either direction. This item stays LATER, now waiting only on a second real Definition.
 
 ## NOT NEEDED
 

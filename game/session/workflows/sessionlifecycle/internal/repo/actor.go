@@ -33,6 +33,29 @@ func (r *Repo) FindActor(ctx context.Context, tx *gorm.DB, sessionID uint, userU
 	return &row, nil
 }
 
+// FindActorsByIDs returns the SessionActors for (sessionID, ids) in one
+// query, in no particular order, for callers that need to resolve several
+// internal actor ids to their UserUUID (e.g. a RuntimeTurn's Output
+// recipients) without one query per id. An id in ids with no matching row
+// (should not happen for an id sourced from this same Session's own data) is
+// simply absent from the result - callers must check for missing ids
+// themselves.
+func (r *Repo) FindActorsByIDs(ctx context.Context, tx *gorm.DB, sessionID uint, ids []uint) ([]Actor, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var rows []Actor
+	result := tx.WithContext(ctx).Raw(`
+		SELECT id, session_id, user_uuid
+		FROM session_actors
+		WHERE session_id = ? AND id IN ?
+	`, sessionID, ids).Scan(&rows)
+	if result.Error != nil {
+		return nil, fmt.Errorf("finding session actors by id: %s", result.Error)
+	}
+	return rows, nil
+}
+
 type actorInsert struct {
 	ID               uint   `gorm:"column:id"`
 	SessionID        uint   `gorm:"column:session_id"`

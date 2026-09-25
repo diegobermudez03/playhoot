@@ -8,8 +8,6 @@ package sessionlifecycle
 
 import (
 	"time"
-
-	"github.com/diegobermudez03/playhoot/game/language/v1/engine"
 )
 
 // GameUUID is a public Game identity (Create's input).
@@ -128,10 +126,10 @@ const (
 // session.TerminalReasonGame*) whenever this same Turn also ended the
 // Session.
 type StartResult struct {
-	Outcome        StartOutcome    `json:"outcome"`
-	SessionUUID    SessionUUID     `json:"session_uuid,omitempty"`
-	Outputs        []engine.Output `json:"-"`
-	TerminalReason string          `json:"terminal_reason,omitempty"`
+	Outcome        StartOutcome `json:"outcome"`
+	SessionUUID    SessionUUID  `json:"session_uuid,omitempty"`
+	Outputs        []Output     `json:"-"`
+	TerminalReason string       `json:"terminal_reason,omitempty"`
 }
 
 // InteractionUUID is a session_interactions row's public identity.
@@ -177,6 +175,6 @@ const (
 type AnswerInteractionResult struct {
 	Outcome        AnswerInteractionOutcome `json:"outcome"`
 	SessionUUID    SessionUUID              `json:"session_uuid,omitempty"`
-	Outputs        []engine.Output          `json:"-"`
+	Outputs        []Output                 `json:"-"`
 	TerminalReason string                   `json:"terminal_reason,omitempty"`
 }
