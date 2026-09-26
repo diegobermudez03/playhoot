@@ -107,3 +107,71 @@ func TestReplayReconstructsKeyedTimerExpiredSignal_Integration(t *testing.T) {
 	require.Equal(t, keyedTimerSlotName, priorSignals[0].Slot)
 	require.Contains(t, []engine.Value{engine.StringValue{Value: "P0"}, engine.StringValue{Value: "P1"}}, priorSignals[0].Key)
 }
+
+// TestReplayReconstructsMixedInteractionAndTimerCauses_Integration proves
+// LoadPriorSignals correctly reconstructs an ordered sequence mixing both
+// existing replay-input cause kinds - an interaction response followed by a
+// timer expiration - across multiple Turns of the same Session, not just one
+// cause kind exercised in isolation. A bug in how loadReplaySignal's
+// INTERACTION_RESPONSE/TIMER_EXPIRED cases interleave across a multi-Turn
+// sequence would not be caught by either single-cause test above.
+func TestReplayReconstructsMixedInteractionAndTimerCauses_Integration(t *testing.T) {
+	db := testdb.OpenSessionDB(t)
+
+	definition := timerAndQuestionMixedCauseDefinition(1, 4)
+	m := New(db, nil, stubStartPinnedGameReader{definition: definition})
+
+	fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
+	hostUUID := uuid.NewString()
+	hostActorID := testfixtures.SeedActor(t, db, fx.SessionID, hostUUID)
+	require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
+	testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
+
+	startResult, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), session.IdempotencyKey(uuid.NewString()))
+	require.NoError(t, err)
+	require.Equal(t, session.StartOutcomeStarted, startResult.Outcome)
+
+	var interactionUUID string
+	require.NoError(t, db.Raw(`SELECT uuid FROM session_interactions WHERE session_id = ?`, fx.SessionID).Scan(&interactionUUID).Error)
+	var obligationUUID string
+	require.NoError(t, db.Raw(`SELECT uuid FROM session_timer_obligations WHERE session_id = ?`, fx.SessionID).Scan(&obligationUUID).Error)
+
+	answerResult, err := m.AnswerInteraction(context.Background(), session.InteractionUUID(interactionUUID), session.UserUUID(hostUUID), numberAnswer(t, 7))
+	require.NoError(t, err)
+	require.Equal(t, session.AnswerInteractionOutcomeAnswered, answerResult.Outcome)
+
+	expireResult, err := m.ExpireTimer(context.Background(), session.TimerObligationUUID(obligationUUID))
+	require.NoError(t, err)
+	require.Equal(t, session.ExpireTimerOutcomeExpired, expireResult.Outcome)
+	require.Len(t, expireResult.Outputs, 1, "the timer's own TimerFired effect")
+
+	var turnCount int64
+	require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_turns WHERE session_id = ?`, fx.SessionID).Scan(&turnCount).Error)
+	require.Equal(t, int64(3), turnCount, "Start, the answer, and the expiration - three committed Turns")
+
+	process := New(db, nil, stubStartPinnedGameReader{definition: definition})
+	input, priorSignals, err := replay.LoadPriorSignals(context.Background(), db, process.answerInteractionRepo, fx.SessionID)
+	require.NoError(t, err)
+	require.Len(t, priorSignals, 2, "the answer and the expiration, in commit order")
+	require.Equal(t, engine.SignalKindInteractionAnswered, priorSignals[0].Kind)
+	require.Equal(t, engine.NumberValue{Value: 7}, priorSignals[0].Answer)
+	require.Equal(t, engine.SignalKindTimerExpired, priorSignals[1].Kind)
+	require.Equal(t, timerSlotName, priorSignals[1].Slot)
+
+	compiledProgram, diagnostics := engineservice.Compile(definition)
+	require.False(t, diagnostics.HasErrors())
+
+	// Reconstructing Turn 2 (the answer) and Turn 3 (the expiration)
+	// independently, from durable state alone, must reproduce exactly what
+	// live execution actually produced.
+	afterAnswer, err := engineservice.AdvanceTurn(compiledProgram, input, nil, priorSignals[0], engine.DefaultLimits())
+	require.NoError(t, err)
+	require.Empty(t, afterAnswer, "answering Q only closes it - no output of its own in this fixture")
+
+	afterExpire, err := engineservice.AdvanceTurn(compiledProgram, input, priorSignals[:1], priorSignals[1], engine.DefaultLimits())
+	require.NoError(t, err)
+	require.Len(t, afterExpire, 1)
+	effect, ok := afterExpire[0].(engine.EmitEffectOutput)
+	require.True(t, ok, "%#v", afterExpire[0])
+	require.Equal(t, timerEffectName, effect.Effect)
+}

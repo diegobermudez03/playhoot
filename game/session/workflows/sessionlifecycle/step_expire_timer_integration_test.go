@@ -262,4 +262,62 @@ func TestManagerExpireTimer_Integration(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, session.ExpireTimerOutcomeStale, expireResult.Outcome, "a still-in-flight physical timer firing after the Session already terminated must be a harmless stale decline")
 	})
+
+	t.Run("concurrent_expire_and_answer_for_the_same_session_never_both_execute_a_runtime_turn", func(t *testing.T) {
+		// timerCancelledOnAnswerDefinition schedules "T" and opens "Q" both at
+		// Start; answering Q closes it and cancels "T" - the two operations
+		// below race for the same Session, proving at most one of them
+		// commits a RuntimeTurn and the loser always observes the winner's
+		// already-committed state instead of executing against stale state.
+		m := New(db, nil, stubStartPinnedGameReader{definition: timerCancelledOnAnswerDefinition(1, 4)})
+
+		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
+		hostUUID := uuid.NewString()
+		hostActorID := testfixtures.SeedActor(t, db, fx.SessionID, hostUUID)
+		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
+		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
+
+		_, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), session.IdempotencyKey(uuid.NewString()))
+		require.NoError(t, err)
+
+		var obligationUUID string
+		require.NoError(t, db.Raw(`SELECT uuid FROM session_timer_obligations WHERE session_id = ?`, fx.SessionID).Scan(&obligationUUID).Error)
+		var interactionUUID string
+		require.NoError(t, db.Raw(`SELECT uuid FROM session_interactions WHERE session_id = ?`, fx.SessionID).Scan(&interactionUUID).Error)
+
+		type answerOutcome struct {
+			result session.AnswerInteractionResult
+			err    error
+		}
+		type expireOutcome struct {
+			result session.ExpireTimerResult
+			err    error
+		}
+		answerCh := make(chan answerOutcome, 1)
+		expireCh := make(chan expireOutcome, 1)
+		go func() {
+			result, err := m.AnswerInteraction(context.Background(), session.InteractionUUID(interactionUUID), session.UserUUID(hostUUID), numberAnswer(t, 1))
+			answerCh <- answerOutcome{result, err}
+		}()
+		go func() {
+			result, err := m.ExpireTimer(context.Background(), session.TimerObligationUUID(obligationUUID))
+			expireCh <- expireOutcome{result, err}
+		}()
+
+		answer := <-answerCh
+		expire := <-expireCh
+		require.NoError(t, answer.err)
+		require.NoError(t, expire.err)
+		require.Equal(t, session.AnswerInteractionOutcomeAnswered, answer.result.Outcome, "the answer always eventually succeeds against reloaded state, regardless of arrival order relative to the timer expiration")
+		require.Contains(t, []session.ExpireTimerOutcome{session.ExpireTimerOutcomeStale, session.ExpireTimerOutcomeRejected}, expire.result.Outcome,
+			"whichever operation loses the race must observe the winner's already-committed state, never execute against stale state: Stale if the answer's own cancel already ran first, Rejected by the engine's own stale-signal backstop if the expiration reached the engine first (this fixture's root state has no transition for the timer's own expiration)")
+
+		var turnCount int64
+		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_turns WHERE session_id = ?`, fx.SessionID).Scan(&turnCount).Error)
+		require.Equal(t, int64(2), turnCount, "at most one of the two concurrent operations may ever commit a RuntimeTurn, on top of Start's own first Turn")
+
+		var obligationState string
+		require.NoError(t, db.Raw(`SELECT state FROM session_timer_obligations WHERE uuid = ?`, obligationUUID).Scan(&obligationState).Error)
+		require.Equal(t, session.TimerObligationStateCancelled, obligationState, "the answer's own authored cancel must take effect regardless of race order")
+	})
 }

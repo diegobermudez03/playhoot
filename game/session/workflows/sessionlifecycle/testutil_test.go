@@ -1064,3 +1064,75 @@ func keyedTimerDefinition(playersMin, playersMax int) program.Definition {
 		},
 	}
 }
+
+// mixedCauseQuestionName/mixedCauseQuestionSlot name
+// timerAndQuestionMixedCauseDefinition's own declarations.
+const (
+	mixedCauseQuestionName = "PickNumber"
+	mixedCauseQuestionSlot = "Q"
+)
+
+// timerAndQuestionMixedCauseDefinition builds a real, engineservice.Compile-able
+// Definition whose root workflow schedules TimerSlot "T" (reusing
+// timerSlotName/timerEffectName) and opens Question "Q" both at Start;
+// answering Q leaves "T" untouched (unlike timerCancelledOnAnswerDefinition),
+// and "T"'s own expiration emits timerEffectName - for tests proving replay
+// reconstruction correctly threads a mixed sequence of interaction-response
+// and timer-expiration causes across multiple Turns, not just one cause kind
+// in isolation.
+func timerAndQuestionMixedCauseDefinition(playersMin, playersMax int) program.Definition {
+	recipient := program.IndexExpression{Target: program.ReferenceExpression{Name: "players"}, Index: program.NumberLiteralExpression{Value: "0"}}
+	return program.Definition{
+		Metadata:     program.Metadata{ID: "timer-and-question-mixed-cause", Name: "TimerAndQuestionMixedCause"},
+		RootWorkflow: "Main",
+		Players:      program.PlayerPolicy{Min: playersMin, Max: playersMax},
+		Effects:      []program.EffectDeclaration{{Name: timerEffectName}},
+		Questions: []program.QuestionDeclaration{
+			{Name: mixedCauseQuestionName, ResponseType: program.BuiltinTypeReference{Type: program.BuiltinTypeNumber}},
+		},
+		Workflows: []program.WorkflowDeclaration{
+			{
+				Name: "Main",
+				Parameters: []program.FieldDeclaration{
+					{Name: "players", Type: program.ListTypeReference{Element: program.BuiltinTypeReference{Type: program.BuiltinTypeUser}}},
+				},
+				ResultType:    program.BuiltinTypeReference{Type: program.BuiltinTypeUnit},
+				InitialState:  "Start",
+				TimerSlots:    []program.TimerSlotDeclaration{{Name: timerSlotName}},
+				QuestionSlots: []program.QuestionSlotDeclaration{{Name: mixedCauseQuestionSlot, Question: mixedCauseQuestionName}},
+				States: []program.WorkflowStateDeclaration{
+					{
+						Name: "Start",
+						Transitions: []program.TransitionDeclaration{
+							{
+								Name:   "Started",
+								Signal: program.SignalPattern{Source: program.NamedSignalSource{Name: "WorkflowStarted"}},
+								Operations: program.Block{Operations: []program.Operation{
+									program.ScheduleTimerOperation{Slot: timerSlotName, DelayMilliseconds: program.NumberLiteralExpression{Value: "5000"}},
+									program.OpenQuestionOperation{Slot: mixedCauseQuestionSlot, Recipient: recipient},
+								}},
+								Control: program.StayControl{},
+							},
+							{
+								Name:   "Answered",
+								Signal: program.SignalPattern{Source: program.QuestionAnsweredSignalSource{Slot: mixedCauseQuestionSlot}},
+								Operations: program.Block{Operations: []program.Operation{
+									program.CloseQuestionOperation{Slot: mixedCauseQuestionSlot},
+								}},
+								Control: program.StayControl{},
+							},
+							{
+								Name:   "TimerFired",
+								Signal: program.SignalPattern{Source: program.TimerExpiredSignalSource{Slot: timerSlotName}},
+								Operations: program.Block{Operations: []program.Operation{
+									program.EmitEffectOperation{Effect: timerEffectName, Recipients: program.ReferenceExpression{Name: "players"}},
+								}},
+								Control: program.StayControl{},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}

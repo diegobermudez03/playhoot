@@ -49,11 +49,11 @@ func MigrateTables(db *gorm.DB) error {
 		migration20260924000000SessionInteractionsEngineInteractionID(),
 
 		// session_timer_obligations - the durable Timer Obligation entity a
-		// committed RuntimeTurn schedules/cancels/consumes - and
-		// session_runtime_turns.source_timer_obligation_id for a Turn caused
-		// by a timer's expiration.
+		// committed RuntimeTurn schedules/cancels/consumes.
+		// session_runtime_turns.source_timer_obligation_id already existed
+		// from migration20260919000000SessionRuntimeTurns and needs no
+		// migration of its own.
 		migration20260925000000SessionTimerObligations(),
-		migration20260925000001SessionRuntimeTurnsSourceTimerObligationID(),
 	})
 
 	return migrator.Migrate()

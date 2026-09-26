@@ -8,10 +8,12 @@ import (
 // migration20260925000000SessionTimerObligations creates
 // session_timer_obligations, the durable Timer Obligation entity a
 // committed RuntimeTurn schedules (from an engine.ScheduleTimerOutput/
-// ScheduleKeyedTimerOutput) and later cancels/consumes, and adds
-// session_runtime_turns.source_timer_obligation_id - a third nullable
-// cause pointer mirroring the already-established source_interaction_id
-// pattern, for a Turn caused by a timer's expiration.
+// ScheduleKeyedTimerOutput) and later cancels/consumes. It does not add
+// session_runtime_turns.source_timer_obligation_id: that nullable cause
+// pointer already exists, created alongside source_interaction_id by
+// 20260919000000_session_runtime_turns.go from the start - only the Go-side
+// code (runtimeTurnInsert/RuntimeTurnRecord/CreateRuntimeTurn) had not
+// caught up to read/write it yet.
 //
 // There is no engine_path column: unlike questions (which carried
 // engine_path/engine_slot before 20260924000000 replaced that addressing
@@ -64,22 +66,6 @@ func migration20260925000000SessionTimerObligations() *gormigrate.Migration {
 				return err
 			}
 			return tx.Exec(`DROP TABLE session_timer_obligations`).Error
-		},
-	}
-}
-
-// migration20260925000001SessionRuntimeTurnsSourceTimerObligationID adds
-// session_runtime_turns.source_timer_obligation_id, mirroring the existing
-// source_interaction_id column exactly, for a Turn caused by a timer's
-// expiration (Manager.ExpireTimer).
-func migration20260925000001SessionRuntimeTurnsSourceTimerObligationID() *gormigrate.Migration {
-	return &gormigrate.Migration{
-		ID: "20260925000001_session_runtime_turns_source_timer_obligation_id",
-		Migrate: func(tx *gorm.DB) error {
-			return tx.Exec(`ALTER TABLE session_runtime_turns ADD COLUMN source_timer_obligation_id BIGINT NULL`).Error
-		},
-		Rollback: func(tx *gorm.DB) error {
-			return tx.Exec(`ALTER TABLE session_runtime_turns DROP COLUMN source_timer_obligation_id`).Error
 		},
 	}
 }
