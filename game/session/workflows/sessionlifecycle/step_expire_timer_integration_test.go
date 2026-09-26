@@ -38,9 +38,9 @@ func TestManagerExpireTimer_Integration(t *testing.T) {
 		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
 		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
 
-		result, err := m.Start(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(hostUUID), IdempotencyKey(uuid.NewString()))
+		result, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), session.IdempotencyKey(uuid.NewString()))
 		require.NoError(t, err)
-		require.Equal(t, StartOutcomeStarted, result.Outcome)
+		require.Equal(t, session.StartOutcomeStarted, result.Outcome)
 
 		var row timerObligationRow
 		require.NoError(t, db.Raw(`SELECT uuid, engine_slot, engine_key, delay_ms, state, created_by_turn_id, closed_by_turn_id FROM session_timer_obligations WHERE session_id = ?`, fx.SessionID).Scan(&row).Error)
@@ -61,20 +61,20 @@ func TestManagerExpireTimer_Integration(t *testing.T) {
 		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
 		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
 
-		startResult, err := m.Start(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(hostUUID), IdempotencyKey(uuid.NewString()))
+		startResult, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), session.IdempotencyKey(uuid.NewString()))
 		require.NoError(t, err)
-		require.Equal(t, StartOutcomeStarted, startResult.Outcome)
+		require.Equal(t, session.StartOutcomeStarted, startResult.Outcome)
 
 		var obligationUUID string
 		require.NoError(t, db.Raw(`SELECT uuid FROM session_timer_obligations WHERE session_id = ?`, fx.SessionID).Scan(&obligationUUID).Error)
 		require.NotEmpty(t, obligationUUID)
 
-		result, err := m.ExpireTimer(context.Background(), TimerObligationUUID(obligationUUID))
+		result, err := m.ExpireTimer(context.Background(), session.TimerObligationUUID(obligationUUID))
 		require.NoError(t, err)
-		require.Equal(t, ExpireTimerOutcomeExpired, result.Outcome)
-		require.Equal(t, SessionUUID(fx.SessionUUID), result.SessionUUID)
+		require.Equal(t, session.ExpireTimerOutcomeExpired, result.Outcome)
+		require.Equal(t, session.SessionUUID(fx.SessionUUID), result.SessionUUID)
 		require.Len(t, result.Outputs, 1)
-		effect, ok := result.Outputs[0].(EffectEmitted)
+		effect, ok := result.Outputs[0].(session.EffectEmitted)
 		require.True(t, ok, "%T", result.Outputs[0])
 		require.Equal(t, timerEffectName, effect.Effect)
 
@@ -107,22 +107,22 @@ func TestManagerExpireTimer_Integration(t *testing.T) {
 		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
 		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
 
-		_, err := m.Start(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(hostUUID), IdempotencyKey(uuid.NewString()))
+		_, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), session.IdempotencyKey(uuid.NewString()))
 		require.NoError(t, err)
 
 		var obligationUUID string
 		require.NoError(t, db.Raw(`SELECT uuid FROM session_timer_obligations WHERE session_id = ?`, fx.SessionID).Scan(&obligationUUID).Error)
 
-		first, err := m.ExpireTimer(context.Background(), TimerObligationUUID(obligationUUID))
+		first, err := m.ExpireTimer(context.Background(), session.TimerObligationUUID(obligationUUID))
 		require.NoError(t, err)
-		require.Equal(t, ExpireTimerOutcomeExpired, first.Outcome)
+		require.Equal(t, session.ExpireTimerOutcomeExpired, first.Outcome)
 
 		var turnCountAfterFirst int64
 		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_turns WHERE session_id = ?`, fx.SessionID).Scan(&turnCountAfterFirst).Error)
 
-		second, err := m.ExpireTimer(context.Background(), TimerObligationUUID(obligationUUID))
+		second, err := m.ExpireTimer(context.Background(), session.TimerObligationUUID(obligationUUID))
 		require.NoError(t, err)
-		require.Equal(t, ExpireTimerOutcomeStale, second.Outcome)
+		require.Equal(t, session.ExpireTimerOutcomeStale, second.Outcome)
 		require.Empty(t, second.Outputs)
 
 		var turnCountAfterSecond int64
@@ -133,7 +133,7 @@ func TestManagerExpireTimer_Integration(t *testing.T) {
 	t.Run("expiring_an_unknown_obligation_uuid_reports_not_found", func(t *testing.T) {
 		m := New(db, nil, nil)
 
-		_, err := m.ExpireTimer(context.Background(), TimerObligationUUID(uuid.NewString()))
+		_, err := m.ExpireTimer(context.Background(), session.TimerObligationUUID(uuid.NewString()))
 		require.ErrorIs(t, err, session.ErrTimerObligationNotFound)
 	})
 
@@ -146,9 +146,9 @@ func TestManagerExpireTimer_Integration(t *testing.T) {
 		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
 		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
 
-		result, err := m.Start(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(hostUUID), IdempotencyKey(uuid.NewString()))
+		result, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), session.IdempotencyKey(uuid.NewString()))
 		require.NoError(t, err)
-		require.Equal(t, StartOutcomeStarted, result.Outcome)
+		require.Equal(t, session.StartOutcomeStarted, result.Outcome)
 
 		var rows []timerObligationRow
 		require.NoError(t, db.Raw(`SELECT uuid, engine_key, state FROM session_timer_obligations WHERE session_id = ? ORDER BY id ASC`, fx.SessionID).Scan(&rows).Error)
@@ -158,15 +158,15 @@ func TestManagerExpireTimer_Integration(t *testing.T) {
 			require.Equal(t, session.TimerObligationStateActive, r.State)
 		}
 
-		expireResult, err := m.ExpireTimer(context.Background(), TimerObligationUUID(rows[0].UUID))
+		expireResult, err := m.ExpireTimer(context.Background(), session.TimerObligationUUID(rows[0].UUID))
 		require.NoError(t, err)
-		require.Equal(t, ExpireTimerOutcomeExpired, expireResult.Outcome)
+		require.Equal(t, session.ExpireTimerOutcomeExpired, expireResult.Outcome)
 		require.Len(t, expireResult.Outputs, 1)
-		effect, ok := expireResult.Outputs[0].(EffectEmitted)
+		effect, ok := expireResult.Outputs[0].(session.EffectEmitted)
 		require.True(t, ok, "%T", expireResult.Outputs[0])
 		require.Equal(t, keyedTimerEffectName, effect.Effect)
 		require.Len(t, effect.Arguments, 1)
-		keyValue, ok := effect.Arguments[0].Value.(StringValue)
+		keyValue, ok := effect.Arguments[0].Value.(session.StringValue)
 		require.True(t, ok)
 		require.Contains(t, []string{"P0", "P1"}, keyValue.Value)
 
@@ -185,7 +185,7 @@ func TestManagerExpireTimer_Integration(t *testing.T) {
 		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
 		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
 
-		_, err := m.Start(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(hostUUID), IdempotencyKey(uuid.NewString()))
+		_, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), session.IdempotencyKey(uuid.NewString()))
 		require.NoError(t, err)
 
 		var obligationUUID string
@@ -193,9 +193,9 @@ func TestManagerExpireTimer_Integration(t *testing.T) {
 		var interactionUUID string
 		require.NoError(t, db.Raw(`SELECT uuid FROM session_interactions WHERE session_id = ?`, fx.SessionID).Scan(&interactionUUID).Error)
 
-		answerResult, err := m.AnswerInteraction(context.Background(), InteractionUUID(interactionUUID), UserUUID(hostUUID), numberAnswer(t, 1))
+		answerResult, err := m.AnswerInteraction(context.Background(), session.InteractionUUID(interactionUUID), session.UserUUID(hostUUID), numberAnswer(t, 1))
 		require.NoError(t, err)
-		require.Equal(t, AnswerInteractionOutcomeAnswered, answerResult.Outcome)
+		require.Equal(t, session.AnswerInteractionOutcomeAnswered, answerResult.Outcome)
 
 		var obligationRow timerObligationRow
 		require.NoError(t, db.Raw(`SELECT state, closed_by_turn_id, closure_reason FROM session_timer_obligations WHERE uuid = ?`, obligationUUID).Scan(&obligationRow).Error)
@@ -203,9 +203,9 @@ func TestManagerExpireTimer_Integration(t *testing.T) {
 		require.NotNil(t, obligationRow.ClosedByTurnID, "cancelled by the answer's own Turn, not terminal cleanup")
 		require.Nil(t, obligationRow.ClosureReason, "an authored cancel is not a terminal-cleanup closure")
 
-		expireResult, err := m.ExpireTimer(context.Background(), TimerObligationUUID(obligationUUID))
+		expireResult, err := m.ExpireTimer(context.Background(), session.TimerObligationUUID(obligationUUID))
 		require.NoError(t, err)
-		require.Equal(t, ExpireTimerOutcomeStale, expireResult.Outcome)
+		require.Equal(t, session.ExpireTimerOutcomeStale, expireResult.Outcome)
 	})
 
 	t.Run("scheduling_into_an_already_occupied_slot_fails_atomically_and_persists_no_obligation", func(t *testing.T) {
@@ -217,9 +217,9 @@ func TestManagerExpireTimer_Integration(t *testing.T) {
 		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
 		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
 
-		result, err := m.Start(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(hostUUID), IdempotencyKey(uuid.NewString()))
+		result, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), session.IdempotencyKey(uuid.NewString()))
 		require.NoError(t, err)
-		require.Equal(t, StartOutcomeRuntimeInitFailed, result.Outcome, "scheduling into an occupied slot is an engine execution error")
+		require.Equal(t, session.StartOutcomeRuntimeInitFailed, result.Outcome, "scheduling into an occupied slot is an engine execution error")
 
 		var obligationCount int64
 		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_timer_obligations WHERE session_id = ?`, fx.SessionID).Scan(&obligationCount).Error)
@@ -239,7 +239,7 @@ func TestManagerExpireTimer_Integration(t *testing.T) {
 		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
 		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
 
-		_, err := m.Start(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(hostUUID), IdempotencyKey(uuid.NewString()))
+		_, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), session.IdempotencyKey(uuid.NewString()))
 		require.NoError(t, err)
 
 		var obligationUUID string
@@ -247,7 +247,7 @@ func TestManagerExpireTimer_Integration(t *testing.T) {
 		var interactionUUID string
 		require.NoError(t, db.Raw(`SELECT uuid FROM session_interactions WHERE session_id = ?`, fx.SessionID).Scan(&interactionUUID).Error)
 
-		answerResult, err := m.AnswerInteraction(context.Background(), InteractionUUID(interactionUUID), UserUUID(hostUUID), numberAnswer(t, 1))
+		answerResult, err := m.AnswerInteraction(context.Background(), session.InteractionUUID(interactionUUID), session.UserUUID(hostUUID), numberAnswer(t, 1))
 		require.NoError(t, err)
 		require.Equal(t, session.TerminalReasonGameCompleted, answerResult.TerminalReason)
 
@@ -258,8 +258,8 @@ func TestManagerExpireTimer_Integration(t *testing.T) {
 		require.NotNil(t, obligationRow.ClosureReason)
 		require.Equal(t, session.TimerObligationClosureReasonSessionTerminated, *obligationRow.ClosureReason)
 
-		expireResult, err := m.ExpireTimer(context.Background(), TimerObligationUUID(obligationUUID))
+		expireResult, err := m.ExpireTimer(context.Background(), session.TimerObligationUUID(obligationUUID))
 		require.NoError(t, err)
-		require.Equal(t, ExpireTimerOutcomeStale, expireResult.Outcome, "a still-in-flight physical timer firing after the Session already terminated must be a harmless stale decline")
+		require.Equal(t, session.ExpireTimerOutcomeStale, expireResult.Outcome, "a still-in-flight physical timer firing after the Session already terminated must be a harmless stale decline")
 	})
 }

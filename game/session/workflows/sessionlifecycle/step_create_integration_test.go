@@ -14,21 +14,21 @@ import (
 
 // TestManagerCreate_Integration exercises the real public Manager.Create
 // against a real Postgres database (not mocked collaborators), proving the
-// full Host/SessionActor Creation Cycle, JoinCode issuance, and idempotency
+// full Host/SessionActor Creation Cycle, session.JoinCode issuance, and idempotency
 // persistence.
 func TestManagerCreate_Integration(t *testing.T) {
 	type test struct {
-		gameUUID       GameUUID
-		hostUserUUID   UserUUID
-		idempotencyKey IdempotencyKey
-		assert         func(t *testing.T, db *gorm.DB, result CreatedSession, err error)
+		gameUUID       session.GameUUID
+		hostUserUUID   session.UserUUID
+		idempotencyKey session.IdempotencyKey
+		assert         func(t *testing.T, db *gorm.DB, result session.CreatedSession, err error)
 	}
 
 	tests := map[string]func(t *testing.T, db *gorm.DB) test{
 		"creates_lobby_session_host_actor_and_active_join_code": func(t *testing.T, db *gorm.DB) test {
 			return test{
-				gameUUID: GameUUID(uuid.NewString()), hostUserUUID: UserUUID(uuid.NewString()), idempotencyKey: "create-key-1",
-				assert: func(t *testing.T, db *gorm.DB, result CreatedSession, err error) {
+				gameUUID: session.GameUUID(uuid.NewString()), hostUserUUID: session.UserUUID(uuid.NewString()), idempotencyKey: "create-key-1",
+				assert: func(t *testing.T, db *gorm.DB, result session.CreatedSession, err error) {
 					require.NoError(t, err)
 					require.NotEmpty(t, result.SessionUUID)
 					require.GreaterOrEqual(t, uint(result.JoinCode), uint(1000))
@@ -59,8 +59,8 @@ func TestManagerCreate_Integration(t *testing.T) {
 		},
 		"a_game_definition_that_fails_to_compile_is_rejected": func(t *testing.T, db *gorm.DB) test {
 			return test{
-				gameUUID: GameUUID(uuid.NewString()), hostUserUUID: UserUUID(uuid.NewString()), idempotencyKey: "create-key-broken",
-				assert: func(t *testing.T, db *gorm.DB, result CreatedSession, err error) {
+				gameUUID: session.GameUUID(uuid.NewString()), hostUserUUID: session.UserUUID(uuid.NewString()), idempotencyKey: "create-key-broken",
+				assert: func(t *testing.T, db *gorm.DB, result session.CreatedSession, err error) {
 					require.ErrorIs(t, err, session.ErrDefinitionDoesNotCompile)
 					require.Empty(t, result.SessionUUID)
 				},
@@ -91,8 +91,8 @@ func TestManagerCreate_Integration_RepeatedSemanticallyEquivalentCreateReplays(t
 	reader := stubCurrentGameReader{versionUUID: uuid.NewString(), definition: compilableDefinitionForTest(4)}
 	m := New(db, reader, stubPinnedGameReader{})
 
-	gameUUID := GameUUID(uuid.NewString())
-	hostUserUUID := UserUUID(uuid.NewString())
+	gameUUID := session.GameUUID(uuid.NewString())
+	hostUserUUID := session.UserUUID(uuid.NewString())
 
 	first, err := m.Create(context.Background(), gameUUID, hostUserUUID, "create-key-replay")
 	require.NoError(t, err)
@@ -111,11 +111,11 @@ func TestManagerCreate_Integration_ConflictingIdempotencyIdentityIsRejected(t *t
 	reader := stubCurrentGameReader{versionUUID: uuid.NewString(), definition: compilableDefinitionForTest(4)}
 	m := New(db, reader, stubPinnedGameReader{})
 
-	hostUserUUID := UserUUID(uuid.NewString())
-	_, err := m.Create(context.Background(), GameUUID(uuid.NewString()), hostUserUUID, "create-key-conflict")
+	hostUserUUID := session.UserUUID(uuid.NewString())
+	_, err := m.Create(context.Background(), session.GameUUID(uuid.NewString()), hostUserUUID, "create-key-conflict")
 	require.NoError(t, err)
 
-	_, err = m.Create(context.Background(), GameUUID(uuid.NewString()), hostUserUUID, "create-key-conflict")
+	_, err = m.Create(context.Background(), session.GameUUID(uuid.NewString()), hostUserUUID, "create-key-conflict")
 	require.ErrorIs(t, err, session.ErrIdempotencyConflict)
 }
 
@@ -124,11 +124,11 @@ func TestManagerCreate_Integration_DifferentUsersReusingSameKeyDoNotCollide(t *t
 	reader := stubCurrentGameReader{versionUUID: uuid.NewString(), definition: compilableDefinitionForTest(4)}
 	m := New(db, reader, stubPinnedGameReader{})
 
-	gameUUID := GameUUID(uuid.NewString())
-	_, err := m.Create(context.Background(), gameUUID, UserUUID(uuid.NewString()), "shared-key")
+	gameUUID := session.GameUUID(uuid.NewString())
+	_, err := m.Create(context.Background(), gameUUID, session.UserUUID(uuid.NewString()), "shared-key")
 	require.NoError(t, err)
 
-	result, err := m.Create(context.Background(), gameUUID, UserUUID(uuid.NewString()), "shared-key")
+	result, err := m.Create(context.Background(), gameUUID, session.UserUUID(uuid.NewString()), "shared-key")
 	require.NoError(t, err)
 	require.NotEmpty(t, result.SessionUUID)
 }
@@ -150,13 +150,13 @@ func TestManagerCreate_Integration_Concurrent(t *testing.T) {
 	reader := stubCurrentGameReader{versionUUID: uuid.NewString(), definition: compilableDefinitionForTest(4)}
 	m := New(db, reader, stubPinnedGameReader{})
 
-	gameUUID := GameUUID(uuid.NewString())
-	hostUserUUID := UserUUID(uuid.NewString())
+	gameUUID := session.GameUUID(uuid.NewString())
+	hostUserUUID := session.UserUUID(uuid.NewString())
 
 	const attempts = 8
 	start := make(chan struct{})
 	var wg sync.WaitGroup
-	results := make([]CreatedSession, attempts)
+	results := make([]session.CreatedSession, attempts)
 	errs := make([]error, attempts)
 
 	for i := 0; i < attempts; i++ {
@@ -170,7 +170,7 @@ func TestManagerCreate_Integration_Concurrent(t *testing.T) {
 	close(start)
 	wg.Wait()
 
-	var successResult *CreatedSession
+	var successResult *session.CreatedSession
 	successCount := 0
 	for i := 0; i < attempts; i++ {
 		if errs[i] != nil {

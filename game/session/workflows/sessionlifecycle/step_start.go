@@ -72,7 +72,7 @@ type startRequestPayload struct {
 // and executes the Game Language engine's first RuntimeTurn against the
 // Session's pinned immutable Game Definition, and atomically commits
 // phase=RUNNING together with the committed Turn and JoinCode revocation.
-func (m *Manager) Start(ctx context.Context, sessionUUID SessionUUID, userUUID UserUUID, idempotencyKey IdempotencyKey) (StartResult, error) {
+func (m *Manager) Start(ctx context.Context, sessionUUID session.SessionUUID, userUUID session.UserUUID, idempotencyKey session.IdempotencyKey) (session.StartResult, error) {
 	defer logging.Step(ctx, "SessionLifecycle.Start").Close()
 	logging.LogFields(ctx,
 		logging.Field("session_uuid", string(sessionUUID)),
@@ -80,10 +80,10 @@ func (m *Manager) Start(ctx context.Context, sessionUUID SessionUUID, userUUID U
 	)
 
 	if idempotencyKey == "" {
-		return StartResult{}, session.ErrIdempotencyKeyRequired
+		return session.StartResult{}, session.ErrIdempotencyKeyRequired
 	}
 
-	return utils.RunInDBTransaction(ctx, m, func(ctx context.Context, tx *gorm.DB) (StartResult, error) {
+	return utils.RunInDBTransaction(ctx, m, func(ctx context.Context, tx *gorm.DB) (session.StartResult, error) {
 		return m.startSessionInTx(ctx, tx, sessionUUID, userUUID, idempotencyKey)
 	})
 }
@@ -94,20 +94,20 @@ func (m *Manager) Start(ctx context.Context, sessionUUID SessionUUID, userUUID U
 // sessionlock/idempotency mechanism calls further down this same path
 // require a real Postgres connection to run their SQL, which is instead
 // proven by this package's repository-integration/concurrency tests.
-func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID SessionUUID, userUUID UserUUID, idempotencyKey IdempotencyKey) (StartResult, error) {
+func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID session.SessionUUID, userUUID session.UserUUID, idempotencyKey session.IdempotencyKey) (session.StartResult, error) {
 	incomingPayload := startRequestPayload{SessionUUID: string(sessionUUID), UserUUID: string(userUUID)}
 
 	lockedSession, err := sessionlock.LockByUUID(ctx, tx, string(sessionUUID))
 	if err != nil {
-		return StartResult{}, err
+		return session.StartResult{}, err
 	}
 	if lockedSession == nil {
-		return StartResult{}, session.ErrSessionNotFound
+		return session.StartResult{}, session.ErrSessionNotFound
 	}
 
 	now := time.Now().UTC()
 	if _, err := expiration.MaterializeIfDue(ctx, tx, m.startRepo, lockedSession, now); err != nil {
-		return StartResult{}, err
+		return session.StartResult{}, err
 	}
 
 	// Claimed before any phase-based decision: unlike Join/Leave, Start's
@@ -117,7 +117,7 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 	// current phase as if this were a fresh command.
 	payloadBytes, err := json.Marshal(incomingPayload)
 	if err != nil {
-		return StartResult{}, fmt.Errorf("marshaling start request payload: %s", err)
+		return session.StartResult{}, fmt.Errorf("marshaling start request payload: %s", err)
 	}
 	requestID, existing, err := idempotency.Claim(ctx, tx, idempotency.ClaimInput{
 		Operation:      operationStart,
@@ -127,7 +127,7 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 		RequestPayload: string(payloadBytes),
 	})
 	if err != nil {
-		return StartResult{}, fmt.Errorf("claiming start session request: %s", err)
+		return session.StartResult{}, fmt.Errorf("claiming start session request: %s", err)
 	}
 	if existing != nil {
 		return interpretExistingStartClaim(existing, incomingPayload)
@@ -147,38 +147,38 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 	// Session terminalized by Start's own fatal path is reported as
 	// RuntimeInitFailed rather than mislabeled as a lobby timeout.
 	if lockedSession.Phase == session.PhaseRunning {
-		result := StartResult{Outcome: StartOutcomeStarted, SessionUUID: SessionUUID(lockedSession.UUID)}
+		result := session.StartResult{Outcome: session.StartOutcomeStarted, SessionUUID: session.SessionUUID(lockedSession.UUID)}
 		responseBytes, err := json.Marshal(result)
 		if err != nil {
-			return StartResult{}, fmt.Errorf("marshaling start response payload: %s", err)
+			return session.StartResult{}, fmt.Errorf("marshaling start response payload: %s", err)
 		}
 		if err := idempotency.Complete(ctx, tx, requestID, &lockedSession.ID, outcomeStarted, string(responseBytes)); err != nil {
-			return StartResult{}, fmt.Errorf("completing start session request: %s", err)
+			return session.StartResult{}, fmt.Errorf("completing start session request: %s", err)
 		}
 		return result, nil
 	}
 	if lockedSession.Phase != session.PhaseLobby {
-		outcome, resultOutcome := outcomeLobbyExpired, StartOutcomeLobbyExpired
+		outcome, resultOutcome := outcomeLobbyExpired, session.StartOutcomeLobbyExpired
 		if lockedSession.TerminalReason != nil && *lockedSession.TerminalReason != session.TerminalReasonLobbyExpired {
-			outcome, resultOutcome = outcomeRuntimeInitFailed, StartOutcomeRuntimeInitFailed
+			outcome, resultOutcome = outcomeRuntimeInitFailed, session.StartOutcomeRuntimeInitFailed
 		}
 		if err := idempotency.Complete(ctx, tx, requestID, &lockedSession.ID, outcome, ""); err != nil {
-			return StartResult{}, fmt.Errorf("completing start session request: %s", err)
+			return session.StartResult{}, fmt.Errorf("completing start session request: %s", err)
 		}
-		return StartResult{Outcome: resultOutcome}, nil
+		return session.StartResult{Outcome: resultOutcome}, nil
 	}
 
 	// A missing actor is indistinguishable from "not the host" for this
 	// purpose, since only sessions.host_actor_id grants Start authority.
 	actor, err := m.startRepo.FindActor(ctx, tx, lockedSession.ID, string(userUUID))
 	if err != nil {
-		return StartResult{}, err
+		return session.StartResult{}, err
 	}
 	if actor == nil || lockedSession.HostActorID == nil || actor.ID != *lockedSession.HostActorID {
 		if err := idempotency.Complete(ctx, tx, requestID, &lockedSession.ID, outcomeNotHost, ""); err != nil {
-			return StartResult{}, fmt.Errorf("completing start session request: %s", err)
+			return session.StartResult{}, fmt.Errorf("completing start session request: %s", err)
 		}
-		return StartResult{Outcome: StartOutcomeNotHost}, nil
+		return session.StartResult{Outcome: session.StartOutcomeNotHost}, nil
 	}
 
 	// The pinned Definition/Version UUID is read directly, never the Game's
@@ -187,11 +187,11 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 	// once the Session row is known to exist under lock.
 	definition, err := m.pinnedGameReader.GetGameDefinition(ctx, lockedSession.GameDefinitionUUID)
 	if err != nil {
-		return StartResult{}, err
+		return session.StartResult{}, err
 	}
 	if definition == nil {
 		monitoring.Alert(ctx, "session pinned game definition is missing")
-		return StartResult{}, session.ErrPinnedDefinitionMissing
+		return session.StartResult{}, session.ErrPinnedDefinitionMissing
 	}
 
 	compiledProgram, diagnostics := engineservice.Compile(*definition)
@@ -211,16 +211,16 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 	// by internal actor id.
 	roster, err := m.startRepo.ListActiveParticipantsForRoster(ctx, tx, lockedSession.ID)
 	if err != nil {
-		return StartResult{}, err
+		return session.StartResult{}, err
 	}
 	if len(roster) < definition.Players.Min || (definition.Players.Max > 0 && len(roster) > definition.Players.Max) {
 		// The players.max case is defensive - Join already enforces it and
 		// is not expected to ever trigger here in practice - grouped under
 		// the same ordinary LOBBY-phase decline as players.min.
 		if err := idempotency.Complete(ctx, tx, requestID, &lockedSession.ID, outcomeNotEnoughPlayers, ""); err != nil {
-			return StartResult{}, fmt.Errorf("completing start session request: %s", err)
+			return session.StartResult{}, fmt.Errorf("completing start session request: %s", err)
 		}
-		return StartResult{Outcome: StartOutcomeNotEnoughPlayers}, nil
+		return session.StartResult{Outcome: session.StartOutcomeNotEnoughPlayers}, nil
 	}
 
 	players := make([]engine.Value, len(roster))
@@ -249,26 +249,26 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 
 	encodedRootParameters, err := replay.EncodeRootParameters(rootParameters)
 	if err != nil {
-		return StartResult{}, fmt.Errorf("encoding start root parameters: %s", err)
+		return session.StartResult{}, fmt.Errorf("encoding start root parameters: %s", err)
 	}
 	turnID, err := m.startRepo.CreateRuntimeTurn(ctx, tx, lockedSession.ID, 1, startSourceKind, nil, nil, nil)
 	if err != nil {
-		return StartResult{}, err
+		return session.StartResult{}, err
 	}
 	if err := m.startRepo.CreateRuntimeStart(ctx, tx, lockedSession.ID, seed, encodedRootParameters); err != nil {
-		return StartResult{}, err
+		return session.StartResult{}, err
 	}
 	if err := interactions.Capture(ctx, tx, m.startRepo, lockedSession.ID, turnID, outputs); err != nil {
-		return StartResult{}, err
+		return session.StartResult{}, err
 	}
 	if err := timers.Capture(ctx, tx, m.startRepo, lockedSession.ID, turnID, outputs); err != nil {
-		return StartResult{}, err
+		return session.StartResult{}, err
 	}
 	if err := m.startRepo.SetCurrentTurn(ctx, tx, lockedSession.ID, turnID); err != nil {
-		return StartResult{}, err
+		return session.StartResult{}, err
 	}
 	if err := m.startRepo.SetSessionRunning(ctx, tx, lockedSession.ID, now); err != nil {
-		return StartResult{}, err
+		return session.StartResult{}, err
 	}
 
 	// A Definition may complete/fail/cancel its own root instance on its
@@ -278,32 +278,32 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 	terminalReason, terminated := completion.Detect(outputs)
 	if terminated {
 		if err := m.startRepo.SetSessionTerminal(ctx, tx, lockedSession.ID, now, terminalReason); err != nil {
-			return StartResult{}, err
+			return session.StartResult{}, err
 		}
 		if err := m.startRepo.CloseAllActiveInteractionsForSession(ctx, tx, lockedSession.ID, session.InteractionClosureReasonSessionTerminated); err != nil {
-			return StartResult{}, err
+			return session.StartResult{}, err
 		}
 		if err := m.startRepo.CancelAllActiveTimerObligationsForSession(ctx, tx, lockedSession.ID, session.TimerObligationClosureReasonSessionTerminated); err != nil {
-			return StartResult{}, err
+			return session.StartResult{}, err
 		}
 	}
 
 	if err := m.startRepo.RevokeActiveJoinCode(ctx, tx, lockedSession.ID, now); err != nil {
-		return StartResult{}, err
+		return session.StartResult{}, err
 	}
 
 	mappedOutputs, err := m.mapOutputs(ctx, tx, lockedSession.ID, clientoutputs.ClientFacing(outputs))
 	if err != nil {
-		return StartResult{}, fmt.Errorf("mapping client-facing outputs: %s", err)
+		return session.StartResult{}, fmt.Errorf("mapping client-facing outputs: %s", err)
 	}
 
-	result := StartResult{Outcome: StartOutcomeStarted, SessionUUID: SessionUUID(lockedSession.UUID), Outputs: mappedOutputs, TerminalReason: terminalReason}
+	result := session.StartResult{Outcome: session.StartOutcomeStarted, SessionUUID: session.SessionUUID(lockedSession.UUID), Outputs: mappedOutputs, TerminalReason: terminalReason}
 	responseBytes, err := json.Marshal(result)
 	if err != nil {
-		return StartResult{}, fmt.Errorf("marshaling start response payload: %s", err)
+		return session.StartResult{}, fmt.Errorf("marshaling start response payload: %s", err)
 	}
 	if err := idempotency.Complete(ctx, tx, requestID, &lockedSession.ID, outcomeStarted, string(responseBytes)); err != nil {
-		return StartResult{}, fmt.Errorf("completing start session request: %s", err)
+		return session.StartResult{}, fmt.Errorf("completing start session request: %s", err)
 	}
 	return result, nil
 }
@@ -316,17 +316,17 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 // started_at is left at its canonical NULL - the Session never actually
 // ran. No session_runtime_turns/session_runtime_starts row is written, and
 // no runtime-failure diagnostic entity exists yet.
-func (m *Manager) terminalizeStartFatal(ctx context.Context, tx *gorm.DB, lockedSession *sessionlock.Session, requestID uint, terminalAt time.Time, terminalReason string) (StartResult, error) {
+func (m *Manager) terminalizeStartFatal(ctx context.Context, tx *gorm.DB, lockedSession *sessionlock.Session, requestID uint, terminalAt time.Time, terminalReason string) (session.StartResult, error) {
 	if err := m.startRepo.SetSessionTerminal(ctx, tx, lockedSession.ID, terminalAt, terminalReason); err != nil {
-		return StartResult{}, err
+		return session.StartResult{}, err
 	}
 	if err := m.startRepo.RevokeActiveJoinCode(ctx, tx, lockedSession.ID, terminalAt); err != nil {
-		return StartResult{}, err
+		return session.StartResult{}, err
 	}
 	if err := idempotency.Complete(ctx, tx, requestID, &lockedSession.ID, outcomeRuntimeInitFailed, ""); err != nil {
-		return StartResult{}, fmt.Errorf("completing start session request: %s", err)
+		return session.StartResult{}, fmt.Errorf("completing start session request: %s", err)
 	}
-	return StartResult{Outcome: StartOutcomeRuntimeInitFailed}, nil
+	return session.StartResult{Outcome: session.StartOutcomeRuntimeInitFailed}, nil
 }
 
 // interpretExistingStartClaim decides what an already-claimed START
@@ -335,36 +335,36 @@ func (m *Manager) terminalizeStartFatal(ctx context.Context, tx *gorm.DB, locked
 // the same outcome value it was originally recorded as, never reconstructed
 // as an error and never re-attempted against a Session that has since
 // become TERMINAL.
-func interpretExistingStartClaim(existing *idempotency.Request, incoming startRequestPayload) (StartResult, error) {
+func interpretExistingStartClaim(existing *idempotency.Request, incoming startRequestPayload) (session.StartResult, error) {
 	if existing.Status != idempotency.StatusCompleted {
-		return StartResult{}, session.ErrIdempotencyInFlight
+		return session.StartResult{}, session.ErrIdempotencyInFlight
 	}
 
 	var stored startRequestPayload
 	if err := json.Unmarshal([]byte(existing.RequestPayload), &stored); err != nil {
-		return StartResult{}, fmt.Errorf("decoding stored start request payload: %s", err)
+		return session.StartResult{}, fmt.Errorf("decoding stored start request payload: %s", err)
 	}
 	if stored != incoming {
-		return StartResult{}, session.ErrIdempotencyConflict
+		return session.StartResult{}, session.ErrIdempotencyConflict
 	}
 
 	switch existing.Outcome {
 	case outcomeNotHost:
-		return StartResult{Outcome: StartOutcomeNotHost}, nil
+		return session.StartResult{Outcome: session.StartOutcomeNotHost}, nil
 	case outcomeNotEnoughPlayers:
-		return StartResult{Outcome: StartOutcomeNotEnoughPlayers}, nil
+		return session.StartResult{Outcome: session.StartOutcomeNotEnoughPlayers}, nil
 	case outcomeRuntimeInitFailed:
-		return StartResult{Outcome: StartOutcomeRuntimeInitFailed}, nil
+		return session.StartResult{Outcome: session.StartOutcomeRuntimeInitFailed}, nil
 	case outcomeLobbyExpired:
-		return StartResult{Outcome: StartOutcomeLobbyExpired}, nil
+		return session.StartResult{Outcome: session.StartOutcomeLobbyExpired}, nil
 	}
 
 	if existing.ResponsePayload == nil {
-		return StartResult{}, fmt.Errorf("completed start idempotency record missing response payload")
+		return session.StartResult{}, fmt.Errorf("completed start idempotency record missing response payload")
 	}
-	var result StartResult
+	var result session.StartResult
 	if err := json.Unmarshal([]byte(*existing.ResponsePayload), &result); err != nil {
-		return StartResult{}, fmt.Errorf("decoding stored start response payload: %s", err)
+		return session.StartResult{}, fmt.Errorf("decoding stored start response payload: %s", err)
 	}
 	return result, nil
 }

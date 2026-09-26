@@ -1,7 +1,14 @@
-// Package session is the Session Runtime capability's public domain
-// vocabulary: the lobby lifecycle phase/presence/terminal-reason values and
-// the sentinel errors shared by its CreateSession/JoinSession/LeaveSession
-// lifecycle operations (game/session/workflows/sessionlifecycle/...).
+// Package session is the Session Runtime capability's public contract: the
+// lobby lifecycle phase/presence/terminal-reason values, the sentinel
+// errors, and every request/result type its Session lifecycle workflow's
+// operations (Create/Join/Leave/Start/AnswerInteraction/ExpireTimer) take or
+// return. This package intentionally imports nothing beyond the standard
+// library, so a caller depending only on this contract never transitively
+// imports anything the workflow's own implementation
+// (game/session/workflows/sessionlifecycle) needs, such as the Game
+// Language engine. That implementation package refers to these types fully
+// qualified (session.SessionUUID, session.StartResult, ...) rather than
+// re-declaring them under local names.
 package session
 
 import "errors"

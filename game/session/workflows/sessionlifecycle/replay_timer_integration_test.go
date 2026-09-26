@@ -7,6 +7,7 @@ import (
 
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine"
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine/engineservice"
+	"github.com/diegobermudez03/playhoot/game/session"
 	"github.com/diegobermudez03/playhoot/game/session/internal/testdb"
 	"github.com/diegobermudez03/playhoot/game/session/internal/testfixtures"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/replay"
@@ -35,16 +36,16 @@ func TestReplayReconstructsTimerExpiredSignal_Integration(t *testing.T) {
 	require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
 	testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
 
-	startResult, err := m.Start(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(hostUUID), IdempotencyKey(uuid.NewString()))
+	startResult, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), session.IdempotencyKey(uuid.NewString()))
 	require.NoError(t, err)
-	require.Equal(t, StartOutcomeStarted, startResult.Outcome)
+	require.Equal(t, session.StartOutcomeStarted, startResult.Outcome)
 
 	var obligationUUID string
 	require.NoError(t, db.Raw(`SELECT uuid FROM session_timer_obligations WHERE session_id = ?`, fx.SessionID).Scan(&obligationUUID).Error)
 
-	expireResult, err := m.ExpireTimer(context.Background(), TimerObligationUUID(obligationUUID))
+	expireResult, err := m.ExpireTimer(context.Background(), session.TimerObligationUUID(obligationUUID))
 	require.NoError(t, err)
-	require.Equal(t, ExpireTimerOutcomeExpired, expireResult.Outcome)
+	require.Equal(t, session.ExpireTimerOutcomeExpired, expireResult.Outcome)
 	require.Len(t, expireResult.Outputs, 1, "the live execution's own TimerFired effect")
 
 	// A freshly constructed Manager, sharing no in-memory state with the live
@@ -87,16 +88,16 @@ func TestReplayReconstructsKeyedTimerExpiredSignal_Integration(t *testing.T) {
 	require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
 	testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
 
-	startResult, err := m.Start(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(hostUUID), IdempotencyKey(uuid.NewString()))
+	startResult, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), session.IdempotencyKey(uuid.NewString()))
 	require.NoError(t, err)
-	require.Equal(t, StartOutcomeStarted, startResult.Outcome)
+	require.Equal(t, session.StartOutcomeStarted, startResult.Outcome)
 
 	var obligationUUID string
 	require.NoError(t, db.Raw(`SELECT uuid FROM session_timer_obligations WHERE session_id = ? ORDER BY id ASC LIMIT 1`, fx.SessionID).Scan(&obligationUUID).Error)
 
-	expireResult, err := m.ExpireTimer(context.Background(), TimerObligationUUID(obligationUUID))
+	expireResult, err := m.ExpireTimer(context.Background(), session.TimerObligationUUID(obligationUUID))
 	require.NoError(t, err)
-	require.Equal(t, ExpireTimerOutcomeExpired, expireResult.Outcome)
+	require.Equal(t, session.ExpireTimerOutcomeExpired, expireResult.Outcome)
 
 	process := New(db, nil, stubStartPinnedGameReader{definition: definition})
 	_, priorSignals, err := replay.LoadPriorSignals(context.Background(), db, process.answerInteractionRepo, fx.SessionID)

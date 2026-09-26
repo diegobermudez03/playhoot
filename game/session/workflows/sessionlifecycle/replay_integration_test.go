@@ -9,6 +9,7 @@ import (
 
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine"
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine/engineservice"
+	"github.com/diegobermudez03/playhoot/game/session"
 	"github.com/diegobermudez03/playhoot/game/session/internal/testdb"
 	"github.com/diegobermudez03/playhoot/game/session/internal/testfixtures"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/interactions"
@@ -52,9 +53,9 @@ func TestReconstructCurrentSnapshot_Integration(t *testing.T) {
 	require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
 	testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
 
-	startResult, err := m.Start(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(hostUUID), IdempotencyKey(uuid.NewString()))
+	startResult, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), session.IdempotencyKey(uuid.NewString()))
 	require.NoError(t, err)
-	require.Equal(t, StartOutcomeStarted, startResult.Outcome)
+	require.Equal(t, session.StartOutcomeStarted, startResult.Outcome)
 
 	sessionID := fx.SessionID
 
@@ -80,17 +81,17 @@ func TestReconstructCurrentSnapshot_Integration(t *testing.T) {
 	liveRandomValue, ok := liveRandomField.Value.(engine.NumberValue)
 	require.True(t, ok)
 
-	answer1, err := m.AnswerInteraction(context.Background(), InteractionUUID(firstRow.UUID), UserUUID(hostUUID), numberAnswer(t, 111))
+	answer1, err := m.AnswerInteraction(context.Background(), session.InteractionUUID(firstRow.UUID), session.UserUUID(hostUUID), numberAnswer(t, 111))
 	require.NoError(t, err)
-	require.Equal(t, AnswerInteractionOutcomeAnswered, answer1.Outcome)
+	require.Equal(t, session.AnswerInteractionOutcomeAnswered, answer1.Outcome)
 
 	var secondUUID string
 	require.NoError(t, db.Raw(`SELECT uuid FROM session_interactions WHERE session_id = ? ORDER BY id DESC LIMIT 1`, sessionID).Scan(&secondUUID).Error)
 	require.NotEmpty(t, secondUUID, "answering Q1 must open Q2")
 
-	answer2, err := m.AnswerInteraction(context.Background(), InteractionUUID(secondUUID), UserUUID(hostUUID), numberAnswer(t, 222))
+	answer2, err := m.AnswerInteraction(context.Background(), session.InteractionUUID(secondUUID), session.UserUUID(hostUUID), numberAnswer(t, 222))
 	require.NoError(t, err)
-	require.Equal(t, AnswerInteractionOutcomeAnswered, answer2.Outcome)
+	require.Equal(t, session.AnswerInteractionOutcomeAnswered, answer2.Outcome)
 
 	var thirdUUID string
 	var thirdEngineInteractionID uint64

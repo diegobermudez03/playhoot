@@ -1,3 +1,18 @@
+// Package sessionlifecycle is the Session lifecycle workflow's
+// implementation: one Manager exposing
+// Create/Join/Leave/Start/AnswerInteraction/ExpireTimer as its steps. The
+// Manager decides business/lifecycle policy (transaction scope, admission,
+// expiration, idempotency-replay meaning); its narrow `internal/repo`
+// persistence layer reports facts and performs the mutations the Manager
+// requests.
+//
+// This package is not the workflow's public contract - game/session is.
+// Every type Manager's methods take or return is defined there, at a
+// zero-dependency package a caller may depend on without transitively
+// importing anything this package needs for its own implementation (the
+// Game Language engine, GORM, and so on). This package refers to those
+// types fully qualified (session.SessionUUID, session.StartResult, ...)
+// rather than re-declaring them under local names.
 package sessionlifecycle
 
 import (

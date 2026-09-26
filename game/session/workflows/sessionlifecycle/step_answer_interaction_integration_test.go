@@ -21,7 +21,7 @@ import (
 // Manager, the Session's/host's identities, and the opened interaction's
 // public UUID - the common setup every AnswerInteraction integration
 // subtest below builds on.
-func startedAnswerableSession(t *testing.T, db *gorm.DB, definition program.Definition) (m *Manager, sessionUUID SessionUUID, hostUUID UserUUID, interactionUUID InteractionUUID) {
+func startedAnswerableSession(t *testing.T, db *gorm.DB, definition program.Definition) (m *Manager, sessionUUID session.SessionUUID, hostUUID session.UserUUID, interactionUUID session.InteractionUUID) {
 	t.Helper()
 
 	m = New(db, nil, stubStartPinnedGameReader{definition: definition})
@@ -32,9 +32,9 @@ func startedAnswerableSession(t *testing.T, db *gorm.DB, definition program.Defi
 	require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
 	testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
 
-	startResult, err := m.Start(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(hostUUIDStr), IdempotencyKey(uuid.NewString()))
+	startResult, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUIDStr), session.IdempotencyKey(uuid.NewString()))
 	require.NoError(t, err)
-	require.Equal(t, StartOutcomeStarted, startResult.Outcome)
+	require.Equal(t, session.StartOutcomeStarted, startResult.Outcome)
 
 	var interactionUUIDStr string
 	require.NoError(t, db.Raw(`
@@ -42,7 +42,7 @@ func startedAnswerableSession(t *testing.T, db *gorm.DB, definition program.Defi
 	`, fx.SessionID, session.InteractionStateActive).Scan(&interactionUUIDStr).Error)
 	require.NotEmpty(t, interactionUUIDStr, "Start's own first Turn must open and persist the Q interaction")
 
-	return m, SessionUUID(fx.SessionUUID), UserUUID(hostUUIDStr), InteractionUUID(interactionUUIDStr)
+	return m, session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUIDStr), session.InteractionUUID(interactionUUIDStr)
 }
 
 func TestManagerAnswerInteraction_Integration(t *testing.T) {
@@ -53,7 +53,7 @@ func TestManagerAnswerInteraction_Integration(t *testing.T) {
 
 		result, err := m.AnswerInteraction(context.Background(), interactionUUID, hostUUID, numberAnswer(t, 42))
 		require.NoError(t, err)
-		require.Equal(t, AnswerInteractionOutcomeAnswered, result.Outcome)
+		require.Equal(t, session.AnswerInteractionOutcomeAnswered, result.Outcome)
 		require.Equal(t, sessionUUID, result.SessionUUID)
 
 		var turnCount int64
@@ -87,41 +87,41 @@ func TestManagerAnswerInteraction_Integration(t *testing.T) {
 		playerTwoUUIDStr := uuid.NewString()
 		testfixtures.SeedActiveParticipant(t, db, fx.SessionID, playerTwoUUIDStr, "Player Two")
 
-		startResult, err := m.Start(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(hostUUIDStr), IdempotencyKey(uuid.NewString()))
+		startResult, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUIDStr), session.IdempotencyKey(uuid.NewString()))
 		require.NoError(t, err)
-		require.Equal(t, StartOutcomeStarted, startResult.Outcome)
+		require.Equal(t, session.StartOutcomeStarted, startResult.Outcome)
 
 		var interactionUUIDStr string
 		require.NoError(t, db.Raw(`SELECT uuid FROM session_interactions WHERE session_id = ? AND state = ?`, fx.SessionID, session.InteractionStateActive).Scan(&interactionUUIDStr).Error)
 		require.NotEmpty(t, interactionUUIDStr)
 
-		result, err := m.AnswerInteraction(context.Background(), InteractionUUID(interactionUUIDStr), UserUUID(hostUUIDStr), numberAnswer(t, 42))
+		result, err := m.AnswerInteraction(context.Background(), session.InteractionUUID(interactionUUIDStr), session.UserUUID(hostUUIDStr), numberAnswer(t, 42))
 		require.NoError(t, err)
-		require.Equal(t, AnswerInteractionOutcomeAnswered, result.Outcome)
+		require.Equal(t, session.AnswerInteractionOutcomeAnswered, result.Outcome)
 
-		var effects []EffectEmitted
-		var updates []PresentationUpdated
+		var effects []session.EffectEmitted
+		var updates []session.PresentationUpdated
 		for _, o := range result.Outputs {
 			switch v := o.(type) {
-			case EffectEmitted:
+			case session.EffectEmitted:
 				effects = append(effects, v)
-			case PresentationUpdated:
+			case session.PresentationUpdated:
 				updates = append(updates, v)
 			default:
 				t.Fatalf("unexpected Output kind returned: %T", o)
 			}
 		}
-		require.Len(t, effects, 1, "one EffectEmitted addressed to both players via a single Recipients list")
-		require.ElementsMatch(t, []UserUUID{
-			UserUUID(hostUUIDStr),
-			UserUUID(playerTwoUUIDStr),
+		require.Len(t, effects, 1, "one session.EffectEmitted addressed to both players via a single Recipients list")
+		require.ElementsMatch(t, []session.UserUUID{
+			session.UserUUID(hostUUIDStr),
+			session.UserUUID(playerTwoUUIDStr),
 		}, effects[0].Recipients)
 		require.Equal(t, presentationEffectName, effects[0].Effect)
 
-		require.Len(t, updates, 2, "one PresentationUpdated per mounted Hud presentation")
+		require.Len(t, updates, 2, "one session.PresentationUpdated per mounted Hud presentation")
 		for _, u := range updates {
 			require.Equal(t, presentationEffectHudSlot, u.Slot)
-			require.Equal(t, NumberValue{Value: 42}, u.Model)
+			require.Equal(t, session.NumberValue{Value: 42}, u.Model)
 		}
 	})
 
@@ -130,7 +130,7 @@ func TestManagerAnswerInteraction_Integration(t *testing.T) {
 
 		result, err := m.AnswerInteraction(context.Background(), primaryInteractionUUID, hostUUID, numberAnswer(t, 1))
 		require.NoError(t, err)
-		require.Equal(t, AnswerInteractionOutcomeAnswered, result.Outcome)
+		require.Equal(t, session.AnswerInteractionOutcomeAnswered, result.Outcome)
 		require.Equal(t, session.TerminalReasonGameCompleted, result.TerminalReason)
 
 		var row struct {
@@ -156,7 +156,7 @@ func TestManagerAnswerInteraction_Integration(t *testing.T) {
 
 		second, err := m.AnswerInteraction(context.Background(), primaryInteractionUUID, hostUUID, numberAnswer(t, 1))
 		require.NoError(t, err)
-		require.Equal(t, AnswerInteractionOutcomeAnswered, second.Outcome)
+		require.Equal(t, session.AnswerInteractionOutcomeAnswered, second.Outcome)
 		require.Equal(t, session.TerminalReasonGameCompleted, second.TerminalReason, "a replayed retry of the game-ending answer must still report why the Session ended")
 	})
 
@@ -165,7 +165,7 @@ func TestManagerAnswerInteraction_Integration(t *testing.T) {
 
 		result, err := m.AnswerInteraction(context.Background(), primaryInteractionUUID, hostUUID, numberAnswer(t, 1))
 		require.NoError(t, err)
-		require.Equal(t, AnswerInteractionOutcomeAnswered, result.Outcome)
+		require.Equal(t, session.AnswerInteractionOutcomeAnswered, result.Outcome)
 		require.Equal(t, session.TerminalReasonGameFailed, result.TerminalReason)
 
 		var row struct {
@@ -182,7 +182,7 @@ func TestManagerAnswerInteraction_Integration(t *testing.T) {
 
 		result, err := m.AnswerInteraction(context.Background(), primaryInteractionUUID, hostUUID, numberAnswer(t, 1))
 		require.NoError(t, err)
-		require.Equal(t, AnswerInteractionOutcomeAnswered, result.Outcome)
+		require.Equal(t, session.AnswerInteractionOutcomeAnswered, result.Outcome)
 		require.Equal(t, session.TerminalReasonGameCancelled, result.TerminalReason)
 
 		var row struct {
@@ -200,9 +200,9 @@ func TestManagerAnswerInteraction_Integration(t *testing.T) {
 		otherUUID := uuid.NewString()
 		testfixtures.SeedActiveParticipant(t, db, sessionIDForUUID(t, db, sessionUUID), otherUUID, "Not Recipient")
 
-		result, err := m.AnswerInteraction(context.Background(), interactionUUID, UserUUID(otherUUID), numberAnswer(t, 7))
+		result, err := m.AnswerInteraction(context.Background(), interactionUUID, session.UserUUID(otherUUID), numberAnswer(t, 7))
 		require.NoError(t, err)
-		require.Equal(t, AnswerInteractionOutcomeRejected, result.Outcome)
+		require.Equal(t, session.AnswerInteractionOutcomeRejected, result.Outcome)
 
 		var turnCount int64
 		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_turns WHERE session_id = ?`, sessionIDForUUID(t, db, sessionUUID)).Scan(&turnCount).Error)
@@ -212,7 +212,7 @@ func TestManagerAnswerInteraction_Integration(t *testing.T) {
 	t.Run("reports_not_found_for_unknown_interaction_uuid", func(t *testing.T) {
 		m := New(db, nil, stubStartPinnedGameReader{definition: answerableDefinition(1, 4)})
 
-		_, err := m.AnswerInteraction(context.Background(), InteractionUUID(uuid.NewString()), UserUUID(uuid.NewString()), numberAnswer(t, 1))
+		_, err := m.AnswerInteraction(context.Background(), session.InteractionUUID(uuid.NewString()), session.UserUUID(uuid.NewString()), numberAnswer(t, 1))
 		require.ErrorIs(t, err, session.ErrInteractionNotFound)
 	})
 
@@ -221,14 +221,14 @@ func TestManagerAnswerInteraction_Integration(t *testing.T) {
 
 		first, err := m.AnswerInteraction(context.Background(), interactionUUID, hostUUID, numberAnswer(t, 9))
 		require.NoError(t, err)
-		require.Equal(t, AnswerInteractionOutcomeAnswered, first.Outcome)
+		require.Equal(t, session.AnswerInteractionOutcomeAnswered, first.Outcome)
 
 		var turnCountAfterFirst int64
 		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_turns WHERE session_id = ?`, sessionIDForUUID(t, db, sessionUUID)).Scan(&turnCountAfterFirst).Error)
 
 		second, err := m.AnswerInteraction(context.Background(), interactionUUID, hostUUID, numberAnswer(t, 9))
 		require.NoError(t, err)
-		require.Equal(t, AnswerInteractionOutcomeAnswered, second.Outcome)
+		require.Equal(t, session.AnswerInteractionOutcomeAnswered, second.Outcome)
 
 		var turnCountAfterSecond int64
 		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_turns WHERE session_id = ?`, sessionIDForUUID(t, db, sessionUUID)).Scan(&turnCountAfterSecond).Error)
@@ -240,14 +240,14 @@ func TestManagerAnswerInteraction_Integration(t *testing.T) {
 
 		first, err := m.AnswerInteraction(context.Background(), interactionUUID, hostUUID, numberAnswer(t, 3))
 		require.NoError(t, err)
-		require.Equal(t, AnswerInteractionOutcomeAnswered, first.Outcome)
+		require.Equal(t, session.AnswerInteractionOutcomeAnswered, first.Outcome)
 
 		var turnCountAfterFirst int64
 		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_turns WHERE session_id = ?`, sessionIDForUUID(t, db, sessionUUID)).Scan(&turnCountAfterFirst).Error)
 
 		second, err := m.AnswerInteraction(context.Background(), interactionUUID, hostUUID, numberAnswer(t, 4))
 		require.NoError(t, err)
-		require.Equal(t, AnswerInteractionOutcomeConflict, second.Outcome)
+		require.Equal(t, session.AnswerInteractionOutcomeConflict, second.Outcome)
 
 		var turnCountAfterSecond int64
 		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_turns WHERE session_id = ?`, sessionIDForUUID(t, db, sessionUUID)).Scan(&turnCountAfterSecond).Error)
@@ -259,7 +259,7 @@ func TestManagerAnswerInteraction_Integration(t *testing.T) {
 
 		result, err := m.AnswerInteraction(context.Background(), interactionUUID, hostUUID, numberAnswer(t, 5))
 		require.NoError(t, err)
-		require.Equal(t, AnswerInteractionOutcomeRuntimeExecutionFailed, result.Outcome)
+		require.Equal(t, session.AnswerInteractionOutcomeRuntimeExecutionFailed, result.Outcome)
 
 		var row struct {
 			Phase          string  `gorm:"column:phase"`
@@ -288,7 +288,7 @@ func TestManagerAnswerInteraction_Integration(t *testing.T) {
 
 		result, err := m.AnswerInteraction(context.Background(), interactionUUID, hostUUID, numberAnswer(t, 21))
 		require.NoError(t, err)
-		require.Equal(t, AnswerInteractionOutcomeAnswered, result.Outcome)
+		require.Equal(t, session.AnswerInteractionOutcomeAnswered, result.Outcome)
 		require.Equal(t, sessionUUID, result.SessionUUID)
 
 		var row struct {
@@ -313,9 +313,9 @@ func TestManagerAnswerInteraction_Integration(t *testing.T) {
 		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
 		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
 
-		startResult, err := m.Start(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(hostUUID), IdempotencyKey(uuid.NewString()))
+		startResult, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), session.IdempotencyKey(uuid.NewString()))
 		require.NoError(t, err)
-		require.Equal(t, StartOutcomeStarted, startResult.Outcome)
+		require.Equal(t, session.StartOutcomeStarted, startResult.Outcome)
 
 		// dualQuestionDefinition's "Started" transition opens Q1 (dualPrimarySlot)
 		// then Q2 (dualSecondarySlot) as two sequential OpenQuestionOutputs
@@ -328,9 +328,9 @@ func TestManagerAnswerInteraction_Integration(t *testing.T) {
 		require.NotEmpty(t, primaryUUID)
 		require.NotEmpty(t, secondaryUUID)
 
-		result, err := m.AnswerInteraction(context.Background(), InteractionUUID(primaryUUID), UserUUID(hostUUID), numberAnswer(t, 5))
+		result, err := m.AnswerInteraction(context.Background(), session.InteractionUUID(primaryUUID), session.UserUUID(hostUUID), numberAnswer(t, 5))
 		require.NoError(t, err)
-		require.Equal(t, AnswerInteractionOutcomeAnswered, result.Outcome)
+		require.Equal(t, session.AnswerInteractionOutcomeAnswered, result.Outcome)
 
 		var primaryRow struct {
 			State           string `gorm:"column:state"`
@@ -357,7 +357,7 @@ func TestManagerAnswerInteraction_Integration(t *testing.T) {
 		m, sessionUUID, hostUUID, interactionUUID := startedAnswerableSession(t, db, answerableDefinition(1, 4))
 
 		type outcome struct {
-			result AnswerInteractionResult
+			result session.AnswerInteractionResult
 			err    error
 		}
 		results := make(chan outcome, 2)
@@ -372,8 +372,8 @@ func TestManagerAnswerInteraction_Integration(t *testing.T) {
 		second := <-results
 		require.NoError(t, first.err)
 		require.NoError(t, second.err)
-		require.Equal(t, AnswerInteractionOutcomeAnswered, first.result.Outcome)
-		require.Equal(t, AnswerInteractionOutcomeAnswered, second.result.Outcome, "the loser must replay the winner's outcome, not fail or reject")
+		require.Equal(t, session.AnswerInteractionOutcomeAnswered, first.result.Outcome)
+		require.Equal(t, session.AnswerInteractionOutcomeAnswered, second.result.Outcome, "the loser must replay the winner's outcome, not fail or reject")
 
 		var turnCount int64
 		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_turns WHERE session_id = ?`, sessionIDForUUID(t, db, sessionUUID)).Scan(&turnCount).Error)
@@ -383,7 +383,7 @@ func TestManagerAnswerInteraction_Integration(t *testing.T) {
 
 // sessionIDForUUID resolves sessionUUID's internal id, for assertions that
 // need to query by it directly.
-func sessionIDForUUID(t *testing.T, db *gorm.DB, sessionUUID SessionUUID) uint {
+func sessionIDForUUID(t *testing.T, db *gorm.DB, sessionUUID session.SessionUUID) uint {
 	t.Helper()
 	var id uint
 	require.NoError(t, db.Raw(`SELECT id FROM sessions WHERE uuid = ?`, string(sessionUUID)).Scan(&id).Error)

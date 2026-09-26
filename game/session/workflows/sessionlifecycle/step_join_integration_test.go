@@ -17,21 +17,21 @@ import (
 
 func TestManagerJoin_Integration(t *testing.T) {
 	type test struct {
-		before func(t *testing.T, db *gorm.DB) (fx testfixtures.SessionFixture, joinCode JoinCode, userUUID UserUUID)
-		assert func(t *testing.T, db *gorm.DB, fx testfixtures.SessionFixture, userUUID UserUUID, result JoinResult, err error)
+		before func(t *testing.T, db *gorm.DB) (fx testfixtures.SessionFixture, joinCode session.JoinCode, userUUID session.UserUUID)
+		assert func(t *testing.T, db *gorm.DB, fx testfixtures.SessionFixture, userUUID session.UserUUID, result session.JoinResult, err error)
 	}
 
 	tests := map[string]func(t *testing.T, db *gorm.DB) test{
 		"creates_actor_and_activates_participant": func(t *testing.T, db *gorm.DB) test {
 			return test{
-				before: func(t *testing.T, db *gorm.DB) (testfixtures.SessionFixture, JoinCode, UserUUID) {
+				before: func(t *testing.T, db *gorm.DB) (testfixtures.SessionFixture, session.JoinCode, session.UserUUID) {
 					fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
 					testfixtures.SeedJoinCode(t, db, fx.SessionID, 1111, false)
-					return fx, 1111, UserUUID(uuid.NewString())
+					return fx, 1111, session.UserUUID(uuid.NewString())
 				},
-				assert: func(t *testing.T, db *gorm.DB, fx testfixtures.SessionFixture, userUUID UserUUID, result JoinResult, err error) {
+				assert: func(t *testing.T, db *gorm.DB, fx testfixtures.SessionFixture, userUUID session.UserUUID, result session.JoinResult, err error) {
 					require.NoError(t, err)
-					require.Equal(t, DisplayName("Alice"), result.DisplayName)
+					require.Equal(t, session.DisplayName("Alice"), result.DisplayName)
 
 					var actorCount int64
 					require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_actors WHERE session_id = ? AND user_uuid = ?`, fx.SessionID, string(userUUID)).Scan(&actorCount).Error)
@@ -49,26 +49,26 @@ func TestManagerJoin_Integration(t *testing.T) {
 		},
 		"a_revoked_join_code_is_rejected": func(t *testing.T, db *gorm.DB) test {
 			return test{
-				before: func(t *testing.T, db *gorm.DB) (testfixtures.SessionFixture, JoinCode, UserUUID) {
+				before: func(t *testing.T, db *gorm.DB) (testfixtures.SessionFixture, session.JoinCode, session.UserUUID) {
 					fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
 					testfixtures.SeedJoinCode(t, db, fx.SessionID, 1112, true)
-					return fx, 1112, UserUUID(uuid.NewString())
+					return fx, 1112, session.UserUUID(uuid.NewString())
 				},
-				assert: func(t *testing.T, db *gorm.DB, fx testfixtures.SessionFixture, userUUID UserUUID, result JoinResult, err error) {
+				assert: func(t *testing.T, db *gorm.DB, fx testfixtures.SessionFixture, userUUID session.UserUUID, result session.JoinResult, err error) {
 					require.ErrorIs(t, err, session.ErrJoinCodeInvalid)
 				},
 			}
 		},
 		"lazily_materializes_expired_lobby_and_rejects": func(t *testing.T, db *gorm.DB) test {
 			return test{
-				before: func(t *testing.T, db *gorm.DB) (testfixtures.SessionFixture, JoinCode, UserUUID) {
+				before: func(t *testing.T, db *gorm.DB) (testfixtures.SessionFixture, session.JoinCode, session.UserUUID) {
 					fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(-1*time.Minute))
 					testfixtures.SeedJoinCode(t, db, fx.SessionID, 1113, false)
-					return fx, 1113, UserUUID(uuid.NewString())
+					return fx, 1113, session.UserUUID(uuid.NewString())
 				},
-				assert: func(t *testing.T, db *gorm.DB, fx testfixtures.SessionFixture, userUUID UserUUID, result JoinResult, err error) {
+				assert: func(t *testing.T, db *gorm.DB, fx testfixtures.SessionFixture, userUUID session.UserUUID, result session.JoinResult, err error) {
 					require.NoError(t, err)
-					require.Equal(t, JoinOutcomeLobbyExpired, result.Outcome)
+					require.Equal(t, session.JoinOutcomeLobbyExpired, result.Outcome)
 
 					var phase string
 					require.NoError(t, db.Raw(`SELECT phase FROM sessions WHERE id = ?`, fx.SessionID).Scan(&phase).Error)
@@ -78,15 +78,15 @@ func TestManagerJoin_Integration(t *testing.T) {
 		},
 		"enforces_players_max": func(t *testing.T, db *gorm.DB) test {
 			return test{
-				before: func(t *testing.T, db *gorm.DB) (testfixtures.SessionFixture, JoinCode, UserUUID) {
+				before: func(t *testing.T, db *gorm.DB) (testfixtures.SessionFixture, session.JoinCode, session.UserUUID) {
 					fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
 					testfixtures.SeedJoinCode(t, db, fx.SessionID, 1114, false)
 					testfixtures.SeedActiveParticipant(t, db, fx.SessionID, uuid.NewString(), "Existing Player")
-					return fx, 1114, UserUUID(uuid.NewString())
+					return fx, 1114, session.UserUUID(uuid.NewString())
 				},
-				assert: func(t *testing.T, db *gorm.DB, fx testfixtures.SessionFixture, userUUID UserUUID, result JoinResult, err error) {
+				assert: func(t *testing.T, db *gorm.DB, fx testfixtures.SessionFixture, userUUID session.UserUUID, result session.JoinResult, err error) {
 					require.NoError(t, err)
-					require.Equal(t, JoinOutcomeLobbyFull, result.Outcome)
+					require.Equal(t, session.JoinOutcomeLobbyFull, result.Outcome)
 				},
 			}
 		},
@@ -99,7 +99,7 @@ func TestManagerJoin_Integration(t *testing.T) {
 			fx, joinCode, userUUID := tc.before(t, db)
 
 			m := New(db, nil, stubPinnedGameReader{playersMax: 1})
-			result, err := m.Join(context.Background(), joinCode, userUUID, "Alice", IdempotencyKey("join-key-"+uuid.NewString()))
+			result, err := m.Join(context.Background(), joinCode, userUUID, "Alice", session.IdempotencyKey("join-key-"+uuid.NewString()))
 			tc.assert(t, db, fx, userUUID, result, err)
 		})
 	}
@@ -115,11 +115,11 @@ func TestManagerJoin_Integration_TokenSemantics(t *testing.T) {
 	fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
 	testfixtures.SeedJoinCode(t, db, fx.SessionID, 2211, false)
 	m := New(db, nil, stubPinnedGameReader{playersMax: 4})
-	userUUID := UserUUID(uuid.NewString())
+	userUUID := session.UserUUID(uuid.NewString())
 
 	first, err := m.Join(context.Background(), 2211, userUUID, "Casey", "join-key-replay")
 	require.NoError(t, err)
-	require.Equal(t, DisplayName("Casey"), first.DisplayName)
+	require.Equal(t, session.DisplayName("Casey"), first.DisplayName)
 
 	t.Run("same_token_same_fields_replays", func(t *testing.T) {
 		replay, err := m.Join(context.Background(), 2211, userUUID, "Casey", "join-key-replay")
@@ -143,7 +143,7 @@ func TestManagerJoin_Integration_TokenSemantics(t *testing.T) {
 	t.Run("different_token_while_already_active_is_rejected", func(t *testing.T) {
 		result, err := m.Join(context.Background(), 2211, userUUID, "Casey", "join-key-second")
 		require.NoError(t, err)
-		require.Equal(t, JoinOutcomeAlreadyJoined, result.Outcome)
+		require.Equal(t, session.JoinOutcomeAlreadyJoined, result.Outcome)
 
 		var actorCount int64
 		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_actors WHERE session_id = ? AND user_uuid = ?`, fx.SessionID, string(userUUID)).Scan(&actorCount).Error)
@@ -159,12 +159,12 @@ func TestManagerJoin_Integration_DifferentUsersSameKeyDoNotCollide(t *testing.T)
 	testfixtures.SeedJoinCode(t, db, fx.SessionID, 2212, false)
 	m := New(db, nil, stubPinnedGameReader{playersMax: 4})
 
-	_, err := m.Join(context.Background(), 2212, UserUUID(uuid.NewString()), "A", "shared-join-key")
+	_, err := m.Join(context.Background(), 2212, session.UserUUID(uuid.NewString()), "A", "shared-join-key")
 	require.NoError(t, err)
 
-	result, err := m.Join(context.Background(), 2212, UserUUID(uuid.NewString()), "B", "shared-join-key")
+	result, err := m.Join(context.Background(), 2212, session.UserUUID(uuid.NewString()), "B", "shared-join-key")
 	require.NoError(t, err)
-	require.Equal(t, DisplayName("B"), result.DisplayName)
+	require.Equal(t, session.DisplayName("B"), result.DisplayName)
 }
 
 // TestManagerJoin_Integration_PinnedDefinitionImmutability proves Join
@@ -182,9 +182,9 @@ func TestManagerJoin_Integration_PinnedDefinitionImmutability(t *testing.T) {
 	}
 	m := New(db, nil, &pinnedReader)
 
-	result, err := m.Join(context.Background(), 2213, UserUUID(uuid.NewString()), "Late Joiner", "join-key-pinned")
+	result, err := m.Join(context.Background(), 2213, session.UserUUID(uuid.NewString()), "Late Joiner", "join-key-pinned")
 	require.NoError(t, err)
-	require.Equal(t, JoinOutcomeLobbyFull, result.Outcome, "Join must still enforce the pinned V1 players.max, not a hypothetical current V2")
+	require.Equal(t, session.JoinOutcomeLobbyFull, result.Outcome, "Join must still enforce the pinned V1 players.max, not a hypothetical current V2")
 	require.Equal(t, []string{fx.GameDefinitionUUID}, pinnedReader.requestedUUIDs, "Join must load the Definition by the Session's pinned game_definition_uuid, never by re-resolving the Game's current version")
 }
 
@@ -208,12 +208,12 @@ func TestManagerJoin_Integration_ConcurrentJoinsForFinalSlot(t *testing.T) {
 	testfixtures.SeedJoinCode(t, db, fx.SessionID, 6001, false)
 	m := New(db, nil, stubPinnedGameReader{playersMax: 1})
 
-	userA := UserUUID(uuid.NewString())
-	userB := UserUUID(uuid.NewString())
+	userA := session.UserUUID(uuid.NewString())
+	userB := session.UserUUID(uuid.NewString())
 
 	start := make(chan struct{})
 	var wg sync.WaitGroup
-	var resA, resB JoinResult
+	var resA, resB session.JoinResult
 	var errA, errB error
 
 	wg.Add(2)
@@ -234,17 +234,17 @@ func TestManagerJoin_Integration_ConcurrentJoinsForFinalSlot(t *testing.T) {
 	require.NoError(t, errB)
 
 	successCount := 0
-	if resA.Outcome == JoinOutcomeJoined {
+	if resA.Outcome == session.JoinOutcomeJoined {
 		successCount++
 		require.NotEmpty(t, resA.DisplayName)
 	} else {
-		require.Equal(t, JoinOutcomeLobbyFull, resA.Outcome)
+		require.Equal(t, session.JoinOutcomeLobbyFull, resA.Outcome)
 	}
-	if resB.Outcome == JoinOutcomeJoined {
+	if resB.Outcome == session.JoinOutcomeJoined {
 		successCount++
 		require.NotEmpty(t, resB.DisplayName)
 	} else {
-		require.Equal(t, JoinOutcomeLobbyFull, resB.Outcome)
+		require.Equal(t, session.JoinOutcomeLobbyFull, resB.Outcome)
 	}
 	require.Equal(t, 1, successCount, "exactly one Join must succeed when only one slot remains")
 
@@ -269,13 +269,13 @@ func TestManagerJoin_Integration_ConcurrentJoinRacingLeave(t *testing.T) {
 	fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
 	testfixtures.SeedJoinCode(t, db, fx.SessionID, 7001, false)
 
-	existingUser := UserUUID(uuid.NewString())
+	existingUser := session.UserUUID(uuid.NewString())
 	testfixtures.SeedActiveParticipant(t, db, fx.SessionID, string(existingUser), "Existing")
-	newUser := UserUUID(uuid.NewString())
+	newUser := session.UserUUID(uuid.NewString())
 
 	start := make(chan struct{})
 	var wg sync.WaitGroup
-	var joinResult JoinResult
+	var joinResult session.JoinResult
 	var joinErr, leaveErr error
 
 	wg.Add(2)
@@ -287,7 +287,7 @@ func TestManagerJoin_Integration_ConcurrentJoinRacingLeave(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		<-start
-		_, leaveErr = m.Leave(context.Background(), SessionUUID(fx.SessionUUID), existingUser, "race-leave")
+		_, leaveErr = m.Leave(context.Background(), session.SessionUUID(fx.SessionUUID), existingUser, "race-leave")
 	}()
 	close(start)
 	wg.Wait()
@@ -302,11 +302,11 @@ func TestManagerJoin_Integration_ConcurrentJoinRacingLeave(t *testing.T) {
 		WHERE a.session_id = ? AND p.active = TRUE
 	`, fx.SessionID).Scan(&activeCount).Error)
 
-	if joinResult.Outcome == JoinOutcomeJoined {
+	if joinResult.Outcome == session.JoinOutcomeJoined {
 		require.NotEmpty(t, joinResult.DisplayName)
 		require.Equal(t, int64(1), activeCount, "Join won the race after Leave released the slot")
 	} else {
-		require.Equal(t, JoinOutcomeLobbyFull, joinResult.Outcome)
+		require.Equal(t, session.JoinOutcomeLobbyFull, joinResult.Outcome)
 		require.Equal(t, int64(0), activeCount, "Join lost the race while the existing Participant still held the only slot")
 	}
 }
@@ -324,14 +324,14 @@ func TestManagerJoin_Integration_ConcurrentOperationRacingLobbyExpiration(t *tes
 	fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(-1*time.Minute))
 	testfixtures.SeedJoinCode(t, db, fx.SessionID, 7002, false)
 
-	existingUser := UserUUID(uuid.NewString())
+	existingUser := session.UserUUID(uuid.NewString())
 	testfixtures.SeedActiveParticipant(t, db, fx.SessionID, string(existingUser), "Existing")
-	newUser := UserUUID(uuid.NewString())
+	newUser := session.UserUUID(uuid.NewString())
 
 	start := make(chan struct{})
 	var wg sync.WaitGroup
-	var joinResult JoinResult
-	var leaveResult LeaveResult
+	var joinResult session.JoinResult
+	var leaveResult session.LeaveResult
 	var joinErr, leaveErr error
 
 	wg.Add(2)
@@ -343,15 +343,15 @@ func TestManagerJoin_Integration_ConcurrentOperationRacingLobbyExpiration(t *tes
 	go func() {
 		defer wg.Done()
 		<-start
-		leaveResult, leaveErr = m.Leave(context.Background(), SessionUUID(fx.SessionUUID), existingUser, "race-expire-leave")
+		leaveResult, leaveErr = m.Leave(context.Background(), session.SessionUUID(fx.SessionUUID), existingUser, "race-expire-leave")
 	}()
 	close(start)
 	wg.Wait()
 
 	require.NoError(t, joinErr)
 	require.NoError(t, leaveErr)
-	require.Equal(t, JoinOutcomeLobbyExpired, joinResult.Outcome)
-	require.Equal(t, LeaveOutcomeNotInLobby, leaveResult.Outcome)
+	require.Equal(t, session.JoinOutcomeLobbyExpired, joinResult.Outcome)
+	require.Equal(t, session.LeaveOutcomeNotInLobby, leaveResult.Outcome)
 
 	var phase, terminalReason string
 	require.NoError(t, db.Raw(`SELECT phase FROM sessions WHERE id = ?`, fx.SessionID).Scan(&phase).Error)

@@ -12,7 +12,7 @@ import (
 )
 
 // TestManagerJoin covers Join's pre-transaction validation - idempotency key,
-// JoinCode resolution, and pinned-definition loading - the only parts of
+// session.JoinCode resolution, and pinned-definition loading - the only parts of
 // Join mockable without a real DB transaction: the lock, lazy-expiration
 // materialization, idempotency claim, and admission decision further down
 // this path call the shared sessionlock/idempotency mechanism packages
@@ -24,10 +24,10 @@ import (
 func TestManagerJoin(t *testing.T) {
 	type test struct {
 		ctx            context.Context
-		joinCode       JoinCode
-		userUUID       UserUUID
-		displayName    DisplayName
-		idempotencyKey IdempotencyKey
+		joinCode       session.JoinCode
+		userUUID       session.UserUUID
+		displayName    session.DisplayName
+		idempotencyKey session.IdempotencyKey
 		errAssert      require.ErrorAssertionFunc
 	}
 

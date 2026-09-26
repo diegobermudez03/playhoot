@@ -21,9 +21,9 @@ func TestManagerLeave_Integration(t *testing.T) {
 		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
 		testfixtures.SeedActiveParticipant(t, db, fx.SessionID, userUUID, "User One")
 
-		result, err := m.Leave(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(userUUID), "leave-key-1")
+		result, err := m.Leave(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(userUUID), "leave-key-1")
 		require.NoError(t, err)
-		require.Equal(t, SessionUUID(fx.SessionUUID), result.SessionUUID)
+		require.Equal(t, session.SessionUUID(fx.SessionUUID), result.SessionUUID)
 
 		var active bool
 		require.NoError(t, db.Raw(`
@@ -45,7 +45,7 @@ func TestManagerLeave_Integration(t *testing.T) {
 		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
 		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
 
-		_, err := m.Leave(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(hostUUID), "leave-key-host")
+		_, err := m.Leave(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), "leave-key-host")
 		require.NoError(t, err)
 
 		var hostActorIDAfter *uint
@@ -58,12 +58,12 @@ func TestManagerLeave_Integration(t *testing.T) {
 		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
 		testfixtures.SeedActiveParticipant(t, db, fx.SessionID, userUUID, "User Two")
 
-		_, err := m.Leave(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(userUUID), "leave-key-retry")
+		_, err := m.Leave(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(userUUID), "leave-key-retry")
 		require.NoError(t, err)
 
-		result, err := m.Leave(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(userUUID), "leave-key-retry")
+		result, err := m.Leave(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(userUUID), "leave-key-retry")
 		require.NoError(t, err)
-		require.Equal(t, SessionUUID(fx.SessionUUID), result.SessionUUID)
+		require.Equal(t, session.SessionUUID(fx.SessionUUID), result.SessionUUID)
 	})
 
 	t.Run("rejects_leave_when_session_already_terminal", func(t *testing.T) {
@@ -72,9 +72,9 @@ func TestManagerLeave_Integration(t *testing.T) {
 		testfixtures.SeedActiveParticipant(t, db, fx.SessionID, userUUID, "User Three")
 		require.NoError(t, db.Exec(`UPDATE sessions SET phase = 'TERMINAL' WHERE id = ?`, fx.SessionID).Error)
 
-		result, err := m.Leave(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(userUUID), "leave-key-terminal")
+		result, err := m.Leave(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(userUUID), "leave-key-terminal")
 		require.NoError(t, err)
-		require.Equal(t, LeaveOutcomeNotInLobby, result.Outcome)
+		require.Equal(t, session.LeaveOutcomeNotInLobby, result.Outcome)
 	})
 
 	t.Run("lazily_materializes_expired_lobby_and_rejects", func(t *testing.T) {
@@ -82,9 +82,9 @@ func TestManagerLeave_Integration(t *testing.T) {
 		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(-1*time.Minute))
 		testfixtures.SeedActiveParticipant(t, db, fx.SessionID, userUUID, "User Four")
 
-		result, err := m.Leave(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(userUUID), "leave-key-expired")
+		result, err := m.Leave(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(userUUID), "leave-key-expired")
 		require.NoError(t, err)
-		require.Equal(t, LeaveOutcomeNotInLobby, result.Outcome)
+		require.Equal(t, session.LeaveOutcomeNotInLobby, result.Outcome)
 
 		var phase string
 		require.NoError(t, db.Raw(`SELECT phase FROM sessions WHERE uuid = ?`, fx.SessionUUID).Scan(&phase).Error)
@@ -94,8 +94,8 @@ func TestManagerLeave_Integration(t *testing.T) {
 	t.Run("rejects_when_actor_never_joined", func(t *testing.T) {
 		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
 
-		result, err := m.Leave(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(uuid.NewString()), "leave-key-missing")
+		result, err := m.Leave(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(uuid.NewString()), "leave-key-missing")
 		require.NoError(t, err)
-		require.Equal(t, LeaveOutcomeActorNotFound, result.Outcome)
+		require.Equal(t, session.LeaveOutcomeActorNotFound, result.Outcome)
 	})
 }

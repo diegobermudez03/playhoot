@@ -61,7 +61,7 @@ type answerInteractionRepoAPI interface {
 // AnswerInteractionOutcomeAnswered without a second engine effect; a
 // conflicting different response against an already-resolved interaction is
 // rejected as AnswerInteractionOutcomeConflict.
-func (m *Manager) AnswerInteraction(ctx context.Context, interactionUUID InteractionUUID, userUUID UserUUID, answer json.RawMessage) (AnswerInteractionResult, error) {
+func (m *Manager) AnswerInteraction(ctx context.Context, interactionUUID session.InteractionUUID, userUUID session.UserUUID, answer json.RawMessage) (session.AnswerInteractionResult, error) {
 	defer logging.Step(ctx, "SessionLifecycle.AnswerInteraction").Close()
 	logging.LogFields(ctx,
 		logging.Field("interaction_uuid", string(interactionUUID)),
@@ -70,18 +70,18 @@ func (m *Manager) AnswerInteraction(ctx context.Context, interactionUUID Interac
 
 	decodedAnswer, err := engineservice.DecodeValue(answer)
 	if err != nil {
-		return AnswerInteractionResult{}, fmt.Errorf("decoding interaction response: %s", err)
+		return session.AnswerInteractionResult{}, fmt.Errorf("decoding interaction response: %s", err)
 	}
 
 	sessionID, err := m.answerInteractionRepo.ResolveSessionForInteraction(ctx, string(interactionUUID))
 	if err != nil {
-		return AnswerInteractionResult{}, err
+		return session.AnswerInteractionResult{}, err
 	}
 	if sessionID == nil {
-		return AnswerInteractionResult{}, session.ErrInteractionNotFound
+		return session.AnswerInteractionResult{}, session.ErrInteractionNotFound
 	}
 
-	return utils.RunInDBTransaction(ctx, m, func(ctx context.Context, tx *gorm.DB) (AnswerInteractionResult, error) {
+	return utils.RunInDBTransaction(ctx, m, func(ctx context.Context, tx *gorm.DB) (session.AnswerInteractionResult, error) {
 		return m.answerInteractionInTx(ctx, tx, *sessionID, interactionUUID, userUUID, decodedAnswer)
 	})
 }
@@ -90,21 +90,21 @@ func (m *Manager) AnswerInteraction(ctx context.Context, interactionUUID Interac
 // isolated so its pre-engine-execution checks (respondent authorization,
 // interaction state) can be tested without a real database connection; the
 // lock acquisition and engine execution beyond this point require one.
-func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessionID uint, interactionUUID InteractionUUID, userUUID UserUUID, answer engine.Value) (AnswerInteractionResult, error) {
+func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessionID uint, interactionUUID session.InteractionUUID, userUUID session.UserUUID, answer engine.Value) (session.AnswerInteractionResult, error) {
 	lockedSession, err := sessionlock.LockByID(ctx, tx, sessionID)
 	if err != nil {
-		return AnswerInteractionResult{}, err
+		return session.AnswerInteractionResult{}, err
 	}
 	if lockedSession == nil {
-		return AnswerInteractionResult{}, session.ErrSessionNotFound
+		return session.AnswerInteractionResult{}, session.ErrSessionNotFound
 	}
 
 	interaction, err := m.answerInteractionRepo.FindInteractionByUUID(ctx, tx, string(interactionUUID))
 	if err != nil {
-		return AnswerInteractionResult{}, err
+		return session.AnswerInteractionResult{}, err
 	}
 	if interaction == nil {
-		return AnswerInteractionResult{}, session.ErrInteractionNotFound
+		return session.AnswerInteractionResult{}, session.ErrInteractionNotFound
 	}
 
 	// A missing actor is indistinguishable from "not this interaction's
@@ -113,15 +113,15 @@ func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessio
 	// engine at all.
 	actor, err := m.answerInteractionRepo.FindActor(ctx, tx, lockedSession.ID, string(userUUID))
 	if err != nil {
-		return AnswerInteractionResult{}, err
+		return session.AnswerInteractionResult{}, err
 	}
 	if actor == nil || actor.ID != interaction.SessionActorID {
-		return AnswerInteractionResult{Outcome: AnswerInteractionOutcomeRejected, SessionUUID: SessionUUID(lockedSession.UUID)}, nil
+		return session.AnswerInteractionResult{Outcome: session.AnswerInteractionOutcomeRejected, SessionUUID: session.SessionUUID(lockedSession.UUID)}, nil
 	}
 
 	responsePayload, err := engineservice.EncodeValue(answer)
 	if err != nil {
-		return AnswerInteractionResult{}, fmt.Errorf("encoding interaction response: %s", err)
+		return session.AnswerInteractionResult{}, fmt.Errorf("encoding interaction response: %s", err)
 	}
 
 	if interaction.State != session.InteractionStateActive {
@@ -132,7 +132,7 @@ func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessio
 			// stored/freshly-encoded byte comparison would be unreliable.
 			storedResponse, err := engineservice.DecodeValue(interaction.ResponsePayload)
 			if err != nil {
-				return AnswerInteractionResult{}, fmt.Errorf("decoding stored interaction response: %s", err)
+				return session.AnswerInteractionResult{}, fmt.Errorf("decoding stored interaction response: %s", err)
 			}
 			if storedResponse.Equal(answer) {
 				// The original answer may have also terminalized the Session
@@ -142,13 +142,13 @@ func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessio
 				if lockedSession.TerminalReason != nil {
 					terminalReason = *lockedSession.TerminalReason
 				}
-				return AnswerInteractionResult{Outcome: AnswerInteractionOutcomeAnswered, SessionUUID: SessionUUID(lockedSession.UUID), TerminalReason: terminalReason}, nil
+				return session.AnswerInteractionResult{Outcome: session.AnswerInteractionOutcomeAnswered, SessionUUID: session.SessionUUID(lockedSession.UUID), TerminalReason: terminalReason}, nil
 			}
-			return AnswerInteractionResult{Outcome: AnswerInteractionOutcomeConflict, SessionUUID: SessionUUID(lockedSession.UUID)}, nil
+			return session.AnswerInteractionResult{Outcome: session.AnswerInteractionOutcomeConflict, SessionUUID: session.SessionUUID(lockedSession.UUID)}, nil
 		}
 		// InteractionStateTerminated (or any other non-ACTIVE state): the
 		// interaction is no longer answerable, an ordinary stale decline.
-		return AnswerInteractionResult{Outcome: AnswerInteractionOutcomeRejected, SessionUUID: SessionUUID(lockedSession.UUID)}, nil
+		return session.AnswerInteractionResult{Outcome: session.AnswerInteractionOutcomeRejected, SessionUUID: session.SessionUUID(lockedSession.UUID)}, nil
 	}
 
 	if lockedSession.CurrentTurnID == nil {
@@ -157,15 +157,15 @@ func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessio
 		// but reports no current_turn_id at all is a data-integrity
 		// condition, not an ordinary decline.
 		monitoring.Alert(ctx, "session has an active interaction but no current_turn_id")
-		return AnswerInteractionResult{}, fmt.Errorf("session %d has an active interaction but no current_turn_id", lockedSession.ID)
+		return session.AnswerInteractionResult{}, fmt.Errorf("session %d has an active interaction but no current_turn_id", lockedSession.ID)
 	}
 	currentTurn, err := m.answerInteractionRepo.GetRuntimeTurn(ctx, tx, *lockedSession.CurrentTurnID)
 	if err != nil {
-		return AnswerInteractionResult{}, err
+		return session.AnswerInteractionResult{}, err
 	}
 	if currentTurn == nil {
 		monitoring.Alert(ctx, "session current_turn_id does not resolve to a runtime turn")
-		return AnswerInteractionResult{}, fmt.Errorf("session %d current_turn_id %d does not resolve to a runtime turn", lockedSession.ID, *lockedSession.CurrentTurnID)
+		return session.AnswerInteractionResult{}, fmt.Errorf("session %d current_turn_id %d does not resolve to a runtime turn", lockedSession.ID, *lockedSession.CurrentTurnID)
 	}
 
 	now := time.Now().UTC()
@@ -174,11 +174,11 @@ func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessio
 	// current version.
 	definition, err := m.pinnedGameReader.GetGameDefinition(ctx, lockedSession.GameDefinitionUUID)
 	if err != nil {
-		return AnswerInteractionResult{}, err
+		return session.AnswerInteractionResult{}, err
 	}
 	if definition == nil {
 		monitoring.Alert(ctx, "session pinned game definition is missing")
-		return AnswerInteractionResult{}, session.ErrPinnedDefinitionMissing
+		return session.AnswerInteractionResult{}, session.ErrPinnedDefinitionMissing
 	}
 	compiledProgram, diagnostics := engineservice.Compile(*definition)
 	if diagnostics.HasErrors() {
@@ -198,7 +198,7 @@ func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessio
 	// cause committed so far, given only the ordered signal log below.
 	input, priorSignals, err := replay.LoadPriorSignals(ctx, tx, m.answerInteractionRepo, lockedSession.ID)
 	if err != nil {
-		return AnswerInteractionResult{}, fmt.Errorf("reconstructing current runtime state: %s", err)
+		return session.AnswerInteractionResult{}, fmt.Errorf("reconstructing current runtime state: %s", err)
 	}
 
 	signal := engine.Signal{
@@ -216,13 +216,13 @@ func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessio
 			// identically is a data-integrity condition, never an ordinary
 			// decline.
 			monitoring.Alert(ctx, fmt.Sprintf("session %d: %s", lockedSession.ID, err))
-			return AnswerInteractionResult{}, fmt.Errorf("reconstructing current runtime state: %s", err)
+			return session.AnswerInteractionResult{}, fmt.Errorf("reconstructing current runtime state: %s", err)
 		}
 		// A rejection of the response itself is an ordinary declined
 		// outcome: no RuntimeTurn, no Snapshot mutation, Session stays
 		// RUNNING.
 		if errors.Is(err, engineservice.ErrSignalRejected) || errors.Is(err, engineservice.ErrInputRejected) {
-			return AnswerInteractionResult{Outcome: AnswerInteractionOutcomeRejected, SessionUUID: SessionUUID(lockedSession.UUID)}, nil
+			return session.AnswerInteractionResult{Outcome: session.AnswerInteractionOutcomeRejected, SessionUUID: session.SessionUUID(lockedSession.UUID)}, nil
 		}
 		return m.terminalizeAnswerInteractionFatal(ctx, tx, lockedSession, now, session.TerminalReasonRuntimeExecutionFailed)
 	}
@@ -230,7 +230,7 @@ func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessio
 	actorID := actor.ID
 	turnID, err := m.answerInteractionRepo.CreateRuntimeTurn(ctx, tx, lockedSession.ID, currentTurn.Sequence+1, replay.AnswerInteractionSourceKind, &interaction.ID, nil, &actorID)
 	if err != nil {
-		return AnswerInteractionResult{}, err
+		return session.AnswerInteractionResult{}, err
 	}
 	// The engine clears an accepted answer's own slot internally, before
 	// the transition's own operations run, and produces no Output
@@ -242,37 +242,37 @@ func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessio
 	// key within the same Turn finds it already closed, not still occupying
 	// the active-interaction uniqueness constraint.
 	if err := m.answerInteractionRepo.CloseAnsweredInteraction(ctx, tx, interaction.ID, responsePayload, turnID); err != nil {
-		return AnswerInteractionResult{}, err
+		return session.AnswerInteractionResult{}, err
 	}
 	if err := interactions.Capture(ctx, tx, m.answerInteractionRepo, lockedSession.ID, turnID, outputs); err != nil {
-		return AnswerInteractionResult{}, err
+		return session.AnswerInteractionResult{}, err
 	}
 	if err := timers.Capture(ctx, tx, m.answerInteractionRepo, lockedSession.ID, turnID, outputs); err != nil {
-		return AnswerInteractionResult{}, err
+		return session.AnswerInteractionResult{}, err
 	}
 	if err := m.answerInteractionRepo.SetCurrentTurn(ctx, tx, lockedSession.ID, turnID); err != nil {
-		return AnswerInteractionResult{}, err
+		return session.AnswerInteractionResult{}, err
 	}
 
 	terminalReason, terminated := completion.Detect(outputs)
 	if terminated {
 		if err := m.answerInteractionRepo.SetSessionTerminal(ctx, tx, lockedSession.ID, now, terminalReason); err != nil {
-			return AnswerInteractionResult{}, err
+			return session.AnswerInteractionResult{}, err
 		}
 		if err := m.answerInteractionRepo.CloseAllActiveInteractionsForSession(ctx, tx, lockedSession.ID, session.InteractionClosureReasonSessionTerminated); err != nil {
-			return AnswerInteractionResult{}, err
+			return session.AnswerInteractionResult{}, err
 		}
 		if err := m.answerInteractionRepo.CancelAllActiveTimerObligationsForSession(ctx, tx, lockedSession.ID, session.TimerObligationClosureReasonSessionTerminated); err != nil {
-			return AnswerInteractionResult{}, err
+			return session.AnswerInteractionResult{}, err
 		}
 	}
 
 	mappedOutputs, err := m.mapOutputs(ctx, tx, lockedSession.ID, clientoutputs.ClientFacing(outputs))
 	if err != nil {
-		return AnswerInteractionResult{}, fmt.Errorf("mapping client-facing outputs: %s", err)
+		return session.AnswerInteractionResult{}, fmt.Errorf("mapping client-facing outputs: %s", err)
 	}
 
-	return AnswerInteractionResult{Outcome: AnswerInteractionOutcomeAnswered, SessionUUID: SessionUUID(lockedSession.UUID), Outputs: mappedOutputs, TerminalReason: terminalReason}, nil
+	return session.AnswerInteractionResult{Outcome: session.AnswerInteractionOutcomeAnswered, SessionUUID: session.SessionUUID(lockedSession.UUID), Outputs: mappedOutputs, TerminalReason: terminalReason}, nil
 }
 
 // terminalizeAnswerInteractionFatal performs AnswerInteraction's fatal path:
@@ -280,15 +280,15 @@ func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessio
 // session_interactions row for it, so a TERMINAL Session never retains one
 // still ACTIVE. No partial RuntimeTurn is ever persisted:
 // sessions.current_turn_id remains at the last committed Turn.
-func (m *Manager) terminalizeAnswerInteractionFatal(ctx context.Context, tx *gorm.DB, lockedSession *sessionlock.Session, terminalAt time.Time, terminalReason string) (AnswerInteractionResult, error) {
+func (m *Manager) terminalizeAnswerInteractionFatal(ctx context.Context, tx *gorm.DB, lockedSession *sessionlock.Session, terminalAt time.Time, terminalReason string) (session.AnswerInteractionResult, error) {
 	if err := m.answerInteractionRepo.SetSessionTerminal(ctx, tx, lockedSession.ID, terminalAt, terminalReason); err != nil {
-		return AnswerInteractionResult{}, err
+		return session.AnswerInteractionResult{}, err
 	}
 	if err := m.answerInteractionRepo.CloseAllActiveInteractionsForSession(ctx, tx, lockedSession.ID, session.InteractionClosureReasonSessionTerminated); err != nil {
-		return AnswerInteractionResult{}, err
+		return session.AnswerInteractionResult{}, err
 	}
 	if err := m.answerInteractionRepo.CancelAllActiveTimerObligationsForSession(ctx, tx, lockedSession.ID, session.TimerObligationClosureReasonSessionTerminated); err != nil {
-		return AnswerInteractionResult{}, err
+		return session.AnswerInteractionResult{}, err
 	}
-	return AnswerInteractionResult{Outcome: AnswerInteractionOutcomeRuntimeExecutionFailed, SessionUUID: SessionUUID(lockedSession.UUID)}, nil
+	return session.AnswerInteractionResult{Outcome: session.AnswerInteractionOutcomeRuntimeExecutionFailed, SessionUUID: session.SessionUUID(lockedSession.UUID)}, nil
 }

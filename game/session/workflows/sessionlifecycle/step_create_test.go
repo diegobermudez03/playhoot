@@ -21,9 +21,9 @@ import (
 func TestManagerCreate(t *testing.T) {
 	type test struct {
 		ctx            context.Context
-		gameUUID       GameUUID
-		hostUserUUID   UserUUID
-		idempotencyKey IdempotencyKey
+		gameUUID       session.GameUUID
+		hostUserUUID   session.UserUUID
+		idempotencyKey session.IdempotencyKey
 		errAssert      require.ErrorAssertionFunc
 	}
 

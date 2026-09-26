@@ -7,14 +7,15 @@ import (
 	"testing"
 
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine"
+	"github.com/diegobermudez03/playhoot/game/session"
 	internalrepo "github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/repo"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
 
 // TestManagerMapOutputs covers mapOutputs' translation from engine's Output/
-// Value schema into sessionlifecycle's own exported schema - the only part
-// of this file testable without a real Postgres transaction, since the
+// Value schema into game/session's own exported schema - the only part of
+// this file testable without a real Postgres transaction, since the
 // repository lookup is mocked. Recipient/nested-UserValue resolution against
 // a real session_actors table is covered by
 // TestRepoFindActorsByIDs/the *_Integration tests exercising Start/
@@ -90,35 +91,35 @@ func TestManagerMapOutputs(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, mapped, 1)
 
-		activated, ok := mapped[0].(PresentationActivated)
+		activated, ok := mapped[0].(session.PresentationActivated)
 		require.True(t, ok, "%T", mapped[0])
-		require.Equal(t, UserUUID(hostUUID), activated.Recipient)
+		require.Equal(t, session.UserUUID(hostUUID), activated.Recipient)
 
-		record, ok := activated.Model.(RecordValue)
+		record, ok := activated.Model.(session.RecordValue)
 		require.True(t, ok, "%T", activated.Model)
-		fieldByName := make(map[string]Value, len(record.Fields))
+		fieldByName := make(map[string]session.Value, len(record.Fields))
 		for _, f := range record.Fields {
 			fieldByName[f.Name] = f.Value
 		}
 
-		require.Equal(t, UnitValue{}, fieldByName["unit"])
-		require.Equal(t, BoolValue{Value: true}, fieldByName["ready"])
-		require.Equal(t, NumberValue{Value: 42}, fieldByName["score"])
-		require.Equal(t, StringValue{Value: "hi"}, fieldByName["label"])
-		require.Equal(t, UserValue{UserUUID: UserUUID(playerUUID)}, fieldByName["turn_player"])
-		require.Equal(t, EnumValue{TypeName: "Color", ValueName: "RED"}, fieldByName["color"])
-		require.Equal(t, UnionValue{
+		require.Equal(t, session.UnitValue{}, fieldByName["unit"])
+		require.Equal(t, session.BoolValue{Value: true}, fieldByName["ready"])
+		require.Equal(t, session.NumberValue{Value: 42}, fieldByName["score"])
+		require.Equal(t, session.StringValue{Value: "hi"}, fieldByName["label"])
+		require.Equal(t, session.UserValue{UserUUID: session.UserUUID(playerUUID)}, fieldByName["turn_player"])
+		require.Equal(t, session.EnumValue{TypeName: "Color", ValueName: "RED"}, fieldByName["color"])
+		require.Equal(t, session.UnionValue{
 			TypeName:    "Outcome",
 			VariantName: "Won",
-			Fields:      []FieldValue{{Name: "by", Value: NumberValue{Value: 3}}},
+			Fields:      []session.FieldValue{{Name: "by", Value: session.NumberValue{Value: 3}}},
 		}, fieldByName["outcome"])
-		require.Equal(t, NewTypeValue{TypeName: "Points", Underlying: NumberValue{Value: 9}}, fieldByName["score_points"])
-		require.Equal(t, OptionalValue{ElementType: NumberType{}}, fieldByName["bonus"])
-		require.Equal(t, ListValue{ElementType: StringType{}, Elements: []Value{StringValue{Value: "card"}}}, fieldByName["hand"])
-		require.Equal(t, MapValue{
-			KeyType:   UserType{},
-			ValueType: NumberType{},
-			Entries:   []MapEntry{{Key: UserValue{UserUUID: UserUUID(playerUUID)}, Value: NumberValue{Value: 5}}},
+		require.Equal(t, session.NewTypeValue{TypeName: "Points", Underlying: session.NumberValue{Value: 9}}, fieldByName["score_points"])
+		require.Equal(t, session.OptionalValue{ElementType: session.NumberType{}}, fieldByName["bonus"])
+		require.Equal(t, session.ListValue{ElementType: session.StringType{}, Elements: []session.Value{session.StringValue{Value: "card"}}}, fieldByName["hand"])
+		require.Equal(t, session.MapValue{
+			KeyType:   session.UserType{},
+			ValueType: session.NumberType{},
+			Entries:   []session.MapEntry{{Key: session.UserValue{UserUUID: session.UserUUID(playerUUID)}, Value: session.NumberValue{Value: 5}}},
 		}, fieldByName["scores_by_player"])
 	})
 
@@ -151,11 +152,11 @@ func TestManagerMapOutputs(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, mapped, 1)
 
-		emitted, ok := mapped[0].(EffectEmitted)
+		emitted, ok := mapped[0].(session.EffectEmitted)
 		require.True(t, ok, "%T", mapped[0])
 		require.Equal(t, "Confetti", emitted.Effect)
-		require.ElementsMatch(t, []UserUUID{UserUUID(actorAUUID), UserUUID(actorBUUID)}, emitted.Recipients)
-		require.Equal(t, []FieldValue{{Name: "intensity", Value: NumberValue{Value: 1}}}, emitted.Arguments)
+		require.ElementsMatch(t, []session.UserUUID{session.UserUUID(actorAUUID), session.UserUUID(actorBUUID)}, emitted.Recipients)
+		require.Equal(t, []session.FieldValue{{Name: "intensity", Value: session.NumberValue{Value: 1}}}, emitted.Arguments)
 	})
 
 	t.Run("returns nil for no outputs", func(t *testing.T) {

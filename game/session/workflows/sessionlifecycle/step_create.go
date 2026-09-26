@@ -48,7 +48,7 @@ const outcomeCreated = "CREATED"
 
 // Create resolves/compiles/pins the Game's current playable Definition, then
 // creates a LOBBY Session with a host SessionActor and an active JoinCode.
-func (m *Manager) Create(ctx context.Context, gameUUID GameUUID, hostUserUUID UserUUID, idempotencyKey IdempotencyKey) (CreatedSession, error) {
+func (m *Manager) Create(ctx context.Context, gameUUID session.GameUUID, hostUserUUID session.UserUUID, idempotencyKey session.IdempotencyKey) (session.CreatedSession, error) {
 	defer logging.Step(ctx, "SessionLifecycle.Create").Close()
 	logging.LogFields(ctx,
 		logging.Field("game_uuid", string(gameUUID)),
@@ -56,15 +56,15 @@ func (m *Manager) Create(ctx context.Context, gameUUID GameUUID, hostUserUUID Us
 	)
 
 	if idempotencyKey == "" {
-		return CreatedSession{}, session.ErrIdempotencyKeyRequired
+		return session.CreatedSession{}, session.ErrIdempotencyKeyRequired
 	}
 
 	playableGame, err := m.currentGameReader.GetPlayableGameWithCurrentVersion(ctx, string(gameUUID))
 	if err != nil {
-		return CreatedSession{}, err
+		return session.CreatedSession{}, err
 	}
 	if playableGame == nil {
-		return CreatedSession{}, session.ErrGameNotFound
+		return session.CreatedSession{}, session.ErrGameNotFound
 	}
 
 	if _, diagnostics := engineservice.Compile(playableGame.Definition); diagnostics.HasErrors() {
@@ -72,10 +72,10 @@ func (m *Manager) Create(ctx context.Context, gameUUID GameUUID, hostUserUUID Us
 			"game definition failed to compile at session create: game_uuid=%s version_uuid=%s",
 			gameUUID, playableGame.VersionUUID,
 		))
-		return CreatedSession{}, session.ErrDefinitionDoesNotCompile
+		return session.CreatedSession{}, session.ErrDefinitionDoesNotCompile
 	}
 
-	return utils.RunInDBTransaction(ctx, m, func(ctx context.Context, tx *gorm.DB) (CreatedSession, error) {
+	return utils.RunInDBTransaction(ctx, m, func(ctx context.Context, tx *gorm.DB) (session.CreatedSession, error) {
 		return m.createSessionInTx(ctx, tx, gameUUID, playableGame.VersionUUID, hostUserUUID, idempotencyKey)
 	})
 }
@@ -86,11 +86,11 @@ func (m *Manager) Create(ctx context.Context, gameUUID GameUUID, hostUserUUID Us
 // sessionlock/idempotency mechanism calls further down this same path
 // require a real Postgres connection to run their SQL, which is instead
 // proven by this package's repository-integration/concurrency tests.
-func (m *Manager) createSessionInTx(ctx context.Context, tx *gorm.DB, gameUUID GameUUID, gameDefinitionUUID string, hostUserUUID UserUUID, idempotencyKey IdempotencyKey) (CreatedSession, error) {
+func (m *Manager) createSessionInTx(ctx context.Context, tx *gorm.DB, gameUUID session.GameUUID, gameDefinitionUUID string, hostUserUUID session.UserUUID, idempotencyKey session.IdempotencyKey) (session.CreatedSession, error) {
 	incomingPayload := createRequestPayload{GameUUID: string(gameUUID)}
 	payloadBytes, err := json.Marshal(incomingPayload)
 	if err != nil {
-		return CreatedSession{}, fmt.Errorf("marshaling create request payload: %s", err)
+		return session.CreatedSession{}, fmt.Errorf("marshaling create request payload: %s", err)
 	}
 
 	requestID, existing, err := idempotency.Claim(ctx, tx, idempotency.ClaimInput{
@@ -100,7 +100,7 @@ func (m *Manager) createSessionInTx(ctx context.Context, tx *gorm.DB, gameUUID G
 		RequestPayload: string(payloadBytes),
 	})
 	if err != nil {
-		return CreatedSession{}, fmt.Errorf("claiming create session request: %s", err)
+		return session.CreatedSession{}, fmt.Errorf("claiming create session request: %s", err)
 	}
 	if existing != nil {
 		return interpretExistingCreateClaim(existing, incomingPayload)
@@ -109,27 +109,27 @@ func (m *Manager) createSessionInTx(ctx context.Context, tx *gorm.DB, gameUUID G
 	now := time.Now().UTC()
 	created, err := m.createRepo.CreateSessionWithHost(ctx, tx, gameDefinitionUUID, string(hostUserUUID), now.Add(m.lobbyTTL))
 	if err != nil {
-		return CreatedSession{}, err
+		return session.CreatedSession{}, err
 	}
 
 	joinCode, err := m.createRepo.CreateJoinCode(ctx, tx, created.SessionID)
 	if err != nil {
-		return CreatedSession{}, err
+		return session.CreatedSession{}, err
 	}
 
-	result := CreatedSession{
-		SessionUUID:    SessionUUID(created.SessionUUID),
-		JoinCode:       JoinCode(joinCode),
+	result := session.CreatedSession{
+		SessionUUID:    session.SessionUUID(created.SessionUUID),
+		JoinCode:       session.JoinCode(joinCode),
 		LobbyExpiresAt: created.LobbyExpiresAt,
 	}
 	responseBytes, err := json.Marshal(result)
 	if err != nil {
-		return CreatedSession{}, fmt.Errorf("marshaling create response payload: %s", err)
+		return session.CreatedSession{}, fmt.Errorf("marshaling create response payload: %s", err)
 	}
 
 	sessionID := created.SessionID
 	if err := idempotency.Complete(ctx, tx, requestID, &sessionID, outcomeCreated, string(responseBytes)); err != nil {
-		return CreatedSession{}, fmt.Errorf("completing create session request: %s", err)
+		return session.CreatedSession{}, fmt.Errorf("completing create session request: %s", err)
 	}
 	return result, nil
 }
@@ -138,25 +138,25 @@ func (m *Manager) createSessionInTx(ctx context.Context, tx *gorm.DB, gameUUID G
 // identity means for the incoming request: replay or conflict. This is
 // Manager policy - the shared idempotency mechanism only reports the
 // existing request.
-func interpretExistingCreateClaim(existing *idempotency.Request, incoming createRequestPayload) (CreatedSession, error) {
+func interpretExistingCreateClaim(existing *idempotency.Request, incoming createRequestPayload) (session.CreatedSession, error) {
 	if existing.Status != idempotency.StatusCompleted {
-		return CreatedSession{}, session.ErrIdempotencyInFlight
+		return session.CreatedSession{}, session.ErrIdempotencyInFlight
 	}
 
 	var stored createRequestPayload
 	if err := json.Unmarshal([]byte(existing.RequestPayload), &stored); err != nil {
-		return CreatedSession{}, fmt.Errorf("decoding stored create request payload: %s", err)
+		return session.CreatedSession{}, fmt.Errorf("decoding stored create request payload: %s", err)
 	}
 	if stored != incoming {
-		return CreatedSession{}, session.ErrIdempotencyConflict
+		return session.CreatedSession{}, session.ErrIdempotencyConflict
 	}
 
 	if existing.ResponsePayload == nil {
-		return CreatedSession{}, fmt.Errorf("completed create idempotency record missing response payload")
+		return session.CreatedSession{}, fmt.Errorf("completed create idempotency record missing response payload")
 	}
-	var result CreatedSession
+	var result session.CreatedSession
 	if err := json.Unmarshal([]byte(*existing.ResponsePayload), &result); err != nil {
-		return CreatedSession{}, fmt.Errorf("decoding stored create response payload: %s", err)
+		return session.CreatedSession{}, fmt.Errorf("decoding stored create response payload: %s", err)
 	}
 	return result, nil
 }

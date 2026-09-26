@@ -27,10 +27,10 @@ func TestManagerStart_Integration(t *testing.T) {
 		testfixtures.SeedActiveParticipant(t, db, fx.SessionID, uuid.NewString(), "Player Two")
 		testfixtures.SeedJoinCode(t, db, fx.SessionID, 1111, false)
 
-		result, err := m.Start(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(hostUUID), "start-key-1")
+		result, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), "start-key-1")
 		require.NoError(t, err)
-		require.Equal(t, StartOutcomeStarted, result.Outcome)
-		require.Equal(t, SessionUUID(fx.SessionUUID), result.SessionUUID)
+		require.Equal(t, session.StartOutcomeStarted, result.Outcome)
+		require.Equal(t, session.SessionUUID(fx.SessionUUID), result.SessionUUID)
 
 		var row struct {
 			Phase     string     `gorm:"column:phase"`
@@ -42,7 +42,7 @@ func TestManagerStart_Integration(t *testing.T) {
 
 		var joinCodeRevoked *time.Time
 		require.NoError(t, db.Raw(`SELECT revoked_at FROM join_codes WHERE session_id = ?`, fx.SessionID).Scan(&joinCodeRevoked).Error)
-		require.NotNil(t, joinCodeRevoked, "the active JoinCode must be revoked on Start")
+		require.NotNil(t, joinCodeRevoked, "the active session.JoinCode must be revoked on Start")
 
 		var turn struct {
 			ID       uint   `gorm:"column:id"`
@@ -70,9 +70,9 @@ func TestManagerStart_Integration(t *testing.T) {
 		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
 		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
 
-		result, err := m.Start(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(hostUUID), "start-key-opens-question")
+		result, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), "start-key-opens-question")
 		require.NoError(t, err)
-		require.Equal(t, StartOutcomeStarted, result.Outcome)
+		require.Equal(t, session.StartOutcomeStarted, result.Outcome)
 
 		var turn struct {
 			ID uint `gorm:"column:id"`
@@ -104,16 +104,16 @@ func TestManagerStart_Integration(t *testing.T) {
 		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
 		testfixtures.SeedActiveParticipant(t, db, fx.SessionID, uuid.NewString(), "Player Two")
 
-		result, err := m.Start(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(hostUUID), "start-key-presentation")
+		result, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), "start-key-presentation")
 		require.NoError(t, err)
-		require.Equal(t, StartOutcomeStarted, result.Outcome)
+		require.Equal(t, session.StartOutcomeStarted, result.Outcome)
 
-		require.Len(t, result.Outputs, 2, "one PresentationActivated per player, no OpenQuestionOutput returned")
+		require.Len(t, result.Outputs, 2, "one session.PresentationActivated per player, no OpenQuestionOutput returned")
 		for _, o := range result.Outputs {
-			activate, ok := o.(PresentationActivated)
+			activate, ok := o.(session.PresentationActivated)
 			require.True(t, ok, "%T", o)
 			require.Equal(t, presentationEffectHudSlot, activate.Slot)
-			require.Equal(t, NumberValue{Value: 0}, activate.Model, "score's initializer is 0")
+			require.Equal(t, session.NumberValue{Value: 0}, activate.Model, "score's initializer is 0")
 		}
 	})
 
@@ -126,9 +126,9 @@ func TestManagerStart_Integration(t *testing.T) {
 		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
 		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
 
-		result, err := m.Start(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(hostUUID), "start-key-terminates")
+		result, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), "start-key-terminates")
 		require.NoError(t, err)
-		require.Equal(t, StartOutcomeStarted, result.Outcome, "the first RuntimeTurn genuinely committed, even though the game ended immediately")
+		require.Equal(t, session.StartOutcomeStarted, result.Outcome, "the first RuntimeTurn genuinely committed, even though the game ended immediately")
 		require.Equal(t, session.TerminalReasonGameCompleted, result.TerminalReason)
 
 		var row struct {
@@ -158,9 +158,9 @@ func TestManagerStart_Integration(t *testing.T) {
 		notHostUUID := uuid.NewString()
 		testfixtures.SeedActiveParticipant(t, db, fx.SessionID, notHostUUID, "Not Host")
 
-		result, err := m.Start(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(notHostUUID), "start-key-not-host")
+		result, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(notHostUUID), "start-key-not-host")
 		require.NoError(t, err)
-		require.Equal(t, StartOutcomeNotHost, result.Outcome)
+		require.Equal(t, session.StartOutcomeNotHost, result.Outcome)
 
 		var phase string
 		require.NoError(t, db.Raw(`SELECT phase FROM sessions WHERE id = ?`, fx.SessionID).Scan(&phase).Error)
@@ -177,9 +177,9 @@ func TestManagerStart_Integration(t *testing.T) {
 		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
 		// Only 1 active Participant, below players.min = 2.
 
-		result, err := m.Start(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(hostUUID), "start-key-not-enough")
+		result, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), "start-key-not-enough")
 		require.NoError(t, err)
-		require.Equal(t, StartOutcomeNotEnoughPlayers, result.Outcome)
+		require.Equal(t, session.StartOutcomeNotEnoughPlayers, result.Outcome)
 	})
 
 	t.Run("lazily_materializes_expired_lobby_and_rejects", func(t *testing.T) {
@@ -191,9 +191,9 @@ func TestManagerStart_Integration(t *testing.T) {
 		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
 		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
 
-		result, err := m.Start(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(hostUUID), "start-key-expired")
+		result, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), "start-key-expired")
 		require.NoError(t, err)
-		require.Equal(t, StartOutcomeLobbyExpired, result.Outcome)
+		require.Equal(t, session.StartOutcomeLobbyExpired, result.Outcome)
 
 		var phase string
 		require.NoError(t, db.Raw(`SELECT phase FROM sessions WHERE id = ?`, fx.SessionID).Scan(&phase).Error)
@@ -209,14 +209,14 @@ func TestManagerStart_Integration(t *testing.T) {
 		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
 		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
 
-		first, err := m.Start(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(hostUUID), "start-key-retry")
+		first, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), "start-key-retry")
 		require.NoError(t, err)
-		require.Equal(t, StartOutcomeStarted, first.Outcome)
+		require.Equal(t, session.StartOutcomeStarted, first.Outcome)
 
 		var turnCountAfterFirst int64
 		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_turns WHERE session_id = ?`, fx.SessionID).Scan(&turnCountAfterFirst).Error)
 
-		second, err := m.Start(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(hostUUID), "start-key-retry")
+		second, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), "start-key-retry")
 		require.NoError(t, err)
 		require.Equal(t, first, second, "a same-token retry must replay the exact same recorded outcome")
 
@@ -234,7 +234,7 @@ func TestManagerStart_Integration(t *testing.T) {
 		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
 		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
 
-		_, err := m.Start(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(hostUUID), "start-key-conflict")
+		_, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), "start-key-conflict")
 		require.NoError(t, err)
 
 		otherFx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
@@ -242,7 +242,7 @@ func TestManagerStart_Integration(t *testing.T) {
 		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, otherHostActorID, otherFx.SessionID).Error)
 		testfixtures.SeedParticipantForActor(t, db, otherHostActorID, "Host")
 
-		_, err = m.Start(context.Background(), SessionUUID(otherFx.SessionUUID), UserUUID(hostUUID), "start-key-conflict")
+		_, err = m.Start(context.Background(), session.SessionUUID(otherFx.SessionUUID), session.UserUUID(hostUUID), "start-key-conflict")
 		require.ErrorIs(t, err, session.ErrIdempotencyConflict)
 	})
 
@@ -256,9 +256,9 @@ func TestManagerStart_Integration(t *testing.T) {
 		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
 		testfixtures.SeedJoinCode(t, db, fx.SessionID, 2222, false)
 
-		first, err := m.Start(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(hostUUID), "start-key-fatal")
+		first, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), "start-key-fatal")
 		require.NoError(t, err)
-		require.Equal(t, StartOutcomeRuntimeInitFailed, first.Outcome)
+		require.Equal(t, session.StartOutcomeRuntimeInitFailed, first.Outcome)
 
 		var row struct {
 			Phase          string     `gorm:"column:phase"`
@@ -281,7 +281,7 @@ func TestManagerStart_Integration(t *testing.T) {
 
 		// A same-token retry against the now-TERMINAL Session must replay
 		// the recorded outcome, never re-attempt engine initialization.
-		second, err := m.Start(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(hostUUID), "start-key-fatal")
+		second, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), "start-key-fatal")
 		require.NoError(t, err)
 		require.Equal(t, first, second)
 
@@ -290,9 +290,9 @@ func TestManagerStart_Integration(t *testing.T) {
 		// applies) must still report RuntimeInitFailed, never LobbyExpired -
 		// the Session is TERMINAL because Start's own initialization
 		// deterministically failed, not because the lobby timed out.
-		third, err := m.Start(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(hostUUID), "start-key-fatal-different-token")
+		third, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), "start-key-fatal-different-token")
 		require.NoError(t, err)
-		require.Equal(t, StartOutcomeRuntimeInitFailed, third.Outcome)
+		require.Equal(t, session.StartOutcomeRuntimeInitFailed, third.Outcome)
 	})
 
 	t.Run("two_concurrent_starts_never_both_execute_a_runtime_turn", func(t *testing.T) {
@@ -305,12 +305,12 @@ func TestManagerStart_Integration(t *testing.T) {
 		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
 
 		type outcome struct {
-			result StartResult
+			result session.StartResult
 			err    error
 		}
 		results := make(chan outcome, 2)
-		start := func(idempotencyKey IdempotencyKey) {
-			result, err := m.Start(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(hostUUID), idempotencyKey)
+		start := func(idempotencyKey session.IdempotencyKey) {
+			result, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), idempotencyKey)
 			results <- outcome{result: result, err: err}
 		}
 		go start("start-key-concurrent-a")
@@ -320,8 +320,8 @@ func TestManagerStart_Integration(t *testing.T) {
 		second := <-results
 		require.NoError(t, first.err)
 		require.NoError(t, second.err)
-		require.Equal(t, StartOutcomeStarted, first.result.Outcome)
-		require.Equal(t, StartOutcomeStarted, second.result.Outcome)
+		require.Equal(t, session.StartOutcomeStarted, first.result.Outcome)
+		require.Equal(t, session.StartOutcomeStarted, second.result.Outcome)
 
 		var turnCount int64
 		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_turns WHERE session_id = ?`, fx.SessionID).Scan(&turnCount).Error)

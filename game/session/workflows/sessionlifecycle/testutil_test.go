@@ -11,6 +11,7 @@ import (
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine/engineservice"
 	"github.com/diegobermudez03/playhoot/game/language/v1/program"
 	"github.com/diegobermudez03/playhoot/game/management"
+	"github.com/diegobermudez03/playhoot/game/session"
 	"github.com/diegobermudez03/playhoot/game/session/internal/testfixtures"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -588,7 +589,7 @@ func startTriggersTerminationDefinition(control program.WorkflowControl, players
 // Session's/host's identities, the primary (host-answerable) interaction's
 // public UUID, and the bystander's own interaction UUID - the common setup
 // every termination-control AnswerInteraction test below builds on.
-func startedTerminationControlSession(t *testing.T, db *gorm.DB, control program.WorkflowControl) (m *Manager, sessionUUID SessionUUID, hostUUID UserUUID, primaryInteractionUUID, bystanderInteractionUUID InteractionUUID) {
+func startedTerminationControlSession(t *testing.T, db *gorm.DB, control program.WorkflowControl) (m *Manager, sessionUUID session.SessionUUID, hostUUID session.UserUUID, primaryInteractionUUID, bystanderInteractionUUID session.InteractionUUID) {
 	t.Helper()
 
 	m = New(db, nil, stubStartPinnedGameReader{definition: answerTriggersTerminationDefinition(control, 2, 4)})
@@ -600,9 +601,9 @@ func startedTerminationControlSession(t *testing.T, db *gorm.DB, control program
 	testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
 	testfixtures.SeedActiveParticipant(t, db, fx.SessionID, uuid.NewString(), "Bystander")
 
-	startResult, err := m.Start(context.Background(), SessionUUID(fx.SessionUUID), UserUUID(hostUUIDStr), IdempotencyKey(uuid.NewString()))
+	startResult, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUIDStr), session.IdempotencyKey(uuid.NewString()))
 	require.NoError(t, err)
-	require.Equal(t, StartOutcomeStarted, startResult.Outcome)
+	require.Equal(t, session.StartOutcomeStarted, startResult.Outcome)
 
 	var primaryUUIDStr, bystanderUUIDStr string
 	require.NoError(t, db.Raw(`SELECT uuid FROM session_interactions WHERE session_id = ? AND session_actor_id = ?`, fx.SessionID, hostActorID).Scan(&primaryUUIDStr).Error)
@@ -610,7 +611,7 @@ func startedTerminationControlSession(t *testing.T, db *gorm.DB, control program
 	require.NoError(t, db.Raw(`SELECT uuid FROM session_interactions WHERE session_id = ? AND session_actor_id != ?`, fx.SessionID, hostActorID).Scan(&bystanderUUIDStr).Error)
 	require.NotEmpty(t, bystanderUUIDStr, "Start's own first Turn must open Q2 for the bystander")
 
-	return m, SessionUUID(fx.SessionUUID), UserUUID(hostUUIDStr), InteractionUUID(primaryUUIDStr), InteractionUUID(bystanderUUIDStr)
+	return m, session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUIDStr), session.InteractionUUID(primaryUUIDStr), session.InteractionUUID(bystanderUUIDStr)
 }
 
 // replayObservableQuestionName/replayObservableSlot/replayObservableSlot2/

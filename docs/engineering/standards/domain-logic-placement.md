@@ -49,6 +49,31 @@ Types belong to the concept they represent, not to whichever package happens to 
 
 A capability package may consume an existing domain-owned type directly (e.g. `Visibility`) rather than duplicating it, and may define its own `Input`/`Decision`/similar types only when those genuinely represent that capability rather than duplicating an existing domain concept.
 
+## A Workflow's Public Contract Lives At The Domain Root, Not Inside The Workflow Package
+
+A workflow package (`workflows/<workflow-name>/...`) is the workflow's *implementation*. It commonly needs dependencies its own business logic requires — a supporting technical subsystem/library (e.g. the Game Language engine), GORM, another domain's read capability, and so on. None of that belongs in what an external caller needs merely to invoke the workflow's exposed operations.
+
+Every type a workflow controller's exposed method takes or returns — identifiers, command/result DTOs, outcome enums, and any structural mirror of a lower-layer library's own values the workflow deliberately re-exposes as its own (see `game/session`'s `Output`/`Value`, which exist specifically so a caller never needs to import the engine) — is defined at the owning domain's root package (`game/session`, not `game/session/workflows/sessionlifecycle`), never inside the workflow package itself. That root package must import nothing beyond the standard library (and, when unavoidable, another domain's own equally-isolated root package for a genuinely shared public value type) — never the workflow package, never a supporting technical subsystem, never GORM or another infrastructure library.
+
+This is not merely a style preference: a Go import pulls in everything the imported package itself imports, transitively. If a workflow's public types lived inside the workflow package, any caller depending on them — even one that only wants the identifiers/DTOs to declare its own narrow interface — would transitively import every dependency that workflow's *implementation* happens to need. Concretely, if domain A's workflow internally depends on domain B for some internal capability, and domain C later wants to depend on domain A's public contract, C would transitively import B — and if B ever wants to depend on C, that is an import cycle, entirely accidental and entirely avoidable. Isolating a domain's public contract at its zero-dependency root means two domains can depend on each other's root packages (interfaces/types only) without ever cycling, because neither root package depends on the other's *implementation*.
+
+The workflow package does not re-declare these types locally under its own names, whether as a second, independent definition or as a type/const alias (`type SessionUUID = session.SessionUUID`) for local readability. Its own code refers to them fully qualified (`session.SessionUUID`, `session.StartResult`, ...), the same way it already refers to any other package's exported types. A local alias only reintroduces a second name for the same thing: a reader has to remember which of the two names is authoritative, and nothing stops a future change from touching one spelling and not the other. Since the workflow package already imports the domain root for its own domain vocabulary (phase/terminal-reason constants, sentinel errors), qualifying its public-contract types the same way is not an added import, only an added prefix. This does not apply to types the workflow package defines and owns itself for its own internal use (unexported persistence/query projections, internal payload structs, and so on) — those are not aliases of anything and belong exactly where they are used.
+
+This repository does not define shared Go `interface` types for a workflow's exposed operations at the domain root (or anywhere else) for other domains to depend on. Per ordinary Go convention, each consumer defines its own narrow interface, scoped to exactly what it needs, referencing only the producing domain's root-level types — the same pattern `sessionlifecycle` itself already uses to consume Game Management (see `gameCurrentVersionReader`/`gamePinnedDefinitionReader` in `game/session/workflows/sessionlifecycle/manager.go`/`step_create.go`). This also keeps mocking a consumer's own decision: a consumer generates mocks for the interface *it* declared, in its own package, never for something declared inside the package it depends on.
+
+```text
+game/session/                              # public contract: zero-dependency root
+    session.go                             # domain vocabulary (Phase, TerminalReason, errors)
+    types.go                               # workflow request/result DTOs (SessionUUID, StartResult, ...)
+    output.go                              # Output/Value/Type mirror (re-exposed engine shapes)
+    workflows/
+        sessionlifecycle/                  # implementation - may import engine, GORM, etc. freely
+            manager.go
+            step_create.go                 # refers to the root's types as session.SessionUUID, etc.
+            ...
+            outputs.go                     # engine.Output -> session.Output translation
+```
+
 ## Workflow vs Use Case
 
 Application behavior is either a **workflow step** or a **use case**. This distinction governs package placement; it is not a mathematically exhaustive classification, and it is not required to be resolved with certainty in every case — see Classifying Ambiguous Cases below.
@@ -184,4 +209,6 @@ During code review, flag in particular:
 - a workflow split into one sibling package per verb instead of one package with per-step files (see Preferred Workflow Package Shape above);
 - a broad domain/workflow repository interface, or a `Common`/`General`/`Base` repository dumping ground, created to avoid repeating similar methods (see `repositories.md -> Sharing Rule` for the corresponding entity-CRUD-package version of this same concern);
 - a repository method deciding business/lifecycle policy (admission, expiration, idempotency replay meaning) instead of reporting facts and performing requested mutations (see Responsibility Categories above);
-- behavior genuinely shared by two or more steps of the same workflow left as a flat top-level file in the workflow package instead of its own `internal/<mechanism-name>/` subpackage (see Shared Cross-Step Behavior Within A Workflow Package above) — and, conversely, a subpackage extracted for a helper only one step actually uses.
+- behavior genuinely shared by two or more steps of the same workflow left as a flat top-level file in the workflow package instead of its own `internal/<mechanism-name>/` subpackage (see Shared Cross-Step Behavior Within A Workflow Package above) — and, conversely, a subpackage extracted for a helper only one step actually uses;
+- a workflow controller's exposed method taking or returning a type actually defined inside the workflow package itself, rather than at the owning domain's zero-dependency root package (see A Workflow's Public Contract Lives At The Domain Root above) — the tell is a type a caller would need in order to invoke the operation, defined somewhere that also imports GORM, an engine/runtime library, or another domain's implementation package;
+- a shared Go `interface` type declared at a domain root (or anywhere else) for other domains to depend on directly, instead of leaving each consumer to declare its own narrow interface against the producer's root-level types.

@@ -1,14 +1,6 @@
-// Package sessionlifecycle is the Session lifecycle workflow: one Manager
-// exposing Create/Join/Leave/Start/AnswerInteraction as its steps. The
-// Manager decides business/lifecycle policy (transaction scope, admission,
-// expiration, idempotency-replay meaning); its narrow `internal/repo`
-// persistence layer reports facts and performs the mutations the Manager
-// requests.
-package sessionlifecycle
+package session
 
-import (
-	"time"
-)
+import "time"
 
 // GameUUID is a public Game identity (Create's input).
 type GameUUID string
@@ -122,9 +114,8 @@ const (
 // when Outcome is StartOutcomeStarted. Outputs carries the first committed
 // Turn's client-facing Effect/Presentation values, in commit order - empty
 // unless this call actually executed the engine, so never populated on a
-// replayed retry. TerminalReason is populated (one of
-// session.TerminalReasonGame*) whenever this same Turn also ended the
-// Session.
+// replayed retry. TerminalReason is populated (one of TerminalReasonGame*)
+// whenever this same Turn also ended the Session.
 type StartResult struct {
 	Outcome        StartOutcome `json:"outcome"`
 	SessionUUID    SessionUUID  `json:"session_uuid,omitempty"`
@@ -166,12 +157,11 @@ const (
 // AnswerInteractionResult is AnswerInteraction's logical outcome.
 // SessionUUID is populated whenever the interaction's owning Session was
 // resolved (every outcome except an unresolved interactionUUID, reported as
-// session.ErrInteractionNotFound instead). Outputs carries the committed
-// Turn's client-facing Effect/Presentation values, in commit order -
-// populated only when Outcome is AnswerInteractionOutcomeAnswered and this
-// call actually executed the engine. TerminalReason is populated (one of
-// session.TerminalReasonGame*) whenever this same response also ended the
-// Session.
+// ErrInteractionNotFound instead). Outputs carries the committed Turn's
+// client-facing Effect/Presentation values, in commit order - populated
+// only when Outcome is AnswerInteractionOutcomeAnswered and this call
+// actually executed the engine. TerminalReason is populated (one of
+// TerminalReasonGame*) whenever this same response also ended the Session.
 type AnswerInteractionResult struct {
 	Outcome        AnswerInteractionOutcome `json:"outcome"`
 	SessionUUID    SessionUUID              `json:"session_uuid,omitempty"`
@@ -180,8 +170,8 @@ type AnswerInteractionResult struct {
 }
 
 // TimerObligationUUID is a session_timer_obligations row's public identity -
-// the handle a future Coordinator correlates a physical wall-clock timer
-// against, and ExpireTimer's own input.
+// the handle a caller correlates a physical wall-clock timer against, and
+// ExpireTimer's own input.
 type TimerObligationUUID string
 
 // ExpireTimerOutcome is ExpireTimer's expected business outcome, a value
@@ -198,8 +188,7 @@ const (
 	// timer delivery, no engine effect.
 	ExpireTimerOutcomeStale ExpireTimerOutcome = "STALE"
 	// ExpireTimerOutcomeRejected means the engine itself rejected the
-	// expiration signal as stale/cancelled (program.TimerSlotDeclaration's
-	// own documented contract), no engine effect committed.
+	// expiration signal as stale/cancelled, no engine effect committed.
 	ExpireTimerOutcomeRejected ExpireTimerOutcome = "REJECTED"
 	// ExpireTimerOutcomeRuntimeExecutionFailed means a deterministic engine
 	// execution failure terminalized the Session while processing the
@@ -210,11 +199,11 @@ const (
 // ExpireTimerResult is ExpireTimer's logical outcome. SessionUUID is
 // populated whenever the obligation's owning Session was resolved (every
 // outcome except an unresolved timerObligationUUID, reported as
-// session.ErrTimerObligationNotFound instead). Outputs carries the committed
-// Turn's client-facing Effect/Presentation values, in commit order -
-// populated only when Outcome is ExpireTimerOutcomeExpired and this call
-// actually executed the engine. TerminalReason is populated (one of
-// session.TerminalReasonGame*) whenever this same expiration also ended the
+// ErrTimerObligationNotFound instead). Outputs carries the committed Turn's
+// client-facing Effect/Presentation values, in commit order - populated
+// only when Outcome is ExpireTimerOutcomeExpired and this call actually
+// executed the engine. TerminalReason is populated (one of
+// TerminalReasonGame*) whenever this same expiration also ended the
 // Session.
 type ExpireTimerResult struct {
 	Outcome        ExpireTimerOutcome `json:"outcome"`
