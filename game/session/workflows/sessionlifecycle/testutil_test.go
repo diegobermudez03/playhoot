@@ -28,6 +28,24 @@ func numberAnswer(t *testing.T, value float64) json.RawMessage {
 	return encoded
 }
 
+// userIntentArguments encodes fields as a nameless engine.RecordValue in
+// SubmitUserIntent's own wire shape (a JSON object keyed by parameter
+// name), for tests submitting intent arguments - callers of the real
+// Manager never construct an engine.Value themselves.
+func userIntentArguments(t *testing.T, fields ...engine.FieldValue) json.RawMessage {
+	t.Helper()
+	encoded, err := engineservice.EncodeValue(engine.RecordValue{Fields: fields})
+	require.NoError(t, err)
+	return encoded
+}
+
+// guessArguments encodes userIntentDefinition's "Guess" intent's one
+// declared "value: number" parameter.
+func guessArguments(t *testing.T, value float64) json.RawMessage {
+	t.Helper()
+	return userIntentArguments(t, engine.FieldValue{Name: "value", Value: engine.NumberValue{Value: value}})
+}
+
 // compilableDefinitionForTest is a minimal Game Language definition that
 // compiles successfully, reused by integration tests that need Create to
 // succeed against a real engineservice.Compile call.
@@ -220,6 +238,106 @@ func answerableDefinition(playersMin, playersMax int) program.Definition {
 			},
 		},
 	}
+}
+
+// userIntentGuessName/userIntentIgnoredName/userIntentEffectName name
+// userIntentDefinition's own declarations.
+const (
+	userIntentGuessName   = "Guess"
+	userIntentIgnoredName = "Ignored"
+	userIntentEffectName  = "Acknowledged"
+)
+
+// userIntentDefinition builds a real, engineservice.Compile-able Definition
+// declaring the accepted `players: list<user>` root roster parameter, and
+// two program.UserIntentDeclarations: "Guess" (one declared "value: number"
+// parameter), whose root workflow reacts by emitting an Effect addressed to
+// the submitting actor, and "Ignored" (no parameters, deliberately no
+// reacting transition) - so a test can submit an intent the engine itself
+// rejects as unmatched (ErrSignalRejected) without needing a second
+// Definition fixture.
+func userIntentDefinition(playersMin, playersMax int) program.Definition {
+	numberType := program.BuiltinTypeReference{Type: program.BuiltinTypeNumber}
+	userType := program.BuiltinTypeReference{Type: program.BuiltinTypeUser}
+	return program.Definition{
+		Metadata:     program.Metadata{ID: "user-intent", Name: "UserIntent"},
+		RootWorkflow: "Main",
+		Players:      program.PlayerPolicy{Min: playersMin, Max: playersMax},
+		UserIntents: []program.UserIntentDeclaration{
+			{Name: userIntentGuessName, Parameters: []program.FieldDeclaration{{Name: "value", Type: numberType}}},
+			{Name: userIntentIgnoredName},
+		},
+		Effects: []program.EffectDeclaration{{Name: userIntentEffectName}},
+		Workflows: []program.WorkflowDeclaration{
+			{
+				Name: "Main",
+				Parameters: []program.FieldDeclaration{
+					{Name: "players", Type: program.ListTypeReference{Element: userType}},
+				},
+				ResultType:   program.BuiltinTypeReference{Type: program.BuiltinTypeUnit},
+				InitialState: "Start",
+				States: []program.WorkflowStateDeclaration{
+					{
+						Name: "Start",
+						Transitions: []program.TransitionDeclaration{
+							{Name: "Started", Signal: program.SignalPattern{Source: program.NamedSignalSource{Name: "WorkflowStarted"}}, Control: program.StayControl{}},
+							{
+								Name: "Guessed",
+								Signal: program.SignalPattern{
+									Source:   program.UserIntentSignalSource{Intent: userIntentGuessName},
+									Bindings: []program.SignalBinding{{Field: "value", Name: "value"}, {Field: "actor", Name: "actor"}},
+								},
+								Operations: program.Block{Operations: []program.Operation{
+									program.EmitEffectOperation{
+										Effect:     userIntentEffectName,
+										Recipients: program.ListExpression{ElementType: userType, Elements: []program.Expression{program.ReferenceExpression{Name: "actor"}}},
+									},
+								}},
+								Control: program.StayControl{},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+// userIntentTriggersTerminationDefinition is userIntentDefinition's shape,
+// except "Guessed" completes the root workflow instead of staying - for
+// tests proving a game-completion Output produced by a SubmitUserIntent-
+// driven Turn terminalizes the Session, mirroring
+// answerTriggersTerminationDefinition/startTriggersTerminationDefinition.
+func userIntentTriggersTerminationDefinition(playersMin, playersMax int) program.Definition {
+	d := userIntentDefinition(playersMin, playersMax)
+	d.Workflows[0].States[0].Transitions[1].Control = program.CompleteControl{Result: program.UnitLiteralExpression{}}
+	return d
+}
+
+// userIntentDefinitionWithFatalGuess is userIntentDefinition's shape,
+// except its "Guessed" transition deterministically fails (division by
+// zero) instead of emitting an Effect - forcing SubmitUserIntent's fatal
+// RUNTIME_EXECUTION_FAILED path against a real database, mirroring
+// answerableDefinitionWithFatalAnswer exactly.
+func userIntentDefinitionWithFatalGuess(playersMin, playersMax int) program.Definition {
+	d := userIntentDefinition(playersMin, playersMax)
+	d.Metadata = program.Metadata{ID: "user-intent-fatal", Name: "UserIntentFatal"}
+	d.GlobalState = program.StateDeclaration{
+		Fields: []program.StateFieldDeclaration{
+			{Name: "n", Type: program.BuiltinTypeReference{Type: program.BuiltinTypeNumber}, Initializer: program.NumberLiteralExpression{Value: "0"}},
+		},
+	}
+	d.Workflows[0].States[0].Transitions[1].Operations = program.Block{Operations: []program.Operation{
+		program.SetOperation{
+			Target: program.FieldTarget{Target: program.NameTarget{Name: "global"}, Field: "n"},
+			Value: program.BinaryExpression{
+				Operator: program.BinaryOperatorDivide,
+				Left:     program.NumberLiteralExpression{Value: "1"},
+				Right:    program.NumberLiteralExpression{Value: "0"},
+			},
+		},
+	}}
+	return d
 }
 
 // answerableDefinitionWithFatalAnswer is answerableDefinition's shape,

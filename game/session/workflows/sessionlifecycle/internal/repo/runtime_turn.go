@@ -8,11 +8,11 @@ import (
 )
 
 // runtimeTurnInsert is the persisted shape of one committed RuntimeTurn.
-// SourceInteractionID/SourceTimerObligationID/ActorID are nil for a Turn
-// with no such cause. There is no Snapshot column: a Turn row identifies
-// which durable cause happened and in what order, never the resulting
-// state - current/historical Runtime state is always reconstructed by
-// replaying those causes instead.
+// SourceInteractionID/SourceTimerObligationID/SourceCauseEventID/ActorID
+// are nil for a Turn with no such cause. There is no Snapshot column: a
+// Turn row identifies which durable cause happened and in what order,
+// never the resulting state - current/historical Runtime state is always
+// reconstructed by replaying those causes instead.
 type runtimeTurnInsert struct {
 	ID                      uint   `gorm:"column:id"`
 	SessionID               uint   `gorm:"column:session_id"`
@@ -20,30 +20,49 @@ type runtimeTurnInsert struct {
 	SourceKind              string `gorm:"column:source_kind"`
 	SourceInteractionID     *uint  `gorm:"column:source_interaction_id"`
 	SourceTimerObligationID *uint  `gorm:"column:source_timer_obligation_id"`
+	SourceCauseEventID      *uint  `gorm:"column:source_cause_event_id"`
 	ActorID                 *uint  `gorm:"column:actor_id"`
 }
 
 func (runtimeTurnInsert) TableName() string { return "session_runtime_turns" }
 
 // CreateRuntimeTurn persists one committed RuntimeTurn's replay-input
-// envelope. sourceInteractionID/sourceTimerObligationID/actorID are the
-// Turn's own cause/actor references, nil when the Turn has no such cause -
-// exactly one of sourceInteractionID/sourceTimerObligationID is ever
-// non-nil, or both are nil (Start's own Turn, or a Turn with no existing
-// normalized cause). Returns the new row's internal id.
-func (r *Repo) CreateRuntimeTurn(ctx context.Context, tx *gorm.DB, sessionID uint, sequence uint64, sourceKind string, sourceInteractionID *uint, sourceTimerObligationID *uint, actorID *uint) (uint, error) {
+// envelope. sourceInteractionID/sourceTimerObligationID/sourceCauseEventID/
+// actorID are the Turn's own cause/actor references, nil when the Turn has
+// no such cause - exactly one of sourceInteractionID/
+// sourceTimerObligationID/sourceCauseEventID is ever non-nil, or all three
+// are nil (Start's own Turn). sourceCauseEventID is always nil at creation
+// time even for a Turn a cause event will own: session_cause_events.
+// runtime_turn_id is NOT NULL, so the cause event row can only be created
+// after this Turn exists - see SetRuntimeTurnCauseEvent, which backfills
+// this column once that row is created. Returns the new row's internal id.
+func (r *Repo) CreateRuntimeTurn(ctx context.Context, tx *gorm.DB, sessionID uint, sequence uint64, sourceKind string, sourceInteractionID *uint, sourceTimerObligationID *uint, sourceCauseEventID *uint, actorID *uint) (uint, error) {
 	row := runtimeTurnInsert{
 		SessionID:               sessionID,
 		Sequence:                sequence,
 		SourceKind:              sourceKind,
 		SourceInteractionID:     sourceInteractionID,
 		SourceTimerObligationID: sourceTimerObligationID,
+		SourceCauseEventID:      sourceCauseEventID,
 		ActorID:                 actorID,
 	}
 	if err := tx.WithContext(ctx).Create(&row).Error; err != nil {
 		return 0, fmt.Errorf("creating runtime turn: %s", err)
 	}
 	return row.ID, nil
+}
+
+// SetRuntimeTurnCauseEvent backfills turnID's source_cause_event_id once
+// its owning session_cause_events row has been created - see
+// CreateRuntimeTurn's own doc comment for why this is a separate step
+// rather than supplied at creation time.
+func (r *Repo) SetRuntimeTurnCauseEvent(ctx context.Context, tx *gorm.DB, turnID uint, causeEventID uint) error {
+	if err := tx.WithContext(ctx).Exec(`
+		UPDATE session_runtime_turns SET source_cause_event_id = ? WHERE id = ?
+	`, causeEventID, turnID).Error; err != nil {
+		return fmt.Errorf("setting runtime turn cause event: %s", err)
+	}
+	return nil
 }
 
 // RuntimeTurn is the persisted facts of one committed RuntimeTurn needed to
@@ -81,6 +100,7 @@ type RuntimeTurnRecord struct {
 	SourceKind              string
 	SourceInteractionID     *uint
 	SourceTimerObligationID *uint
+	SourceCauseEventID      *uint
 	ActorID                 *uint
 }
 
@@ -93,7 +113,7 @@ type RuntimeTurnRecord struct {
 func (r *Repo) ListRuntimeTurns(ctx context.Context, tx *gorm.DB, sessionID uint) ([]RuntimeTurnRecord, error) {
 	var rows []RuntimeTurnRecord
 	if err := tx.WithContext(ctx).Raw(`
-		SELECT id, sequence, source_kind, source_interaction_id, source_timer_obligation_id, actor_id
+		SELECT id, sequence, source_kind, source_interaction_id, source_timer_obligation_id, source_cause_event_id, actor_id
 		FROM session_runtime_turns
 		WHERE session_id = ?
 		ORDER BY sequence ASC

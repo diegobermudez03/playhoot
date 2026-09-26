@@ -168,9 +168,9 @@ classDiagram
     sessions "1" --> "*" session_runtime_turns : "session_runtime_turns.session_id -> sessions.id"
     session_runtime_turns "0..1" --> "*" sessions : "sessions.current_turn_id -> session_runtime_turns.id (logical, non-DB-enforced)"
     sessions "0..1" --> "1" session_runtime_starts : "session_runtime_starts.session_id -> sessions.id (one row per Session that completes Start)"
-    sessions "1" --> "*" session_cause_events : "session_cause_events.session_id -> sessions.id (unpopulated - no cause using it is implemented yet)"
-    session_runtime_turns "0..1" --> "0..1" session_cause_events : "session_cause_events.runtime_turn_id -> session_runtime_turns.id (1:1, unpopulated)"
-    session_cause_events "0..1 causes" --> "*" session_runtime_turns : "session_runtime_turns.source_cause_event_id -> session_cause_events.id (unpopulated)"
+    sessions "1" --> "*" session_cause_events : "session_cause_events.session_id -> sessions.id (populated by SubmitUserIntent; other causes still unpopulated)"
+    session_runtime_turns "0..1" --> "0..1" session_cause_events : "session_cause_events.runtime_turn_id -> session_runtime_turns.id (1:1)"
+    session_cause_events "0..1 causes" --> "*" session_runtime_turns : "session_runtime_turns.source_cause_event_id -> session_cause_events.id"
     sessions "1" --> "*" session_interactions : "session_interactions.session_id -> sessions.id"
     session_actors "1" --> "*" session_interactions : "session_interactions.session_actor_id -> session_actors.id"
     session_runtime_turns "1 opens" --> "*" session_interactions : "session_interactions.opened_by_turn_id -> session_runtime_turns.id"
@@ -222,9 +222,9 @@ Logical persisted references:
 - `session_runtime_turns.session_id -> sessions.id`
 - `sessions.current_turn_id -> session_runtime_turns.id` (GAME-ADR-0023)
 - `session_runtime_starts.session_id -> sessions.id` (one row per Session that completes Start)
-- `session_cause_events.session_id -> sessions.id` (unpopulated - no cause using it is implemented yet)
-- `session_cause_events.runtime_turn_id -> session_runtime_turns.id` (1:1, unpopulated)
-- `session_runtime_turns.source_cause_event_id -> session_cause_events.id` (nullable, unpopulated)
+- `session_cause_events.session_id -> sessions.id` (populated by SubmitUserIntent's `USER_INTENT` cause_kind; other future causes, e.g. manual cancellation, remain unimplemented)
+- `session_cause_events.runtime_turn_id -> session_runtime_turns.id` (1:1)
+- `session_runtime_turns.source_cause_event_id -> session_cause_events.id` (nullable - populated only for a `USER_INTENT`-sourced Turn)
 - `session_interactions.session_id -> sessions.id`
 - `session_interactions.session_actor_id -> session_actors.id`
 - `session_interactions.opened_by_turn_id -> session_runtime_turns.id`

@@ -169,6 +169,48 @@ type AnswerInteractionResult struct {
 	TerminalReason string                   `json:"terminal_reason,omitempty"`
 }
 
+// SubmitUserIntentOutcome is SubmitUserIntent's expected business outcome, a
+// value distinct from a Go error: an ordinary decline a caller should
+// branch on, not treat as a failure. Unlike AnswerInteractionOutcome, there
+// is no Answered/Conflict analogue: a submitted intent has no existing
+// durable row to compare a retry against, so a retried, semantically
+// equivalent submission replays via its IdempotencyKey instead (see
+// ErrIdempotencyConflict for a same-key retry with a materially different
+// request).
+type SubmitUserIntentOutcome string
+
+const (
+	// SubmitUserIntentOutcomeAccepted means the intent was accepted: a new
+	// RuntimeTurn committed - or, for a retried submission under the same
+	// IdempotencyKey, the original outcome replayed without a second engine
+	// effect.
+	SubmitUserIntentOutcomeAccepted SubmitUserIntentOutcome = "ACCEPTED"
+	// SubmitUserIntentOutcomeRejected means the intent was declined without
+	// any engine effect: the caller did not resolve to a current
+	// Participant, intentName does not name a declared user intent, the
+	// submitted arguments did not match its declared Parameters, or the
+	// engine itself rejected the intent (no matching transition, or a
+	// guard evaluated false).
+	SubmitUserIntentOutcomeRejected SubmitUserIntentOutcome = "REJECTED"
+	// SubmitUserIntentOutcomeRuntimeExecutionFailed means a deterministic
+	// engine execution failure (including Step-bound overflow) terminalized
+	// the Session while processing the intent.
+	SubmitUserIntentOutcomeRuntimeExecutionFailed SubmitUserIntentOutcome = "RUNTIME_EXECUTION_FAILED"
+)
+
+// SubmitUserIntentResult is SubmitUserIntent's logical outcome. Outputs
+// carries the committed Turn's client-facing Effect/Presentation values, in
+// commit order - populated only when Outcome is
+// SubmitUserIntentOutcomeAccepted and this call actually executed the
+// engine. TerminalReason is populated (one of TerminalReasonGame*)
+// whenever this same intent also ended the Session.
+type SubmitUserIntentResult struct {
+	Outcome        SubmitUserIntentOutcome `json:"outcome"`
+	SessionUUID    SessionUUID             `json:"session_uuid,omitempty"`
+	Outputs        []Output                `json:"-"`
+	TerminalReason string                  `json:"terminal_reason,omitempty"`
+}
+
 // TimerObligationUUID is a session_timer_obligations row's public identity -
 // the handle a caller correlates a physical wall-clock timer against, and
 // ExpireTimer's own input.

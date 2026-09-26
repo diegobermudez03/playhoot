@@ -8,6 +8,7 @@ package replay
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 
@@ -28,12 +29,19 @@ const AnswerInteractionSourceKind = "INTERACTION_RESPONSE"
 // by the obligation's own EngineKey.
 const TimerExpiredSourceKind = "TIMER_EXPIRED"
 
+// UserIntentSourceKind is the source_kind label persisted on the
+// RuntimeTurn a submitted user intent causes (Manager.SubmitUserIntent).
+// Its durable content lives in session_cause_events (cause_kind
+// "USER_INTENT"), referenced by the Turn's source_cause_event_id.
+const UserIntentSourceKind = "USER_INTENT"
+
 // Repo is the narrow persistence contract LoadPriorSignals needs.
 type Repo interface {
 	GetRuntimeStart(ctx context.Context, tx *gorm.DB, sessionID uint) (*internalrepo.RuntimeStart, error)
 	ListRuntimeTurns(ctx context.Context, tx *gorm.DB, sessionID uint) ([]internalrepo.RuntimeTurnRecord, error)
 	GetInteractionByID(ctx context.Context, tx *gorm.DB, interactionID uint) (*internalrepo.Interaction, error)
 	GetTimerObligationByID(ctx context.Context, tx *gorm.DB, timerObligationID uint) (*internalrepo.TimerObligation, error)
+	GetCauseEventByID(ctx context.Context, tx *gorm.DB, causeEventID uint) (*internalrepo.CauseEvent, error)
 }
 
 // LoadPriorSignals loads sessionID's Start record and every already-
@@ -131,6 +139,28 @@ func loadReplaySignal(ctx context.Context, tx *gorm.DB, repo Repo, turn internal
 			return engine.Signal{}, wrapped
 		}
 		return signal, nil
+	case UserIntentSourceKind:
+		if turn.SourceCauseEventID == nil || turn.ActorID == nil {
+			err := fmt.Errorf("reconstructing runtime turn %d: %s turn missing source_cause_event_id/actor_id", turn.ID, UserIntentSourceKind)
+			monitoring.Alert(ctx, err.Error())
+			return engine.Signal{}, err
+		}
+		causeEvent, err := repo.GetCauseEventByID(ctx, tx, *turn.SourceCauseEventID)
+		if err != nil {
+			return engine.Signal{}, err
+		}
+		if causeEvent == nil {
+			err := fmt.Errorf("reconstructing runtime turn %d: source cause event %d not found", turn.ID, *turn.SourceCauseEventID)
+			monitoring.Alert(ctx, err.Error())
+			return engine.Signal{}, err
+		}
+		signal, err := buildUserIntentSignal(causeEvent, *turn.ActorID)
+		if err != nil {
+			wrapped := fmt.Errorf("reconstructing runtime turn %d: %s", turn.ID, err)
+			monitoring.Alert(ctx, wrapped.Error())
+			return engine.Signal{}, wrapped
+		}
+		return signal, nil
 	default:
 		err := fmt.Errorf("reconstructing runtime turn %d: unsupported source_kind %q for replay", turn.ID, turn.SourceKind)
 		monitoring.Alert(ctx, err.Error())
@@ -170,6 +200,66 @@ func buildTimerExpiredSignal(obligation *internalrepo.TimerObligation) (engine.S
 		return engine.Signal{}, fmt.Errorf("decoding timer obligation key: %s", err)
 	}
 	return engine.Signal{Kind: engine.SignalKindKeyedTimerExpired, Slot: obligation.EngineSlot, Key: key}, nil
+}
+
+// buildUserIntentSignal deterministically rebuilds the engine.Signal a
+// submitted user intent drove, purely from that cause event's own durable
+// payload and its actor id - the same construction Manager.SubmitUserIntent
+// itself performs for the intent it is currently processing.
+func buildUserIntentSignal(causeEvent *internalrepo.CauseEvent, actorID uint) (engine.Signal, error) {
+	intentName, arguments, err := DecodeUserIntentPayload(causeEvent.Payload)
+	if err != nil {
+		return engine.Signal{}, fmt.Errorf("decoding user intent payload: %s", err)
+	}
+	fields := make(map[string]engine.Value, len(arguments.Fields))
+	for _, f := range arguments.Fields {
+		fields[f.Name] = f.Value
+	}
+	return engine.Signal{
+		Kind:   engine.SignalKindIntent,
+		Intent: intentName,
+		Actor:  engine.UserID(strconv.FormatUint(uint64(actorID), 10)),
+		Fields: fields,
+	}, nil
+}
+
+// userIntentPayload is session_cause_events.payload's shape for a
+// UserIntentSourceKind cause event: the submitted intent's name, plus its
+// arguments encoded as a nameless engine.RecordValue - the same
+// EncodeValue-wrapping technique EncodeRootParameters uses, rather than a
+// second encoding for the same "named engine.Values" shape.
+type userIntentPayload struct {
+	IntentName string `json:"intent_name"`
+	Arguments  []byte `json:"arguments"`
+}
+
+// EncodeUserIntentPayload encodes intentName and its already-decoded
+// arguments (an engine.RecordValue) as session_cause_events.payload.
+func EncodeUserIntentPayload(intentName string, arguments engine.RecordValue) ([]byte, error) {
+	encodedArguments, err := engineservice.EncodeValue(arguments)
+	if err != nil {
+		return nil, fmt.Errorf("encoding user intent arguments: %s", err)
+	}
+	return json.Marshal(userIntentPayload{IntentName: intentName, Arguments: encodedArguments})
+}
+
+// DecodeUserIntentPayload decodes session_cause_events.payload back into
+// the submitted intent's name and its arguments, the counterpart to
+// EncodeUserIntentPayload.
+func DecodeUserIntentPayload(data []byte) (string, engine.RecordValue, error) {
+	var payload userIntentPayload
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return "", engine.RecordValue{}, fmt.Errorf("unmarshaling user intent payload: %s", err)
+	}
+	value, err := engineservice.DecodeValue(payload.Arguments)
+	if err != nil {
+		return "", engine.RecordValue{}, fmt.Errorf("decoding user intent arguments: %s", err)
+	}
+	record, ok := value.(engine.RecordValue)
+	if !ok {
+		return "", engine.RecordValue{}, fmt.Errorf("decoded user intent arguments value is a %s, not a record", value.Kind())
+	}
+	return payload.IntentName, record, nil
 }
 
 // EncodeRootParameters encodes rootParameters (an

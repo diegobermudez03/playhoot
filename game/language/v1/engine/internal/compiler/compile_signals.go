@@ -18,9 +18,9 @@ import (
 // directly through the workflow's own Parameters, not exposed as
 // WorkflowStarted payload fields, and SessionCancelled has no accepted
 // payload need yet. UserDisconnected and UserReconnected each expose
-// exactly one field, user: user (Session-local runtime identity derived
-// from SessionActorID) — see
-// game/docs/decisions/GAME-ADR-0011-game-language-disconnect-reconnect-authored-semantics.md.
+// exactly one field, user: user - Session-local runtime identity derived
+// from SessionActorID, never the platform's own public user identity or
+// any transport-connection detail.
 var namedLifecycleSignals = map[string]map[string]engine.Type{
 	"WorkflowStarted":  {},
 	"SessionCancelled": {},

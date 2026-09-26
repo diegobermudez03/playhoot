@@ -22,7 +22,7 @@ import (
 	"gorm.io/gorm"
 )
 
-//go:generate mockgen -package=sessionlifecycle -destination=mocks_test.go . createRepoAPI,joinRepoAPI,leaveRepoAPI,startRepoAPI,answerInteractionRepoAPI,expireTimerRepoAPI,outputsRepoAPI,gameCurrentVersionReader,gamePinnedDefinitionReader
+//go:generate mockgen -package=sessionlifecycle -destination=mocks_test.go . createRepoAPI,joinRepoAPI,leaveRepoAPI,startRepoAPI,answerInteractionRepoAPI,expireTimerRepoAPI,submitUserIntentRepoAPI,outputsRepoAPI,gameCurrentVersionReader,gamePinnedDefinitionReader
 
 // defaultLobbyTTL is the lobby lifetime applied when no other TTL
 // configuration is supplied.
@@ -31,10 +31,11 @@ const defaultLobbyTTL = 10 * time.Minute
 // Session lifecycle idempotency operation labels, scoping each command's
 // idempotency identity to (UserUUID, operation, IdempotencyKey).
 const (
-	operationCreate = "CREATE"
-	operationJoin   = "JOIN"
-	operationLeave  = "LEAVE"
-	operationStart  = "START"
+	operationCreate           = "CREATE"
+	operationJoin             = "JOIN"
+	operationLeave            = "LEAVE"
+	operationStart            = "START"
+	operationSubmitUserIntent = "SUBMIT_USER_INTENT"
 )
 
 // Manager is the Session lifecycle workflow controller, exposing
@@ -61,6 +62,7 @@ type Manager struct {
 	startRepo             startRepoAPI
 	answerInteractionRepo answerInteractionRepoAPI
 	expireTimerRepo       expireTimerRepoAPI
+	submitUserIntentRepo  submitUserIntentRepoAPI
 	outputsRepo           outputsRepoAPI
 
 	db *gorm.DB
@@ -91,6 +93,7 @@ func New(db *gorm.DB, currentGameReader gameCurrentVersionReader, pinnedGameRead
 		startRepo:             r,
 		answerInteractionRepo: r,
 		expireTimerRepo:       r,
+		submitUserIntentRepo:  r,
 		outputsRepo:           r,
 		db:                    db,
 		currentGameReader:     currentGameReader,
