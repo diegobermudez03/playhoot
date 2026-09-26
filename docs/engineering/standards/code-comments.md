@@ -217,13 +217,61 @@ with the citation deleted.
 
 A doc comment on an exported symbol that forms part of a package's own public
 boundary — a domain's public API, callable without importing that domain's
-internal dependencies — must be written entirely in terms of that public
-contract: parameters, return values, exported types, and observable behavior.
-It must not send the reader to an `internal/...` package (literally
-unimportable from outside this module's owning directory) or to a
-lower-layer implementation type from an underlying engine/runtime package the
-public API exists specifically to hide, merely to explain how the method
-works underneath.
+internal dependencies — must be written entirely from the *caller's*
+perspective, the same way a well-written third-party API's documentation is:
+you integrate with Stripe to create a charge; its docs tell you what fields
+the request needs and what each field of the response means, never that a
+charge is durably persisted in their database, which internal service
+enqueues it, or which table stores it. You don't need to know any of that to
+use the API correctly, and nothing about it changes what you should pass or
+how you should read what comes back.
+
+Concretely, an exported doc comment should be answerable from exactly two
+questions:
+
+1. What does the caller need to provide, and what constraints/shape does it
+   have to satisfy?
+2. What does the caller get back, and how should each part of it be
+   interpreted?
+
+Anything that does not change the answer to either question is implementation
+narration, not contract, and does not belong in the comment — regardless of
+whether it names a package. "This package persists X," "internally this
+calls Y," "see `pkg.Helper` to build this," and "this uses a queue/cache/
+retry loop under the hood" are all the same mistake: they describe how the
+callee does its job, which is the callee's problem, not information the
+caller needs to call it correctly. The one exception is a guarantee that
+*does* change what the caller can rely on — "the response is durably
+committed before this call returns, so a concurrent read is guaranteed to
+observe it" is caller-relevant (it tells them what they may depend on), even
+though it mentions persistence; "this package already persists the same wire
+shape" is not (it tells them nothing they can act on).
+
+This also means such a comment must never send the reader to an
+`internal/...` package (literally unimportable from outside this module's
+owning directory) or to a lower-layer implementation/engine/runtime package
+the public API exists specifically to hide, merely to explain how the method
+works underneath or how to shape a parameter — if the caller genuinely needs
+a specific wire shape, describe that shape directly and self-sufficiently,
+without requiring the reader to go call a helper from a different
+architectural layer to produce it.
+
+```go
+// Bad: leaks a persistence detail with no effect on the caller, and sends
+// the reader to a lower-layer package (not even Go-internal, just a
+// different architectural layer) to understand a parameter's shape.
+// answer is the caller's response payload, encoded in the same wire shape
+// this package already persists (see engineservice.EncodeValue/DecodeValue)
+// - callers never construct or import an engine-owned value type directly.
+```
+
+```go
+// Good: says what the caller must provide, self-sufficiently.
+// answer is the caller's response, encoded as plain JSON matching the
+// interaction's own declared response type - a bare true/false for a
+// boolean response, a bare number, a bare quoted string, or a JSON object
+// keyed by field name for a record-shaped response, and so on.
+```
 
 ```go
 // Bad: sends the reader to a package they cannot import, and a
@@ -251,6 +299,29 @@ If a maintainer genuinely needs that deeper cross-reference, it belongs on
 the unexported implementation this comment sits above (a private helper, or
 an internal package's own doc), never on the exported symbol a caller reads.
 
+## Enforcement: Exported Doc Comments Referencing A Lower-Layer Package
+
+`TestExportedDocCommentsStayAtPublicContract` (root package,
+`comment_standard_test.go`) mechanically catches the concrete, unambiguous
+half of the rule above: an exported declaration's doc comment — on a plain
+function, or a method whose receiver type is itself exported (an exported
+method on an unexported type is not reachable from outside the package
+either way) — in a non-internal, non-test file, referencing a qualified
+symbol (`pkgname.Symbol`) from a package the file itself imports whose
+import path contains `/internal/`, or that is on a small denylist of known
+engine/runtime/infrastructure-layer packages (`engine`, `engineservice`,
+`gorm` today — extend this list, with a one-line reason, whenever another
+such layer appears, e.g. a future domain's own internal execution engine).
+A reference is only flagged when that same package is not already part of
+the declaration's own signature (parameters/results, or a type alias's
+underlying type) — a caller who already has to see `engine.Program` because
+a function returns one is not learning anything new from a comment that also
+names it; the violation is a reference the signature does not already force
+on the caller. It cannot catch the softer half — implementation narration
+that names no package ("this package already persists...", "internally this
+retries...") — which remains a code-review responsibility per the
+caller-perspective test above.
+
 ## No Artificial Coupling
 
 A comment on one symbol should not need to change merely because an
@@ -276,14 +347,18 @@ cannot communicate.
 ## Enforcement
 
 Code review and this standard are the primary enforcement mechanism; no
-general linter checks comment content. `TestNoInternalDocCitationsInComments`
-(root package, `comment_standard_test.go`) runs as part of `go test ./...`
-and mechanically catches one specific, common violation - a comment citing
-an ADR/WORK/Blocker/Slice reference or a `docs/work|engineering|ai/` path
-as the reason something is true - but it cannot detect most of what this
-standard covers (narrating the function body, describing current callers
-instead of what a symbol represents, historical "previously X, now Y"
-phrasing, etc.). Code review remains required for the rest.
+general linter checks comment content. Two tests in `comment_standard_test.go`
+(root package) run as part of `go test ./...` and mechanically catch two
+specific, common violations: `TestNoInternalDocCitationsInComments` catches a
+comment citing an ADR/WORK/Blocker/Slice reference or a
+`docs/work|engineering|ai/` path as the reason something is true;
+`TestExportedDocCommentsStayAtPublicContract` catches an exported
+declaration's doc comment referencing a lower-layer/`internal/` package (see
+Public API Comments Stay At The Public Contract above). Neither catches most
+of what this standard covers (narrating the function body, describing
+current callers instead of what a symbol represents, historical "previously
+X, now Y" phrasing, implementation narration that names no package, etc.).
+Code review remains required for the rest.
 
 During code review, flag in particular:
 
@@ -298,5 +373,9 @@ During code review, flag in particular:
 - an exported symbol's doc comment sending the reader to an `internal/...`
   package or a lower-layer implementation type the public API exists to
   hide, instead of staying in terms of the public contract;
+- an exported symbol's doc comment narrating how the implementation does its
+  job (persistence, retries, internal calls, queues/caches) with no effect
+  on what the caller passes or how it reads the return value - ask "does this
+  sentence change either answer?" before keeping it;
 - a genuine correctness/concurrency/invariant comment being deleted merely
   to reduce comment count.

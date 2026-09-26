@@ -52,9 +52,10 @@ type answerInteractionRepoAPI interface {
 // waits its turn and then always reloads current authoritative state before
 // applying the response.
 //
-// answer is the caller's response payload, encoded in the same wire shape
-// this package already persists (see engineservice.EncodeValue/DecodeValue)
-// - callers never construct or import an engine-owned value type directly.
+// answer is the caller's response, encoded as plain JSON matching the
+// interaction's own declared response type - a bare true/false for a
+// boolean response, a bare number, a bare quoted string, or a JSON object
+// keyed by field name for a record-shaped response, and so on.
 //
 // No idempotency key is required: the interaction's own persisted state is
 // the dedup identity. A retried, semantically equivalent response replays
