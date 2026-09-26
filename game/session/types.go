@@ -211,6 +211,55 @@ type SubmitUserIntentResult struct {
 	TerminalReason string                  `json:"terminal_reason,omitempty"`
 }
 
+// CancelSessionOutcome is CancelSession's expected business outcome, a value
+// distinct from a Go error: an ordinary decline a caller should branch on,
+// not treat as a failure. Unlike every other signal-driven capability,
+// CancelSessionOutcomeCancelled covers three distinct underlying paths (the
+// authored game reacting to SessionCancelled and itself reaching a terminal
+// run status, reacting without reaching one, or not reacting at all) - a
+// host cancel always ends the Session once accepted past authorization, so
+// callers branch on TerminalReason for which happened, not on Outcome.
+type CancelSessionOutcome string
+
+const (
+	// CancelSessionOutcomeCancelled means the Session is now TERMINAL as a
+	// direct result of this call - whether because the authored game itself
+	// reacted to SessionCancelled and reached a terminal run status
+	// (TerminalReason is one of TerminalReasonGame*), or because it did not
+	// (TerminalReason is TerminalReasonSessionCancelledByHost) - or, for a
+	// retried call under the same IdempotencyKey, the original outcome
+	// replayed without a second engine effect.
+	CancelSessionOutcomeCancelled CancelSessionOutcome = "CANCELLED"
+	// CancelSessionOutcomeAlreadyTerminal means the Session was already
+	// TERMINAL (any TerminalReason, including a prior CancelSession call)
+	// before this call - an idempotent no-op, not an error.
+	CancelSessionOutcomeAlreadyTerminal CancelSessionOutcome = "ALREADY_TERMINAL"
+	// CancelSessionOutcomeNotRunning means the Session was still LOBBY -
+	// there is no running engine instance yet to deliver SessionCancelled
+	// to.
+	CancelSessionOutcomeNotRunning CancelSessionOutcome = "NOT_RUNNING"
+	// CancelSessionOutcomeNotHost means the caller did not resolve to the
+	// Session's own host actor.
+	CancelSessionOutcomeNotHost CancelSessionOutcome = "NOT_HOST"
+	// CancelSessionOutcomeRuntimeExecutionFailed means a deterministic
+	// engine execution failure (unrelated to SessionCancelled itself being
+	// rejected) terminalized the Session while processing the cancellation.
+	CancelSessionOutcomeRuntimeExecutionFailed CancelSessionOutcome = "RUNTIME_EXECUTION_FAILED"
+)
+
+// CancelSessionResult is CancelSession's logical outcome. Outputs carries the
+// committed Turn's client-facing Effect/Presentation values, in commit
+// order - populated only when the authored game itself produced a
+// RuntimeTurn reacting to SessionCancelled, never for a forced termination
+// with no such Turn. TerminalReason is always populated when Outcome is
+// CancelSessionOutcomeCancelled.
+type CancelSessionResult struct {
+	Outcome        CancelSessionOutcome `json:"outcome"`
+	SessionUUID    SessionUUID          `json:"session_uuid,omitempty"`
+	Outputs        []Output             `json:"-"`
+	TerminalReason string               `json:"terminal_reason,omitempty"`
+}
+
 // TimerObligationUUID is a session_timer_obligations row's public identity -
 // the handle a caller correlates a physical wall-clock timer against, and
 // ExpireTimer's own input.

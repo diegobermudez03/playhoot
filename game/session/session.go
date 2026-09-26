@@ -59,6 +59,14 @@ const (
 	// CancelControl applied) - distinct from any future session-lifecycle-level
 	// cancellation a host or operator initiates directly.
 	TerminalReasonGameCancelled = "GAME_CANCELLED"
+
+	// TerminalReasonSessionCancelledByHost marks a Session terminated by an
+	// explicit host cancellation command (CancelSession) that did not itself
+	// result in the authored game reaching a terminal run status - distinct
+	// from TerminalReasonGameCancelled, which marks the game's own authored
+	// abandonment. A host cancellation always terminalizes the Session even
+	// when the authored game has no transition modeling it at all.
+	TerminalReasonSessionCancelledByHost = "SESSION_CANCELLED_BY_HOST"
 )
 
 // session_interactions.kind values: which of the engine's two

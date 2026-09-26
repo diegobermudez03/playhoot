@@ -1183,6 +1183,63 @@ func keyedTimerDefinition(playersMin, playersMax int) program.Definition {
 	}
 }
 
+// sessionCancelledReasonArgName names sessionCancelledDefinition's/
+// sessionCancelledStaysDefinition's CancelControl.Reason literal - not
+// otherwise observable by a test, but required by program.CancelControl's
+// own shape.
+const sessionCancelledReasonArgName = "host cancelled"
+
+// sessionCancelledDefinition builds a real, engineservice.Compile-able
+// Definition declaring the accepted `players: list<user>` root roster
+// parameter, whose root workflow reacts to SessionCancelled by applying
+// CancelControl - reaching the engine's own Cancelled run status - for
+// tests proving CancelSession reuses the existing game-completion-detection
+// mechanism (TerminalReasonGameCancelled) exactly when the authored game
+// itself models the transition and ends the run.
+func sessionCancelledDefinition(playersMin, playersMax int) program.Definition {
+	return program.Definition{
+		Metadata:     program.Metadata{ID: "session-cancelled", Name: "SessionCancelled"},
+		RootWorkflow: "Main",
+		Players:      program.PlayerPolicy{Min: playersMin, Max: playersMax},
+		Workflows: []program.WorkflowDeclaration{
+			{
+				Name: "Main",
+				Parameters: []program.FieldDeclaration{
+					{Name: "players", Type: program.ListTypeReference{Element: program.BuiltinTypeReference{Type: program.BuiltinTypeUser}}},
+				},
+				ResultType:   program.BuiltinTypeReference{Type: program.BuiltinTypeUnit},
+				InitialState: "Start",
+				States: []program.WorkflowStateDeclaration{
+					{
+						Name: "Start",
+						Transitions: []program.TransitionDeclaration{
+							{Name: "Started", Signal: program.SignalPattern{Source: program.NamedSignalSource{Name: "WorkflowStarted"}}, Control: program.StayControl{}},
+							{
+								Name:    "Cancelled",
+								Signal:  program.SignalPattern{Source: program.NamedSignalSource{Name: "SessionCancelled"}},
+								Control: program.CancelControl{Reason: program.StringLiteralExpression{Value: sessionCancelledReasonArgName}},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+// sessionCancelledStaysDefinition is sessionCancelledDefinition's shape,
+// except its SessionCancelled transition applies StayControl instead of
+// CancelControl - the authored game reacts to the signal (the engine
+// accepts it, a RuntimeTurn commits) but does not itself end the run - for
+// tests proving CancelSession still forcibly terminalizes the Session under
+// the new TerminalReasonSessionCancelledByHost in that case.
+func sessionCancelledStaysDefinition(playersMin, playersMax int) program.Definition {
+	d := sessionCancelledDefinition(playersMin, playersMax)
+	d.Metadata = program.Metadata{ID: "session-cancelled-stays", Name: "SessionCancelledStays"}
+	d.Workflows[0].States[0].Transitions[1].Control = program.StayControl{}
+	return d
+}
+
 // mixedCauseQuestionName/mixedCauseQuestionSlot name
 // timerAndQuestionMixedCauseDefinition's own declarations.
 const (

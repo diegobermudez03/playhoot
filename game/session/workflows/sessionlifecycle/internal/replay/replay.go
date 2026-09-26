@@ -35,6 +35,15 @@ const TimerExpiredSourceKind = "TIMER_EXPIRED"
 // "USER_INTENT"), referenced by the Turn's source_cause_event_id.
 const UserIntentSourceKind = "USER_INTENT"
 
+// SessionCancelledSourceKind is the source_kind label persisted on the
+// RuntimeTurn a host's manual cancellation causes when the authored game
+// itself has a transition matching SessionCancelled (Manager.CancelSession).
+// Its durable content lives in session_cause_events (cause_kind
+// "SESSION_CANCELLED"), referenced by the Turn's source_cause_event_id. A
+// cancellation the engine rejects outright never reaches this - no
+// RuntimeTurn is created for it (see CancelSession's own Approved Design).
+const SessionCancelledSourceKind = "SESSION_CANCELLED"
+
 // Repo is the narrow persistence contract LoadPriorSignals needs.
 type Repo interface {
 	GetRuntimeStart(ctx context.Context, tx *gorm.DB, sessionID uint) (*internalrepo.RuntimeStart, error)
@@ -161,6 +170,22 @@ func loadReplaySignal(ctx context.Context, tx *gorm.DB, repo Repo, turn internal
 			return engine.Signal{}, wrapped
 		}
 		return signal, nil
+	case SessionCancelledSourceKind:
+		if turn.SourceCauseEventID == nil {
+			err := fmt.Errorf("reconstructing runtime turn %d: %s turn missing source_cause_event_id", turn.ID, SessionCancelledSourceKind)
+			monitoring.Alert(ctx, err.Error())
+			return engine.Signal{}, err
+		}
+		causeEvent, err := repo.GetCauseEventByID(ctx, tx, *turn.SourceCauseEventID)
+		if err != nil {
+			return engine.Signal{}, err
+		}
+		if causeEvent == nil {
+			err := fmt.Errorf("reconstructing runtime turn %d: source cause event %d not found", turn.ID, *turn.SourceCauseEventID)
+			monitoring.Alert(ctx, err.Error())
+			return engine.Signal{}, err
+		}
+		return buildSessionCancelledSignal(), nil
 	default:
 		err := fmt.Errorf("reconstructing runtime turn %d: unsupported source_kind %q for replay", turn.ID, turn.SourceKind)
 		monitoring.Alert(ctx, err.Error())
@@ -221,6 +246,15 @@ func buildUserIntentSignal(causeEvent *internalrepo.CauseEvent, actorID uint) (e
 		Actor:  engine.UserID(strconv.FormatUint(uint64(actorID), 10)),
 		Fields: fields,
 	}, nil
+}
+
+// buildSessionCancelledSignal deterministically rebuilds the engine.Signal a
+// manual session cancellation drove. SessionCancelled carries no Fields (the
+// compiler's own namedLifecycleSignals catalog declares it an empty schema),
+// so nothing needs decoding from the cause event's payload - the cause
+// event's existence and actor_id are its only meaningful durable content.
+func buildSessionCancelledSignal() engine.Signal {
+	return engine.Signal{Kind: engine.SignalKindNamed, Name: "SessionCancelled"}
 }
 
 // userIntentPayload is session_cause_events.payload's shape for a
