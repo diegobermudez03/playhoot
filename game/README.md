@@ -298,6 +298,8 @@ Handling either signal is optional. If the root workflow declares no matching tr
 
 An interaction/question targeted at a SessionActor whose transport connection is currently absent is still created as a normal durable `SessionInteraction` - Session Runtime must not suppress, auto-answer, skip, or redirect it, or deactivate the Participant, merely because the actor is offline. The interaction remains logically ACTIVE independent of live delivery; a later reconnect can surface it through the existing resync capability. Whether/how gameplay proceeds while an actor is offline (an authored timer/timeout deciding skip/default/forfeit, or legitimately remaining unresolved if no timeout applies) is ordinary authored Game Language policy, not a Session Runtime inference; a future max-runtime/inactivity/runaway protection may eventually terminate an abandoned Session but must never fabricate gameplay responses.
 
+The compiler's `namedLifecycleSignals` schema for both signals is implemented (`docs/projects/active/session-runtime-v1/works/WORK-0018-game-language-disconnect-reconnect-signal-support.md`); Session Runtime's own delivery of either signal to a running workflow instance is not yet implemented (`docs/projects/active/session-runtime-v1/works/WORK-0015-disconnect-reconnect-full-resync.md`).
+
 Rationale and alternatives are recorded in `game/docs/decisions/GAME-ADR-0011-game-language-disconnect-reconnect-authored-semantics.md`.
 
 ### Keyed Timer Slots

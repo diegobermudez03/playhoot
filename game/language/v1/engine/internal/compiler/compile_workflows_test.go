@@ -97,6 +97,77 @@ func TestCompile_UnknownNamedSignal(t *testing.T) {
 	}
 }
 
+func TestCompile_UserDisconnectedReconnectedSignalBinding(t *testing.T) {
+	for _, name := range []string{"UserDisconnected", "UserReconnected"} {
+		def := program.Definition{
+			Workflows: []program.WorkflowDeclaration{
+				{
+					Name:         "Main",
+					ResultType:   program.BuiltinTypeReference{Type: program.BuiltinTypeUser},
+					InitialState: "S",
+					States: []program.WorkflowStateDeclaration{{Name: "S", Transitions: []program.TransitionDeclaration{
+						{
+							Signal: program.SignalPattern{
+								Source:   program.NamedSignalSource{Name: name},
+								Bindings: []program.SignalBinding{{Field: "user", Name: "u"}},
+							},
+							Control: program.CompleteControl{Result: program.ReferenceExpression{Name: "u"}},
+						},
+					}}},
+				},
+			},
+			RootWorkflow: "Main",
+		}
+		_, diags := compiler.Compile(def)
+		if diags.HasErrors() {
+			t.Fatalf("%s: unexpected errors: %v", name, diags)
+		}
+	}
+}
+
+func TestCompile_UserDisconnectedSignalBindingTypeIsUser(t *testing.T) {
+	def := program.Definition{
+		Workflows: []program.WorkflowDeclaration{
+			{
+				Name: "Main",
+				// ResultType Number (not User) forces a type mismatch
+				// against the "user" binding's actual compiled type,
+				// proving it is engine.UserType, not merely present.
+				ResultType:   program.BuiltinTypeReference{Type: program.BuiltinTypeNumber},
+				InitialState: "S",
+				States: []program.WorkflowStateDeclaration{{Name: "S", Transitions: []program.TransitionDeclaration{
+					{
+						Signal: program.SignalPattern{
+							Source:   program.NamedSignalSource{Name: "UserDisconnected"},
+							Bindings: []program.SignalBinding{{Field: "user", Name: "u"}},
+						},
+						Control: program.CompleteControl{Result: program.ReferenceExpression{Name: "u"}},
+					},
+				}}},
+			},
+		},
+		RootWorkflow: "Main",
+	}
+	_, diags := compiler.Compile(def)
+	if !diags.HasErrors() {
+		t.Fatal("expected a type mismatch error binding a User-typed field into a Number result")
+	}
+}
+
+func TestCompile_UserDisconnectedSignalBindingUnknownField(t *testing.T) {
+	def := workflowWithOneTransition(program.TransitionDeclaration{
+		Signal: program.SignalPattern{
+			Source:   program.NamedSignalSource{Name: "UserDisconnected"},
+			Bindings: []program.SignalBinding{{Field: "nonexistent", Name: "x"}},
+		},
+		Control: program.StayControl{},
+	})
+	_, diags := compiler.Compile(def)
+	if !diags.HasErrors() {
+		t.Fatal("expected an unknown field error")
+	}
+}
+
 func TestCompile_SignalBindingUnknownField(t *testing.T) {
 	def := workflowWithOneTransition(program.TransitionDeclaration{
 		Signal: program.SignalPattern{

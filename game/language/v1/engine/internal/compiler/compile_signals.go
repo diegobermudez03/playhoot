@@ -13,17 +13,19 @@ import (
 // of named signals; that is left to "the future compiler" (see
 // program.NamedSignalSource's doc comment), which is this catalog.
 //
-// Every entry's schema is currently empty (no payload fields): a new
-// workflow instance's own parameters are already in scope directly
-// through the workflow's own Parameters, not exposed as WorkflowStarted
-// payload fields. SessionCancelled and UserDisconnected are included
-// because program's own documentation names them as examples alongside
-// WorkflowStarted; their schemas are left empty until a concrete payload
-// need is identified.
+// WorkflowStarted and SessionCancelled have an empty schema (no payload
+// fields): a new workflow instance's own parameters are already in scope
+// directly through the workflow's own Parameters, not exposed as
+// WorkflowStarted payload fields, and SessionCancelled has no accepted
+// payload need yet. UserDisconnected and UserReconnected each expose
+// exactly one field, user: user (Session-local runtime identity derived
+// from SessionActorID) — see
+// game/docs/decisions/GAME-ADR-0011-game-language-disconnect-reconnect-authored-semantics.md.
 var namedLifecycleSignals = map[string]map[string]engine.Type{
 	"WorkflowStarted":  {},
 	"SessionCancelled": {},
-	"UserDisconnected": {},
+	"UserDisconnected": {"user": engine.UserType{}},
+	"UserReconnected":  {"user": engine.UserType{}},
 }
 
 // compileTransition compiles t's signal pattern, guard, operations, and

@@ -33,13 +33,16 @@ Session Runtime supplies `players` from active Participants at Start. Each
 `user` represents the Session-local runtime identity derived from
 SessionActorID, not Identity.UserUUID.
 
-Accepted, not yet implemented, Operational Lifecycle contracts to preserve:
+Accepted Operational Lifecycle contracts to preserve:
 
 - `UserDisconnected`/`UserReconnected` are standard `NamedSignalSource`
-  signals exposing only `user: user`, delivered to the one workflow
-  instance a Session runs; handling is optional and an unhandled delivery
-  has no automatic gameplay consequence and produces no RuntimeTurn (see
+  signals exposing only `user: user` — the compiler's named-signal
+  catalog schema is implemented; handling is optional and an unhandled
+  delivery has no automatic gameplay consequence and produces no
+  RuntimeTurn (see
   `game/docs/decisions/GAME-ADR-0011-game-language-disconnect-reconnect-authored-semantics.md`).
+  Session Runtime does not yet actually deliver either signal to the
+  root workflow instance — that remains future work.
 
 Question, Ask Group, and Timer slots each have an implemented keyed family
 (`KeyedQuestionSlot`/`KeyedAskGroupSlot`/`KeyedTimerSlot`) holding several
