@@ -213,6 +213,44 @@ a maintainer who wants to trace the deeper design record), it must be
 strictly supplementary: the sentence must already be complete and correct
 with the citation deleted.
 
+## Public API Comments Stay At The Public Contract
+
+A doc comment on an exported symbol that forms part of a package's own public
+boundary — a domain's public API, callable without importing that domain's
+internal dependencies — must be written entirely in terms of that public
+contract: parameters, return values, exported types, and observable behavior.
+It must not send the reader to an `internal/...` package (literally
+unimportable from outside this module's owning directory) or to a
+lower-layer implementation type from an underlying engine/runtime package the
+public API exists specifically to hide, merely to explain how the method
+works underneath.
+
+```go
+// Bad: sends the reader to a package they cannot import, and a
+// lower-layer type the public API exists to hide, to understand a public
+// method.
+// ExpireTimer ... drives engine.SignalKindTimerExpired (or
+// SignalKindKeyedTimerExpired, for a keyed timer) through the compiled
+// Program ... see internal/repo.TimerObligation.UUID.
+```
+
+```go
+// Good: describes the same behavior entirely in terms of the public
+// contract — what the caller passes and what happens as a result.
+// ExpireTimer submits the previously scheduled timer identified by
+// timerObligationUUID as expired, driving whatever transition the running
+// game declared for it.
+```
+
+This applies regardless of whether the referenced package is Go-`internal`
+(literally inaccessible) or merely a lower architectural layer the public API
+was built to abstract away (accessible, but irrelevant to a caller of the
+public contract) — either way, the citation asks the reader to understand
+something the public symbol was specifically designed to let them not need.
+If a maintainer genuinely needs that deeper cross-reference, it belongs on
+the unexported implementation this comment sits above (a private helper, or
+an internal package's own doc), never on the exported symbol a caller reads.
+
 ## No Artificial Coupling
 
 A comment on one symbol should not need to change merely because an
@@ -257,5 +295,8 @@ During code review, flag in particular:
   Y" implementation history;
 - a comment citing an ADR/WORK/standards-doc path as the reason for
   something, instead of stating the reason itself in plain language;
+- an exported symbol's doc comment sending the reader to an `internal/...`
+  package or a lower-layer implementation type the public API exists to
+  hide, instead of staying in terms of the public contract;
 - a genuine correctness/concurrency/invariant comment being deleted merely
   to reduce comment count.

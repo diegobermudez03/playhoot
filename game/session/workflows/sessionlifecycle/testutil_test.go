@@ -3,6 +3,7 @@ package sessionlifecycle
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"testing"
 	"time"
 
@@ -762,6 +763,295 @@ func replayObservableDefinition(playersMin, playersMax int) program.Definition {
 									program.SetOperation{
 										Target: program.FieldTarget{Target: program.NameTarget{Name: "global"}, Field: "c"},
 										Value:  program.ReferenceExpression{Name: "response3"},
+									},
+								}},
+								Control: program.StayControl{},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+// timerSlotName/timerEffectName name timerDefinition's own declarations.
+const (
+	timerSlotName   = "T"
+	timerEffectName = "TimerFired"
+)
+
+// timerDefinition builds a real, engineservice.Compile-able Definition
+// declaring the accepted `players: list<user>` root roster parameter, whose
+// root workflow schedules an ordinary TimerSlot ("T", delayMilliseconds)
+// immediately at Start and emits a client-facing effect for every player
+// once it expires - for tests proving a scheduled timer obligation is
+// durably persisted, and its expiration (Manager.ExpireTimer) drives a new
+// RuntimeTurn.
+func timerDefinition(playersMin, playersMax int, delayMilliseconds int) program.Definition {
+	return program.Definition{
+		Metadata:     program.Metadata{ID: "timer", Name: "Timer"},
+		RootWorkflow: "Main",
+		Players:      program.PlayerPolicy{Min: playersMin, Max: playersMax},
+		Effects:      []program.EffectDeclaration{{Name: timerEffectName}},
+		Workflows: []program.WorkflowDeclaration{
+			{
+				Name: "Main",
+				Parameters: []program.FieldDeclaration{
+					{Name: "players", Type: program.ListTypeReference{Element: program.BuiltinTypeReference{Type: program.BuiltinTypeUser}}},
+				},
+				ResultType:   program.BuiltinTypeReference{Type: program.BuiltinTypeUnit},
+				InitialState: "Start",
+				TimerSlots:   []program.TimerSlotDeclaration{{Name: timerSlotName}},
+				States: []program.WorkflowStateDeclaration{
+					{
+						Name: "Start",
+						Transitions: []program.TransitionDeclaration{
+							{
+								Name:   "Started",
+								Signal: program.SignalPattern{Source: program.NamedSignalSource{Name: "WorkflowStarted"}},
+								Operations: program.Block{Operations: []program.Operation{
+									program.ScheduleTimerOperation{
+										Slot:              timerSlotName,
+										DelayMilliseconds: program.NumberLiteralExpression{Value: strconv.Itoa(delayMilliseconds)},
+									},
+								}},
+								Control: program.StayControl{},
+							},
+							{
+								Name:   "TimerFired",
+								Signal: program.SignalPattern{Source: program.TimerExpiredSignalSource{Slot: timerSlotName}},
+								Operations: program.Block{Operations: []program.Operation{
+									program.EmitEffectOperation{
+										Effect:     timerEffectName,
+										Recipients: program.ReferenceExpression{Name: "players"},
+									},
+								}},
+								Control: program.StayControl{},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+// timerCancelledOnAnswerDefinition builds a real, engineservice.Compile-able
+// Definition whose root workflow schedules TimerSlot "T" and opens Question
+// "Q" (reusing answerableQuestionName/answerableSlot) both at Start;
+// answering Q explicitly cancels "T" via CancelTimerOperation instead of
+// letting it expire - for tests proving a cancelled timer obligation is
+// durably transitioned to CANCELLED and no longer expirable.
+func timerCancelledOnAnswerDefinition(playersMin, playersMax int) program.Definition {
+	recipient := program.IndexExpression{Target: program.ReferenceExpression{Name: "players"}, Index: program.NumberLiteralExpression{Value: "0"}}
+	return program.Definition{
+		Metadata:     program.Metadata{ID: "timer-cancelled-on-answer", Name: "TimerCancelledOnAnswer"},
+		RootWorkflow: "Main",
+		Players:      program.PlayerPolicy{Min: playersMin, Max: playersMax},
+		Questions: []program.QuestionDeclaration{
+			{Name: answerableQuestionName, ResponseType: program.BuiltinTypeReference{Type: program.BuiltinTypeNumber}},
+		},
+		Workflows: []program.WorkflowDeclaration{
+			{
+				Name: "Main",
+				Parameters: []program.FieldDeclaration{
+					{Name: "players", Type: program.ListTypeReference{Element: program.BuiltinTypeReference{Type: program.BuiltinTypeUser}}},
+				},
+				ResultType:    program.BuiltinTypeReference{Type: program.BuiltinTypeUnit},
+				InitialState:  "Start",
+				TimerSlots:    []program.TimerSlotDeclaration{{Name: timerSlotName}},
+				QuestionSlots: []program.QuestionSlotDeclaration{{Name: answerableSlot, Question: answerableQuestionName}},
+				States: []program.WorkflowStateDeclaration{
+					{
+						Name: "Start",
+						Transitions: []program.TransitionDeclaration{
+							{
+								Name:   "Started",
+								Signal: program.SignalPattern{Source: program.NamedSignalSource{Name: "WorkflowStarted"}},
+								Operations: program.Block{Operations: []program.Operation{
+									program.ScheduleTimerOperation{Slot: timerSlotName, DelayMilliseconds: program.NumberLiteralExpression{Value: "5000"}},
+									program.OpenQuestionOperation{Slot: answerableSlot, Recipient: recipient},
+								}},
+								Control: program.StayControl{},
+							},
+							{
+								Name:   "Answered",
+								Signal: program.SignalPattern{Source: program.QuestionAnsweredSignalSource{Slot: answerableSlot}},
+								Operations: program.Block{Operations: []program.Operation{
+									program.CloseQuestionOperation{Slot: answerableSlot},
+									program.CancelTimerOperation{Slot: timerSlotName},
+								}},
+								Control: program.StayControl{},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+// timerActiveAtTerminationDefinition builds a real, engineservice.Compile-able
+// Definition whose root workflow schedules TimerSlot "T" and opens Question
+// "Q" (reusing answerableQuestionName/answerableSlot) both at Start;
+// answering Q applies control (terminating the game) without ever cancelling
+// "T" - for tests proving terminal cleanup cancels a still-ACTIVE timer
+// obligation exactly like it already does for a still-ACTIVE interaction, so
+// a TERMINAL Session never retains an obligation that could still fire.
+func timerActiveAtTerminationDefinition(control program.WorkflowControl, playersMin, playersMax int) program.Definition {
+	recipient := program.IndexExpression{Target: program.ReferenceExpression{Name: "players"}, Index: program.NumberLiteralExpression{Value: "0"}}
+	return program.Definition{
+		Metadata:     program.Metadata{ID: "timer-active-at-termination", Name: "TimerActiveAtTermination"},
+		RootWorkflow: "Main",
+		Players:      program.PlayerPolicy{Min: playersMin, Max: playersMax},
+		Questions: []program.QuestionDeclaration{
+			{Name: answerableQuestionName, ResponseType: program.BuiltinTypeReference{Type: program.BuiltinTypeNumber}},
+		},
+		Workflows: []program.WorkflowDeclaration{
+			{
+				Name: "Main",
+				Parameters: []program.FieldDeclaration{
+					{Name: "players", Type: program.ListTypeReference{Element: program.BuiltinTypeReference{Type: program.BuiltinTypeUser}}},
+				},
+				ResultType:    program.BuiltinTypeReference{Type: program.BuiltinTypeUnit},
+				InitialState:  "Start",
+				TimerSlots:    []program.TimerSlotDeclaration{{Name: timerSlotName}},
+				QuestionSlots: []program.QuestionSlotDeclaration{{Name: answerableSlot, Question: answerableQuestionName}},
+				States: []program.WorkflowStateDeclaration{
+					{
+						Name: "Start",
+						Transitions: []program.TransitionDeclaration{
+							{
+								Name:   "Started",
+								Signal: program.SignalPattern{Source: program.NamedSignalSource{Name: "WorkflowStarted"}},
+								Operations: program.Block{Operations: []program.Operation{
+									program.ScheduleTimerOperation{Slot: timerSlotName, DelayMilliseconds: program.NumberLiteralExpression{Value: "5000"}},
+									program.OpenQuestionOperation{Slot: answerableSlot, Recipient: recipient},
+								}},
+								Control: program.StayControl{},
+							},
+							{
+								Name:    "Answered",
+								Signal:  program.SignalPattern{Source: program.QuestionAnsweredSignalSource{Slot: answerableSlot}},
+								Control: control,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+// doubleScheduleTimerDefinition builds a real, engineservice.Compile-able
+// Definition whose root workflow schedules TimerSlot "T" twice into the same
+// slot within one transition - the engine's own atomic occupied-slot
+// execution error (ScheduleTimerOperation's documented contract) - for tests
+// proving the whole Start Turn fails atomically and no
+// session_timer_obligations row is left behind.
+func doubleScheduleTimerDefinition(playersMin, playersMax int) program.Definition {
+	return program.Definition{
+		Metadata:     program.Metadata{ID: "double-schedule-timer", Name: "DoubleScheduleTimer"},
+		RootWorkflow: "Main",
+		Players:      program.PlayerPolicy{Min: playersMin, Max: playersMax},
+		Workflows: []program.WorkflowDeclaration{
+			{
+				Name: "Main",
+				Parameters: []program.FieldDeclaration{
+					{Name: "players", Type: program.ListTypeReference{Element: program.BuiltinTypeReference{Type: program.BuiltinTypeUser}}},
+				},
+				ResultType:   program.BuiltinTypeReference{Type: program.BuiltinTypeUnit},
+				InitialState: "Start",
+				TimerSlots:   []program.TimerSlotDeclaration{{Name: timerSlotName}},
+				States: []program.WorkflowStateDeclaration{
+					{
+						Name: "Start",
+						Transitions: []program.TransitionDeclaration{
+							{
+								Name:   "Started",
+								Signal: program.SignalPattern{Source: program.NamedSignalSource{Name: "WorkflowStarted"}},
+								Operations: program.Block{Operations: []program.Operation{
+									program.ScheduleTimerOperation{Slot: timerSlotName, DelayMilliseconds: program.NumberLiteralExpression{Value: "1000"}},
+									program.ScheduleTimerOperation{Slot: timerSlotName, DelayMilliseconds: program.NumberLiteralExpression{Value: "2000"}},
+								}},
+								Control: program.StayControl{},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+// keyedTimerSlotName/keyedTimerKeyArgName/keyedTimerEffectName name
+// keyedTimerDefinition's own declarations.
+const (
+	keyedTimerSlotName   = "KT"
+	keyedTimerKeyArgName = "key"
+	keyedTimerEffectName = "KeyedTimerFired"
+)
+
+// keyedTimerDefinition builds a real, engineservice.Compile-able Definition
+// whose root workflow schedules a string-keyed KeyedTimerSlot ("KT")
+// independently for two keys ("P0", "P1") at Start, and emits a
+// client-facing effect carrying which key expired once a keyed timer fires -
+// for tests proving two independent keyed timer obligations coexist under
+// the same slot and each expiration threads its own authored key correctly
+// through persistence and replay.
+func keyedTimerDefinition(playersMin, playersMax int) program.Definition {
+	stringType := program.BuiltinTypeReference{Type: program.BuiltinTypeString}
+	return program.Definition{
+		Metadata:     program.Metadata{ID: "keyed-timer", Name: "KeyedTimer"},
+		RootWorkflow: "Main",
+		Players:      program.PlayerPolicy{Min: playersMin, Max: playersMax},
+		Effects: []program.EffectDeclaration{
+			{Name: keyedTimerEffectName, Parameters: []program.FieldDeclaration{{Name: keyedTimerKeyArgName, Type: stringType}}},
+		},
+		Workflows: []program.WorkflowDeclaration{
+			{
+				Name: "Main",
+				Parameters: []program.FieldDeclaration{
+					{Name: "players", Type: program.ListTypeReference{Element: program.BuiltinTypeReference{Type: program.BuiltinTypeUser}}},
+				},
+				ResultType:      program.BuiltinTypeReference{Type: program.BuiltinTypeUnit},
+				InitialState:    "Start",
+				KeyedTimerSlots: []program.KeyedTimerSlotDeclaration{{Name: keyedTimerSlotName, KeyType: stringType}},
+				States: []program.WorkflowStateDeclaration{
+					{
+						Name: "Start",
+						Transitions: []program.TransitionDeclaration{
+							{
+								Name:   "Started",
+								Signal: program.SignalPattern{Source: program.NamedSignalSource{Name: "WorkflowStarted"}},
+								Operations: program.Block{Operations: []program.Operation{
+									program.ScheduleKeyedTimerOperation{
+										Slot:              keyedTimerSlotName,
+										Key:               program.StringLiteralExpression{Value: "P0"},
+										DelayMilliseconds: program.NumberLiteralExpression{Value: "5000"},
+									},
+									program.ScheduleKeyedTimerOperation{
+										Slot:              keyedTimerSlotName,
+										Key:               program.StringLiteralExpression{Value: "P1"},
+										DelayMilliseconds: program.NumberLiteralExpression{Value: "5000"},
+									},
+								}},
+								Control: program.StayControl{},
+							},
+							{
+								Name: "KeyedTimerFired",
+								Signal: program.SignalPattern{
+									Source:   program.KeyedTimerExpiredSignalSource{Slot: keyedTimerSlotName},
+									Bindings: []program.SignalBinding{{Field: "key", Name: "k"}},
+								},
+								Operations: program.Block{Operations: []program.Operation{
+									program.EmitEffectOperation{
+										Effect:     keyedTimerEffectName,
+										Recipients: program.ReferenceExpression{Name: "players"},
+										Arguments: []program.CallArgument{
+											{Name: keyedTimerKeyArgName, Value: program.ReferenceExpression{Name: "k"}},
+										},
 									},
 								}},
 								Control: program.StayControl{},

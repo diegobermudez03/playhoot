@@ -16,9 +16,11 @@ import (
 // game/session/internal/storage/migrations/20260908000000_drop_legacy_session_schema.go
 // already established for this repository.
 //
-// session_timer_obligations keeps engine_path/engine_slot exactly as
-// before - Timer occurrences are not addressed by an InteractionID and are
-// unaffected by this migration.
+// session_timer_obligations is unaffected by this migration - Timer
+// occurrences are not addressed by an InteractionID. It also carries no
+// engine_path column of its own: engine.ScheduleTimerOutput/
+// CancelTimerOutput never had a Path field to begin with, unlike questions
+// before this migration.
 func migration20260924000000SessionInteractionsEngineInteractionID() *gormigrate.Migration {
 	return &gormigrate.Migration{
 		ID: "20260924000000_session_interactions_engine_interaction_id",

@@ -200,7 +200,6 @@ classDiagram
         id
         uuid
         session_id
-        engine_path
         engine_slot
         engine_key
         delay_ms
@@ -325,12 +324,14 @@ Cardinality notes:
 
 ## Keyed Timer Discriminator
 
-`session_timer_obligations.engine_key` is a nullable internal Session/engine routing field accepted alongside `engine_path`/`engine_slot`/`delay_ms`/`state`/Turn relationships, to support the accepted Game Language keyed-timer-slot capability (GAME-ADR-0012):
+`session_timer_obligations.engine_key` is a nullable internal Session/engine routing field accepted alongside `engine_slot`/`delay_ms`/`state`/Turn relationships, to support the accepted Game Language keyed-timer-slot capability (GAME-ADR-0012):
 
-- Ordinary `TimerSlot` timer: `engine_path = ...`, `engine_slot = ...`, `engine_key = NULL`.
-- Keyed timer: `engine_path = ...`, `engine_slot = ...`, `engine_key = <serialized authored key>`.
+- Ordinary `TimerSlot` timer: `engine_slot = ...`, `engine_key = NULL`.
+- Keyed timer: `engine_slot = ...`, `engine_key = <serialized authored key>`.
 
-`engine_key` is internal Session/engine routing metadata only - it exists so Session Runtime can reconstruct the correct `KeyedTimerExpiredSignalSource` signal (carrying the authored `engine.Value` key) on recovery. It must never be exposed directly to Coordinator/frontend merely because it is persisted. The Game Language compiler/engine side of keyed timer slots (`KeyedTimerSlotDeclaration`, an arbitrary compiled `KeyType`) is implemented; `engine_key`'s own concrete serialized column representation on this table is not frozen by this document, since no Session Runtime capability persists it yet.
+**Correction (2026-09-25, WORK-0012 drafting)**: this table has no `engine_path` column. Unlike questions (which carried `engine_path`/`engine_slot` before WORK-0026/WORK-0027 replaced that addressing with `engine_interaction_id`), `engine.ScheduleTimerOutput`/`CancelTimerOutput`/`ScheduleKeyedTimerOutput`/`CancelKeyedTimerOutput` and `Signal`'s timer-addressing fields have never carried a `Path` field, in this repository's entire history - `engine_path` was never grounded in an actual engine field for timers and was likely copied from the interaction pattern when this document/GAME-ADR-0012/GAME-ADR-0007 were originally written. `engine_slot` alone (plus `engine_key` for keyed timers) is a Session's sole timer-instance addressing, consistent with the flat, single-instance execution model GAME-ADR-0026 accepts.
+
+`engine_key` is internal Session/engine routing metadata only - it exists so Session Runtime can reconstruct the correct `KeyedTimerExpiredSignalSource` signal (carrying the authored `engine.Value` key) on recovery. It must never be exposed directly to Coordinator/frontend merely because it is persisted. The Game Language compiler/engine side of keyed timer slots (`KeyedTimerSlotDeclaration`, an arbitrary compiled `KeyType`) is implemented (WORK-0025); `session_timer_obligations` itself, including `engine_key`'s concrete serialized column representation, is designed by `docs/projects/active/session-runtime-v1/works/WORK-0012-timer-obligations.md`.
 
 ## Process-Agnostic Recovery
 

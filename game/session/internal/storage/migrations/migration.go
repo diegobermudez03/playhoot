@@ -46,9 +46,14 @@ func MigrateTables(db *gorm.DB) error {
 
 		// Replaces session_interactions' (engine_path, engine_slot) identity
 		// with the Game Language engine's own assigned engine_interaction_id.
-		// session_timer_obligations is unaffected - Timer occurrences keep
-		// engine_path/engine_slot addressing unchanged.
 		migration20260924000000SessionInteractionsEngineInteractionID(),
+
+		// session_timer_obligations - the durable Timer Obligation entity a
+		// committed RuntimeTurn schedules/cancels/consumes - and
+		// session_runtime_turns.source_timer_obligation_id for a Turn caused
+		// by a timer's expiration.
+		migration20260925000000SessionTimerObligations(),
+		migration20260925000001SessionRuntimeTurnsSourceTimerObligationID(),
 	})
 
 	return migrator.Migrate()

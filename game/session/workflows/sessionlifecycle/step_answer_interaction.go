@@ -15,8 +15,9 @@ import (
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/clientoutputs"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/completion"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/interactions"
-	internalrepo "github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/repo"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/replay"
+	internalrepo "github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/repo"
+	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/timers"
 	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/monitoring"
 	"github.com/diegobermudez03/playhoot/utils"
@@ -28,6 +29,7 @@ import (
 // this step instead of through a repository forwarding method.
 type answerInteractionRepoAPI interface {
 	interactions.CaptureRepo
+	timers.CaptureRepo
 	ResolveSessionForInteraction(ctx context.Context, interactionUUID string) (*uint, error)
 	FindInteractionByUUID(ctx context.Context, tx *gorm.DB, interactionUUID string) (*internalrepo.Interaction, error)
 	FindActor(ctx context.Context, tx *gorm.DB, sessionID uint, userUUID string) (*internalrepo.Actor, error)
@@ -35,11 +37,13 @@ type answerInteractionRepoAPI interface {
 	GetRuntimeStart(ctx context.Context, tx *gorm.DB, sessionID uint) (*internalrepo.RuntimeStart, error)
 	ListRuntimeTurns(ctx context.Context, tx *gorm.DB, sessionID uint) ([]internalrepo.RuntimeTurnRecord, error)
 	GetInteractionByID(ctx context.Context, tx *gorm.DB, interactionID uint) (*internalrepo.Interaction, error)
-	CreateRuntimeTurn(ctx context.Context, tx *gorm.DB, sessionID uint, sequence uint64, sourceKind string, sourceInteractionID *uint, actorID *uint) (uint, error)
+	GetTimerObligationByID(ctx context.Context, tx *gorm.DB, timerObligationID uint) (*internalrepo.TimerObligation, error)
+	CreateRuntimeTurn(ctx context.Context, tx *gorm.DB, sessionID uint, sequence uint64, sourceKind string, sourceInteractionID *uint, sourceTimerObligationID *uint, actorID *uint) (uint, error)
 	SetCurrentTurn(ctx context.Context, tx *gorm.DB, sessionID uint, currentTurnID uint) error
 	CloseAnsweredInteraction(ctx context.Context, tx *gorm.DB, interactionID uint, responsePayload []byte, closedByTurnID uint) error
 	SetSessionTerminal(ctx context.Context, tx *gorm.DB, sessionID uint, terminalAt time.Time, terminalReason string) error
 	CloseAllActiveInteractionsForSession(ctx context.Context, tx *gorm.DB, sessionID uint, reason string) error
+	CancelAllActiveTimerObligationsForSession(ctx context.Context, tx *gorm.DB, sessionID uint, reason string) error
 }
 
 // AnswerInteraction submits answer as the caller's response to the
@@ -224,7 +228,7 @@ func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessio
 	}
 
 	actorID := actor.ID
-	turnID, err := m.answerInteractionRepo.CreateRuntimeTurn(ctx, tx, lockedSession.ID, currentTurn.Sequence+1, replay.AnswerInteractionSourceKind, &interaction.ID, &actorID)
+	turnID, err := m.answerInteractionRepo.CreateRuntimeTurn(ctx, tx, lockedSession.ID, currentTurn.Sequence+1, replay.AnswerInteractionSourceKind, &interaction.ID, nil, &actorID)
 	if err != nil {
 		return AnswerInteractionResult{}, err
 	}
@@ -243,6 +247,9 @@ func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessio
 	if err := interactions.Capture(ctx, tx, m.answerInteractionRepo, lockedSession.ID, turnID, outputs); err != nil {
 		return AnswerInteractionResult{}, err
 	}
+	if err := timers.Capture(ctx, tx, m.answerInteractionRepo, lockedSession.ID, turnID, outputs); err != nil {
+		return AnswerInteractionResult{}, err
+	}
 	if err := m.answerInteractionRepo.SetCurrentTurn(ctx, tx, lockedSession.ID, turnID); err != nil {
 		return AnswerInteractionResult{}, err
 	}
@@ -253,6 +260,9 @@ func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessio
 			return AnswerInteractionResult{}, err
 		}
 		if err := m.answerInteractionRepo.CloseAllActiveInteractionsForSession(ctx, tx, lockedSession.ID, session.InteractionClosureReasonSessionTerminated); err != nil {
+			return AnswerInteractionResult{}, err
+		}
+		if err := m.answerInteractionRepo.CancelAllActiveTimerObligationsForSession(ctx, tx, lockedSession.ID, session.TimerObligationClosureReasonSessionTerminated); err != nil {
 			return AnswerInteractionResult{}, err
 		}
 	}
@@ -275,6 +285,9 @@ func (m *Manager) terminalizeAnswerInteractionFatal(ctx context.Context, tx *gor
 		return AnswerInteractionResult{}, err
 	}
 	if err := m.answerInteractionRepo.CloseAllActiveInteractionsForSession(ctx, tx, lockedSession.ID, session.InteractionClosureReasonSessionTerminated); err != nil {
+		return AnswerInteractionResult{}, err
+	}
+	if err := m.answerInteractionRepo.CancelAllActiveTimerObligationsForSession(ctx, tx, lockedSession.ID, session.TimerObligationClosureReasonSessionTerminated); err != nil {
 		return AnswerInteractionResult{}, err
 	}
 	return AnswerInteractionResult{Outcome: AnswerInteractionOutcomeRuntimeExecutionFailed, SessionUUID: SessionUUID(lockedSession.UUID)}, nil

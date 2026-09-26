@@ -178,3 +178,47 @@ type AnswerInteractionResult struct {
 	Outputs        []Output                 `json:"-"`
 	TerminalReason string                   `json:"terminal_reason,omitempty"`
 }
+
+// TimerObligationUUID is a session_timer_obligations row's public identity -
+// the handle a future Coordinator correlates a physical wall-clock timer
+// against, and ExpireTimer's own input.
+type TimerObligationUUID string
+
+// ExpireTimerOutcome is ExpireTimer's expected business outcome, a value
+// distinct from a Go error: an ordinary decline a caller should branch on,
+// not treat as a failure.
+type ExpireTimerOutcome string
+
+const (
+	// ExpireTimerOutcomeExpired means the expiration was accepted: a new
+	// RuntimeTurn committed and the obligation resolved (CONSUMED).
+	ExpireTimerOutcomeExpired ExpireTimerOutcome = "EXPIRED"
+	// ExpireTimerOutcomeStale means the obligation was no longer ACTIVE
+	// (already CONSUMED or CANCELLED) - an ordinary duplicate/late physical
+	// timer delivery, no engine effect.
+	ExpireTimerOutcomeStale ExpireTimerOutcome = "STALE"
+	// ExpireTimerOutcomeRejected means the engine itself rejected the
+	// expiration signal as stale/cancelled (program.TimerSlotDeclaration's
+	// own documented contract), no engine effect committed.
+	ExpireTimerOutcomeRejected ExpireTimerOutcome = "REJECTED"
+	// ExpireTimerOutcomeRuntimeExecutionFailed means a deterministic engine
+	// execution failure terminalized the Session while processing the
+	// expiration.
+	ExpireTimerOutcomeRuntimeExecutionFailed ExpireTimerOutcome = "RUNTIME_EXECUTION_FAILED"
+)
+
+// ExpireTimerResult is ExpireTimer's logical outcome. SessionUUID is
+// populated whenever the obligation's owning Session was resolved (every
+// outcome except an unresolved timerObligationUUID, reported as
+// session.ErrTimerObligationNotFound instead). Outputs carries the committed
+// Turn's client-facing Effect/Presentation values, in commit order -
+// populated only when Outcome is ExpireTimerOutcomeExpired and this call
+// actually executed the engine. TerminalReason is populated (one of
+// session.TerminalReasonGame*) whenever this same expiration also ended the
+// Session.
+type ExpireTimerResult struct {
+	Outcome        ExpireTimerOutcome `json:"outcome"`
+	SessionUUID    SessionUUID        `json:"session_uuid,omitempty"`
+	Outputs        []Output           `json:"-"`
+	TerminalReason string             `json:"terminal_reason,omitempty"`
+}

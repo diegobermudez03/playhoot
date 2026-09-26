@@ -19,15 +19,21 @@ import (
 )
 
 // AnswerInteractionSourceKind is the source_kind label persisted on the
-// RuntimeTurn an accepted interaction response causes - the one durable
-// cause LoadPriorSignals currently knows how to reconstruct a signal from.
+// RuntimeTurn an accepted interaction response causes.
 const AnswerInteractionSourceKind = "INTERACTION_RESPONSE"
+
+// TimerExpiredSourceKind is the source_kind label persisted on the
+// RuntimeTurn a timer obligation's expiration causes (Manager.ExpireTimer) -
+// covers both the ordinary TimerSlot and KeyedTimerSlot shapes, discriminated
+// by the obligation's own EngineKey.
+const TimerExpiredSourceKind = "TIMER_EXPIRED"
 
 // Repo is the narrow persistence contract LoadPriorSignals needs.
 type Repo interface {
 	GetRuntimeStart(ctx context.Context, tx *gorm.DB, sessionID uint) (*internalrepo.RuntimeStart, error)
 	ListRuntimeTurns(ctx context.Context, tx *gorm.DB, sessionID uint) ([]internalrepo.RuntimeTurnRecord, error)
 	GetInteractionByID(ctx context.Context, tx *gorm.DB, interactionID uint) (*internalrepo.Interaction, error)
+	GetTimerObligationByID(ctx context.Context, tx *gorm.DB, timerObligationID uint) (*internalrepo.TimerObligation, error)
 }
 
 // LoadPriorSignals loads sessionID's Start record and every already-
@@ -103,6 +109,28 @@ func loadReplaySignal(ctx context.Context, tx *gorm.DB, repo Repo, turn internal
 			return engine.Signal{}, wrapped
 		}
 		return signal, nil
+	case TimerExpiredSourceKind:
+		if turn.SourceTimerObligationID == nil {
+			err := fmt.Errorf("reconstructing runtime turn %d: %s turn missing source_timer_obligation_id", turn.ID, TimerExpiredSourceKind)
+			monitoring.Alert(ctx, err.Error())
+			return engine.Signal{}, err
+		}
+		obligation, err := repo.GetTimerObligationByID(ctx, tx, *turn.SourceTimerObligationID)
+		if err != nil {
+			return engine.Signal{}, err
+		}
+		if obligation == nil {
+			err := fmt.Errorf("reconstructing runtime turn %d: source timer obligation %d not found", turn.ID, *turn.SourceTimerObligationID)
+			monitoring.Alert(ctx, err.Error())
+			return engine.Signal{}, err
+		}
+		signal, err := buildTimerExpiredSignal(obligation)
+		if err != nil {
+			wrapped := fmt.Errorf("reconstructing runtime turn %d: %s", turn.ID, err)
+			monitoring.Alert(ctx, wrapped.Error())
+			return engine.Signal{}, wrapped
+		}
+		return signal, nil
 	default:
 		err := fmt.Errorf("reconstructing runtime turn %d: unsupported source_kind %q for replay", turn.ID, turn.SourceKind)
 		monitoring.Alert(ctx, err.Error())
@@ -126,6 +154,22 @@ func buildAnswerSignal(interaction *internalrepo.Interaction, actorID uint) (eng
 		Respondent:    engine.UserID(strconv.FormatUint(uint64(actorID), 10)),
 		Answer:        answer,
 	}, nil
+}
+
+// buildTimerExpiredSignal deterministically rebuilds the engine.Signal a
+// timer obligation's expiration drove, purely from that obligation's own
+// durable fields - the ordinary SignalKindTimerExpired when EngineKey is
+// nil, or SignalKindKeyedTimerExpired with the decoded authored key
+// otherwise.
+func buildTimerExpiredSignal(obligation *internalrepo.TimerObligation) (engine.Signal, error) {
+	if obligation.EngineKey == nil {
+		return engine.Signal{Kind: engine.SignalKindTimerExpired, Slot: obligation.EngineSlot}, nil
+	}
+	key, err := engineservice.DecodeValue(obligation.EngineKey)
+	if err != nil {
+		return engine.Signal{}, fmt.Errorf("decoding timer obligation key: %s", err)
+	}
+	return engine.Signal{Kind: engine.SignalKindKeyedTimerExpired, Slot: obligation.EngineSlot, Key: key}, nil
 }
 
 // EncodeRootParameters encodes rootParameters (an

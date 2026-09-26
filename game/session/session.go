@@ -83,6 +83,31 @@ const (
 // closure_reason's value for InteractionStateTerminated rows.
 const InteractionClosureReasonSessionTerminated = "SESSION_TERMINATED"
 
+// session_timer_obligations.state values. Reuses the same "ACTIVE" value
+// session_interactions already uses for a still-pending row, alongside two
+// closure states of its own - a timer obligation's closure is either its own
+// expiration (CONSUMED) or an explicit/terminal cancellation (CANCELLED),
+// distinct from an interaction's CLOSED/TERMINATED split since a timer has
+// no "answered" concept.
+const (
+	// TimerObligationStateActive means the timer is still pending expiration.
+	TimerObligationStateActive = "ACTIVE"
+	// TimerObligationStateConsumed means a committed RuntimeTurn closed the
+	// obligation by processing its own expiration (Manager.ExpireTimer).
+	TimerObligationStateConsumed = "CONSUMED"
+	// TimerObligationStateCancelled means the obligation was closed without
+	// expiring - an authored CancelTimerOperation/CancelKeyedTimerOperation,
+	// or terminal cleanup (closure_reason
+	// TimerObligationClosureReasonSessionTerminated).
+	TimerObligationStateCancelled = "CANCELLED"
+)
+
+// TimerObligationClosureReasonSessionTerminated is
+// session_timer_obligations.closure_reason's value for a still-ACTIVE
+// obligation cancelled by terminal cleanup rather than an authored cancel -
+// mirrors InteractionClosureReasonSessionTerminated exactly.
+const TimerObligationClosureReasonSessionTerminated = "SESSION_TERMINATED"
+
 var (
 	// ErrGameNotFound is returned by CreateSession when the referenced Game
 	// does not exist.
@@ -126,4 +151,8 @@ var (
 	// ErrInteractionNotFound is returned when an interaction UUID does not
 	// resolve to an existing session_interactions row.
 	ErrInteractionNotFound = errors.New("interaction not found")
+
+	// ErrTimerObligationNotFound is returned when a timer obligation UUID
+	// does not resolve to an existing session_timer_obligations row.
+	ErrTimerObligationNotFound = errors.New("timer obligation not found")
 )

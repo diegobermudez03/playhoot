@@ -7,7 +7,7 @@ import (
 	"gorm.io/gorm"
 )
 
-//go:generate mockgen -package=sessionlifecycle -destination=mocks_test.go . createRepoAPI,joinRepoAPI,leaveRepoAPI,startRepoAPI,answerInteractionRepoAPI,outputsRepoAPI,gameCurrentVersionReader,gamePinnedDefinitionReader
+//go:generate mockgen -package=sessionlifecycle -destination=mocks_test.go . createRepoAPI,joinRepoAPI,leaveRepoAPI,startRepoAPI,answerInteractionRepoAPI,expireTimerRepoAPI,outputsRepoAPI,gameCurrentVersionReader,gamePinnedDefinitionReader
 
 // defaultLobbyTTL is the lobby lifetime applied when no other TTL
 // configuration is supplied.
@@ -45,6 +45,7 @@ type Manager struct {
 	leaveRepo             leaveRepoAPI
 	startRepo             startRepoAPI
 	answerInteractionRepo answerInteractionRepoAPI
+	expireTimerRepo       expireTimerRepoAPI
 	outputsRepo           outputsRepoAPI
 
 	db *gorm.DB
@@ -74,6 +75,7 @@ func New(db *gorm.DB, currentGameReader gameCurrentVersionReader, pinnedGameRead
 		leaveRepo:             r,
 		startRepo:             r,
 		answerInteractionRepo: r,
+		expireTimerRepo:       r,
 		outputsRepo:           r,
 		db:                    db,
 		currentGameReader:     currentGameReader,
