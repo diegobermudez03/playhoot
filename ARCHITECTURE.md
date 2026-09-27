@@ -43,6 +43,8 @@ A trusted authentication/application layer may establish which `Identity.User` i
 
 The accepted business bounded contexts currently normalized here are Game and Identity.
 
+**Superseded in part (2026-09-27, not yet implemented):** the "Game" grouping below is being dissolved into two independent business bounded contexts, Game Management and Session Runtime, with Game Language reclassified from a shared supporting subsystem into Session Runtime's own internal implementation detail. This is `docs/decisions/architecture/ADR-0014-management-session-domain-split.md` (ACCEPTED). Status: HUMAN-APPROVED; not yet implemented — the description immediately below remains the current implemented reality until `docs/projects/active/management-session-domain-split/works/WORK-0031-session-owned-executable-program-management-session-split.md` lands. Do not treat the paragraphs below as still accepted-going-forward once that WORK is DONE; at that point this whole subsection should be rewritten to state the new boundary directly rather than as a superseding note.
+
 Game contains:
 
 - Game Management: authored game lifecycle concerns.
@@ -51,15 +53,23 @@ Game contains:
 
 Game Management and Session Runtime are capabilities inside the Game bounded context, not separate business domains. Game Language is not a separate business bounded context.
 
-Sharing one bounded context does not imply Game Management and Session Runtime share one persistence or transaction boundary; their independent persistence/transaction ownership is recorded in `game/README.md` and `game/docs/decisions/GAME-ADR-0001-game-capability-persistence-transaction-boundary.md`.
+Sharing one bounded context does not imply Game Management and Session Runtime share one persistence or transaction boundary; their independent persistence/transaction ownership is recorded in `game/README.md` and `game/docs/decisions/GAME-ADR-0001-game-capability-persistence-transaction-boundary.md` (superseded in part by ADR-0014 above — see that ADR's header).
 
 The current physical package layout may remain:
 
 ```text
 game/
-  game/
+  management/
   session/
   language/
+```
+
+Target layout once ADR-0014 is implemented (`management` and `session` become independent top-level domains, siblings of `identity`/`composer`/`orchestrator`; Game Language moves inside `session` as its own internal implementation):
+
+```text
+management/
+session/
+  language/       # was game/language, now session-internal only
 ```
 
 Identity owns stable Playhoot identity for people interacting with the platform. Its public cross-domain referenceable entity is `User`, identified by stable public `UserUUID` under the Cross-Domain Public Entity References rule below.
@@ -150,6 +160,8 @@ Cross-domain workflows must account for partial failure rather than relying on a
 A business domain's public operations should primarily expose that domain's own concepts/types.
 
 Depending directly on another business domain's internal/entity types should be avoided. Supporting behavior-only libraries may expose types intentionally consumed by domains when that dependency does not reverse business-domain ownership.
+
+A consumer importing a producer domain's own exported root-level type to declare its own narrow interface is expected and correct, not a violation — the producer's implementation is not exposed, only its public contract. The actual violation is one level up: a producer domain's own exported type must not itself be composed from a type owned by a third domain or subsystem the producer does not own. When it is, every consumer that only wanted the producer's narrow contract transitively depends on that third package too, and the coupling silently belongs to whichever domain actually owns/consumes that third type, not to the producer merely re-exporting it. See `docs/engineering/standards/domain-logic-placement.md`'s Enforcement section for the concrete Go-level tell, and `docs/decisions/architecture/ADR-0014-management-session-domain-split.md` for a worked example (Game Management's own `Game` type embedding a Game Language `program.Definition` it does not own).
 
 ## Intra-Domain Responsibility Boundary
 

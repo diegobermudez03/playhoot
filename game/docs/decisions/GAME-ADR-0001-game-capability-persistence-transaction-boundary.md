@@ -4,7 +4,7 @@ Status: ACCEPTED
 Created: 2026-09-06
 Last status change: 2026-09-06
 Supersedes: None
-Superseded by: None
+Superseded by: ADR-0014 (bounded-context-grouping and cross-domain-read-dependency portions only — "Game remains one bounded context... Game Management and Session Runtime remain internal capabilities of Game" and the narrow-read-capability-contract consequence for `sessionlifecycle`; the independent-persistence/transaction-boundary rationale below, and the rejection of shared transactions between the two capabilities, remain valid and are restated by ADR-0014)
 Legacy ID: ADR-0002
 
 ## Context

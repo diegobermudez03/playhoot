@@ -22,6 +22,8 @@ Game owns the authored lifecycle and runtime execution of Playhoot games.
 
 ## Internal Structure
 
+**Superseded in part (2026-09-27, not yet implemented):** this whole section (Game as one bounded context containing Game Management/Session Runtime as capabilities, with Game Language as a shared supporting subsystem of both) is dissolved by `docs/decisions/architecture/ADR-0014-management-session-domain-split.md` (ACCEPTED). Status: HUMAN-APPROVED; not yet implemented. Game Management and Session Runtime become independent bounded contexts; Game Language becomes Session Runtime's own internal implementation detail, no longer shared with Game Management. See ADR-0014 for the full decision and `docs/projects/active/management-session-domain-split/` for the tracked migration. The description below remains the current implemented reality until that migration lands, at which point this section (and this document) should be split into `management/README.md`/`session/README.md` rather than continuing to describe a shared "Game" grouping.
+
 ### Business Capabilities
 
 - Game Management: owns authored game lifecycle concerns.
@@ -32,6 +34,8 @@ Game owns the authored lifecycle and runtime execution of Playhoot games.
 - Game Language: defines, compiles, and executes game behavior for Game; it is not a business domain.
 
 ## Capability Persistence and Transaction Boundary
+
+**Superseded in part (2026-09-27, not yet implemented):** see the Internal Structure annotation above — ADR-0014 removes Session Runtime's runtime read dependency on Game Management described below (Session Runtime gains its own persisted executable-definition entity instead of calling Game Management's narrow read capability on every operation); the independent-persistence/no-shared-transaction rule immediately below is unaffected and remains accepted.
 
 Game Management and Session Runtime share one business domain but not one persistence or transaction boundary.
 
