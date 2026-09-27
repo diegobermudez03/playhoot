@@ -105,7 +105,7 @@ func (m *Manager) Join(ctx context.Context, joinCode session.JoinCode, userUUID 
 
 	codeWasRevokedAtResolution := resolution.RevokedAt != nil
 
-	return utils.RunInDBTransaction(ctx, m, func(ctx context.Context, tx *gorm.DB) (session.JoinResult, error) {
+	return utils.RunInDBTransaction(ctx, m.dbServicer, func(ctx context.Context, tx *gorm.DB) (session.JoinResult, error) {
 		return m.joinSessionInTx(ctx, tx, resolution.SessionID, codeWasRevokedAtResolution, playersMax, joinCode, userUUID, displayName, idempotencyKey)
 	})
 }

@@ -58,8 +58,13 @@ const (
 // Manager decides transaction scope itself by calling
 // utils.RunInDBTransaction directly, rather than holding a separate injected
 // `transactor` dependency whose only purpose would be to indirect into that
-// already generic helper. Manager satisfies utils.DBServicer itself via
-// GetDB so it can be passed directly to that helper.
+// already generic helper. Manager does not hold a raw *gorm.DB handle
+// itself, and does not satisfy utils.DBServicer itself either - its own
+// internal/repo.Repo already owns the db handle (that is Repo's job, not
+// Manager's), so Manager passes its dbServicer field, backed by that same
+// Repo value, directly to utils.RunInDBTransaction instead of duplicating
+// the handle onto Manager just to shoehorn Manager into the helper's
+// required shape.
 type Manager struct {
 	createRepo            createRepoAPI
 	joinRepo              joinRepoAPI
@@ -71,7 +76,7 @@ type Manager struct {
 	cancelSessionRepo     cancelSessionRepoAPI
 	outputsRepo           outputsRepoAPI
 
-	db *gorm.DB
+	dbServicer dbServicer
 
 	currentGameReader gameCurrentVersionReader
 	pinnedGameReader  gamePinnedDefinitionReader
@@ -80,10 +85,11 @@ type Manager struct {
 	activityTTL time.Duration
 }
 
-// GetDB satisfies utils.DBServicer, letting Manager itself be passed
-// directly to utils.RunInDBTransaction.
-func (m *Manager) GetDB() *gorm.DB {
-	return m.db
+// dbServicer is the narrow capability Manager needs to open a DB
+// transaction via utils.RunInDBTransaction: reaching the *gorm.DB handle
+// its own internal/repo.Repo already owns exclusively.
+type dbServicer interface {
+	GetDB() *gorm.DB
 }
 
 // New constructs a Manager. currentGameReader resolves a Game's current
@@ -103,7 +109,7 @@ func New(db *gorm.DB, currentGameReader gameCurrentVersionReader, pinnedGameRead
 		submitUserIntentRepo:  r,
 		cancelSessionRepo:     r,
 		outputsRepo:           r,
-		db:                    db,
+		dbServicer:            r,
 		currentGameReader:     currentGameReader,
 		pinnedGameReader:      pinnedGameReader,
 		lobbyTTL:              defaultLobbyTTL,

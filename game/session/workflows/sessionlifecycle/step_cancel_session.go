@@ -103,7 +103,7 @@ func (m *Manager) CancelSession(ctx context.Context, sessionUUID session.Session
 		return session.CancelSessionResult{}, session.ErrIdempotencyKeyRequired
 	}
 
-	return utils.RunInDBTransaction(ctx, m, func(ctx context.Context, tx *gorm.DB) (session.CancelSessionResult, error) {
+	return utils.RunInDBTransaction(ctx, m.dbServicer, func(ctx context.Context, tx *gorm.DB) (session.CancelSessionResult, error) {
 		return m.cancelSessionInTx(ctx, tx, sessionUUID, userUUID, idempotencyKey)
 	})
 }

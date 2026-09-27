@@ -22,3 +22,10 @@ type Repo struct {
 func New(db *gorm.DB) *Repo {
 	return &Repo{db: db}
 }
+
+// GetDB satisfies utils.DBServicer. Repo is the layer that actually owns the
+// db handle, so it - not Manager - is the thing Manager passes to
+// utils.RunInDBTransaction to open a transaction.
+func (r *Repo) GetDB() *gorm.DB {
+	return r.db
+}

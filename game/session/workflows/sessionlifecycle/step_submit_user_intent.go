@@ -95,7 +95,7 @@ func (m *Manager) SubmitUserIntent(ctx context.Context, sessionUUID session.Sess
 		return session.SubmitUserIntentResult{}, session.ErrIdempotencyKeyRequired
 	}
 
-	return utils.RunInDBTransaction(ctx, m, func(ctx context.Context, tx *gorm.DB) (session.SubmitUserIntentResult, error) {
+	return utils.RunInDBTransaction(ctx, m.dbServicer, func(ctx context.Context, tx *gorm.DB) (session.SubmitUserIntentResult, error) {
 		return m.submitUserIntentInTx(ctx, tx, sessionUUID, userUUID, intentName, arguments, idempotencyKey)
 	})
 }

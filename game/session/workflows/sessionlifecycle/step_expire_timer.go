@@ -76,7 +76,7 @@ func (m *Manager) ExpireTimer(ctx context.Context, timerObligationUUID session.T
 		return session.ExpireTimerResult{}, session.ErrTimerObligationNotFound
 	}
 
-	return utils.RunInDBTransaction(ctx, m, func(ctx context.Context, tx *gorm.DB) (session.ExpireTimerResult, error) {
+	return utils.RunInDBTransaction(ctx, m.dbServicer, func(ctx context.Context, tx *gorm.DB) (session.ExpireTimerResult, error) {
 		return m.expireTimerInTx(ctx, tx, *sessionID, timerObligationUUID)
 	})
 }

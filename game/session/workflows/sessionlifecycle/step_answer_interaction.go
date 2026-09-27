@@ -86,7 +86,7 @@ func (m *Manager) AnswerInteraction(ctx context.Context, interactionUUID session
 		return session.AnswerInteractionResult{}, session.ErrInteractionNotFound
 	}
 
-	return utils.RunInDBTransaction(ctx, m, func(ctx context.Context, tx *gorm.DB) (session.AnswerInteractionResult, error) {
+	return utils.RunInDBTransaction(ctx, m.dbServicer, func(ctx context.Context, tx *gorm.DB) (session.AnswerInteractionResult, error) {
 		return m.answerInteractionInTx(ctx, tx, *sessionID, interactionUUID, userUUID, decodedAnswer)
 	})
 }

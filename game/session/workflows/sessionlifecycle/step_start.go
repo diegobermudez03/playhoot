@@ -79,7 +79,7 @@ func (m *Manager) Start(ctx context.Context, sessionUUID session.SessionUUID, us
 		return session.StartResult{}, session.ErrIdempotencyKeyRequired
 	}
 
-	return utils.RunInDBTransaction(ctx, m, func(ctx context.Context, tx *gorm.DB) (session.StartResult, error) {
+	return utils.RunInDBTransaction(ctx, m.dbServicer, func(ctx context.Context, tx *gorm.DB) (session.StartResult, error) {
 		return m.startSessionInTx(ctx, tx, sessionUUID, userUUID, idempotencyKey)
 	})
 }

@@ -55,7 +55,7 @@ func (m *Manager) Leave(ctx context.Context, sessionUUID session.SessionUUID, us
 		return session.LeaveResult{}, session.ErrIdempotencyKeyRequired
 	}
 
-	return utils.RunInDBTransaction(ctx, m, func(ctx context.Context, tx *gorm.DB) (session.LeaveResult, error) {
+	return utils.RunInDBTransaction(ctx, m.dbServicer, func(ctx context.Context, tx *gorm.DB) (session.LeaveResult, error) {
 		return m.leaveSessionInTx(ctx, tx, sessionUUID, userUUID, idempotencyKey)
 	})
 }

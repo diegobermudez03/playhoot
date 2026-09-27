@@ -75,7 +75,7 @@ func (m *Manager) Create(ctx context.Context, gameUUID session.GameUUID, hostUse
 		return session.CreatedSession{}, session.ErrDefinitionDoesNotCompile
 	}
 
-	return utils.RunInDBTransaction(ctx, m, func(ctx context.Context, tx *gorm.DB) (session.CreatedSession, error) {
+	return utils.RunInDBTransaction(ctx, m.dbServicer, func(ctx context.Context, tx *gorm.DB) (session.CreatedSession, error) {
 		return m.createSessionInTx(ctx, tx, gameUUID, playableGame.VersionUUID, hostUserUUID, idempotencyKey)
 	})
 }
