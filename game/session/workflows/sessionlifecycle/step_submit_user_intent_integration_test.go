@@ -78,6 +78,48 @@ func TestManagerSubmitUserIntent_Integration(t *testing.T) {
 		require.Equal(t, int64(1), causeEventCount)
 	})
 
+	t.Run("accepted_intent_renews_activity_deadline", func(t *testing.T) {
+		m, sessionUUID, hostUUID := startedUserIntentSession(t, db, userIntentDefinition(1, 4))
+
+		before := activityExpiresAtForUUID(t, db, sessionUUID)
+		require.NotNil(t, before)
+
+		result, err := m.SubmitUserIntent(context.Background(), sessionUUID, hostUUID, userIntentGuessName, guessArguments(t, 42), session.IdempotencyKey(uuid.NewString()))
+		require.NoError(t, err)
+		require.Equal(t, session.SubmitUserIntentOutcomeAccepted, result.Outcome)
+
+		after := activityExpiresAtForUUID(t, db, sessionUUID)
+		require.NotNil(t, after)
+		require.True(t, after.After(*before), "a Turn-committing intent must renew activity_expires_at")
+	})
+
+	t.Run("stale_activity_deadline_materializes_inactivity_expiration_and_declines", func(t *testing.T) {
+		m, sessionUUID, hostUUID := startedUserIntentSession(t, db, userIntentDefinition(1, 4))
+
+		staleDeadline := time.Now().Add(-1 * time.Minute).UTC()
+		require.NoError(t, db.Exec(`UPDATE sessions SET activity_expires_at = ? WHERE uuid = ?`, staleDeadline, string(sessionUUID)).Error)
+
+		result, err := m.SubmitUserIntent(context.Background(), sessionUUID, hostUUID, userIntentGuessName, guessArguments(t, 42), session.IdempotencyKey(uuid.NewString()))
+		require.NoError(t, err)
+		require.Equal(t, session.SubmitUserIntentOutcomeRejected, result.Outcome, "a materialized inactivity expiration leaves the existing non-RUNNING decline path to apply")
+
+		var row struct {
+			Phase          string     `gorm:"column:phase"`
+			TerminalReason *string    `gorm:"column:terminal_reason"`
+			TerminalAt     *time.Time `gorm:"column:terminal_at"`
+		}
+		require.NoError(t, db.Raw(`SELECT phase, terminal_reason, terminal_at FROM sessions WHERE uuid = ?`, string(sessionUUID)).Scan(&row).Error)
+		require.Equal(t, session.PhaseTerminal, row.Phase)
+		require.NotNil(t, row.TerminalReason)
+		require.Equal(t, session.TerminalReasonRuntimeInactivityExpired, *row.TerminalReason)
+		require.NotNil(t, row.TerminalAt)
+		require.WithinDuration(t, staleDeadline, row.TerminalAt.UTC(), time.Second)
+
+		var failureCount int64
+		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_failures WHERE session_id = ?`, sessionIDForUUID(t, db, sessionUUID)).Scan(&failureCount).Error)
+		require.Equal(t, int64(0), failureCount)
+	})
+
 	t.Run("second_submission_replays_correctly_via_replay_reconstruction", func(t *testing.T) {
 		// Proves USER_INTENT's replay wiring: a second SubmitUserIntent call
 		// forces replay.LoadPriorSignals to reconstruct the first

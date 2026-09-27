@@ -1,0 +1,59 @@
+// Package activity provides lazy RUNNING-phase inactivity-expiration
+// materialization, shared by sessionlifecycle's
+// AnswerInteraction/SubmitUserIntent/ExpireTimer/CancelSession steps so the
+// logic lives once rather than being reimplemented per step - the same shape
+// internal/expiration already provides for LOBBY-phase lobby_expires_at.
+package activity
+
+import (
+	"context"
+	"time"
+
+	"github.com/diegobermudez03/playhoot/game/session"
+	"github.com/diegobermudez03/playhoot/game/session/internal/sessionlock"
+	"gorm.io/gorm"
+)
+
+// Store is the narrow persistence capability MaterializeIfDue needs.
+type Store interface {
+	SetSessionTerminal(ctx context.Context, tx *gorm.DB, sessionID uint, terminalAt time.Time, terminalReason string) error
+	CloseAllActiveInteractionsForSession(ctx context.Context, tx *gorm.DB, sessionID uint, reason string) error
+	CancelAllActiveTimerObligationsForSession(ctx context.Context, tx *gorm.DB, sessionID uint, reason string) error
+}
+
+// MaterializeIfDue evaluates whether lockedSession's RUNNING-phase inactivity
+// deadline has already passed (phase is RUNNING, activity_expires_at is set,
+// and now is at or after it) and, if so, persists the mutations that
+// materialize TERMINAL under TerminalReasonRuntimeInactivityExpired and close
+// every still-ACTIVE interaction/timer obligation, reporting whether it did
+// so. This is workflow policy, not something the shared sessionlock
+// primitive decides on its own behalf. lockedSession is mutated in place to
+// reflect the new state so callers do not need to re-read it. Unlike a
+// runtime failure, this termination cause is an ordinary, expected lifecycle
+// outcome - no session_runtime_failures row is created. terminal_at is
+// always set to the deadline that actually passed, never to now - so a
+// delayed materialization (a later call, or an eventual background sweep)
+// still records the instant the Session actually became inactive, not the
+// instant it happened to be noticed.
+func MaterializeIfDue(ctx context.Context, tx *gorm.DB, store Store, lockedSession *sessionlock.Session, now time.Time) (bool, error) {
+	if lockedSession.Phase != session.PhaseRunning || lockedSession.ActivityExpiresAt == nil || now.Before(*lockedSession.ActivityExpiresAt) {
+		return false, nil
+	}
+
+	terminalAt := *lockedSession.ActivityExpiresAt
+	reason := session.TerminalReasonRuntimeInactivityExpired
+	if err := store.SetSessionTerminal(ctx, tx, lockedSession.ID, terminalAt, reason); err != nil {
+		return false, err
+	}
+	if err := store.CloseAllActiveInteractionsForSession(ctx, tx, lockedSession.ID, session.InteractionClosureReasonSessionTerminated); err != nil {
+		return false, err
+	}
+	if err := store.CancelAllActiveTimerObligationsForSession(ctx, tx, lockedSession.ID, session.TimerObligationClosureReasonSessionTerminated); err != nil {
+		return false, err
+	}
+
+	lockedSession.Phase = session.PhaseTerminal
+	lockedSession.TerminalAt = &terminalAt
+	lockedSession.TerminalReason = &reason
+	return true, nil
+}

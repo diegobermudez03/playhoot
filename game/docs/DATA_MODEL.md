@@ -77,6 +77,7 @@ classDiagram
         phase
         lobby_expires_at
         started_at
+        activity_expires_at
         current_turn_id
         terminal_at
         terminal_reason

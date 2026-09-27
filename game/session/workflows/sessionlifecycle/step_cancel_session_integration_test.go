@@ -248,6 +248,38 @@ func TestManagerCancelSession_Integration(t *testing.T) {
 		require.Equal(t, session.CancelSessionOutcomeAlreadyTerminal, result.Outcome)
 	})
 
+	t.Run("stale_activity_deadline_materializes_inactivity_expiration_before_cancellation", func(t *testing.T) {
+		// CancelSession is a RUNNING-phase lazy-materialization checkpoint
+		// too (validation only, not a renewal trigger - it always
+		// terminalizes the Session itself either way). A Session already
+		// inactivity-expired must not have TerminalReasonSessionCancelledByHost
+		// silently applied over it.
+		m, sessionUUID, hostUUID := startedCancelSession(t, db, sessionCancelledStaysDefinition(1, 4))
+
+		staleDeadline := time.Now().Add(-1 * time.Minute).UTC()
+		require.NoError(t, db.Exec(`UPDATE sessions SET activity_expires_at = ? WHERE uuid = ?`, staleDeadline, string(sessionUUID)).Error)
+
+		result, err := m.CancelSession(context.Background(), sessionUUID, hostUUID, session.IdempotencyKey(uuid.NewString()))
+		require.NoError(t, err)
+		require.Equal(t, session.CancelSessionOutcomeAlreadyTerminal, result.Outcome, "a materialized inactivity expiration leaves the existing already-TERMINAL decline path to apply")
+
+		var row struct {
+			Phase          string     `gorm:"column:phase"`
+			TerminalReason *string    `gorm:"column:terminal_reason"`
+			TerminalAt     *time.Time `gorm:"column:terminal_at"`
+		}
+		require.NoError(t, db.Raw(`SELECT phase, terminal_reason, terminal_at FROM sessions WHERE uuid = ?`, string(sessionUUID)).Scan(&row).Error)
+		require.Equal(t, session.PhaseTerminal, row.Phase)
+		require.NotNil(t, row.TerminalReason)
+		require.Equal(t, session.TerminalReasonRuntimeInactivityExpired, *row.TerminalReason, "must not be overwritten by TerminalReasonSessionCancelledByHost")
+		require.NotNil(t, row.TerminalAt)
+		require.WithinDuration(t, staleDeadline, row.TerminalAt.UTC(), time.Second)
+
+		var failureCount int64
+		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_failures WHERE session_id = ?`, sessionIDForUUID(t, db, sessionUUID)).Scan(&failureCount).Error)
+		require.Equal(t, int64(0), failureCount)
+	})
+
 	t.Run("effect_outputs_from_an_accepted_transition_are_returned", func(t *testing.T) {
 		// AC10 - reuses userIntentDefinition's own Effect-emitting shape by
 		// having SessionCancelled itself emit one, proving mapOutputs/

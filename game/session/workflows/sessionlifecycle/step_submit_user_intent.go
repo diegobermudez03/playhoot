@@ -14,6 +14,7 @@ import (
 	"github.com/diegobermudez03/playhoot/game/session"
 	"github.com/diegobermudez03/playhoot/game/session/internal/idempotency"
 	"github.com/diegobermudez03/playhoot/game/session/internal/sessionlock"
+	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/activity"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/clientoutputs"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/completion"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/interactions"
@@ -53,6 +54,7 @@ type submitUserIntentRepoAPI interface {
 	CreateCauseEvent(ctx context.Context, tx *gorm.DB, sessionID uint, runtimeTurnID uint, causeKind string, actorID *uint, payload []byte) (uint, error)
 	SetRuntimeTurnCauseEvent(ctx context.Context, tx *gorm.DB, turnID uint, causeEventID uint) error
 	SetCurrentTurn(ctx context.Context, tx *gorm.DB, sessionID uint, currentTurnID uint) error
+	RenewActivityDeadline(ctx context.Context, tx *gorm.DB, sessionID uint, activityExpiresAt time.Time) error
 	SetSessionTerminal(ctx context.Context, tx *gorm.DB, sessionID uint, terminalAt time.Time, terminalReason string) error
 	CreateRuntimeFailure(ctx context.Context, tx *gorm.DB, sessionID uint, failureKind string, errorCode string, errorMessage string, baseTurnID *uint, attemptedSequence uint64, sourceKind string, sourceInteractionID *uint, sourceTimerObligationID *uint, actorID *uint, diagnosticPayload []byte) error
 	CloseAllActiveInteractionsForSession(ctx context.Context, tx *gorm.DB, sessionID uint, reason string) error
@@ -112,6 +114,13 @@ func (m *Manager) submitUserIntentInTx(ctx context.Context, tx *gorm.DB, session
 	}
 	if lockedSession == nil {
 		return session.SubmitUserIntentResult{}, session.ErrSessionNotFound
+	}
+
+	// A materialized inactivity expiration leaves the existing
+	// lockedSession.Phase != PhaseRunning check below to naturally decline
+	// this call via declineSubmitUserIntent - no separate branch is needed.
+	if _, err := activity.MaterializeIfDue(ctx, tx, m.submitUserIntentRepo, lockedSession, time.Now().UTC()); err != nil {
+		return session.SubmitUserIntentResult{}, err
 	}
 
 	payloadBytes, err := json.Marshal(incomingPayload)
@@ -281,6 +290,9 @@ func (m *Manager) submitUserIntentInTx(ctx context.Context, tx *gorm.DB, session
 		return session.SubmitUserIntentResult{}, err
 	}
 	if err := m.submitUserIntentRepo.SetCurrentTurn(ctx, tx, lockedSession.ID, turnID); err != nil {
+		return session.SubmitUserIntentResult{}, err
+	}
+	if err := m.submitUserIntentRepo.RenewActivityDeadline(ctx, tx, lockedSession.ID, now.Add(m.activityTTL)); err != nil {
 		return session.SubmitUserIntentResult{}, err
 	}
 

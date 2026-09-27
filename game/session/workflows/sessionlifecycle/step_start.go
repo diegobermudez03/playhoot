@@ -48,7 +48,7 @@ type startRepoAPI interface {
 	timers.CaptureRepo
 	FindActor(ctx context.Context, tx *gorm.DB, sessionID uint, userUUID string) (*internalrepo.Actor, error)
 	ListActiveParticipantsForRoster(ctx context.Context, tx *gorm.DB, sessionID uint) ([]internalrepo.RosterParticipant, error)
-	SetSessionRunning(ctx context.Context, tx *gorm.DB, sessionID uint, startedAt time.Time) error
+	SetSessionRunning(ctx context.Context, tx *gorm.DB, sessionID uint, startedAt time.Time, activityExpiresAt time.Time) error
 	CreateRuntimeTurn(ctx context.Context, tx *gorm.DB, sessionID uint, sequence uint64, sourceKind string, sourceInteractionID *uint, sourceTimerObligationID *uint, sourceCauseEventID *uint, actorID *uint) (uint, error)
 	CreateRuntimeStart(ctx context.Context, tx *gorm.DB, sessionID uint, seed uint64, rootParameters []byte) error
 	SetCurrentTurn(ctx context.Context, tx *gorm.DB, sessionID uint, currentTurnID uint) error
@@ -266,7 +266,7 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 	if err := m.startRepo.SetCurrentTurn(ctx, tx, lockedSession.ID, turnID); err != nil {
 		return session.StartResult{}, err
 	}
-	if err := m.startRepo.SetSessionRunning(ctx, tx, lockedSession.ID, now); err != nil {
+	if err := m.startRepo.SetSessionRunning(ctx, tx, lockedSession.ID, now, now.Add(m.activityTTL)); err != nil {
 		return session.StartResult{}, err
 	}
 

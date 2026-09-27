@@ -12,6 +12,7 @@ import (
 	"github.com/diegobermudez03/playhoot/game/session"
 	"github.com/diegobermudez03/playhoot/game/session/internal/idempotency"
 	"github.com/diegobermudez03/playhoot/game/session/internal/sessionlock"
+	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/activity"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/clientoutputs"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/completion"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/interactions"
@@ -116,6 +117,16 @@ func (m *Manager) cancelSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUI
 	}
 	if lockedSession == nil {
 		return session.CancelSessionResult{}, session.ErrSessionNotFound
+	}
+
+	// A materialized inactivity expiration leaves the existing
+	// lockedSession.Phase == PhaseTerminal check below to naturally decline
+	// this call as cancelSessionOutcomeAlreadyTerminal - an accurate,
+	// already-idempotent outcome regardless of which terminal reason applies
+	// - no separate branch is needed. CancelSession does not itself renew the
+	// deadline - it always terminalizes, leaving nothing left to renew.
+	if _, err := activity.MaterializeIfDue(ctx, tx, m.cancelSessionRepo, lockedSession, time.Now().UTC()); err != nil {
+		return session.CancelSessionResult{}, err
 	}
 
 	payloadBytes, err := json.Marshal(incomingPayload)

@@ -12,6 +12,7 @@ import (
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine/engineservice"
 	"github.com/diegobermudez03/playhoot/game/session"
 	"github.com/diegobermudez03/playhoot/game/session/internal/sessionlock"
+	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/activity"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/clientoutputs"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/completion"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/interactions"
@@ -41,6 +42,7 @@ type answerInteractionRepoAPI interface {
 	GetCauseEventByID(ctx context.Context, tx *gorm.DB, causeEventID uint) (*internalrepo.CauseEvent, error)
 	CreateRuntimeTurn(ctx context.Context, tx *gorm.DB, sessionID uint, sequence uint64, sourceKind string, sourceInteractionID *uint, sourceTimerObligationID *uint, sourceCauseEventID *uint, actorID *uint) (uint, error)
 	SetCurrentTurn(ctx context.Context, tx *gorm.DB, sessionID uint, currentTurnID uint) error
+	RenewActivityDeadline(ctx context.Context, tx *gorm.DB, sessionID uint, activityExpiresAt time.Time) error
 	CloseAnsweredInteraction(ctx context.Context, tx *gorm.DB, interactionID uint, responsePayload []byte, closedByTurnID uint) error
 	SetSessionTerminal(ctx context.Context, tx *gorm.DB, sessionID uint, terminalAt time.Time, terminalReason string) error
 	CreateRuntimeFailure(ctx context.Context, tx *gorm.DB, sessionID uint, failureKind string, errorCode string, errorMessage string, baseTurnID *uint, attemptedSequence uint64, sourceKind string, sourceInteractionID *uint, sourceTimerObligationID *uint, actorID *uint, diagnosticPayload []byte) error
@@ -100,6 +102,14 @@ func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessio
 	}
 	if lockedSession == nil {
 		return session.AnswerInteractionResult{}, session.ErrSessionNotFound
+	}
+
+	// A materialized inactivity expiration closes the interaction being
+	// answered (InteractionStateTerminated), so the existing
+	// interaction.State != InteractionStateActive check below naturally
+	// declines this call - no separate branch is needed.
+	if _, err := activity.MaterializeIfDue(ctx, tx, m.answerInteractionRepo, lockedSession, time.Now().UTC()); err != nil {
+		return session.AnswerInteractionResult{}, err
 	}
 
 	interaction, err := m.answerInteractionRepo.FindInteractionByUUID(ctx, tx, string(interactionUUID))
@@ -257,6 +267,9 @@ func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessio
 		return session.AnswerInteractionResult{}, err
 	}
 	if err := m.answerInteractionRepo.SetCurrentTurn(ctx, tx, lockedSession.ID, turnID); err != nil {
+		return session.AnswerInteractionResult{}, err
+	}
+	if err := m.answerInteractionRepo.RenewActivityDeadline(ctx, tx, lockedSession.ID, now.Add(m.activityTTL)); err != nil {
 		return session.AnswerInteractionResult{}, err
 	}
 

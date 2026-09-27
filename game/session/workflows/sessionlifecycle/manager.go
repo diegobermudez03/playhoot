@@ -28,6 +28,10 @@ import (
 // configuration is supplied.
 const defaultLobbyTTL = 10 * time.Minute
 
+// defaultActivityTTL is the RUNNING-phase inactivity deadline applied when no
+// other TTL configuration is supplied.
+const defaultActivityTTL = 10 * time.Minute
+
 // Session lifecycle idempotency operation labels, scoping each command's
 // idempotency identity to (UserUUID, operation, IdempotencyKey).
 const (
@@ -72,7 +76,8 @@ type Manager struct {
 	currentGameReader gameCurrentVersionReader
 	pinnedGameReader  gamePinnedDefinitionReader
 
-	lobbyTTL time.Duration
+	lobbyTTL    time.Duration
+	activityTTL time.Duration
 }
 
 // GetDB satisfies utils.DBServicer, letting Manager itself be passed
@@ -102,5 +107,6 @@ func New(db *gorm.DB, currentGameReader gameCurrentVersionReader, pinnedGameRead
 		currentGameReader:     currentGameReader,
 		pinnedGameReader:      pinnedGameReader,
 		lobbyTTL:              defaultLobbyTTL,
+		activityTTL:           defaultActivityTTL,
 	}
 }

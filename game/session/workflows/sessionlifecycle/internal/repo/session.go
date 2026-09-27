@@ -45,18 +45,36 @@ type sessionInsert struct {
 
 func (sessionInsert) TableName() string { return "sessions" }
 
-// SetSessionRunning persists Start's successful LOBBY -> RUNNING transition.
+// SetSessionRunning persists Start's successful LOBBY -> RUNNING transition,
+// including the initial activity_expires_at deadline.
 // Expiration/host/roster validation is Start's own business policy, decided
 // before this call; this method only performs the already-decided mutation.
-// updated_at is an audit timestamp the repository stamps itself; startedAt
-// is semantic lifecycle state and remains an explicit input.
-func (r *Repo) SetSessionRunning(ctx context.Context, tx *gorm.DB, sessionID uint, startedAt time.Time) error {
+// updated_at is an audit timestamp the repository stamps itself; startedAt/
+// activityExpiresAt are semantic lifecycle state and remain explicit inputs.
+func (r *Repo) SetSessionRunning(ctx context.Context, tx *gorm.DB, sessionID uint, startedAt time.Time, activityExpiresAt time.Time) error {
 	if err := tx.WithContext(ctx).Exec(`
 		UPDATE sessions
-		SET phase = ?, started_at = ?, updated_at = CURRENT_TIMESTAMP
+		SET phase = ?, started_at = ?, activity_expires_at = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?
-	`, session.PhaseRunning, startedAt, sessionID).Error; err != nil {
+	`, session.PhaseRunning, startedAt, activityExpiresAt, sessionID).Error; err != nil {
 		return fmt.Errorf("setting session running: %s", err)
+	}
+	return nil
+}
+
+// RenewActivityDeadline extends sessionID's RUNNING-phase inactivity
+// deadline, sessions.activity_expires_at, to activityExpiresAt. Called by
+// every RuntimeTurn-producing RUNNING-phase
+// operation once it actually commits a new Turn - deciding *whether* an
+// operation counts as renewal-worthy activity is the Manager's own policy,
+// not this method's.
+func (r *Repo) RenewActivityDeadline(ctx context.Context, tx *gorm.DB, sessionID uint, activityExpiresAt time.Time) error {
+	if err := tx.WithContext(ctx).Exec(`
+		UPDATE sessions
+		SET activity_expires_at = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?
+	`, activityExpiresAt, sessionID).Error; err != nil {
+		return fmt.Errorf("renewing session activity deadline: %s", err)
 	}
 	return nil
 }

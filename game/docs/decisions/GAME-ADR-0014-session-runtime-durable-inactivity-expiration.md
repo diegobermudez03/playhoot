@@ -105,3 +105,7 @@ Rejected. Neither name matches what is actually observed (deadline passage); bot
 ## Implementation Impact
 
 Future implementation must add a migration for `activity_expires_at`, per-operation validation/lazy-materialization logic, and a Reaper job design; TTL must be configurable rather than hard-coded. No migration, Reaper implementation, production code, or WORK is authorized by this record.
+
+### Implemented by
+
+`docs/projects/active/session-runtime-v1/works/WORK-0016-inactivity-expiration-reaper.md` implements this record's schema, renewal, and lazy-materialization rules: `sessions.activity_expires_at` (nullable, set by `Start` alongside `started_at`); renewal by `AnswerInteraction`/`SubmitUserIntent`/`ExpireTimer` whenever any of them actually commits a new RuntimeTurn; lazy materialization (checked immediately after locking, before any other business logic) by those three plus `CancelSession` - a fourth RUNNING-phase operation this record's own "every active-dependent operation validates the deadline" rule also covers, found necessary during implementation. `terminal_at` is always the deadline that passed, never the materializing call's own current time, exactly as this record requires. The background Reaper this record also describes is not yet implemented - a Session past its deadline only actually terminalizes the next time some RUNNING-phase operation reaches it, not proactively; this remains a separate, not-yet-drafted WORK.

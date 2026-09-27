@@ -237,6 +237,8 @@ Rationale and alternatives are recorded in `game/docs/decisions/GAME-ADR-0017-se
 
 ## Session Runtime Durable Inactivity Expiration
 
+Status: HUMAN-APPROVED; schema/renewal/lazy-materialization implemented by `WORK-0016-inactivity-expiration-reaper.md` - the background Session Reaper described below remains not implemented, split to a separate not-yet-drafted WORK.
+
 Every `RUNNING` Session has a durable inactivity deadline, `sessions.activity_expires_at`, distinct from `lobby_expires_at`. It is not a process ownership lease; it answers until what instant the platform still considers the Session active absent meaningful activity, so abandoned Sessions and crashed-process Sessions eventually leave hot `RUNNING` state and become eligible for terminalization and archival.
 
 Meaningful Session operations that demonstrate continued active use extend `activity_expires_at = now + inactivity_ttl`. V1 may use a configurable TTL around 10 minutes; the exact duration is configurable operational/product policy, not hard-coded Game Language semantics. Only operations that constitute meaningful evidence of active use may renew the deadline - for example successful RuntimeTurn-producing gameplay operations, accepted interaction processing, timer expiration processing, meaningful lifecycle/runtime events, or justified authenticated reconnection/resume activity (illustrative, not exhaustive) - arbitrary passive reads/polling must not renew it.

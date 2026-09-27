@@ -67,6 +67,13 @@ const (
 	// abandonment. A host cancellation always terminalizes the Session even
 	// when the authored game has no transition modeling it at all.
 	TerminalReasonSessionCancelledByHost = "SESSION_CANCELLED_BY_HOST"
+
+	// TerminalReasonRuntimeInactivityExpired marks a RUNNING Session
+	// terminated because no meaningful activity renewed activity_expires_at
+	// before its deadline passed - an ordinary, expected lifecycle outcome,
+	// not a runtime failure; no session_runtime_failures row is created for
+	// it.
+	TerminalReasonRuntimeInactivityExpired = "RUNTIME_INACTIVITY_EXPIRED"
 )
 
 // session_interactions.kind values: which of the engine's two

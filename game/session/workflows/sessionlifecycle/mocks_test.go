@@ -538,17 +538,17 @@ func (mr *MockstartRepoAPIMockRecorder) SetCurrentTurn(ctx, tx, sessionID, curre
 }
 
 // SetSessionRunning mocks base method.
-func (m *MockstartRepoAPI) SetSessionRunning(ctx context.Context, tx *gorm.DB, sessionID uint, startedAt time.Time) error {
+func (m *MockstartRepoAPI) SetSessionRunning(ctx context.Context, tx *gorm.DB, sessionID uint, startedAt, activityExpiresAt time.Time) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SetSessionRunning", ctx, tx, sessionID, startedAt)
+	ret := m.ctrl.Call(m, "SetSessionRunning", ctx, tx, sessionID, startedAt, activityExpiresAt)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // SetSessionRunning indicates an expected call of SetSessionRunning.
-func (mr *MockstartRepoAPIMockRecorder) SetSessionRunning(ctx, tx, sessionID, startedAt any) *gomock.Call {
+func (mr *MockstartRepoAPIMockRecorder) SetSessionRunning(ctx, tx, sessionID, startedAt, activityExpiresAt any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetSessionRunning", reflect.TypeOf((*MockstartRepoAPI)(nil).SetSessionRunning), ctx, tx, sessionID, startedAt)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetSessionRunning", reflect.TypeOf((*MockstartRepoAPI)(nil).SetSessionRunning), ctx, tx, sessionID, startedAt, activityExpiresAt)
 }
 
 // SetSessionTerminal mocks base method.
@@ -836,6 +836,20 @@ func (m *MockanswerInteractionRepoAPI) ListRuntimeTurns(ctx context.Context, tx 
 func (mr *MockanswerInteractionRepoAPIMockRecorder) ListRuntimeTurns(ctx, tx, sessionID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListRuntimeTurns", reflect.TypeOf((*MockanswerInteractionRepoAPI)(nil).ListRuntimeTurns), ctx, tx, sessionID)
+}
+
+// RenewActivityDeadline mocks base method.
+func (m *MockanswerInteractionRepoAPI) RenewActivityDeadline(ctx context.Context, tx *gorm.DB, sessionID uint, activityExpiresAt time.Time) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RenewActivityDeadline", ctx, tx, sessionID, activityExpiresAt)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RenewActivityDeadline indicates an expected call of RenewActivityDeadline.
+func (mr *MockanswerInteractionRepoAPIMockRecorder) RenewActivityDeadline(ctx, tx, sessionID, activityExpiresAt any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RenewActivityDeadline", reflect.TypeOf((*MockanswerInteractionRepoAPI)(nil).RenewActivityDeadline), ctx, tx, sessionID, activityExpiresAt)
 }
 
 // ResolveSessionForInteraction mocks base method.
@@ -1139,6 +1153,20 @@ func (mr *MockexpireTimerRepoAPIMockRecorder) ListRuntimeTurns(ctx, tx, sessionI
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListRuntimeTurns", reflect.TypeOf((*MockexpireTimerRepoAPI)(nil).ListRuntimeTurns), ctx, tx, sessionID)
 }
 
+// RenewActivityDeadline mocks base method.
+func (m *MockexpireTimerRepoAPI) RenewActivityDeadline(ctx context.Context, tx *gorm.DB, sessionID uint, activityExpiresAt time.Time) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RenewActivityDeadline", ctx, tx, sessionID, activityExpiresAt)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RenewActivityDeadline indicates an expected call of RenewActivityDeadline.
+func (mr *MockexpireTimerRepoAPIMockRecorder) RenewActivityDeadline(ctx, tx, sessionID, activityExpiresAt any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RenewActivityDeadline", reflect.TypeOf((*MockexpireTimerRepoAPI)(nil).RenewActivityDeadline), ctx, tx, sessionID, activityExpiresAt)
+}
+
 // ResolveSessionForTimerObligation mocks base method.
 func (m *MockexpireTimerRepoAPI) ResolveSessionForTimerObligation(ctx context.Context, timerObligationUUID string) (*uint, error) {
 	m.ctrl.T.Helper()
@@ -1439,6 +1467,20 @@ func (m *MocksubmitUserIntentRepoAPI) ListRuntimeTurns(ctx context.Context, tx *
 func (mr *MocksubmitUserIntentRepoAPIMockRecorder) ListRuntimeTurns(ctx, tx, sessionID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListRuntimeTurns", reflect.TypeOf((*MocksubmitUserIntentRepoAPI)(nil).ListRuntimeTurns), ctx, tx, sessionID)
+}
+
+// RenewActivityDeadline mocks base method.
+func (m *MocksubmitUserIntentRepoAPI) RenewActivityDeadline(ctx context.Context, tx *gorm.DB, sessionID uint, activityExpiresAt time.Time) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RenewActivityDeadline", ctx, tx, sessionID, activityExpiresAt)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RenewActivityDeadline indicates an expected call of RenewActivityDeadline.
+func (mr *MocksubmitUserIntentRepoAPIMockRecorder) RenewActivityDeadline(ctx, tx, sessionID, activityExpiresAt any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RenewActivityDeadline", reflect.TypeOf((*MocksubmitUserIntentRepoAPI)(nil).RenewActivityDeadline), ctx, tx, sessionID, activityExpiresAt)
 }
 
 // SetCurrentTurn mocks base method.

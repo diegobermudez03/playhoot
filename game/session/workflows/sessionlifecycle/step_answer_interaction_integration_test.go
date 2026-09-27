@@ -308,6 +308,102 @@ func TestManagerAnswerInteraction_Integration(t *testing.T) {
 		require.NotNil(t, failureRow.ActorID)
 	})
 
+	t.Run("accepted_answer_renews_activity_deadline", func(t *testing.T) {
+		m, sessionUUID, hostUUID, interactionUUID := startedAnswerableSession(t, db, answerableDefinition(1, 4))
+
+		before := activityExpiresAtForUUID(t, db, sessionUUID)
+		require.NotNil(t, before)
+
+		result, err := m.AnswerInteraction(context.Background(), interactionUUID, hostUUID, numberAnswer(t, 42))
+		require.NoError(t, err)
+		require.Equal(t, session.AnswerInteractionOutcomeAnswered, result.Outcome)
+
+		after := activityExpiresAtForUUID(t, db, sessionUUID)
+		require.NotNil(t, after)
+		require.True(t, after.After(*before), "a Turn-committing answer must renew activity_expires_at")
+	})
+
+	t.Run("rejected_answer_does_not_renew_activity_deadline", func(t *testing.T) {
+		m, sessionUUID, _, interactionUUID := startedAnswerableSession(t, db, answerableDefinition(1, 4))
+
+		otherUUID := uuid.NewString()
+		testfixtures.SeedActiveParticipant(t, db, sessionIDForUUID(t, db, sessionUUID), otherUUID, "Not Recipient")
+
+		before := activityExpiresAtForUUID(t, db, sessionUUID)
+		require.NotNil(t, before)
+
+		result, err := m.AnswerInteraction(context.Background(), interactionUUID, session.UserUUID(otherUUID), numberAnswer(t, 7))
+		require.NoError(t, err)
+		require.Equal(t, session.AnswerInteractionOutcomeRejected, result.Outcome)
+
+		after := activityExpiresAtForUUID(t, db, sessionUUID)
+		require.NotNil(t, after)
+		require.Equal(t, before.UTC(), after.UTC(), "a declined response with no committed Turn must not renew activity_expires_at")
+	})
+
+	t.Run("stale_activity_deadline_materializes_inactivity_expiration_and_declines", func(t *testing.T) {
+		m, sessionUUID, hostUUID, interactionUUID := startedAnswerableSession(t, db, answerableDefinition(1, 4))
+
+		staleDeadline := time.Now().Add(-1 * time.Minute).UTC()
+		require.NoError(t, db.Exec(`UPDATE sessions SET activity_expires_at = ? WHERE uuid = ?`, staleDeadline, string(sessionUUID)).Error)
+
+		result, err := m.AnswerInteraction(context.Background(), interactionUUID, hostUUID, numberAnswer(t, 42))
+		require.NoError(t, err)
+		require.Equal(t, session.AnswerInteractionOutcomeRejected, result.Outcome, "a materialized inactivity expiration closes the interaction, so the existing non-ACTIVE-interaction decline path applies")
+
+		var row struct {
+			Phase          string     `gorm:"column:phase"`
+			TerminalReason *string    `gorm:"column:terminal_reason"`
+			TerminalAt     *time.Time `gorm:"column:terminal_at"`
+		}
+		require.NoError(t, db.Raw(`SELECT phase, terminal_reason, terminal_at FROM sessions WHERE uuid = ?`, string(sessionUUID)).Scan(&row).Error)
+		require.Equal(t, session.PhaseTerminal, row.Phase)
+		require.NotNil(t, row.TerminalReason)
+		require.Equal(t, session.TerminalReasonRuntimeInactivityExpired, *row.TerminalReason)
+		require.NotNil(t, row.TerminalAt)
+		require.WithinDuration(t, staleDeadline, row.TerminalAt.UTC(), time.Second, "terminal_at must equal the deadline that passed, not the materializing call's own current time")
+
+		var interactionState string
+		require.NoError(t, db.Raw(`SELECT state FROM session_interactions WHERE uuid = ?`, string(interactionUUID)).Scan(&interactionState).Error)
+		require.Equal(t, session.InteractionStateTerminated, interactionState, "GAME-ADR-0019 terminal cleanup must close the still-ACTIVE interaction")
+
+		var failureCount int64
+		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_failures WHERE session_id = ?`, sessionIDForUUID(t, db, sessionUUID)).Scan(&failureCount).Error)
+		require.Equal(t, int64(0), failureCount, "inactivity expiration is an ordinary lifecycle outcome, not a GAME-ADR-0017 runtime failure")
+	})
+
+	t.Run("renewed_activity_deadline_survives_past_original_stale_value", func(t *testing.T) {
+		m, sessionUUID, hostUUID, interactionUUID := startedAnswerableSession(t, db, answerableDefinition(1, 4))
+
+		// An operation reaching serialization strictly before its deadline
+		// processes normally and extends it - a later call must not be
+		// treated as expired merely because the *original* deadline already
+		// passed.
+		soonDeadline := time.Now().Add(1500 * time.Millisecond).UTC()
+		require.NoError(t, db.Exec(`UPDATE sessions SET activity_expires_at = ? WHERE uuid = ?`, soonDeadline, string(sessionUUID)).Error)
+
+		result, err := m.AnswerInteraction(context.Background(), interactionUUID, hostUUID, numberAnswer(t, 42))
+		require.NoError(t, err)
+		require.Equal(t, session.AnswerInteractionOutcomeAnswered, result.Outcome)
+
+		renewed := activityExpiresAtForUUID(t, db, sessionUUID)
+		require.NotNil(t, renewed)
+		require.True(t, renewed.After(soonDeadline), "a successful call before the deadline must renew it forward")
+
+		// Wait past the *original* soonDeadline - the renewed deadline is far
+		// in the future, so a further call must still succeed, not be
+		// wrongly treated as expired against the stale original value.
+		time.Sleep(2 * time.Second)
+
+		secondResult, err := m.AnswerInteraction(context.Background(), interactionUUID, hostUUID, numberAnswer(t, 42))
+		require.NoError(t, err)
+		require.Equal(t, session.AnswerInteractionOutcomeAnswered, secondResult.Outcome, "the already-answered interaction replays instead of being wrongly declined as expired")
+
+		var phase string
+		require.NoError(t, db.Raw(`SELECT phase FROM sessions WHERE uuid = ?`, string(sessionUUID)).Scan(&phase).Error)
+		require.Equal(t, session.PhaseRunning, phase, "the renewed deadline must still hold; the Session must not have inactivity-expired")
+	})
+
 	t.Run("accepted_answer_to_ask_group_question_resolves_interaction", func(t *testing.T) {
 		m, sessionUUID, hostUUID, interactionUUID := startedAnswerableSession(t, db, askGroupAnswerableDefinition(1, 4))
 
@@ -417,4 +513,13 @@ func sessionIDForUUID(t *testing.T, db *gorm.DB, sessionUUID session.SessionUUID
 	var id uint
 	require.NoError(t, db.Raw(`SELECT id FROM sessions WHERE uuid = ?`, string(sessionUUID)).Scan(&id).Error)
 	return id
+}
+
+// activityExpiresAtForUUID reads sessions.activity_expires_at for sessionUUID
+// directly, for renewal/lazy-materialization assertions.
+func activityExpiresAtForUUID(t *testing.T, db *gorm.DB, sessionUUID session.SessionUUID) *time.Time {
+	t.Helper()
+	var activityExpiresAt *time.Time
+	require.NoError(t, db.Raw(`SELECT activity_expires_at FROM sessions WHERE uuid = ?`, string(sessionUUID)).Scan(&activityExpiresAt).Error)
+	return activityExpiresAt
 }

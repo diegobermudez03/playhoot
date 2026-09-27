@@ -59,6 +59,10 @@ func MigrateTables(db *gorm.DB) error {
 		// record, populated by every RuntimeTurn-producing path's fatal
 		// branch (WORK-0014).
 		migration20260926000000SessionRuntimeFailures(),
+
+		// sessions.activity_expires_at - the durable RUNNING-phase inactivity
+		// deadline every active-dependent operation validates and may renew.
+		migration20260926000001SessionsActivityExpiresAt(),
 	})
 
 	return migrator.Migrate()

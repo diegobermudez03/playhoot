@@ -98,6 +98,78 @@ func TestManagerExpireTimer_Integration(t *testing.T) {
 		require.Equal(t, *obligationRow.ClosedByTurnID, currentTurnID)
 	})
 
+	t.Run("expiring_a_scheduled_timer_renews_activity_deadline", func(t *testing.T) {
+		m := New(db, nil, stubStartPinnedGameReader{definition: timerDefinition(1, 4, 5000)})
+
+		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
+		hostUUID := uuid.NewString()
+		hostActorID := testfixtures.SeedActor(t, db, fx.SessionID, hostUUID)
+		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
+		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
+
+		startResult, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), session.IdempotencyKey(uuid.NewString()))
+		require.NoError(t, err)
+		require.Equal(t, session.StartOutcomeStarted, startResult.Outcome)
+
+		var obligationUUID string
+		require.NoError(t, db.Raw(`SELECT uuid FROM session_timer_obligations WHERE session_id = ?`, fx.SessionID).Scan(&obligationUUID).Error)
+
+		before := activityExpiresAtForUUID(t, db, session.SessionUUID(fx.SessionUUID))
+		require.NotNil(t, before)
+
+		result, err := m.ExpireTimer(context.Background(), session.TimerObligationUUID(obligationUUID))
+		require.NoError(t, err)
+		require.Equal(t, session.ExpireTimerOutcomeExpired, result.Outcome)
+
+		after := activityExpiresAtForUUID(t, db, session.SessionUUID(fx.SessionUUID))
+		require.NotNil(t, after)
+		require.True(t, after.After(*before), "a Turn-committing expiration must renew activity_expires_at")
+	})
+
+	t.Run("stale_activity_deadline_materializes_inactivity_expiration_and_declines", func(t *testing.T) {
+		m := New(db, nil, stubStartPinnedGameReader{definition: timerDefinition(1, 4, 5000)})
+
+		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
+		hostUUID := uuid.NewString()
+		hostActorID := testfixtures.SeedActor(t, db, fx.SessionID, hostUUID)
+		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
+		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
+
+		startResult, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), session.IdempotencyKey(uuid.NewString()))
+		require.NoError(t, err)
+		require.Equal(t, session.StartOutcomeStarted, startResult.Outcome)
+
+		var obligationUUID string
+		require.NoError(t, db.Raw(`SELECT uuid FROM session_timer_obligations WHERE session_id = ?`, fx.SessionID).Scan(&obligationUUID).Error)
+
+		staleDeadline := time.Now().Add(-1 * time.Minute).UTC()
+		require.NoError(t, db.Exec(`UPDATE sessions SET activity_expires_at = ? WHERE id = ?`, staleDeadline, fx.SessionID).Error)
+
+		result, err := m.ExpireTimer(context.Background(), session.TimerObligationUUID(obligationUUID))
+		require.NoError(t, err)
+		require.Equal(t, session.ExpireTimerOutcomeStale, result.Outcome, "a materialized inactivity expiration cancels the obligation, so the existing stale-obligation decline path applies")
+
+		var row struct {
+			Phase          string     `gorm:"column:phase"`
+			TerminalReason *string    `gorm:"column:terminal_reason"`
+			TerminalAt     *time.Time `gorm:"column:terminal_at"`
+		}
+		require.NoError(t, db.Raw(`SELECT phase, terminal_reason, terminal_at FROM sessions WHERE id = ?`, fx.SessionID).Scan(&row).Error)
+		require.Equal(t, session.PhaseTerminal, row.Phase)
+		require.NotNil(t, row.TerminalReason)
+		require.Equal(t, session.TerminalReasonRuntimeInactivityExpired, *row.TerminalReason)
+		require.NotNil(t, row.TerminalAt)
+		require.WithinDuration(t, staleDeadline, row.TerminalAt.UTC(), time.Second)
+
+		var obligationState string
+		require.NoError(t, db.Raw(`SELECT state FROM session_timer_obligations WHERE uuid = ?`, obligationUUID).Scan(&obligationState).Error)
+		require.Equal(t, session.TimerObligationStateCancelled, obligationState, "GAME-ADR-0019 terminal cleanup must cancel the still-ACTIVE obligation")
+
+		var failureCount int64
+		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_failures WHERE session_id = ?`, fx.SessionID).Scan(&failureCount).Error)
+		require.Equal(t, int64(0), failureCount)
+	})
+
 	t.Run("expiring_an_already_consumed_obligation_is_stale_and_creates_no_second_turn", func(t *testing.T) {
 		m := New(db, nil, stubStartPinnedGameReader{definition: timerDefinition(1, 4, 5000)})
 

@@ -60,6 +60,15 @@ func TestManagerStart_Integration(t *testing.T) {
 		var currentTurnID uint
 		require.NoError(t, db.Raw(`SELECT current_turn_id FROM sessions WHERE id = ?`, fx.SessionID).Scan(&currentTurnID).Error)
 		require.Equal(t, turn.ID, currentTurnID)
+
+		var activity struct {
+			StartedAt         *time.Time `gorm:"column:started_at"`
+			ActivityExpiresAt *time.Time `gorm:"column:activity_expires_at"`
+		}
+		require.NoError(t, db.Raw(`SELECT started_at, activity_expires_at FROM sessions WHERE id = ?`, fx.SessionID).Scan(&activity).Error)
+		require.NotNil(t, activity.StartedAt)
+		require.NotNil(t, activity.ActivityExpiresAt, "Start must set the initial GAME-ADR-0014 inactivity deadline")
+		require.True(t, activity.ActivityExpiresAt.After(*activity.StartedAt), "activity_expires_at must be started_at plus the configured TTL")
 	})
 
 	t.Run("first_turn_opening_a_question_persists_an_active_interaction", func(t *testing.T) {

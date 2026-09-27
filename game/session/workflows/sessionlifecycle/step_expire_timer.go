@@ -10,6 +10,7 @@ import (
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine/engineservice"
 	"github.com/diegobermudez03/playhoot/game/session"
 	"github.com/diegobermudez03/playhoot/game/session/internal/sessionlock"
+	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/activity"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/clientoutputs"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/completion"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/interactions"
@@ -42,6 +43,7 @@ type expireTimerRepoAPI interface {
 	GetCauseEventByID(ctx context.Context, tx *gorm.DB, causeEventID uint) (*internalrepo.CauseEvent, error)
 	CreateRuntimeTurn(ctx context.Context, tx *gorm.DB, sessionID uint, sequence uint64, sourceKind string, sourceInteractionID *uint, sourceTimerObligationID *uint, sourceCauseEventID *uint, actorID *uint) (uint, error)
 	SetCurrentTurn(ctx context.Context, tx *gorm.DB, sessionID uint, currentTurnID uint) error
+	RenewActivityDeadline(ctx context.Context, tx *gorm.DB, sessionID uint, activityExpiresAt time.Time) error
 	CloseTimerObligation(ctx context.Context, tx *gorm.DB, timerObligationID uint, closedByTurnID uint) error
 	SetSessionTerminal(ctx context.Context, tx *gorm.DB, sessionID uint, terminalAt time.Time, terminalReason string) error
 	CreateRuntimeFailure(ctx context.Context, tx *gorm.DB, sessionID uint, failureKind string, errorCode string, errorMessage string, baseTurnID *uint, attemptedSequence uint64, sourceKind string, sourceInteractionID *uint, sourceTimerObligationID *uint, actorID *uint, diagnosticPayload []byte) error
@@ -90,6 +92,14 @@ func (m *Manager) expireTimerInTx(ctx context.Context, tx *gorm.DB, sessionID ui
 	}
 	if lockedSession == nil {
 		return session.ExpireTimerResult{}, session.ErrSessionNotFound
+	}
+
+	// A materialized inactivity expiration cancels the obligation being
+	// expired, so the existing obligation.State != TimerObligationStateActive
+	// check below naturally declines this call as stale - no separate branch
+	// is needed.
+	if _, err := activity.MaterializeIfDue(ctx, tx, m.expireTimerRepo, lockedSession, time.Now().UTC()); err != nil {
+		return session.ExpireTimerResult{}, err
 	}
 
 	obligation, err := m.expireTimerRepo.FindTimerObligationByUUID(ctx, tx, string(timerObligationUUID))
@@ -201,6 +211,9 @@ func (m *Manager) expireTimerInTx(ctx context.Context, tx *gorm.DB, sessionID ui
 		return session.ExpireTimerResult{}, err
 	}
 	if err := m.expireTimerRepo.SetCurrentTurn(ctx, tx, lockedSession.ID, turnID); err != nil {
+		return session.ExpireTimerResult{}, err
+	}
+	if err := m.expireTimerRepo.RenewActivityDeadline(ctx, tx, lockedSession.ID, now.Add(m.activityTTL)); err != nil {
 		return session.ExpireTimerResult{}, err
 	}
 
