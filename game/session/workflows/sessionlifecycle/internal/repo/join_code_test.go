@@ -24,21 +24,15 @@ func TestRepoResolveSessionForJoinCode(t *testing.T) {
 		require.NotNil(t, resolution)
 		require.Equal(t, fx.SessionID, resolution.SessionID)
 		require.Equal(t, fx.GameDefinitionUUID, resolution.GameDefinitionUUID)
-		require.Nil(t, resolution.RevokedAt)
 	})
 
-	t.Run("resolves_revoked_code_with_revoked_at_set", func(t *testing.T) {
-		// A revoked code still resolves - the Manager re-validates
-		// admissibility under lock using RevokedAt, since a code revoked
-		// concurrently by the same Session's own lazy lobby-expiration
-		// materialization must surface as the ordinary LobbyExpired outcome
-		// value rather than a hard "invalid code" error discovered here and
-		// never re-checked under lock.
+	t.Run("does_not_resolve_a_revoked_code", func(t *testing.T) {
+		// A revoked assignment is indistinguishable from a code that never
+		// existed - neither identifies an admissible lobby to join - so this
+		// does not resolve, the same as returns_nil_for_unknown_code below.
 		resolution, err := r.ResolveSessionForJoinCode(context.Background(), 5252)
 		require.NoError(t, err)
-		require.NotNil(t, resolution)
-		require.Equal(t, fx.SessionID, resolution.SessionID)
-		require.NotNil(t, resolution.RevokedAt)
+		require.Nil(t, resolution)
 	})
 
 	t.Run("returns_nil_for_unknown_code", func(t *testing.T) {
@@ -62,12 +56,10 @@ func TestRepoCreateAndRevokeJoinCode(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resolution)
 	require.Equal(t, fx.SessionID, resolution.SessionID)
-	require.Nil(t, resolution.RevokedAt)
 
 	require.NoError(t, r.RevokeActiveJoinCode(context.Background(), db, fx.SessionID, time.Now().UTC()))
 
 	resolution, err = r.ResolveSessionForJoinCode(context.Background(), code)
 	require.NoError(t, err)
-	require.NotNil(t, resolution, "a revoked join code still resolves - RevokedAt reports its status")
-	require.NotNil(t, resolution.RevokedAt)
+	require.Nil(t, resolution, "a revoked join code no longer resolves")
 }

@@ -13,37 +13,29 @@ import (
 // not collide with another currently-active code.
 const maxJoinCodeAttempts = 10
 
-// JoinCodeResolution identifies which Session a JoinCode currently names,
-// and that Session's pinned Definition/Version UUID. RevokedAt is non-nil
-// when the resolved join_codes row is itself already revoked - the caller
-// still re-validates the Session's admissibility under lock afterward, using
-// RevokedAt to distinguish a code revoked independently of the Session it
-// names still being open (genuinely invalid) from one revoked concurrently
-// by that same Session's own lazy lobby-expiration materialization (a value
-// outcome, not an error).
+// JoinCodeResolution identifies which Session a currently-active JoinCode
+// names, and that Session's pinned Definition/Version UUID.
 type JoinCodeResolution struct {
 	SessionID          uint
 	GameDefinitionUUID string
-	RevokedAt          *time.Time
 }
 
 // ResolveSessionForJoinCode is an unlocked, pre-transaction lookup: it lets
 // the Manager read the Game Management pinned-definition capability before
-// opening the mutation transaction. It resolves the most recently issued
-// join_codes row for joinCode regardless of revocation
-// status (never filtered to revoked_at IS NULL) - a code number is reused
-// over time as old assignments are revoked, so the most recent row is always
-// the currently-relevant assignment, active or not. The Session's
-// admissibility itself is always re-validated under lock afterward.
+// opening the mutation transaction. It resolves joinCode's currently-active
+// assignment only (revoked_at IS NULL) - a revoked code is indistinguishable
+// from one that never existed (both cases: no admissible lobby to join), so
+// callers do not attempt to tell them apart. A code number is reused over
+// time as old assignments are revoked, so at most one row can ever match.
+// The Session's admissibility itself is always re-validated under lock
+// afterward, since it can still change between this read and that lock.
 func (r *Repo) ResolveSessionForJoinCode(ctx context.Context, joinCode uint) (*JoinCodeResolution, error) {
 	var resolution JoinCodeResolution
 	result := r.db.WithContext(ctx).Raw(`
-		SELECT s.id AS session_id, s.game_definition_uuid, jc.revoked_at
+		SELECT s.id AS session_id, s.game_definition_uuid
 		FROM sessions s
 		INNER JOIN join_codes jc ON jc.session_id = s.id
-		WHERE jc.code = ?
-		ORDER BY jc.id DESC
-		LIMIT 1
+		WHERE jc.code = ? AND jc.revoked_at IS NULL
 	`, joinCode).Scan(&resolution)
 	if result.Error != nil {
 		return nil, fmt.Errorf("resolving join code: %s", result.Error)
