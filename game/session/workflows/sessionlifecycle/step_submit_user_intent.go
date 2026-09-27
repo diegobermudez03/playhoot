@@ -54,6 +54,7 @@ type submitUserIntentRepoAPI interface {
 	SetRuntimeTurnCauseEvent(ctx context.Context, tx *gorm.DB, turnID uint, causeEventID uint) error
 	SetCurrentTurn(ctx context.Context, tx *gorm.DB, sessionID uint, currentTurnID uint) error
 	SetSessionTerminal(ctx context.Context, tx *gorm.DB, sessionID uint, terminalAt time.Time, terminalReason string) error
+	CreateRuntimeFailure(ctx context.Context, tx *gorm.DB, sessionID uint, failureKind string, errorCode string, errorMessage string, baseTurnID *uint, attemptedSequence uint64, sourceKind string, sourceInteractionID *uint, sourceTimerObligationID *uint, actorID *uint, diagnosticPayload []byte) error
 	CloseAllActiveInteractionsForSession(ctx context.Context, tx *gorm.DB, sessionID uint, reason string) error
 	CancelAllActiveTimerObligationsForSession(ctx context.Context, tx *gorm.DB, sessionID uint, reason string) error
 }
@@ -207,7 +208,8 @@ func (m *Manager) submitUserIntentInTx(ctx context.Context, tx *gorm.DB, session
 			"pinned game definition failed to recompile submitting user intent: session_uuid=%s game_definition_uuid=%s",
 			lockedSession.UUID, lockedSession.GameDefinitionUUID,
 		))
-		return m.terminalizeSubmitUserIntentFatal(ctx, tx, requestID, lockedSession, now, session.TerminalReasonRuntimeStateInvalid)
+		return m.terminalizeSubmitUserIntentFatal(ctx, tx, requestID, lockedSession, now, session.TerminalReasonRuntimeStateInvalid,
+			RuntimeFailureKindStateInvalid, RuntimeFailureErrorCodeDefinitionRecompileFailed, formatDiagnostics(diagnostics), &currentTurn.ID, currentTurn.Sequence+1, actor.ID)
 	}
 
 	// Current authoritative Runtime state is never loaded from a persisted
@@ -246,7 +248,9 @@ func (m *Manager) submitUserIntentInTx(ctx context.Context, tx *gorm.DB, session
 		if errors.Is(err, engineservice.ErrSignalRejected) || errors.Is(err, engineservice.ErrInputRejected) {
 			return m.declineSubmitUserIntent(ctx, tx, requestID, lockedSession)
 		}
-		return m.terminalizeSubmitUserIntentFatal(ctx, tx, requestID, lockedSession, now, session.TerminalReasonRuntimeExecutionFailed)
+		errorCode, errorMessage := classifyExecutionError(err)
+		return m.terminalizeSubmitUserIntentFatal(ctx, tx, requestID, lockedSession, now, session.TerminalReasonRuntimeExecutionFailed,
+			RuntimeFailureKindExecution, errorCode, errorMessage, &currentTurn.ID, currentTurn.Sequence+1, actor.ID)
 	}
 
 	payload, err := replay.EncodeUserIntentPayload(intentName, validatedArguments)
@@ -319,19 +323,14 @@ func (m *Manager) declineSubmitUserIntent(ctx context.Context, tx *gorm.DB, requ
 }
 
 // terminalizeSubmitUserIntentFatal performs SubmitUserIntent's fatal path:
-// atomically terminalizes the Session and closes every currently-ACTIVE
-// session_interactions row and timer obligation for it, mirroring
-// terminalizeAnswerInteractionFatal exactly, and completes the idempotency
-// claim so a retry replays this same outcome instead of re-attempting a
-// doomed execution.
-func (m *Manager) terminalizeSubmitUserIntentFatal(ctx context.Context, tx *gorm.DB, requestID uint, lockedSession *sessionlock.Session, terminalAt time.Time, terminalReason string) (session.SubmitUserIntentResult, error) {
-	if err := m.submitUserIntentRepo.SetSessionTerminal(ctx, tx, lockedSession.ID, terminalAt, terminalReason); err != nil {
-		return session.SubmitUserIntentResult{}, err
-	}
-	if err := m.submitUserIntentRepo.CloseAllActiveInteractionsForSession(ctx, tx, lockedSession.ID, session.InteractionClosureReasonSessionTerminated); err != nil {
-		return session.SubmitUserIntentResult{}, err
-	}
-	if err := m.submitUserIntentRepo.CancelAllActiveTimerObligationsForSession(ctx, tx, lockedSession.ID, session.TimerObligationClosureReasonSessionTerminated); err != nil {
+// atomically terminalizes the Session, persists the session_runtime_failures
+// diagnostic record, and closes every currently-ACTIVE session_interactions
+// row and timer obligation for it, mirroring terminalizeAnswerInteractionFatal
+// exactly, and completes the idempotency claim so a retry replays this same
+// outcome instead of re-attempting a doomed execution.
+func (m *Manager) terminalizeSubmitUserIntentFatal(ctx context.Context, tx *gorm.DB, requestID uint, lockedSession *sessionlock.Session, terminalAt time.Time, terminalReason string, failureKind string, errorCode string, errorMessage string, baseTurnID *uint, attemptedSequence uint64, actorID uint) (session.SubmitUserIntentResult, error) {
+	if err := m.materializeRuntimeFailure(ctx, tx, m.submitUserIntentRepo, lockedSession, terminalAt, terminalReason,
+		failureKind, errorCode, errorMessage, baseTurnID, attemptedSequence, replay.UserIntentSourceKind, nil, nil, &actorID); err != nil {
 		return session.SubmitUserIntentResult{}, err
 	}
 	if err := idempotency.Complete(ctx, tx, requestID, &lockedSession.ID, submitUserIntentOutcomeRuntimeExecutionFailed, ""); err != nil {

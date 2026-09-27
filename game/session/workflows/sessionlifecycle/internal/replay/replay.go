@@ -19,6 +19,11 @@ import (
 	"gorm.io/gorm"
 )
 
+// SessionStartSourceKind is the source_kind label persisted on Start's own
+// RuntimeTurn, and on a session_runtime_failures row for a Start fatal
+// failure.
+const SessionStartSourceKind = "SESSION_START"
+
 // AnswerInteractionSourceKind is the source_kind label persisted on the
 // RuntimeTurn an accepted interaction response causes.
 const AnswerInteractionSourceKind = "INTERACTION_RESPONSE"

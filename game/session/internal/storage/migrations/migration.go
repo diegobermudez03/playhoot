@@ -54,6 +54,11 @@ func MigrateTables(db *gorm.DB) error {
 		// from migration20260919000000SessionRuntimeTurns and needs no
 		// migration of its own.
 		migration20260925000000SessionTimerObligations(),
+
+		// session_runtime_failures - GAME-ADR-0017's durable fatal-diagnostic
+		// record, populated by every RuntimeTurn-producing path's fatal
+		// branch (WORK-0014).
+		migration20260926000000SessionRuntimeFailures(),
 	})
 
 	return migrator.Migrate()

@@ -43,6 +43,7 @@ type answerInteractionRepoAPI interface {
 	SetCurrentTurn(ctx context.Context, tx *gorm.DB, sessionID uint, currentTurnID uint) error
 	CloseAnsweredInteraction(ctx context.Context, tx *gorm.DB, interactionID uint, responsePayload []byte, closedByTurnID uint) error
 	SetSessionTerminal(ctx context.Context, tx *gorm.DB, sessionID uint, terminalAt time.Time, terminalReason string) error
+	CreateRuntimeFailure(ctx context.Context, tx *gorm.DB, sessionID uint, failureKind string, errorCode string, errorMessage string, baseTurnID *uint, attemptedSequence uint64, sourceKind string, sourceInteractionID *uint, sourceTimerObligationID *uint, actorID *uint, diagnosticPayload []byte) error
 	CloseAllActiveInteractionsForSession(ctx context.Context, tx *gorm.DB, sessionID uint, reason string) error
 	CancelAllActiveTimerObligationsForSession(ctx context.Context, tx *gorm.DB, sessionID uint, reason string) error
 }
@@ -191,7 +192,8 @@ func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessio
 			"pinned game definition failed to recompile answering interaction: session_uuid=%s game_definition_uuid=%s",
 			lockedSession.UUID, lockedSession.GameDefinitionUUID,
 		))
-		return m.terminalizeAnswerInteractionFatal(ctx, tx, lockedSession, now, session.TerminalReasonRuntimeStateInvalid)
+		return m.terminalizeAnswerInteractionFatal(ctx, tx, lockedSession, now, session.TerminalReasonRuntimeStateInvalid,
+			RuntimeFailureKindStateInvalid, RuntimeFailureErrorCodeDefinitionRecompileFailed, formatDiagnostics(diagnostics), &currentTurn.ID, currentTurn.Sequence+1, interaction.ID, actor.ID)
 	}
 
 	// Current authoritative Runtime state is never loaded from a persisted
@@ -226,7 +228,9 @@ func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessio
 		if errors.Is(err, engineservice.ErrSignalRejected) || errors.Is(err, engineservice.ErrInputRejected) {
 			return session.AnswerInteractionResult{Outcome: session.AnswerInteractionOutcomeRejected, SessionUUID: session.SessionUUID(lockedSession.UUID)}, nil
 		}
-		return m.terminalizeAnswerInteractionFatal(ctx, tx, lockedSession, now, session.TerminalReasonRuntimeExecutionFailed)
+		errorCode, errorMessage := classifyExecutionError(err)
+		return m.terminalizeAnswerInteractionFatal(ctx, tx, lockedSession, now, session.TerminalReasonRuntimeExecutionFailed,
+			RuntimeFailureKindExecution, errorCode, errorMessage, &currentTurn.ID, currentTurn.Sequence+1, interaction.ID, actor.ID)
 	}
 
 	actorID := actor.ID
@@ -278,18 +282,15 @@ func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessio
 }
 
 // terminalizeAnswerInteractionFatal performs AnswerInteraction's fatal path:
-// atomically terminalizes the Session and closes every currently-ACTIVE
-// session_interactions row for it, so a TERMINAL Session never retains one
-// still ACTIVE. No partial RuntimeTurn is ever persisted:
-// sessions.current_turn_id remains at the last committed Turn.
-func (m *Manager) terminalizeAnswerInteractionFatal(ctx context.Context, tx *gorm.DB, lockedSession *sessionlock.Session, terminalAt time.Time, terminalReason string) (session.AnswerInteractionResult, error) {
-	if err := m.answerInteractionRepo.SetSessionTerminal(ctx, tx, lockedSession.ID, terminalAt, terminalReason); err != nil {
-		return session.AnswerInteractionResult{}, err
-	}
-	if err := m.answerInteractionRepo.CloseAllActiveInteractionsForSession(ctx, tx, lockedSession.ID, session.InteractionClosureReasonSessionTerminated); err != nil {
-		return session.AnswerInteractionResult{}, err
-	}
-	if err := m.answerInteractionRepo.CancelAllActiveTimerObligationsForSession(ctx, tx, lockedSession.ID, session.TimerObligationClosureReasonSessionTerminated); err != nil {
+// atomically terminalizes the Session, persists the session_runtime_failures
+// diagnostic record (sourced from the interaction/actor this response
+// targeted), and closes every currently-ACTIVE session_interactions row for
+// it, so a TERMINAL Session never retains one still ACTIVE. No partial
+// RuntimeTurn is ever persisted: sessions.current_turn_id remains at the
+// last committed Turn.
+func (m *Manager) terminalizeAnswerInteractionFatal(ctx context.Context, tx *gorm.DB, lockedSession *sessionlock.Session, terminalAt time.Time, terminalReason string, failureKind string, errorCode string, errorMessage string, baseTurnID *uint, attemptedSequence uint64, interactionID uint, actorID uint) (session.AnswerInteractionResult, error) {
+	if err := m.materializeRuntimeFailure(ctx, tx, m.answerInteractionRepo, lockedSession, terminalAt, terminalReason,
+		failureKind, errorCode, errorMessage, baseTurnID, attemptedSequence, replay.AnswerInteractionSourceKind, &interactionID, nil, &actorID); err != nil {
 		return session.AnswerInteractionResult{}, err
 	}
 	return session.AnswerInteractionResult{Outcome: session.AnswerInteractionOutcomeRuntimeExecutionFailed, SessionUUID: session.SessionUUID(lockedSession.UUID)}, nil

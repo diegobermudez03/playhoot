@@ -66,6 +66,7 @@ type cancelSessionRepoAPI interface {
 	SetRuntimeTurnCauseEvent(ctx context.Context, tx *gorm.DB, turnID uint, causeEventID uint) error
 	SetCurrentTurn(ctx context.Context, tx *gorm.DB, sessionID uint, currentTurnID uint) error
 	SetSessionTerminal(ctx context.Context, tx *gorm.DB, sessionID uint, terminalAt time.Time, terminalReason string) error
+	CreateRuntimeFailure(ctx context.Context, tx *gorm.DB, sessionID uint, failureKind string, errorCode string, errorMessage string, baseTurnID *uint, attemptedSequence uint64, sourceKind string, sourceInteractionID *uint, sourceTimerObligationID *uint, actorID *uint, diagnosticPayload []byte) error
 	CloseAllActiveInteractionsForSession(ctx context.Context, tx *gorm.DB, sessionID uint, reason string) error
 	CancelAllActiveTimerObligationsForSession(ctx context.Context, tx *gorm.DB, sessionID uint, reason string) error
 }
@@ -189,7 +190,8 @@ func (m *Manager) cancelSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUI
 			"pinned game definition failed to recompile cancelling session: session_uuid=%s game_definition_uuid=%s",
 			lockedSession.UUID, lockedSession.GameDefinitionUUID,
 		))
-		return m.terminalizeCancelSessionFatal(ctx, tx, requestID, lockedSession, now, session.TerminalReasonRuntimeStateInvalid)
+		return m.terminalizeCancelSessionFatal(ctx, tx, requestID, lockedSession, now, session.TerminalReasonRuntimeStateInvalid,
+			RuntimeFailureKindStateInvalid, RuntimeFailureErrorCodeDefinitionRecompileFailed, formatDiagnostics(diagnostics), &currentTurn.ID, currentTurn.Sequence+1, actor.ID)
 	}
 
 	// Current authoritative Runtime state is never loaded from a persisted
@@ -225,7 +227,9 @@ func (m *Manager) cancelSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUI
 			// terminal_reason alone durably explains this outcome.
 			return m.terminalizeCancelSessionForced(ctx, tx, requestID, lockedSession, now)
 		}
-		return m.terminalizeCancelSessionFatal(ctx, tx, requestID, lockedSession, now, session.TerminalReasonRuntimeExecutionFailed)
+		errorCode, errorMessage := classifyExecutionError(err)
+		return m.terminalizeCancelSessionFatal(ctx, tx, requestID, lockedSession, now, session.TerminalReasonRuntimeExecutionFailed,
+			RuntimeFailureKindExecution, errorCode, errorMessage, &currentTurn.ID, currentTurn.Sequence+1, actor.ID)
 	}
 
 	// Accepted: the authored game has a transition matching SessionCancelled.
@@ -331,19 +335,17 @@ func (m *Manager) terminalizeCancelSessionForced(ctx context.Context, tx *gorm.D
 }
 
 // terminalizeCancelSessionFatal performs CancelSession's fatal path:
-// atomically terminalizes the Session and closes every currently-ACTIVE
-// session_interactions row and timer obligation for it, mirroring
-// terminalizeSubmitUserIntentFatal exactly, and completes the idempotency
-// claim so a retry replays this same outcome instead of re-attempting a
-// doomed execution.
-func (m *Manager) terminalizeCancelSessionFatal(ctx context.Context, tx *gorm.DB, requestID uint, lockedSession *sessionlock.Session, terminalAt time.Time, terminalReason string) (session.CancelSessionResult, error) {
-	if err := m.cancelSessionRepo.SetSessionTerminal(ctx, tx, lockedSession.ID, terminalAt, terminalReason); err != nil {
-		return session.CancelSessionResult{}, err
-	}
-	if err := m.cancelSessionRepo.CloseAllActiveInteractionsForSession(ctx, tx, lockedSession.ID, session.InteractionClosureReasonSessionTerminated); err != nil {
-		return session.CancelSessionResult{}, err
-	}
-	if err := m.cancelSessionRepo.CancelAllActiveTimerObligationsForSession(ctx, tx, lockedSession.ID, session.TimerObligationClosureReasonSessionTerminated); err != nil {
+// atomically terminalizes the Session, persists the session_runtime_failures
+// diagnostic record, and closes every currently-ACTIVE session_interactions
+// row and timer obligation for it, mirroring terminalizeSubmitUserIntentFatal
+// exactly, and completes the idempotency claim so a retry replays this same
+// outcome instead of re-attempting a doomed execution. Distinct from
+// terminalizeCancelSessionForced below: this is a genuine runtime failure
+// (GAME-ADR-0017 class B/C), not the host's own intentional cancellation, so
+// only this path persists a session_runtime_failures row.
+func (m *Manager) terminalizeCancelSessionFatal(ctx context.Context, tx *gorm.DB, requestID uint, lockedSession *sessionlock.Session, terminalAt time.Time, terminalReason string, failureKind string, errorCode string, errorMessage string, baseTurnID *uint, attemptedSequence uint64, actorID uint) (session.CancelSessionResult, error) {
+	if err := m.materializeRuntimeFailure(ctx, tx, m.cancelSessionRepo, lockedSession, terminalAt, terminalReason,
+		failureKind, errorCode, errorMessage, baseTurnID, attemptedSequence, replay.SessionCancelledSourceKind, nil, nil, &actorID); err != nil {
 		return session.CancelSessionResult{}, err
 	}
 	if err := idempotency.Complete(ctx, tx, requestID, &lockedSession.ID, cancelSessionOutcomeRuntimeExecutionFailed, ""); err != nil {

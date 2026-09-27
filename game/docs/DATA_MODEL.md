@@ -201,7 +201,33 @@ classDiagram
     session_runtime_turns "1 creates" --> "*" session_timer_obligations : "session_timer_obligations.created_by_turn_id -> session_runtime_turns.id"
     session_runtime_turns "0..1 closes" --> "*" session_timer_obligations : "session_timer_obligations.closed_by_turn_id -> session_runtime_turns.id"
     session_timer_obligations "0..1 causes" --> "*" session_runtime_turns : "session_runtime_turns.source_timer_obligation_id -> session_timer_obligations.id"
-``` `sequence` currently reaches 2 for a Session with one answered interaction (Start's first Turn, then AnswerInteraction's); no later slice that would advance it further is implemented yet. Current authoritative Runtime state is never loaded from a persisted Snapshot - `engineservice.AdvanceTurn` deterministically reconstructs it internally, by replaying pinned Game semantics plus `session_runtime_starts`' `seed`/`root_parameters` through the ordered `session_runtime_turns` log `sessionlifecycle` supplies it, with no ephemeral cache of any kind; `sessionlifecycle` itself never holds or constructs an `engine.Snapshot` (GAME-ADR-0027). `session_runtime_starts` holds exactly one row per Session that completes Start; `seed` stores `InitializationInput.Seed`'s `uint64` bit pattern reinterpreted as a signed `BIGINT` (PostgreSQL has no unsigned 64-bit type); `root_parameters` is JSONB, encoding an `engine.Value`-typed record through `engineservice.EncodeValue`/`DecodeValue`. `session_cause_events` is the shared satellite table a RuntimeTurn cause with no existing normalized home writes into, discriminated by `cause_kind`: `USER_INTENT` (`SubmitUserIntent`, payload `{intent_name, arguments}`) and `SESSION_CANCELLED` (`CancelSession`, when the authored game itself has a transition matching `SessionCancelled` - empty payload, since that signal carries no Fields; an engine-rejected cancellation persists no cause event at all, only `sessions.terminal_reason`). UserDisconnected/UserReconnected remain unimplemented future `cause_kind` values. `session_interactions.kind` is `QUESTION | ASK_GROUP`; `state` is `ACTIVE | CLOSED | TERMINATED` in this codebase's own chosen vocabulary (`CLOSED` for ordinary Turn-produced closure, `TERMINATED` for this slice's own narrow terminal-cleanup closure - `closed_by_turn_id` `NULL` + `closure_reason = SESSION_TERMINATED`); GAME-ADR-0019 leaves the exact enum naming an implementation-planning detail. `interaction_payload`/`response_payload` are JSONB, encoding `engine.Value`-typed data through `engineservice.EncodeValue`/`DecodeValue`, never plain `encoding/json`. `engine_interaction_id` is a plain `BIGINT`, the engine's own assigned interaction identity for the occurrence this row represents (not JSONB, not decoded as an `engine.Value`) - it replaces the earlier `engine_path`/`engine_slot` pair as this table's addressing identity.
+```
+
+`session_runtime_failures` is GAME-ADR-0017's durable fatal-diagnostic record, populated atomically alongside the Session's own `TERMINAL` transition by every RuntimeTurn-producing path's fatal branch (`Start`/`AnswerInteraction`/`SubmitUserIntent`/`CancelSession`/`ExpireTimer`, WORK-0014): `id`, `session_id`, `failure_kind` (`RUNTIME_EXECUTION | RUNTIME_STATE_INVALID`), `error_code` (a Session-Runtime-owned stable string, decoupled from the engine's own `ExecutionErrorCode` int - never the engine's raw code), `error_message`, `base_turn_id` (nullable - `NULL` only for a pre-first-Turn Start failure), `attempted_sequence`, `source_kind` (reuses `session_runtime_turns.source_kind`'s own vocabulary, including `SESSION_START`), `source_interaction_id`/`source_timer_obligation_id`/`actor_id` (nullable), `diagnostic_payload` (JSONB, a minimal `{"schema_version": 1}` envelope - the engine's current `AdvanceTurn`/`StartTurn` contract exposes no per-Step index or partial Step trace for this payload to carry beyond that), `created_at`. There is no `failed_step_index` column: GAME-ADR-0017 marks that field optional/"when known," and the engine's current contract cannot populate it - adding it later is purely additive. Not created for an expected rejection (class A), a transient infrastructure failure (class D), an authored game-completion outcome, or a host `CancelSession`, since none of those is a runtime failure.
+
+```mermaid
+classDiagram
+    class session_runtime_failures {
+        id
+        session_id
+        failure_kind
+        error_code
+        error_message
+        base_turn_id
+        attempted_sequence
+        source_kind
+        source_interaction_id
+        source_timer_obligation_id
+        actor_id
+        diagnostic_payload
+        created_at
+    }
+    sessions "1" --> "*" session_runtime_failures : "session_runtime_failures.session_id -> sessions.id"
+    session_runtime_turns "0..1 base" --> "*" session_runtime_failures : "session_runtime_failures.base_turn_id -> session_runtime_turns.id (nullable)"
+    session_actors "0..1" --> "*" session_runtime_failures : "session_runtime_failures.actor_id -> session_actors.id (nullable)"
+```
+
+`sequence` currently reaches 2 for a Session with one answered interaction (Start's first Turn, then AnswerInteraction's); no later slice that would advance it further is implemented yet. Current authoritative Runtime state is never loaded from a persisted Snapshot - `engineservice.AdvanceTurn` deterministically reconstructs it internally, by replaying pinned Game semantics plus `session_runtime_starts`' `seed`/`root_parameters` through the ordered `session_runtime_turns` log `sessionlifecycle` supplies it, with no ephemeral cache of any kind; `sessionlifecycle` itself never holds or constructs an `engine.Snapshot` (GAME-ADR-0027). `session_runtime_starts` holds exactly one row per Session that completes Start; `seed` stores `InitializationInput.Seed`'s `uint64` bit pattern reinterpreted as a signed `BIGINT` (PostgreSQL has no unsigned 64-bit type); `root_parameters` is JSONB, encoding an `engine.Value`-typed record through `engineservice.EncodeValue`/`DecodeValue`. `session_cause_events` is the shared satellite table a RuntimeTurn cause with no existing normalized home writes into, discriminated by `cause_kind`: `USER_INTENT` (`SubmitUserIntent`, payload `{intent_name, arguments}`) and `SESSION_CANCELLED` (`CancelSession`, when the authored game itself has a transition matching `SessionCancelled` - empty payload, since that signal carries no Fields; an engine-rejected cancellation persists no cause event at all, only `sessions.terminal_reason`). UserDisconnected/UserReconnected remain unimplemented future `cause_kind` values. `session_interactions.kind` is `QUESTION | ASK_GROUP`; `state` is `ACTIVE | CLOSED | TERMINATED` in this codebase's own chosen vocabulary (`CLOSED` for ordinary Turn-produced closure, `TERMINATED` for this slice's own narrow terminal-cleanup closure - `closed_by_turn_id` `NULL` + `closure_reason = SESSION_TERMINATED`); GAME-ADR-0019 leaves the exact enum naming an implementation-planning detail. `interaction_payload`/`response_payload` are JSONB, encoding `engine.Value`-typed data through `engineservice.EncodeValue`/`DecodeValue`, never plain `encoding/json`. `engine_interaction_id` is a plain `BIGINT`, the engine's own assigned interaction identity for the occurrence this row represents (not JSONB, not decoded as an `engine.Value`) - it replaces the earlier `engine_path`/`engine_slot` pair as this table's addressing identity.
 
 ## Relationship Types
 
@@ -230,6 +256,11 @@ Logical persisted references:
 - `session_interactions.opened_by_turn_id -> session_runtime_turns.id`
 - `session_interactions.closed_by_turn_id -> session_runtime_turns.id` (nullable)
 - `session_runtime_turns.source_interaction_id -> session_interactions.id` (nullable)
+- `session_runtime_failures.session_id -> sessions.id`
+- `session_runtime_failures.base_turn_id -> session_runtime_turns.id` (nullable - `NULL` only for a pre-first-Turn Start failure)
+- `session_runtime_failures.source_interaction_id -> session_interactions.id` (nullable)
+- `session_runtime_failures.source_timer_obligation_id -> session_timer_obligations.id` (nullable)
+- `session_runtime_failures.actor_id -> session_actors.id` (nullable)
 
 Logical cross-capability references within Game (no database FK, same bounded context, independent persistence/transaction ownership per GAME-ADR-0001):
 

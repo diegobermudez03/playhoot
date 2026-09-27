@@ -10,6 +10,7 @@ import (
 	"github.com/diegobermudez03/playhoot/game/session"
 	"github.com/diegobermudez03/playhoot/game/session/internal/testdb"
 	"github.com/diegobermudez03/playhoot/game/session/internal/testfixtures"
+	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/replay"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -187,6 +188,12 @@ func TestManagerSubmitUserIntent_Integration(t *testing.T) {
 		var phase string
 		require.NoError(t, db.Raw(`SELECT phase FROM sessions WHERE uuid = ?`, string(sessionUUID)).Scan(&phase).Error)
 		require.Equal(t, session.PhaseTerminal, phase)
+
+		// WORK-0014 AC6: an authored game-completion terminal outcome is not
+		// a runtime failure - no session_runtime_failures row.
+		var failureCount int64
+		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_failures WHERE session_id = (SELECT id FROM sessions WHERE uuid = ?)`, string(sessionUUID)).Scan(&failureCount).Error)
+		require.Zero(t, failureCount)
 	})
 
 	t.Run("deterministic_engine_failure_terminalizes_the_session", func(t *testing.T) {
@@ -207,6 +214,31 @@ func TestManagerSubmitUserIntent_Integration(t *testing.T) {
 		var turnCount int64
 		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_turns WHERE session_id = (SELECT id FROM sessions WHERE uuid = ?)`, string(sessionUUID)).Scan(&turnCount).Error)
 		require.Equal(t, int64(1), turnCount, "a fatal execution must not persist a partial RuntimeTurn - only Start's own Turn remains")
+
+		// WORK-0014: the same atomic materialization also persists a
+		// session_runtime_failures diagnostic row.
+		var failureRow struct {
+			FailureKind       string `gorm:"column:failure_kind"`
+			ErrorCode         string `gorm:"column:error_code"`
+			BaseTurnID        *uint  `gorm:"column:base_turn_id"`
+			AttemptedSequence uint64 `gorm:"column:attempted_sequence"`
+			SourceKind        string `gorm:"column:source_kind"`
+			ActorID           *uint  `gorm:"column:actor_id"`
+		}
+		require.NoError(t, db.Raw(`
+			SELECT failure_kind, error_code, base_turn_id, attempted_sequence, source_kind, actor_id
+			FROM session_runtime_failures WHERE session_id = (SELECT id FROM sessions WHERE uuid = ?)
+		`, string(sessionUUID)).Scan(&failureRow).Error)
+		require.Equal(t, RuntimeFailureKindExecution, failureRow.FailureKind)
+		require.Equal(t, RuntimeFailureErrorCodeDivisionByZero, failureRow.ErrorCode)
+		require.NotNil(t, failureRow.BaseTurnID, "Start's own Turn already committed before this fatal failure")
+		require.Equal(t, uint64(2), failureRow.AttemptedSequence)
+		require.Equal(t, replay.UserIntentSourceKind, failureRow.SourceKind)
+		require.NotNil(t, failureRow.ActorID)
+
+		var failureCount int64
+		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_failures WHERE session_id = (SELECT id FROM sessions WHERE uuid = ?)`, string(sessionUUID)).Scan(&failureCount).Error)
+		require.Equal(t, int64(1), failureCount, "a same-key replay below must not persist a second failure row")
 
 		// A retry under the same idempotency key must replay the already-
 		// recorded fatal outcome from session_requests, not re-attempt a

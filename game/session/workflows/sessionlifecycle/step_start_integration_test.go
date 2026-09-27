@@ -9,6 +9,7 @@ import (
 	"github.com/diegobermudez03/playhoot/game/session"
 	"github.com/diegobermudez03/playhoot/game/session/internal/testdb"
 	"github.com/diegobermudez03/playhoot/game/session/internal/testfixtures"
+	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/replay"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
@@ -279,6 +280,30 @@ func TestManagerStart_Integration(t *testing.T) {
 		require.NoError(t, db.Raw(`SELECT revoked_at FROM join_codes WHERE session_id = ?`, fx.SessionID).Scan(&joinCodeRevoked).Error)
 		require.NotNil(t, joinCodeRevoked)
 
+		// WORK-0014: the same atomic materialization also persists a
+		// session_runtime_failures diagnostic row - base_turn_id NULL and
+		// attempted_sequence 1 since no RuntimeTurn ever committed.
+		var failureRow struct {
+			FailureKind       string `gorm:"column:failure_kind"`
+			ErrorCode         string `gorm:"column:error_code"`
+			BaseTurnID        *uint  `gorm:"column:base_turn_id"`
+			AttemptedSequence uint64 `gorm:"column:attempted_sequence"`
+			SourceKind        string `gorm:"column:source_kind"`
+		}
+		require.NoError(t, db.Raw(`
+			SELECT failure_kind, error_code, base_turn_id, attempted_sequence, source_kind
+			FROM session_runtime_failures WHERE session_id = ?
+		`, fx.SessionID).Scan(&failureRow).Error)
+		require.Equal(t, RuntimeFailureKindExecution, failureRow.FailureKind)
+		require.Nil(t, failureRow.BaseTurnID, "no RuntimeTurn ever committed before a pre-first-Turn Start failure")
+		require.Equal(t, uint64(1), failureRow.AttemptedSequence)
+		require.Equal(t, replay.SessionStartSourceKind, failureRow.SourceKind)
+		require.NotEmpty(t, failureRow.ErrorCode)
+
+		var failureCount int64
+		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_failures WHERE session_id = ?`, fx.SessionID).Scan(&failureCount).Error)
+		require.Equal(t, int64(1), failureCount, "a same-token/different-token replay below must not persist a second failure row")
+
 		// A same-token retry against the now-TERMINAL Session must replay
 		// the recorded outcome, never re-attempt engine initialization.
 		second, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), "start-key-fatal")
@@ -293,6 +318,54 @@ func TestManagerStart_Integration(t *testing.T) {
 		third, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), "start-key-fatal-different-token")
 		require.NoError(t, err)
 		require.Equal(t, session.StartOutcomeRuntimeInitFailed, third.Outcome)
+	})
+
+	t.Run("fatal_recompile_failure_terminalizes_with_state_invalid_reason", func(t *testing.T) {
+		// WORK-0014 AC2: a pinned Definition that unexpectedly fails to
+		// recompile (a data-integrity condition, not a game-execution
+		// failure) must persist a session_runtime_failures row with
+		// failure_kind RUNTIME_STATE_INVALID and the dedicated recompile
+		// error_code - distinct from the RUNTIME_EXECUTION_FAILED case the
+		// test above already covers.
+		m := New(db, nil, stubStartPinnedGameReader{definition: uncompilableDefinitionForTest()})
+
+		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
+		hostUUID := uuid.NewString()
+		hostActorID := testfixtures.SeedActor(t, db, fx.SessionID, hostUUID)
+		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
+		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
+
+		result, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), "start-key-recompile-fatal")
+		require.NoError(t, err)
+		require.Equal(t, session.StartOutcomeRuntimeInitFailed, result.Outcome)
+
+		var row struct {
+			Phase          string  `gorm:"column:phase"`
+			TerminalReason *string `gorm:"column:terminal_reason"`
+		}
+		require.NoError(t, db.Raw(`SELECT phase, terminal_reason FROM sessions WHERE id = ?`, fx.SessionID).Scan(&row).Error)
+		require.Equal(t, session.PhaseTerminal, row.Phase)
+		require.NotNil(t, row.TerminalReason)
+		require.Equal(t, session.TerminalReasonRuntimeStateInvalid, *row.TerminalReason)
+
+		var failureRow struct {
+			FailureKind       string `gorm:"column:failure_kind"`
+			ErrorCode         string `gorm:"column:error_code"`
+			BaseTurnID        *uint  `gorm:"column:base_turn_id"`
+			AttemptedSequence uint64 `gorm:"column:attempted_sequence"`
+			SourceKind        string `gorm:"column:source_kind"`
+			ErrorMessage      string `gorm:"column:error_message"`
+		}
+		require.NoError(t, db.Raw(`
+			SELECT failure_kind, error_code, base_turn_id, attempted_sequence, source_kind, error_message
+			FROM session_runtime_failures WHERE session_id = ?
+		`, fx.SessionID).Scan(&failureRow).Error)
+		require.Equal(t, RuntimeFailureKindStateInvalid, failureRow.FailureKind)
+		require.Equal(t, RuntimeFailureErrorCodeDefinitionRecompileFailed, failureRow.ErrorCode)
+		require.Nil(t, failureRow.BaseTurnID, "no RuntimeTurn ever committed before a pre-first-Turn Start failure")
+		require.Equal(t, uint64(1), failureRow.AttemptedSequence)
+		require.Equal(t, replay.SessionStartSourceKind, failureRow.SourceKind)
+		require.NotEmpty(t, failureRow.ErrorMessage, "the compiler's own diagnostics must be captured as the operator-facing message")
 	})
 
 	t.Run("two_concurrent_starts_never_both_execute_a_runtime_turn", func(t *testing.T) {

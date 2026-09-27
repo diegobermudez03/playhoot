@@ -421,6 +421,20 @@ func (mr *MockstartRepoAPIMockRecorder) CreateInteraction(ctx, tx, sessionID, se
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateInteraction", reflect.TypeOf((*MockstartRepoAPI)(nil).CreateInteraction), ctx, tx, sessionID, sessionActorID, kind, engineInteractionID, interactionPayload, openedByTurnID)
 }
 
+// CreateRuntimeFailure mocks base method.
+func (m *MockstartRepoAPI) CreateRuntimeFailure(ctx context.Context, tx *gorm.DB, sessionID uint, failureKind, errorCode, errorMessage string, baseTurnID *uint, attemptedSequence uint64, sourceKind string, sourceInteractionID, sourceTimerObligationID, actorID *uint, diagnosticPayload []byte) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateRuntimeFailure", ctx, tx, sessionID, failureKind, errorCode, errorMessage, baseTurnID, attemptedSequence, sourceKind, sourceInteractionID, sourceTimerObligationID, actorID, diagnosticPayload)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateRuntimeFailure indicates an expected call of CreateRuntimeFailure.
+func (mr *MockstartRepoAPIMockRecorder) CreateRuntimeFailure(ctx, tx, sessionID, failureKind, errorCode, errorMessage, baseTurnID, attemptedSequence, sourceKind, sourceInteractionID, sourceTimerObligationID, actorID, diagnosticPayload any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateRuntimeFailure", reflect.TypeOf((*MockstartRepoAPI)(nil).CreateRuntimeFailure), ctx, tx, sessionID, failureKind, errorCode, errorMessage, baseTurnID, attemptedSequence, sourceKind, sourceInteractionID, sourceTimerObligationID, actorID, diagnosticPayload)
+}
+
 // CreateRuntimeStart mocks base method.
 func (m *MockstartRepoAPI) CreateRuntimeStart(ctx context.Context, tx *gorm.DB, sessionID uint, seed uint64, rootParameters []byte) error {
 	m.ctrl.T.Helper()
@@ -658,6 +672,20 @@ func (m *MockanswerInteractionRepoAPI) CreateInteraction(ctx context.Context, tx
 func (mr *MockanswerInteractionRepoAPIMockRecorder) CreateInteraction(ctx, tx, sessionID, sessionActorID, kind, engineInteractionID, interactionPayload, openedByTurnID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateInteraction", reflect.TypeOf((*MockanswerInteractionRepoAPI)(nil).CreateInteraction), ctx, tx, sessionID, sessionActorID, kind, engineInteractionID, interactionPayload, openedByTurnID)
+}
+
+// CreateRuntimeFailure mocks base method.
+func (m *MockanswerInteractionRepoAPI) CreateRuntimeFailure(ctx context.Context, tx *gorm.DB, sessionID uint, failureKind, errorCode, errorMessage string, baseTurnID *uint, attemptedSequence uint64, sourceKind string, sourceInteractionID, sourceTimerObligationID, actorID *uint, diagnosticPayload []byte) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateRuntimeFailure", ctx, tx, sessionID, failureKind, errorCode, errorMessage, baseTurnID, attemptedSequence, sourceKind, sourceInteractionID, sourceTimerObligationID, actorID, diagnosticPayload)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateRuntimeFailure indicates an expected call of CreateRuntimeFailure.
+func (mr *MockanswerInteractionRepoAPIMockRecorder) CreateRuntimeFailure(ctx, tx, sessionID, failureKind, errorCode, errorMessage, baseTurnID, attemptedSequence, sourceKind, sourceInteractionID, sourceTimerObligationID, actorID, diagnosticPayload any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateRuntimeFailure", reflect.TypeOf((*MockanswerInteractionRepoAPI)(nil).CreateRuntimeFailure), ctx, tx, sessionID, failureKind, errorCode, errorMessage, baseTurnID, attemptedSequence, sourceKind, sourceInteractionID, sourceTimerObligationID, actorID, diagnosticPayload)
 }
 
 // CreateRuntimeTurn mocks base method.
@@ -962,6 +990,20 @@ func (mr *MockexpireTimerRepoAPIMockRecorder) CreateInteraction(ctx, tx, session
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateInteraction", reflect.TypeOf((*MockexpireTimerRepoAPI)(nil).CreateInteraction), ctx, tx, sessionID, sessionActorID, kind, engineInteractionID, interactionPayload, openedByTurnID)
 }
 
+// CreateRuntimeFailure mocks base method.
+func (m *MockexpireTimerRepoAPI) CreateRuntimeFailure(ctx context.Context, tx *gorm.DB, sessionID uint, failureKind, errorCode, errorMessage string, baseTurnID *uint, attemptedSequence uint64, sourceKind string, sourceInteractionID, sourceTimerObligationID, actorID *uint, diagnosticPayload []byte) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateRuntimeFailure", ctx, tx, sessionID, failureKind, errorCode, errorMessage, baseTurnID, attemptedSequence, sourceKind, sourceInteractionID, sourceTimerObligationID, actorID, diagnosticPayload)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateRuntimeFailure indicates an expected call of CreateRuntimeFailure.
+func (mr *MockexpireTimerRepoAPIMockRecorder) CreateRuntimeFailure(ctx, tx, sessionID, failureKind, errorCode, errorMessage, baseTurnID, attemptedSequence, sourceKind, sourceInteractionID, sourceTimerObligationID, actorID, diagnosticPayload any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateRuntimeFailure", reflect.TypeOf((*MockexpireTimerRepoAPI)(nil).CreateRuntimeFailure), ctx, tx, sessionID, failureKind, errorCode, errorMessage, baseTurnID, attemptedSequence, sourceKind, sourceInteractionID, sourceTimerObligationID, actorID, diagnosticPayload)
+}
+
 // CreateRuntimeTurn mocks base method.
 func (m *MockexpireTimerRepoAPI) CreateRuntimeTurn(ctx context.Context, tx *gorm.DB, sessionID uint, sequence uint64, sourceKind string, sourceInteractionID, sourceTimerObligationID, sourceCauseEventID, actorID *uint) (uint, error) {
 	m.ctrl.T.Helper()
@@ -1250,6 +1292,20 @@ func (mr *MocksubmitUserIntentRepoAPIMockRecorder) CreateInteraction(ctx, tx, se
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateInteraction", reflect.TypeOf((*MocksubmitUserIntentRepoAPI)(nil).CreateInteraction), ctx, tx, sessionID, sessionActorID, kind, engineInteractionID, interactionPayload, openedByTurnID)
 }
 
+// CreateRuntimeFailure mocks base method.
+func (m *MocksubmitUserIntentRepoAPI) CreateRuntimeFailure(ctx context.Context, tx *gorm.DB, sessionID uint, failureKind, errorCode, errorMessage string, baseTurnID *uint, attemptedSequence uint64, sourceKind string, sourceInteractionID, sourceTimerObligationID, actorID *uint, diagnosticPayload []byte) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateRuntimeFailure", ctx, tx, sessionID, failureKind, errorCode, errorMessage, baseTurnID, attemptedSequence, sourceKind, sourceInteractionID, sourceTimerObligationID, actorID, diagnosticPayload)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateRuntimeFailure indicates an expected call of CreateRuntimeFailure.
+func (mr *MocksubmitUserIntentRepoAPIMockRecorder) CreateRuntimeFailure(ctx, tx, sessionID, failureKind, errorCode, errorMessage, baseTurnID, attemptedSequence, sourceKind, sourceInteractionID, sourceTimerObligationID, actorID, diagnosticPayload any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateRuntimeFailure", reflect.TypeOf((*MocksubmitUserIntentRepoAPI)(nil).CreateRuntimeFailure), ctx, tx, sessionID, failureKind, errorCode, errorMessage, baseTurnID, attemptedSequence, sourceKind, sourceInteractionID, sourceTimerObligationID, actorID, diagnosticPayload)
+}
+
 // CreateRuntimeTurn mocks base method.
 func (m *MocksubmitUserIntentRepoAPI) CreateRuntimeTurn(ctx context.Context, tx *gorm.DB, sessionID uint, sequence uint64, sourceKind string, sourceInteractionID, sourceTimerObligationID, sourceCauseEventID, actorID *uint) (uint, error) {
 	m.ctrl.T.Helper()
@@ -1535,6 +1591,20 @@ func (m *MockcancelSessionRepoAPI) CreateInteraction(ctx context.Context, tx *go
 func (mr *MockcancelSessionRepoAPIMockRecorder) CreateInteraction(ctx, tx, sessionID, sessionActorID, kind, engineInteractionID, interactionPayload, openedByTurnID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateInteraction", reflect.TypeOf((*MockcancelSessionRepoAPI)(nil).CreateInteraction), ctx, tx, sessionID, sessionActorID, kind, engineInteractionID, interactionPayload, openedByTurnID)
+}
+
+// CreateRuntimeFailure mocks base method.
+func (m *MockcancelSessionRepoAPI) CreateRuntimeFailure(ctx context.Context, tx *gorm.DB, sessionID uint, failureKind, errorCode, errorMessage string, baseTurnID *uint, attemptedSequence uint64, sourceKind string, sourceInteractionID, sourceTimerObligationID, actorID *uint, diagnosticPayload []byte) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateRuntimeFailure", ctx, tx, sessionID, failureKind, errorCode, errorMessage, baseTurnID, attemptedSequence, sourceKind, sourceInteractionID, sourceTimerObligationID, actorID, diagnosticPayload)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateRuntimeFailure indicates an expected call of CreateRuntimeFailure.
+func (mr *MockcancelSessionRepoAPIMockRecorder) CreateRuntimeFailure(ctx, tx, sessionID, failureKind, errorCode, errorMessage, baseTurnID, attemptedSequence, sourceKind, sourceInteractionID, sourceTimerObligationID, actorID, diagnosticPayload any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateRuntimeFailure", reflect.TypeOf((*MockcancelSessionRepoAPI)(nil).CreateRuntimeFailure), ctx, tx, sessionID, failureKind, errorCode, errorMessage, baseTurnID, attemptedSequence, sourceKind, sourceInteractionID, sourceTimerObligationID, actorID, diagnosticPayload)
 }
 
 // CreateRuntimeTurn mocks base method.

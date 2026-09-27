@@ -44,6 +44,7 @@ type expireTimerRepoAPI interface {
 	SetCurrentTurn(ctx context.Context, tx *gorm.DB, sessionID uint, currentTurnID uint) error
 	CloseTimerObligation(ctx context.Context, tx *gorm.DB, timerObligationID uint, closedByTurnID uint) error
 	SetSessionTerminal(ctx context.Context, tx *gorm.DB, sessionID uint, terminalAt time.Time, terminalReason string) error
+	CreateRuntimeFailure(ctx context.Context, tx *gorm.DB, sessionID uint, failureKind string, errorCode string, errorMessage string, baseTurnID *uint, attemptedSequence uint64, sourceKind string, sourceInteractionID *uint, sourceTimerObligationID *uint, actorID *uint, diagnosticPayload []byte) error
 	CloseAllActiveInteractionsForSession(ctx context.Context, tx *gorm.DB, sessionID uint, reason string) error
 	CancelAllActiveTimerObligationsForSession(ctx context.Context, tx *gorm.DB, sessionID uint, reason string) error
 }
@@ -140,7 +141,8 @@ func (m *Manager) expireTimerInTx(ctx context.Context, tx *gorm.DB, sessionID ui
 			"pinned game definition failed to recompile expiring timer: session_uuid=%s game_definition_uuid=%s",
 			lockedSession.UUID, lockedSession.GameDefinitionUUID,
 		))
-		return m.terminalizeExpireTimerFatal(ctx, tx, lockedSession, now, session.TerminalReasonRuntimeStateInvalid)
+		return m.terminalizeExpireTimerFatal(ctx, tx, lockedSession, now, session.TerminalReasonRuntimeStateInvalid,
+			RuntimeFailureKindStateInvalid, RuntimeFailureErrorCodeDefinitionRecompileFailed, formatDiagnostics(diagnostics), &currentTurn.ID, currentTurn.Sequence+1, obligation.ID)
 	}
 
 	// Current authoritative Runtime state is never loaded from a persisted
@@ -179,7 +181,9 @@ func (m *Manager) expireTimerInTx(ctx context.Context, tx *gorm.DB, sessionID ui
 		if errors.Is(err, engineservice.ErrSignalRejected) || errors.Is(err, engineservice.ErrInputRejected) {
 			return session.ExpireTimerResult{Outcome: session.ExpireTimerOutcomeRejected, SessionUUID: session.SessionUUID(lockedSession.UUID)}, nil
 		}
-		return m.terminalizeExpireTimerFatal(ctx, tx, lockedSession, now, session.TerminalReasonRuntimeExecutionFailed)
+		errorCode, errorMessage := classifyExecutionError(err)
+		return m.terminalizeExpireTimerFatal(ctx, tx, lockedSession, now, session.TerminalReasonRuntimeExecutionFailed,
+			RuntimeFailureKindExecution, errorCode, errorMessage, &currentTurn.ID, currentTurn.Sequence+1, obligation.ID)
 	}
 
 	obligationID := obligation.ID
@@ -222,19 +226,16 @@ func (m *Manager) expireTimerInTx(ctx context.Context, tx *gorm.DB, sessionID ui
 }
 
 // terminalizeExpireTimerFatal performs ExpireTimer's fatal path: atomically
-// terminalizes the Session, closes every currently-ACTIVE session_interactions
-// row, and cancels every currently-ACTIVE session_timer_obligations row for
-// it, mirroring terminalizeAnswerInteractionFatal exactly. No partial
+// terminalizes the Session, persists the session_runtime_failures diagnostic
+// record (sourced from the timer obligation whose expiration was being
+// processed), closes every currently-ACTIVE session_interactions row, and
+// cancels every currently-ACTIVE session_timer_obligations row for it,
+// mirroring terminalizeAnswerInteractionFatal exactly. No partial
 // RuntimeTurn is ever persisted: sessions.current_turn_id remains at the
 // last committed Turn.
-func (m *Manager) terminalizeExpireTimerFatal(ctx context.Context, tx *gorm.DB, lockedSession *sessionlock.Session, terminalAt time.Time, terminalReason string) (session.ExpireTimerResult, error) {
-	if err := m.expireTimerRepo.SetSessionTerminal(ctx, tx, lockedSession.ID, terminalAt, terminalReason); err != nil {
-		return session.ExpireTimerResult{}, err
-	}
-	if err := m.expireTimerRepo.CloseAllActiveInteractionsForSession(ctx, tx, lockedSession.ID, session.InteractionClosureReasonSessionTerminated); err != nil {
-		return session.ExpireTimerResult{}, err
-	}
-	if err := m.expireTimerRepo.CancelAllActiveTimerObligationsForSession(ctx, tx, lockedSession.ID, session.TimerObligationClosureReasonSessionTerminated); err != nil {
+func (m *Manager) terminalizeExpireTimerFatal(ctx context.Context, tx *gorm.DB, lockedSession *sessionlock.Session, terminalAt time.Time, terminalReason string, failureKind string, errorCode string, errorMessage string, baseTurnID *uint, attemptedSequence uint64, timerObligationID uint) (session.ExpireTimerResult, error) {
+	if err := m.materializeRuntimeFailure(ctx, tx, m.expireTimerRepo, lockedSession, terminalAt, terminalReason,
+		failureKind, errorCode, errorMessage, baseTurnID, attemptedSequence, replay.TimerExpiredSourceKind, nil, &timerObligationID, nil); err != nil {
 		return session.ExpireTimerResult{}, err
 	}
 	return session.ExpireTimerResult{Outcome: session.ExpireTimerOutcomeRuntimeExecutionFailed, SessionUUID: session.SessionUUID(lockedSession.UUID)}, nil

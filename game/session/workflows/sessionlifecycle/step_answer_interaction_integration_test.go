@@ -9,6 +9,7 @@ import (
 	"github.com/diegobermudez03/playhoot/game/session"
 	"github.com/diegobermudez03/playhoot/game/session/internal/testdb"
 	"github.com/diegobermudez03/playhoot/game/session/internal/testfixtures"
+	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/replay"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -274,9 +275,37 @@ func TestManagerAnswerInteraction_Integration(t *testing.T) {
 		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_turns WHERE session_id = ?`, sessionIDForUUID(t, db, sessionUUID)).Scan(&turnCount).Error)
 		require.Equal(t, int64(1), turnCount, "a fatal failure must never persist a partial second RuntimeTurn")
 
-		var interactionState string
-		require.NoError(t, db.Raw(`SELECT state FROM session_interactions WHERE uuid = ?`, string(interactionUUID)).Scan(&interactionState).Error)
-		require.Equal(t, session.InteractionStateTerminated, interactionState, "a fatal failure must close the still-ACTIVE interaction it was processing")
+		var interactionRow struct {
+			State string `gorm:"column:state"`
+			ID    uint   `gorm:"column:id"`
+		}
+		require.NoError(t, db.Raw(`SELECT state, id FROM session_interactions WHERE uuid = ?`, string(interactionUUID)).Scan(&interactionRow).Error)
+		require.Equal(t, session.InteractionStateTerminated, interactionRow.State, "a fatal failure must close the still-ACTIVE interaction it was processing")
+
+		// WORK-0014: the same atomic materialization also persists a
+		// session_runtime_failures diagnostic row, sourced from the
+		// interaction/actor this response targeted.
+		var failureRow struct {
+			FailureKind         string `gorm:"column:failure_kind"`
+			ErrorCode           string `gorm:"column:error_code"`
+			BaseTurnID          *uint  `gorm:"column:base_turn_id"`
+			AttemptedSequence   uint64 `gorm:"column:attempted_sequence"`
+			SourceKind          string `gorm:"column:source_kind"`
+			SourceInteractionID *uint  `gorm:"column:source_interaction_id"`
+			ActorID             *uint  `gorm:"column:actor_id"`
+		}
+		require.NoError(t, db.Raw(`
+			SELECT failure_kind, error_code, base_turn_id, attempted_sequence, source_kind, source_interaction_id, actor_id
+			FROM session_runtime_failures WHERE session_id = ?
+		`, sessionIDForUUID(t, db, sessionUUID)).Scan(&failureRow).Error)
+		require.Equal(t, RuntimeFailureKindExecution, failureRow.FailureKind)
+		require.Equal(t, RuntimeFailureErrorCodeDivisionByZero, failureRow.ErrorCode)
+		require.NotNil(t, failureRow.BaseTurnID, "Start's own Turn already committed before this fatal failure")
+		require.Equal(t, uint64(2), failureRow.AttemptedSequence)
+		require.Equal(t, replay.AnswerInteractionSourceKind, failureRow.SourceKind)
+		require.NotNil(t, failureRow.SourceInteractionID)
+		require.Equal(t, interactionRow.ID, *failureRow.SourceInteractionID)
+		require.NotNil(t, failureRow.ActorID)
 	})
 
 	t.Run("accepted_answer_to_ask_group_question_resolves_interaction", func(t *testing.T) {

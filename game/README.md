@@ -202,7 +202,7 @@ Rationale and alternatives, including the rejected process-owned-lease/heartbeat
 
 ## Session Runtime Failure Classification And Diagnostic Persistence
 
-Status: HUMAN-APPROVED and canonically promoted; not yet implemented.
+Status: HUMAN-APPROVED and canonically promoted; implemented by `WORK-0014-runtime-failure-diagnostics-terminal-cleanup.md`. Two narrowings from the description below, both because the Game Language engine's actual `AdvanceTurn`/`StartTurn` contract provides no more than a terminal `{Code, Message}` on failure - no per-Step index and no partial Step traces: `failed_step_index` is not implemented as a column (adding it later, if the engine contract ever changes, is purely additive); `diagnostic_payload` is a minimal forward-compatible envelope rather than carrying step-trace content that does not exist to capture. `error_code` is a Session-Runtime-owned stable string decoupled from the engine's own `ExecutionErrorCode` int (mirrors `WORK-0029`'s `Value`/`Output` decoupling), not the engine's raw code reused directly.
 
 Session Runtime distinguishes four conceptually different failure classes, not one undifferentiated "operation failed" outcome:
 

@@ -92,6 +92,13 @@ func TestManagerCancelSession_Integration(t *testing.T) {
 		require.Equal(t, session.PhaseTerminal, phase)
 		require.NoError(t, db.Raw(`SELECT terminal_reason FROM sessions WHERE uuid = ?`, string(sessionUUID)).Scan(&terminalReason).Error)
 		require.Equal(t, session.TerminalReasonSessionCancelledByHost, terminalReason)
+
+		// WORK-0014 AC6: a host cancellation is never a runtime failure -
+		// no session_runtime_failures row, even though the Session
+		// terminalized.
+		var failureCount int64
+		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_failures WHERE session_id = (SELECT id FROM sessions WHERE uuid = ?)`, string(sessionUUID)).Scan(&failureCount).Error)
+		require.Zero(t, failureCount)
 	})
 
 	t.Run("rejected_by_the_engine_is_still_forced_terminal_with_no_runtime_turn", func(t *testing.T) {
@@ -114,6 +121,12 @@ func TestManagerCancelSession_Integration(t *testing.T) {
 		require.Equal(t, session.PhaseTerminal, phase)
 		require.NoError(t, db.Raw(`SELECT terminal_reason FROM sessions WHERE uuid = ?`, string(sessionUUID)).Scan(&terminalReason).Error)
 		require.Equal(t, session.TerminalReasonSessionCancelledByHost, terminalReason)
+
+		// WORK-0014 AC6: an engine-rejected cancellation is still not a
+		// runtime failure - no session_runtime_failures row.
+		var failureCount int64
+		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_failures WHERE session_id = (SELECT id FROM sessions WHERE uuid = ?)`, string(sessionUUID)).Scan(&failureCount).Error)
+		require.Zero(t, failureCount)
 	})
 
 	t.Run("caller_not_the_host_is_rejected_without_reaching_the_engine", func(t *testing.T) {

@@ -27,11 +27,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// startSourceKind is the source_kind label persisted on Start's own
-// RuntimeTurn. There is no exhaustive enum of source_kind values yet, so
-// this is a plain string.
-const startSourceKind = "SESSION_START"
-
 // Start outcome labels persisted to session_requests.outcome for a
 // deterministic post-claim decline that must survive as a replayable
 // outcome. outcomeStarted is also recorded so a same-token replay can tell
@@ -57,6 +52,7 @@ type startRepoAPI interface {
 	CreateRuntimeTurn(ctx context.Context, tx *gorm.DB, sessionID uint, sequence uint64, sourceKind string, sourceInteractionID *uint, sourceTimerObligationID *uint, sourceCauseEventID *uint, actorID *uint) (uint, error)
 	CreateRuntimeStart(ctx context.Context, tx *gorm.DB, sessionID uint, seed uint64, rootParameters []byte) error
 	SetCurrentTurn(ctx context.Context, tx *gorm.DB, sessionID uint, currentTurnID uint) error
+	CreateRuntimeFailure(ctx context.Context, tx *gorm.DB, sessionID uint, failureKind string, errorCode string, errorMessage string, baseTurnID *uint, attemptedSequence uint64, sourceKind string, sourceInteractionID *uint, sourceTimerObligationID *uint, actorID *uint, diagnosticPayload []byte) error
 	CloseAllActiveInteractionsForSession(ctx context.Context, tx *gorm.DB, sessionID uint, reason string) error
 	CancelAllActiveTimerObligationsForSession(ctx context.Context, tx *gorm.DB, sessionID uint, reason string) error
 }
@@ -203,7 +199,8 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 			"pinned game definition failed to recompile at session start: session_uuid=%s game_definition_uuid=%s",
 			sessionUUID, lockedSession.GameDefinitionUUID,
 		))
-		return m.terminalizeStartFatal(ctx, tx, lockedSession, requestID, now, session.TerminalReasonRuntimeStateInvalid)
+		return m.terminalizeStartFatal(ctx, tx, lockedSession, requestID, now, session.TerminalReasonRuntimeStateInvalid,
+			RuntimeFailureKindStateInvalid, RuntimeFailureErrorCodeDefinitionRecompileFailed, formatDiagnostics(diagnostics))
 	}
 
 	// The roster is built strictly from Participants active at the
@@ -244,14 +241,16 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 	if err != nil {
 		// Everything downstream of a successful compile that fails is
 		// treated as RUNTIME_EXECUTION_FAILED.
-		return m.terminalizeStartFatal(ctx, tx, lockedSession, requestID, now, session.TerminalReasonRuntimeExecutionFailed)
+		errorCode, errorMessage := classifyExecutionError(err)
+		return m.terminalizeStartFatal(ctx, tx, lockedSession, requestID, now, session.TerminalReasonRuntimeExecutionFailed,
+			RuntimeFailureKindExecution, errorCode, errorMessage)
 	}
 
 	encodedRootParameters, err := replay.EncodeRootParameters(rootParameters)
 	if err != nil {
 		return session.StartResult{}, fmt.Errorf("encoding start root parameters: %s", err)
 	}
-	turnID, err := m.startRepo.CreateRuntimeTurn(ctx, tx, lockedSession.ID, 1, startSourceKind, nil, nil, nil, nil)
+	turnID, err := m.startRepo.CreateRuntimeTurn(ctx, tx, lockedSession.ID, 1, replay.SessionStartSourceKind, nil, nil, nil, nil)
 	if err != nil {
 		return session.StartResult{}, err
 	}
@@ -309,15 +308,17 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 }
 
 // terminalizeStartFatal performs Start's pre-first-Turn fatal path:
-// atomically terminalizes the Session directly from LOBBY, revokes its
+// atomically terminalizes the Session directly from LOBBY, persists the
+// session_runtime_failures diagnostic record (base_turn_id NULL,
+// attempted_sequence 1 - no Turn has ever committed yet), revokes its
 // JoinCode, and records the fatal outcome as the START idempotency claim's
 // completed - and replayable - outcome, so a Start that already fatally
 // terminalized the Session is never re-attempted on a same-token retry.
 // started_at is left at its canonical NULL - the Session never actually
-// ran. No session_runtime_turns/session_runtime_starts row is written, and
-// no runtime-failure diagnostic entity exists yet.
-func (m *Manager) terminalizeStartFatal(ctx context.Context, tx *gorm.DB, lockedSession *sessionlock.Session, requestID uint, terminalAt time.Time, terminalReason string) (session.StartResult, error) {
-	if err := m.startRepo.SetSessionTerminal(ctx, tx, lockedSession.ID, terminalAt, terminalReason); err != nil {
+// ran. No session_runtime_turns/session_runtime_starts row is written.
+func (m *Manager) terminalizeStartFatal(ctx context.Context, tx *gorm.DB, lockedSession *sessionlock.Session, requestID uint, terminalAt time.Time, terminalReason string, failureKind string, errorCode string, errorMessage string) (session.StartResult, error) {
+	if err := m.materializeRuntimeFailure(ctx, tx, m.startRepo, lockedSession, terminalAt, terminalReason,
+		failureKind, errorCode, errorMessage, nil, 1, replay.SessionStartSourceKind, nil, nil, nil); err != nil {
 		return session.StartResult{}, err
 	}
 	if err := m.startRepo.RevokeActiveJoinCode(ctx, tx, lockedSession.ID, terminalAt); err != nil {
