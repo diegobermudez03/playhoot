@@ -45,6 +45,36 @@ func (m *MockcreateRepoAPI) EXPECT() *MockcreateRepoAPIMockRecorder {
 	return m.recorder
 }
 
+// ClaimSessionRequest mocks base method.
+func (m *MockcreateRepoAPI) ClaimSessionRequest(ctx context.Context, tx *gorm.DB, input repo.ClaimSessionRequestInput) (uint, *repo.Request, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ClaimSessionRequest", ctx, tx, input)
+	ret0, _ := ret[0].(uint)
+	ret1, _ := ret[1].(*repo.Request)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// ClaimSessionRequest indicates an expected call of ClaimSessionRequest.
+func (mr *MockcreateRepoAPIMockRecorder) ClaimSessionRequest(ctx, tx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClaimSessionRequest", reflect.TypeOf((*MockcreateRepoAPI)(nil).ClaimSessionRequest), ctx, tx, input)
+}
+
+// CompleteSessionRequest mocks base method.
+func (m *MockcreateRepoAPI) CompleteSessionRequest(ctx context.Context, tx *gorm.DB, requestID uint, sessionID *uint, outcome, responsePayload string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CompleteSessionRequest", ctx, tx, requestID, sessionID, outcome, responsePayload)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CompleteSessionRequest indicates an expected call of CompleteSessionRequest.
+func (mr *MockcreateRepoAPIMockRecorder) CompleteSessionRequest(ctx, tx, requestID, sessionID, outcome, responsePayload any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CompleteSessionRequest", reflect.TypeOf((*MockcreateRepoAPI)(nil).CompleteSessionRequest), ctx, tx, requestID, sessionID, outcome, responsePayload)
+}
+
 // CreateJoinCode mocks base method.
 func (m *MockcreateRepoAPI) CreateJoinCode(ctx context.Context, tx *gorm.DB, sessionID uint) (uint, error) {
 	m.ctrl.T.Helper()
@@ -111,6 +141,36 @@ func (m *MockjoinRepoAPI) ActivateParticipant(ctx context.Context, tx *gorm.DB, 
 func (mr *MockjoinRepoAPIMockRecorder) ActivateParticipant(ctx, tx, participantID, displayName, joinedAt any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ActivateParticipant", reflect.TypeOf((*MockjoinRepoAPI)(nil).ActivateParticipant), ctx, tx, participantID, displayName, joinedAt)
+}
+
+// ClaimSessionRequest mocks base method.
+func (m *MockjoinRepoAPI) ClaimSessionRequest(ctx context.Context, tx *gorm.DB, input repo.ClaimSessionRequestInput) (uint, *repo.Request, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ClaimSessionRequest", ctx, tx, input)
+	ret0, _ := ret[0].(uint)
+	ret1, _ := ret[1].(*repo.Request)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// ClaimSessionRequest indicates an expected call of ClaimSessionRequest.
+func (mr *MockjoinRepoAPIMockRecorder) ClaimSessionRequest(ctx, tx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClaimSessionRequest", reflect.TypeOf((*MockjoinRepoAPI)(nil).ClaimSessionRequest), ctx, tx, input)
+}
+
+// CompleteSessionRequest mocks base method.
+func (m *MockjoinRepoAPI) CompleteSessionRequest(ctx context.Context, tx *gorm.DB, requestID uint, sessionID *uint, outcome, responsePayload string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CompleteSessionRequest", ctx, tx, requestID, sessionID, outcome, responsePayload)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CompleteSessionRequest indicates an expected call of CompleteSessionRequest.
+func (mr *MockjoinRepoAPIMockRecorder) CompleteSessionRequest(ctx, tx, requestID, sessionID, outcome, responsePayload any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CompleteSessionRequest", reflect.TypeOf((*MockjoinRepoAPI)(nil).CompleteSessionRequest), ctx, tx, requestID, sessionID, outcome, responsePayload)
 }
 
 // CountActiveParticipants mocks base method.
@@ -187,6 +247,21 @@ func (mr *MockjoinRepoAPIMockRecorder) FindParticipant(ctx, tx, actorID any) *go
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindParticipant", reflect.TypeOf((*MockjoinRepoAPI)(nil).FindParticipant), ctx, tx, actorID)
 }
 
+// LockSessionByID mocks base method.
+func (m *MockjoinRepoAPI) LockSessionByID(ctx context.Context, tx *gorm.DB, sessionID uint) (*repo.Session, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LockSessionByID", ctx, tx, sessionID)
+	ret0, _ := ret[0].(*repo.Session)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// LockSessionByID indicates an expected call of LockSessionByID.
+func (mr *MockjoinRepoAPIMockRecorder) LockSessionByID(ctx, tx, sessionID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LockSessionByID", reflect.TypeOf((*MockjoinRepoAPI)(nil).LockSessionByID), ctx, tx, sessionID)
+}
+
 // ResolveSessionForJoinCode mocks base method.
 func (m *MockjoinRepoAPI) ResolveSessionForJoinCode(ctx context.Context, joinCode uint) (*repo.JoinCodeResolution, error) {
 	m.ctrl.T.Helper()
@@ -254,6 +329,36 @@ func (m *MockleaveRepoAPI) EXPECT() *MockleaveRepoAPIMockRecorder {
 	return m.recorder
 }
 
+// ClaimSessionRequest mocks base method.
+func (m *MockleaveRepoAPI) ClaimSessionRequest(ctx context.Context, tx *gorm.DB, input repo.ClaimSessionRequestInput) (uint, *repo.Request, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ClaimSessionRequest", ctx, tx, input)
+	ret0, _ := ret[0].(uint)
+	ret1, _ := ret[1].(*repo.Request)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// ClaimSessionRequest indicates an expected call of ClaimSessionRequest.
+func (mr *MockleaveRepoAPIMockRecorder) ClaimSessionRequest(ctx, tx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClaimSessionRequest", reflect.TypeOf((*MockleaveRepoAPI)(nil).ClaimSessionRequest), ctx, tx, input)
+}
+
+// CompleteSessionRequest mocks base method.
+func (m *MockleaveRepoAPI) CompleteSessionRequest(ctx context.Context, tx *gorm.DB, requestID uint, sessionID *uint, outcome, responsePayload string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CompleteSessionRequest", ctx, tx, requestID, sessionID, outcome, responsePayload)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CompleteSessionRequest indicates an expected call of CompleteSessionRequest.
+func (mr *MockleaveRepoAPIMockRecorder) CompleteSessionRequest(ctx, tx, requestID, sessionID, outcome, responsePayload any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CompleteSessionRequest", reflect.TypeOf((*MockleaveRepoAPI)(nil).CompleteSessionRequest), ctx, tx, requestID, sessionID, outcome, responsePayload)
+}
+
 // DeactivateParticipant mocks base method.
 func (m *MockleaveRepoAPI) DeactivateParticipant(ctx context.Context, tx *gorm.DB, participantID uint, leftAt time.Time) error {
 	m.ctrl.T.Helper()
@@ -296,6 +401,21 @@ func (m *MockleaveRepoAPI) FindParticipant(ctx context.Context, tx *gorm.DB, act
 func (mr *MockleaveRepoAPIMockRecorder) FindParticipant(ctx, tx, actorID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindParticipant", reflect.TypeOf((*MockleaveRepoAPI)(nil).FindParticipant), ctx, tx, actorID)
+}
+
+// LockSessionByUUID mocks base method.
+func (m *MockleaveRepoAPI) LockSessionByUUID(ctx context.Context, tx *gorm.DB, sessionUUID string) (*repo.Session, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LockSessionByUUID", ctx, tx, sessionUUID)
+	ret0, _ := ret[0].(*repo.Session)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// LockSessionByUUID indicates an expected call of LockSessionByUUID.
+func (mr *MockleaveRepoAPIMockRecorder) LockSessionByUUID(ctx, tx, sessionUUID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LockSessionByUUID", reflect.TypeOf((*MockleaveRepoAPI)(nil).LockSessionByUUID), ctx, tx, sessionUUID)
 }
 
 // RevokeActiveJoinCode mocks base method.
@@ -378,6 +498,22 @@ func (mr *MockstartRepoAPIMockRecorder) CancelAllActiveTimerObligationsForSessio
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CancelAllActiveTimerObligationsForSession", reflect.TypeOf((*MockstartRepoAPI)(nil).CancelAllActiveTimerObligationsForSession), ctx, tx, sessionID, reason)
 }
 
+// ClaimSessionRequest mocks base method.
+func (m *MockstartRepoAPI) ClaimSessionRequest(ctx context.Context, tx *gorm.DB, input repo.ClaimSessionRequestInput) (uint, *repo.Request, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ClaimSessionRequest", ctx, tx, input)
+	ret0, _ := ret[0].(uint)
+	ret1, _ := ret[1].(*repo.Request)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// ClaimSessionRequest indicates an expected call of ClaimSessionRequest.
+func (mr *MockstartRepoAPIMockRecorder) ClaimSessionRequest(ctx, tx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClaimSessionRequest", reflect.TypeOf((*MockstartRepoAPI)(nil).ClaimSessionRequest), ctx, tx, input)
+}
+
 // CloseActiveInteraction mocks base method.
 func (m *MockstartRepoAPI) CloseActiveInteraction(ctx context.Context, tx *gorm.DB, sessionID uint, engineInteractionID uint64, sessionActorID, closedByTurnID uint) error {
 	m.ctrl.T.Helper()
@@ -404,6 +540,20 @@ func (m *MockstartRepoAPI) CloseAllActiveInteractionsForSession(ctx context.Cont
 func (mr *MockstartRepoAPIMockRecorder) CloseAllActiveInteractionsForSession(ctx, tx, sessionID, reason any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CloseAllActiveInteractionsForSession", reflect.TypeOf((*MockstartRepoAPI)(nil).CloseAllActiveInteractionsForSession), ctx, tx, sessionID, reason)
+}
+
+// CompleteSessionRequest mocks base method.
+func (m *MockstartRepoAPI) CompleteSessionRequest(ctx context.Context, tx *gorm.DB, requestID uint, sessionID *uint, outcome, responsePayload string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CompleteSessionRequest", ctx, tx, requestID, sessionID, outcome, responsePayload)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CompleteSessionRequest indicates an expected call of CompleteSessionRequest.
+func (mr *MockstartRepoAPIMockRecorder) CompleteSessionRequest(ctx, tx, requestID, sessionID, outcome, responsePayload any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CompleteSessionRequest", reflect.TypeOf((*MockstartRepoAPI)(nil).CompleteSessionRequest), ctx, tx, requestID, sessionID, outcome, responsePayload)
 }
 
 // CreateInteraction mocks base method.
@@ -507,6 +657,21 @@ func (m *MockstartRepoAPI) ListActiveParticipantsForRoster(ctx context.Context, 
 func (mr *MockstartRepoAPIMockRecorder) ListActiveParticipantsForRoster(ctx, tx, sessionID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListActiveParticipantsForRoster", reflect.TypeOf((*MockstartRepoAPI)(nil).ListActiveParticipantsForRoster), ctx, tx, sessionID)
+}
+
+// LockSessionByUUID mocks base method.
+func (m *MockstartRepoAPI) LockSessionByUUID(ctx context.Context, tx *gorm.DB, sessionUUID string) (*repo.Session, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LockSessionByUUID", ctx, tx, sessionUUID)
+	ret0, _ := ret[0].(*repo.Session)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// LockSessionByUUID indicates an expected call of LockSessionByUUID.
+func (mr *MockstartRepoAPIMockRecorder) LockSessionByUUID(ctx, tx, sessionUUID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LockSessionByUUID", reflect.TypeOf((*MockstartRepoAPI)(nil).LockSessionByUUID), ctx, tx, sessionUUID)
 }
 
 // RevokeActiveJoinCode mocks base method.
@@ -838,6 +1003,21 @@ func (mr *MockanswerInteractionRepoAPIMockRecorder) ListRuntimeTurns(ctx, tx, se
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListRuntimeTurns", reflect.TypeOf((*MockanswerInteractionRepoAPI)(nil).ListRuntimeTurns), ctx, tx, sessionID)
 }
 
+// LockSessionByID mocks base method.
+func (m *MockanswerInteractionRepoAPI) LockSessionByID(ctx context.Context, tx *gorm.DB, sessionID uint) (*repo.Session, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LockSessionByID", ctx, tx, sessionID)
+	ret0, _ := ret[0].(*repo.Session)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// LockSessionByID indicates an expected call of LockSessionByID.
+func (mr *MockanswerInteractionRepoAPIMockRecorder) LockSessionByID(ctx, tx, sessionID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LockSessionByID", reflect.TypeOf((*MockanswerInteractionRepoAPI)(nil).LockSessionByID), ctx, tx, sessionID)
+}
+
 // RenewActivityDeadline mocks base method.
 func (m *MockanswerInteractionRepoAPI) RenewActivityDeadline(ctx context.Context, tx *gorm.DB, sessionID uint, activityExpiresAt time.Time) error {
 	m.ctrl.T.Helper()
@@ -1153,6 +1333,21 @@ func (mr *MockexpireTimerRepoAPIMockRecorder) ListRuntimeTurns(ctx, tx, sessionI
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListRuntimeTurns", reflect.TypeOf((*MockexpireTimerRepoAPI)(nil).ListRuntimeTurns), ctx, tx, sessionID)
 }
 
+// LockSessionByID mocks base method.
+func (m *MockexpireTimerRepoAPI) LockSessionByID(ctx context.Context, tx *gorm.DB, sessionID uint) (*repo.Session, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LockSessionByID", ctx, tx, sessionID)
+	ret0, _ := ret[0].(*repo.Session)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// LockSessionByID indicates an expected call of LockSessionByID.
+func (mr *MockexpireTimerRepoAPIMockRecorder) LockSessionByID(ctx, tx, sessionID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LockSessionByID", reflect.TypeOf((*MockexpireTimerRepoAPI)(nil).LockSessionByID), ctx, tx, sessionID)
+}
+
 // RenewActivityDeadline mocks base method.
 func (m *MockexpireTimerRepoAPI) RenewActivityDeadline(ctx context.Context, tx *gorm.DB, sessionID uint, activityExpiresAt time.Time) error {
 	m.ctrl.T.Helper()
@@ -1262,6 +1457,22 @@ func (mr *MocksubmitUserIntentRepoAPIMockRecorder) CancelAllActiveTimerObligatio
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CancelAllActiveTimerObligationsForSession", reflect.TypeOf((*MocksubmitUserIntentRepoAPI)(nil).CancelAllActiveTimerObligationsForSession), ctx, tx, sessionID, reason)
 }
 
+// ClaimSessionRequest mocks base method.
+func (m *MocksubmitUserIntentRepoAPI) ClaimSessionRequest(ctx context.Context, tx *gorm.DB, input repo.ClaimSessionRequestInput) (uint, *repo.Request, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ClaimSessionRequest", ctx, tx, input)
+	ret0, _ := ret[0].(uint)
+	ret1, _ := ret[1].(*repo.Request)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// ClaimSessionRequest indicates an expected call of ClaimSessionRequest.
+func (mr *MocksubmitUserIntentRepoAPIMockRecorder) ClaimSessionRequest(ctx, tx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClaimSessionRequest", reflect.TypeOf((*MocksubmitUserIntentRepoAPI)(nil).ClaimSessionRequest), ctx, tx, input)
+}
+
 // CloseActiveInteraction mocks base method.
 func (m *MocksubmitUserIntentRepoAPI) CloseActiveInteraction(ctx context.Context, tx *gorm.DB, sessionID uint, engineInteractionID uint64, sessionActorID, closedByTurnID uint) error {
 	m.ctrl.T.Helper()
@@ -1288,6 +1499,20 @@ func (m *MocksubmitUserIntentRepoAPI) CloseAllActiveInteractionsForSession(ctx c
 func (mr *MocksubmitUserIntentRepoAPIMockRecorder) CloseAllActiveInteractionsForSession(ctx, tx, sessionID, reason any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CloseAllActiveInteractionsForSession", reflect.TypeOf((*MocksubmitUserIntentRepoAPI)(nil).CloseAllActiveInteractionsForSession), ctx, tx, sessionID, reason)
+}
+
+// CompleteSessionRequest mocks base method.
+func (m *MocksubmitUserIntentRepoAPI) CompleteSessionRequest(ctx context.Context, tx *gorm.DB, requestID uint, sessionID *uint, outcome, responsePayload string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CompleteSessionRequest", ctx, tx, requestID, sessionID, outcome, responsePayload)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CompleteSessionRequest indicates an expected call of CompleteSessionRequest.
+func (mr *MocksubmitUserIntentRepoAPIMockRecorder) CompleteSessionRequest(ctx, tx, requestID, sessionID, outcome, responsePayload any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CompleteSessionRequest", reflect.TypeOf((*MocksubmitUserIntentRepoAPI)(nil).CompleteSessionRequest), ctx, tx, requestID, sessionID, outcome, responsePayload)
 }
 
 // CreateCauseEvent mocks base method.
@@ -1469,6 +1694,21 @@ func (mr *MocksubmitUserIntentRepoAPIMockRecorder) ListRuntimeTurns(ctx, tx, ses
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListRuntimeTurns", reflect.TypeOf((*MocksubmitUserIntentRepoAPI)(nil).ListRuntimeTurns), ctx, tx, sessionID)
 }
 
+// LockSessionByUUID mocks base method.
+func (m *MocksubmitUserIntentRepoAPI) LockSessionByUUID(ctx context.Context, tx *gorm.DB, sessionUUID string) (*repo.Session, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LockSessionByUUID", ctx, tx, sessionUUID)
+	ret0, _ := ret[0].(*repo.Session)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// LockSessionByUUID indicates an expected call of LockSessionByUUID.
+func (mr *MocksubmitUserIntentRepoAPIMockRecorder) LockSessionByUUID(ctx, tx, sessionUUID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LockSessionByUUID", reflect.TypeOf((*MocksubmitUserIntentRepoAPI)(nil).LockSessionByUUID), ctx, tx, sessionUUID)
+}
+
 // RenewActivityDeadline mocks base method.
 func (m *MocksubmitUserIntentRepoAPI) RenewActivityDeadline(ctx context.Context, tx *gorm.DB, sessionID uint, activityExpiresAt time.Time) error {
 	m.ctrl.T.Helper()
@@ -1577,6 +1817,22 @@ func (mr *MockcancelSessionRepoAPIMockRecorder) CancelAllActiveTimerObligationsF
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CancelAllActiveTimerObligationsForSession", reflect.TypeOf((*MockcancelSessionRepoAPI)(nil).CancelAllActiveTimerObligationsForSession), ctx, tx, sessionID, reason)
 }
 
+// ClaimSessionRequest mocks base method.
+func (m *MockcancelSessionRepoAPI) ClaimSessionRequest(ctx context.Context, tx *gorm.DB, input repo.ClaimSessionRequestInput) (uint, *repo.Request, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ClaimSessionRequest", ctx, tx, input)
+	ret0, _ := ret[0].(uint)
+	ret1, _ := ret[1].(*repo.Request)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// ClaimSessionRequest indicates an expected call of ClaimSessionRequest.
+func (mr *MockcancelSessionRepoAPIMockRecorder) ClaimSessionRequest(ctx, tx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClaimSessionRequest", reflect.TypeOf((*MockcancelSessionRepoAPI)(nil).ClaimSessionRequest), ctx, tx, input)
+}
+
 // CloseActiveInteraction mocks base method.
 func (m *MockcancelSessionRepoAPI) CloseActiveInteraction(ctx context.Context, tx *gorm.DB, sessionID uint, engineInteractionID uint64, sessionActorID, closedByTurnID uint) error {
 	m.ctrl.T.Helper()
@@ -1603,6 +1859,20 @@ func (m *MockcancelSessionRepoAPI) CloseAllActiveInteractionsForSession(ctx cont
 func (mr *MockcancelSessionRepoAPIMockRecorder) CloseAllActiveInteractionsForSession(ctx, tx, sessionID, reason any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CloseAllActiveInteractionsForSession", reflect.TypeOf((*MockcancelSessionRepoAPI)(nil).CloseAllActiveInteractionsForSession), ctx, tx, sessionID, reason)
+}
+
+// CompleteSessionRequest mocks base method.
+func (m *MockcancelSessionRepoAPI) CompleteSessionRequest(ctx context.Context, tx *gorm.DB, requestID uint, sessionID *uint, outcome, responsePayload string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CompleteSessionRequest", ctx, tx, requestID, sessionID, outcome, responsePayload)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CompleteSessionRequest indicates an expected call of CompleteSessionRequest.
+func (mr *MockcancelSessionRepoAPIMockRecorder) CompleteSessionRequest(ctx, tx, requestID, sessionID, outcome, responsePayload any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CompleteSessionRequest", reflect.TypeOf((*MockcancelSessionRepoAPI)(nil).CompleteSessionRequest), ctx, tx, requestID, sessionID, outcome, responsePayload)
 }
 
 // CreateCauseEvent mocks base method.
@@ -1782,6 +2052,21 @@ func (m *MockcancelSessionRepoAPI) ListRuntimeTurns(ctx context.Context, tx *gor
 func (mr *MockcancelSessionRepoAPIMockRecorder) ListRuntimeTurns(ctx, tx, sessionID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListRuntimeTurns", reflect.TypeOf((*MockcancelSessionRepoAPI)(nil).ListRuntimeTurns), ctx, tx, sessionID)
+}
+
+// LockSessionByUUID mocks base method.
+func (m *MockcancelSessionRepoAPI) LockSessionByUUID(ctx context.Context, tx *gorm.DB, sessionUUID string) (*repo.Session, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LockSessionByUUID", ctx, tx, sessionUUID)
+	ret0, _ := ret[0].(*repo.Session)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// LockSessionByUUID indicates an expected call of LockSessionByUUID.
+func (mr *MockcancelSessionRepoAPIMockRecorder) LockSessionByUUID(ctx, tx, sessionUUID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LockSessionByUUID", reflect.TypeOf((*MockcancelSessionRepoAPI)(nil).LockSessionByUUID), ctx, tx, sessionUUID)
 }
 
 // SetCurrentTurn mocks base method.

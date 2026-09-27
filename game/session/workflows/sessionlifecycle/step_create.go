@@ -9,7 +9,6 @@ import (
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine/engineservice"
 	"github.com/diegobermudez03/playhoot/game/management"
 	"github.com/diegobermudez03/playhoot/game/session"
-	"github.com/diegobermudez03/playhoot/game/session/internal/idempotency"
 	internalrepo "github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/repo"
 	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/monitoring"
@@ -29,11 +28,14 @@ type gameCurrentVersionReader interface {
 // leaveRepoAPI today, each step keeps its own contract naming only the
 // methods that step actually calls, so a method added for one step never
 // forces every other step's interface, mock, and test to change with it.
-// The shared sessionlock/idempotency mechanism packages are called directly
-// by this step instead of through repository forwarding methods.
+// ClaimSessionRequest/CompleteSessionRequest are this workflow's own
+// idempotency-claim mechanics, not a domain-wide protocol; Create has no
+// pre-existing Session row to lock, unlike every other step below.
 type createRepoAPI interface {
 	CreateSessionWithHost(ctx context.Context, tx *gorm.DB, gameDefinitionUUID string, hostUserUUID string, lobbyExpiresAt time.Time) (internalrepo.CreatedSession, error)
 	CreateJoinCode(ctx context.Context, tx *gorm.DB, sessionID uint) (uint, error)
+	ClaimSessionRequest(ctx context.Context, tx *gorm.DB, input internalrepo.ClaimSessionRequestInput) (requestID uint, existing *internalrepo.Request, err error)
+	CompleteSessionRequest(ctx context.Context, tx *gorm.DB, requestID uint, sessionID *uint, outcome string, responsePayload string) error
 }
 
 // createRequestPayload is CREATE's meaningful-field idempotency payload (the
@@ -93,7 +95,7 @@ func (m *Manager) createSessionInTx(ctx context.Context, tx *gorm.DB, gameUUID s
 		return session.CreatedSession{}, fmt.Errorf("marshaling create request payload: %s", err)
 	}
 
-	requestID, existing, err := idempotency.Claim(ctx, tx, idempotency.ClaimInput{
+	requestID, existing, err := m.createRepo.ClaimSessionRequest(ctx, tx, internalrepo.ClaimSessionRequestInput{
 		Operation:      operationCreate,
 		UserUUID:       string(hostUserUUID),
 		IdempotencyKey: string(idempotencyKey),
@@ -128,7 +130,7 @@ func (m *Manager) createSessionInTx(ctx context.Context, tx *gorm.DB, gameUUID s
 	}
 
 	sessionID := created.SessionID
-	if err := idempotency.Complete(ctx, tx, requestID, &sessionID, outcomeCreated, string(responseBytes)); err != nil {
+	if err := m.createRepo.CompleteSessionRequest(ctx, tx, requestID, &sessionID, outcomeCreated, string(responseBytes)); err != nil {
 		return session.CreatedSession{}, fmt.Errorf("completing create session request: %s", err)
 	}
 	return result, nil
@@ -138,8 +140,8 @@ func (m *Manager) createSessionInTx(ctx context.Context, tx *gorm.DB, gameUUID s
 // identity means for the incoming request: replay or conflict. This is
 // Manager policy - the shared idempotency mechanism only reports the
 // existing request.
-func interpretExistingCreateClaim(existing *idempotency.Request, incoming createRequestPayload) (session.CreatedSession, error) {
-	if existing.Status != idempotency.StatusCompleted {
+func interpretExistingCreateClaim(existing *internalrepo.Request, incoming createRequestPayload) (session.CreatedSession, error) {
+	if existing.Status != internalrepo.RequestStatusCompleted {
 		return session.CreatedSession{}, session.ErrIdempotencyInFlight
 	}
 

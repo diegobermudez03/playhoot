@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/diegobermudez03/playhoot/game/session"
-	"github.com/diegobermudez03/playhoot/game/session/internal/sessionlock"
+	internalrepo "github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/repo"
 	"gorm.io/gorm"
 )
 
@@ -27,7 +27,7 @@ type Store interface {
 // callers do not need to re-read it. now serves both as the decision's
 // "current time" and as the semantic revocation timestamp passed to
 // RevokeActiveJoinCode.
-func MaterializeIfDue(ctx context.Context, tx *gorm.DB, store Store, lockedSession *sessionlock.Session, now time.Time) (bool, error) {
+func MaterializeIfDue(ctx context.Context, tx *gorm.DB, store Store, lockedSession *internalrepo.Session, now time.Time) (bool, error) {
 	if lockedSession.Phase != session.PhaseLobby || now.Before(lockedSession.LobbyExpiresAt) {
 		return false, nil
 	}

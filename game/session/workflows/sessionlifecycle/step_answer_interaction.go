@@ -11,7 +11,6 @@ import (
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine"
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine/engineservice"
 	"github.com/diegobermudez03/playhoot/game/session"
-	"github.com/diegobermudez03/playhoot/game/session/internal/sessionlock"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/activity"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/clientoutputs"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/completion"
@@ -26,11 +25,12 @@ import (
 )
 
 // answerInteractionRepoAPI is AnswerInteraction's own narrow persistence
-// contract. The shared sessionlock mechanism package is called directly by
-// this step instead of through a repository forwarding method.
+// contract. LockSessionByID is this workflow's own locking mechanic, not a
+// domain-wide protocol.
 type answerInteractionRepoAPI interface {
 	interactions.CaptureRepo
 	timers.CaptureRepo
+	LockSessionByID(ctx context.Context, tx *gorm.DB, sessionID uint) (*internalrepo.Session, error)
 	ResolveSessionForInteraction(ctx context.Context, interactionUUID string) (*uint, error)
 	FindInteractionByUUID(ctx context.Context, tx *gorm.DB, interactionUUID string) (*internalrepo.Interaction, error)
 	FindActor(ctx context.Context, tx *gorm.DB, sessionID uint, userUUID string) (*internalrepo.Actor, error)
@@ -96,7 +96,7 @@ func (m *Manager) AnswerInteraction(ctx context.Context, interactionUUID session
 // interaction state) can be tested without a real database connection; the
 // lock acquisition and engine execution beyond this point require one.
 func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessionID uint, interactionUUID session.InteractionUUID, userUUID session.UserUUID, answer engine.Value) (session.AnswerInteractionResult, error) {
-	lockedSession, err := sessionlock.LockByID(ctx, tx, sessionID)
+	lockedSession, err := m.answerInteractionRepo.LockSessionByID(ctx, tx, sessionID)
 	if err != nil {
 		return session.AnswerInteractionResult{}, err
 	}
@@ -301,7 +301,7 @@ func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessio
 // it, so a TERMINAL Session never retains one still ACTIVE. No partial
 // RuntimeTurn is ever persisted: sessions.current_turn_id remains at the
 // last committed Turn.
-func (m *Manager) terminalizeAnswerInteractionFatal(ctx context.Context, tx *gorm.DB, lockedSession *sessionlock.Session, terminalAt time.Time, terminalReason string, failureKind string, errorCode string, errorMessage string, baseTurnID *uint, attemptedSequence uint64, interactionID uint, actorID uint) (session.AnswerInteractionResult, error) {
+func (m *Manager) terminalizeAnswerInteractionFatal(ctx context.Context, tx *gorm.DB, lockedSession *internalrepo.Session, terminalAt time.Time, terminalReason string, failureKind string, errorCode string, errorMessage string, baseTurnID *uint, attemptedSequence uint64, interactionID uint, actorID uint) (session.AnswerInteractionResult, error) {
 	if err := m.materializeRuntimeFailure(ctx, tx, m.answerInteractionRepo, lockedSession, terminalAt, terminalReason,
 		failureKind, errorCode, errorMessage, baseTurnID, attemptedSequence, replay.AnswerInteractionSourceKind, &interactionID, nil, &actorID); err != nil {
 		return session.AnswerInteractionResult{}, err

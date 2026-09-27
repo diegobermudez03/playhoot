@@ -1,16 +1,4 @@
-// Package sessionlock implements the one shared per-Session DB-locking
-// primitive that every LOBBY mutation (Join, Leave, and lazy lobby-expiration
-// materialization) must use rather than each inventing its own locking
-// query, so at most one mutation against a given Session ever executes at a
-// time. It is intentionally shaped so RUNNING-phase mutations can reuse it
-// unchanged.
-//
-// This package owns locking only. It reports the locked row's current facts
-// (phase, lobby_expires_at, ...); it does not decide lobby-expiration policy
-// itself - that decision (and the resulting mutations) belongs to the
-// workflow/Manager layer that calls it (see
-// `game/session/workflows/sessionlifecycle`'s expiration ownership).
-package sessionlock
+package repo
 
 import (
 	"context"
@@ -39,11 +27,24 @@ type Session struct {
 	TerminalReason     *string
 }
 
-// LockByID selects the sessions row FOR UPDATE by its internal id,
-// serializing every other lobby mutation attempted against the same
-// Session. Callers must invoke this from within an already-open DB
-// transaction. Returns nil, nil if no such Session exists.
-func LockByID(ctx context.Context, tx *gorm.DB, sessionID uint) (*Session, error) {
+// LockSessionByID and LockSessionByUUID are the one shared per-Session
+// DB-locking primitive that every LOBBY mutation (Join, Leave, Start, and
+// lazy lobby/activity-expiration materialization) must use rather than each
+// inventing its own locking query, so at most one mutation against a given
+// Session ever executes at a time. The same primitive is reused unchanged
+// for RUNNING-phase mutations (AnswerInteraction, SubmitUserIntent,
+// ExpireTimer, CancelSession).
+//
+// These methods report the locked row's current facts only; they do not
+// decide lobby/activity-expiration policy themselves - that decision (and
+// the resulting mutations) belongs to the workflow/Manager layer that calls
+// them (see internal/expiration, internal/activity).
+
+// LockSessionByID selects the sessions row FOR UPDATE by its internal id,
+// serializing every other mutation attempted against the same Session.
+// Callers must invoke this from within an already-open DB transaction.
+// Returns nil, nil if no such Session exists.
+func (r *Repo) LockSessionByID(ctx context.Context, tx *gorm.DB, sessionID uint) (*Session, error) {
 	var row Session
 	result := tx.WithContext(ctx).Raw(`
 		SELECT id, uuid, game_definition_uuid, host_actor_id, phase, lobby_expires_at, activity_expires_at, current_turn_id, terminal_at, terminal_reason
@@ -60,9 +61,9 @@ func LockByID(ctx context.Context, tx *gorm.DB, sessionID uint) (*Session, error
 	return &row, nil
 }
 
-// LockByUUID selects the sessions row FOR UPDATE by its public uuid. Returns
-// nil, nil if no such Session exists.
-func LockByUUID(ctx context.Context, tx *gorm.DB, sessionUUID string) (*Session, error) {
+// LockSessionByUUID selects the sessions row FOR UPDATE by its public uuid.
+// Returns nil, nil if no such Session exists.
+func (r *Repo) LockSessionByUUID(ctx context.Context, tx *gorm.DB, sessionUUID string) (*Session, error) {
 	var row Session
 	result := tx.WithContext(ctx).Raw(`
 		SELECT id, uuid, game_definition_uuid, host_actor_id, phase, lobby_expires_at, activity_expires_at, current_turn_id, terminal_at, terminal_reason

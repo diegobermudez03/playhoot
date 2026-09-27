@@ -12,8 +12,6 @@ import (
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine/engineservice"
 	"github.com/diegobermudez03/playhoot/game/language/v1/program"
 	"github.com/diegobermudez03/playhoot/game/session"
-	"github.com/diegobermudez03/playhoot/game/session/internal/idempotency"
-	"github.com/diegobermudez03/playhoot/game/session/internal/sessionlock"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/activity"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/clientoutputs"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/completion"
@@ -37,12 +35,13 @@ const (
 )
 
 // submitUserIntentRepoAPI is SubmitUserIntent's own narrow persistence
-// contract. The shared sessionlock/idempotency mechanism packages are
-// called directly by this step instead of through repository forwarding
-// methods.
+// contract. LockSessionByUUID/ClaimSessionRequest/CompleteSessionRequest are
+// this workflow's own locking/idempotency-claim mechanics, not a domain-wide
+// protocol.
 type submitUserIntentRepoAPI interface {
 	interactions.CaptureRepo
 	timers.CaptureRepo
+	LockSessionByUUID(ctx context.Context, tx *gorm.DB, sessionUUID string) (*internalrepo.Session, error)
 	FindActor(ctx context.Context, tx *gorm.DB, sessionID uint, userUUID string) (*internalrepo.Actor, error)
 	GetRuntimeTurn(ctx context.Context, tx *gorm.DB, turnID uint) (*internalrepo.RuntimeTurn, error)
 	GetRuntimeStart(ctx context.Context, tx *gorm.DB, sessionID uint) (*internalrepo.RuntimeStart, error)
@@ -59,6 +58,8 @@ type submitUserIntentRepoAPI interface {
 	CreateRuntimeFailure(ctx context.Context, tx *gorm.DB, sessionID uint, failureKind string, errorCode string, errorMessage string, baseTurnID *uint, attemptedSequence uint64, sourceKind string, sourceInteractionID *uint, sourceTimerObligationID *uint, actorID *uint, diagnosticPayload []byte) error
 	CloseAllActiveInteractionsForSession(ctx context.Context, tx *gorm.DB, sessionID uint, reason string) error
 	CancelAllActiveTimerObligationsForSession(ctx context.Context, tx *gorm.DB, sessionID uint, reason string) error
+	ClaimSessionRequest(ctx context.Context, tx *gorm.DB, input internalrepo.ClaimSessionRequestInput) (requestID uint, existing *internalrepo.Request, err error)
+	CompleteSessionRequest(ctx context.Context, tx *gorm.DB, requestID uint, sessionID *uint, outcome string, responsePayload string) error
 }
 
 // submitUserIntentRequestPayload is SubmitUserIntent's meaningful-field
@@ -108,7 +109,7 @@ func (m *Manager) submitUserIntentInTx(ctx context.Context, tx *gorm.DB, session
 		Arguments:   string(arguments),
 	}
 
-	lockedSession, err := sessionlock.LockByUUID(ctx, tx, string(sessionUUID))
+	lockedSession, err := m.submitUserIntentRepo.LockSessionByUUID(ctx, tx, string(sessionUUID))
 	if err != nil {
 		return session.SubmitUserIntentResult{}, err
 	}
@@ -127,7 +128,7 @@ func (m *Manager) submitUserIntentInTx(ctx context.Context, tx *gorm.DB, session
 	if err != nil {
 		return session.SubmitUserIntentResult{}, fmt.Errorf("marshaling submit user intent request payload: %s", err)
 	}
-	requestID, existing, err := idempotency.Claim(ctx, tx, idempotency.ClaimInput{
+	requestID, existing, err := m.submitUserIntentRepo.ClaimSessionRequest(ctx, tx, internalrepo.ClaimSessionRequestInput{
 		Operation:      operationSubmitUserIntent,
 		UserUUID:       string(userUUID),
 		IdempotencyKey: string(idempotencyKey),
@@ -319,7 +320,7 @@ func (m *Manager) submitUserIntentInTx(ctx context.Context, tx *gorm.DB, session
 	if err != nil {
 		return session.SubmitUserIntentResult{}, fmt.Errorf("marshaling submit user intent response payload: %s", err)
 	}
-	if err := idempotency.Complete(ctx, tx, requestID, &lockedSession.ID, submitUserIntentOutcomeAccepted, string(responseBytes)); err != nil {
+	if err := m.submitUserIntentRepo.CompleteSessionRequest(ctx, tx, requestID, &lockedSession.ID, submitUserIntentOutcomeAccepted, string(responseBytes)); err != nil {
 		return session.SubmitUserIntentResult{}, fmt.Errorf("completing submit user intent request: %s", err)
 	}
 	return result, nil
@@ -327,8 +328,8 @@ func (m *Manager) submitUserIntentInTx(ctx context.Context, tx *gorm.DB, session
 
 // declineSubmitUserIntent completes requestID as an ordinary decline (no
 // engine effect, no RuntimeTurn) and reports SubmitUserIntentOutcomeRejected.
-func (m *Manager) declineSubmitUserIntent(ctx context.Context, tx *gorm.DB, requestID uint, lockedSession *sessionlock.Session) (session.SubmitUserIntentResult, error) {
-	if err := idempotency.Complete(ctx, tx, requestID, &lockedSession.ID, submitUserIntentOutcomeRejected, ""); err != nil {
+func (m *Manager) declineSubmitUserIntent(ctx context.Context, tx *gorm.DB, requestID uint, lockedSession *internalrepo.Session) (session.SubmitUserIntentResult, error) {
+	if err := m.submitUserIntentRepo.CompleteSessionRequest(ctx, tx, requestID, &lockedSession.ID, submitUserIntentOutcomeRejected, ""); err != nil {
 		return session.SubmitUserIntentResult{}, fmt.Errorf("completing submit user intent request: %s", err)
 	}
 	return session.SubmitUserIntentResult{Outcome: session.SubmitUserIntentOutcomeRejected, SessionUUID: session.SessionUUID(lockedSession.UUID)}, nil
@@ -340,12 +341,12 @@ func (m *Manager) declineSubmitUserIntent(ctx context.Context, tx *gorm.DB, requ
 // row and timer obligation for it, mirroring terminalizeAnswerInteractionFatal
 // exactly, and completes the idempotency claim so a retry replays this same
 // outcome instead of re-attempting a doomed execution.
-func (m *Manager) terminalizeSubmitUserIntentFatal(ctx context.Context, tx *gorm.DB, requestID uint, lockedSession *sessionlock.Session, terminalAt time.Time, terminalReason string, failureKind string, errorCode string, errorMessage string, baseTurnID *uint, attemptedSequence uint64, actorID uint) (session.SubmitUserIntentResult, error) {
+func (m *Manager) terminalizeSubmitUserIntentFatal(ctx context.Context, tx *gorm.DB, requestID uint, lockedSession *internalrepo.Session, terminalAt time.Time, terminalReason string, failureKind string, errorCode string, errorMessage string, baseTurnID *uint, attemptedSequence uint64, actorID uint) (session.SubmitUserIntentResult, error) {
 	if err := m.materializeRuntimeFailure(ctx, tx, m.submitUserIntentRepo, lockedSession, terminalAt, terminalReason,
 		failureKind, errorCode, errorMessage, baseTurnID, attemptedSequence, replay.UserIntentSourceKind, nil, nil, &actorID); err != nil {
 		return session.SubmitUserIntentResult{}, err
 	}
-	if err := idempotency.Complete(ctx, tx, requestID, &lockedSession.ID, submitUserIntentOutcomeRuntimeExecutionFailed, ""); err != nil {
+	if err := m.submitUserIntentRepo.CompleteSessionRequest(ctx, tx, requestID, &lockedSession.ID, submitUserIntentOutcomeRuntimeExecutionFailed, ""); err != nil {
 		return session.SubmitUserIntentResult{}, fmt.Errorf("completing submit user intent request: %s", err)
 	}
 	return session.SubmitUserIntentResult{Outcome: session.SubmitUserIntentOutcomeRuntimeExecutionFailed, SessionUUID: session.SessionUUID(lockedSession.UUID)}, nil
@@ -354,8 +355,8 @@ func (m *Manager) terminalizeSubmitUserIntentFatal(ctx context.Context, tx *gorm
 // interpretExistingSubmitUserIntentClaim replays an already-completed
 // idempotency claim's original outcome, mirroring
 // interpretExistingStartClaim exactly.
-func interpretExistingSubmitUserIntentClaim(existing *idempotency.Request, incoming submitUserIntentRequestPayload) (session.SubmitUserIntentResult, error) {
-	if existing.Status != idempotency.StatusCompleted {
+func interpretExistingSubmitUserIntentClaim(existing *internalrepo.Request, incoming submitUserIntentRequestPayload) (session.SubmitUserIntentResult, error) {
+	if existing.Status != internalrepo.RequestStatusCompleted {
 		return session.SubmitUserIntentResult{}, session.ErrIdempotencyInFlight
 	}
 

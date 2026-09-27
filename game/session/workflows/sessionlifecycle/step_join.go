@@ -8,8 +8,6 @@ import (
 
 	"github.com/diegobermudez03/playhoot/game/language/v1/program"
 	"github.com/diegobermudez03/playhoot/game/session"
-	"github.com/diegobermudez03/playhoot/game/session/internal/idempotency"
-	"github.com/diegobermudez03/playhoot/game/session/internal/sessionlock"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/expiration"
 	internalrepo "github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/repo"
 	"github.com/diegobermudez03/playhoot/logging"
@@ -36,18 +34,21 @@ type gamePinnedDefinitionReader interface {
 	GetGameDefinition(ctx context.Context, gameDefinitionUUID string) (*program.Definition, error)
 }
 
-// joinRepoAPI is Join's own narrow persistence contract. The shared
-// sessionlock/idempotency mechanism packages are called directly by this
-// step instead of through repository forwarding methods.
+// joinRepoAPI is Join's own narrow persistence contract. LockSessionByID/
+// ClaimSessionRequest/CompleteSessionRequest are this workflow's own
+// locking/idempotency-claim mechanics, not a domain-wide protocol.
 type joinRepoAPI interface {
 	expiration.Store
 	ResolveSessionForJoinCode(ctx context.Context, joinCode uint) (*internalrepo.JoinCodeResolution, error)
+	LockSessionByID(ctx context.Context, tx *gorm.DB, sessionID uint) (*internalrepo.Session, error)
 	FindActor(ctx context.Context, tx *gorm.DB, sessionID uint, userUUID string) (*internalrepo.Actor, error)
 	CreateActor(ctx context.Context, tx *gorm.DB, sessionID uint, userUUID string) (uint, error)
 	FindParticipant(ctx context.Context, tx *gorm.DB, actorID uint) (*internalrepo.Participant, error)
 	CountActiveParticipants(ctx context.Context, tx *gorm.DB, sessionID uint) (int, error)
 	CreateParticipant(ctx context.Context, tx *gorm.DB, actorID uint, displayName string, joinedAt time.Time) error
 	ActivateParticipant(ctx context.Context, tx *gorm.DB, participantID uint, displayName string, joinedAt time.Time) error
+	ClaimSessionRequest(ctx context.Context, tx *gorm.DB, input internalrepo.ClaimSessionRequestInput) (requestID uint, existing *internalrepo.Request, err error)
+	CompleteSessionRequest(ctx context.Context, tx *gorm.DB, requestID uint, sessionID *uint, outcome string, responsePayload string) error
 }
 
 // joinRequestPayload is JOIN's meaningful-field idempotency payload.
@@ -119,7 +120,7 @@ func (m *Manager) Join(ctx context.Context, joinCode session.JoinCode, userUUID 
 func (m *Manager) joinSessionInTx(ctx context.Context, tx *gorm.DB, sessionID uint, codeWasRevokedAtResolution bool, playersMax int, joinCode session.JoinCode, userUUID session.UserUUID, displayName session.DisplayName, idempotencyKey session.IdempotencyKey) (session.JoinResult, error) {
 	incomingPayload := joinRequestPayload{JoinCode: uint(joinCode), UserUUID: string(userUUID), DisplayName: string(displayName)}
 
-	lockedSession, err := sessionlock.LockByID(ctx, tx, sessionID)
+	lockedSession, err := m.joinRepo.LockSessionByID(ctx, tx, sessionID)
 	if err != nil {
 		return session.JoinResult{}, err
 	}
@@ -153,7 +154,7 @@ func (m *Manager) joinSessionInTx(ctx context.Context, tx *gorm.DB, sessionID ui
 	if err != nil {
 		return session.JoinResult{}, fmt.Errorf("marshaling join request payload: %s", err)
 	}
-	requestID, existing, err := idempotency.Claim(ctx, tx, idempotency.ClaimInput{
+	requestID, existing, err := m.joinRepo.ClaimSessionRequest(ctx, tx, internalrepo.ClaimSessionRequestInput{
 		Operation:      operationJoin,
 		UserUUID:       string(userUUID),
 		IdempotencyKey: string(idempotencyKey),
@@ -194,7 +195,7 @@ func (m *Manager) joinSessionInTx(ctx context.Context, tx *gorm.DB, sessionID ui
 		// silently replayed or treated as success. The rejection is itself
 		// the token's completed logical outcome, so it still commits
 		// together with the just-created claim.
-		if err := idempotency.Complete(ctx, tx, requestID, &lockedSession.ID, outcomeAlreadyJoined, ""); err != nil {
+		if err := m.joinRepo.CompleteSessionRequest(ctx, tx, requestID, &lockedSession.ID, outcomeAlreadyJoined, ""); err != nil {
 			return session.JoinResult{}, fmt.Errorf("completing join session request: %s", err)
 		}
 		return session.JoinResult{Outcome: session.JoinOutcomeAlreadyJoined}, nil
@@ -205,7 +206,7 @@ func (m *Manager) joinSessionInTx(ctx context.Context, tx *gorm.DB, sessionID ui
 		return session.JoinResult{}, err
 	}
 	if playersMax > 0 && activeCount >= playersMax {
-		if err := idempotency.Complete(ctx, tx, requestID, &lockedSession.ID, outcomeLobbyFull, ""); err != nil {
+		if err := m.joinRepo.CompleteSessionRequest(ctx, tx, requestID, &lockedSession.ID, outcomeLobbyFull, ""); err != nil {
 			return session.JoinResult{}, fmt.Errorf("completing join session request: %s", err)
 		}
 		return session.JoinResult{Outcome: session.JoinOutcomeLobbyFull}, nil
@@ -226,7 +227,7 @@ func (m *Manager) joinSessionInTx(ctx context.Context, tx *gorm.DB, sessionID ui
 	if err != nil {
 		return session.JoinResult{}, fmt.Errorf("marshaling join response payload: %s", err)
 	}
-	if err := idempotency.Complete(ctx, tx, requestID, &lockedSession.ID, outcomeJoined, string(responseBytes)); err != nil {
+	if err := m.joinRepo.CompleteSessionRequest(ctx, tx, requestID, &lockedSession.ID, outcomeJoined, string(responseBytes)); err != nil {
 		return session.JoinResult{}, fmt.Errorf("completing join session request: %s", err)
 	}
 	return result, nil
@@ -236,8 +237,8 @@ func (m *Manager) joinSessionInTx(ctx context.Context, tx *gorm.DB, sessionID ui
 // means for the incoming request: replay or conflict. A replayed decline is
 // returned as the same outcome value it was originally recorded as, never
 // reconstructed as an error.
-func interpretExistingJoinClaim(existing *idempotency.Request, incoming joinRequestPayload) (session.JoinResult, error) {
-	if existing.Status != idempotency.StatusCompleted {
+func interpretExistingJoinClaim(existing *internalrepo.Request, incoming joinRequestPayload) (session.JoinResult, error) {
+	if existing.Status != internalrepo.RequestStatusCompleted {
 		return session.JoinResult{}, session.ErrIdempotencyInFlight
 	}
 

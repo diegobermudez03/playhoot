@@ -1,4 +1,4 @@
-package idempotency
+package repo
 
 import (
 	"context"
@@ -10,12 +10,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestClaimAndComplete(t *testing.T) {
+func TestRepoClaimAndCompleteSessionRequest(t *testing.T) {
 	db := testdb.OpenSessionDB(t)
+	r := New(db)
 	userUUID := uuid.NewString()
 	key := uuid.NewString()
 
-	requestID, existing, err := Claim(context.Background(), db, ClaimInput{
+	requestID, existing, err := r.ClaimSessionRequest(context.Background(), db, ClaimSessionRequestInput{
 		Operation: "TEST_OP", UserUUID: userUUID, IdempotencyKey: key, RequestPayload: `{"a":1}`,
 	})
 	require.NoError(t, err)
@@ -24,39 +25,41 @@ func TestClaimAndComplete(t *testing.T) {
 
 	// A second claim attempt against the same identity, before completion,
 	// finds the existing (still-PENDING) request rather than claiming again.
-	requestIDAgain, existingAgain, err := Claim(context.Background(), db, ClaimInput{
+	requestIDAgain, existingAgain, err := r.ClaimSessionRequest(context.Background(), db, ClaimSessionRequestInput{
 		Operation: "TEST_OP", UserUUID: userUUID, IdempotencyKey: key, RequestPayload: `{"a":1}`,
 	})
 	require.NoError(t, err)
 	require.Zero(t, requestIDAgain)
 	require.NotNil(t, existingAgain)
-	require.Equal(t, StatusPending, existingAgain.Status)
+	require.Equal(t, RequestStatusPending, existingAgain.Status)
 
-	require.NoError(t, Complete(context.Background(), db, requestID, nil, "TEST_OUTCOME", `{"result":true}`))
+	require.NoError(t, r.CompleteSessionRequest(context.Background(), db, requestID, nil, "TEST_OUTCOME", `{"result":true}`))
 
-	requestIDFinal, existingFinal, err := Claim(context.Background(), db, ClaimInput{
+	requestIDFinal, existingFinal, err := r.ClaimSessionRequest(context.Background(), db, ClaimSessionRequestInput{
 		Operation: "TEST_OP", UserUUID: userUUID, IdempotencyKey: key, RequestPayload: `{"a":1}`,
 	})
 	require.NoError(t, err)
 	require.Zero(t, requestIDFinal)
 	require.NotNil(t, existingFinal)
-	require.Equal(t, StatusCompleted, existingFinal.Status)
+	require.Equal(t, RequestStatusCompleted, existingFinal.Status)
 	require.Equal(t, "TEST_OUTCOME", existingFinal.Outcome)
 	require.NotNil(t, existingFinal.ResponsePayload)
 	require.JSONEq(t, `{"result":true}`, *existingFinal.ResponsePayload, "Postgres's JSONB storage reformats stored JSON text, so compare semantically rather than byte-for-byte")
 }
 
-// TestClaim_ConcurrentSameIdentityResolvesToExactlyOneFreshClaim proves -
-// against a real Postgres database - that of N concurrent claims sharing the
-// same identity, exactly one wins a fresh claim; Claim does not itself
-// resolve the race between its own fetch and its own insert, so every other
-// attempt either observes the existing identity (if its fetch ran after the
-// winner committed) or fails with a unique-constraint-violation error (if it
-// raced the winner's still-open insert) - callers with no other
+// TestRepoClaimSessionRequest_ConcurrentSameIdentityResolvesToExactlyOneFreshClaim
+// proves - against a real Postgres database - that of N concurrent claims
+// sharing the same identity, exactly one wins a fresh claim; ClaimSessionRequest
+// does not itself resolve the race between its own fetch and its own insert,
+// so every other attempt either observes the existing identity (if its fetch
+// ran after the winner committed) or fails with a unique-constraint-violation
+// error (if it raced the winner's still-open insert) - callers with no other
 // serialization of their own (unlike Join/Leave, which lock the owning
-// Session's row before ever reaching Claim) must expect and handle this.
-func TestClaim_ConcurrentSameIdentityResolvesToExactlyOneFreshClaim(t *testing.T) {
+// Session's row before ever reaching this method) must expect and handle
+// this.
+func TestRepoClaimSessionRequest_ConcurrentSameIdentityResolvesToExactlyOneFreshClaim(t *testing.T) {
 	db := testdb.OpenSessionDB(t)
+	r := New(db)
 	userUUID := uuid.NewString()
 	key := uuid.NewString()
 
@@ -76,7 +79,7 @@ func TestClaim_ConcurrentSameIdentityResolvesToExactlyOneFreshClaim(t *testing.T
 			tx := db.Begin()
 			defer tx.Rollback()
 
-			requestID, existing, err := Claim(context.Background(), tx, ClaimInput{
+			requestID, existing, err := r.ClaimSessionRequest(context.Background(), tx, ClaimSessionRequestInput{
 				Operation: "CONCURRENT_OP", UserUUID: userUUID, IdempotencyKey: key, RequestPayload: `{"a":1}`,
 			})
 			requestIDs[i], existings[i], errs[i] = requestID, existing, err

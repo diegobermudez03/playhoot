@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/diegobermudez03/playhoot/game/session"
-	"github.com/diegobermudez03/playhoot/game/session/internal/sessionlock"
+	internalrepo "github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/repo"
 	"gorm.io/gorm"
 )
 
@@ -35,7 +35,7 @@ type Store interface {
 // delayed materialization (a later call, or an eventual background sweep)
 // still records the instant the Session actually became inactive, not the
 // instant it happened to be noticed.
-func MaterializeIfDue(ctx context.Context, tx *gorm.DB, store Store, lockedSession *sessionlock.Session, now time.Time) (bool, error) {
+func MaterializeIfDue(ctx context.Context, tx *gorm.DB, store Store, lockedSession *internalrepo.Session, now time.Time) (bool, error) {
 	if lockedSession.Phase != session.PhaseRunning || lockedSession.ActivityExpiresAt == nil || now.Before(*lockedSession.ActivityExpiresAt) {
 		return false, nil
 	}

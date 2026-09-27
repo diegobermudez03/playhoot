@@ -7,8 +7,6 @@ import (
 	"time"
 
 	"github.com/diegobermudez03/playhoot/game/session"
-	"github.com/diegobermudez03/playhoot/game/session/internal/idempotency"
-	"github.com/diegobermudez03/playhoot/game/session/internal/sessionlock"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/expiration"
 	internalrepo "github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/repo"
 	"github.com/diegobermudez03/playhoot/logging"
@@ -25,14 +23,17 @@ const (
 	outcomeActorNotFound = "ACTOR_NOT_FOUND"
 )
 
-// leaveRepoAPI is Leave's own narrow persistence contract. The shared
-// sessionlock/idempotency mechanism packages are called directly by this
-// step instead of through repository forwarding methods.
+// leaveRepoAPI is Leave's own narrow persistence contract. LockSessionByUUID/
+// ClaimSessionRequest/CompleteSessionRequest are this workflow's own
+// locking/idempotency-claim mechanics, not a domain-wide protocol.
 type leaveRepoAPI interface {
 	expiration.Store
+	LockSessionByUUID(ctx context.Context, tx *gorm.DB, sessionUUID string) (*internalrepo.Session, error)
 	FindActor(ctx context.Context, tx *gorm.DB, sessionID uint, userUUID string) (*internalrepo.Actor, error)
 	FindParticipant(ctx context.Context, tx *gorm.DB, actorID uint) (*internalrepo.Participant, error)
 	DeactivateParticipant(ctx context.Context, tx *gorm.DB, participantID uint, leftAt time.Time) error
+	ClaimSessionRequest(ctx context.Context, tx *gorm.DB, input internalrepo.ClaimSessionRequestInput) (requestID uint, existing *internalrepo.Request, err error)
+	CompleteSessionRequest(ctx context.Context, tx *gorm.DB, requestID uint, sessionID *uint, outcome string, responsePayload string) error
 }
 
 // leaveRequestPayload is LEAVE's meaningful-field idempotency payload.
@@ -69,7 +70,7 @@ func (m *Manager) Leave(ctx context.Context, sessionUUID session.SessionUUID, us
 func (m *Manager) leaveSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID session.SessionUUID, userUUID session.UserUUID, idempotencyKey session.IdempotencyKey) (session.LeaveResult, error) {
 	incomingPayload := leaveRequestPayload{SessionUUID: string(sessionUUID), UserUUID: string(userUUID)}
 
-	lockedSession, err := sessionlock.LockByUUID(ctx, tx, string(sessionUUID))
+	lockedSession, err := m.leaveRepo.LockSessionByUUID(ctx, tx, string(sessionUUID))
 	if err != nil {
 		return session.LeaveResult{}, err
 	}
@@ -94,7 +95,7 @@ func (m *Manager) leaveSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 	if err != nil {
 		return session.LeaveResult{}, fmt.Errorf("marshaling leave request payload: %s", err)
 	}
-	requestID, existing, err := idempotency.Claim(ctx, tx, idempotency.ClaimInput{
+	requestID, existing, err := m.leaveRepo.ClaimSessionRequest(ctx, tx, internalrepo.ClaimSessionRequestInput{
 		Operation:      operationLeave,
 		UserUUID:       string(userUUID),
 		IdempotencyKey: string(idempotencyKey),
@@ -113,7 +114,7 @@ func (m *Manager) leaveSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 		return session.LeaveResult{}, err
 	}
 	if actor == nil {
-		if err := idempotency.Complete(ctx, tx, requestID, &lockedSession.ID, outcomeActorNotFound, ""); err != nil {
+		if err := m.leaveRepo.CompleteSessionRequest(ctx, tx, requestID, &lockedSession.ID, outcomeActorNotFound, ""); err != nil {
 			return session.LeaveResult{}, fmt.Errorf("completing leave session request: %s", err)
 		}
 		return session.LeaveResult{Outcome: session.LeaveOutcomeActorNotFound}, nil
@@ -136,7 +137,7 @@ func (m *Manager) leaveSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 	if err != nil {
 		return session.LeaveResult{}, fmt.Errorf("marshaling leave response payload: %s", err)
 	}
-	if err := idempotency.Complete(ctx, tx, requestID, &lockedSession.ID, outcomeLeft, string(responseBytes)); err != nil {
+	if err := m.leaveRepo.CompleteSessionRequest(ctx, tx, requestID, &lockedSession.ID, outcomeLeft, string(responseBytes)); err != nil {
 		return session.LeaveResult{}, fmt.Errorf("completing leave session request: %s", err)
 	}
 	return result, nil
@@ -146,8 +147,8 @@ func (m *Manager) leaveSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 // means for the incoming request: replay or conflict. A replayed decline is
 // returned as the same outcome value it was originally recorded as, never
 // reconstructed as an error.
-func interpretExistingLeaveClaim(existing *idempotency.Request, incoming leaveRequestPayload) (session.LeaveResult, error) {
-	if existing.Status != idempotency.StatusCompleted {
+func interpretExistingLeaveClaim(existing *internalrepo.Request, incoming leaveRequestPayload) (session.LeaveResult, error) {
+	if existing.Status != internalrepo.RequestStatusCompleted {
 		return session.LeaveResult{}, session.ErrIdempotencyInFlight
 	}
 

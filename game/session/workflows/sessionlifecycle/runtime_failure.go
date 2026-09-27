@@ -10,7 +10,7 @@ import (
 
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine/engineservice"
 	"github.com/diegobermudez03/playhoot/game/session"
-	"github.com/diegobermudez03/playhoot/game/session/internal/sessionlock"
+	internalrepo "github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/repo"
 	"gorm.io/gorm"
 )
 
@@ -192,7 +192,7 @@ func (m *Manager) materializeRuntimeFailure(
 	ctx context.Context,
 	tx *gorm.DB,
 	repo runtimeFailureRepoAPI,
-	lockedSession *sessionlock.Session,
+	lockedSession *internalrepo.Session,
 	terminalAt time.Time,
 	terminalReason string,
 	failureKind string,

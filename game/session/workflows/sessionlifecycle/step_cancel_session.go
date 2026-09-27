@@ -10,8 +10,6 @@ import (
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine"
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine/engineservice"
 	"github.com/diegobermudez03/playhoot/game/session"
-	"github.com/diegobermudez03/playhoot/game/session/internal/idempotency"
-	"github.com/diegobermudez03/playhoot/game/session/internal/sessionlock"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/activity"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/clientoutputs"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/completion"
@@ -52,9 +50,13 @@ const (
 // identical in shape to submitUserIntentRepoAPI - both steps address the
 // Session itself (not a separate interaction/obligation row) and share the
 // same cause-persistence/capture/terminal-cleanup machinery.
+// LockSessionByUUID/ClaimSessionRequest/CompleteSessionRequest are this
+// workflow's own locking/idempotency-claim mechanics, not a domain-wide
+// protocol.
 type cancelSessionRepoAPI interface {
 	interactions.CaptureRepo
 	timers.CaptureRepo
+	LockSessionByUUID(ctx context.Context, tx *gorm.DB, sessionUUID string) (*internalrepo.Session, error)
 	FindActor(ctx context.Context, tx *gorm.DB, sessionID uint, userUUID string) (*internalrepo.Actor, error)
 	GetRuntimeTurn(ctx context.Context, tx *gorm.DB, turnID uint) (*internalrepo.RuntimeTurn, error)
 	GetRuntimeStart(ctx context.Context, tx *gorm.DB, sessionID uint) (*internalrepo.RuntimeStart, error)
@@ -70,6 +72,8 @@ type cancelSessionRepoAPI interface {
 	CreateRuntimeFailure(ctx context.Context, tx *gorm.DB, sessionID uint, failureKind string, errorCode string, errorMessage string, baseTurnID *uint, attemptedSequence uint64, sourceKind string, sourceInteractionID *uint, sourceTimerObligationID *uint, actorID *uint, diagnosticPayload []byte) error
 	CloseAllActiveInteractionsForSession(ctx context.Context, tx *gorm.DB, sessionID uint, reason string) error
 	CancelAllActiveTimerObligationsForSession(ctx context.Context, tx *gorm.DB, sessionID uint, reason string) error
+	ClaimSessionRequest(ctx context.Context, tx *gorm.DB, input internalrepo.ClaimSessionRequestInput) (requestID uint, existing *internalrepo.Request, err error)
+	CompleteSessionRequest(ctx context.Context, tx *gorm.DB, requestID uint, sessionID *uint, outcome string, responsePayload string) error
 }
 
 // cancelSessionRequestPayload is CancelSession's meaningful-field
@@ -111,7 +115,7 @@ func (m *Manager) CancelSession(ctx context.Context, sessionUUID session.Session
 func (m *Manager) cancelSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID session.SessionUUID, userUUID session.UserUUID, idempotencyKey session.IdempotencyKey) (session.CancelSessionResult, error) {
 	incomingPayload := cancelSessionRequestPayload{SessionUUID: string(sessionUUID), UserUUID: string(userUUID)}
 
-	lockedSession, err := sessionlock.LockByUUID(ctx, tx, string(sessionUUID))
+	lockedSession, err := m.cancelSessionRepo.LockSessionByUUID(ctx, tx, string(sessionUUID))
 	if err != nil {
 		return session.CancelSessionResult{}, err
 	}
@@ -133,7 +137,7 @@ func (m *Manager) cancelSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUI
 	if err != nil {
 		return session.CancelSessionResult{}, fmt.Errorf("marshaling cancel session request payload: %s", err)
 	}
-	requestID, existing, err := idempotency.Claim(ctx, tx, idempotency.ClaimInput{
+	requestID, existing, err := m.cancelSessionRepo.ClaimSessionRequest(ctx, tx, internalrepo.ClaimSessionRequestInput{
 		Operation:      operationCancelSession,
 		UserUUID:       string(userUUID),
 		IdempotencyKey: string(idempotencyKey),
@@ -302,7 +306,7 @@ func (m *Manager) cancelSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUI
 	if err != nil {
 		return session.CancelSessionResult{}, fmt.Errorf("marshaling cancel session response payload: %s", err)
 	}
-	if err := idempotency.Complete(ctx, tx, requestID, &lockedSession.ID, cancelSessionOutcomeCancelled, string(responseBytes)); err != nil {
+	if err := m.cancelSessionRepo.CompleteSessionRequest(ctx, tx, requestID, &lockedSession.ID, cancelSessionOutcomeCancelled, string(responseBytes)); err != nil {
 		return session.CancelSessionResult{}, fmt.Errorf("completing cancel session request: %s", err)
 	}
 	return result, nil
@@ -311,8 +315,8 @@ func (m *Manager) cancelSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUI
 // declineCancelSession completes requestID as an ordinary decline (no
 // engine effect, no state change) and reports resultOutcome, mirroring
 // declineSubmitUserIntent's shape.
-func (m *Manager) declineCancelSession(ctx context.Context, tx *gorm.DB, requestID uint, lockedSession *sessionlock.Session, outcomeLabel string, resultOutcome session.CancelSessionOutcome) (session.CancelSessionResult, error) {
-	if err := idempotency.Complete(ctx, tx, requestID, &lockedSession.ID, outcomeLabel, ""); err != nil {
+func (m *Manager) declineCancelSession(ctx context.Context, tx *gorm.DB, requestID uint, lockedSession *internalrepo.Session, outcomeLabel string, resultOutcome session.CancelSessionOutcome) (session.CancelSessionResult, error) {
+	if err := m.cancelSessionRepo.CompleteSessionRequest(ctx, tx, requestID, &lockedSession.ID, outcomeLabel, ""); err != nil {
 		return session.CancelSessionResult{}, fmt.Errorf("completing cancel session request: %s", err)
 	}
 	return session.CancelSessionResult{Outcome: resultOutcome, SessionUUID: session.SessionUUID(lockedSession.UUID)}, nil
@@ -324,7 +328,7 @@ func (m *Manager) declineCancelSession(ctx context.Context, tx *gorm.DB, request
 // ErrSignalRejected/ErrInputRejected handling for why no cause is
 // persisted. Outcome is still CancelSessionOutcomeCancelled: the Session
 // ends either way.
-func (m *Manager) terminalizeCancelSessionForced(ctx context.Context, tx *gorm.DB, requestID uint, lockedSession *sessionlock.Session, terminalAt time.Time) (session.CancelSessionResult, error) {
+func (m *Manager) terminalizeCancelSessionForced(ctx context.Context, tx *gorm.DB, requestID uint, lockedSession *internalrepo.Session, terminalAt time.Time) (session.CancelSessionResult, error) {
 	if err := m.cancelSessionRepo.SetSessionTerminal(ctx, tx, lockedSession.ID, terminalAt, session.TerminalReasonSessionCancelledByHost); err != nil {
 		return session.CancelSessionResult{}, err
 	}
@@ -339,7 +343,7 @@ func (m *Manager) terminalizeCancelSessionForced(ctx context.Context, tx *gorm.D
 	if err != nil {
 		return session.CancelSessionResult{}, fmt.Errorf("marshaling cancel session response payload: %s", err)
 	}
-	if err := idempotency.Complete(ctx, tx, requestID, &lockedSession.ID, cancelSessionOutcomeCancelled, string(responseBytes)); err != nil {
+	if err := m.cancelSessionRepo.CompleteSessionRequest(ctx, tx, requestID, &lockedSession.ID, cancelSessionOutcomeCancelled, string(responseBytes)); err != nil {
 		return session.CancelSessionResult{}, fmt.Errorf("completing cancel session request: %s", err)
 	}
 	return result, nil
@@ -354,12 +358,12 @@ func (m *Manager) terminalizeCancelSessionForced(ctx context.Context, tx *gorm.D
 // terminalizeCancelSessionForced below: this is a genuine runtime failure
 // (GAME-ADR-0017 class B/C), not the host's own intentional cancellation, so
 // only this path persists a session_runtime_failures row.
-func (m *Manager) terminalizeCancelSessionFatal(ctx context.Context, tx *gorm.DB, requestID uint, lockedSession *sessionlock.Session, terminalAt time.Time, terminalReason string, failureKind string, errorCode string, errorMessage string, baseTurnID *uint, attemptedSequence uint64, actorID uint) (session.CancelSessionResult, error) {
+func (m *Manager) terminalizeCancelSessionFatal(ctx context.Context, tx *gorm.DB, requestID uint, lockedSession *internalrepo.Session, terminalAt time.Time, terminalReason string, failureKind string, errorCode string, errorMessage string, baseTurnID *uint, attemptedSequence uint64, actorID uint) (session.CancelSessionResult, error) {
 	if err := m.materializeRuntimeFailure(ctx, tx, m.cancelSessionRepo, lockedSession, terminalAt, terminalReason,
 		failureKind, errorCode, errorMessage, baseTurnID, attemptedSequence, replay.SessionCancelledSourceKind, nil, nil, &actorID); err != nil {
 		return session.CancelSessionResult{}, err
 	}
-	if err := idempotency.Complete(ctx, tx, requestID, &lockedSession.ID, cancelSessionOutcomeRuntimeExecutionFailed, ""); err != nil {
+	if err := m.cancelSessionRepo.CompleteSessionRequest(ctx, tx, requestID, &lockedSession.ID, cancelSessionOutcomeRuntimeExecutionFailed, ""); err != nil {
 		return session.CancelSessionResult{}, fmt.Errorf("completing cancel session request: %s", err)
 	}
 	return session.CancelSessionResult{Outcome: session.CancelSessionOutcomeRuntimeExecutionFailed, SessionUUID: session.SessionUUID(lockedSession.UUID)}, nil
@@ -368,8 +372,8 @@ func (m *Manager) terminalizeCancelSessionFatal(ctx context.Context, tx *gorm.DB
 // interpretExistingCancelSessionClaim replays an already-completed
 // idempotency claim's original outcome, mirroring
 // interpretExistingSubmitUserIntentClaim exactly.
-func interpretExistingCancelSessionClaim(existing *idempotency.Request, incoming cancelSessionRequestPayload) (session.CancelSessionResult, error) {
-	if existing.Status != idempotency.StatusCompleted {
+func interpretExistingCancelSessionClaim(existing *internalrepo.Request, incoming cancelSessionRequestPayload) (session.CancelSessionResult, error) {
+	if existing.Status != internalrepo.RequestStatusCompleted {
 		return session.CancelSessionResult{}, session.ErrIdempotencyInFlight
 	}
 
