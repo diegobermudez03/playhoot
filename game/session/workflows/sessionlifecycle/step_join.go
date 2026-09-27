@@ -72,16 +72,10 @@ func (m *Manager) Join(ctx context.Context, joinCode session.JoinCode, userUUID 
 		return session.JoinResult{}, session.ErrIdempotencyKeyRequired
 	}
 
-	// ResolveSessionForJoinCode resolves the most recent join_codes row for
-	// this code number regardless of revocation status (never filtered to
-	// revoked_at IS NULL): a code that was active a moment ago can be
-	// concurrently revoked by another operation's lazy lobby-expiration
-	// materialization before this call reaches the lock below, and that race
-	// must still surface as the ordinary LobbyExpired outcome value once
-	// locked, not as a hard "invalid code" error discovered here and never
-	// re-validated under lock. A code already revoked independently of the
-	// Session it names remaining LOBBY (resolution.RevokedAt set) is instead
-	// rejected once locked, immediately below - see joinSessionInTx.
+	// A concurrent lazy-expiration materialization can revoke this code
+	// between this unlocked read and the lock below; that race surfaces as
+	// the ordinary LobbyExpired outcome once locked, not a hard error here -
+	// see joinSessionInTx.
 	resolution, err := m.joinRepo.ResolveSessionForJoinCode(ctx, uint(joinCode))
 	if err != nil {
 		return session.JoinResult{}, err
@@ -90,10 +84,9 @@ func (m *Manager) Join(ctx context.Context, joinCode session.JoinCode, userUUID 
 		return session.JoinResult{}, session.ErrJoinCodeInvalid
 	}
 
-	// Loads the Session's pinned Definition/Version UUID directly - never
-	// the Game's current version - before opening the mutation
-	// transaction/row lock, so lobby capacity stays governed by the exact
-	// version this Session was pinned to at Create.
+	// Read before the mutation transaction/row lock opens, so lobby capacity
+	// stays governed by the exact version this Session was pinned to at
+	// Create, not whatever the lock might observe by the time it opens.
 	definition, err := m.pinnedGameReader.GetGameDefinition(ctx, resolution.GameDefinitionUUID)
 	if err != nil {
 		return session.JoinResult{}, err

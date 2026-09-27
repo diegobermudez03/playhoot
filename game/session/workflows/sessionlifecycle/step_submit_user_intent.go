@@ -168,8 +168,6 @@ func (m *Manager) submitUserIntentInTx(ctx context.Context, tx *gorm.DB, session
 		return m.declineSubmitUserIntent(ctx, tx, requestID, lockedSession)
 	}
 
-	// The pinned Definition/Version UUID is read directly, never the Game's
-	// current version.
 	definition, err := m.pinnedGameReader.GetGameDefinition(ctx, lockedSession.GameDefinitionUUID)
 	if err != nil {
 		return session.SubmitUserIntentResult{}, err

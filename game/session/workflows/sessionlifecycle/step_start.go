@@ -178,10 +178,9 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 		return session.StartResult{Outcome: session.StartOutcomeNotHost}, nil
 	}
 
-	// The pinned Definition/Version UUID is read directly, never the Game's
-	// current version. Start's SessionUUID already identifies the Session
-	// directly, so this read has no unlocked pre-lookup step - it happens
-	// once the Session row is known to exist under lock.
+	// Unlike Join, this has no unlocked pre-lookup step: Start's SessionUUID
+	// already identifies the Session directly, so this read happens once the
+	// Session row is known to exist under lock.
 	definition, err := m.pinnedGameReader.GetGameDefinition(ctx, lockedSession.GameDefinitionUUID)
 	if err != nil {
 		return session.StartResult{}, err

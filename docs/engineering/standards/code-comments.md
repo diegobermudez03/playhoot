@@ -322,6 +322,57 @@ that names no package ("this package already persists...", "internally this
 retries...") — which remains a code-review responsibility per the
 caller-perspective test above.
 
+## Call-Site Comments Explain Why This Call Happens Here, Not What The Callee Does
+
+An inline comment immediately above a function/method call must not restate what that function already does - that explanation belongs on the callee's own declaration (its doc comment), which a reader can open if they need it. Restating it at every call site duplicates the callee's contract in prose that must now be kept in sync by hand at every caller, and tells the reader nothing beyond what the callee's own name and doc comment already give them.
+
+A call-site comment earns its place only when it explains something the *call site* itself needs - why this call happens here rather than elsewhere, why it happens in this order relative to other calls, or a caller-specific consequence of doing so - never a restatement of the callee's own already-documented behavior.
+
+```go
+// Bad: restates ResolveSessionForJoinCode's own already-documented contract
+// instead of saying why this caller needs it here.
+// ResolveSessionForJoinCode resolves the most recent join_codes row for
+// this code number regardless of revocation status (never filtered to
+// revoked_at IS NULL): a code that was active a moment ago can be
+// concurrently revoked by another operation's lazy lobby-expiration
+// materialization before this call reaches the lock below, and that race
+// must still surface as the ordinary LobbyExpired outcome value once
+// locked, not as a hard "invalid code" error discovered here.
+resolution, err := m.joinRepo.ResolveSessionForJoinCode(ctx, uint(joinCode))
+```
+
+```go
+// Good: only the caller-specific consequence remains; what the callee
+// itself guarantees is left to its own doc comment.
+// A concurrent lazy-expiration materialization can revoke this code
+// between this unlocked read and the lock below; that race surfaces as
+// the ordinary LobbyExpired outcome once locked, not a hard error here.
+resolution, err := m.joinRepo.ResolveSessionForJoinCode(ctx, uint(joinCode))
+```
+
+The same restatement can hide inside a longer comment that also contains genuine caller-specific reasoning - trim only the redundant part, keep the rest:
+
+```go
+// Bad: the first clause restates gamePinnedDefinitionReader's own "never
+// the Game's current version" contract; only the second clause is actually
+// about this call site.
+// Loads the Session's pinned Definition/Version UUID directly - never
+// the Game's current version - before opening the mutation
+// transaction/row lock, so lobby capacity stays governed by the exact
+// version this Session was pinned to at Create.
+definition, err := m.pinnedGameReader.GetGameDefinition(ctx, resolution.GameDefinitionUUID)
+```
+
+```go
+// Good: keeps only the reasoning specific to reading this before the lock.
+// Read before the mutation transaction/row lock opens, so lobby capacity
+// stays governed by the exact version this Session was pinned to at
+// Create, not whatever the lock might observe by the time it opens.
+definition, err := m.pinnedGameReader.GetGameDefinition(ctx, resolution.GameDefinitionUUID)
+```
+
+If a call site has no caller-specific reasoning to add at all, it gets no comment - the callee's own doc comment is sufficient and the reader is expected to open it.
+
 ## No Artificial Coupling
 
 A comment on one symbol should not need to change merely because an
@@ -370,6 +421,11 @@ During code review, flag in particular:
   Y" implementation history;
 - a comment citing an ADR/WORK/standards-doc path as the reason for
   something, instead of stating the reason itself in plain language;
+- a call-site comment restating what the called function/method already
+  does (especially one whose first sentence's subject is literally the
+  callee's own name) instead of explaining why this call happens here (see
+  Call-Site Comments Explain Why This Call Happens Here, Not What The
+  Callee Does above);
 - an exported symbol's doc comment sending the reader to an `internal/...`
   package or a lower-layer implementation type the public API exists to
   hide, instead of staying in terms of the public contract;

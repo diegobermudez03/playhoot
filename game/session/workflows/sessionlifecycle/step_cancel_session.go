@@ -189,8 +189,6 @@ func (m *Manager) cancelSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUI
 
 	now := time.Now().UTC()
 
-	// The pinned Definition/Version UUID is read directly, never the Game's
-	// current version.
 	definition, err := m.pinnedGameReader.GetGameDefinition(ctx, lockedSession.GameDefinitionUUID)
 	if err != nil {
 		return session.CancelSessionResult{}, err
