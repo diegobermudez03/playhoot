@@ -8,7 +8,6 @@ import (
 
 	"github.com/diegobermudez03/playhoot/game/language/v1/program"
 	"github.com/diegobermudez03/playhoot/game/session"
-	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/expiration"
 	internalrepo "github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/repo"
 	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/monitoring"
@@ -38,7 +37,6 @@ type gamePinnedDefinitionReader interface {
 // ClaimSessionRequest/CompleteSessionRequest are this workflow's own
 // locking/idempotency-claim mechanics, not a domain-wide protocol.
 type joinRepoAPI interface {
-	expiration.Store
 	ResolveSessionForJoinCode(ctx context.Context, joinCode uint) (*internalrepo.JoinCodeResolution, error)
 	LockSessionByID(ctx context.Context, tx *gorm.DB, sessionID uint) (*internalrepo.Session, error)
 	FindActor(ctx context.Context, tx *gorm.DB, sessionID uint, userUUID string) (*internalrepo.Actor, error)
@@ -121,7 +119,7 @@ func (m *Manager) joinSessionInTx(ctx context.Context, tx *gorm.DB, sessionID ui
 	}
 
 	now := time.Now().UTC()
-	if _, err := expiration.MaterializeIfDue(ctx, tx, m.joinRepo, lockedSession, now); err != nil {
+	if _, err := m.lobbyExpirer.MaterializeIfDue(ctx, tx, lockedSession, now); err != nil {
 		return session.JoinResult{}, err
 	}
 	if lockedSession.Phase != session.PhaseLobby {

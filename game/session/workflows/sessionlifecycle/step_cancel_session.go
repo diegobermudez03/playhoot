@@ -10,13 +10,10 @@ import (
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine"
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine/engineservice"
 	"github.com/diegobermudez03/playhoot/game/session"
-	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/activity"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/clientoutputs"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/completion"
-	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/interactions"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/replay"
 	internalrepo "github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/repo"
-	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/timers"
 	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/monitoring"
 	"github.com/diegobermudez03/playhoot/utils"
@@ -54,8 +51,6 @@ const (
 // workflow's own locking/idempotency-claim mechanics, not a domain-wide
 // protocol.
 type cancelSessionRepoAPI interface {
-	interactions.CaptureRepo
-	timers.CaptureRepo
 	LockSessionByUUID(ctx context.Context, tx *gorm.DB, sessionUUID string) (*internalrepo.Session, error)
 	FindActor(ctx context.Context, tx *gorm.DB, sessionID uint, userUUID string) (*internalrepo.Actor, error)
 	GetRuntimeTurn(ctx context.Context, tx *gorm.DB, turnID uint) (*internalrepo.RuntimeTurn, error)
@@ -129,7 +124,7 @@ func (m *Manager) cancelSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUI
 	// already-idempotent outcome regardless of which terminal reason applies
 	// - no separate branch is needed. CancelSession does not itself renew the
 	// deadline - it always terminalizes, leaving nothing left to renew.
-	if _, err := activity.MaterializeIfDue(ctx, tx, m.cancelSessionRepo, lockedSession, time.Now().UTC()); err != nil {
+	if _, err := m.activityExpirer.MaterializeIfDue(ctx, tx, lockedSession, time.Now().UTC()); err != nil {
 		return session.CancelSessionResult{}, err
 	}
 
@@ -263,10 +258,10 @@ func (m *Manager) cancelSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUI
 		return session.CancelSessionResult{}, err
 	}
 
-	if err := interactions.Capture(ctx, tx, m.cancelSessionRepo, lockedSession.ID, turnID, outputs); err != nil {
+	if err := m.interactionsCapturer.Capture(ctx, tx, lockedSession.ID, turnID, outputs); err != nil {
 		return session.CancelSessionResult{}, err
 	}
-	if err := timers.Capture(ctx, tx, m.cancelSessionRepo, lockedSession.ID, turnID, outputs); err != nil {
+	if err := m.timersCapturer.Capture(ctx, tx, lockedSession.ID, turnID, outputs); err != nil {
 		return session.CancelSessionResult{}, err
 	}
 	if err := m.cancelSessionRepo.SetCurrentTurn(ctx, tx, lockedSession.ID, turnID); err != nil {

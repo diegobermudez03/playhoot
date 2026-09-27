@@ -14,11 +14,24 @@ import (
 	"gorm.io/gorm"
 )
 
-// Store is the narrow persistence capability MaterializeIfDue needs.
+// Store is the narrow persistence capability Expirer needs.
 type Store interface {
 	SetSessionTerminal(ctx context.Context, tx *gorm.DB, sessionID uint, terminalAt time.Time, terminalReason string) error
 	CloseAllActiveInteractionsForSession(ctx context.Context, tx *gorm.DB, sessionID uint, reason string) error
 	CancelAllActiveTimerObligationsForSession(ctx context.Context, tx *gorm.DB, sessionID uint, reason string) error
+}
+
+// Expirer performs lazy RUNNING-phase inactivity-expiration materialization.
+// It depends on its own Store, bound once at construction, rather than each
+// caller supplying one per call - this workflow's own shared mechanism, not
+// a domain-wide protocol other workflows are bound to follow the same way.
+type Expirer struct {
+	store Store
+}
+
+// NewExpirer constructs an Expirer bound to store.
+func NewExpirer(store Store) *Expirer {
+	return &Expirer{store: store}
 }
 
 // MaterializeIfDue evaluates whether lockedSession's RUNNING-phase inactivity
@@ -35,20 +48,20 @@ type Store interface {
 // delayed materialization (a later call, or an eventual background sweep)
 // still records the instant the Session actually became inactive, not the
 // instant it happened to be noticed.
-func MaterializeIfDue(ctx context.Context, tx *gorm.DB, store Store, lockedSession *internalrepo.Session, now time.Time) (bool, error) {
+func (e *Expirer) MaterializeIfDue(ctx context.Context, tx *gorm.DB, lockedSession *internalrepo.Session, now time.Time) (bool, error) {
 	if lockedSession.Phase != session.PhaseRunning || lockedSession.ActivityExpiresAt == nil || now.Before(*lockedSession.ActivityExpiresAt) {
 		return false, nil
 	}
 
 	terminalAt := *lockedSession.ActivityExpiresAt
 	reason := session.TerminalReasonRuntimeInactivityExpired
-	if err := store.SetSessionTerminal(ctx, tx, lockedSession.ID, terminalAt, reason); err != nil {
+	if err := e.store.SetSessionTerminal(ctx, tx, lockedSession.ID, terminalAt, reason); err != nil {
 		return false, err
 	}
-	if err := store.CloseAllActiveInteractionsForSession(ctx, tx, lockedSession.ID, session.InteractionClosureReasonSessionTerminated); err != nil {
+	if err := e.store.CloseAllActiveInteractionsForSession(ctx, tx, lockedSession.ID, session.InteractionClosureReasonSessionTerminated); err != nil {
 		return false, err
 	}
-	if err := store.CancelAllActiveTimerObligationsForSession(ctx, tx, lockedSession.ID, session.TimerObligationClosureReasonSessionTerminated); err != nil {
+	if err := e.store.CancelAllActiveTimerObligationsForSession(ctx, tx, lockedSession.ID, session.TimerObligationClosureReasonSessionTerminated); err != nil {
 		return false, err
 	}
 

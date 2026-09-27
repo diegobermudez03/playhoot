@@ -11,13 +11,10 @@ import (
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine"
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine/engineservice"
 	"github.com/diegobermudez03/playhoot/game/session"
-	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/activity"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/clientoutputs"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/completion"
-	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/interactions"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/replay"
 	internalrepo "github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/repo"
-	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/timers"
 	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/monitoring"
 	"github.com/diegobermudez03/playhoot/utils"
@@ -28,8 +25,6 @@ import (
 // contract. LockSessionByID is this workflow's own locking mechanic, not a
 // domain-wide protocol.
 type answerInteractionRepoAPI interface {
-	interactions.CaptureRepo
-	timers.CaptureRepo
 	LockSessionByID(ctx context.Context, tx *gorm.DB, sessionID uint) (*internalrepo.Session, error)
 	ResolveSessionForInteraction(ctx context.Context, interactionUUID string) (*uint, error)
 	FindInteractionByUUID(ctx context.Context, tx *gorm.DB, interactionUUID string) (*internalrepo.Interaction, error)
@@ -108,7 +103,7 @@ func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessio
 	// answered (InteractionStateTerminated), so the existing
 	// interaction.State != InteractionStateActive check below naturally
 	// declines this call - no separate branch is needed.
-	if _, err := activity.MaterializeIfDue(ctx, tx, m.answerInteractionRepo, lockedSession, time.Now().UTC()); err != nil {
+	if _, err := m.activityExpirer.MaterializeIfDue(ctx, tx, lockedSession, time.Now().UTC()); err != nil {
 		return session.AnswerInteractionResult{}, err
 	}
 
@@ -258,10 +253,10 @@ func (m *Manager) answerInteractionInTx(ctx context.Context, tx *gorm.DB, sessio
 	if err := m.answerInteractionRepo.CloseAnsweredInteraction(ctx, tx, interaction.ID, responsePayload, turnID); err != nil {
 		return session.AnswerInteractionResult{}, err
 	}
-	if err := interactions.Capture(ctx, tx, m.answerInteractionRepo, lockedSession.ID, turnID, outputs); err != nil {
+	if err := m.interactionsCapturer.Capture(ctx, tx, lockedSession.ID, turnID, outputs); err != nil {
 		return session.AnswerInteractionResult{}, err
 	}
-	if err := timers.Capture(ctx, tx, m.answerInteractionRepo, lockedSession.ID, turnID, outputs); err != nil {
+	if err := m.timersCapturer.Capture(ctx, tx, lockedSession.ID, turnID, outputs); err != nil {
 		return session.AnswerInteractionResult{}, err
 	}
 	if err := m.answerInteractionRepo.SetCurrentTurn(ctx, tx, lockedSession.ID, turnID); err != nil {

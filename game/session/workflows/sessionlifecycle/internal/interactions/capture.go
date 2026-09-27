@@ -17,10 +17,24 @@ import (
 	"gorm.io/gorm"
 )
 
-// CaptureRepo is the narrow persistence contract Capture needs.
+// CaptureRepo is the narrow persistence contract Capturer needs.
 type CaptureRepo interface {
 	CreateInteraction(ctx context.Context, tx *gorm.DB, sessionID uint, sessionActorID uint, kind string, engineInteractionID uint64, interactionPayload []byte, openedByTurnID uint) (uint, error)
 	CloseActiveInteraction(ctx context.Context, tx *gorm.DB, sessionID uint, engineInteractionID uint64, sessionActorID uint, closedByTurnID uint) error
+}
+
+// Capturer durably records a committed RuntimeTurn's Output values as
+// session_interactions rows. It depends on its own CaptureRepo, bound once
+// at construction, rather than each caller supplying one per call - this
+// workflow's own shared mechanism, not a domain-wide protocol other
+// workflows are bound to follow the same way.
+type Capturer struct {
+	repo CaptureRepo
+}
+
+// NewCapturer constructs a Capturer bound to repo.
+func NewCapturer(repo CaptureRepo) *Capturer {
+	return &Capturer{repo: repo}
 }
 
 // Capture durably records every engine.OpenQuestionOutput/
@@ -37,7 +51,7 @@ type CaptureRepo interface {
 // Each Output already carries its own engine-assigned InteractionID and Kind
 // (QUESTION vs ASK_GROUP) directly - no compiled Program lookup is needed to
 // classify what was opened.
-func Capture(ctx context.Context, tx *gorm.DB, repo CaptureRepo, sessionID uint, turnID uint, outputs []engine.Output) error {
+func (c *Capturer) Capture(ctx context.Context, tx *gorm.DB, sessionID uint, turnID uint, outputs []engine.Output) error {
 	for _, output := range outputs {
 		switch o := output.(type) {
 		case engine.OpenQuestionOutput:
@@ -53,7 +67,7 @@ func Capture(ctx context.Context, tx *gorm.DB, repo CaptureRepo, sessionID uint,
 			if err != nil {
 				return fmt.Errorf("encoding interaction payload: %s", err)
 			}
-			if _, err := repo.CreateInteraction(ctx, tx, sessionID, actorID, kind, uint64(o.InteractionID), payload, turnID); err != nil {
+			if _, err := c.repo.CreateInteraction(ctx, tx, sessionID, actorID, kind, uint64(o.InteractionID), payload, turnID); err != nil {
 				return err
 			}
 		case engine.CloseQuestionOutput:
@@ -67,7 +81,7 @@ func Capture(ctx context.Context, tx *gorm.DB, repo CaptureRepo, sessionID uint,
 			if err != nil {
 				return fmt.Errorf("parsing interaction recipient: %s", err)
 			}
-			if err := repo.CloseActiveInteraction(ctx, tx, sessionID, uint64(o.InteractionID), actorID, turnID); err != nil {
+			if err := c.repo.CloseActiveInteraction(ctx, tx, sessionID, uint64(o.InteractionID), actorID, turnID); err != nil {
 				return err
 			}
 		}

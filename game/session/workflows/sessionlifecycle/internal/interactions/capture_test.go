@@ -49,7 +49,7 @@ func TestCapture(t *testing.T) {
 			engine.OpenQuestionOutput{Slot: "Q", Recipient: engine.UserID("7"), Question: "PickNumber", InteractionID: 42, Kind: engine.InteractionKindQuestion},
 		}
 
-		err := Capture(context.Background(), nil, repo, 1, 10, outputs)
+		err := NewCapturer(repo).Capture(context.Background(), nil, 1, 10, outputs)
 		require.NoError(t, err)
 		require.Empty(t, repo.closes)
 		require.Len(t, repo.creates, 1)
@@ -66,7 +66,7 @@ func TestCapture(t *testing.T) {
 			engine.OpenQuestionOutput{Slot: "AG", Recipient: engine.UserID("3"), Question: "PickNumber", InteractionID: 43, Kind: engine.InteractionKindAskGroup},
 		}
 
-		err := Capture(context.Background(), nil, repo, 1, 10, outputs)
+		err := NewCapturer(repo).Capture(context.Background(), nil, 1, 10, outputs)
 		require.NoError(t, err)
 		require.Len(t, repo.creates, 1)
 		require.Equal(t, session.InteractionKindAskGroup, repo.creates[0].kind)
@@ -78,7 +78,7 @@ func TestCapture(t *testing.T) {
 			engine.CloseQuestionOutput{Slot: "Q", Recipient: engine.UserID("7"), InteractionID: 42},
 		}
 
-		err := Capture(context.Background(), nil, repo, 1, 11, outputs)
+		err := NewCapturer(repo).Capture(context.Background(), nil, 1, 11, outputs)
 		require.NoError(t, err)
 		require.Empty(t, repo.creates)
 		require.Len(t, repo.closes, 1)
@@ -95,7 +95,7 @@ func TestCapture(t *testing.T) {
 			engine.CloseQuestionOutput{Slot: "Q", Recipient: engine.UserID("2"), InteractionID: 99},
 		}
 
-		err := Capture(context.Background(), nil, repo, 1, 12, outputs)
+		err := NewCapturer(repo).Capture(context.Background(), nil, 1, 12, outputs)
 		require.NoError(t, err)
 		require.Len(t, repo.creates, 1)
 		require.Len(t, repo.closes, 1)
@@ -105,7 +105,7 @@ func TestCapture(t *testing.T) {
 	t.Run("no_outputs_is_a_no_op", func(t *testing.T) {
 		repo := &fakeCaptureRepo{}
 
-		err := Capture(context.Background(), nil, repo, 1, 13, nil)
+		err := NewCapturer(repo).Capture(context.Background(), nil, 1, 13, nil)
 		require.NoError(t, err)
 		require.Empty(t, repo.creates)
 		require.Empty(t, repo.closes)
@@ -117,7 +117,7 @@ func TestCapture(t *testing.T) {
 			engine.OpenQuestionOutput{Slot: "Q", Recipient: engine.UserID("7"), Question: "PickNumber", InteractionID: 1, Kind: engine.InteractionKind(99)},
 		}
 
-		err := Capture(context.Background(), nil, repo, 1, 10, outputs)
+		err := NewCapturer(repo).Capture(context.Background(), nil, 1, 10, outputs)
 		require.Error(t, err)
 		require.Empty(t, repo.creates)
 	})
@@ -128,7 +128,7 @@ func TestCapture(t *testing.T) {
 			engine.OpenQuestionOutput{Slot: "Q", Recipient: engine.UserID("not-a-number"), Question: "PickNumber", InteractionID: 1, Kind: engine.InteractionKindQuestion},
 		}
 
-		err := Capture(context.Background(), nil, repo, 1, 10, outputs)
+		err := NewCapturer(repo).Capture(context.Background(), nil, 1, 10, outputs)
 		require.Error(t, err)
 		require.Empty(t, repo.creates)
 	})

@@ -12,13 +12,10 @@ import (
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine/engineservice"
 	"github.com/diegobermudez03/playhoot/game/language/v1/program"
 	"github.com/diegobermudez03/playhoot/game/session"
-	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/activity"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/clientoutputs"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/completion"
-	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/interactions"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/replay"
 	internalrepo "github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/repo"
-	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/timers"
 	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/monitoring"
 	"github.com/diegobermudez03/playhoot/utils"
@@ -39,8 +36,6 @@ const (
 // this workflow's own locking/idempotency-claim mechanics, not a domain-wide
 // protocol.
 type submitUserIntentRepoAPI interface {
-	interactions.CaptureRepo
-	timers.CaptureRepo
 	LockSessionByUUID(ctx context.Context, tx *gorm.DB, sessionUUID string) (*internalrepo.Session, error)
 	FindActor(ctx context.Context, tx *gorm.DB, sessionID uint, userUUID string) (*internalrepo.Actor, error)
 	GetRuntimeTurn(ctx context.Context, tx *gorm.DB, turnID uint) (*internalrepo.RuntimeTurn, error)
@@ -120,7 +115,7 @@ func (m *Manager) submitUserIntentInTx(ctx context.Context, tx *gorm.DB, session
 	// A materialized inactivity expiration leaves the existing
 	// lockedSession.Phase != PhaseRunning check below to naturally decline
 	// this call via declineSubmitUserIntent - no separate branch is needed.
-	if _, err := activity.MaterializeIfDue(ctx, tx, m.submitUserIntentRepo, lockedSession, time.Now().UTC()); err != nil {
+	if _, err := m.activityExpirer.MaterializeIfDue(ctx, tx, lockedSession, time.Now().UTC()); err != nil {
 		return session.SubmitUserIntentResult{}, err
 	}
 
@@ -282,10 +277,10 @@ func (m *Manager) submitUserIntentInTx(ctx context.Context, tx *gorm.DB, session
 		return session.SubmitUserIntentResult{}, err
 	}
 
-	if err := interactions.Capture(ctx, tx, m.submitUserIntentRepo, lockedSession.ID, turnID, outputs); err != nil {
+	if err := m.interactionsCapturer.Capture(ctx, tx, lockedSession.ID, turnID, outputs); err != nil {
 		return session.SubmitUserIntentResult{}, err
 	}
-	if err := timers.Capture(ctx, tx, m.submitUserIntentRepo, lockedSession.ID, turnID, outputs); err != nil {
+	if err := m.timersCapturer.Capture(ctx, tx, lockedSession.ID, turnID, outputs); err != nil {
 		return session.SubmitUserIntentResult{}, err
 	}
 	if err := m.submitUserIntentRepo.SetCurrentTurn(ctx, tx, lockedSession.ID, turnID); err != nil {

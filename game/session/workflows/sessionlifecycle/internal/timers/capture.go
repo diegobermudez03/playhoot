@@ -16,22 +16,36 @@ import (
 	"gorm.io/gorm"
 )
 
-// CaptureRepo is the narrow persistence contract Capture needs.
+// CaptureRepo is the narrow persistence contract Capturer needs.
 type CaptureRepo interface {
 	CreateTimerObligation(ctx context.Context, tx *gorm.DB, sessionID uint, engineSlot string, engineKey []byte, delayMs int64, createdByTurnID uint) (uint, error)
 	CancelActiveTimerObligation(ctx context.Context, tx *gorm.DB, sessionID uint, engineSlot string, engineKey []byte, closedByTurnID uint) error
+}
+
+// Capturer durably records a committed RuntimeTurn's timer-related Output
+// values as session_timer_obligations rows. It depends on its own
+// CaptureRepo, bound once at construction, rather than each caller supplying
+// one per call - this workflow's own shared mechanism, not a domain-wide
+// protocol other workflows are bound to follow the same way.
+type Capturer struct {
+	repo CaptureRepo
+}
+
+// NewCapturer constructs a Capturer bound to repo.
+func NewCapturer(repo CaptureRepo) *Capturer {
+	return &Capturer{repo: repo}
 }
 
 // Capture durably records every engine.ScheduleTimerOutput/CancelTimerOutput/
 // ScheduleKeyedTimerOutput/CancelKeyedTimerOutput produced by a just-processed
 // RuntimeTurn as session_timer_obligations rows created/closed by turnID.
 // Every step that persists a RuntimeTurn must call this, alongside
-// interactions.Capture, so a timer a Turn schedules or cancels is never left
-// unrecorded.
+// interactions.Capturer's own Capture, so a timer a Turn schedules or
+// cancels is never left unrecorded.
 //
 // outputs is the flat, ordered Output list engineservice.StartTurn/
 // AdvanceTurn already return for one Turn.
-func Capture(ctx context.Context, tx *gorm.DB, repo CaptureRepo, sessionID uint, turnID uint, outputs []engine.Output) error {
+func (c *Capturer) Capture(ctx context.Context, tx *gorm.DB, sessionID uint, turnID uint, outputs []engine.Output) error {
 	for _, output := range outputs {
 		switch o := output.(type) {
 		case engine.ScheduleTimerOutput:
@@ -39,7 +53,7 @@ func Capture(ctx context.Context, tx *gorm.DB, repo CaptureRepo, sessionID uint,
 			if err != nil {
 				return err
 			}
-			if _, err := repo.CreateTimerObligation(ctx, tx, sessionID, o.Slot, nil, delayMs, turnID); err != nil {
+			if _, err := c.repo.CreateTimerObligation(ctx, tx, sessionID, o.Slot, nil, delayMs, turnID); err != nil {
 				return err
 			}
 		case engine.ScheduleKeyedTimerOutput:
@@ -51,7 +65,7 @@ func Capture(ctx context.Context, tx *gorm.DB, repo CaptureRepo, sessionID uint,
 			if err != nil {
 				return fmt.Errorf("encoding keyed timer key: %s", err)
 			}
-			if _, err := repo.CreateTimerObligation(ctx, tx, sessionID, o.Slot, encodedKey, delayMs, turnID); err != nil {
+			if _, err := c.repo.CreateTimerObligation(ctx, tx, sessionID, o.Slot, encodedKey, delayMs, turnID); err != nil {
 				return err
 			}
 		case engine.CancelTimerOutput:
@@ -60,7 +74,7 @@ func Capture(ctx context.Context, tx *gorm.DB, repo CaptureRepo, sessionID uint,
 			// already empty and produces no Output in that case, so
 			// CancelActiveTimerObligation's own no-op-if-absent behavior is
 			// defense-in-depth, not the primary correctness mechanism here.
-			if err := repo.CancelActiveTimerObligation(ctx, tx, sessionID, o.Slot, nil, turnID); err != nil {
+			if err := c.repo.CancelActiveTimerObligation(ctx, tx, sessionID, o.Slot, nil, turnID); err != nil {
 				return err
 			}
 		case engine.CancelKeyedTimerOutput:
@@ -68,7 +82,7 @@ func Capture(ctx context.Context, tx *gorm.DB, repo CaptureRepo, sessionID uint,
 			if err != nil {
 				return fmt.Errorf("encoding keyed timer key: %s", err)
 			}
-			if err := repo.CancelActiveTimerObligation(ctx, tx, sessionID, o.Slot, encodedKey, turnID); err != nil {
+			if err := c.repo.CancelActiveTimerObligation(ctx, tx, sessionID, o.Slot, encodedKey, turnID); err != nil {
 				return err
 			}
 		}

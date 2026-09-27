@@ -277,34 +277,6 @@ func (mr *MockjoinRepoAPIMockRecorder) ResolveSessionForJoinCode(ctx, joinCode a
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResolveSessionForJoinCode", reflect.TypeOf((*MockjoinRepoAPI)(nil).ResolveSessionForJoinCode), ctx, joinCode)
 }
 
-// RevokeActiveJoinCode mocks base method.
-func (m *MockjoinRepoAPI) RevokeActiveJoinCode(ctx context.Context, tx *gorm.DB, sessionID uint, revokedAt time.Time) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RevokeActiveJoinCode", ctx, tx, sessionID, revokedAt)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// RevokeActiveJoinCode indicates an expected call of RevokeActiveJoinCode.
-func (mr *MockjoinRepoAPIMockRecorder) RevokeActiveJoinCode(ctx, tx, sessionID, revokedAt any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RevokeActiveJoinCode", reflect.TypeOf((*MockjoinRepoAPI)(nil).RevokeActiveJoinCode), ctx, tx, sessionID, revokedAt)
-}
-
-// SetSessionTerminal mocks base method.
-func (m *MockjoinRepoAPI) SetSessionTerminal(ctx context.Context, tx *gorm.DB, sessionID uint, terminalAt time.Time, terminalReason string) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SetSessionTerminal", ctx, tx, sessionID, terminalAt, terminalReason)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// SetSessionTerminal indicates an expected call of SetSessionTerminal.
-func (mr *MockjoinRepoAPIMockRecorder) SetSessionTerminal(ctx, tx, sessionID, terminalAt, terminalReason any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetSessionTerminal", reflect.TypeOf((*MockjoinRepoAPI)(nil).SetSessionTerminal), ctx, tx, sessionID, terminalAt, terminalReason)
-}
-
 // MockleaveRepoAPI is a mock of leaveRepoAPI interface.
 type MockleaveRepoAPI struct {
 	ctrl     *gomock.Controller
@@ -418,34 +390,6 @@ func (mr *MockleaveRepoAPIMockRecorder) LockSessionByUUID(ctx, tx, sessionUUID a
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LockSessionByUUID", reflect.TypeOf((*MockleaveRepoAPI)(nil).LockSessionByUUID), ctx, tx, sessionUUID)
 }
 
-// RevokeActiveJoinCode mocks base method.
-func (m *MockleaveRepoAPI) RevokeActiveJoinCode(ctx context.Context, tx *gorm.DB, sessionID uint, revokedAt time.Time) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RevokeActiveJoinCode", ctx, tx, sessionID, revokedAt)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// RevokeActiveJoinCode indicates an expected call of RevokeActiveJoinCode.
-func (mr *MockleaveRepoAPIMockRecorder) RevokeActiveJoinCode(ctx, tx, sessionID, revokedAt any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RevokeActiveJoinCode", reflect.TypeOf((*MockleaveRepoAPI)(nil).RevokeActiveJoinCode), ctx, tx, sessionID, revokedAt)
-}
-
-// SetSessionTerminal mocks base method.
-func (m *MockleaveRepoAPI) SetSessionTerminal(ctx context.Context, tx *gorm.DB, sessionID uint, terminalAt time.Time, terminalReason string) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SetSessionTerminal", ctx, tx, sessionID, terminalAt, terminalReason)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// SetSessionTerminal indicates an expected call of SetSessionTerminal.
-func (mr *MockleaveRepoAPIMockRecorder) SetSessionTerminal(ctx, tx, sessionID, terminalAt, terminalReason any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetSessionTerminal", reflect.TypeOf((*MockleaveRepoAPI)(nil).SetSessionTerminal), ctx, tx, sessionID, terminalAt, terminalReason)
-}
-
 // MockstartRepoAPI is a mock of startRepoAPI interface.
 type MockstartRepoAPI struct {
 	ctrl     *gomock.Controller
@@ -468,20 +412,6 @@ func NewMockstartRepoAPI(ctrl *gomock.Controller) *MockstartRepoAPI {
 // EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockstartRepoAPI) EXPECT() *MockstartRepoAPIMockRecorder {
 	return m.recorder
-}
-
-// CancelActiveTimerObligation mocks base method.
-func (m *MockstartRepoAPI) CancelActiveTimerObligation(ctx context.Context, tx *gorm.DB, sessionID uint, engineSlot string, engineKey []byte, closedByTurnID uint) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CancelActiveTimerObligation", ctx, tx, sessionID, engineSlot, engineKey, closedByTurnID)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// CancelActiveTimerObligation indicates an expected call of CancelActiveTimerObligation.
-func (mr *MockstartRepoAPIMockRecorder) CancelActiveTimerObligation(ctx, tx, sessionID, engineSlot, engineKey, closedByTurnID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CancelActiveTimerObligation", reflect.TypeOf((*MockstartRepoAPI)(nil).CancelActiveTimerObligation), ctx, tx, sessionID, engineSlot, engineKey, closedByTurnID)
 }
 
 // CancelAllActiveTimerObligationsForSession mocks base method.
@@ -514,20 +444,6 @@ func (mr *MockstartRepoAPIMockRecorder) ClaimSessionRequest(ctx, tx, input any) 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClaimSessionRequest", reflect.TypeOf((*MockstartRepoAPI)(nil).ClaimSessionRequest), ctx, tx, input)
 }
 
-// CloseActiveInteraction mocks base method.
-func (m *MockstartRepoAPI) CloseActiveInteraction(ctx context.Context, tx *gorm.DB, sessionID uint, engineInteractionID uint64, sessionActorID, closedByTurnID uint) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CloseActiveInteraction", ctx, tx, sessionID, engineInteractionID, sessionActorID, closedByTurnID)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// CloseActiveInteraction indicates an expected call of CloseActiveInteraction.
-func (mr *MockstartRepoAPIMockRecorder) CloseActiveInteraction(ctx, tx, sessionID, engineInteractionID, sessionActorID, closedByTurnID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CloseActiveInteraction", reflect.TypeOf((*MockstartRepoAPI)(nil).CloseActiveInteraction), ctx, tx, sessionID, engineInteractionID, sessionActorID, closedByTurnID)
-}
-
 // CloseAllActiveInteractionsForSession mocks base method.
 func (m *MockstartRepoAPI) CloseAllActiveInteractionsForSession(ctx context.Context, tx *gorm.DB, sessionID uint, reason string) error {
 	m.ctrl.T.Helper()
@@ -554,21 +470,6 @@ func (m *MockstartRepoAPI) CompleteSessionRequest(ctx context.Context, tx *gorm.
 func (mr *MockstartRepoAPIMockRecorder) CompleteSessionRequest(ctx, tx, requestID, sessionID, outcome, responsePayload any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CompleteSessionRequest", reflect.TypeOf((*MockstartRepoAPI)(nil).CompleteSessionRequest), ctx, tx, requestID, sessionID, outcome, responsePayload)
-}
-
-// CreateInteraction mocks base method.
-func (m *MockstartRepoAPI) CreateInteraction(ctx context.Context, tx *gorm.DB, sessionID, sessionActorID uint, kind string, engineInteractionID uint64, interactionPayload []byte, openedByTurnID uint) (uint, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateInteraction", ctx, tx, sessionID, sessionActorID, kind, engineInteractionID, interactionPayload, openedByTurnID)
-	ret0, _ := ret[0].(uint)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// CreateInteraction indicates an expected call of CreateInteraction.
-func (mr *MockstartRepoAPIMockRecorder) CreateInteraction(ctx, tx, sessionID, sessionActorID, kind, engineInteractionID, interactionPayload, openedByTurnID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateInteraction", reflect.TypeOf((*MockstartRepoAPI)(nil).CreateInteraction), ctx, tx, sessionID, sessionActorID, kind, engineInteractionID, interactionPayload, openedByTurnID)
 }
 
 // CreateRuntimeFailure mocks base method.
@@ -612,21 +513,6 @@ func (m *MockstartRepoAPI) CreateRuntimeTurn(ctx context.Context, tx *gorm.DB, s
 func (mr *MockstartRepoAPIMockRecorder) CreateRuntimeTurn(ctx, tx, sessionID, sequence, sourceKind, sourceInteractionID, sourceTimerObligationID, sourceCauseEventID, actorID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateRuntimeTurn", reflect.TypeOf((*MockstartRepoAPI)(nil).CreateRuntimeTurn), ctx, tx, sessionID, sequence, sourceKind, sourceInteractionID, sourceTimerObligationID, sourceCauseEventID, actorID)
-}
-
-// CreateTimerObligation mocks base method.
-func (m *MockstartRepoAPI) CreateTimerObligation(ctx context.Context, tx *gorm.DB, sessionID uint, engineSlot string, engineKey []byte, delayMs int64, createdByTurnID uint) (uint, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateTimerObligation", ctx, tx, sessionID, engineSlot, engineKey, delayMs, createdByTurnID)
-	ret0, _ := ret[0].(uint)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// CreateTimerObligation indicates an expected call of CreateTimerObligation.
-func (mr *MockstartRepoAPIMockRecorder) CreateTimerObligation(ctx, tx, sessionID, engineSlot, engineKey, delayMs, createdByTurnID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateTimerObligation", reflect.TypeOf((*MockstartRepoAPI)(nil).CreateTimerObligation), ctx, tx, sessionID, engineSlot, engineKey, delayMs, createdByTurnID)
 }
 
 // FindActor mocks base method.
@@ -754,20 +640,6 @@ func (m *MockanswerInteractionRepoAPI) EXPECT() *MockanswerInteractionRepoAPIMoc
 	return m.recorder
 }
 
-// CancelActiveTimerObligation mocks base method.
-func (m *MockanswerInteractionRepoAPI) CancelActiveTimerObligation(ctx context.Context, tx *gorm.DB, sessionID uint, engineSlot string, engineKey []byte, closedByTurnID uint) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CancelActiveTimerObligation", ctx, tx, sessionID, engineSlot, engineKey, closedByTurnID)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// CancelActiveTimerObligation indicates an expected call of CancelActiveTimerObligation.
-func (mr *MockanswerInteractionRepoAPIMockRecorder) CancelActiveTimerObligation(ctx, tx, sessionID, engineSlot, engineKey, closedByTurnID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CancelActiveTimerObligation", reflect.TypeOf((*MockanswerInteractionRepoAPI)(nil).CancelActiveTimerObligation), ctx, tx, sessionID, engineSlot, engineKey, closedByTurnID)
-}
-
 // CancelAllActiveTimerObligationsForSession mocks base method.
 func (m *MockanswerInteractionRepoAPI) CancelAllActiveTimerObligationsForSession(ctx context.Context, tx *gorm.DB, sessionID uint, reason string) error {
 	m.ctrl.T.Helper()
@@ -780,20 +652,6 @@ func (m *MockanswerInteractionRepoAPI) CancelAllActiveTimerObligationsForSession
 func (mr *MockanswerInteractionRepoAPIMockRecorder) CancelAllActiveTimerObligationsForSession(ctx, tx, sessionID, reason any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CancelAllActiveTimerObligationsForSession", reflect.TypeOf((*MockanswerInteractionRepoAPI)(nil).CancelAllActiveTimerObligationsForSession), ctx, tx, sessionID, reason)
-}
-
-// CloseActiveInteraction mocks base method.
-func (m *MockanswerInteractionRepoAPI) CloseActiveInteraction(ctx context.Context, tx *gorm.DB, sessionID uint, engineInteractionID uint64, sessionActorID, closedByTurnID uint) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CloseActiveInteraction", ctx, tx, sessionID, engineInteractionID, sessionActorID, closedByTurnID)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// CloseActiveInteraction indicates an expected call of CloseActiveInteraction.
-func (mr *MockanswerInteractionRepoAPIMockRecorder) CloseActiveInteraction(ctx, tx, sessionID, engineInteractionID, sessionActorID, closedByTurnID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CloseActiveInteraction", reflect.TypeOf((*MockanswerInteractionRepoAPI)(nil).CloseActiveInteraction), ctx, tx, sessionID, engineInteractionID, sessionActorID, closedByTurnID)
 }
 
 // CloseAllActiveInteractionsForSession mocks base method.
@@ -824,21 +682,6 @@ func (mr *MockanswerInteractionRepoAPIMockRecorder) CloseAnsweredInteraction(ctx
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CloseAnsweredInteraction", reflect.TypeOf((*MockanswerInteractionRepoAPI)(nil).CloseAnsweredInteraction), ctx, tx, interactionID, responsePayload, closedByTurnID)
 }
 
-// CreateInteraction mocks base method.
-func (m *MockanswerInteractionRepoAPI) CreateInteraction(ctx context.Context, tx *gorm.DB, sessionID, sessionActorID uint, kind string, engineInteractionID uint64, interactionPayload []byte, openedByTurnID uint) (uint, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateInteraction", ctx, tx, sessionID, sessionActorID, kind, engineInteractionID, interactionPayload, openedByTurnID)
-	ret0, _ := ret[0].(uint)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// CreateInteraction indicates an expected call of CreateInteraction.
-func (mr *MockanswerInteractionRepoAPIMockRecorder) CreateInteraction(ctx, tx, sessionID, sessionActorID, kind, engineInteractionID, interactionPayload, openedByTurnID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateInteraction", reflect.TypeOf((*MockanswerInteractionRepoAPI)(nil).CreateInteraction), ctx, tx, sessionID, sessionActorID, kind, engineInteractionID, interactionPayload, openedByTurnID)
-}
-
 // CreateRuntimeFailure mocks base method.
 func (m *MockanswerInteractionRepoAPI) CreateRuntimeFailure(ctx context.Context, tx *gorm.DB, sessionID uint, failureKind, errorCode, errorMessage string, baseTurnID *uint, attemptedSequence uint64, sourceKind string, sourceInteractionID, sourceTimerObligationID, actorID *uint, diagnosticPayload []byte) error {
 	m.ctrl.T.Helper()
@@ -866,21 +709,6 @@ func (m *MockanswerInteractionRepoAPI) CreateRuntimeTurn(ctx context.Context, tx
 func (mr *MockanswerInteractionRepoAPIMockRecorder) CreateRuntimeTurn(ctx, tx, sessionID, sequence, sourceKind, sourceInteractionID, sourceTimerObligationID, sourceCauseEventID, actorID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateRuntimeTurn", reflect.TypeOf((*MockanswerInteractionRepoAPI)(nil).CreateRuntimeTurn), ctx, tx, sessionID, sequence, sourceKind, sourceInteractionID, sourceTimerObligationID, sourceCauseEventID, actorID)
-}
-
-// CreateTimerObligation mocks base method.
-func (m *MockanswerInteractionRepoAPI) CreateTimerObligation(ctx context.Context, tx *gorm.DB, sessionID uint, engineSlot string, engineKey []byte, delayMs int64, createdByTurnID uint) (uint, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateTimerObligation", ctx, tx, sessionID, engineSlot, engineKey, delayMs, createdByTurnID)
-	ret0, _ := ret[0].(uint)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// CreateTimerObligation indicates an expected call of CreateTimerObligation.
-func (mr *MockanswerInteractionRepoAPIMockRecorder) CreateTimerObligation(ctx, tx, sessionID, engineSlot, engineKey, delayMs, createdByTurnID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateTimerObligation", reflect.TypeOf((*MockanswerInteractionRepoAPI)(nil).CreateTimerObligation), ctx, tx, sessionID, engineSlot, engineKey, delayMs, createdByTurnID)
 }
 
 // FindActor mocks base method.
@@ -1099,20 +927,6 @@ func (m *MockexpireTimerRepoAPI) EXPECT() *MockexpireTimerRepoAPIMockRecorder {
 	return m.recorder
 }
 
-// CancelActiveTimerObligation mocks base method.
-func (m *MockexpireTimerRepoAPI) CancelActiveTimerObligation(ctx context.Context, tx *gorm.DB, sessionID uint, engineSlot string, engineKey []byte, closedByTurnID uint) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CancelActiveTimerObligation", ctx, tx, sessionID, engineSlot, engineKey, closedByTurnID)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// CancelActiveTimerObligation indicates an expected call of CancelActiveTimerObligation.
-func (mr *MockexpireTimerRepoAPIMockRecorder) CancelActiveTimerObligation(ctx, tx, sessionID, engineSlot, engineKey, closedByTurnID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CancelActiveTimerObligation", reflect.TypeOf((*MockexpireTimerRepoAPI)(nil).CancelActiveTimerObligation), ctx, tx, sessionID, engineSlot, engineKey, closedByTurnID)
-}
-
 // CancelAllActiveTimerObligationsForSession mocks base method.
 func (m *MockexpireTimerRepoAPI) CancelAllActiveTimerObligationsForSession(ctx context.Context, tx *gorm.DB, sessionID uint, reason string) error {
 	m.ctrl.T.Helper()
@@ -1125,20 +939,6 @@ func (m *MockexpireTimerRepoAPI) CancelAllActiveTimerObligationsForSession(ctx c
 func (mr *MockexpireTimerRepoAPIMockRecorder) CancelAllActiveTimerObligationsForSession(ctx, tx, sessionID, reason any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CancelAllActiveTimerObligationsForSession", reflect.TypeOf((*MockexpireTimerRepoAPI)(nil).CancelAllActiveTimerObligationsForSession), ctx, tx, sessionID, reason)
-}
-
-// CloseActiveInteraction mocks base method.
-func (m *MockexpireTimerRepoAPI) CloseActiveInteraction(ctx context.Context, tx *gorm.DB, sessionID uint, engineInteractionID uint64, sessionActorID, closedByTurnID uint) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CloseActiveInteraction", ctx, tx, sessionID, engineInteractionID, sessionActorID, closedByTurnID)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// CloseActiveInteraction indicates an expected call of CloseActiveInteraction.
-func (mr *MockexpireTimerRepoAPIMockRecorder) CloseActiveInteraction(ctx, tx, sessionID, engineInteractionID, sessionActorID, closedByTurnID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CloseActiveInteraction", reflect.TypeOf((*MockexpireTimerRepoAPI)(nil).CloseActiveInteraction), ctx, tx, sessionID, engineInteractionID, sessionActorID, closedByTurnID)
 }
 
 // CloseAllActiveInteractionsForSession mocks base method.
@@ -1169,21 +969,6 @@ func (mr *MockexpireTimerRepoAPIMockRecorder) CloseTimerObligation(ctx, tx, time
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CloseTimerObligation", reflect.TypeOf((*MockexpireTimerRepoAPI)(nil).CloseTimerObligation), ctx, tx, timerObligationID, closedByTurnID)
 }
 
-// CreateInteraction mocks base method.
-func (m *MockexpireTimerRepoAPI) CreateInteraction(ctx context.Context, tx *gorm.DB, sessionID, sessionActorID uint, kind string, engineInteractionID uint64, interactionPayload []byte, openedByTurnID uint) (uint, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateInteraction", ctx, tx, sessionID, sessionActorID, kind, engineInteractionID, interactionPayload, openedByTurnID)
-	ret0, _ := ret[0].(uint)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// CreateInteraction indicates an expected call of CreateInteraction.
-func (mr *MockexpireTimerRepoAPIMockRecorder) CreateInteraction(ctx, tx, sessionID, sessionActorID, kind, engineInteractionID, interactionPayload, openedByTurnID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateInteraction", reflect.TypeOf((*MockexpireTimerRepoAPI)(nil).CreateInteraction), ctx, tx, sessionID, sessionActorID, kind, engineInteractionID, interactionPayload, openedByTurnID)
-}
-
 // CreateRuntimeFailure mocks base method.
 func (m *MockexpireTimerRepoAPI) CreateRuntimeFailure(ctx context.Context, tx *gorm.DB, sessionID uint, failureKind, errorCode, errorMessage string, baseTurnID *uint, attemptedSequence uint64, sourceKind string, sourceInteractionID, sourceTimerObligationID, actorID *uint, diagnosticPayload []byte) error {
 	m.ctrl.T.Helper()
@@ -1211,21 +996,6 @@ func (m *MockexpireTimerRepoAPI) CreateRuntimeTurn(ctx context.Context, tx *gorm
 func (mr *MockexpireTimerRepoAPIMockRecorder) CreateRuntimeTurn(ctx, tx, sessionID, sequence, sourceKind, sourceInteractionID, sourceTimerObligationID, sourceCauseEventID, actorID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateRuntimeTurn", reflect.TypeOf((*MockexpireTimerRepoAPI)(nil).CreateRuntimeTurn), ctx, tx, sessionID, sequence, sourceKind, sourceInteractionID, sourceTimerObligationID, sourceCauseEventID, actorID)
-}
-
-// CreateTimerObligation mocks base method.
-func (m *MockexpireTimerRepoAPI) CreateTimerObligation(ctx context.Context, tx *gorm.DB, sessionID uint, engineSlot string, engineKey []byte, delayMs int64, createdByTurnID uint) (uint, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateTimerObligation", ctx, tx, sessionID, engineSlot, engineKey, delayMs, createdByTurnID)
-	ret0, _ := ret[0].(uint)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// CreateTimerObligation indicates an expected call of CreateTimerObligation.
-func (mr *MockexpireTimerRepoAPIMockRecorder) CreateTimerObligation(ctx, tx, sessionID, engineSlot, engineKey, delayMs, createdByTurnID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateTimerObligation", reflect.TypeOf((*MockexpireTimerRepoAPI)(nil).CreateTimerObligation), ctx, tx, sessionID, engineSlot, engineKey, delayMs, createdByTurnID)
 }
 
 // FindTimerObligationByUUID mocks base method.
@@ -1429,20 +1199,6 @@ func (m *MocksubmitUserIntentRepoAPI) EXPECT() *MocksubmitUserIntentRepoAPIMockR
 	return m.recorder
 }
 
-// CancelActiveTimerObligation mocks base method.
-func (m *MocksubmitUserIntentRepoAPI) CancelActiveTimerObligation(ctx context.Context, tx *gorm.DB, sessionID uint, engineSlot string, engineKey []byte, closedByTurnID uint) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CancelActiveTimerObligation", ctx, tx, sessionID, engineSlot, engineKey, closedByTurnID)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// CancelActiveTimerObligation indicates an expected call of CancelActiveTimerObligation.
-func (mr *MocksubmitUserIntentRepoAPIMockRecorder) CancelActiveTimerObligation(ctx, tx, sessionID, engineSlot, engineKey, closedByTurnID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CancelActiveTimerObligation", reflect.TypeOf((*MocksubmitUserIntentRepoAPI)(nil).CancelActiveTimerObligation), ctx, tx, sessionID, engineSlot, engineKey, closedByTurnID)
-}
-
 // CancelAllActiveTimerObligationsForSession mocks base method.
 func (m *MocksubmitUserIntentRepoAPI) CancelAllActiveTimerObligationsForSession(ctx context.Context, tx *gorm.DB, sessionID uint, reason string) error {
 	m.ctrl.T.Helper()
@@ -1471,20 +1227,6 @@ func (m *MocksubmitUserIntentRepoAPI) ClaimSessionRequest(ctx context.Context, t
 func (mr *MocksubmitUserIntentRepoAPIMockRecorder) ClaimSessionRequest(ctx, tx, input any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClaimSessionRequest", reflect.TypeOf((*MocksubmitUserIntentRepoAPI)(nil).ClaimSessionRequest), ctx, tx, input)
-}
-
-// CloseActiveInteraction mocks base method.
-func (m *MocksubmitUserIntentRepoAPI) CloseActiveInteraction(ctx context.Context, tx *gorm.DB, sessionID uint, engineInteractionID uint64, sessionActorID, closedByTurnID uint) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CloseActiveInteraction", ctx, tx, sessionID, engineInteractionID, sessionActorID, closedByTurnID)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// CloseActiveInteraction indicates an expected call of CloseActiveInteraction.
-func (mr *MocksubmitUserIntentRepoAPIMockRecorder) CloseActiveInteraction(ctx, tx, sessionID, engineInteractionID, sessionActorID, closedByTurnID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CloseActiveInteraction", reflect.TypeOf((*MocksubmitUserIntentRepoAPI)(nil).CloseActiveInteraction), ctx, tx, sessionID, engineInteractionID, sessionActorID, closedByTurnID)
 }
 
 // CloseAllActiveInteractionsForSession mocks base method.
@@ -1530,21 +1272,6 @@ func (mr *MocksubmitUserIntentRepoAPIMockRecorder) CreateCauseEvent(ctx, tx, ses
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateCauseEvent", reflect.TypeOf((*MocksubmitUserIntentRepoAPI)(nil).CreateCauseEvent), ctx, tx, sessionID, runtimeTurnID, causeKind, actorID, payload)
 }
 
-// CreateInteraction mocks base method.
-func (m *MocksubmitUserIntentRepoAPI) CreateInteraction(ctx context.Context, tx *gorm.DB, sessionID, sessionActorID uint, kind string, engineInteractionID uint64, interactionPayload []byte, openedByTurnID uint) (uint, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateInteraction", ctx, tx, sessionID, sessionActorID, kind, engineInteractionID, interactionPayload, openedByTurnID)
-	ret0, _ := ret[0].(uint)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// CreateInteraction indicates an expected call of CreateInteraction.
-func (mr *MocksubmitUserIntentRepoAPIMockRecorder) CreateInteraction(ctx, tx, sessionID, sessionActorID, kind, engineInteractionID, interactionPayload, openedByTurnID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateInteraction", reflect.TypeOf((*MocksubmitUserIntentRepoAPI)(nil).CreateInteraction), ctx, tx, sessionID, sessionActorID, kind, engineInteractionID, interactionPayload, openedByTurnID)
-}
-
 // CreateRuntimeFailure mocks base method.
 func (m *MocksubmitUserIntentRepoAPI) CreateRuntimeFailure(ctx context.Context, tx *gorm.DB, sessionID uint, failureKind, errorCode, errorMessage string, baseTurnID *uint, attemptedSequence uint64, sourceKind string, sourceInteractionID, sourceTimerObligationID, actorID *uint, diagnosticPayload []byte) error {
 	m.ctrl.T.Helper()
@@ -1572,21 +1299,6 @@ func (m *MocksubmitUserIntentRepoAPI) CreateRuntimeTurn(ctx context.Context, tx 
 func (mr *MocksubmitUserIntentRepoAPIMockRecorder) CreateRuntimeTurn(ctx, tx, sessionID, sequence, sourceKind, sourceInteractionID, sourceTimerObligationID, sourceCauseEventID, actorID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateRuntimeTurn", reflect.TypeOf((*MocksubmitUserIntentRepoAPI)(nil).CreateRuntimeTurn), ctx, tx, sessionID, sequence, sourceKind, sourceInteractionID, sourceTimerObligationID, sourceCauseEventID, actorID)
-}
-
-// CreateTimerObligation mocks base method.
-func (m *MocksubmitUserIntentRepoAPI) CreateTimerObligation(ctx context.Context, tx *gorm.DB, sessionID uint, engineSlot string, engineKey []byte, delayMs int64, createdByTurnID uint) (uint, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateTimerObligation", ctx, tx, sessionID, engineSlot, engineKey, delayMs, createdByTurnID)
-	ret0, _ := ret[0].(uint)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// CreateTimerObligation indicates an expected call of CreateTimerObligation.
-func (mr *MocksubmitUserIntentRepoAPIMockRecorder) CreateTimerObligation(ctx, tx, sessionID, engineSlot, engineKey, delayMs, createdByTurnID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateTimerObligation", reflect.TypeOf((*MocksubmitUserIntentRepoAPI)(nil).CreateTimerObligation), ctx, tx, sessionID, engineSlot, engineKey, delayMs, createdByTurnID)
 }
 
 // FindActor mocks base method.
@@ -1789,20 +1501,6 @@ func (m *MockcancelSessionRepoAPI) EXPECT() *MockcancelSessionRepoAPIMockRecorde
 	return m.recorder
 }
 
-// CancelActiveTimerObligation mocks base method.
-func (m *MockcancelSessionRepoAPI) CancelActiveTimerObligation(ctx context.Context, tx *gorm.DB, sessionID uint, engineSlot string, engineKey []byte, closedByTurnID uint) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CancelActiveTimerObligation", ctx, tx, sessionID, engineSlot, engineKey, closedByTurnID)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// CancelActiveTimerObligation indicates an expected call of CancelActiveTimerObligation.
-func (mr *MockcancelSessionRepoAPIMockRecorder) CancelActiveTimerObligation(ctx, tx, sessionID, engineSlot, engineKey, closedByTurnID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CancelActiveTimerObligation", reflect.TypeOf((*MockcancelSessionRepoAPI)(nil).CancelActiveTimerObligation), ctx, tx, sessionID, engineSlot, engineKey, closedByTurnID)
-}
-
 // CancelAllActiveTimerObligationsForSession mocks base method.
 func (m *MockcancelSessionRepoAPI) CancelAllActiveTimerObligationsForSession(ctx context.Context, tx *gorm.DB, sessionID uint, reason string) error {
 	m.ctrl.T.Helper()
@@ -1831,20 +1529,6 @@ func (m *MockcancelSessionRepoAPI) ClaimSessionRequest(ctx context.Context, tx *
 func (mr *MockcancelSessionRepoAPIMockRecorder) ClaimSessionRequest(ctx, tx, input any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClaimSessionRequest", reflect.TypeOf((*MockcancelSessionRepoAPI)(nil).ClaimSessionRequest), ctx, tx, input)
-}
-
-// CloseActiveInteraction mocks base method.
-func (m *MockcancelSessionRepoAPI) CloseActiveInteraction(ctx context.Context, tx *gorm.DB, sessionID uint, engineInteractionID uint64, sessionActorID, closedByTurnID uint) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CloseActiveInteraction", ctx, tx, sessionID, engineInteractionID, sessionActorID, closedByTurnID)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// CloseActiveInteraction indicates an expected call of CloseActiveInteraction.
-func (mr *MockcancelSessionRepoAPIMockRecorder) CloseActiveInteraction(ctx, tx, sessionID, engineInteractionID, sessionActorID, closedByTurnID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CloseActiveInteraction", reflect.TypeOf((*MockcancelSessionRepoAPI)(nil).CloseActiveInteraction), ctx, tx, sessionID, engineInteractionID, sessionActorID, closedByTurnID)
 }
 
 // CloseAllActiveInteractionsForSession mocks base method.
@@ -1890,21 +1574,6 @@ func (mr *MockcancelSessionRepoAPIMockRecorder) CreateCauseEvent(ctx, tx, sessio
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateCauseEvent", reflect.TypeOf((*MockcancelSessionRepoAPI)(nil).CreateCauseEvent), ctx, tx, sessionID, runtimeTurnID, causeKind, actorID, payload)
 }
 
-// CreateInteraction mocks base method.
-func (m *MockcancelSessionRepoAPI) CreateInteraction(ctx context.Context, tx *gorm.DB, sessionID, sessionActorID uint, kind string, engineInteractionID uint64, interactionPayload []byte, openedByTurnID uint) (uint, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateInteraction", ctx, tx, sessionID, sessionActorID, kind, engineInteractionID, interactionPayload, openedByTurnID)
-	ret0, _ := ret[0].(uint)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// CreateInteraction indicates an expected call of CreateInteraction.
-func (mr *MockcancelSessionRepoAPIMockRecorder) CreateInteraction(ctx, tx, sessionID, sessionActorID, kind, engineInteractionID, interactionPayload, openedByTurnID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateInteraction", reflect.TypeOf((*MockcancelSessionRepoAPI)(nil).CreateInteraction), ctx, tx, sessionID, sessionActorID, kind, engineInteractionID, interactionPayload, openedByTurnID)
-}
-
 // CreateRuntimeFailure mocks base method.
 func (m *MockcancelSessionRepoAPI) CreateRuntimeFailure(ctx context.Context, tx *gorm.DB, sessionID uint, failureKind, errorCode, errorMessage string, baseTurnID *uint, attemptedSequence uint64, sourceKind string, sourceInteractionID, sourceTimerObligationID, actorID *uint, diagnosticPayload []byte) error {
 	m.ctrl.T.Helper()
@@ -1932,21 +1601,6 @@ func (m *MockcancelSessionRepoAPI) CreateRuntimeTurn(ctx context.Context, tx *go
 func (mr *MockcancelSessionRepoAPIMockRecorder) CreateRuntimeTurn(ctx, tx, sessionID, sequence, sourceKind, sourceInteractionID, sourceTimerObligationID, sourceCauseEventID, actorID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateRuntimeTurn", reflect.TypeOf((*MockcancelSessionRepoAPI)(nil).CreateRuntimeTurn), ctx, tx, sessionID, sequence, sourceKind, sourceInteractionID, sourceTimerObligationID, sourceCauseEventID, actorID)
-}
-
-// CreateTimerObligation mocks base method.
-func (m *MockcancelSessionRepoAPI) CreateTimerObligation(ctx context.Context, tx *gorm.DB, sessionID uint, engineSlot string, engineKey []byte, delayMs int64, createdByTurnID uint) (uint, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateTimerObligation", ctx, tx, sessionID, engineSlot, engineKey, delayMs, createdByTurnID)
-	ret0, _ := ret[0].(uint)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// CreateTimerObligation indicates an expected call of CreateTimerObligation.
-func (mr *MockcancelSessionRepoAPIMockRecorder) CreateTimerObligation(ctx, tx, sessionID, engineSlot, engineKey, delayMs, createdByTurnID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateTimerObligation", reflect.TypeOf((*MockcancelSessionRepoAPI)(nil).CreateTimerObligation), ctx, tx, sessionID, engineSlot, engineKey, delayMs, createdByTurnID)
 }
 
 // FindActor mocks base method.

@@ -9,13 +9,10 @@ import (
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine"
 	"github.com/diegobermudez03/playhoot/game/language/v1/engine/engineservice"
 	"github.com/diegobermudez03/playhoot/game/session"
-	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/activity"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/clientoutputs"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/completion"
-	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/interactions"
 	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/replay"
 	internalrepo "github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/repo"
-	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/timers"
 	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/monitoring"
 	"github.com/diegobermudez03/playhoot/utils"
@@ -23,16 +20,12 @@ import (
 )
 
 // expireTimerRepoAPI is ExpireTimer's own narrow persistence contract. It
-// embeds interactions.CaptureRepo/timers.CaptureRepo (a timer's expiration
-// may itself open a question or schedule/cancel another timer) and
 // satisfies replay.Repo (GetRuntimeStart/ListRuntimeTurns/
 // GetInteractionByID/GetTimerObligationByID) so replay.LoadPriorSignals can
 // be called directly with it, exactly like answerInteractionRepoAPI already
 // does. LockSessionByID is this workflow's own locking mechanic, not a
 // domain-wide protocol.
 type expireTimerRepoAPI interface {
-	interactions.CaptureRepo
-	timers.CaptureRepo
 	LockSessionByID(ctx context.Context, tx *gorm.DB, sessionID uint) (*internalrepo.Session, error)
 	ResolveSessionForTimerObligation(ctx context.Context, timerObligationUUID string) (*uint, error)
 	FindTimerObligationByUUID(ctx context.Context, tx *gorm.DB, timerObligationUUID string) (*internalrepo.TimerObligation, error)
@@ -99,7 +92,7 @@ func (m *Manager) expireTimerInTx(ctx context.Context, tx *gorm.DB, sessionID ui
 	// expired, so the existing obligation.State != TimerObligationStateActive
 	// check below naturally declines this call as stale - no separate branch
 	// is needed.
-	if _, err := activity.MaterializeIfDue(ctx, tx, m.expireTimerRepo, lockedSession, time.Now().UTC()); err != nil {
+	if _, err := m.activityExpirer.MaterializeIfDue(ctx, tx, lockedSession, time.Now().UTC()); err != nil {
 		return session.ExpireTimerResult{}, err
 	}
 
@@ -203,10 +196,10 @@ func (m *Manager) expireTimerInTx(ctx context.Context, tx *gorm.DB, sessionID ui
 	if err := m.expireTimerRepo.CloseTimerObligation(ctx, tx, obligationID, turnID); err != nil {
 		return session.ExpireTimerResult{}, err
 	}
-	if err := interactions.Capture(ctx, tx, m.expireTimerRepo, lockedSession.ID, turnID, outputs); err != nil {
+	if err := m.interactionsCapturer.Capture(ctx, tx, lockedSession.ID, turnID, outputs); err != nil {
 		return session.ExpireTimerResult{}, err
 	}
-	if err := timers.Capture(ctx, tx, m.expireTimerRepo, lockedSession.ID, turnID, outputs); err != nil {
+	if err := m.timersCapturer.Capture(ctx, tx, lockedSession.ID, turnID, outputs); err != nil {
 		return session.ExpireTimerResult{}, err
 	}
 	if err := m.expireTimerRepo.SetCurrentTurn(ctx, tx, lockedSession.ID, turnID); err != nil {

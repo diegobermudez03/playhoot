@@ -18,7 +18,11 @@ package sessionlifecycle
 import (
 	"time"
 
+	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/activity"
+	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/expiration"
+	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/interactions"
 	internalrepo "github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/repo"
+	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/timers"
 	"gorm.io/gorm"
 )
 
@@ -78,6 +82,11 @@ type Manager struct {
 
 	dbServicer dbServicer
 
+	lobbyExpirer         *expiration.Expirer
+	activityExpirer      *activity.Expirer
+	interactionsCapturer *interactions.Capturer
+	timersCapturer       *timers.Capturer
+
 	currentGameReader gameCurrentVersionReader
 	pinnedGameReader  gamePinnedDefinitionReader
 
@@ -110,6 +119,10 @@ func New(db *gorm.DB, currentGameReader gameCurrentVersionReader, pinnedGameRead
 		cancelSessionRepo:     r,
 		outputsRepo:           r,
 		dbServicer:            r,
+		lobbyExpirer:          expiration.NewExpirer(r),
+		activityExpirer:       activity.NewExpirer(r),
+		interactionsCapturer:  interactions.NewCapturer(r),
+		timersCapturer:        timers.NewCapturer(r),
 		currentGameReader:     currentGameReader,
 		pinnedGameReader:      pinnedGameReader,
 		lobbyTTL:              defaultLobbyTTL,

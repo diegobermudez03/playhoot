@@ -49,7 +49,7 @@ func TestCapture(t *testing.T) {
 			engine.ScheduleTimerOutput{Slot: "T", DelayMilliseconds: 5000},
 		}
 
-		err := Capture(context.Background(), nil, repo, 1, 10, outputs)
+		err := NewCapturer(repo).Capture(context.Background(), nil, 1, 10, outputs)
 		require.NoError(t, err)
 		require.Empty(t, repo.cancels)
 		require.Len(t, repo.creates, 1)
@@ -66,7 +66,7 @@ func TestCapture(t *testing.T) {
 			engine.ScheduleKeyedTimerOutput{Slot: "KT", Key: engine.StringValue{Value: "P0"}, DelayMilliseconds: 1000},
 		}
 
-		err := Capture(context.Background(), nil, repo, 1, 10, outputs)
+		err := NewCapturer(repo).Capture(context.Background(), nil, 1, 10, outputs)
 		require.NoError(t, err)
 		require.Len(t, repo.creates, 1)
 		require.Equal(t, "KT", repo.creates[0].engineSlot)
@@ -84,7 +84,7 @@ func TestCapture(t *testing.T) {
 			engine.ScheduleKeyedTimerOutput{Slot: "KT", Key: engine.StringValue{Value: "P1"}, DelayMilliseconds: 1000},
 		}
 
-		err := Capture(context.Background(), nil, repo, 1, 10, outputs)
+		err := NewCapturer(repo).Capture(context.Background(), nil, 1, 10, outputs)
 		require.NoError(t, err)
 		require.Len(t, repo.creates, 2)
 		require.NotEqual(t, repo.creates[0].engineKey, repo.creates[1].engineKey)
@@ -96,7 +96,7 @@ func TestCapture(t *testing.T) {
 			engine.CancelTimerOutput{Slot: "T"},
 		}
 
-		err := Capture(context.Background(), nil, repo, 1, 11, outputs)
+		err := NewCapturer(repo).Capture(context.Background(), nil, 1, 11, outputs)
 		require.NoError(t, err)
 		require.Empty(t, repo.creates)
 		require.Len(t, repo.cancels, 1)
@@ -112,7 +112,7 @@ func TestCapture(t *testing.T) {
 			engine.CancelKeyedTimerOutput{Slot: "KT", Key: engine.StringValue{Value: "P0"}},
 		}
 
-		err := Capture(context.Background(), nil, repo, 1, 11, outputs)
+		err := NewCapturer(repo).Capture(context.Background(), nil, 1, 11, outputs)
 		require.NoError(t, err)
 		require.Len(t, repo.cancels, 1)
 		require.NotNil(t, repo.cancels[0].engineKey)
@@ -124,7 +124,7 @@ func TestCapture(t *testing.T) {
 	t.Run("no_outputs_is_a_no_op", func(t *testing.T) {
 		repo := &fakeCaptureRepo{}
 
-		err := Capture(context.Background(), nil, repo, 1, 13, nil)
+		err := NewCapturer(repo).Capture(context.Background(), nil, 1, 13, nil)
 		require.NoError(t, err)
 		require.Empty(t, repo.creates)
 		require.Empty(t, repo.cancels)
@@ -136,7 +136,7 @@ func TestCapture(t *testing.T) {
 			engine.ScheduleTimerOutput{Slot: "T", DelayMilliseconds: 500.5},
 		}
 
-		err := Capture(context.Background(), nil, repo, 1, 10, outputs)
+		err := NewCapturer(repo).Capture(context.Background(), nil, 1, 10, outputs)
 		require.Error(t, err)
 		require.Empty(t, repo.creates)
 	})
@@ -147,7 +147,7 @@ func TestCapture(t *testing.T) {
 			engine.ScheduleTimerOutput{Slot: "T", DelayMilliseconds: -1},
 		}
 
-		err := Capture(context.Background(), nil, repo, 1, 10, outputs)
+		err := NewCapturer(repo).Capture(context.Background(), nil, 1, 10, outputs)
 		require.Error(t, err)
 		require.Empty(t, repo.creates)
 	})

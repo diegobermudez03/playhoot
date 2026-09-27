@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/diegobermudez03/playhoot/game/session"
-	"github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/expiration"
 	internalrepo "github.com/diegobermudez03/playhoot/game/session/workflows/sessionlifecycle/internal/repo"
 	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/utils"
@@ -27,7 +26,6 @@ const (
 // ClaimSessionRequest/CompleteSessionRequest are this workflow's own
 // locking/idempotency-claim mechanics, not a domain-wide protocol.
 type leaveRepoAPI interface {
-	expiration.Store
 	LockSessionByUUID(ctx context.Context, tx *gorm.DB, sessionUUID string) (*internalrepo.Session, error)
 	FindActor(ctx context.Context, tx *gorm.DB, sessionID uint, userUUID string) (*internalrepo.Actor, error)
 	FindParticipant(ctx context.Context, tx *gorm.DB, actorID uint) (*internalrepo.Participant, error)
@@ -79,7 +77,7 @@ func (m *Manager) leaveSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 	}
 
 	now := time.Now().UTC()
-	if _, err := expiration.MaterializeIfDue(ctx, tx, m.leaveRepo, lockedSession, now); err != nil {
+	if _, err := m.lobbyExpirer.MaterializeIfDue(ctx, tx, lockedSession, now); err != nil {
 		return session.LeaveResult{}, err
 	}
 	if lockedSession.Phase != session.PhaseLobby {
