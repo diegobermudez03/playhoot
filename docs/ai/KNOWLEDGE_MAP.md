@@ -31,7 +31,8 @@ This is a machine-facing routing document. It does not explain Playhoot. It tell
 | Engineering recommendations / future concerns | `docs/engineering/ENGINEERING_RADAR.md` | AVAILABLE / NON-AUTHORITATIVE | |
 | Decision-family routing (which ADR family owns a question) | `docs/decisions/INDEX.md` | AVAILABLE | |
 | Global/cross-domain architecture decision rationale | `docs/decisions/architecture/INDEX.md` and referenced ADRs | AVAILABLE | |
-| Game architecture decision rationale/history | `game/docs/decisions/INDEX.md` and referenced GAME-ADRs | AVAILABLE | |
+| Game Management architecture decision rationale/history | `game/docs/decisions/INDEX.md` and referenced GAME-ADRs | AVAILABLE | |
+| Session Runtime architecture decision rationale/history | `session/docs/decisions/INDEX.md` and referenced SESSION-ADRs | AVAILABLE | |
 | Identity architecture decision rationale/history | `identity/docs/decisions/INDEX.md` and referenced IDENTITY-ADRs | AVAILABLE | |
 | Legacy pre-migration ADR identifier lookup | `docs/decisions/LEGACY_ADR_ID_MAP.md` | AVAILABLE / HISTORICAL | |
 | Product decision rationale | `docs/decisions/product/INDEX.md` and referenced PDRs | AVAILABLE | |
@@ -62,7 +63,8 @@ DOMAIN-DEPENDENT entries apply only to accepted domains. They do not mean every 
 
 | Domain | Model | Current State | Data Model | Flows |
 | --- | --- | --- | --- | --- |
-| Game | `game/README.md` | `game/CURRENT_STATE.md` | `game/docs/DATA_MODEL.md` | `game/docs/FLOWS.md` |
+| Game Management | `game/README.md` | `game/CURRENT_STATE.md` | `game/docs/DATA_MODEL.md` | `game/docs/FLOWS.md` |
+| Session Runtime | `session/README.md` | `session/CURRENT_STATE.md` | `session/docs/DATA_MODEL.md` | `session/docs/FLOWS.md` |
 | Identity | `identity/README.md` | `identity/CURRENT_STATE.md` |  |  |
 
 ## Specialized Documentation
@@ -73,11 +75,11 @@ Package-local contracts and implementation documentation may remain near the imp
 - `game/language/v1/engine/README.md` -> engine usage.
 - `game/language/v1/engine/IMPLEMENTATION.md` -> engine implementation/maintenance context.
 - `game/language/v1/program/*` -> game-language/program-specific context.
-- `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md` -> accepted (not yet implemented) Session Runtime RuntimeTurn/persistence/runtime-history-archive design and ER diagram; `game/docs/DATA_MODEL.md` remains the current-implementation schema.
-- `game/docs/GAME_VERSION_ARTIFACT_MODEL.md` -> accepted (not yet implemented) Game Version artifact shape (backend/frontend scripts, contract, assets); `game/docs/DATA_MODEL.md` remains the current-implementation schema until `WORK-0034` lands.
-- `game/session/jsexecutor/internal/sandbox/LOGICAL_CONTRACT.md` -> sandboxed JavaScript execution semantics/invariants (the Executor's own side of the boundary).
-- `game/session/internal/executor/LOGICAL_CONTRACT.md` -> Session Runtime's caller-side `Executor` port contract, retry policy, error semantics.
-- `game/session/jsexecutor/README.md` -> why the separately deployed JavaScript Executor is placed inside `game/session/` rather than the repository root, and why that boundary is documentation-enforced, not compiler-enforced.
+- `session/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md` -> accepted (not yet implemented) Session Runtime RuntimeTurn/persistence/runtime-history-archive design and ER diagram; `session/docs/DATA_MODEL.md` remains the current-implementation schema.
+- `session/docs/GAME_VERSION_ARTIFACT_MODEL.md` -> accepted Game Version artifact shape (backend/frontend scripts, contract, assets); implemented for `Create`'s own read path by `WORK-0034` (`session_games`/`session_game_version_artifacts`, see `session/docs/DATA_MODEL.md`), but nothing yet writes it - the publish path remains `WORK-0033`.
+- `session/jsexecutor/internal/sandbox/LOGICAL_CONTRACT.md` -> sandboxed JavaScript execution semantics/invariants (the Executor's own side of the boundary).
+- `session/internal/executor/LOGICAL_CONTRACT.md` -> Session Runtime's caller-side `Executor` port contract, retry policy, error semantics.
+- `session/jsexecutor/README.md` -> why the separately deployed JavaScript Executor is placed inside `session/` rather than the repository root, and why that boundary is documentation-enforced, not compiler-enforced.
 
 The following files are game-generation product AI artifacts, not instructions for AI agents developing Playhoot:
 

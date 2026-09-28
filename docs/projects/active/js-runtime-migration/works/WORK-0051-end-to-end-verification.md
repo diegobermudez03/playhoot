@@ -8,7 +8,7 @@ Related decisions:
 - `docs/decisions/architecture/ADR-0015-javascript-rule-execution-and-iframe-frontend-contract.md`
 - `docs/decisions/architecture/ADR-0016-javascript-executor-separately-deployed-infrastructure-service.md`
 - `game/docs/decisions/GAME-ADR-0028-javascript-execution-replaces-game-language.md`
-- `game/docs/decisions/GAME-ADR-0029-snapshot-based-session-runtime-persistence.md`
+- `session/docs/decisions/SESSION-ADR-0025-snapshot-based-session-runtime-persistence.md`
 
 Canonical context:
 - `docs/projects/active/js-runtime-migration/PROJECT.md` (Completion Criteria, Capability Coverage)

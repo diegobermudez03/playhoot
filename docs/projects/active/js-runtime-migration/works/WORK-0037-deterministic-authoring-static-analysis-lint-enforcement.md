@@ -7,14 +7,14 @@ Last status change: 2026-09-27
 Related decisions:
 - `docs/decisions/architecture/ADR-0015-javascript-rule-execution-and-iframe-frontend-contract.md`
 - `game/docs/decisions/GAME-ADR-0028-javascript-execution-replaces-game-language.md`
-- `game/docs/decisions/GAME-ADR-0029-snapshot-based-session-runtime-persistence.md`
+- `session/docs/decisions/SESSION-ADR-0025-snapshot-based-session-runtime-persistence.md`
 
 Canonical context:
 - None beyond the ADRs above; this is a new capability with no current-implementation precedent.
 
 ## Outcome
 
-Because sandboxed JavaScript's determinism cannot be guaranteed the way Game Language's closed DSL guaranteed it by construction, this WORK builds a required-before-acceptance validation pass that flags authored/generated backend script code calling known nondeterministic host APIs (wall-clock reads, `Math.random`, network, filesystem, and any other source the selected sandbox exposes) before that script is accepted for publish or use. This is a best-effort authoring-quality gate, explicitly not a substitute for the isolation boundary `WORK-0036` enforces at runtime — it exists because `GAME-ADR-0029`'s snapshot-based persistence model no longer depends on perfect determinism for correctness, but reducing nondeterminism still matters for the best-effort session-reconstruction capability (`WORK-0051`) and for authoring quality generally.
+Because sandboxed JavaScript's determinism cannot be guaranteed the way Game Language's closed DSL guaranteed it by construction, this WORK builds a required-before-acceptance validation pass that flags authored/generated backend script code calling known nondeterministic host APIs (wall-clock reads, `Math.random`, network, filesystem, and any other source the selected sandbox exposes) before that script is accepted for publish or use. This is a best-effort authoring-quality gate, explicitly not a substitute for the isolation boundary `WORK-0036` enforces at runtime — it exists because `SESSION-ADR-0025`'s snapshot-based persistence model no longer depends on perfect determinism for correctness, but reducing nondeterminism still matters for the best-effort session-reconstruction capability (`WORK-0051`) and for authoring quality generally.
 
 ## Context
 

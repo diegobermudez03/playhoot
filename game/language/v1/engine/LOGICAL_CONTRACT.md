@@ -40,7 +40,7 @@ Accepted Operational Lifecycle contracts to preserve:
   catalog schema is implemented; handling is optional and an unhandled
   delivery has no automatic gameplay consequence and produces no
   RuntimeTurn (see
-  `game/docs/decisions/GAME-ADR-0011-game-language-disconnect-reconnect-authored-semantics.md`).
+  `session/docs/decisions/SESSION-ADR-0010-game-language-disconnect-reconnect-authored-semantics.md`).
   Session Runtime does not yet actually deliver either signal to the
   root workflow instance — that remains future work.
 
@@ -50,7 +50,7 @@ independently addressable, simultaneously pending occurrences per `(slot,
 key)` instead of one occurrence per slot, exposing the authored key to a
 matching transition and, for Question, to a mounted presentation's
 projection arguments (see
-`game/docs/decisions/GAME-ADR-0012-game-language-keyed-timer-slots.md` for
+`session/docs/decisions/SESSION-ADR-0011-game-language-keyed-timer-slots.md` for
 the original Timer case and
 `game/docs/decisions/GAME-ADR-0026-flat-workflow-execution-model-and-keyed-interaction-slots.md`
 for the generalization). A keyed ask group's own configured presentation

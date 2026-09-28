@@ -10,7 +10,7 @@ Related decisions:
 - `game/docs/decisions/GAME-ADR-0030-sandbox-runtime-quickjs-wasm-wazero-process-isolated-workers.md`
 
 Canonical context:
-- `game/docs/decisions/GAME-ADR-0019-runtimeturn-execution-bound-and-terminal-cleanup.md` (the DSL-specific precedent this generalizes)
+- `session/docs/decisions/SESSION-ADR-0018-runtimeturn-execution-bound-and-terminal-cleanup.md` (the DSL-specific precedent this generalizes)
 - `docs/projects/active/js-runtime-migration/works/WORK-0052-javascript-executor-service.md` (this WORK hardens that service's internal worker pool; it does not stand the service up)
 
 ## Rescoped (2026-09-27)

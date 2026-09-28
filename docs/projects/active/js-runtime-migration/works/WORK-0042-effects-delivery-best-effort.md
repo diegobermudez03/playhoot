@@ -1,11 +1,11 @@
-# WORK-0042: Effects Delivery (Best-Effort, Restated From GAME-ADR-0020)
+# WORK-0042: Effects Delivery (Best-Effort, Restated From SESSION-ADR-0019)
 
 Status: PLANNED
 Created: 2026-09-27
 Last status change: 2026-09-27
 
 Related decisions:
-- `game/docs/decisions/GAME-ADR-0020-session-runtime-post-commit-client-delivery-semantics.md`
+- `session/docs/decisions/SESSION-ADR-0019-session-runtime-post-commit-client-delivery-semantics.md`
 - `docs/decisions/architecture/ADR-0015-javascript-rule-execution-and-iframe-frontend-contract.md`
 
 Canonical context:
@@ -13,7 +13,7 @@ Canonical context:
 
 ## Outcome
 
-Adapt cosmetic/presentation effect delivery to the new JS command source (`WORK-0039`), restating `GAME-ADR-0020`'s existing accepted stance unchanged: effects are best-effort, correctness never depends on a client receiving one, and correlation exists for repeated/late/absent effects. This is explicitly distinct from `WORK-0043` (durable delivery of confirmed interaction *results*, which `ADR-0015` extends beyond best-effort) — this WORK does not change delivery guarantees, only the source of what's being delivered.
+Adapt cosmetic/presentation effect delivery to the new JS command source (`WORK-0039`), restating `SESSION-ADR-0019`'s existing accepted stance unchanged: effects are best-effort, correctness never depends on a client receiving one, and correlation exists for repeated/late/absent effects. This is explicitly distinct from `WORK-0043` (durable delivery of confirmed interaction *results*, which `ADR-0015` extends beyond best-effort) — this WORK does not change delivery guarantees, only the source of what's being delivered.
 
 ## Context
 
@@ -29,7 +29,7 @@ Not yet designed.
 
 ## Constraints and Invariants
 
-- Must not introduce a durable outbox for effects — `GAME-ADR-0020`'s "no outbox for presentation" conclusion is unchanged by this WORK.
+- Must not introduce a durable outbox for effects — `SESSION-ADR-0019`'s "no outbox for presentation" conclusion is unchanged by this WORK.
 
 ## Acceptance Criteria
 

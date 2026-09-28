@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 
-	gamemigrations "github.com/diegobermudez03/playhoot/game/management/migration"
-	sessionmigrations "github.com/diegobermudez03/playhoot/game/session/migration"
+	gamemigrations "github.com/diegobermudez03/playhoot/game/migration"
+	sessionmigrations "github.com/diegobermudez03/playhoot/session/migration"
 	"gorm.io/gorm"
 )
 

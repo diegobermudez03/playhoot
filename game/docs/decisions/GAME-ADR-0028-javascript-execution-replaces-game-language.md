@@ -10,7 +10,7 @@ Superseded by: None
 
 `docs/decisions/architecture/ADR-0015-javascript-rule-execution-and-iframe-frontend-contract.md` accepts, at the architecture-principle level, that Session Runtime's rule-authoring/execution mechanism moves from Game Language (`game/language/v1/program`+`engine`) to sandboxed JavaScript. This record makes that decision concrete for Session Runtime's own execution boundary: what Game Language's engine contract (`game/language/v1/engine/LOGICAL_CONTRACT.md`) currently guarantees, and what its replacement must guarantee instead.
 
-Today's engine contract is: `Definition -> compile -> Program+Diagnostics`; `Program+InitializationInput -> StartTurn -> Outputs`; `Program+Start+priorSignals+newSignal -> AdvanceTurn -> Outputs`. Entry points are Turn-level only; the engine is stateless as a library; execution is deterministic by construction (closed operation set, seeded RNG, no wall clock/network); concurrency is entirely the caller's responsibility (`GAME-ADR-0018`); one workflow instance runs for a whole Session's lifetime (`GAME-ADR-0026`); a per-invocation step budget bounds chained internal signals (`GAME-ADR-0019`, generalized by `GAME-ADR-0027`).
+Today's engine contract is: `Definition -> compile -> Program+Diagnostics`; `Program+InitializationInput -> StartTurn -> Outputs`; `Program+Start+priorSignals+newSignal -> AdvanceTurn -> Outputs`. Entry points are Turn-level only; the engine is stateless as a library; execution is deterministic by construction (closed operation set, seeded RNG, no wall clock/network); concurrency is entirely the caller's responsibility (`SESSION-ADR-0017`); one workflow instance runs for a whole Session's lifetime (`GAME-ADR-0026`); a per-invocation step budget bounds chained internal signals (`SESSION-ADR-0018`, generalized by `GAME-ADR-0027`).
 
 ## Decision
 
@@ -22,7 +22,7 @@ Session Runtime's new execution boundary (owning package to be internal to Sessi
 execute(previousState, event, context) -> { newState, requestedCommands }
 ```
 
-- `previousState` is the durably persisted current state (per `GAME-ADR-0029`), passed in explicitly — the runtime never loads it itself.
+- `previousState` is the durably persisted current state (per `SESSION-ADR-0025`), passed in explicitly — the runtime never loads it itself.
 - `event` is the single externally/internally driving cause for this invocation (an accepted interaction response, a fired timer, a user intent, a session lifecycle signal) — the same category of causes Session Runtime already recognizes (`session_runtime_turns.source_kind` and its satellite tables), reused rather than redesigned by this record.
 - `context` carries Playhoot-controlled non-deterministic inputs the authored code needs (current logical time, a seeded random source, the acting player's identity) so authored code never reads real wall-clock/OS-randomness directly.
 - `newState` is the full new authoritative state, serializable and size-bounded.
@@ -33,10 +33,10 @@ The exact wire/serialization shape, the supported JavaScript/TypeScript authorin
 ### What is preserved from the current model
 
 - **One execution instance per Session for its whole lifetime, no nested/child instances** (`GAME-ADR-0026`'s flat model) — carried forward unchanged; nothing in the product/architecture pressure motivating this migration requires reintroducing nested execution.
-- **Caller-owned concurrency serialization** (`GAME-ADR-0018`) — the new runtime does not serialize calls against the same Session any more than `engineservice` does today; Session Runtime's existing per-Session database locking is unaffected.
-- **Root player-roster initialization contract** (`GAME-ADR-0006`) — `InitializationInput`'s `players` roster concept is preserved as part of the new `context`/initial-event shape; the owning WORK confirms its exact representation.
-- **Timer ownership** (`GAME-ADR-0008`/`GAME-ADR-0012`) — authored code requests timer scheduling/cancellation as commands; Session Runtime persists and fires timer obligations exactly as it does today, now adapted to the command vocabulary above rather than `engine.ScheduleTimerOutput`/`CancelTimerOutput`. See the owning WORK for the concrete adaptation.
-- **A per-invocation execution bound** (`GAME-ADR-0019`/`GAME-ADR-0027`'s step-chain budget) — restated as a resource limit the sandbox enforces (compute time/step count), not a DSL-specific chained-signal count, since JavaScript has no equivalent "internal signal chain" concept to bound the same way.
+- **Caller-owned concurrency serialization** (`SESSION-ADR-0017`) — the new runtime does not serialize calls against the same Session any more than `engineservice` does today; Session Runtime's existing per-Session database locking is unaffected.
+- **Root player-roster initialization contract** (`SESSION-ADR-0005`) — `InitializationInput`'s `players` roster concept is preserved as part of the new `context`/initial-event shape; the owning WORK confirms its exact representation.
+- **Timer ownership** (`SESSION-ADR-0007`/`SESSION-ADR-0011`) — authored code requests timer scheduling/cancellation as commands; Session Runtime persists and fires timer obligations exactly as it does today, now adapted to the command vocabulary above rather than `engine.ScheduleTimerOutput`/`CancelTimerOutput`. See the owning WORK for the concrete adaptation.
+- **A per-invocation execution bound** (`SESSION-ADR-0018`/`GAME-ADR-0027`'s step-chain budget) — restated as a resource limit the sandbox enforces (compute time/step count), not a DSL-specific chained-signal count, since JavaScript has no equivalent "internal signal chain" concept to bound the same way.
 - **Immutable per-Session version pinning** (`GAME-ADR-0001`) — a running Session's authored script and frontend package remain pinned for its whole lifetime; unaffected in principle by the artifact's content type changing.
 
 ### What is retired
@@ -79,4 +79,4 @@ Rejected. `engine.Signal`/`Output`'s current shape is intentionally coupled to t
 
 Not authorized by this record. Routed to `docs/projects/active/js-runtime-migration/` (sandbox runtime selection and isolation boundary, resource limits, command/state wire schema, command/protocol validation, timer adaptation, and the per-call-site migration).
 
-**Refined (2026-09-27) by `game/docs/GAME_VERSION_ARTIFACT_MODEL.md`** (via `docs/projects/active/js-runtime-migration/works/WORK-0044-game-version-artifact-model.md`): the two references above to a "frontend package" are refined at the implementation-shape level to a mandatory, directly stored frontend script — Playhoot holds the authored source itself, not a reference to a separately built/compiled package. This does not change this record's own rendering-ownership decision (frontend rendering moves out of Playhoot-computed `Projection`/`View`); it only fixes how the frontend content is actually held.
+**Refined (2026-09-27) by `session/docs/GAME_VERSION_ARTIFACT_MODEL.md`** (via `docs/projects/active/js-runtime-migration/works/WORK-0044-game-version-artifact-model.md`): the two references above to a "frontend package" are refined at the implementation-shape level to a mandatory, directly stored frontend script — Playhoot holds the authored source itself, not a reference to a separately built/compiled package. This does not change this record's own rendering-ownership decision (frontend rendering moves out of Playhoot-computed `Projection`/`View`); it only fixes how the frontend content is actually held.

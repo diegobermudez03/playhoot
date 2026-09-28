@@ -76,7 +76,7 @@ func TestNoInternalDocCitationsInComments(t *testing.T) {
 // This list only matters for a reference NOT already part of the
 // declaration's own signature - see qualifiedIdentsInType below.
 var lowerLayerPackageIdentifiers = map[string]string{
-	"engine":        "Game Language's execution engine - game/session's own public contract exists specifically so callers never need it",
+	"engine":        "Game Language's execution engine - session's own public contract exists specifically so callers never need it",
 	"engineservice": "the engine's own service/codec layer - same reason as engine",
 	"gorm":          "the ORM library used for persistence - an implementation detail of whichever repository happens to use it",
 }

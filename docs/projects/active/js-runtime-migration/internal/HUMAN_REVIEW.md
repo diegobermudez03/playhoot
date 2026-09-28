@@ -1,5 +1,9 @@
-Checkpoint: WORK-0034 DRAFT, pending READY authorization.
+Checkpoint: WORK-0034 implemented, pending independent review (not a new human-decision gate — informational).
 Date: 2026-09-28
+
+**Update:** You authorized READY ("Nice, proceed") and the implementation described below is now complete. `go build`/`go vet`/`go test ./...` are clean except one pre-existing, unrelated test failure (verified via diff against the pre-move code, not caused by this WORK). Real-Postgres verification of the two new tables is outstanding only because this sandbox has no reachable database — the same limitation recorded throughout this repository's history. Next step is independent review per `docs/ai/protocols/IMPLEMENTATION_REVIEW.md`, then closure if APPROVED; no further decision is needed from you unless review surfaces a DECISION_REQUIRED finding. Full detail: WORK-0034's own Completion Record.
+
+Original READY-authorization checkpoint, preserved below:
 
 ## What this WORK does
 

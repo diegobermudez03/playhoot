@@ -1,8 +1,8 @@
 # WORK-0034: Session-Owned Executable Script Artifact & Package Restructuring
 
-Status: DRAFT
+Status: IMPLEMENTING
 Created: 2026-09-27
-Last status change: 2026-09-28
+Last status change: 2026-09-28 (DRAFT -> READY -> IMPLEMENTING, human authorization: "Nice, proceed")
 
 Related decisions:
 - `docs/decisions/architecture/ADR-0014-management-session-domain-split.md`
@@ -13,7 +13,7 @@ Canonical context:
 - `ARCHITECTURE.md` (Accepted Business Boundaries, Dependency Principles)
 - `game/README.md` (Internal Structure, Capability Persistence and Transaction Boundary)
 - `docs/engineering/standards/domain-logic-placement.md`
-- `game/docs/GAME_VERSION_ARTIFACT_MODEL.md` (the artifact shape this WORK persists)
+- `session/docs/GAME_VERSION_ARTIFACT_MODEL.md` (the artifact shape this WORK persists)
 - `game/session/workflows/sessionlifecycle/manager.go` and `step_create.go` (the only call site this WORK touches)
 - `game/management/models.go`, `game/management/usecases/getgame/`, `game/management/usecases/getgamedefinition/`
 - `docs/projects/completed/management-session-domain-split/works/WORK-0031-session-owned-executable-program-management-session-split.md` (CANCELLED precedent this WORK's design reuses/narrows)
@@ -23,7 +23,7 @@ Canonical context:
 
 Supersedes cancelled `docs/projects/completed/management-session-domain-split/works/WORK-0031-session-owned-executable-program-management-session-split.md` — see that WORK's own Completion Record. Its underlying outcome is conserved but **narrowed in scope** (see Scope Narrowing below, human-decided 2026-09-28): `Create` stops depending on Game Management at runtime and resolves the Game's current playable version entirely from Session Runtime's own persisted artifact tables, keyed by the immutable definition/version identity already pinned at `Create` (`sessions.game_definition_uuid`). What changes from WORK-0031's own design is the artifact's content type: two mandatory scripts (backend JavaScript rules and a stored frontend script) plus optional contract/asset metadata, per `WORK-0044`'s artifact model, not a compiled Game Language `program.Definition`.
 
-This WORK also completes **part** of `ADR-0014`'s package-restructuring goal: Game Management and Session Runtime become independent top-level packages (`management/`, `session/`), no longer nested under a shared `game/` bounded-context root. It does **not** yet relocate Game Language (`game/language/v1/...`) into Session Runtime's own package tree, and does **not** remove Game Management's dependency on it — see Scope Narrowing.
+This WORK also completes **part** of `ADR-0014`'s package-restructuring goal: Game Management and Session Runtime become independent top-level packages (`game/`, `session/`), no longer nested under a shared `game/` bounded-context root. It does **not** yet relocate Game Language (`game/language/v1/...`) into Session Runtime's own package tree, and does **not** remove Game Management's dependency on it — see Scope Narrowing.
 
 ## Scope Narrowing (human-decided 2026-09-28)
 
@@ -36,7 +36,7 @@ Consequence: `ADR-0014`'s full goal (Game Management importing nothing from Game
 
 ## Context
 
-`WORK-0044` is DONE — `game/docs/GAME_VERSION_ARTIFACT_MODEL.md` defines the shape this WORK persists: `DefinitionUUID`, mandatory `BackendScript` and `FrontendScript`, optional `GameContract`/`Assets`/`PlatformContractVersion`. That contract does not itself include a `game_uuid`/"current version" concept — it describes one immutable version's own content, not how a caller finds the current one. Resolving "given a `game_uuid`, which version is current" is Session Runtime's own need (per the Scope Narrowing decision above) and is this WORK's own addition, not a modification of `WORK-0044`'s accepted artifact contract.
+`WORK-0044` is DONE — `session/docs/GAME_VERSION_ARTIFACT_MODEL.md` defines the shape this WORK persists: `DefinitionUUID`, mandatory `BackendScript` and `FrontendScript`, optional `GameContract`/`Assets`/`PlatformContractVersion`. That contract does not itself include a `game_uuid`/"current version" concept — it describes one immutable version's own content, not how a caller finds the current one. Resolving "given a `game_uuid`, which version is current" is Session Runtime's own need (per the Scope Narrowing decision above) and is this WORK's own addition, not a modification of `WORK-0044`'s accepted artifact contract.
 
 Today, `sessionlifecycle.Manager.Create` (`game/session/workflows/sessionlifecycle/step_create.go`) calls `m.currentGameReader.GetPlayableGameWithCurrentVersion(ctx, gameUUID)` (`gameCurrentVersionReader`, backed by Game Management's `getgame` use case), which returns `*management.Game` embedding `program.Definition`. `Create` then calls `engineservice.Compile(playableGame.Definition)` as a fail-fast validation before creating the Session, alerting monitoring on failure. Neither of these is meaningful once the pinned artifact is JavaScript: there is no `program.Definition` to compile, and no equivalent runtime-side validation is designed yet (`WORK-0037`, static-analysis/lint enforcement, is the accepted future owner of authored-script validation — it runs at authoring/publish time, not at `Create`). This WORK removes the compile-time validation with no replacement; it is not this WORK's job to invent one.
 
@@ -51,8 +51,8 @@ Today, `sessionlifecycle.Manager.Create` (`game/session/workflows/sessionlifecyc
 - A new internal repository method on `sessionlifecycle`'s own persistence layer, resolving `game_uuid -> current_definition_uuid`, called only by `Create`.
 - Removing `Create`'s dependency on Game Management entirely: `gameCurrentVersionReader` (interface, field, constructor parameter, mocks) removed from `sessionlifecycle.Manager`/`New`; `step_create.go` no longer imports `game/management` or `game/language/v1/engine/engineservice`.
 - Removing `Create`'s `engineservice.Compile` validation step, with no replacement (see Context).
-- Moving `game/management` and `game/session` to become independent top-level packages (`management/`, `session/`), siblings to `identity/`, `composer/`, `orchestrator/`. `game/session/jsexecutor` (already relocated there by `WORK-0052`) moves along with `game/session` automatically.
-- Splitting `game/README.md` into `management/README.md`/`session/README.md`, each following `docs/ai/templates/domain/`, scoped to what each domain actually now owns.
+- Moving `game/management` and `game/session` to become independent top-level packages (`game/`, `session/`), siblings to `identity/`, `composer/`, `orchestrator/`. `game/session/jsexecutor` (already relocated there by `WORK-0052`) moves along with `game/session` automatically.
+- Splitting `game/README.md` into `game/README.md`/`session/README.md`, each following `docs/ai/templates/domain/`, scoped to what each domain actually now owns.
 - Updating `docs/ai/KNOWLEDGE_MAP.md`'s Accepted Domain Documentation table (replace the single `Game` row with `Management`/`Session` rows) and `ARCHITECTURE.md`'s Accepted Business Boundaries (state the new boundary directly, no longer a superseded-in-part annotation).
 
 ### Explicitly Out Of Scope (see Scope Narrowing)
@@ -80,17 +80,17 @@ Today, `sessionlifecycle.Manager.Create` (`game/session/workflows/sessionlifecyc
 
 ## Acceptance Criteria
 
-- `step_create.go` imports neither `github.com/diegobermudez03/playhoot/game/management` (or its post-move `management/` path) nor `.../game/language/v1/engine/engineservice`.
+- `step_create.go` imports neither `github.com/diegobermudez03/playhoot/game/management` (or its post-move `game/` path) nor `.../game/language/v1/engine/engineservice`.
 - `sessionlifecycle.Manager`/`New` no longer has a `currentGameReader`/`gameCurrentVersionReader` field or constructor parameter.
 - `step_join.go`, `step_start.go`, `step_answer_interaction.go`, `step_submit_user_intent.go`, `step_cancel_session.go`, `step_expire_timer.go` are unchanged and still compile/pass against `gamePinnedDefinitionReader` exactly as before this WORK.
 - New migration creates the two Session-owned tables, with a real FK between them and no FK to any Game-Management-owned table.
-- `management/` and `session/` exist as independent top-level Go packages; no remaining reference anywhere in the repository to the old `game/management`/`game/session` import paths.
+- `game/` and `session/` exist as independent top-level Go packages; no remaining reference anywhere in the repository to the old `game/management`/`game/session` import paths.
 - `go build ./...` succeeds.
 - Existing `step_create` unit/integration tests pass against the new repository dependency (mocked the same way `MockgameCurrentVersionReader` is today); new repository-integration test coverage (real Postgres) exists for `session_games`/`session_game_version_artifacts`' read path used by `Create`.
 
 ## Implementation Freedom
 
-Exact table/column naming, exact new internal package layout for the new repository method, and exact file-move mechanics for `management/`/`session/` are local implementation choices within the Operating Model's normal autonomy boundary. Whether `game/docs/decisions/` (the `GAME-ADR-*` family) moves alongside `game/session` or stays at its current path is also implementer's call — existing `GAME-ADR-NNNN` filenames/identifiers are never renumbered or renamed regardless (`docs/decisions/README.md`'s historical-immutability rule).
+Exact table/column naming, exact new internal package layout for the new repository method, and exact file-move mechanics for `game/`/`session/` are local implementation choices within the Operating Model's normal autonomy boundary. Whether `game/docs/decisions/` (the `GAME-ADR-*` family) moves alongside `game/session` or stays at its current path is also implementer's call — existing `GAME-ADR-NNNN` filenames/identifiers are never renumbered or renamed regardless (`docs/decisions/README.md`'s historical-immutability rule).
 
 ## Verification
 
@@ -103,12 +103,12 @@ Exact table/column naming, exact new internal package layout for the new reposit
 ### Accepted / Canonical Knowledge
 
 - `ARCHITECTURE.md` — Accepted Business Boundaries rewritten to state the new boundary directly; annotated that `ADR-0014`'s Game-Language-internalization goal remains partially open pending `WORK-0038`.
-- `game/README.md` — split into `management/README.md`/`session/README.md`, each following `docs/ai/templates/domain/`. Session Runtime's own document should note that Game Language execution is still, for now, reached through the old engine for everything except `Create`.
+- `game/README.md` — split into `game/README.md`/`session/README.md`, each following `docs/ai/templates/domain/`. Session Runtime's own document should note that Game Language execution is still, for now, reached through the old engine for everything except `Create`.
 - `docs/ai/KNOWLEDGE_MAP.md` — Accepted Domain Documentation table updated (`Management`/`Session` rows replace the `Game` row).
 
 ### Current-State Documentation After Implementation
 
-- `game/docs/DATA_MODEL.md` (or its split `management/docs/DATA_MODEL.md` / `session/docs/DATA_MODEL.md`) — add `session_games`/`session_game_version_artifacts`; existing tables otherwise unchanged (the five other call sites' tables/behavior are untouched by this WORK).
+- `game/docs/DATA_MODEL.md` (or its split `game/docs/DATA_MODEL.md` / `session/docs/DATA_MODEL.md`) — add `session_games`/`session_game_version_artifacts`; existing tables otherwise unchanged (the five other call sites' tables/behavior are untouched by this WORK).
 - `game/CURRENT_STATE.md` (or its split successors) — reflect `Create`'s new resolution path and the new package layout; explicitly note the remaining five call sites are unchanged pending `WORK-0038`.
 
 ## Blockers
@@ -117,4 +117,37 @@ None remaining. Both blockers inherited from the cancelled `WORK-0031` are resol
 
 ## Completion Record
 
-Not yet started.
+**Implementation pass complete (2026-09-28); not yet DONE — independent review per `docs/ai/protocols/IMPLEMENTATION_REVIEW.md` has not run.**
+
+Implemented:
+- `Create` (`session/workflows/sessionlifecycle/step_create.go`) resolves the Game's current pinnable version via a new `createRepoAPI.ResolveCurrentGameDefinitionUUID` method (`session/workflows/sessionlifecycle/internal/repo/game_version.go`), reading only Session Runtime's own tables. `gameCurrentVersionReader` (interface, field, constructor param) is removed from `Manager`/`New`; `step_create.go` no longer imports `management` or `game/language/v1/engine/engineservice`; the `engineservice.Compile` validation and `session.ErrDefinitionDoesNotCompile` are removed with no replacement, per the approved design.
+- Two new Session-owned tables/migrations: `session_games` (`game_uuid` -> `current_definition_uuid`) and `session_game_version_artifacts` (one row per immutable version: `definition_uuid`, `game_uuid`, `backend_script`, `frontend_script`, `game_contract`, `assets`, `platform_contract_version`), with a real FK pair between them (`session/internal/storage/migrations/20260928000000_session_games.go`, `.../20260928000001_session_game_version_artifacts.go`).
+- `game/management` and `game/session` moved to independent top-level packages `game/` and `session/` (`git mv`, ~135 files), including `session/jsexecutor` moving along with `session/`. All Go import paths repository-wide updated accordingly; `game/language/v1/...` and `game/docs/decisions/` deliberately left at their current paths (implementer's freedom, per the WORK's own scope narrowing — Game Management and the five untouched call sites still need them).
+- Test fixtures: `session/internal/testfixtures.SeedCurrentGameVersion` seeds both new tables directly (no publish path exists yet); `step_create_test.go`/`step_create_integration_test.go` rewritten against the new dependency; `testutil_test.go`'s now-dead `stubCurrentGameReader` removed. Mocks regenerated (`mockgen`) — `MockgameCurrentVersionReader` removed, `MockcreateRepoAPI` gained `ResolveCurrentGameDefinitionUUID`.
+- Documentation synchronized: `ARCHITECTURE.md` (Accepted Business Boundaries rewritten to state the new boundary directly, including that Game Language internalization remains incomplete pending `WORK-0038`), `docs/ai/KNOWLEDGE_MAP.md` (Accepted Domain Documentation table split into Management/Session rows; Specialized Documentation paths corrected), `game/README.md`/`game/CURRENT_STATE.md`/`game/docs/{DATA_MODEL,FLOWS}.md` split into `game/{README,CURRENT_STATE}.md` + `game/docs/{DATA_MODEL,FLOWS}.md` and `session/{README,CURRENT_STATE}.md` + `session/docs/{DATA_MODEL,FLOWS}.md`, each corrected to current reality and cross-referencing the other; `docs/architecture/SYSTEM_MAP.md` and `docs/engineering/standards/domain-logic-placement.md` (its own `gameCurrentVersionReader` worked example, now removed, corrected) updated for the new package layout.
+- `docs/projects/active/js-runtime-migration/works/WORK-0032-composer-mediated-session-creation-visibility-check.md` lightly synced: its own Context/Blockers now reflect that its design is simplified (visibility gate only, no data handoff) as a direct consequence of this WORK's Scope Narrowing decision.
+
+Local implementation decisions:
+- `session_games`/`session_game_version_artifacts` table/column names and the two-insert-then-update seeding sequence (mirroring `CreateSessionWithHost`'s existing insert-then-assign pattern) — both within Implementation Freedom.
+- Regenerated `session/jsexecutor/proto/{executor.pb.go,executor_grpc.pb.go}` via `protoc` after correcting `executor.proto`'s `go_package` option — required because a naive path-string find/replace across the repository's `.go` files had corrupted the generated file's embedded serialized `FileDescriptorProto` bytes (the `go_package` string's byte-length changed but the wire-format length prefix framing it did not, causing a `slice bounds out of range` panic on package init); caught by `go test ./...` before this pass closed, fixed by regenerating from the corrected `.proto` source rather than hand-patching the generated file.
+
+Deviations from the approved WORK: None.
+
+Discoveries: None unresolved. (Two were surfaced and resolved by human decision *before* implementation began — see the WORK's own Scope Narrowing section — not during implementation.)
+
+Verification performed:
+- `go build ./...`, `go vet ./...`, `gofmt -l` (all changed/new `.go` files): clean.
+- `go test ./... -count=1`: all packages pass except two pre-existing `comment_standard_test.go` checks, both confirmed unrelated to this WORK via `diff` against the pre-move file content (only the import path differs): `TestExportedDocCommentsStayAtPublicContract` (23 findings - `runtime_failure.go`'s `engineservice.*` references, `manager.go`'s own doc comment mentioning `gorm.DB`) and `TestNoInternalDocCitationsInComments` (23 findings, all `GAME-ADR-*`/`WORK-0014`/`WORK-0029` citations in files this WORK never touched: `runtime_failure.go`, `step_cancel_session.go`, three `step_*_integration_test.go` files, `session_runtime_failures.go`'s migration). Neither fixed here (outside this WORK's approved scope); both flagged for a separate follow-up. Note: this same `TestNoInternalDocCitationsInComments` check caught 6 real violations in code *this WORK itself added* (ADR-0014/WORK-0034/WORK-0033 citations in new doc comments) - human-flagged during review, fixed as a LOCAL FIX (comments rewritten to state the reasoning directly instead of citing the doc) before this checkpoint.
+- Real-Postgres repository-integration tests (including the new `session_games`/`session_game_version_artifacts` coverage and `TestManagerCreate_Integration*`) compile-check clean and skip gracefully (no reachable Docker/Postgres in this sandbox) — the same known limitation recorded throughout this repository's history. Not yet run against a real database.
+
+Documentation synchronized: see Implemented, above. `session/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md`/`session/docs/GAME_VERSION_ARTIFACT_MODEL.md` intentionally left at their current `game/docs/` path (implementer's freedom).
+
+Known limitations:
+- Real-Postgres verification of the new tables/`Create` path has not run (sandbox limitation, not a design gap).
+- `comment_standard_test.go`'s one pre-existing failure (unrelated to this WORK) remains unfixed; recorded as a discovered, non-blocking, out-of-scope defect for a future follow-up.
+
+Human review feedback:
+- Doc comment in `step_create.go` cited `ADR-0014`/`WORK-0034`, violating the internal-citation comment standard -> LOCAL FIX — applied, and swept for the same pattern across every file this WORK touched (6 instances total, across `step_create.go`, `manager.go`, `step_create_integration_test.go`, `testfixtures.go`, and two migration files); verified via `go test -run TestNoInternalDocCitationsInComments` that none remain in code this WORK added.
+- Directly requested: rename `management/` to `game/`, reclaiming the name the old shared "Game" bounded context used, and park Game Language (`game/language/v1/...`) inside it "for now" until it is eventually retired -> applied as a further package-layout refinement within this WORK's already-approved package-restructuring scope, not a new material decision: `management/*` merged into the existing `game/` directory (which already held `language/v1/` and `docs/`), `package management` renamed to `package game` throughout, every `management.Xxx`/`playhoot/management` reference repository-wide updated (all confirmed confined to the package's own former tree plus `migrations.go` - no external caller existed to update, consistent with `Create` no longer depending on it). `go build`/`go vet`/`go test ./...` re-verified clean (same two pre-existing failures, no new ones). Documentation re-synchronized: `game/README.md` (new note explaining `game/` now names Game Management alone and that Game Language's presence there is a parking spot, not ownership), `ARCHITECTURE.md`'s package-layout block, `KNOWLEDGE_MAP.md`, `SYSTEM_MAP.md`, `domain-logic-placement.md`'s worked example, and this WORK's own Scope/Approved Design/Acceptance Criteria/Completion Record text updated throughout to `game/`.
+
+Ready for independent review: YES.

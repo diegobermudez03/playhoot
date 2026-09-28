@@ -6,8 +6,8 @@ Last status change: 2026-09-27
 
 Related decisions:
 - `game/docs/decisions/GAME-ADR-0028-javascript-execution-replaces-game-language.md`
-- `game/docs/decisions/GAME-ADR-0008-session-runtime-v1-timer-recovery-simplification.md`
-- `game/docs/decisions/GAME-ADR-0012-game-language-keyed-timer-slots.md`
+- `session/docs/decisions/SESSION-ADR-0007-session-runtime-v1-timer-recovery-simplification.md`
+- `session/docs/decisions/SESSION-ADR-0011-game-language-keyed-timer-slots.md`
 
 Canonical context:
 - `game/session/workflows/sessionlifecycle/internal/timers/` (existing durable timer-obligation persistence, `session_timer_obligations`)
@@ -26,11 +26,11 @@ Not yet designed.
 
 ## Approved Design
 
-Not yet designed. `GAME-ADR-0008`'s relative-delay-only recovery model and the existing keyed-slot addressing scheme are expected to carry over largely unchanged; confirm rather than assume during design.
+Not yet designed. `SESSION-ADR-0007`'s relative-delay-only recovery model and the existing keyed-slot addressing scheme are expected to carry over largely unchanged; confirm rather than assume during design.
 
 ## Constraints and Invariants
 
-- No timer obligation may remain ACTIVE after a Session reaches TERMINAL (restates the existing GAME-ADR-0019 terminal-cleanup invariant, applied to the new command-sourced timers).
+- No timer obligation may remain ACTIVE after a Session reaches TERMINAL (restates the existing SESSION-ADR-0018 terminal-cleanup invariant, applied to the new command-sourced timers).
 
 ## Acceptance Criteria
 

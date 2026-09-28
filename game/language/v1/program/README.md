@@ -104,7 +104,7 @@ Each `user` value represents a Session-local runtime actor derived from Session 
 
 For V1, arbitrary externally supplied game-specific root parameters are deferred until a Session Configuration capability is explicitly designed.
 
-Rationale and alternatives are recorded in `game/docs/decisions/GAME-ADR-0006-game-language-root-player-roster-contract.md`.
+Rationale and alternatives are recorded in `session/docs/decisions/SESSION-ADR-0005-game-language-root-player-roster-contract.md`.
 
 ## Accepted Disconnect/Reconnect Lifecycle Signal Contract
 
@@ -112,7 +112,7 @@ Status: SIGNAL SCHEMA IMPLEMENTED; SESSION RUNTIME DELIVERY NOT YET IMPLEMENTED.
 
 `UserDisconnected` and `UserReconnected` are accepted as standard `NamedSignalSource` platform/lifecycle signals — the same mechanism as `WorkflowStarted`/`SessionCancelled` — each exposing exactly one authored field, `user: user` (the Session-local runtime identity derived from `SessionActorID`, never `Identity.UserUUID` or any Coordinator/transport internal). Session Runtime will deliver both to the one workflow instance a game runs as, once its own delivery path exists. Handling either signal is optional; an authored game with no matching transition experiences an ordinary rejected/unmatched signal with no automatic gameplay consequence.
 
-Rationale and alternatives are recorded in `game/docs/decisions/GAME-ADR-0011-game-language-disconnect-reconnect-authored-semantics.md`.
+Rationale and alternatives are recorded in `session/docs/decisions/SESSION-ADR-0010-game-language-disconnect-reconnect-authored-semantics.md`.
 
 ## Keyed Interaction Slots
 
@@ -124,7 +124,7 @@ Every existing `AskGroupCompletionPolicy` variant is reused unchanged for `Keyed
 
 Presentation slots (`PresentationSlotDeclaration`/`PresentationDeclaration`) have no keyed family — this was considered and deliberately deferred pending a concrete demonstrated need, since Presentation's fully declarative, no-open/close-operation shape would need a materially different mechanism than the other three.
 
-Rationale and alternatives for the original Timer case are recorded in `game/docs/decisions/GAME-ADR-0012-game-language-keyed-timer-slots.md`; the generalization to Question/Ask Group/Presentation (and the decision to defer Presentation) is recorded in `game/docs/decisions/GAME-ADR-0026-flat-workflow-execution-model-and-keyed-interaction-slots.md`.
+Rationale and alternatives for the original Timer case are recorded in `session/docs/decisions/SESSION-ADR-0011-game-language-keyed-timer-slots.md`; the generalization to Question/Ask Group/Presentation (and the decision to defer Presentation) is recorded in `game/docs/decisions/GAME-ADR-0026-flat-workflow-execution-model-and-keyed-interaction-slots.md`.
 
 ### Resources vs. global state
 

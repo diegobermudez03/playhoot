@@ -11,7 +11,8 @@ Architecture decision-record ownership follows architectural scope: a decision w
 | Scope | Family | Prefix | Index |
 | --- | --- | --- | --- |
 | Global / cross-domain | Architecture | `ADR-NNNN` | `docs/decisions/architecture/INDEX.md` |
-| Game (Game Management, Session Runtime, Game Language) | Game | `GAME-ADR-NNNN` | `game/docs/decisions/INDEX.md` |
+| Game Management (plus foundational/shared and Game Language's own internal-mechanics decisions, pending its retirement) | Game | `GAME-ADR-NNNN` | `game/docs/decisions/INDEX.md` |
+| Session Runtime | Session | `SESSION-ADR-NNNN` | `session/docs/decisions/INDEX.md` |
 | Identity | Identity | `IDENTITY-ADR-NNNN` | `identity/docs/decisions/INDEX.md` |
 
 Each family has its own independent numbering sequence and its own `INDEX.md`. A future accepted bounded context gets its own family the first time it needs a local ADR: create `<domain>/docs/decisions/`, an `INDEX.md`, a stable uppercase prefix, and start that domain's sequence at `0001` — do not pre-create empty decision directories for hypothetical domains.
@@ -20,7 +21,7 @@ Do not duplicate the same decision in more than one family. A consuming domain l
 
 ## Legacy Migration
 
-Existing accepted ADRs were migrated from the previously centralized `docs/decisions/architecture/` directory to this scope-based model on 2026-09-07. `docs/decisions/LEGACY_ADR_ID_MAP.md` resolves every legacy `ADR-NNNN` identifier to its current canonical ID and location. The global family's next allocation must not reuse any legacy ID recorded there — see that file for the current high-water mark rule.
+Existing accepted ADRs were migrated from the previously centralized `docs/decisions/architecture/` directory to this scope-based model on 2026-09-07. On 2026-09-28, following the Game Management/Session Runtime domain split, most of the `Game` family's records further migrated into the new `Session` family. `docs/decisions/LEGACY_ADR_ID_MAP.md` resolves every legacy identifier (from either migration) to its current canonical ID and location. The global family's next allocation must not reuse any legacy ID recorded there — see that file for the current high-water mark rule.
 
 ## Product Decision Records
 

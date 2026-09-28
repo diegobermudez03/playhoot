@@ -39,7 +39,7 @@ Not yet designed.
 
 ## Constraints and Invariants
 
-- Must preserve the currently-enforced invariant: `Create` never succeeds for a Game whose current version is not playable/visible (today enforced by `businessservice.IsPlayableVisibility` inside `getgame`'s service — see `game/management/usecases/getgame/service.go`).
+- Must preserve the currently-enforced invariant: `Create` never succeeds for a Game whose current version is not playable/visible (today enforced by `businessservice.IsPlayableVisibility` inside `getgame`'s service — see `game/usecases/getgame/service.go`).
 - Per `ARCHITECTURE.md -> Cross-Domain Reads`, Composer is stateless with respect to business/domain state and does not own business entities or either domain's business rules — it only composes.
 
 ## Acceptance Criteria

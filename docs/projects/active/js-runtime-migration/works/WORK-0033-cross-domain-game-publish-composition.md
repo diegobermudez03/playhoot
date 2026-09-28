@@ -14,7 +14,7 @@ Canonical context:
 
 ## Reparenting Note (2026-09-27)
 
-This WORK originated under `docs/projects/completed/management-session-domain-split/`, driven by `ADR-0014`. Its own goal (an Orchestrator-mediated home for cross-domain publish consistency) is unaffected in kind by `ADR-0015`/`GAME-ADR-0028` retiring Game Language for sandboxed JavaScript, but its scope now widens: the artifact being published is a backend script plus a mandatory, directly-stored frontend script plus contracts/assets (`WORK-0044`'s artifact model — `game/docs/GAME_VERSION_ARTIFACT_MODEL.md`), not a compiled Game Language `program.Definition`, and validation must cover that whole artifact, not only a script. Every reference below to "Game Language" or "WORK-0031" means the new JavaScript execution model and `WORK-0034`/`WORK-0044` respectively.
+This WORK originated under `docs/projects/completed/management-session-domain-split/`, driven by `ADR-0014`. Its own goal (an Orchestrator-mediated home for cross-domain publish consistency) is unaffected in kind by `ADR-0015`/`GAME-ADR-0028` retiring Game Language for sandboxed JavaScript, but its scope now widens: the artifact being published is a backend script plus a mandatory, directly-stored frontend script plus contracts/assets (`WORK-0044`'s artifact model — `session/docs/GAME_VERSION_ARTIFACT_MODEL.md`), not a compiled Game Language `program.Definition`, and validation must cover that whole artifact, not only a script. Every reference below to "Game Language" or "WORK-0031" means the new JavaScript execution model and `WORK-0034`/`WORK-0044` respectively.
 
 ## Outcome
 

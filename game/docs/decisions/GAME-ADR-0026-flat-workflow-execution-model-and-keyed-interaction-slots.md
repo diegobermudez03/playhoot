@@ -5,7 +5,7 @@ Created: 2026-09-24
 Last status change: 2026-09-24 (PROPOSED -> ACCEPTED, human-approved)
 Supersedes: None
 Superseded by: None
-Generalizes: GAME-ADR-0012 (Keyed Timer Slots) - the keyed-slot concept accepted there for timers is extended here to Questions, Ask Groups, and Presentations, and its underlying rationale ("a general primitive, not a narrow special case") is what motivates removing nested workflow execution in favor of it.
+Generalizes: SESSION-ADR-0011 (Keyed Timer Slots) - the keyed-slot concept accepted there for timers is extended here to Questions, Ask Groups, and Presentations, and its underlying rationale ("a general primitive, not a narrow special case") is what motivates removing nested workflow execution in favor of it.
 
 ## Context
 
@@ -17,9 +17,9 @@ This capability was never put through this repository's own decision-record proc
 2. **The already-accepted canonical documentation itself defers how the outside world interacts with a nested instance.** `game/README.md`'s Authored Game Language Disconnect/Reconnect Contract states plainly: "there is no implicit broadcast to nested child/task-group/ask-group instances, since the engine's `Step` contract addresses one instance path per call and does not currently support hidden multi-instance fan-out. Nested workflows may later be coordinated explicitly by authored root-level logic or a future language capability." The same gap applies to `program.EmitUserIntentAction` (see below) and to Session Runtime, which has no implemented mechanism at all for delivering a child/ask-group/task-group join signal - a Session using these constructs today would leave a completed child permanently unjoined.
 3. **The addressing scheme it requires (`Path`+`Slot`) leaks into the consumer at every point of contact**: answering an interaction, classifying what an `OpenQuestionOutput` actually is, resolving a `WorkflowCompletedOutput`'s meaning (root vs. informational-only child), and routing a `program.EmitUserIntentAction`. On that last point specifically: `EmitUserIntentAction`'s own doc comment gives it no mechanism analogous to `AnswerQuestionAction`'s ("the mounted question context, not this action, identifies the concrete question instance") - there is no authored UI construct that could ever supply a non-root target for a user intent. The engine mechanically permits a `UserIntentSignalSource` inside a non-root workflow, but nothing in the authoring language can ever address it. This is unreachable capability, not a deliberately supported one.
 
-Separately, GAME-ADR-0012 already established, for the narrower case of `TimerSlotDeclaration`, that "one independent occurrence per statically named slot" is too restrictive whenever a game needs several simultaneous, independently-addressed occurrences of the same authored mechanism (its own motivating example: one disconnect timeout per player). It solved this with a **keyed slot** family (`KeyedTimerSlot<Key>`) rather than by requiring a separate workflow instance per player.
+Separately, SESSION-ADR-0011 already established, for the narrower case of `TimerSlotDeclaration`, that "one independent occurrence per statically named slot" is too restrictive whenever a game needs several simultaneous, independently-addressed occurrences of the same authored mechanism (its own motivating example: one disconnect timeout per player). It solved this with a **keyed slot** family (`KeyedTimerSlot<Key>`) rather than by requiring a separate workflow instance per player.
 
-This record asks the same question GAME-ADR-0012 already answered for timers, of the whole nested-execution model: does any concrete target game need a genuinely separate execution instance (its own address, its own spawn/join lifecycle), or does "keyed slot" generalize to cover the same need with substantially less machinery?
+This record asks the same question SESSION-ADR-0011 already answered for timers, of the whole nested-execution model: does any concrete target game need a genuinely separate execution instance (its own address, its own spawn/join lifecycle), or does "keyed slot" generalize to cover the same need with substantially less machinery?
 
 ## Decision
 
@@ -31,9 +31,9 @@ Game Language no longer supports spawning a nested workflow instance. `program.C
 
 A compiled `Program` therefore has exactly one instantiated workflow (the former "root") for the lifetime of a Session. `engine.Signal` no longer needs a `Path` field: every signal targets the one existing instance, unconditionally.
 
-### 2. Generalize keyed slots (GAME-ADR-0012) to Questions, Ask Groups, and Presentations
+### 2. Generalize keyed slots (SESSION-ADR-0011) to Questions, Ask Groups, and Presentations
 
-Question, Ask Group, and Presentation slots each gain a keyed family (`KeyedQuestionSlot<Key>`, `KeyedAskGroupSlot<Key>`, `KeyedPresentationSlot<Key>` - naming/API/Go type names are not frozen by this record, matching GAME-ADR-0012's own restraint), following the exact semantics already accepted for `KeyedTimerSlot<Key>`:
+Question, Ask Group, and Presentation slots each gain a keyed family (`KeyedQuestionSlot<Key>`, `KeyedAskGroupSlot<Key>`, `KeyedPresentationSlot<Key>` - naming/API/Go type names are not frozen by this record, matching SESSION-ADR-0011's own restraint), following the exact semantics already accepted for `KeyedTimerSlot<Key>`:
 
 - Conceptual identity is `(slot, key)` - at most one pending occurrence per exact tuple.
 - Opening into an already-occupied `(slot, key)` is an execution error, atomic for the whole enclosing transition; there is no implicit reset/replace/coalesce.
@@ -64,7 +64,7 @@ The previously open, never-actually-authorable question of "which instance does 
 
 ## Target Game Coverage
 
-This record's Alternatives analysis worked through the following games/scenarios to confirm the flat, keyed-slot model covers the product's accepted expressivity target (`docs/product/PRODUCT_STATE.md`'s "quizzes through Parqués/UNO/poker-level complexity") without loss, using concrete examples rather than only the two abstract patterns GAME-ADR-0012 already covered for timers:
+This record's Alternatives analysis worked through the following games/scenarios to confirm the flat, keyed-slot model covers the product's accepted expressivity target (`docs/product/PRODUCT_STATE.md`'s "quizzes through Parqués/UNO/poker-level complexity") without loss, using concrete examples rather than only the two abstract patterns SESSION-ADR-0011 already covered for timers:
 
 | Game / scenario | Shape needed | Covered by |
 |---|---|---|
@@ -95,7 +95,7 @@ Real-time/spatial games (free movement of an avatar through a scene, as opposed 
 
 **Authoring reliability.** `docs/product/PRODUCT_STATE.md` commits to AI-assisted game creation from a creator's natural-language description, with low iteration/error rates as an explicit goal. "Declare fields, index by key, guard by role/team/identity" is a pattern much closer to ordinary data-and-conditionals programming, which language models generate reliably. "Construct a correctly addressed spawn/join instance tree" is a rarer, more structurally error-prone pattern with more subtle failure modes (an orphaned child, a wrong `Path`, a forgotten join) - exactly the kind of mistake more likely to survive a first generation pass undetected.
 
-**Keyed slots are not a new kind of primitive.** They generalize a pattern this repository already accepted for timers (GAME-ADR-0012) for the identical underlying reason ("a general primitive, not a narrow special case"). Applying it consistently to Questions/Ask Groups/Presentations, instead of leaving those three to rely on nested instances for the same need, is the same decision GAME-ADR-0012 already made, extended to where it already logically belonged.
+**Keyed slots are not a new kind of primitive.** They generalize a pattern this repository already accepted for timers (SESSION-ADR-0011) for the identical underlying reason ("a general primitive, not a narrow special case"). Applying it consistently to Questions/Ask Groups/Presentations, instead of leaving those three to rely on nested instances for the same need, is the same decision SESSION-ADR-0011 already made, extended to where it already logically belonged.
 
 ## Alternatives Considered
 
@@ -122,7 +122,7 @@ Rejected. `Path` becomes entirely vestigial the moment Child Workflows/Task Grou
 - `internal/compiler`: `compile_child_workflows.go`/`compile_task_groups.go` passes are removed; `compile_ask_groups.go`/question/presentation/timer-slot compilation gain keyed-family handling.
 - `internal/runtime`: `child_workflow` and `task_group` execution files are removed; interaction-opening/answering logic gains ID assignment/resolution; `deriveActivePresentations`/`diffPresentations` simplify (no instance-tree walk needed - see also the still-open, separate item about exposing a public resync entry point, unaffected by this record).
 - **No completed or in-progress Session Runtime WORK is invalidated by this record.** WORK-0001 through WORK-0005/WORK-0019 (DONE) and WORK-0006 (IMPLEMENTING, paused) never used Child Workflows/Task Groups or `Path`-based addressing beyond the single root instance already implied by the current implementation; this confirms the audit's finding that these constructs were never actually exercised. Session Runtime's own `interaction_capture.go`/`replay.go` will need rework to consume `InteractionID` instead of encoding/decoding `engine_path`/`engine_slot`, but this is new work against the new engine contract, not a reopening of prior WORK's historical scope.
-- `session_interactions`' identity (GAME-ADR-0007: `(engine_path, engine_slot)`) needs a follow-up persistence-model update to key on the engine's own `InteractionID` instead - tracked as implementation impact below, not decided in full by this record.
+- `session_interactions`' identity (SESSION-ADR-0006: `(engine_path, engine_slot)`) needs a follow-up persistence-model update to key on the engine's own `InteractionID` instead - tracked as implementation impact below, not decided in full by this record.
 
 ## Canonical Knowledge Impact
 
@@ -130,12 +130,12 @@ Rejected. `Path` becomes entirely vestigial the moment Child Workflows/Task Grou
 - `game/language/v1/engine/LOGICAL_CONTRACT.md` - "the engine does not recursively execute multiple transitions inside one step" remains true and becomes a direct structural consequence (there is only one instance to step) rather than a constraint on a tree; the accepted-not-yet-implemented `KeyedTimerSlot<Key>` note is updated to reference the now-general keyed-slot family.
 - `game/language/v1/engine/README.md` - `Signal.Path`/nested-instance documentation removed; `InteractionID`/unified answer-signal/`Kind` documented once implemented.
 - `game/language/v1/program/README.md` - Child Workflow/Task Group declarations and operations removed from the type catalog; keyed slot variants documented.
-- `game/docs/decisions/GAME-ADR-0012-game-language-keyed-timer-slots.md` - remains ACCEPTED and historically accurate as written (Historical Immutability); this record notes it generalizes GAME-ADR-0012's concept rather than rewriting it.
-- `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md` / GAME-ADR-0007 - `session_interactions`' identity model needs a follow-up decision/update once implementation specifics (the concrete `InteractionID` persistence shape) are designed; not resolved by this record.
+- `game/docs/decisions/SESSION-ADR-0011-game-language-keyed-timer-slots.md` - remains ACCEPTED and historically accurate as written (Historical Immutability); this record notes it generalizes SESSION-ADR-0011's concept rather than rewriting it.
+- `session/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md` / SESSION-ADR-0006 - `session_interactions`' identity model needs a follow-up decision/update once implementation specifics (the concrete `InteractionID` persistence shape) are designed; not resolved by this record.
 
 ## Implementation Impact
 
-No compiler, engine, program, migration, or Session Runtime code, and no WORK, is authorized by this record alone, matching GAME-ADR-0012's own precedent. Future WORKs must design and implement: the concrete keyed-slot declarations/operations/signal sources across Question/AskGroup/Presentation; the `InteractionID` assignment/persistence mechanism and its replay-determinism proof; the unified answer-signal shape; removal of Child Workflow/Task Group from `program`/`engine`/compiler/runtime; and Session Runtime's own rework of interaction capture/replay/answer-signal construction against the new contract. WORK-0006 (currently paused, IMPLEMENTING reverted to DRAFT pending this record) and the rest of `session-runtime-v1`'s Phase 1 remain paused until at least the engine/compiler/program side of this record lands, since they depend directly on the `Output`/`Signal` shapes this record changes.
+No compiler, engine, program, migration, or Session Runtime code, and no WORK, is authorized by this record alone, matching SESSION-ADR-0011's own precedent. Future WORKs must design and implement: the concrete keyed-slot declarations/operations/signal sources across Question/AskGroup/Presentation; the `InteractionID` assignment/persistence mechanism and its replay-determinism proof; the unified answer-signal shape; removal of Child Workflow/Task Group from `program`/`engine`/compiler/runtime; and Session Runtime's own rework of interaction capture/replay/answer-signal construction against the new contract. WORK-0006 (currently paused, IMPLEMENTING reverted to DRAFT pending this record) and the rest of `session-runtime-v1`'s Phase 1 remain paused until at least the engine/compiler/program side of this record lands, since they depend directly on the `Output`/`Signal` shapes this record changes.
 
 ### Implemented by
 

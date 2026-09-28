@@ -184,7 +184,7 @@ the line.
 ## No Citing Internal Documents As A Stand-In For Explanation
 
 Do not cite an ADR, WORK document, workspace file, or engineering-standard
-path (`GAME-ADR-0018`, `ADR-0005`, `docs/engineering/standards/repositories.md`,
+path (`SESSION-ADR-0017`, `ADR-0005`, `docs/engineering/standards/repositories.md`,
 `docs/work/...`, anything under `docs/ai/...`) as the reason something is
 true. Assume the reader — human or AI, inside this org or outside it —
 cannot open that document and has never heard of it, even though it
@@ -197,7 +197,7 @@ repository's internal decision-tracking or documentation structure.
 // Bad: the reasoning lives in a document the reader is expected to already
 // know about and go open.
 // Mutations against the same Session serialize with one another
-// (GAME-ADR-0018).
+// (SESSION-ADR-0017).
 ```
 
 ```go
