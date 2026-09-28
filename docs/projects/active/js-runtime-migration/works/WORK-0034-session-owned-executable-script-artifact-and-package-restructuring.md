@@ -18,13 +18,13 @@ Canonical context:
 
 ## Outcome
 
-Supersedes cancelled `docs/projects/completed/management-session-domain-split/works/WORK-0031-session-owned-executable-program-management-session-split.md` — see that WORK's own Completion Record. Its underlying outcome is conserved: Session Runtime stops depending on Game Management at runtime for anything beyond, at most, a one-time Composer-mediated Create-time visibility check (`WORK-0032`), and owns its own persisted copy of the executable artifact it runs, keyed by the same immutable definition/version identity already pinned at `Create`. What changes from WORK-0031's own design is the artifact's content type: a JavaScript script (backend rules) plus a reference to a frontend package, per `WORK-0044`'s artifact model, not a compiled Game Language `program.Definition`.
+Supersedes cancelled `docs/projects/completed/management-session-domain-split/works/WORK-0031-session-owned-executable-program-management-session-split.md` — see that WORK's own Completion Record. Its underlying outcome is conserved: Session Runtime stops depending on Game Management at runtime for anything beyond, at most, a one-time Composer-mediated Create-time visibility check (`WORK-0032`), and owns its own persisted copy of the executable artifact it runs, keyed by the same immutable definition/version identity already pinned at `Create`. What changes from WORK-0031's own design is the artifact's content type: two mandatory scripts (backend JavaScript rules and a stored frontend script) plus optional contract/asset metadata, per `WORK-0044`'s artifact model, not a compiled Game Language `program.Definition`.
 
 This WORK also completes `ADR-0014`'s package-restructuring goal: Game Management and Session Runtime become independent top-level packages, no longer nested under a shared `game/` bounded-context root, and Game Language's successor (the JavaScript execution boundary) lives inside Session Runtime's own package tree, not importable from Game Management.
 
 ## Context
 
-Not yet designed. Depends on `WORK-0044` (the artifact model) reaching enough design maturity to know what Session Runtime's new table actually stores — designing this table against WORK-0031's old (now-retired) artifact shape would repeat WORK-0031's own mistake of designing against a shape about to change.
+Not yet designed. `WORK-0044` is DONE — `game/docs/GAME_VERSION_ARTIFACT_MODEL.md` now defines the shape this WORK must persist: `DefinitionUUID`, mandatory `BackendScript` and `FrontendScript`, optional `GameContract`/`Assets`/`PlatformContractVersion`. Designing this table against WORK-0031's old (now-retired) artifact shape would have repeated WORK-0031's own mistake of designing against a shape about to change; that risk no longer applies.
 
 ## Scope
 

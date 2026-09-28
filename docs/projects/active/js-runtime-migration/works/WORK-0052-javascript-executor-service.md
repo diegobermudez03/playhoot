@@ -26,7 +26,7 @@ This is required because Session Runtime's own process must not spawn sandbox wo
 
 ## Context
 
-Network transport is decided: gRPC (`PROJECT.md` Material Decisions #8). The Executor only ever needs a version's backend script content — never the frontend package, assets, or contracts `WORK-0044`'s full artifact model also covers — so this WORK does not need to wait on that WORK's complete design; see Approved Design for the narrow transfer mechanism this WORK adopts now.
+Network transport is decided: gRPC (`PROJECT.md` Material Decisions #8). The Executor only ever needs a version's backend script content — never the frontend script, assets, or contracts `WORK-0044`'s full artifact model also covers — so this WORK does not need to wait on that WORK's complete design; see Approved Design for the narrow transfer mechanism this WORK adopts now.
 
 ## Scope
 
@@ -42,7 +42,7 @@ Network transport is decided: gRPC (`PROJECT.md` Material Decisions #8). The Exe
 
 - Resource-limit tuning, pool sizing/reuse, and forced-termination policy beyond what `WORK-0035` already built — `WORK-0036` (revised).
 - The Session-side port/client — `WORK-0053`.
-- Any artifact-transfer mechanism beyond a single inline script (frontend package/assets/contracts references) — `WORK-0044`'s own scope; the Executor does not need them.
+- Any artifact-transfer mechanism beyond a single inline script (frontend script/assets/contracts references) — `WORK-0044`'s own scope; the Executor does not need them.
 - Deployment manifests (Dockerfile, `docker-compose.yaml` service entry, orchestration), autoscaling policy, and detailed observability — implementer's call within this WORK's own design, not frozen here, though a new deployable artifact necessarily needs at least a minimal Dockerfile/compose entry to be runnable; exact shape is not prescribed.
 
 ## Approved Design

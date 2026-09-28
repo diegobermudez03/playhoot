@@ -12,7 +12,7 @@ Canonical context:
 
 ## Outcome
 
-Build the backend capability to store and serve a Session's pinned frontend package/assets (per `WORK-0044`'s artifact model) so Playhoot's own (separately built) frontend can load the correct iframe-delivered package for a given Session's version. This directly overlaps `session-runtime-v1`'s own `WORK-0009` (Client-Safe Game UI Manifest, PLANNED) — that WORK's original premise (a manifest describing Game Language's declarative UI tree) is retired along with Game Language itself; its actual need (some client-safe, version-pinned way to know what to render) is superseded by this WORK's frontend-package-serving capability. This reconciliation is flagged here and in `session-runtime-v1`'s own `PROJECT.md`, not silently resolved by duplicating both.
+Build the backend capability to store and serve a Session's pinned `FrontendScript`/assets (per `WORK-0044`'s artifact model — the frontend script is stored content, not a separately-built package) so Playhoot's own (separately built) frontend can load the correct iframe-delivered script for a given Session's version. This directly overlaps `session-runtime-v1`'s own `WORK-0009` (Client-Safe Game UI Manifest, PLANNED) — that WORK's original premise (a manifest describing Game Language's declarative UI tree) is retired along with Game Language itself; its actual need (some client-safe, version-pinned way to know what to render) is superseded by this WORK's frontend-script-serving capability. This reconciliation is flagged here and in `session-runtime-v1`'s own `PROJECT.md`, not silently resolved by duplicating both.
 
 ## Context
 

@@ -78,3 +78,5 @@ Rejected. `engine.Signal`/`Output`'s current shape is intentionally coupled to t
 ## Implementation Impact
 
 Not authorized by this record. Routed to `docs/projects/active/js-runtime-migration/` (sandbox runtime selection and isolation boundary, resource limits, command/state wire schema, command/protocol validation, timer adaptation, and the per-call-site migration).
+
+**Refined (2026-09-27) by `game/docs/GAME_VERSION_ARTIFACT_MODEL.md`** (via `docs/projects/active/js-runtime-migration/works/WORK-0044-game-version-artifact-model.md`): the two references above to a "frontend package" are refined at the implementation-shape level to a mandatory, directly stored frontend script — Playhoot holds the authored source itself, not a reference to a separately built/compiled package. This does not change this record's own rendering-ownership decision (frontend rendering moves out of Playhoot-computed `Projection`/`View`); it only fixes how the frontend content is actually held.

@@ -74,6 +74,10 @@ Package-local contracts and implementation documentation may remain near the imp
 - `game/language/v1/engine/IMPLEMENTATION.md` -> engine implementation/maintenance context.
 - `game/language/v1/program/*` -> game-language/program-specific context.
 - `game/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md` -> accepted (not yet implemented) Session Runtime RuntimeTurn/persistence/runtime-history-archive design and ER diagram; `game/docs/DATA_MODEL.md` remains the current-implementation schema.
+- `game/docs/GAME_VERSION_ARTIFACT_MODEL.md` -> accepted (not yet implemented) Game Version artifact shape (backend/frontend scripts, contract, assets); `game/docs/DATA_MODEL.md` remains the current-implementation schema until `WORK-0034` lands.
+- `game/session/jsexecutor/internal/sandbox/LOGICAL_CONTRACT.md` -> sandboxed JavaScript execution semantics/invariants (the Executor's own side of the boundary).
+- `game/session/internal/executor/LOGICAL_CONTRACT.md` -> Session Runtime's caller-side `Executor` port contract, retry policy, error semantics.
+- `game/session/jsexecutor/README.md` -> why the separately deployed JavaScript Executor is placed inside `game/session/` rather than the repository root, and why that boundary is documentation-enforced, not compiler-enforced.
 
 The following files are game-generation product AI artifacts, not instructions for AI agents developing Playhoot:
 
