@@ -2,7 +2,7 @@
 
 Status: ACTIVE
 Created: 2026-09-27
-Last updated: 2026-09-27
+Last updated: 2026-09-28
 
 ## Goal
 
@@ -31,6 +31,8 @@ Both halves of `ADR-0016`'s topology split are now DONE. No `sessionlifecycle` c
 
 **WORK-0044** is DONE (2026-09-27) — the Game Version Artifact Model published (`game/docs/GAME_VERSION_ARTIFACT_MODEL.md`): `BackendScript` and `FrontendScript` both mandatory (both directly stored, not a package reference — corrected after human review of the first draft), `Assets` optional and identified only by an internal logical key (never a URL, a deliberate security decision), `GameContract`/`PlatformContractVersion` optional. A contract-defining WORK, not a persistence WORK — `WORK-0034`/`WORK-0033`/`WORK-0046` each design their own narrow view against it; the deferred backend/frontend communication protocol and asset-request mechanism were carried forward into `WORK-0045`'s own file so they aren't lost. See the WORK's own Completion Record.
 
+**WORK-0034 moved to DRAFT (2026-09-28), scope narrowed by explicit human decision.** Drafting surfaced that WORK-0031's original design (inherited by WORK-0034) moved all six of Session Runtime's pinned-definition reads off Game Management, but five of those six (`Join`/`Start`/`AnswerInteraction`/`SubmitUserIntent`/`CancelSession`/`ExpireTimer`) still execute gameplay through the *old* Game Language engine — handing them a JS-shaped artifact before `WORK-0038` wires in the Executor would break them. Human decision: WORK-0034 now moves only `Create`; the other five stay on Game Management, unchanged, until `WORK-0038` switches them together with the engine swap it already owns. Separately, the bootstrapping question (how `Create` learns a not-yet-seen version's content) is resolved: `Create` resolves the current version entirely from Session Runtime's own new tables, never from Game Management and never from data Composer (`WORK-0032`) passes in — Composer's own future design is now simpler (visibility gate only, no data handoff). Both resolutions, and their consequence that `ADR-0014`'s full Game-Language-internalization goal is only partially realized until `WORK-0038` lands, are recorded in WORK-0034's own file (Scope Narrowing section).
+
 ## Work
 
 | Order | Work | Status |
@@ -41,7 +43,7 @@ Both halves of `ADR-0016`'s topology split are now DONE. No `sessionlifecycle` c
 | 4 | WORK-0036 — Execution Resource Limits & Isolation Boundary (now inside the Executor service) | PLANNED |
 | 5 | WORK-0037 — Deterministic-Authoring Static Analysis / Lint Enforcement | PLANNED |
 | 6 | WORK-0044 — Game Version Artifact Model (Backend Script + Frontend Script + Contracts + Assets) | DONE |
-| 7 | WORK-0034 — Session-Owned Executable Script Artifact & Package Restructuring (supersedes cancelled WORK-0031) | PLANNED |
+| 7 | WORK-0034 — Session-Owned Executable Script Artifact & Package Restructuring (supersedes cancelled WORK-0031) | DRAFT |
 | 8 | WORK-0032 — Composer-Mediated Session Creation Visibility Composition (reparented from `management-session-domain-split`) | PLANNED |
 | 9 | WORK-0038 — Snapshot-Based Session Runtime Persistence Migration (implements GAME-ADR-0029) | PLANNED |
 | 10 | WORK-0039 — Platform Command Protocol & Runtime Validation | PLANNED |
@@ -58,7 +60,7 @@ Both halves of `ADR-0016`'s topology split are now DONE. No `sessionlifecycle` c
 | 21 | WORK-0050 — Scoped & Revocable Authoring Authorization | PLANNED |
 | 22 | WORK-0051 — End-To-End Verification (gates project completion) | PLANNED |
 
-22 WORK total: 4 DONE, 0 IMPLEMENTING, 0 READY, 0 DRAFT, 18 PLANNED.
+22 WORK total: 4 DONE, 0 IMPLEMENTING, 0 READY, 1 DRAFT, 17 PLANNED.
 
 ## Ordering / Dependencies
 

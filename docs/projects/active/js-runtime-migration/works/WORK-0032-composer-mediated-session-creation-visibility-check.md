@@ -25,7 +25,9 @@ This is a known-required future outcome, not a speculative idea: without it, eit
 
 ## Context
 
-Not yet designed. `composer/` currently contains only a README stub describing its accepted responsibility — no concrete composition code exists yet in this codebase. This WORK's design must also account for WORK-0034's own "bootstrapping the new artifact's first row" Blocker: Composer resolving the current version's content (not just its UUID/visibility) may be exactly the mechanism that supplies Session Runtime's new artifact table its first row for a not-yet-seen version, which materially couples this WORK's design to how WORK-0034's own Blockers are ultimately resolved.
+Not yet designed. `composer/` currently contains only a README stub describing its accepted responsibility — no concrete composition code exists yet in this codebase.
+
+**Simplified (2026-09-28), per WORK-0034's own Scope Narrowing.** The entanglement this section previously described is resolved: `Create` resolves the current version's content entirely from Session Runtime's own tables (populated by a future publish path, `WORK-0033`), never from Game Management and never from data Composer passes in. Composer's role here is therefore only a visibility gate — read Game Management's visibility/current-version state, decide whether `Create` may proceed, and if so call `Create` with nothing more than the `game_uuid` it already takes today. Composer does not resolve or hand off any artifact content, and this WORK's design is no longer coupled to how WORK-0034's table gets its first row.
 
 ## Scope
 
@@ -64,7 +66,7 @@ Not yet designed.
 
 ## Blockers
 
-- Whether `Create`'s own public signature changes (e.g. to accept an already-resolved definition-version-UUID and/or its content from Composer, rather than resolving it itself) is a public-contract decision this WORK must make explicitly, not silently — see WORK-0034's own "bootstrapping" Blocker, which this WORK's design must resolve jointly with it.
+- ~~Whether `Create`'s own public signature changes...~~ — **Resolved 2026-09-28**, see Context above: `Create`'s signature is unchanged (`game_uuid` only); Composer passes no additional data.
 - Sequencing against `session-runtime-v1`'s own live-transport WORK (WORK-0020 onward) — Composer needs some real entry point calling it; this WORK's design should confirm what that entry point is before design proceeds.
 
 ## Completion Record
