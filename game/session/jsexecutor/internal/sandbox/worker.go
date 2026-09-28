@@ -1,4 +1,4 @@
-package jsengine
+package sandbox
 
 import (
 	"encoding/json"
@@ -12,7 +12,7 @@ import (
 )
 
 // RunAsWorkerIfRequested checks whether the current process was invoked in
-// jsengine worker mode (the sentinel argument Execute passes when spawning a
+// sandbox worker mode (the sentinel argument Execute passes when spawning a
 // worker). If so, it runs exactly one request/response cycle against stdin/
 // stdout and returns true — the caller must exit the process immediately
 // afterward without falling through to normal application startup, since the

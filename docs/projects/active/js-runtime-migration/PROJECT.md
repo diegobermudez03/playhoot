@@ -23,12 +23,14 @@ Implement `docs/decisions/architecture/ADR-0015-javascript-rule-execution-and-if
 
 Next candidates per Ordering / Dependencies: `WORK-0052` and `WORK-0053` (the actual split), which the rest of the execution-dependent WORK now waits on.
 
+**WORK-0052** is DONE (2026-09-27) — the JavaScript Executor is now a genuinely separate deployable gRPC service (`game/session/jsexecutor/` — relocated post-closure, per explicit human direction, from a repository-root `jsexecutor/` into Session's own package tree specifically to signal it is Session's own deployable unit, not a repository-wide capability; see that package's own `README.md` and `WORK-0052`'s "Relocated" note), reusing `WORK-0035`'s execution logic faithfully (independently confirmed byte-for-byte during review); the old same-host `game/session/internal/jsengine`/`game/session/bootstrap` are deleted. Independent review: two rounds, first found two documentation-sync gaps (fixed), final APPROVED with no findings. See the WORK's own Completion Record. Next candidate per Ordering / Dependencies: `WORK-0053` (Session-side `Executor` port/client — nothing calls `jsexecutor` in production yet).
+
 ## Work
 
 | Order | Work | Status |
 |------:|------|--------|
 | 1 | WORK-0035 — Sandboxed JavaScript Execution Runtime (Pure Function Contract) | DONE |
-| 2 | WORK-0052 — JavaScript Executor Service (separately deployed workload) | PLANNED |
+| 2 | WORK-0052 — JavaScript Executor Service (separately deployed workload) | DONE |
 | 3 | WORK-0053 — Session-Side Remote Executor Port & Network Client | PLANNED |
 | 4 | WORK-0036 — Execution Resource Limits & Isolation Boundary (now inside the Executor service) | PLANNED |
 | 5 | WORK-0037 — Deterministic-Authoring Static Analysis / Lint Enforcement | PLANNED |
@@ -50,7 +52,7 @@ Next candidates per Ordering / Dependencies: `WORK-0052` and `WORK-0053` (the ac
 | 21 | WORK-0050 — Scoped & Revocable Authoring Authorization | PLANNED |
 | 22 | WORK-0051 — End-To-End Verification (gates project completion) | PLANNED |
 
-22 WORK total: 1 DONE, 0 IMPLEMENTING, 0 READY, 0 DRAFT, 21 PLANNED.
+22 WORK total: 2 DONE, 0 IMPLEMENTING, 0 READY, 0 DRAFT, 20 PLANNED.
 
 ## Ordering / Dependencies
 
@@ -107,7 +109,7 @@ None of these block creating this Project or its PLANNED WORK; each blocks the s
 5. **Artifact bundle format and storage** (`WORK-0044`) — how script + frontend package + contracts + assets are packaged/versioned/stored (single row, object storage, hybrid); "no build pipeline is required for a functional game" per the mandate must remain true regardless of the answer. Now also constrained by `ADR-0016`: whatever this decides must be resolvable by the Executor service without a filesystem shared with Session Runtime.
 6. **AI provider(s)/model(s) and commercial terms** (`WORK-0047`–`WORK-0049`) — explicitly out of this Project's scope to decide, but each WORK's own design needs at least a placeholder/interface assumption to proceed; flagged so it is not silently assumed away.
 7. **Whether strict deterministic replay is ever required later** (for example, for a future anti-cheat or audit requirement) — `GAME-ADR-0029`'s Alternatives Considered explicitly leaves this open rather than foreclosing it; no WORK currently depends on it.
-8. **Network transport between Session Runtime and the JavaScript Executor** (`WORK-0052`/`WORK-0053`) — gRPC, Connect, plain HTTP, or another option; `ADR-0016` explicitly leaves this to the owning WORK rather than fixing it, provided it is a real internal network protocol, not a same-host-only mechanism.
+8. ~~**Network transport between Session Runtime and the JavaScript Executor**~~ — **Resolved 2026-09-27**: gRPC. `WORK-0052`/`WORK-0053` design their service/client against a `.proto`-defined API rather than an ad hoc wire format.
 
 ## Completion Criteria
 

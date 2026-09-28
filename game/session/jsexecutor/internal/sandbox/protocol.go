@@ -1,13 +1,13 @@
-package jsengine
+package sandbox
 
 import "encoding/json"
 
 // workerModeArg is the re-exec sentinel argument that tells this same
-// binary to act as a jsengine worker instead of starting normally. It must
-// be checked at the very top of every real and test entry point (see
-// game/session's RunWorkerIfRequested and this package's TestMain) before
-// any other initialization.
-const workerModeArg = "__playhoot_jsengine_worker__"
+// binary to act as a sandbox worker instead of starting normally. It must
+// be checked at the very top of every real and test entry point (this
+// package's own TestMain, and jsexecutor's main.go) before any other
+// initialization.
+const workerModeArg = "__playhoot_jsexecutor_worker__"
 
 // Best-effort resource defaults enforced by the QuickJS runtime itself.
 // These alone are not a sufficient resource-limit guarantee: a tight loop

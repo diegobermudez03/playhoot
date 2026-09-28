@@ -1,9 +1,9 @@
-// Package jsengine runs author-written JavaScript inside a QuickJS-on-
+// Package sandbox runs author-written JavaScript inside a QuickJS-on-
 // WebAssembly sandbox, hosted in a process separate from the caller's own,
 // so untrusted or generated game rules cannot read the host's files,
 // network, or process state. See LOGICAL_CONTRACT.md in this package for the
 // full contract.
-package jsengine
+package sandbox
 
 import (
 	"bytes"
@@ -63,7 +63,7 @@ type ScriptRejectedError struct {
 }
 
 func (e *ScriptRejectedError) Error() string {
-	return fmt.Sprintf("jsengine: script rejected input: %s", e.Reason)
+	return fmt.Sprintf("sandbox: script rejected input: %s", e.Reason)
 }
 
 // WorkerExecutionError indicates an infrastructure-level execution failure:
@@ -77,9 +77,9 @@ type WorkerExecutionError struct {
 
 func (e *WorkerExecutionError) Error() string {
 	if e.Cause != nil {
-		return fmt.Sprintf("jsengine: worker execution failed: %s: %v", e.Reason, e.Cause)
+		return fmt.Sprintf("sandbox: worker execution failed: %s: %v", e.Reason, e.Cause)
 	}
-	return fmt.Sprintf("jsengine: worker execution failed: %s", e.Reason)
+	return fmt.Sprintf("sandbox: worker execution failed: %s", e.Reason)
 }
 
 func (e *WorkerExecutionError) Unwrap() error { return e.Cause }
@@ -108,7 +108,7 @@ func Execute(ctx context.Context, in ExecutionInput) (ExecutionOutput, error) {
 	// own deferred cleanup, so a directory the worker created itself would
 	// be left on disk forever after every caller-deadline kill. This
 	// process is never the one killed, so its own cleanup always runs.
-	scratchDir, err := os.MkdirTemp("", "playhoot-jsengine-*")
+	scratchDir, err := os.MkdirTemp("", "playhoot-jsexecutor-*")
 	if err != nil {
 		return ExecutionOutput{}, &WorkerExecutionError{Reason: "creating sandbox scratch directory", Cause: err}
 	}

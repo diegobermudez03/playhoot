@@ -23,7 +23,7 @@ Not yet designed. Depends on `WORK-0052` existing enough to have a real network 
 ### In Scope
 
 - The `Executor` interface itself (Session-owned, per `ADR-0016`'s sketch: `Execute(ctx, ExecutionRequest) (ExecutionResult, error)` — exact field/type shape is this WORK's own design).
-- A production implementation of that interface that communicates with the separately deployed Executor over the network transport `WORK-0052` exposes, including request/response marshaling, retry/timeout policy for ambiguous transport failures (per `ADR-0016`'s scaling/failure assumptions — no correctness may depend on a specific Executor instance or worker), and mapping transport-level failures onto the existing `*ScriptRejectedError`/`*WorkerExecutionError` distinction `WORK-0035` established (or its successor types, if this WORK's design supersedes them).
+- A production gRPC client implementation of that interface, generated from the same `.proto` `WORK-0052` defines, including retry/timeout policy for ambiguous transport failures (per `ADR-0016`'s scaling/failure assumptions — no correctness may depend on a specific Executor instance or worker; standard gRPC deadline propagation from `ctx` is the expected mechanism, not a bespoke one) and mapping gRPC-level failures (status codes such as `UNAVAILABLE`/`DEADLINE_EXCEEDED` vs. an application-level rejection the Executor returns deliberately) onto the existing `*ScriptRejectedError`/`*WorkerExecutionError` distinction `WORK-0035` established (or its successor types, if this WORK's design supersedes them).
 - Retiring `game/session/internal/jsengine.Execute`'s direct local `exec.Command` invocation — this WORK's network-client implementation becomes Session Runtime's actual production dependency; whether `jsengine`'s Go-level types (`ExecutionInput`/`ExecutionOutput`/error types) are kept as the interface's own shape or superseded is this WORK's design decision, not fixed here.
 
 ### Out of Scope
@@ -64,8 +64,7 @@ Not yet designed. Must include a test double/fake `Executor` implementation Sess
 
 ## Blockers
 
-- Depends on `WORK-0052`.
-- Network transport choice (shared with `WORK-0052`, `PROJECT.md` Material Decisions).
+- Depends on `WORK-0052` (needs the `.proto` contract, at minimum, to generate a client against).
 
 ## Completion Record
 

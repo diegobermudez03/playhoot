@@ -1,4 +1,4 @@
-package jsengine
+package sandbox
 
 import (
 	"context"
@@ -17,7 +17,7 @@ import (
 // (Execute must surface a clean *WorkerExecutionError, never crash its own
 // process, when the spawned worker process itself misbehaves). It has no
 // effect on the production RunAsWorkerIfRequested path.
-const testCrashWorkerArg = "__playhoot_jsengine_test_crash_worker__"
+const testCrashWorkerArg = "__playhoot_jsexecutor_test_crash_worker__"
 
 func TestMain(m *testing.M) {
 	if len(os.Args) >= 2 {
@@ -270,7 +270,7 @@ func TestExecute_NoRealTimingOrEnvironmentLeak(t *testing.T) {
 }
 
 func TestExecute_ScratchDirectoryNotLeakedAfterKill(t *testing.T) {
-	pattern := filepath.Join(os.TempDir(), "playhoot-jsengine-*")
+	pattern := filepath.Join(os.TempDir(), "playhoot-jsexecutor-*")
 	before, err := filepath.Glob(pattern)
 	require.NoError(t, err)
 
