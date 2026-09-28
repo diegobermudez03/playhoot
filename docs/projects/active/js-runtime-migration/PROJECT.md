@@ -23,7 +23,11 @@ Implement `docs/decisions/architecture/ADR-0015-javascript-rule-execution-and-if
 
 Next candidates per Ordering / Dependencies: `WORK-0052` and `WORK-0053` (the actual split), which the rest of the execution-dependent WORK now waits on.
 
-**WORK-0052** is DONE (2026-09-27) — the JavaScript Executor is now a genuinely separate deployable gRPC service (`game/session/jsexecutor/` — relocated post-closure, per explicit human direction, from a repository-root `jsexecutor/` into Session's own package tree specifically to signal it is Session's own deployable unit, not a repository-wide capability; see that package's own `README.md` and `WORK-0052`'s "Relocated" note), reusing `WORK-0035`'s execution logic faithfully (independently confirmed byte-for-byte during review); the old same-host `game/session/internal/jsengine`/`game/session/bootstrap` are deleted. Independent review: two rounds, first found two documentation-sync gaps (fixed), final APPROVED with no findings. See the WORK's own Completion Record. Next candidate per Ordering / Dependencies: `WORK-0053` (Session-side `Executor` port/client — nothing calls `jsexecutor` in production yet).
+**WORK-0052** is DONE (2026-09-27) — the JavaScript Executor is now a genuinely separate deployable gRPC service (`game/session/jsexecutor/` — relocated post-closure, per explicit human direction, from a repository-root `jsexecutor/` into Session's own package tree specifically to signal it is Session's own deployable unit, not a repository-wide capability; see that package's own `README.md` and `WORK-0052`'s "Relocated" note), reusing `WORK-0035`'s execution logic faithfully (independently confirmed byte-for-byte during review); the old same-host `game/session/internal/jsengine`/`game/session/bootstrap` are deleted. Independent review: two rounds, first found two documentation-sync gaps (fixed), final APPROVED with no findings. See the WORK's own Completion Record.
+
+**WORK-0053** is DONE (2026-09-27) — Session Runtime now has a real `Executor` port/client (`game/session/internal/executor`): the interface reusing `WORK-0035`'s proven `ExecutionInput`/`ExecutionOutput` shape, a production `GRPCClient` (pure-function-safe bounded retry on `Unavailable` only, never on `DeadlineExceeded` or any other status — the retry safety argument was independently stress-tested, not just implemented), and an in-memory `Fake` for tests. Independent review: one round, APPROVED with no findings. See the WORK's own Completion Record.
+
+Both halves of `ADR-0016`'s topology split are now DONE. No `sessionlifecycle` call site invokes the new port yet — that wiring, and the persistence-model migration it depends on, is `WORK-0038`'s scope, the next candidate per Ordering / Dependencies (alongside `WORK-0044`, still needed for the artifact-transfer mechanism `WORK-0034`/`WORK-0033` depend on).
 
 ## Work
 
@@ -31,7 +35,7 @@ Next candidates per Ordering / Dependencies: `WORK-0052` and `WORK-0053` (the ac
 |------:|------|--------|
 | 1 | WORK-0035 — Sandboxed JavaScript Execution Runtime (Pure Function Contract) | DONE |
 | 2 | WORK-0052 — JavaScript Executor Service (separately deployed workload) | DONE |
-| 3 | WORK-0053 — Session-Side Remote Executor Port & Network Client | PLANNED |
+| 3 | WORK-0053 — Session-Side Remote Executor Port & Network Client | DONE |
 | 4 | WORK-0036 — Execution Resource Limits & Isolation Boundary (now inside the Executor service) | PLANNED |
 | 5 | WORK-0037 — Deterministic-Authoring Static Analysis / Lint Enforcement | PLANNED |
 | 6 | WORK-0044 — Game Version Artifact Model (Script + Frontend Package + Contracts + Assets) | PLANNED |
@@ -52,7 +56,7 @@ Next candidates per Ordering / Dependencies: `WORK-0052` and `WORK-0053` (the ac
 | 21 | WORK-0050 — Scoped & Revocable Authoring Authorization | PLANNED |
 | 22 | WORK-0051 — End-To-End Verification (gates project completion) | PLANNED |
 
-22 WORK total: 2 DONE, 0 IMPLEMENTING, 0 READY, 0 DRAFT, 20 PLANNED.
+22 WORK total: 3 DONE, 0 IMPLEMENTING, 0 READY, 0 DRAFT, 19 PLANNED.
 
 ## Ordering / Dependencies
 
