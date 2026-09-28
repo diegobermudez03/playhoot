@@ -1,8 +1,17 @@
 # Project: Game Management / Session Runtime Domain Split
 
-Status: ACTIVE
+Status: SUPERSEDED — absorbed into `docs/projects/active/js-runtime-migration/` (2026-09-27)
 Created: 2026-09-27
 Last updated: 2026-09-27
+
+## Superseded (2026-09-27)
+
+`docs/decisions/architecture/ADR-0015-javascript-rule-execution-and-iframe-frontend-contract.md` retires Game Language (`program`/`engine` v1) entirely, replacing it with sandboxed JavaScript owned by Session Runtime. This Project's own goal (the domain split and its composition flows) is conserved, not abandoned, but its concrete artifact-persistence design (WORK-0031, which persisted a compiled Game Language `program.Definition`) no longer applies to an artifact type that is being retired.
+
+- **WORK-0031** is CANCELLED, superseded by `docs/projects/active/js-runtime-migration/works/WORK-0034-session-owned-executable-script-artifact-and-package-restructuring.md` (same goal — Session Runtime owning its own persisted executable-artifact copy — redesigned against a JavaScript artifact instead of a compiled DSL row). It remains in this Project's own `works/` directory as closed historical work, per `docs/projects/README.md`'s directory-semantics rule against fragmenting a Project's WORK history.
+- **WORK-0032** and **WORK-0033** are reparented (moved, not duplicated) to `docs/projects/active/js-runtime-migration/works/` — their own composition goals (Composer-mediated visibility, Orchestrator-mediated publish) are independent of rule-execution language and are unaffected in kind, only widened in scope (the artifact being composed is now a script/frontend/contract bundle, not a compiled DSL definition). See each WORK's own "Reparenting Note (2026-09-27)".
+
+This Project is closed with no further active WORK of its own; it moves to `docs/projects/completed/` accordingly. See `docs/projects/active/js-runtime-migration/PROJECT.md` for the initiative that now owns this goal.
 
 ## Goal
 

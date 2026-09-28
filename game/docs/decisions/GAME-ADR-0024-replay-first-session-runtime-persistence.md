@@ -4,7 +4,7 @@ Status: ACCEPTED
 Created: 2026-09-20
 Last status change: 2026-09-20
 Supersedes: GAME-ADR-0007 (the `session_runtime_turns.snapshot_payload`/`snapshot_format_version` and `session_runtime_state` Snapshot-persistence decision only — RuntimeTurn as the historical/transactional unit, RuntimeStep as technical-only history, and the Turn/Interaction/Timer relationship rules are unaffected and are restated here), GAME-ADR-0009 (the object-storage/GCS archive-location decision only — the archive-metadata-entity concept, the verified-archival-before-hard-delete policy, and the exclusion of `session_actors`/`session_participants`/`session_runtime_failures` from deletion are unaffected and are restated here)
-Superseded by: None
+Superseded by: GAME-ADR-0029 (the central decision only — that Session Runtime never persists a full state Snapshot and relies on deterministic replay as the live-correctness mechanism. GAME-ADR-0029 reinstates persisted current state as authoritative; the durable replay-input log this record established is retained, but only as a non-authoritative historical/reconstruction aid)
 Legacy ID: None
 
 ## Context

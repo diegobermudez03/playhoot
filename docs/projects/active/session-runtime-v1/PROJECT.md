@@ -185,6 +185,15 @@ Required to run a Session frontend end-to-end against the supported Game Languag
 
 No required outcome from this reconciliation pass emerged ownerless - every bolded new row above already has an owning WORK created or revised by this pass.
 
+## Coordination Flag (2026-09-27): `js-runtime-migration`
+
+`docs/decisions/architecture/ADR-0015-javascript-rule-execution-and-iframe-frontend-contract.md` and `game/docs/decisions/GAME-ADR-0029-snapshot-based-session-runtime-persistence.md` (ACCEPTED, not yet implemented) retire Game Language and revert this Project's own replay-first persistence model (`GAME-ADR-0024`, implemented by this Project's own DONE `WORK-0019`). New Project `docs/projects/active/js-runtime-migration/` owns that migration. Two of this Project's own PLANNED WORK are directly affected and are flagged here, not silently resolved:
+
+- **WORK-0017 (Archival)** — its archive-payload design was written against `GAME-ADR-0024`'s replay-first model; it must be redesigned against `GAME-ADR-0029`'s snapshot-based model instead (the archived payload now also needs the final persisted state, not only the replay-input log). See `js-runtime-migration`'s own `WORK-0038`.
+- **WORK-0009 (Client-Safe Game UI Manifest)** — its premise (a manifest describing Game Language's declarative UI tree) no longer applies once Game Language is retired; its actual need is likely superseded by `js-runtime-migration`'s `WORK-0046` (Frontend Package Serving). Not yet reconciled — see that WORK's own Blockers.
+
+Neither WORK's own file has been rewritten by this flag; whoever next drafts either should read the two records above first rather than design against stale premises.
+
 ## Material Decisions Needing Human Input
 
 These were found during this Project's completeness audit and reconciliation (2026-09-20). None have been silently decided; each is recorded here rather than assumed.

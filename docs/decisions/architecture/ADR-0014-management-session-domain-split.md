@@ -4,7 +4,7 @@ Status: ACCEPTED
 Created: 2026-09-27
 Last status change: 2026-09-27
 Supersedes: None
-Superseded by: None
+Superseded by: ADR-0015 (in part — the "Game Language" reclassification/artifact-content-type framing only, since Game Language itself is retired by ADR-0015/GAME-ADR-0028; the domain-split decision, the independent-bounded-context/persisted-artifact-ownership shape, and the Composer/Orchestrator composition-flow decisions below are conserved and restated by ADR-0015)
 
 ## Context
 

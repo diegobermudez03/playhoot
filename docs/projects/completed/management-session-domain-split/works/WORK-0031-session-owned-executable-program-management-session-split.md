@@ -1,8 +1,8 @@
 # WORK-0031: Session-Owned Executable Game Definition — Management/Session Domain Split
 
-Status: DRAFT
+Status: CANCELLED
 Created: 2026-09-27
-Last status change: 2026-09-27
+Last status change: 2026-09-27 (CANCELLED — superseded by WORK-0034 under `docs/projects/active/js-runtime-migration/`)
 
 Related decisions:
 - `docs/decisions/architecture/ADR-0014-management-session-domain-split.md`
@@ -107,4 +107,4 @@ Exact table/column naming, exact new-package internal layout (`internal/repo` ex
 
 ## Completion Record
 
-Not yet started.
+**Cancelled (2026-09-27), superseded, not implemented.** `docs/decisions/architecture/ADR-0015-javascript-rule-execution-and-iframe-frontend-contract.md` and `game/docs/decisions/GAME-ADR-0028-javascript-execution-replaces-game-language.md` retire Game Language (`program`/`engine` v1) as Session Runtime's execution mechanism, replacing it with sandboxed JavaScript. This WORK's Approved Design specifically persisted the executable artifact as encoded Game Language `program.Definition` content ("the same wire shape Game Management stores today") — an artifact type that no longer exists once Game Language is retired. Its underlying goal (Session Runtime owning its own persisted executable-artifact copy, independent of Game Management, per `ADR-0014`) is conserved, not abandoned: it is carried forward as `docs/projects/active/js-runtime-migration/works/WORK-0034-session-owned-executable-script-artifact-and-package-restructuring.md`, redesigned against a JavaScript-artifact shape instead of a compiled DSL row. No implementation or migration from this WORK was ever started; nothing is reverted.
