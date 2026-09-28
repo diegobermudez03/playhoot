@@ -19,6 +19,8 @@ Define the closed vocabulary of platform-level commands authored JavaScript may 
 
 Not yet designed. Depends on `WORK-0035`'s execution contract and the wire-schema decision (`PROJECT.md` Material Decisions #3).
 
+**Revised (2026-09-27, per `docs/decisions/architecture/ADR-0016-javascript-executor-separately-deployed-infrastructure-service.md`):** the JavaScript Executor is now a separately deployed service, not part of Session Runtime's own process — validation of `requestedCommands` belongs in Session Runtime itself, at the point it receives an `ExecutionResult` back through `WORK-0053`'s `Executor` port, not inside the Executor service. The Executor is trusted Playhoot-owned infrastructure, but it hosts untrusted execution; Session Runtime must not trust a command's shape/content merely because it crossed back through that boundary.
+
 ## Scope
 
 Not yet designed.

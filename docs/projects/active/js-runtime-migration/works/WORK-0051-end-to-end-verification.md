@@ -6,6 +6,7 @@ Last status change: 2026-09-27
 
 Related decisions:
 - `docs/decisions/architecture/ADR-0015-javascript-rule-execution-and-iframe-frontend-contract.md`
+- `docs/decisions/architecture/ADR-0016-javascript-executor-separately-deployed-infrastructure-service.md`
 - `game/docs/decisions/GAME-ADR-0028-javascript-execution-replaces-game-language.md`
 - `game/docs/decisions/GAME-ADR-0029-snapshot-based-session-runtime-persistence.md`
 
@@ -17,6 +18,8 @@ Canonical context:
 Gate this Project's completion with evidence that a real authored JavaScript game runs end to end: persistent state across turns, real interactions/validation, timers (ordinary and keyed), per-player private views with privacy verification, effects, durable confirmed-result delivery, disconnect/reconnect-style state recovery, best-effort session reconstruction from the retained signal log, concurrency (serialized mutation under load), duplicate/idempotent requests, and resource-limit enforcement (a script that exceeds its bounds is terminated without corrupting the Session). Per `ADR-0015`'s own closing requirement, documenting behavior does not substitute for this — this WORK exists specifically so a single trivial case is never mistaken for full coverage.
 
 ## Context
+
+**Note (2026-09-27, per `ADR-0016`):** verification must exercise the real, separately deployed Executor topology (Session Runtime calling a genuinely separate Executor process/deployment over the network transport `WORK-0052`/`WORK-0053` choose), not an in-process shortcut that calls execution logic directly — the deployment/security boundary is exactly what this Project's mandate requires evidence for, not merely the execution contract's correctness in isolation.
 
 Not yet designed. Depends on nearly every other WORK in this Project being DONE or far enough along to exercise.
 

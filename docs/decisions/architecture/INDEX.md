@@ -12,8 +12,11 @@ This directory holds only global/cross-domain architecture decisions: decisions 
 | [ADR-0005](ADR-0005-cross-domain-public-entity-references.md) | Cross-Domain Public Entity References | ACCEPTED | 2026-09-06 | `ARCHITECTURE.md`, `docs/engineering/standards/cross-domain-reference-naming.md` |
 | [ADR-0014](ADR-0014-management-session-domain-split.md) | Game Management / Session Runtime Domain Split, Game Language Internalized Into Session Runtime | ACCEPTED | 2026-09-27 | `ARCHITECTURE.md`, `docs/engineering/standards/domain-logic-placement.md`, `game/README.md`, `game/docs/decisions/GAME-ADR-0001-game-capability-persistence-transaction-boundary.md` |
 | [ADR-0015](ADR-0015-javascript-rule-execution-and-iframe-frontend-contract.md) | Sandboxed JavaScript Game Rule Execution and Iframe-Isolated Frontend Contract | ACCEPTED | 2026-09-27 | `ARCHITECTURE.md`, `game/README.md`, `game/docs/decisions/GAME-ADR-0028-javascript-execution-replaces-game-language.md`, `game/docs/decisions/GAME-ADR-0029-snapshot-based-session-runtime-persistence.md` |
+| [ADR-0016](ADR-0016-javascript-executor-separately-deployed-infrastructure-service.md) | JavaScript Executor As A Separately Deployed Infrastructure Service | ACCEPTED | 2026-09-27 | `ARCHITECTURE.md`, `game/docs/decisions/GAME-ADR-0030-sandbox-runtime-quickjs-wasm-wazero-process-isolated-workers.md`, `docs/projects/active/js-runtime-migration/PROJECT.md` |
 
 ADR-0015 supersedes ADR-0014's "Game Language" artifact-content-type framing **in part only** — see ADR-0015's own header for the precise scope; ADR-0014's domain-split, independent-bounded-context, and Composer/Orchestrator composition-flow decisions remain valid and are restated by ADR-0015.
+
+ADR-0016 supersedes `game/docs/decisions/GAME-ADR-0030-sandbox-runtime-quickjs-wasm-wazero-process-isolated-workers.md`'s deployment-topology portion **only** — see ADR-0016's own header for the precise scope; GAME-ADR-0030's sandbox-technology choice and process-isolated-worker layering remain valid and are restated by ADR-0016.
 
 ## Migrated Records
 
@@ -21,6 +24,6 @@ ADR-0002, ADR-0003, ADR-0004, ADR-0006, ADR-0007, ADR-0008, ADR-0009, ADR-0010, 
 
 ## Next Global ID
 
-Next newly allocated global ADR: `ADR-0016`. Legacy global-style IDs existed through at least `ADR-0013` before migration (see `docs/decisions/LEGACY_ADR_ID_MAP.md`); never reuse a legacy ID, including one that migrated to a domain family. Gaps in this directory's numbering (ADR-0002 through ADR-0004, ADR-0006 through ADR-0013) are intentional and expected; they are not missing records.
+Next newly allocated global ADR: `ADR-0017`. Legacy global-style IDs existed through at least `ADR-0013` before migration (see `docs/decisions/LEGACY_ADR_ID_MAP.md`); never reuse a legacy ID, including one that migrated to a domain family. Gaps in this directory's numbering (ADR-0002 through ADR-0004, ADR-0006 through ADR-0013) are intentional and expected; they are not missing records.
 
 Whenever a global ADR is created or its lifecycle status changes, update this index.

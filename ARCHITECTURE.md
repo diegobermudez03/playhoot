@@ -22,6 +22,7 @@ Playhoot is initially a modular monolith.
 - Technical / Supporting Library: provides reusable behavior without owning business state.
 - Coordination Layer: coordinates work across business domains without owning participating domains' business rules.
 - Transport / Application Edge: exposes user-facing transport entry points and translates transport requests/responses.
+- Infrastructure Service: a separately deployed technical workload, callable over an internal network protocol, that exists for an operational reason (isolating untrusted/high-risk execution, independent scaling, a materially smaller privilege set) rather than a business reason. It is not a business bounded context and does not decide domain behavior; a business domain that depends on one does so through a narrow port/interface it owns, not by depending on the service's own implementation details. See `docs/decisions/architecture/ADR-0016-javascript-executor-separately-deployed-infrastructure-service.md` for a worked example (the JavaScript Executor).
 
 Domain != package. Domain != folder. Domain != deployment. Domain != service.
 

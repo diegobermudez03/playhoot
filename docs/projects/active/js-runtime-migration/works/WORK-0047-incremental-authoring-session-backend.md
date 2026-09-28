@@ -12,11 +12,11 @@ Canonical context:
 
 ## Outcome
 
-Build the backend capability for incremental, persistent game authoring: read documentation/an existing draft, edit the draft's files/components, validate it (`WORK-0037`'s lint plus `WORK-0039`'s protocol validation), simulate it, review a render (using `WORK-0035`'s real execution and `WORK-0045`'s real contract, not an invented approximation), and correct — as a durable, resumable session, not a single JSON-generation call. This is the shared foundation both AI-authoring modalities (`WORK-0048` external tool integration, `WORK-0049` integrated chat) operate on, so neither gets a privileged path that skips validation.
+Build the backend capability for incremental, persistent game authoring: read documentation/an existing draft, edit the draft's files/components, validate it (`WORK-0037`'s lint plus `WORK-0039`'s protocol validation), simulate it, review a render (using the same real execution path production Sessions use and `WORK-0045`'s real contract, not an invented approximation), and correct — as a durable, resumable session, not a single JSON-generation call. This is the shared foundation both AI-authoring modalities (`WORK-0048` external tool integration, `WORK-0049` integrated chat) operate on, so neither gets a privileged path that skips validation.
 
 ## Context
 
-Not yet designed. Depends on `WORK-0035`, `WORK-0037`, `WORK-0044` existing enough to validate/simulate/render against.
+Not yet designed. Depends on `WORK-0037`, `WORK-0044` existing enough to validate/simulate/render against, and on `WORK-0053`'s `Executor` port existing enough to simulate against the same real, separately deployed execution path production Sessions use (per `docs/decisions/architecture/ADR-0016-javascript-executor-separately-deployed-infrastructure-service.md`) — this WORK must not invent its own shortcut, in-process execution path merely because it is "just a simulation."
 
 ## Scope
 

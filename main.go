@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/diegobermudez03/playhoot/api"
+	"github.com/diegobermudez03/playhoot/game/session/bootstrap"
 	"github.com/joho/godotenv"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -28,6 +29,15 @@ type envVariables struct {
 }
 
 func main() {
+	// This process may be a re-exec of itself acting as a sandboxed
+	// JavaScript execution worker (game/session/internal/jsengine), not the
+	// normal Session Runtime server. That dispatch must happen before any
+	// other initialization (env/DB/HTTP), and this process must exit
+	// immediately afterward.
+	if bootstrap.RunJSWorkerIfRequested() {
+		return
+	}
+
 	envVars, err := readEnvVariables()
 	if err != nil {
 		log.Fatalf("reading environment variables: %v", err)
