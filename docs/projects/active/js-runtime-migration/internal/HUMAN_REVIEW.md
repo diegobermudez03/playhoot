@@ -1,3 +1,52 @@
+Checkpoint: WORK-0037 DONE (not a new human-decision gate — informational).
+Date: 2026-09-29
+
+**Update:** You authorized READY ("move to ready and proceed"). Implementation is complete and independent review (three rounds - two found real gaps, both fixed and re-verified) returned APPROVED with no findings. `go build`/`go vet`/`go test ./...` are clean except one confirmed pre-existing, unrelated test failure. No further decision is needed from you. Full detail: WORK-0037's own Completion Record.
+
+Original DRAFT/READY-authorization checkpoint, preserved below:
+
+## What this WORK does
+
+Adds a static-analysis check over authored **backend script** source (not frontend script — different runtime, out of scope) that runs before a script is accepted for publish/use. It flags two kinds of things:
+
+- **ERROR**: the script references something outside what the sandbox actually supports (e.g. `fetch`, `require`, `process`, `fs`) — this is guaranteed to fail at runtime today anyway; catching it earlier is strictly better than a live failure discovered later.
+- **WARNING**: the script calls `Math.random()`/`Date()`/`Date.now()` — these are already safe and deterministic (the sandbox silently substitutes them with session-context-derived values), but an author expecting real randomness or a real wall-clock deadline will get quietly confusing behavior, so it's surfaced without blocking.
+
+## Why the scope changed from the original PLANNED text
+
+The original text said this WORK would catch scripts "calling known nondeterministic host APIs (wall-clock reads, `Math.random`, network, filesystem...)". Before drafting a design against that assumption, I checked it against the actual implemented sandbox (`WORK-0035`/`WORK-0036`, both DONE) — and it's stale: `Date`/`Math.random` are already neutralized by a runtime prelude, and no filesystem/network capability is wired into the JS globals at all (calling them already throws a clean, already-handled runtime rejection). So a lint against those specific APIs would not be closing a real gap. I raised this to you directly rather than silently building a lint against a premise that no longer holds.
+
+## The two decisions you already made in this session
+
+1. Lint scope is both categories above (ERROR allow-list violations + WARNING `Math.random`/`Date` usage), not just one.
+2. Implementation uses a real JS parser/AST library, not a lightweight regex/token scan. This is a new external Go dependency (none exists in this repository today).
+
+## What's new (illustrative, not frozen — see WORK-0037's own Implementation Freedom)
+
+A Go package exposing something like `Validate(source string) (Result, error)`, callable by a future publish-path caller (`WORK-0033`, still PLANNED and not itself part of this authorization) without needing the sandbox/jsexecutor service running at all — this is pure static analysis, it never executes the script.
+
+## What's explicitly NOT done by this WORK
+
+- No publish/authoring HTTP path or UI surfacing of warnings — that's `WORK-0033`'s own future scope; this WORK only builds the validation capability itself, not its caller.
+- Frontend script is never validated by this capability.
+- The sandbox's own runtime isolation is unchanged (`WORK-0035`/`WORK-0036` already own it).
+
+## Unresolved blockers
+
+None. The only prior blocker (`WORK-0035`'s supported-JavaScript-profile decision) is resolved.
+
+## What READY would authorize
+
+A Codebase Agent implementing exactly what WORK-0037's own Scope/Approved Design sections describe: the validation package, its allow-list (checked against the actual sandbox where not already documented), its fixture-based tests, and the new authoring-facing documentation page — nothing about `WORK-0033`'s own future publish-path wiring.
+
+## Recommendation
+
+The design is internally consistent with what's actually implemented (not the original stale assumption), and both open questions were resolved by you directly rather than invented. Ready for READY authorization if you're satisfied with the ERROR/WARNING split and the new-dependency decision above — full detail is in `../works/WORK-0037-deterministic-authoring-static-analysis-lint-enforcement.md`.
+
+---
+
+Prior checkpoint, preserved below:
+
 Checkpoint: WORK-0034 implemented, pending independent review (not a new human-decision gate — informational).
 Date: 2026-09-28
 
