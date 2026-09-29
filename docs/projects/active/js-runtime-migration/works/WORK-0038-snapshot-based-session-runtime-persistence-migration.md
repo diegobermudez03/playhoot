@@ -1,8 +1,8 @@
 # WORK-0038: Snapshot-Based Session Runtime Persistence Migration
 
-Status: IMPLEMENTING
+Status: DONE
 Created: 2026-09-27
-Last status change: 2026-09-29 (READY -> IMPLEMENTING; implementation started)
+Last status change: 2026-09-29 (IMPLEMENTING -> DONE; independent review APPROVED, no findings requiring a fix)
 
 Related decisions:
 - `session/docs/decisions/SESSION-ADR-0025-snapshot-based-session-runtime-persistence.md`
@@ -188,6 +188,6 @@ No material decision remains unresolved. Ready for implementation once `WORK-003
 - Real-Postgres verification was still sandbox-dependent on a Docker container happening to be available this session — a future session without one reverts to the documented graceful-skip behavior.
 - `SEND_EVENT`/`SCHEDULE_TIMER`/`CANCEL_TIMER` platform Commands are parsed and validated at every call site but not dispatched to any owning mechanism (persisting a new timer obligation, delivering an effect) — explicitly out of this WORK's own scope, owned by `WORK-0040`/`WORK-0042`.
 
-### Ready For Independent Review
+### Independent Review
 
-YES — per `docs/ai/protocols/IMPLEMENTATION_REVIEW.md`, a fresh Codebase Agent/session that did not implement this change should review before this WORK is closed to DONE.
+APPROVED (fresh Codebase Agent, read-only, reasoning from the actual `git diff HEAD~1 HEAD` change-set, migrations, tests, and canonical docs, not from this Completion Record's own claims — confirmed the required "no drift between persisted `new_state` and what Execute returned" test genuinely exists and asserts the real property; independently re-verified both Discoveries above as true and pre-existing; confirmed the `ParticipantConstraints`/`session.Output` retirement decisions were implemented consistently and their amendments to `WORK-0044`/`ADR-0014`/`GAME-ADR-0028` used the addendum-not-rewrite convention correctly). No `REQUIRED_FIX`/`DECISION_REQUIRED` findings. Two `NON_BLOCKING` findings, not required for closure, left as follow-up: (1) `manager.go`'s package doc comment and `step_start_test.go`'s own comment still narrate the retired Game-Language-based mechanism (`engineservice`, `engine.Signal`, `Output`) despite the surrounding code no longer matching it; (2) `api/session/wire.go`'s pre-existing, untouched placeholder constants (`ANSWER_INTERACTION`, `INTERACTION_OPENED/CLOSED`) still name the retired interaction concept — confirmed out of this WORK's own scope (the whole `api/session` package is an untouched no-op transport stub with zero diff in this WORK), left for whichever future WORK actually wires the API layer.
