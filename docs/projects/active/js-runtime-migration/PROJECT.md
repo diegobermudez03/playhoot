@@ -2,18 +2,18 @@
 
 Status: ACTIVE
 Created: 2026-09-27
-Last updated: 2026-09-28
+Last updated: 2026-09-29
 
 ## Goal
 
-Implement `docs/decisions/architecture/ADR-0015-javascript-rule-execution-and-iframe-frontend-contract.md`, `game/docs/decisions/GAME-ADR-0028-javascript-execution-replaces-game-language.md`, `session/docs/decisions/SESSION-ADR-0025-snapshot-based-session-runtime-persistence.md`, and `docs/decisions/architecture/ADR-0016-javascript-executor-separately-deployed-infrastructure-service.md` end to end: retire Game Language (`program`/`engine` v1) as Playhoot's rule-authoring/execution mechanism in favor of author-written JavaScript running in a sandboxed, resource-limited runtime hosted by a separately deployed JavaScript Executor service that Session Runtime calls over an internal network boundary (not a subprocess of Session Runtime's own deployment); revert Session Runtime's persistence model from replay-first to snapshot-based; give Session Runtime its own persisted backend/frontend script artifact independent of Game Management (completing the Game Management/Session Runtime domain split `ADR-0014` accepted); build the backend capabilities required to deliver a versioned frontend script into an isolated iframe (views, effects, durable interaction-result delivery); and build the backend capabilities required for incremental, tool-driven, and integrated-chat AI-assisted authoring against this new execution model. This Project supersedes and absorbs `docs/projects/completed/management-session-domain-split/`'s goal (see that Project's own closing note) and coordinates with, rather than duplicates, `docs/projects/active/session-runtime-v1/` for session-lifecycle/lobby/live-connection capabilities that are independent of rule-execution language.
+Implement `docs/decisions/architecture/ADR-0015-javascript-rule-execution-and-iframe-frontend-contract.md`, `game/docs/decisions/GAME-ADR-0028-javascript-execution-replaces-game-language.md`, `session/docs/decisions/SESSION-ADR-0025-snapshot-based-session-runtime-persistence.md`, and `docs/decisions/architecture/ADR-0016-javascript-executor-separately-deployed-infrastructure-service.md` end to end: retire Game Language (`program`/`engine` v1) as Playhoot's rule-authoring/execution mechanism in favor of author-written JavaScript running in a sandboxed, resource-limited runtime hosted by a separately deployed JavaScript Executor service that Session Runtime calls over an internal network boundary (not a subprocess of Session Runtime's own deployment); revert Session Runtime's persistence model from replay-first to snapshot-based; give Session Runtime its own persisted backend/frontend script artifact independent of Game Management (completing the Game Management/Session Runtime domain split `ADR-0014` accepted); and build the backend capabilities required to deliver a versioned frontend script into an isolated iframe (views, effects, durable interaction-result delivery). This Project supersedes and absorbs `docs/projects/completed/management-session-domain-split/`'s goal (see that Project's own closing note) and coordinates with, rather than duplicates, `docs/projects/active/session-runtime-v1/` for session-lifecycle/lobby/live-connection capabilities that are independent of rule-execution language.
 
 ## Explicitly Out Of Scope
 
 - Building the frontend application, its browser SDK/client library, its authoring-chat UI, or their repository. That repository does not exist yet; `ADR-0015` documents the contract this Project's backend WORK must serve, and is verified with test clients/fixtures, not a production frontend.
-- Selecting AI provider(s), model(s), or their commercial/licensing terms for AI-assisted authoring (`WORK-0047`–`WORK-0049`) — these WORK build the backend orchestration/adapter capabilities against whatever provider is later chosen; provider selection is a separate business/vendor decision.
 - Session lifecycle, lobby, live-connection-role, disconnect/reconnect transport, and inactivity-expiration mechanisms already owned by `docs/projects/active/session-runtime-v1/` (WORK-0008, WORK-0015, WORK-0020, WORK-0021, WORK-0023, WORK-0030) — these are independent of which language executes game rules and are not duplicated here. Where this Project's WORK materially affects one of them (see Ordering / Dependencies), it is flagged for coordination in both Projects' own files, not silently resolved in one.
 - Host "kick a participant" / "transfer host" and any other product-scope question already tracked as open in `session-runtime-v1`'s own Material Decisions — unaffected by this migration.
+- **Game creation/authoring, entirely** (2026-09-29, explicit human decision): this Project migrates the JavaScript execution runtime and its supporting backend capabilities; it does not own Game creation/publishing/authoring, which belongs to its own future Project (informally, "game creation"), not yet created. Five WORK moved out to standalone `docs/work/active/` accordingly, content preserved as-is so their already-recorded scope/ideas are ready to redirect to once that future Project starts: `WORK-0033` (cross-domain publish/authoring composition — keeping Game Management's own Game entity and Session Runtime's own executable-artifact representation consistent when a Game is published; `ADR-0014`'s already-accepted domain split — Game Management owns the marketplace Game entity, Session Runtime owns its own separate executable-artifact representation of it, never the marketplace entity itself — is unaffected by this move, only the composition workflow is out of scope here), `WORK-0047` (incremental authoring session backend), `WORK-0048` (MCP tool adapter for external AI authoring), `WORK-0049` (integrated authoring chat backend orchestration), `WORK-0050` (scoped/revocable authoring authorization). AI provider/model selection and commercial terms, previously flagged here as a Material Decision for `WORK-0047`–`WORK-0049`, moves with them — no longer this Project's concern at all.
 
 ## Current Work
 
@@ -73,14 +73,9 @@ Both halves of `ADR-0016`'s topology split are now DONE. No `sessionlifecycle` c
 | 14 | WORK-0043 — Durable Confirmed-Turn Result Delivery (Outbox) | PLANNED |
 | 15 | WORK-0045 — Frontend Iframe Delivery Contract Specification | PLANNED |
 | 16 | WORK-0046 — Frontend Package Serving & Versioned Asset Delivery | PLANNED |
-| 17 | WORK-0033 — Cross-Domain Game Publish/Authoring Composition (reparented from `management-session-domain-split`) | PLANNED |
-| 18 | WORK-0047 — Incremental Authoring Session Backend | PLANNED |
-| 19 | WORK-0048 — MCP Tool Adapter For External AI Authoring | PLANNED |
-| 20 | WORK-0049 — Integrated Authoring Chat Backend Orchestration | PLANNED |
-| 21 | WORK-0050 — Scoped & Revocable Authoring Authorization | PLANNED |
-| 22 | WORK-0051 — End-To-End Verification (gates project completion) | PLANNED |
+| 17 | WORK-0051 — End-To-End Verification (gates project completion) | PLANNED |
 
-22 WORK total: 10 DONE, 0 IMPLEMENTING, 0 READY, 0 DRAFT, 12 PLANNED.
+17 WORK total: 10 DONE, 0 IMPLEMENTING, 0 READY, 0 DRAFT, 7 PLANNED. (`WORK-0033`/`WORK-0047`/`WORK-0048`/`WORK-0049`/`WORK-0050` moved out to standalone `docs/work/active/` 2026-09-29 — see Explicitly Out Of Scope.)
 
 **WORK-0039 is DONE (2026-09-29)** — independent review APPROVED with no findings after two fix/re-review rounds (`session/workflows/sessionlifecycle/internal/platform`: closed Event/Command vocabulary, registry-based extensibility, `ParseEvent`/`ParseCommand` validation, round-trip tested through `executor.Fake`). No caller wires it yet — that is `WORK-0038`'s own scope, now unblocked to begin implementation.
 
@@ -100,8 +95,6 @@ Both halves of `ADR-0016`'s topology split are now DONE. No `sessionlifecycle` c
 - **Persistence and protocol (9–11)** depend on `WORK-0035`'s contract existing (they consume its `newState`/`commands` shapes) and, per `ADR-0016`, on `WORK-0053`'s `Executor` port existing (that is what `WORK-0038` actually wires Session Runtime's call sites to) — but not on the domain restructuring landing first, so these can proceed in parallel with group 6–8 once 2–3 are far enough along.
 - **Timers, views, effects, delivery (11–14)** depend on `WORK-0039`'s command vocabulary. `WORK-0043` (durable outbox for confirmed results) additionally depends on `WORK-0038`'s persistence model and must coordinate with `session-runtime-v1`'s `WORK-0020` (live-connection layer) for where delivery actually attaches — flagged, not resolved, here. `WORK-0041` (per-player view computation/privacy verification) is a pure backend computation only, not a delivery/reconnect mechanism; its own "retrieve on reconnect" phrasing must not silently absorb `session-runtime-v1`'s own `WORK-0015` (Disconnect/Reconnect/Full Resync) — flagged in both Projects, not resolved here; see `WORK-0041`'s own Coordination Flag.
 - **Frontend contract and serving (15–16)** depend on `WORK-0039` (command/view vocabulary) and `WORK-0044` (artifact model). `WORK-0046` must explicitly reconcile with `session-runtime-v1`'s `WORK-0009` (Client-Safe Game UI Manifest) — see that Project's own flag.
-- **Publish composition (17)** depends on `WORK-0044` and, as before, on Game Management's not-yet-built authoring/publish write path — unchanged blocker from the superseded Project.
-- **AI-assisted authoring (18–21)** depends on the execution/lint/artifact capabilities above existing enough to validate/simulate/render against — specifically `WORK-0053`'s `Executor` port (per `ADR-0016`, simulation must use the same real, separately deployed execution path production Sessions use, not an in-process shortcut), plus `WORK-0037`, `WORK-0044`. `WORK-0048`/`WORK-0049` both depend on `WORK-0047`'s shared authoring-session capability; `WORK-0050` can be designed in parallel with it.
 - **`WORK-0051`** is this Project's own completion gate, not a capability of its own — it depends on essentially everything above being DONE, and must exercise the real Executor-as-a-separate-deployment topology, not an in-process substitute.
 
 ## Capability Coverage
@@ -124,17 +117,12 @@ Traceability from the accepted mandate's required capabilities to the WORK that 
 | Game version artifact model (backend script + frontend script + contracts + assets + capability versions, immutable per-session pin) | WORK-0044 |
 | Session-owned executable artifact, Game Management/Session Runtime domain split completed | WORK-0034 |
 | Orchestrator-mediated create-time visibility composition | WORK-0032 |
-| Orchestrator-mediated cross-domain publish/authoring composition | WORK-0033 |
 | Frontend iframe trust boundary, permissions, view/effect/interaction API contract (documentation) | WORK-0045 |
 | Backend serving of a session's pinned frontend script/assets | WORK-0046 |
-| Incremental authoring (read/edit/validate/simulate/render draft) | WORK-0047 |
-| External AI authoring tool integration (MCP adapter) | WORK-0048 |
-| Integrated authoring chat backend orchestration (consumption/budget controls, resumability) | WORK-0049 |
-| Scoped, revocable authoring authorization (edit/test vs. publish, per-project) | WORK-0050 |
 | End-to-end verification (real JS game, persistence, timers, private views, effects, reconnect/recovery, best-effort reconstruction, concurrency, duplicates, failure limits) | WORK-0051 |
 | Frontend application, SDK, authoring-chat UI implementation | Explicitly out of scope (future frontend repository) |
-| AI provider/model selection and commercial terms | Explicitly out of scope (separate business decision) |
 | Session lifecycle, lobby, live-connection roles, disconnect/reconnect transport, inactivity expiration | Owned by `session-runtime-v1`, coordinated not duplicated |
+| Game creation/authoring (publish composition, incremental authoring session, external AI tool/MCP integration, integrated authoring chat, authoring authorization) | Explicitly out of scope (future "game creation" Project; `WORK-0033`/`WORK-0047`–`WORK-0050` moved to standalone `docs/work/active/`) |
 
 ## Material Decisions Needing Human Input
 
@@ -145,7 +133,7 @@ None of these block creating this Project or its PLANNED WORK; each blocks the s
 3. **Exact command/state wire schema** (`WORK-0035`/`WORK-0039`) — deferred until the runtime technology decision (1) is made, since it constrains what's efficient/safe to serialize across the sandbox boundary.
 4. **Durable outbox mechanism for confirmed-turn results** (`WORK-0043`) — same-database durable table vs. an external queue/broker; must also reconcile with `SESSION-ADR-0019`'s existing "no outbox for presentation" stance, which this Project extends rather than reopens.
 5. ~~**Artifact bundle format and storage**~~ — **Resolved 2026-09-27** (revised twice same day after human review): a `GameVersionArtifact` is two stored scripts, both mandatory (backend and frontend — frontend's exact format is still deferred to frontend-specific design, but its presence is not) plus an opaque game contract and optional platform-hosted assets identified only by logical key, never a URL — see `WORK-0044`'s own Approved Design. "No build pipeline is required for a functional game" still holds (no compiler/bundler step, just required source content); the backend script's transfer to the Executor is confirmed inline, satisfying `ADR-0016`'s no-shared-filesystem requirement.
-6. **AI provider(s)/model(s) and commercial terms** (`WORK-0047`–`WORK-0049`) — explicitly out of this Project's scope to decide, but each WORK's own design needs at least a placeholder/interface assumption to proceed; flagged so it is not silently assumed away.
+6. ~~**AI provider(s)/model(s) and commercial terms**~~ — **Moved 2026-09-29**: no longer this Project's own Material Decision to track. `WORK-0047`–`WORK-0050` (and `WORK-0033`) moved to standalone `docs/work/active/` (see Explicitly Out Of Scope); this decision now belongs to whichever future Project picks them up.
 7. **Whether strict deterministic replay is ever required later** (for example, for a future anti-cheat or audit requirement) — `SESSION-ADR-0025`'s Alternatives Considered explicitly leaves this open rather than foreclosing it; no WORK currently depends on it.
 8. ~~**Network transport between Session Runtime and the JavaScript Executor**~~ — **Resolved 2026-09-27**: gRPC. `WORK-0052`/`WORK-0053` design their service/client against a `.proto`-defined API rather than an ad hoc wire format.
 

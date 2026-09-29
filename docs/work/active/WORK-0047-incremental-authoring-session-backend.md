@@ -2,13 +2,17 @@
 
 Status: PLANNED
 Created: 2026-09-27
-Last status change: 2026-09-27
+Last status change: 2026-09-29 (removed from `docs/projects/active/js-runtime-migration/`, now standalone under `docs/work/active/`, see Reparenting Note below)
 
 Related decisions:
 - `docs/decisions/architecture/ADR-0015-javascript-rule-execution-and-iframe-frontend-contract.md`
 
 Canonical context:
 - `game/language/v1/program/DEFINITION.md`, `GAME_BRIEF.md` (the current single-shot AI-authoring flow this replaces)
+
+## Reparenting Note (2026-09-29)
+
+Removed from `docs/projects/active/js-runtime-migration/` by explicit human decision: that Project migrates the JavaScript execution runtime and its supporting backend capabilities, and must not carry Game creation/authoring capabilities — a distinct concern belonging to its own future Project (informally, "game creation"), not yet created. This WORK moves to standalone (`docs/work/active/`) pending that future Project's creation. Its Outcome/Context/Constraints below are deliberately preserved as-is, not stripped - they already record the intended shape of this capability (an incremental, resumable authoring session validated/simulated/rendered through the real execution path, shared by both AI-authoring modalities) so a future session designing the "game creation" Project's WORK does not have to reconstruct that thinking from scratch. Still PLANNED, still not yet designed - this move changes ownership/grouping only, not design maturity.
 
 ## Outcome
 

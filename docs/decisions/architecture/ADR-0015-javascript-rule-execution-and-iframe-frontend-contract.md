@@ -5,6 +5,7 @@ Created: 2026-09-27
 Last status change: 2026-09-27
 Supersedes: None
 Superseded by: None
+Addendum (2026-09-29): this record's own Implementation Impact routed AI-assisted-authoring capabilities into `js-runtime-migration` "as part of its own scope." By explicit human decision, that grouping is narrowed: `js-runtime-migration` migrates the execution runtime and its supporting backend capabilities only; Game creation/publishing/authoring (including AI-assisted authoring) is carved out to its own future Project, not yet created. This decision record's own Decision/Rationale (the execution model, the sandboxing requirement, the frontend contract) is unaffected - only Project-level grouping of the not-yet-designed authoring WORK changes. See `docs/projects/active/js-runtime-migration/PROJECT.md`'s own Explicitly Out Of Scope for the current routing.
 
 ## Context
 

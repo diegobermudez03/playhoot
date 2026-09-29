@@ -2,7 +2,7 @@
 
 Status: PLANNED
 Created: 2026-09-27
-Last status change: 2026-09-27 (reparented into `docs/projects/active/js-runtime-migration/`, see Reparenting note below)
+Last status change: 2026-09-29 (removed from `docs/projects/active/js-runtime-migration/`, now standalone under `docs/work/active/`, see Reparenting Note (2026-09-29) below)
 
 Related decisions:
 - `docs/decisions/architecture/ADR-0014-management-session-domain-split.md`
@@ -11,6 +11,10 @@ Related decisions:
 Canonical context:
 - `ARCHITECTURE.md` (Cross-Domain Writes, Orchestrator)
 - `orchestrator/README.md`
+
+## Reparenting Note (2026-09-29)
+
+Removed from `docs/projects/active/js-runtime-migration/` by explicit human decision: that Project migrates the JavaScript execution runtime and its supporting backend capabilities, and must not carry any part of Game creation/publishing/authoring composition — a distinct concern that belongs to its own future Project (informally, "game creation"), not yet created. This WORK moves back to standalone (`docs/work/active/`) pending that future Project's creation, the same status shape it held before the reparenting below. The decision this WORK exists to implement — Game Management owns the marketplace Game entity (visibility, metadata, ownership, images, authored history) while Session Runtime owns its own separate, independently-persisted executable-artifact representation of it, not the marketplace entity itself — is not new: it is `ADR-0014`'s own already-accepted Decision, unaffected by this WORK's move between projects.
 
 ## Reparenting Note (2026-09-27)
 
@@ -24,7 +28,7 @@ This is recorded as a known-required future outcome per ADR-0014's own Decision 
 
 ## Context
 
-Not yet designed, and not yet designable: Game Management currently exposes no game-creation/authoring/publish write path at all (only `getgame`/`getgamedefinition` reads exist). This WORK depends on that authoring capability being built first — by this Project or a separate future one — which is itself out of this Project's scope (see `PROJECT.md -> Explicitly Out Of Scope`). It also depends on `WORK-0044`'s artifact model existing enough to know what "an authored artifact" actually bundles.
+Not yet designed, and not yet designable: Game Management currently exposes no game-creation/authoring/publish write path at all (only `getgame`/`getgamedefinition` reads exist). This WORK depends on that authoring capability being built first, by whichever future Project owns Game creation/authoring/publishing. It also depends on `WORK-0044`'s artifact model existing enough to know what "an authored artifact" actually bundles (already DONE — see `session/docs/GAME_VERSION_ARTIFACT_MODEL.md`).
 
 ## Scope
 
@@ -63,7 +67,8 @@ Not yet designed.
 
 ## Blockers
 
-- Blocked on a Game Management authoring/publish write path existing at all (out of this Project's scope) — this WORK cannot move to DRAFT until that capability is at least planned concretely enough to design against.
+- Blocked on a Game Management authoring/publish write path existing at all — this WORK cannot move to DRAFT until that capability is at least planned concretely enough to design against.
+- Blocked on a future "game creation"/authoring Project actually existing to own this WORK's own design and grouping (see Reparenting Note (2026-09-29)) — this WORK is standalone in the meantime.
 
 ## Completion Record
 

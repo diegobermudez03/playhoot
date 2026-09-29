@@ -55,7 +55,7 @@ Identical to `game/docs/decisions/GAME-ADR-0001-game-capability-persistence-tran
 
 - No cross-domain database foreign key exists to Game Management's own tables (`ARCHITECTURE.md -> Cross-Domain Public Entity References`); `DefinitionUUID` is a logical reference only.
 - Session Runtime owns its own persisted copy of this artifact, keyed by `DefinitionUUID` (`docs/projects/active/js-runtime-migration/works/WORK-0034-session-owned-executable-script-artifact-and-package-restructuring.md`).
-- Game Management's own publish-time write, and keeping both domains' representations consistent, is `docs/projects/active/js-runtime-migration/works/WORK-0033-cross-domain-game-publish-composition.md`'s concern.
+- Game Management's own publish-time write, and keeping both domains' representations consistent, is `docs/work/active/WORK-0033-cross-domain-game-publish-composition.md`'s concern (standalone, not part of any Project owning this document).
 - No domain imports another domain's concrete artifact type merely to declare a narrow interface against it - each consumer declares its own type against this document.
 
 ## Rationale And History
