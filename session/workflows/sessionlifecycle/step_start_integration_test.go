@@ -5,11 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/diegobermudez03/playhoot/game/language/v1/program"
 	"github.com/diegobermudez03/playhoot/session"
 	"github.com/diegobermudez03/playhoot/session/internal/testdb"
 	"github.com/diegobermudez03/playhoot/session/internal/testfixtures"
-	"github.com/diegobermudez03/playhoot/session/workflows/sessionlifecycle/internal/replay"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
@@ -17,10 +15,13 @@ import (
 func TestManagerStart_Integration(t *testing.T) {
 	db := testdb.OpenSessionDB(t)
 
-	t.Run("host_starts_session_and_persists_first_runtime_turn", func(t *testing.T) {
-		m := New(db, stubStartPinnedGameReader{definition: startableDefinition(1, 4)})
+	t.Run("host_starts_session_and_persists_first_runtime_turn_with_executor_new_state", func(t *testing.T) {
+		newState := stateJSON(t, map[string]any{"phase": "running", "score": float64(0)})
+		m := New(db, fakeExecutorAlwaysReturning(newState))
 
 		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
+		gv := testfixtures.SeedCurrentGameVersion(t, db, "function backend() {}", "function frontend() {}", 1, nil)
+		require.NoError(t, db.Exec(`UPDATE sessions SET game_definition_uuid = ? WHERE id = ?`, gv.DefinitionUUID, fx.SessionID).Error)
 		hostUUID := uuid.NewString()
 		hostActorID := testfixtures.SeedActor(t, db, fx.SessionID, hostUUID)
 		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
@@ -45,17 +46,18 @@ func TestManagerStart_Integration(t *testing.T) {
 		require.NoError(t, db.Raw(`SELECT revoked_at FROM join_codes WHERE session_id = ?`, fx.SessionID).Scan(&joinCodeRevoked).Error)
 		require.NotNil(t, joinCodeRevoked, "the active session.JoinCode must be revoked on Start")
 
+		// Acceptance Criteria: a test proving persisted new_state matches
+		// what a live Execute call actually produced - no silent drift
+		// between "what was persisted" and "what the Executor returned".
 		var turn struct {
 			ID       uint   `gorm:"column:id"`
 			Sequence uint64 `gorm:"column:sequence"`
+			NewState []byte `gorm:"column:new_state"`
 		}
-		require.NoError(t, db.Raw(`SELECT id, sequence FROM session_runtime_turns WHERE session_id = ?`, fx.SessionID).Scan(&turn).Error)
+		require.NoError(t, db.Raw(`SELECT id, sequence, new_state FROM session_runtime_turns WHERE session_id = ?`, fx.SessionID).Scan(&turn).Error)
 		require.Equal(t, uint64(1), turn.Sequence)
 		require.NotZero(t, turn.ID)
-
-		var startCount int64
-		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_starts WHERE session_id = ?`, fx.SessionID).Scan(&startCount).Error)
-		require.Equal(t, int64(1), startCount, "Start's Seed/RootParameters must be durably captured atomically with Turn 1")
+		require.JSONEq(t, string(newState), string(turn.NewState))
 
 		var currentTurnID uint
 		require.NoError(t, db.Raw(`SELECT current_turn_id FROM sessions WHERE id = ?`, fx.SessionID).Scan(&currentTurnID).Error)
@@ -71,66 +73,13 @@ func TestManagerStart_Integration(t *testing.T) {
 		require.True(t, activity.ActivityExpiresAt.After(*activity.StartedAt), "activity_expires_at must be started_at plus the configured TTL")
 	})
 
-	t.Run("first_turn_opening_a_question_persists_an_active_interaction", func(t *testing.T) {
-		m := New(db, stubStartPinnedGameReader{definition: answerableDefinition(1, 4)})
+	t.Run("first_turn_requesting_session_complete_terminalizes_session_immediately", func(t *testing.T) {
+		newState := stateJSON(t, map[string]any{"done": true})
+		m := New(db, fakeExecutorAlwaysReturning(newState, sessionCompleteCommand(t)))
 
 		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
-		hostUUID := uuid.NewString()
-		hostActorID := testfixtures.SeedActor(t, db, fx.SessionID, hostUUID)
-		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
-		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
-
-		result, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), "start-key-opens-question")
-		require.NoError(t, err)
-		require.Equal(t, session.StartOutcomeStarted, result.Outcome)
-
-		var turn struct {
-			ID uint `gorm:"column:id"`
-		}
-		require.NoError(t, db.Raw(`SELECT id FROM session_runtime_turns WHERE session_id = ?`, fx.SessionID).Scan(&turn).Error)
-
-		var row struct {
-			SessionActorID      uint   `gorm:"column:session_actor_id"`
-			Kind                string `gorm:"column:kind"`
-			EngineInteractionID uint64 `gorm:"column:engine_interaction_id"`
-			State               string `gorm:"column:state"`
-			OpenedByTurnID      uint   `gorm:"column:opened_by_turn_id"`
-		}
-		require.NoError(t, db.Raw(`SELECT session_actor_id, kind, engine_interaction_id, state, opened_by_turn_id FROM session_interactions WHERE session_id = ?`, fx.SessionID).Scan(&row).Error)
-		require.Equal(t, hostActorID, row.SessionActorID, "the only active Participant is players[0], the question's Recipient")
-		require.Equal(t, session.InteractionKindQuestion, row.Kind)
-		require.NotZero(t, row.EngineInteractionID, "the engine's own assigned InteractionID must be persisted")
-		require.Equal(t, session.InteractionStateActive, row.State)
-		require.Equal(t, turn.ID, row.OpenedByTurnID)
-	})
-
-	t.Run("first_turn_returns_activated_presentations_in_memory", func(t *testing.T) {
-		m := New(db, stubStartPinnedGameReader{definition: presentationEffectDefinition(1, 4)})
-
-		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
-		hostUUID := uuid.NewString()
-		hostActorID := testfixtures.SeedActor(t, db, fx.SessionID, hostUUID)
-		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
-		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
-		testfixtures.SeedActiveParticipant(t, db, fx.SessionID, uuid.NewString(), "Player Two")
-
-		result, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), "start-key-presentation")
-		require.NoError(t, err)
-		require.Equal(t, session.StartOutcomeStarted, result.Outcome)
-
-		require.Len(t, result.Outputs, 2, "one session.PresentationActivated per player, no OpenQuestionOutput returned")
-		for _, o := range result.Outputs {
-			activate, ok := o.(session.PresentationActivated)
-			require.True(t, ok, "%T", o)
-			require.Equal(t, presentationEffectHudSlot, activate.Slot)
-			require.Equal(t, session.NumberValue{Value: 0}, activate.Model, "score's initializer is 0")
-		}
-	})
-
-	t.Run("first_turn_completing_the_game_terminalizes_session_immediately", func(t *testing.T) {
-		m := New(db, stubStartPinnedGameReader{definition: startTriggersTerminationDefinition(program.CompleteControl{Result: program.UnitLiteralExpression{}}, 1, 4)})
-
-		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
+		gv := testfixtures.SeedCurrentGameVersion(t, db, "function backend() {}", "function frontend() {}", 1, nil)
+		require.NoError(t, db.Exec(`UPDATE sessions SET game_definition_uuid = ? WHERE id = ?`, gv.DefinitionUUID, fx.SessionID).Error)
 		hostUUID := uuid.NewString()
 		hostActorID := testfixtures.SeedActor(t, db, fx.SessionID, hostUUID)
 		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
@@ -158,9 +107,11 @@ func TestManagerStart_Integration(t *testing.T) {
 	})
 
 	t.Run("rejects_start_by_non_host", func(t *testing.T) {
-		m := New(db, stubStartPinnedGameReader{definition: startableDefinition(1, 4)})
+		m := New(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
 
 		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
+		gv := testfixtures.SeedCurrentGameVersion(t, db, "function backend() {}", "function frontend() {}", 1, nil)
+		require.NoError(t, db.Exec(`UPDATE sessions SET game_definition_uuid = ? WHERE id = ?`, gv.DefinitionUUID, fx.SessionID).Error)
 		hostActorID := testfixtures.SeedActor(t, db, fx.SessionID, uuid.NewString())
 		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
 		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
@@ -177,15 +128,17 @@ func TestManagerStart_Integration(t *testing.T) {
 		require.Equal(t, session.PhaseLobby, phase, "a rejected Start must not mutate phase")
 	})
 
-	t.Run("rejects_start_with_fewer_than_players_min", func(t *testing.T) {
-		m := New(db, stubStartPinnedGameReader{definition: startableDefinition(2, 4)})
+	t.Run("rejects_start_with_fewer_than_participant_min", func(t *testing.T) {
+		m := New(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
 
 		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
+		gv := testfixtures.SeedCurrentGameVersion(t, db, "function backend() {}", "function frontend() {}", 2, nil)
+		require.NoError(t, db.Exec(`UPDATE sessions SET game_definition_uuid = ? WHERE id = ?`, gv.DefinitionUUID, fx.SessionID).Error)
 		hostUUID := uuid.NewString()
 		hostActorID := testfixtures.SeedActor(t, db, fx.SessionID, hostUUID)
 		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
 		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
-		// Only 1 active Participant, below players.min = 2.
+		// Only 1 active Participant, below participant_min = 2.
 
 		result, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), "start-key-not-enough")
 		require.NoError(t, err)
@@ -193,9 +146,11 @@ func TestManagerStart_Integration(t *testing.T) {
 	})
 
 	t.Run("lazily_materializes_expired_lobby_and_rejects", func(t *testing.T) {
-		m := New(db, stubStartPinnedGameReader{definition: startableDefinition(1, 4)})
+		m := New(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
 
 		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(-1*time.Minute))
+		gv := testfixtures.SeedCurrentGameVersion(t, db, "function backend() {}", "function frontend() {}", 1, nil)
+		require.NoError(t, db.Exec(`UPDATE sessions SET game_definition_uuid = ? WHERE id = ?`, gv.DefinitionUUID, fx.SessionID).Error)
 		hostUUID := uuid.NewString()
 		hostActorID := testfixtures.SeedActor(t, db, fx.SessionID, hostUUID)
 		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
@@ -211,9 +166,11 @@ func TestManagerStart_Integration(t *testing.T) {
 	})
 
 	t.Run("retried_start_with_same_idempotency_key_replays_started", func(t *testing.T) {
-		m := New(db, stubStartPinnedGameReader{definition: startableDefinition(1, 4)})
+		m := New(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
 
 		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
+		gv := testfixtures.SeedCurrentGameVersion(t, db, "function backend() {}", "function frontend() {}", 1, nil)
+		require.NoError(t, db.Exec(`UPDATE sessions SET game_definition_uuid = ? WHERE id = ?`, gv.DefinitionUUID, fx.SessionID).Error)
 		hostUUID := uuid.NewString()
 		hostActorID := testfixtures.SeedActor(t, db, fx.SessionID, hostUUID)
 		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
@@ -232,13 +189,15 @@ func TestManagerStart_Integration(t *testing.T) {
 
 		var turnCountAfterSecond int64
 		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_turns WHERE session_id = ?`, fx.SessionID).Scan(&turnCountAfterSecond).Error)
-		require.Equal(t, turnCountAfterFirst, turnCountAfterSecond, "a replay must not re-execute engine initialization or create a second Turn")
+		require.Equal(t, turnCountAfterFirst, turnCountAfterSecond, "a replay must not re-execute the backend script or create a second Turn")
 	})
 
 	t.Run("rejects_conflicting_payload_under_same_token", func(t *testing.T) {
-		m := New(db, stubStartPinnedGameReader{definition: startableDefinition(1, 4)})
+		m := New(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
 
 		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
+		gv := testfixtures.SeedCurrentGameVersion(t, db, "function backend() {}", "function frontend() {}", 1, nil)
+		require.NoError(t, db.Exec(`UPDATE sessions SET game_definition_uuid = ? WHERE id = ?`, gv.DefinitionUUID, fx.SessionID).Error)
 		hostUUID := uuid.NewString()
 		hostActorID := testfixtures.SeedActor(t, db, fx.SessionID, hostUUID)
 		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
@@ -248,6 +207,8 @@ func TestManagerStart_Integration(t *testing.T) {
 		require.NoError(t, err)
 
 		otherFx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
+		otherGV := testfixtures.SeedCurrentGameVersion(t, db, "function backend() {}", "function frontend() {}", 1, nil)
+		require.NoError(t, db.Exec(`UPDATE sessions SET game_definition_uuid = ? WHERE id = ?`, otherGV.DefinitionUUID, otherFx.SessionID).Error)
 		otherHostActorID := testfixtures.SeedActor(t, db, otherFx.SessionID, hostUUID)
 		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, otherHostActorID, otherFx.SessionID).Error)
 		testfixtures.SeedParticipantForActor(t, db, otherHostActorID, "Host")
@@ -256,10 +217,12 @@ func TestManagerStart_Integration(t *testing.T) {
 		require.ErrorIs(t, err, session.ErrIdempotencyConflict)
 	})
 
-	t.Run("fatal_runtime_init_failure_terminalizes_and_replays_without_re_executing", func(t *testing.T) {
-		m := New(db, stubStartPinnedGameReader{definition: nonStartableDefinition(1, 4)})
+	t.Run("fatal_executor_error_terminalizes_and_replays_without_re_executing", func(t *testing.T) {
+		m := New(db, fakeExecutorFailing("executor unreachable"))
 
 		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
+		gv := testfixtures.SeedCurrentGameVersion(t, db, "function backend() {}", "function frontend() {}", 1, nil)
+		require.NoError(t, db.Exec(`UPDATE sessions SET game_definition_uuid = ? WHERE id = ?`, gv.DefinitionUUID, fx.SessionID).Error)
 		hostUUID := uuid.NewString()
 		hostActorID := testfixtures.SeedActor(t, db, fx.SessionID, hostUUID)
 		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
@@ -289,9 +252,6 @@ func TestManagerStart_Integration(t *testing.T) {
 		require.NoError(t, db.Raw(`SELECT revoked_at FROM join_codes WHERE session_id = ?`, fx.SessionID).Scan(&joinCodeRevoked).Error)
 		require.NotNil(t, joinCodeRevoked)
 
-		// WORK-0014: the same atomic materialization also persists a
-		// session_runtime_failures diagnostic row - base_turn_id NULL and
-		// attempted_sequence 1 since no RuntimeTurn ever committed.
 		var failureRow struct {
 			FailureKind       string `gorm:"column:failure_kind"`
 			ErrorCode         string `gorm:"column:error_code"`
@@ -306,81 +266,28 @@ func TestManagerStart_Integration(t *testing.T) {
 		require.Equal(t, RuntimeFailureKindExecution, failureRow.FailureKind)
 		require.Nil(t, failureRow.BaseTurnID, "no RuntimeTurn ever committed before a pre-first-Turn Start failure")
 		require.Equal(t, uint64(1), failureRow.AttemptedSequence)
-		require.Equal(t, replay.SessionStartSourceKind, failureRow.SourceKind)
+		require.Equal(t, sessionStartSourceKind, failureRow.SourceKind)
 		require.NotEmpty(t, failureRow.ErrorCode)
 
 		var failureCount int64
 		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_failures WHERE session_id = ?`, fx.SessionID).Scan(&failureCount).Error)
 		require.Equal(t, int64(1), failureCount, "a same-token/different-token replay below must not persist a second failure row")
 
-		// A same-token retry against the now-TERMINAL Session must replay
-		// the recorded outcome, never re-attempt engine initialization.
 		second, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), "start-key-fatal")
 		require.NoError(t, err)
 		require.Equal(t, first, second)
 
-		// A *differently*-tokened Start against the same already-fatally-
-		// terminalized Session (no prior claim for this token, so no replay
-		// applies) must still report RuntimeInitFailed, never LobbyExpired -
-		// the Session is TERMINAL because Start's own initialization
-		// deterministically failed, not because the lobby timed out.
 		third, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), "start-key-fatal-different-token")
 		require.NoError(t, err)
 		require.Equal(t, session.StartOutcomeRuntimeInitFailed, third.Outcome)
 	})
 
-	t.Run("fatal_recompile_failure_terminalizes_with_state_invalid_reason", func(t *testing.T) {
-		// WORK-0014 AC2: a pinned Definition that unexpectedly fails to
-		// recompile (a data-integrity condition, not a game-execution
-		// failure) must persist a session_runtime_failures row with
-		// failure_kind RUNTIME_STATE_INVALID and the dedicated recompile
-		// error_code - distinct from the RUNTIME_EXECUTION_FAILED case the
-		// test above already covers.
-		m := New(db, stubStartPinnedGameReader{definition: uncompilableDefinitionForTest()})
-
-		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
-		hostUUID := uuid.NewString()
-		hostActorID := testfixtures.SeedActor(t, db, fx.SessionID, hostUUID)
-		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
-		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
-
-		result, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), "start-key-recompile-fatal")
-		require.NoError(t, err)
-		require.Equal(t, session.StartOutcomeRuntimeInitFailed, result.Outcome)
-
-		var row struct {
-			Phase          string  `gorm:"column:phase"`
-			TerminalReason *string `gorm:"column:terminal_reason"`
-		}
-		require.NoError(t, db.Raw(`SELECT phase, terminal_reason FROM sessions WHERE id = ?`, fx.SessionID).Scan(&row).Error)
-		require.Equal(t, session.PhaseTerminal, row.Phase)
-		require.NotNil(t, row.TerminalReason)
-		require.Equal(t, session.TerminalReasonRuntimeStateInvalid, *row.TerminalReason)
-
-		var failureRow struct {
-			FailureKind       string `gorm:"column:failure_kind"`
-			ErrorCode         string `gorm:"column:error_code"`
-			BaseTurnID        *uint  `gorm:"column:base_turn_id"`
-			AttemptedSequence uint64 `gorm:"column:attempted_sequence"`
-			SourceKind        string `gorm:"column:source_kind"`
-			ErrorMessage      string `gorm:"column:error_message"`
-		}
-		require.NoError(t, db.Raw(`
-			SELECT failure_kind, error_code, base_turn_id, attempted_sequence, source_kind, error_message
-			FROM session_runtime_failures WHERE session_id = ?
-		`, fx.SessionID).Scan(&failureRow).Error)
-		require.Equal(t, RuntimeFailureKindStateInvalid, failureRow.FailureKind)
-		require.Equal(t, RuntimeFailureErrorCodeDefinitionRecompileFailed, failureRow.ErrorCode)
-		require.Nil(t, failureRow.BaseTurnID, "no RuntimeTurn ever committed before a pre-first-Turn Start failure")
-		require.Equal(t, uint64(1), failureRow.AttemptedSequence)
-		require.Equal(t, replay.SessionStartSourceKind, failureRow.SourceKind)
-		require.NotEmpty(t, failureRow.ErrorMessage, "the compiler's own diagnostics must be captured as the operator-facing message")
-	})
-
 	t.Run("two_concurrent_starts_never_both_execute_a_runtime_turn", func(t *testing.T) {
-		m := New(db, stubStartPinnedGameReader{definition: startableDefinition(1, 4)})
+		m := New(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
 
 		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
+		gv := testfixtures.SeedCurrentGameVersion(t, db, "function backend() {}", "function frontend() {}", 1, nil)
+		require.NoError(t, db.Exec(`UPDATE sessions SET game_definition_uuid = ? WHERE id = ?`, gv.DefinitionUUID, fx.SessionID).Error)
 		hostUUID := uuid.NewString()
 		hostActorID := testfixtures.SeedActor(t, db, fx.SessionID, hostUUID)
 		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)

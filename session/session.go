@@ -1,7 +1,8 @@
 // Package session is the Session Runtime capability's public contract: the
 // lobby lifecycle phase/presence/terminal-reason values, the sentinel
 // errors, and every request/result type its Session lifecycle workflow's
-// operations (Create/Join/Leave/Start/AnswerInteraction/ExpireTimer) take or
+// operations (Create/Join/Leave/Start/SubmitPlayerEvent/CancelSession/
+// ExpireTimer) take or
 // return. This package intentionally imports nothing beyond the standard
 // library, so a caller depending only on this contract never transitively
 // imports anything the workflow's own implementation
@@ -43,29 +44,21 @@ const (
 	TerminalReasonRuntimeStateInvalid = "RUNTIME_STATE_INVALID"
 
 	// TerminalReasonGameCompleted marks a Session terminated because the
-	// authored game itself finished as designed (an authored CompleteControl
-	// applied) - an ordinary, expected outcome, not a failure.
+	// authored script itself requested SESSION_COMPLETE - an ordinary,
+	// expected outcome, not a failure.
 	TerminalReasonGameCompleted = "GAME_COMPLETED"
 
 	// TerminalReasonGameFailed marks a Session terminated because the
-	// authored game's own logic determined a failure condition (an authored
-	// FailControl applied) - distinct from TerminalReasonRuntimeExecutionFailed,
-	// which marks an engine-execution malfunction rather than a deliberate
-	// authored outcome.
+	// authored script itself requested SESSION_FAIL - distinct from
+	// TerminalReasonRuntimeExecutionFailed, which marks an Executor
+	// infrastructure failure rather than a deliberate authored outcome.
 	TerminalReasonGameFailed = "GAME_FAILED"
-
-	// TerminalReasonGameCancelled marks a Session terminated because the
-	// authored game's own logic abandoned the instance (an authored
-	// CancelControl applied) - distinct from any future session-lifecycle-level
-	// cancellation a host or operator initiates directly.
-	TerminalReasonGameCancelled = "GAME_CANCELLED"
 
 	// TerminalReasonSessionCancelledByHost marks a Session terminated by an
 	// explicit host cancellation command (CancelSession) that did not itself
-	// result in the authored game reaching a terminal run status - distinct
-	// from TerminalReasonGameCancelled, which marks the game's own authored
-	// abandonment. A host cancellation always terminalizes the Session even
-	// when the authored game has no transition modeling it at all.
+	// result in the authored script requesting SESSION_COMPLETE/SESSION_FAIL.
+	// A host cancellation always terminalizes the Session even when the
+	// authored script has no reaction to SESSION_CANCELLED at all.
 	TerminalReasonSessionCancelledByHost = "SESSION_CANCELLED_BY_HOST"
 
 	// TerminalReasonRuntimeInactivityExpired marks a RUNNING Session
@@ -76,41 +69,9 @@ const (
 	TerminalReasonRuntimeInactivityExpired = "RUNTIME_INACTIVITY_EXPIRED"
 )
 
-// session_interactions.kind values: which of the engine's two
-// open-question shapes produced this interaction, needed to construct the
-// correct engine.SignalKind when a response is submitted - OpenQuestionOutput
-// itself carries no such discriminator.
-const (
-	InteractionKindQuestion = "QUESTION"
-	InteractionKindAskGroup = "ASK_GROUP"
-)
-
-// session_interactions.state values.
-const (
-	// InteractionStateActive means the interaction is still pending a
-	// response.
-	InteractionStateActive = "ACTIVE"
-	// InteractionStateClosed means a committed RuntimeTurn closed the
-	// interaction (closed_by_turn_id is set) - an accepted response, or an
-	// authored CloseQuestionOperation closing it without one.
-	InteractionStateClosed = "CLOSED"
-	// InteractionStateTerminated means the Session itself terminalized
-	// while the interaction was still ACTIVE, so terminal-cleanup closed it
-	// directly instead (closed_by_turn_id NULL, closure_reason
-	// InteractionClosureReasonSessionTerminated) - not gameplay closure.
-	InteractionStateTerminated = "TERMINATED"
-)
-
-// InteractionClosureReasonSessionTerminated is session_interactions.
-// closure_reason's value for InteractionStateTerminated rows.
-const InteractionClosureReasonSessionTerminated = "SESSION_TERMINATED"
-
-// session_timer_obligations.state values. Reuses the same "ACTIVE" value
-// session_interactions already uses for a still-pending row, alongside two
-// closure states of its own - a timer obligation's closure is either its own
-// expiration (CONSUMED) or an explicit/terminal cancellation (CANCELLED),
-// distinct from an interaction's CLOSED/TERMINATED split since a timer has
-// no "answered" concept.
+// session_timer_obligations.state values. A timer obligation's closure is
+// either its own expiration (CONSUMED) or an explicit/terminal cancellation
+// (CANCELLED).
 const (
 	// TimerObligationStateActive means the timer is still pending expiration.
 	TimerObligationStateActive = "ACTIVE"
@@ -126,8 +87,7 @@ const (
 
 // TimerObligationClosureReasonSessionTerminated is
 // session_timer_obligations.closure_reason's value for a still-ACTIVE
-// obligation cancelled by terminal cleanup rather than an authored cancel -
-// mirrors InteractionClosureReasonSessionTerminated exactly.
+// obligation cancelled by terminal cleanup rather than an authored cancel.
 const TimerObligationClosureReasonSessionTerminated = "SESSION_TERMINATED"
 
 var (
@@ -164,10 +124,6 @@ var (
 	// caller supplies a missing/empty idempotency token - every command on
 	// these operations requires one.
 	ErrIdempotencyKeyRequired = errors.New("idempotency key is required")
-
-	// ErrInteractionNotFound is returned when an interaction UUID does not
-	// resolve to an existing session_interactions row.
-	ErrInteractionNotFound = errors.New("interaction not found")
 
 	// ErrTimerObligationNotFound is returned when a timer obligation UUID
 	// does not resolve to an existing session_timer_obligations row.

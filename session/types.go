@@ -111,104 +111,51 @@ const (
 )
 
 // StartResult is Start's logical outcome. SessionUUID is only populated
-// when Outcome is StartOutcomeStarted. Outputs carries the first committed
-// Turn's client-facing Effect/Presentation values, in commit order - empty
-// unless this call actually executed the engine, so never populated on a
-// replayed retry. TerminalReason is populated (one of TerminalReasonGame*)
-// whenever this same Turn also ended the Session.
+// when Outcome is StartOutcomeStarted. TerminalReason is populated (one of
+// TerminalReasonGame*) whenever this same Turn also ended the Session. This
+// type carries no client-facing view/effect payload - a per-player view and
+// any transient game-defined occurrence are each obtained through their own
+// separate, dedicated call.
 type StartResult struct {
 	Outcome        StartOutcome `json:"outcome"`
 	SessionUUID    SessionUUID  `json:"session_uuid,omitempty"`
-	Outputs        []Output     `json:"-"`
 	TerminalReason string       `json:"terminal_reason,omitempty"`
 }
 
-// InteractionUUID is a session_interactions row's public identity.
-type InteractionUUID string
-
-// AnswerInteractionOutcome is AnswerInteraction's expected business
+// SubmitPlayerEventOutcome is SubmitPlayerEvent's expected business
 // outcome, a value distinct from a Go error: an ordinary decline a caller
-// should branch on, not treat as a failure.
-type AnswerInteractionOutcome string
+// should branch on, not treat as a failure. A submitted player event has no
+// existing durable row to compare a retry against, so a retried,
+// semantically equivalent submission replays via its IdempotencyKey
+// instead (see ErrIdempotencyConflict for a same-key retry with a
+// materially different request).
+type SubmitPlayerEventOutcome string
 
 const (
-	// AnswerInteractionOutcomeAnswered means the response was accepted: a
-	// new RuntimeTurn committed and the interaction resolved - or, for a
-	// retried, semantically equivalent response to an already-resolved
-	// interaction, the original outcome replayed without a second engine
-	// effect.
-	AnswerInteractionOutcomeAnswered AnswerInteractionOutcome = "ANSWERED"
-	// AnswerInteractionOutcomeRejected means the response was declined
-	// without any engine effect: the caller was not the interaction's
-	// recipient, the interaction was no longer answerable (already
-	// terminally closed, or resolved by a different respondent's answer -
-	// unreachable for this caller), or the engine itself rejected the
-	// answer as stale/duplicate/invalid.
-	AnswerInteractionOutcomeRejected AnswerInteractionOutcome = "REJECTED"
-	// AnswerInteractionOutcomeConflict means the interaction was already
-	// resolved with a response different from the one now submitted.
-	AnswerInteractionOutcomeConflict AnswerInteractionOutcome = "CONFLICT"
-	// AnswerInteractionOutcomeRuntimeExecutionFailed means a deterministic
-	// engine execution failure (including Step-bound overflow) terminalized
-	// the Session while processing the response.
-	AnswerInteractionOutcomeRuntimeExecutionFailed AnswerInteractionOutcome = "RUNTIME_EXECUTION_FAILED"
-)
-
-// AnswerInteractionResult is AnswerInteraction's logical outcome.
-// SessionUUID is populated whenever the interaction's owning Session was
-// resolved (every outcome except an unresolved interactionUUID, reported as
-// ErrInteractionNotFound instead). Outputs carries the committed Turn's
-// client-facing Effect/Presentation values, in commit order - populated
-// only when Outcome is AnswerInteractionOutcomeAnswered and this call
-// actually executed the engine. TerminalReason is populated (one of
-// TerminalReasonGame*) whenever this same response also ended the Session.
-type AnswerInteractionResult struct {
-	Outcome        AnswerInteractionOutcome `json:"outcome"`
-	SessionUUID    SessionUUID              `json:"session_uuid,omitempty"`
-	Outputs        []Output                 `json:"-"`
-	TerminalReason string                   `json:"terminal_reason,omitempty"`
-}
-
-// SubmitUserIntentOutcome is SubmitUserIntent's expected business outcome, a
-// value distinct from a Go error: an ordinary decline a caller should
-// branch on, not treat as a failure. Unlike AnswerInteractionOutcome, there
-// is no Answered/Conflict analogue: a submitted intent has no existing
-// durable row to compare a retry against, so a retried, semantically
-// equivalent submission replays via its IdempotencyKey instead (see
-// ErrIdempotencyConflict for a same-key retry with a materially different
-// request).
-type SubmitUserIntentOutcome string
-
-const (
-	// SubmitUserIntentOutcomeAccepted means the intent was accepted: a new
+	// SubmitPlayerEventOutcomeAccepted means the event was accepted: a new
 	// RuntimeTurn committed - or, for a retried submission under the same
-	// IdempotencyKey, the original outcome replayed without a second engine
-	// effect.
-	SubmitUserIntentOutcomeAccepted SubmitUserIntentOutcome = "ACCEPTED"
-	// SubmitUserIntentOutcomeRejected means the intent was declined without
-	// any engine effect: the caller did not resolve to a current
-	// Participant, intentName does not name a declared user intent, the
-	// submitted arguments did not match its declared Parameters, or the
-	// engine itself rejected the intent (no matching transition, or a
-	// guard evaluated false).
-	SubmitUserIntentOutcomeRejected SubmitUserIntentOutcome = "REJECTED"
-	// SubmitUserIntentOutcomeRuntimeExecutionFailed means a deterministic
-	// engine execution failure (including Step-bound overflow) terminalized
-	// the Session while processing the intent.
-	SubmitUserIntentOutcomeRuntimeExecutionFailed SubmitUserIntentOutcome = "RUNTIME_EXECUTION_FAILED"
+	// IdempotencyKey, the original outcome replayed without a second
+	// execution.
+	SubmitPlayerEventOutcomeAccepted SubmitPlayerEventOutcome = "ACCEPTED"
+	// SubmitPlayerEventOutcomeRejected means the event was declined without
+	// any execution effect: the caller did not resolve to a current
+	// Participant, or the authored script itself rejected it (threw, or no
+	// matching game-defined reaction).
+	SubmitPlayerEventOutcomeRejected SubmitPlayerEventOutcome = "REJECTED"
+	// SubmitPlayerEventOutcomeRuntimeExecutionFailed means an infrastructure-
+	// level Executor failure terminalized the Session while processing the
+	// event.
+	SubmitPlayerEventOutcomeRuntimeExecutionFailed SubmitPlayerEventOutcome = "RUNTIME_EXECUTION_FAILED"
 )
 
-// SubmitUserIntentResult is SubmitUserIntent's logical outcome. Outputs
-// carries the committed Turn's client-facing Effect/Presentation values, in
-// commit order - populated only when Outcome is
-// SubmitUserIntentOutcomeAccepted and this call actually executed the
-// engine. TerminalReason is populated (one of TerminalReasonGame*)
-// whenever this same intent also ended the Session.
-type SubmitUserIntentResult struct {
-	Outcome        SubmitUserIntentOutcome `json:"outcome"`
-	SessionUUID    SessionUUID             `json:"session_uuid,omitempty"`
-	Outputs        []Output                `json:"-"`
-	TerminalReason string                  `json:"terminal_reason,omitempty"`
+// SubmitPlayerEventResult is SubmitPlayerEvent's logical outcome.
+// TerminalReason is populated (one of TerminalReasonGame*) whenever this
+// same event also ended the Session. See StartResult's own doc comment for
+// why this type carries no client-facing Output payload.
+type SubmitPlayerEventResult struct {
+	Outcome        SubmitPlayerEventOutcome `json:"outcome"`
+	SessionUUID    SessionUUID              `json:"session_uuid,omitempty"`
+	TerminalReason string                   `json:"terminal_reason,omitempty"`
 }
 
 // CancelSessionOutcome is CancelSession's expected business outcome, a value
@@ -247,16 +194,13 @@ const (
 	CancelSessionOutcomeRuntimeExecutionFailed CancelSessionOutcome = "RUNTIME_EXECUTION_FAILED"
 )
 
-// CancelSessionResult is CancelSession's logical outcome. Outputs carries the
-// committed Turn's client-facing Effect/Presentation values, in commit
-// order - populated only when the authored game itself produced a
-// RuntimeTurn reacting to SessionCancelled, never for a forced termination
-// with no such Turn. TerminalReason is always populated when Outcome is
-// CancelSessionOutcomeCancelled.
+// CancelSessionResult is CancelSession's logical outcome. TerminalReason is
+// always populated when Outcome is CancelSessionOutcomeCancelled. See
+// StartResult's own doc comment for why this type carries no client-facing
+// Output payload.
 type CancelSessionResult struct {
 	Outcome        CancelSessionOutcome `json:"outcome"`
 	SessionUUID    SessionUUID          `json:"session_uuid,omitempty"`
-	Outputs        []Output             `json:"-"`
 	TerminalReason string               `json:"terminal_reason,omitempty"`
 }
 
@@ -290,15 +234,12 @@ const (
 // ExpireTimerResult is ExpireTimer's logical outcome. SessionUUID is
 // populated whenever the obligation's owning Session was resolved (every
 // outcome except an unresolved timerObligationUUID, reported as
-// ErrTimerObligationNotFound instead). Outputs carries the committed Turn's
-// client-facing Effect/Presentation values, in commit order - populated
-// only when Outcome is ExpireTimerOutcomeExpired and this call actually
-// executed the engine. TerminalReason is populated (one of
+// ErrTimerObligationNotFound instead). TerminalReason is populated (one of
 // TerminalReasonGame*) whenever this same expiration also ended the
-// Session.
+// Session. See StartResult's own doc comment for why this type carries no
+// client-facing Output payload.
 type ExpireTimerResult struct {
 	Outcome        ExpireTimerOutcome `json:"outcome"`
 	SessionUUID    SessionUUID        `json:"session_uuid,omitempty"`
-	Outputs        []Output           `json:"-"`
 	TerminalReason string             `json:"terminal_reason,omitempty"`
 }

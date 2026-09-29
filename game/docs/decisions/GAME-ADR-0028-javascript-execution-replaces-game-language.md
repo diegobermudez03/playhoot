@@ -5,6 +5,7 @@ Created: 2026-09-27
 Last status change: 2026-09-27
 Supersedes: None
 Superseded by: None
+Addendum (2026-09-29): this retirement is fully realized as of `WORK-0038` - `game/language/v1/...` (`program`/`engine`/`engineservice`/`gameservice`) no longer exists in the repository, and every Session Runtime RuntimeTurn-producing operation executes exclusively through the separately deployed JavaScript Executor.
 
 ## Context
 

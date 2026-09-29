@@ -12,11 +12,20 @@ GameVersionArtifact
   BackendScript           - authored JavaScript source (required); executed by the JavaScript Executor
   FrontendScript          - authored frontend source (required); format not yet decided; stored, never parsed or executed by Playhoot itself
   GameContract            - this game's own declared event/data vocabulary, alongside (not replacing) the platform's own fixed command vocabulary
+  ParticipantConstraints  - required structural Session admission/capacity range: {Min, Max} (Max nil/absent means unlimited)
   Assets                  - optional list of {Key, Kind} - images/sounds/etc. uploaded directly to Playhoot; identified only by an internal logical Key, never a URL
   PlatformContractVersion - which version of the platform command vocabulary this artifact was authored against
 ```
 
-Both `BackendScript` and `FrontendScript` are mandatory. A valid artifact always has both scripts; there is no fallback/default-rendering path for a missing frontend script, and no "backend-only" artifact shape. `GameContract`, `Assets`, and `PlatformContractVersion` are the only fields that may be absent.
+Both `BackendScript` and `FrontendScript` are mandatory. A valid artifact always has both scripts; there is no fallback/default-rendering path for a missing frontend script, and no "backend-only" artifact shape. `GameContract`, `Assets`, and `PlatformContractVersion` are the only fields that may be absent; `ParticipantConstraints` is required (`Max` alone may be absent, meaning unlimited).
+
+## Participant Constraints
+
+**Added 2026-09-29, by explicit human decision, discovered missing during `WORK-0038`'s implementation** (see that WORK's own Completion Record and this document's Rationale And History section below). `ParticipantConstraints{Min, Max}` is structural Session admission/capacity metadata, not a game rule: Playhoot itself (`Join`/`Start`) must be able to enforce it *before* any authored JavaScript ever runs, so a lobby's supported participant range is known independently of executing untrusted game code. It travels alongside `GameContract` rather than inside it, because `GameContract`'s own schema is owned by the platform command-protocol WORK and is opaque to this record, while `ParticipantConstraints` is this record's own required field, always present, the same way `BackendScript`/`FrontendScript` are.
+
+The responsibility split this restates:
+- **Artifact/platform metadata (`ParticipantConstraints`)**: the structural supported participant range - reject a Join beyond `Max`, reject a Start below `Min`, know lobby capacity without executing the authored script.
+- **Authored JavaScript (`GameContract`/backend script logic)**: any additional game-specific restriction or behavior involving participants, layered inside the platform's structural bounds, never replacing them.
 
 ## Backend Script
 
@@ -52,3 +61,5 @@ Identical to `game/docs/decisions/GAME-ADR-0001-game-capability-persistence-tran
 ## Rationale And History
 
 Recorded in `docs/projects/active/js-runtime-migration/works/WORK-0044-game-version-artifact-model.md`, including why the frontend was initially (incorrectly) modeled as an optional reference to a separately-built package before being corrected to a mandatory, directly-stored script.
+
+`ParticipantConstraints` was added afterward, discovered missing during `WORK-0038`'s own implementation: `WORK-0038` found that `Join`/`Start`'s existing lobby-capacity gate (`definition.Players.Min`/`Max`) had no replacement once `program.Definition` was retired, and this record had no field for it. Resolved by explicit human decision (2026-09-29) to keep platform-level enforcement rather than delegate it to authored JavaScript - recorded here as an amendment to this WORK's own already-DONE Completion Record, not a rewrite of its Approved Design, per this repository's convention for amending closed WORK (see `WORK-0044`'s own file for the equivalent terminology-fix precedent).

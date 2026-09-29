@@ -21,8 +21,8 @@ import (
 func TestManagerCreate_Integration(t *testing.T) {
 	t.Run("creates_lobby_session_host_actor_and_active_join_code", func(t *testing.T) {
 		db := testdb.OpenSessionDB(t)
-		m := New(db, stubPinnedGameReader{})
-		fixture := testfixtures.SeedCurrentGameVersion(t, db, "function backend() {}", "function frontend() {}")
+		m := New(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
+		fixture := testfixtures.SeedCurrentGameVersion(t, db, "function backend() {}", "function frontend() {}", 1, nil)
 
 		result, err := m.Create(context.Background(), session.GameUUID(fixture.GameUUID), session.UserUUID(uuid.NewString()), "create-key-1")
 		require.NoError(t, err)
@@ -56,7 +56,7 @@ func TestManagerCreate_Integration(t *testing.T) {
 
 	t.Run("a_game_with_no_current_version_in_session_runtime_is_rejected", func(t *testing.T) {
 		db := testdb.OpenSessionDB(t)
-		m := New(db, stubPinnedGameReader{})
+		m := New(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
 
 		result, err := m.Create(context.Background(), session.GameUUID(uuid.NewString()), session.UserUUID(uuid.NewString()), "create-key-missing")
 		require.ErrorIs(t, err, session.ErrGameNotFound)
@@ -66,8 +66,8 @@ func TestManagerCreate_Integration(t *testing.T) {
 
 func TestManagerCreate_Integration_RepeatedSemanticallyEquivalentCreateReplays(t *testing.T) {
 	db := testdb.OpenSessionDB(t)
-	m := New(db, stubPinnedGameReader{})
-	fixture := testfixtures.SeedCurrentGameVersion(t, db, "function backend() {}", "function frontend() {}")
+	m := New(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
+	fixture := testfixtures.SeedCurrentGameVersion(t, db, "function backend() {}", "function frontend() {}", 1, nil)
 
 	gameUUID := session.GameUUID(fixture.GameUUID)
 	hostUserUUID := session.UserUUID(uuid.NewString())
@@ -86,9 +86,9 @@ func TestManagerCreate_Integration_RepeatedSemanticallyEquivalentCreateReplays(t
 
 func TestManagerCreate_Integration_ConflictingIdempotencyIdentityIsRejected(t *testing.T) {
 	db := testdb.OpenSessionDB(t)
-	m := New(db, stubPinnedGameReader{})
-	fixtureA := testfixtures.SeedCurrentGameVersion(t, db, "function backend() {}", "function frontend() {}")
-	fixtureB := testfixtures.SeedCurrentGameVersion(t, db, "function backend() {}", "function frontend() {}")
+	m := New(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
+	fixtureA := testfixtures.SeedCurrentGameVersion(t, db, "function backend() {}", "function frontend() {}", 1, nil)
+	fixtureB := testfixtures.SeedCurrentGameVersion(t, db, "function backend() {}", "function frontend() {}", 1, nil)
 
 	hostUserUUID := session.UserUUID(uuid.NewString())
 	_, err := m.Create(context.Background(), session.GameUUID(fixtureA.GameUUID), hostUserUUID, "create-key-conflict")
@@ -100,8 +100,8 @@ func TestManagerCreate_Integration_ConflictingIdempotencyIdentityIsRejected(t *t
 
 func TestManagerCreate_Integration_DifferentUsersReusingSameKeyDoNotCollide(t *testing.T) {
 	db := testdb.OpenSessionDB(t)
-	m := New(db, stubPinnedGameReader{})
-	fixture := testfixtures.SeedCurrentGameVersion(t, db, "function backend() {}", "function frontend() {}")
+	m := New(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
+	fixture := testfixtures.SeedCurrentGameVersion(t, db, "function backend() {}", "function frontend() {}", 1, nil)
 
 	gameUUID := session.GameUUID(fixture.GameUUID)
 	_, err := m.Create(context.Background(), gameUUID, session.UserUUID(uuid.NewString()), "shared-key")
@@ -126,8 +126,8 @@ func TestManagerCreate_Integration_DifferentUsersReusingSameKeyDoNotCollide(t *t
 // papers over that race.
 func TestManagerCreate_Integration_Concurrent(t *testing.T) {
 	db := testdb.OpenSessionDB(t)
-	m := New(db, stubPinnedGameReader{})
-	fixture := testfixtures.SeedCurrentGameVersion(t, db, "function backend() {}", "function frontend() {}")
+	m := New(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
+	fixture := testfixtures.SeedCurrentGameVersion(t, db, "function backend() {}", "function frontend() {}", 1, nil)
 
 	gameUUID := session.GameUUID(fixture.GameUUID)
 	hostUserUUID := session.UserUUID(uuid.NewString())

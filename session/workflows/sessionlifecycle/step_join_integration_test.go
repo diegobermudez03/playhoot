@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/diegobermudez03/playhoot/game/language/v1/program"
 	"github.com/diegobermudez03/playhoot/session"
 	"github.com/diegobermudez03/playhoot/session/internal/testdb"
 	"github.com/diegobermudez03/playhoot/session/internal/testfixtures"
@@ -25,7 +24,7 @@ func TestManagerJoin_Integration(t *testing.T) {
 		"creates_actor_and_activates_participant": func(t *testing.T, db *gorm.DB) test {
 			return test{
 				before: func(t *testing.T, db *gorm.DB) (testfixtures.SessionFixture, session.JoinCode, session.UserUUID) {
-					fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
+					fx := seedLobbySessionWithParticipantMax(t, db, time.Now().Add(10*time.Minute), intPtr(1))
 					testfixtures.SeedJoinCode(t, db, fx.SessionID, 1111, false)
 					return fx, 1111, session.UserUUID(uuid.NewString())
 				},
@@ -50,7 +49,7 @@ func TestManagerJoin_Integration(t *testing.T) {
 		"a_revoked_join_code_is_rejected": func(t *testing.T, db *gorm.DB) test {
 			return test{
 				before: func(t *testing.T, db *gorm.DB) (testfixtures.SessionFixture, session.JoinCode, session.UserUUID) {
-					fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
+					fx := seedLobbySessionWithParticipantMax(t, db, time.Now().Add(10*time.Minute), intPtr(1))
 					testfixtures.SeedJoinCode(t, db, fx.SessionID, 1112, true)
 					return fx, 1112, session.UserUUID(uuid.NewString())
 				},
@@ -62,7 +61,7 @@ func TestManagerJoin_Integration(t *testing.T) {
 		"lazily_materializes_expired_lobby_and_rejects": func(t *testing.T, db *gorm.DB) test {
 			return test{
 				before: func(t *testing.T, db *gorm.DB) (testfixtures.SessionFixture, session.JoinCode, session.UserUUID) {
-					fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(-1*time.Minute))
+					fx := seedLobbySessionWithParticipantMax(t, db, time.Now().Add(-1*time.Minute), intPtr(1))
 					testfixtures.SeedJoinCode(t, db, fx.SessionID, 1113, false)
 					return fx, 1113, session.UserUUID(uuid.NewString())
 				},
@@ -79,7 +78,7 @@ func TestManagerJoin_Integration(t *testing.T) {
 		"enforces_players_max": func(t *testing.T, db *gorm.DB) test {
 			return test{
 				before: func(t *testing.T, db *gorm.DB) (testfixtures.SessionFixture, session.JoinCode, session.UserUUID) {
-					fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
+					fx := seedLobbySessionWithParticipantMax(t, db, time.Now().Add(10*time.Minute), intPtr(1))
 					testfixtures.SeedJoinCode(t, db, fx.SessionID, 1114, false)
 					testfixtures.SeedActiveParticipant(t, db, fx.SessionID, uuid.NewString(), "Existing Player")
 					return fx, 1114, session.UserUUID(uuid.NewString())
@@ -98,7 +97,7 @@ func TestManagerJoin_Integration(t *testing.T) {
 			tc := setup(t, db)
 			fx, joinCode, userUUID := tc.before(t, db)
 
-			m := New(db, stubPinnedGameReader{playersMax: 1})
+			m := New(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
 			result, err := m.Join(context.Background(), joinCode, userUUID, "Alice", session.IdempotencyKey("join-key-"+uuid.NewString()))
 			tc.assert(t, db, fx, userUUID, result, err)
 		})
@@ -112,9 +111,9 @@ func TestManagerJoin_Integration(t *testing.T) {
 // (never silently replayed or succeeded).
 func TestManagerJoin_Integration_TokenSemantics(t *testing.T) {
 	db := testdb.OpenSessionDB(t)
-	fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
+	fx := seedLobbySessionWithParticipantMax(t, db, time.Now().Add(10*time.Minute), intPtr(4))
 	testfixtures.SeedJoinCode(t, db, fx.SessionID, 2211, false)
-	m := New(db, stubPinnedGameReader{playersMax: 4})
+	m := New(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
 	userUUID := session.UserUUID(uuid.NewString())
 
 	first, err := m.Join(context.Background(), 2211, userUUID, "Casey", "join-key-replay")
@@ -155,9 +154,9 @@ func TestManagerJoin_Integration_TokenSemantics(t *testing.T) {
 // idempotency namespace is (user_uuid, operation, idempotency_key).
 func TestManagerJoin_Integration_DifferentUsersSameKeyDoNotCollide(t *testing.T) {
 	db := testdb.OpenSessionDB(t)
-	fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
+	fx := seedLobbySessionWithParticipantMax(t, db, time.Now().Add(10*time.Minute), intPtr(4))
 	testfixtures.SeedJoinCode(t, db, fx.SessionID, 2212, false)
-	m := New(db, stubPinnedGameReader{playersMax: 4})
+	m := New(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
 
 	_, err := m.Join(context.Background(), 2212, session.UserUUID(uuid.NewString()), "A", "shared-join-key")
 	require.NoError(t, err)
@@ -168,34 +167,29 @@ func TestManagerJoin_Integration_DifferentUsersSameKeyDoNotCollide(t *testing.T)
 }
 
 // TestManagerJoin_Integration_PinnedDefinitionImmutability proves Join
-// enforces the Session's pinned game_definition_uuid, never the Game's
-// current version, by simulating "current version changed" directly in the
-// pinned-definition reader rather than through a literal publish workflow.
+// enforces the Session's own pinned game_definition_uuid, never the Game's
+// current version: a second, different artifact becomes the Game's current
+// version (session_games.current_definition_uuid) after Create, but the
+// already-created Session's own sessions.game_definition_uuid still points
+// at the original (V1) artifact, whose participant_max Join must keep
+// enforcing.
 func TestManagerJoin_Integration_PinnedDefinitionImmutability(t *testing.T) {
 	db := testdb.OpenSessionDB(t)
-	fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
+	fx := seedLobbySessionWithParticipantMax(t, db, time.Now().Add(10*time.Minute), intPtr(1)) // V1's participant_max, pinned at Create time
 	testfixtures.SeedJoinCode(t, db, fx.SessionID, 2213, false)
 	testfixtures.SeedActiveParticipant(t, db, fx.SessionID, uuid.NewString(), "Existing")
 
-	pinnedReader := recordingPinnedGameReader{
-		playersMax: 1, // V1's players.max, pinned at Create time
-	}
-	m := New(db, &pinnedReader)
+	// V2: a second artifact for a *different* Game, never referenced by
+	// this Session - proves Join reads by the Session's own pinned
+	// definition_uuid, not by re-resolving "current version" through
+	// session_games at all.
+	testfixtures.SeedCurrentGameVersion(t, db, "function backend() {}", "function frontend() {}", 1, intPtr(4))
+
+	m := New(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
 
 	result, err := m.Join(context.Background(), 2213, session.UserUUID(uuid.NewString()), "Late Joiner", "join-key-pinned")
 	require.NoError(t, err)
-	require.Equal(t, session.JoinOutcomeLobbyFull, result.Outcome, "Join must still enforce the pinned V1 players.max, not a hypothetical current V2")
-	require.Equal(t, []string{fx.GameDefinitionUUID}, pinnedReader.requestedUUIDs, "Join must load the Definition by the Session's pinned game_definition_uuid, never by re-resolving the Game's current version")
-}
-
-type recordingPinnedGameReader struct {
-	playersMax     int
-	requestedUUIDs []string
-}
-
-func (r *recordingPinnedGameReader) GetGameDefinition(ctx context.Context, gameDefinitionUUID string) (*program.Definition, error) {
-	r.requestedUUIDs = append(r.requestedUUIDs, gameDefinitionUUID)
-	return &program.Definition{Players: program.PlayerPolicy{Max: r.playersMax}}, nil
+	require.Equal(t, session.JoinOutcomeLobbyFull, result.Outcome, "Join must still enforce the pinned V1 participant_max, not a hypothetical current V2")
 }
 
 // TestManagerJoin_Integration_ConcurrentJoinsForFinalSlot proves - against a
@@ -204,9 +198,9 @@ func (r *recordingPinnedGameReader) GetGameDefinition(ctx context.Context, gameD
 // than an application-level check-then-act race.
 func TestManagerJoin_Integration_ConcurrentJoinsForFinalSlot(t *testing.T) {
 	db := testdb.OpenSessionDB(t)
-	fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
+	fx := seedLobbySessionWithParticipantMax(t, db, time.Now().Add(10*time.Minute), intPtr(1))
 	testfixtures.SeedJoinCode(t, db, fx.SessionID, 6001, false)
-	m := New(db, stubPinnedGameReader{playersMax: 1})
+	m := New(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
 
 	userA := session.UserUUID(uuid.NewString())
 	userB := session.UserUUID(uuid.NewString())
@@ -264,9 +258,9 @@ func TestManagerJoin_Integration_ConcurrentJoinsForFinalSlot(t *testing.T) {
 // determines a consistent, non-corrupted final state.
 func TestManagerJoin_Integration_ConcurrentJoinRacingLeave(t *testing.T) {
 	db := testdb.OpenSessionDB(t)
-	m := New(db, stubPinnedGameReader{playersMax: 1})
+	m := New(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
 
-	fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
+	fx := seedLobbySessionWithParticipantMax(t, db, time.Now().Add(10*time.Minute), intPtr(1))
 	testfixtures.SeedJoinCode(t, db, fx.SessionID, 7001, false)
 
 	existingUser := session.UserUUID(uuid.NewString())
@@ -319,9 +313,9 @@ func TestManagerJoin_Integration_ConcurrentJoinRacingLeave(t *testing.T) {
 // other.
 func TestManagerJoin_Integration_ConcurrentOperationRacingLobbyExpiration(t *testing.T) {
 	db := testdb.OpenSessionDB(t)
-	m := New(db, stubPinnedGameReader{playersMax: 4})
+	m := New(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
 
-	fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(-1*time.Minute))
+	fx := seedLobbySessionWithParticipantMax(t, db, time.Now().Add(-1*time.Minute), intPtr(4))
 	testfixtures.SeedJoinCode(t, db, fx.SessionID, 7002, false)
 
 	existingUser := session.UserUUID(uuid.NewString())

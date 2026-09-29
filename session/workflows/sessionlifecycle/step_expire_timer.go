@@ -2,62 +2,53 @@ package sessionlifecycle
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
-	"github.com/diegobermudez03/playhoot/game/language/v1/engine"
-	"github.com/diegobermudez03/playhoot/game/language/v1/engine/engineservice"
 	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/monitoring"
 	"github.com/diegobermudez03/playhoot/session"
-	"github.com/diegobermudez03/playhoot/session/workflows/sessionlifecycle/internal/clientoutputs"
+	"github.com/diegobermudez03/playhoot/session/internal/executor"
 	"github.com/diegobermudez03/playhoot/session/workflows/sessionlifecycle/internal/completion"
-	"github.com/diegobermudez03/playhoot/session/workflows/sessionlifecycle/internal/replay"
+	"github.com/diegobermudez03/playhoot/session/workflows/sessionlifecycle/internal/platform"
 	internalrepo "github.com/diegobermudez03/playhoot/session/workflows/sessionlifecycle/internal/repo"
 	"github.com/diegobermudez03/playhoot/utils"
 	"gorm.io/gorm"
 )
 
-// expireTimerRepoAPI is ExpireTimer's own narrow persistence contract. It
-// satisfies replay.Repo (GetRuntimeStart/ListRuntimeTurns/
-// GetInteractionByID/GetTimerObligationByID) so replay.LoadPriorSignals can
-// be called directly with it, exactly like answerInteractionRepoAPI already
-// does. LockSessionByID is this workflow's own locking mechanic, not a
+// expireTimerRepoAPI is ExpireTimer's own narrow persistence contract.
+// LockSessionByID is this workflow's own locking mechanic, not a
 // domain-wide protocol.
 type expireTimerRepoAPI interface {
 	LockSessionByID(ctx context.Context, tx *gorm.DB, sessionID uint) (*internalrepo.Session, error)
 	ResolveSessionForTimerObligation(ctx context.Context, timerObligationUUID string) (*uint, error)
 	FindTimerObligationByUUID(ctx context.Context, tx *gorm.DB, timerObligationUUID string) (*internalrepo.TimerObligation, error)
+	ListActiveParticipantsForRoster(ctx context.Context, tx *gorm.DB, sessionID uint) ([]internalrepo.RosterParticipant, error)
 	GetRuntimeTurn(ctx context.Context, tx *gorm.DB, turnID uint) (*internalrepo.RuntimeTurn, error)
-	GetRuntimeStart(ctx context.Context, tx *gorm.DB, sessionID uint) (*internalrepo.RuntimeStart, error)
-	ListRuntimeTurns(ctx context.Context, tx *gorm.DB, sessionID uint) ([]internalrepo.RuntimeTurnRecord, error)
-	GetInteractionByID(ctx context.Context, tx *gorm.DB, interactionID uint) (*internalrepo.Interaction, error)
-	GetTimerObligationByID(ctx context.Context, tx *gorm.DB, timerObligationID uint) (*internalrepo.TimerObligation, error)
-	GetCauseEventByID(ctx context.Context, tx *gorm.DB, causeEventID uint) (*internalrepo.CauseEvent, error)
-	CreateRuntimeTurn(ctx context.Context, tx *gorm.DB, sessionID uint, sequence uint64, sourceKind string, sourceInteractionID *uint, sourceTimerObligationID *uint, sourceCauseEventID *uint, actorID *uint) (uint, error)
+	GetGameVersionArtifact(ctx context.Context, tx *gorm.DB, definitionUUID string) (*internalrepo.GameVersionArtifact, error)
+	CreateRuntimeTurn(ctx context.Context, tx *gorm.DB, sessionID uint, sequence uint64, sourceKind string, sourceTimerObligationID *uint, sourceCauseEventID *uint, actorID *uint, newState json.RawMessage) (uint, error)
 	SetCurrentTurn(ctx context.Context, tx *gorm.DB, sessionID uint, currentTurnID uint) error
 	RenewActivityDeadline(ctx context.Context, tx *gorm.DB, sessionID uint, activityExpiresAt time.Time) error
 	CloseTimerObligation(ctx context.Context, tx *gorm.DB, timerObligationID uint, closedByTurnID uint) error
 	SetSessionTerminal(ctx context.Context, tx *gorm.DB, sessionID uint, terminalAt time.Time, terminalReason string) error
-	CreateRuntimeFailure(ctx context.Context, tx *gorm.DB, sessionID uint, failureKind string, errorCode string, errorMessage string, baseTurnID *uint, attemptedSequence uint64, sourceKind string, sourceInteractionID *uint, sourceTimerObligationID *uint, actorID *uint, diagnosticPayload []byte) error
-	CloseAllActiveInteractionsForSession(ctx context.Context, tx *gorm.DB, sessionID uint, reason string) error
+	CreateRuntimeFailure(ctx context.Context, tx *gorm.DB, sessionID uint, failureKind string, errorCode string, errorMessage string, baseTurnID *uint, attemptedSequence uint64, sourceKind string, sourceTimerObligationID *uint, actorID *uint, diagnosticPayload []byte) error
 	CancelAllActiveTimerObligationsForSession(ctx context.Context, tx *gorm.DB, sessionID uint, reason string) error
 }
 
 // ExpireTimer submits the previously scheduled timer identified by
-// timerObligationUUID as expired, driving whatever transition the running
-// game declared for it - an ordinary timer or one of a keyed timer's
-// independent occurrences. At most one mutation against a given Session
+// timerObligationUUID as expired, driving whatever reaction the running
+// script declared for it. At most one mutation against a given Session
 // executes at a time; this call waits its turn and then always reloads
 // current authoritative state before applying the expiration, exactly like
-// AnswerInteraction already does - a concurrent interaction response and
-// timer expiration for the same Session must never both execute against the
-// same starting state.
+// SubmitPlayerEvent already does - a concurrent player event and timer
+// expiration for the same Session must never both execute against the same
+// starting state.
 //
 // No idempotency key is required: the obligation's own persisted state is
 // the dedup identity. A duplicate/late delivery against an already-resolved
-// obligation replays ExpireTimerOutcomeStale without a second engine effect.
+// obligation replays ExpireTimerOutcomeStale without a second execution.
 func (m *Manager) ExpireTimer(ctx context.Context, timerObligationUUID session.TimerObligationUUID) (session.ExpireTimerResult, error) {
 	defer logging.Step(ctx, "SessionLifecycle.ExpireTimer").Close()
 	logging.LogFields(ctx, logging.Field("timer_obligation_uuid", string(timerObligationUUID)))
@@ -76,9 +67,8 @@ func (m *Manager) ExpireTimer(ctx context.Context, timerObligationUUID session.T
 }
 
 // expireTimerInTx is ExpireTimer's per-transaction logic, structurally
-// mirroring answerInteractionInTx: an obligation lookup and a
-// SignalKindTimerExpired/SignalKindKeyedTimerExpired signal in place of an
-// interaction lookup and SignalKindInteractionAnswered.
+// mirroring submitPlayerEventInTx: an obligation lookup and a TIMER_EXPIRED
+// Event in place of a PLAYER_EVENT.
 func (m *Manager) expireTimerInTx(ctx context.Context, tx *gorm.DB, sessionID uint, timerObligationUUID session.TimerObligationUUID) (session.ExpireTimerResult, error) {
 	lockedSession, err := m.expireTimerRepo.LockSessionByID(ctx, tx, sessionID)
 	if err != nil {
@@ -106,7 +96,7 @@ func (m *Manager) expireTimerInTx(ctx context.Context, tx *gorm.DB, sessionID ui
 
 	if obligation.State != session.TimerObligationStateActive {
 		// Already CONSUMED or CANCELLED - an ordinary duplicate/late physical
-		// timer delivery, no engine effect.
+		// timer delivery, no execution effect.
 		return session.ExpireTimerResult{Outcome: session.ExpireTimerOutcomeStale, SessionUUID: session.SessionUUID(lockedSession.UUID)}, nil
 	}
 
@@ -129,58 +119,41 @@ func (m *Manager) expireTimerInTx(ctx context.Context, tx *gorm.DB, sessionID ui
 
 	now := time.Now().UTC()
 
-	definition, err := m.pinnedGameReader.GetGameDefinition(ctx, lockedSession.GameDefinitionUUID)
+	artifact, err := m.expireTimerRepo.GetGameVersionArtifact(ctx, tx, lockedSession.GameDefinitionUUID)
 	if err != nil {
 		return session.ExpireTimerResult{}, err
 	}
-	if definition == nil {
-		monitoring.Alert(ctx, "session pinned game definition is missing")
+	if artifact == nil {
+		monitoring.Alert(ctx, "session pinned game version artifact is missing")
 		return session.ExpireTimerResult{}, session.ErrPinnedDefinitionMissing
 	}
-	compiledProgram, diagnostics := engineservice.Compile(*definition)
-	if diagnostics.HasErrors() {
-		monitoring.Alert(ctx, fmt.Sprintf(
-			"pinned game definition failed to recompile expiring timer: session_uuid=%s game_definition_uuid=%s",
-			lockedSession.UUID, lockedSession.GameDefinitionUUID,
-		))
-		return m.terminalizeExpireTimerFatal(ctx, tx, lockedSession, now, session.TerminalReasonRuntimeStateInvalid,
-			RuntimeFailureKindStateInvalid, RuntimeFailureErrorCodeDefinitionRecompileFailed, formatDiagnostics(diagnostics), &currentTurn.ID, currentTurn.Sequence+1, obligation.ID)
-	}
 
-	// Current authoritative Runtime state is never loaded from a persisted
-	// Snapshot (none exists) - engineservice.AdvanceTurn internally replays
-	// every durable cause committed so far, given only the ordered signal log
-	// below.
-	input, priorSignals, err := replay.LoadPriorSignals(ctx, tx, m.expireTimerRepo, lockedSession.ID)
+	roster, err := m.expireTimerRepo.ListActiveParticipantsForRoster(ctx, tx, lockedSession.ID)
 	if err != nil {
-		return session.ExpireTimerResult{}, fmt.Errorf("reconstructing current runtime state: %s", err)
+		return session.ExpireTimerResult{}, err
 	}
+	known := knownActorsFromRoster(roster)
 
-	var signal engine.Signal
-	if obligation.EngineKey == nil {
-		signal = engine.Signal{Kind: engine.SignalKindTimerExpired, Slot: obligation.EngineSlot}
-	} else {
-		key, err := engineservice.DecodeValue(obligation.EngineKey)
-		if err != nil {
-			return session.ExpireTimerResult{}, fmt.Errorf("decoding timer obligation key: %s", err)
-		}
-		signal = engine.Signal{Kind: engine.SignalKindKeyedTimerExpired, Slot: obligation.EngineSlot, Key: key}
-	}
-
-	outputs, err := engineservice.AdvanceTurn(compiledProgram, input, priorSignals, signal, engine.DefaultLimits())
+	// EngineSlot is already the opaque Timer identifier TIMER_EXPIRED needs;
+	// EngineKey is passed through as-is as Data rather than decoded, since
+	// nothing currently creates an obligation with a non-nil EngineKey.
+	event := platform.NewTimerExpired(obligation.EngineSlot, obligation.EngineKey)
+	encodedEvent, err := platform.EncodeEvent(event)
 	if err != nil {
-		if errors.Is(err, engineservice.ErrReplayDivergence) {
-			// Every element of priorSignals already succeeded once - it is
-			// durable specifically because it did - so failing to replay it
-			// identically is a data-integrity condition, never an ordinary
-			// decline.
-			monitoring.Alert(ctx, fmt.Sprintf("session %d: %s", lockedSession.ID, err))
-			return session.ExpireTimerResult{}, fmt.Errorf("reconstructing current runtime state: %s", err)
-		}
-		// The engine's own stale/cancelled-delivery backstop
-		// (program.TimerSlotDeclaration's documented contract): no RuntimeTurn,
-		// no Snapshot mutation, Session stays RUNNING.
-		if errors.Is(err, engineservice.ErrSignalRejected) || errors.Is(err, engineservice.ErrInputRejected) {
+		return session.ExpireTimerResult{}, fmt.Errorf("encoding timer expired event: %s", err)
+	}
+
+	output, err := m.executor.Execute(ctx, executor.ExecutionInput{
+		Script:        executor.ResolvedScript{Source: artifact.BackendScript},
+		PreviousState: currentTurn.NewState,
+		Event:         encodedEvent,
+		Context:       executor.ExecutionContext{LogicalTime: now, RandomSeed: drawSeed()},
+	})
+	if err != nil {
+		var rejected *executor.ScriptRejectedError
+		if errors.As(err, &rejected) {
+			// The script's own stale/cancelled-delivery backstop: no
+			// RuntimeTurn, no state mutation, Session stays RUNNING.
 			return session.ExpireTimerResult{Outcome: session.ExpireTimerOutcomeRejected, SessionUUID: session.SessionUUID(lockedSession.UUID)}, nil
 		}
 		errorCode, errorMessage := classifyExecutionError(err)
@@ -188,18 +161,17 @@ func (m *Manager) expireTimerInTx(ctx context.Context, tx *gorm.DB, sessionID ui
 			RuntimeFailureKindExecution, errorCode, errorMessage, &currentTurn.ID, currentTurn.Sequence+1, obligation.ID)
 	}
 
+	commands, err := parseCommands(output.RequestedCommands, known)
+	if err != nil {
+		return session.ExpireTimerResult{Outcome: session.ExpireTimerOutcomeRejected, SessionUUID: session.SessionUUID(lockedSession.UUID)}, nil
+	}
+
 	obligationID := obligation.ID
-	turnID, err := m.expireTimerRepo.CreateRuntimeTurn(ctx, tx, lockedSession.ID, currentTurn.Sequence+1, replay.TimerExpiredSourceKind, nil, &obligationID, nil, nil)
+	turnID, err := m.expireTimerRepo.CreateRuntimeTurn(ctx, tx, lockedSession.ID, currentTurn.Sequence+1, timerExpiredSourceKind, &obligationID, nil, nil, output.NewState)
 	if err != nil {
 		return session.ExpireTimerResult{}, err
 	}
 	if err := m.expireTimerRepo.CloseTimerObligation(ctx, tx, obligationID, turnID); err != nil {
-		return session.ExpireTimerResult{}, err
-	}
-	if err := m.interactionsCapturer.Capture(ctx, tx, lockedSession.ID, turnID, outputs); err != nil {
-		return session.ExpireTimerResult{}, err
-	}
-	if err := m.timersCapturer.Capture(ctx, tx, lockedSession.ID, turnID, outputs); err != nil {
 		return session.ExpireTimerResult{}, err
 	}
 	if err := m.expireTimerRepo.SetCurrentTurn(ctx, tx, lockedSession.ID, turnID); err != nil {
@@ -209,12 +181,9 @@ func (m *Manager) expireTimerInTx(ctx context.Context, tx *gorm.DB, sessionID ui
 		return session.ExpireTimerResult{}, err
 	}
 
-	terminalReason, terminated := completion.Detect(outputs)
+	terminalReason, terminated := completion.Detect(commands)
 	if terminated {
 		if err := m.expireTimerRepo.SetSessionTerminal(ctx, tx, lockedSession.ID, now, terminalReason); err != nil {
-			return session.ExpireTimerResult{}, err
-		}
-		if err := m.expireTimerRepo.CloseAllActiveInteractionsForSession(ctx, tx, lockedSession.ID, session.InteractionClosureReasonSessionTerminated); err != nil {
 			return session.ExpireTimerResult{}, err
 		}
 		if err := m.expireTimerRepo.CancelAllActiveTimerObligationsForSession(ctx, tx, lockedSession.ID, session.TimerObligationClosureReasonSessionTerminated); err != nil {
@@ -222,25 +191,19 @@ func (m *Manager) expireTimerInTx(ctx context.Context, tx *gorm.DB, sessionID ui
 		}
 	}
 
-	mappedOutputs, err := m.mapOutputs(ctx, tx, lockedSession.ID, clientoutputs.ClientFacing(outputs))
-	if err != nil {
-		return session.ExpireTimerResult{}, fmt.Errorf("mapping client-facing outputs: %s", err)
-	}
-
-	return session.ExpireTimerResult{Outcome: session.ExpireTimerOutcomeExpired, SessionUUID: session.SessionUUID(lockedSession.UUID), Outputs: mappedOutputs, TerminalReason: terminalReason}, nil
+	return session.ExpireTimerResult{Outcome: session.ExpireTimerOutcomeExpired, SessionUUID: session.SessionUUID(lockedSession.UUID), TerminalReason: terminalReason}, nil
 }
 
 // terminalizeExpireTimerFatal performs ExpireTimer's fatal path: atomically
 // terminalizes the Session, persists the session_runtime_failures diagnostic
 // record (sourced from the timer obligation whose expiration was being
-// processed), closes every currently-ACTIVE session_interactions row, and
-// cancels every currently-ACTIVE session_timer_obligations row for it,
-// mirroring terminalizeAnswerInteractionFatal exactly. No partial
+// processed), and cancels every currently-ACTIVE timer obligation for it,
+// mirroring terminalizeSubmitPlayerEventFatal exactly. No partial
 // RuntimeTurn is ever persisted: sessions.current_turn_id remains at the
 // last committed Turn.
 func (m *Manager) terminalizeExpireTimerFatal(ctx context.Context, tx *gorm.DB, lockedSession *internalrepo.Session, terminalAt time.Time, terminalReason string, failureKind string, errorCode string, errorMessage string, baseTurnID *uint, attemptedSequence uint64, timerObligationID uint) (session.ExpireTimerResult, error) {
 	if err := m.materializeRuntimeFailure(ctx, tx, m.expireTimerRepo, lockedSession, terminalAt, terminalReason,
-		failureKind, errorCode, errorMessage, baseTurnID, attemptedSequence, replay.TimerExpiredSourceKind, nil, &timerObligationID, nil); err != nil {
+		failureKind, errorCode, errorMessage, baseTurnID, attemptedSequence, timerExpiredSourceKind, &timerObligationID, nil); err != nil {
 		return session.ExpireTimerResult{}, err
 	}
 	return session.ExpireTimerResult{Outcome: session.ExpireTimerOutcomeRuntimeExecutionFailed, SessionUUID: session.SessionUUID(lockedSession.UUID)}, nil

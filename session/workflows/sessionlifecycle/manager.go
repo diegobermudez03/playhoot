@@ -18,15 +18,14 @@ package sessionlifecycle
 import (
 	"time"
 
+	"github.com/diegobermudez03/playhoot/session/internal/executor"
 	"github.com/diegobermudez03/playhoot/session/workflows/sessionlifecycle/internal/activity"
 	"github.com/diegobermudez03/playhoot/session/workflows/sessionlifecycle/internal/expiration"
-	"github.com/diegobermudez03/playhoot/session/workflows/sessionlifecycle/internal/interactions"
 	internalrepo "github.com/diegobermudez03/playhoot/session/workflows/sessionlifecycle/internal/repo"
-	"github.com/diegobermudez03/playhoot/session/workflows/sessionlifecycle/internal/timers"
 	"gorm.io/gorm"
 )
 
-//go:generate mockgen -package=sessionlifecycle -destination=mocks_test.go . createRepoAPI,joinRepoAPI,leaveRepoAPI,startRepoAPI,answerInteractionRepoAPI,expireTimerRepoAPI,submitUserIntentRepoAPI,cancelSessionRepoAPI,outputsRepoAPI,gamePinnedDefinitionReader
+//go:generate mockgen -package=sessionlifecycle -destination=mocks_test.go . createRepoAPI,joinRepoAPI,leaveRepoAPI,startRepoAPI,submitPlayerEventRepoAPI,expireTimerRepoAPI,cancelSessionRepoAPI
 
 // defaultLobbyTTL is the lobby lifetime applied when no other TTL
 // configuration is supplied.
@@ -39,32 +38,32 @@ const defaultActivityTTL = 10 * time.Minute
 // Session lifecycle idempotency operation labels, scoping each command's
 // idempotency identity to (UserUUID, operation, IdempotencyKey).
 const (
-	operationCreate           = "CREATE"
-	operationJoin             = "JOIN"
-	operationLeave            = "LEAVE"
-	operationStart            = "START"
-	operationSubmitUserIntent = "SUBMIT_USER_INTENT"
-	operationCancelSession    = "CANCEL_SESSION"
+	operationCreate            = "CREATE"
+	operationJoin              = "JOIN"
+	operationLeave             = "LEAVE"
+	operationStart             = "START"
+	operationSubmitPlayerEvent = "SUBMIT_PLAYER_EVENT"
+	operationCancelSession     = "CANCEL_SESSION"
 )
 
 // Manager is the Session lifecycle workflow controller, exposing
-// Create/Join/Leave/Start/AnswerInteraction as its steps: LOBBY admission
-// and RUNNING-phase execution both stay on this one Manager rather than
-// splitting into a separate workflow package. Each step depends on its own
-// narrow persistence contract naming only the methods that step actually
-// calls, rather than one shared repository interface - even though a single
-// concrete internal/repo.Repo currently satisfies all of them - so adding a
-// method for one step never forces every other step's interface, mock, and
-// test to change with it. RuntimeTurn draining/bound execution is entirely
-// owned by `engineservice.StartTurn`/`AdvanceTurn` - this package never
-// implements any part of the engine's own execution model itself.
+// Create/Join/Leave/Start/SubmitPlayerEvent/CancelSession/ExpireTimer as its
+// steps: LOBBY admission and RUNNING-phase execution both stay on this one
+// Manager rather than splitting into a separate workflow package. Each step
+// depends on its own narrow persistence contract naming only the methods
+// that step actually calls, rather than one shared repository interface -
+// even though a single concrete internal/repo.Repo currently satisfies all
+// of them - so adding a method for one step never forces every other step's
+// interface, mock, and test to change with it. Execution itself is entirely
+// owned by the injected executor.Executor port - this package never
+// implements any part of the sandboxed JavaScript execution model itself,
+// and holds no dependency on how/where the Executor actually runs.
 //
 // Manager decides transaction scope itself by calling
 // utils.RunInDBTransaction directly, rather than holding a separate injected
 // `transactor` dependency whose only purpose would be to indirect into that
-// already generic helper. Manager does not hold a raw *gorm.DB handle
-// itself, and does not satisfy utils.DBServicer itself either - its own
-// internal/repo.Repo already owns the db handle (that is Repo's job, not
+// already generic helper. Manager holds no persistence handle of its own -
+// its own internal/repo.Repo already owns it (that is Repo's job, not
 // Manager's), so Manager passes its dbServicer field, backed by that same
 // Repo value, directly to utils.RunInDBTransaction instead of duplicating
 // the handle onto Manager just to shoehorn Manager into the helper's
@@ -74,20 +73,16 @@ type Manager struct {
 	joinRepo              joinRepoAPI
 	leaveRepo             leaveRepoAPI
 	startRepo             startRepoAPI
-	answerInteractionRepo answerInteractionRepoAPI
 	expireTimerRepo       expireTimerRepoAPI
-	submitUserIntentRepo  submitUserIntentRepoAPI
+	submitPlayerEventRepo submitPlayerEventRepoAPI
 	cancelSessionRepo     cancelSessionRepoAPI
-	outputsRepo           outputsRepoAPI
 
 	dbServicer dbServicer
 
-	lobbyExpirer         *expiration.Expirer
-	activityExpirer      *activity.Expirer
-	interactionsCapturer *interactions.Capturer
-	timersCapturer       *timers.Capturer
+	lobbyExpirer    *expiration.Expirer
+	activityExpirer *activity.Expirer
 
-	pinnedGameReader gamePinnedDefinitionReader
+	executor executor.Executor
 
 	lobbyTTL    time.Duration
 	activityTTL time.Duration
@@ -100,30 +95,27 @@ type dbServicer interface {
 	GetDB() *gorm.DB
 }
 
-// New constructs a Manager. pinnedGameReader loads an already-pinned
-// immutable Game Definition by its own Definition/Version UUID, never
-// "current version", since the pinned Definition must stay immutable for
-// the lifetime of the Session. Create needs no equivalent Game Management
-// reader: it resolves the Game's current pinnable version entirely from
-// Session Runtime's own tables through createRepoAPI.
-func New(db *gorm.DB, pinnedGameReader gamePinnedDefinitionReader) *Manager {
+// New constructs a Manager. exec is Session Runtime's own caller-side port
+// onto the separately deployed JavaScript Executor - every RUNNING-phase
+// step calls it, never a local/in-process execution mechanism. Create needs
+// no Game Management reader at all: it resolves the Game's current
+// pinnable version, and every RUNNING-phase step resolves its pinned
+// artifact, entirely from Session Runtime's own tables through
+// internal/repo.
+func New(db *gorm.DB, exec executor.Executor) *Manager {
 	r := internalrepo.New(db)
 	return &Manager{
 		createRepo:            r,
 		joinRepo:              r,
 		leaveRepo:             r,
 		startRepo:             r,
-		answerInteractionRepo: r,
 		expireTimerRepo:       r,
-		submitUserIntentRepo:  r,
+		submitPlayerEventRepo: r,
 		cancelSessionRepo:     r,
-		outputsRepo:           r,
 		dbServicer:            r,
 		lobbyExpirer:          expiration.NewExpirer(r),
 		activityExpirer:       activity.NewExpirer(r),
-		interactionsCapturer:  interactions.NewCapturer(r),
-		timersCapturer:        timers.NewCapturer(r),
-		pinnedGameReader:      pinnedGameReader,
+		executor:              exec,
 		lobbyTTL:              defaultLobbyTTL,
 		activityTTL:           defaultActivityTTL,
 	}

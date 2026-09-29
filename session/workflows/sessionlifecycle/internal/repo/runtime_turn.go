@@ -2,49 +2,50 @@ package repo
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"gorm.io/gorm"
 )
 
 // runtimeTurnInsert is the persisted shape of one committed RuntimeTurn.
-// SourceInteractionID/SourceTimerObligationID/SourceCauseEventID/ActorID
-// are nil for a Turn with no such cause. There is no Snapshot column: a
-// Turn row identifies which durable cause happened and in what order,
-// never the resulting state - current/historical Runtime state is always
-// reconstructed by replaying those causes instead.
+// SourceTimerObligationID/SourceCauseEventID/ActorID are nil for a Turn
+// with no such cause. NewState is the authoritative state immediately after
+// this Turn committed, stored opaque - Session Runtime never decodes/
+// interprets it beyond passing it through to the Executor as the next
+// call's PreviousState.
 type runtimeTurnInsert struct {
-	ID                      uint   `gorm:"column:id"`
-	SessionID               uint   `gorm:"column:session_id"`
-	Sequence                uint64 `gorm:"column:sequence"`
-	SourceKind              string `gorm:"column:source_kind"`
-	SourceInteractionID     *uint  `gorm:"column:source_interaction_id"`
-	SourceTimerObligationID *uint  `gorm:"column:source_timer_obligation_id"`
-	SourceCauseEventID      *uint  `gorm:"column:source_cause_event_id"`
-	ActorID                 *uint  `gorm:"column:actor_id"`
+	ID                      uint            `gorm:"column:id"`
+	SessionID               uint            `gorm:"column:session_id"`
+	Sequence                uint64          `gorm:"column:sequence"`
+	SourceKind              string          `gorm:"column:source_kind"`
+	SourceTimerObligationID *uint           `gorm:"column:source_timer_obligation_id"`
+	SourceCauseEventID      *uint           `gorm:"column:source_cause_event_id"`
+	ActorID                 *uint           `gorm:"column:actor_id"`
+	NewState                json.RawMessage `gorm:"column:new_state"`
 }
 
 func (runtimeTurnInsert) TableName() string { return "session_runtime_turns" }
 
-// CreateRuntimeTurn persists one committed RuntimeTurn's replay-input
-// envelope. sourceInteractionID/sourceTimerObligationID/sourceCauseEventID/
-// actorID are the Turn's own cause/actor references, nil when the Turn has
-// no such cause - exactly one of sourceInteractionID/
-// sourceTimerObligationID/sourceCauseEventID is ever non-nil, or all three
-// are nil (Start's own Turn). sourceCauseEventID is always nil at creation
-// time even for a Turn a cause event will own: session_cause_events.
-// runtime_turn_id is NOT NULL, so the cause event row can only be created
-// after this Turn exists - see SetRuntimeTurnCauseEvent, which backfills
-// this column once that row is created. Returns the new row's internal id.
-func (r *Repo) CreateRuntimeTurn(ctx context.Context, tx *gorm.DB, sessionID uint, sequence uint64, sourceKind string, sourceInteractionID *uint, sourceTimerObligationID *uint, sourceCauseEventID *uint, actorID *uint) (uint, error) {
+// CreateRuntimeTurn persists one committed RuntimeTurn: newState is
+// ExecutionOutput.NewState, stored opaque. sourceTimerObligationID/
+// sourceCauseEventID/actorID are the Turn's own cause/actor references, nil
+// when the Turn has no such cause - at most one of sourceTimerObligationID/
+// sourceCauseEventID is ever non-nil (Start's own Turn has neither).
+// sourceCauseEventID is always nil at creation time even for a Turn a cause
+// event will own: session_cause_events.runtime_turn_id is NOT NULL, so the
+// cause event row can only be created after this Turn exists - see
+// SetRuntimeTurnCauseEvent, which backfills this column once that row is
+// created. Returns the new row's internal id.
+func (r *Repo) CreateRuntimeTurn(ctx context.Context, tx *gorm.DB, sessionID uint, sequence uint64, sourceKind string, sourceTimerObligationID *uint, sourceCauseEventID *uint, actorID *uint, newState json.RawMessage) (uint, error) {
 	row := runtimeTurnInsert{
 		SessionID:               sessionID,
 		Sequence:                sequence,
 		SourceKind:              sourceKind,
-		SourceInteractionID:     sourceInteractionID,
 		SourceTimerObligationID: sourceTimerObligationID,
 		SourceCauseEventID:      sourceCauseEventID,
 		ActorID:                 actorID,
+		NewState:                newState,
 	}
 	if err := tx.WithContext(ctx).Create(&row).Error; err != nil {
 		return 0, fmt.Errorf("creating runtime turn: %s", err)
@@ -67,10 +68,13 @@ func (r *Repo) SetRuntimeTurnCauseEvent(ctx context.Context, tx *gorm.DB, turnID
 
 // RuntimeTurn is the persisted facts of one committed RuntimeTurn needed to
 // resume execution from it: its own sequence, to compute the next Turn's
-// sequence.
+// sequence, and NewState, the authoritative state a subsequent Execute call
+// passes as PreviousState - "current state" for any operation is simply this
+// column for the row sessions.current_turn_id already points at.
 type RuntimeTurn struct {
 	ID       uint
 	Sequence uint64
+	NewState json.RawMessage
 }
 
 // GetRuntimeTurn loads turnID's persisted facts, for a RUNNING-phase
@@ -79,7 +83,7 @@ type RuntimeTurn struct {
 func (r *Repo) GetRuntimeTurn(ctx context.Context, tx *gorm.DB, turnID uint) (*RuntimeTurn, error) {
 	var row RuntimeTurn
 	result := tx.WithContext(ctx).Raw(`
-		SELECT id, sequence
+		SELECT id, sequence, new_state
 		FROM session_runtime_turns
 		WHERE id = ?
 	`, turnID).Scan(&row)
@@ -90,35 +94,4 @@ func (r *Repo) GetRuntimeTurn(ctx context.Context, tx *gorm.DB, turnID uint) (*R
 		return nil, nil
 	}
 	return &row, nil
-}
-
-// RuntimeTurnRecord is one committed RuntimeTurn's replay-input envelope, as
-// needed to reconstruct the engine.Signal that produced it.
-type RuntimeTurnRecord struct {
-	ID                      uint
-	Sequence                uint64
-	SourceKind              string
-	SourceInteractionID     *uint
-	SourceTimerObligationID *uint
-	SourceCauseEventID      *uint
-	ActorID                 *uint
-}
-
-// ListRuntimeTurns returns every committed RuntimeTurn for sessionID,
-// ordered by sequence ascending - the complete, ordered replay-input log a
-// deterministic replay folds over to reconstruct current authoritative
-// Runtime state. sessions.current_turn_id always points at the last row
-// this returns, since a RuntimeTurn is never persisted without immediately
-// advancing that pointer in the same transaction.
-func (r *Repo) ListRuntimeTurns(ctx context.Context, tx *gorm.DB, sessionID uint) ([]RuntimeTurnRecord, error) {
-	var rows []RuntimeTurnRecord
-	if err := tx.WithContext(ctx).Raw(`
-		SELECT id, sequence, source_kind, source_interaction_id, source_timer_obligation_id, source_cause_event_id, actor_id
-		FROM session_runtime_turns
-		WHERE session_id = ?
-		ORDER BY sequence ASC
-	`, sessionID).Scan(&rows).Error; err != nil {
-		return nil, fmt.Errorf("listing runtime turns: %s", err)
-	}
-	return rows, nil
 }

@@ -8,10 +8,10 @@ import (
 )
 
 // runtimeFailureInsert is the persisted shape of one session_runtime_failures
-// row - SESSION-ADR-0016's durable fatal-diagnostic record. There is no
-// failed_step_index column: the engine's current AdvanceTurn/StartTurn
-// contract exposes no per-step failure position, and SESSION-ADR-0016 already
-// marks that field optional (see WORK-0014's own Design Basis).
+// row - the durable fatal-diagnostic record for a RuntimeTurn attempt that
+// never committed. There is no failed_step_index column: the Executor's
+// current contract exposes no per-step failure position, and that field is
+// explicitly optional.
 type runtimeFailureInsert struct {
 	ID                      uint   `gorm:"column:id"`
 	SessionID               uint   `gorm:"column:session_id"`
@@ -21,7 +21,6 @@ type runtimeFailureInsert struct {
 	BaseTurnID              *uint  `gorm:"column:base_turn_id"`
 	AttemptedSequence       uint64 `gorm:"column:attempted_sequence"`
 	SourceKind              string `gorm:"column:source_kind"`
-	SourceInteractionID     *uint  `gorm:"column:source_interaction_id"`
 	SourceTimerObligationID *uint  `gorm:"column:source_timer_obligation_id"`
 	ActorID                 *uint  `gorm:"column:actor_id"`
 	DiagnosticPayload       []byte `gorm:"column:diagnostic_payload"`
@@ -31,13 +30,12 @@ func (runtimeFailureInsert) TableName() string { return "session_runtime_failure
 
 // CreateRuntimeFailure persists one fatal RuntimeTurn attempt's diagnostic
 // record, as part of the same atomic materialization that terminalizes the
-// Session (SESSION-ADR-0016) - baseTurnID/attemptedSequence identify the last
+// Session - baseTurnID/attemptedSequence identify the last
 // committed Turn this attempt was made against (baseTurnID nil,
 // attemptedSequence 1, for a pre-first-Turn Start failure), and
-// sourceKind/sourceInteractionID/sourceTimerObligationID/actorID identify
-// the driving cause, mirroring the same fields CreateRuntimeTurn records for
-// a successful Turn.
-func (r *Repo) CreateRuntimeFailure(ctx context.Context, tx *gorm.DB, sessionID uint, failureKind string, errorCode string, errorMessage string, baseTurnID *uint, attemptedSequence uint64, sourceKind string, sourceInteractionID *uint, sourceTimerObligationID *uint, actorID *uint, diagnosticPayload []byte) error {
+// sourceKind/sourceTimerObligationID/actorID identify the driving cause,
+// mirroring the same fields CreateRuntimeTurn records for a successful Turn.
+func (r *Repo) CreateRuntimeFailure(ctx context.Context, tx *gorm.DB, sessionID uint, failureKind string, errorCode string, errorMessage string, baseTurnID *uint, attemptedSequence uint64, sourceKind string, sourceTimerObligationID *uint, actorID *uint, diagnosticPayload []byte) error {
 	row := runtimeFailureInsert{
 		SessionID:               sessionID,
 		FailureKind:             failureKind,
@@ -46,7 +44,6 @@ func (r *Repo) CreateRuntimeFailure(ctx context.Context, tx *gorm.DB, sessionID 
 		BaseTurnID:              baseTurnID,
 		AttemptedSequence:       attemptedSequence,
 		SourceKind:              sourceKind,
-		SourceInteractionID:     sourceInteractionID,
 		SourceTimerObligationID: sourceTimerObligationID,
 		ActorID:                 actorID,
 		DiagnosticPayload:       diagnosticPayload,

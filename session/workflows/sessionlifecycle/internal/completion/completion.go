@@ -1,30 +1,28 @@
-// Package completion detects that a committed RuntimeTurn ended the game
-// instance a Session runs, shared by sessionlifecycle's Start/
-// AnswerInteraction steps so both react to it the same way.
+// Package completion detects that a committed RuntimeTurn's parsed platform
+// Commands ended the game instance a Session runs, shared by every
+// RuntimeTurn-producing sessionlifecycle step so each reacts to it the same
+// way.
 package completion
 
 import (
-	"github.com/diegobermudez03/playhoot/game/language/v1/engine"
 	"github.com/diegobermudez03/playhoot/session"
+	"github.com/diegobermudez03/playhoot/session/workflows/sessionlifecycle/internal/platform"
 )
 
-// Detect scans outputs for an engine.RunCompletedOutput and, if present,
-// returns the session.TerminalReason value describing which of the game's
-// own outcomes applied. terminated is false when outputs contains no
-// RunCompletedOutput, meaning the Session remains RUNNING.
-func Detect(outputs []engine.Output) (reason string, terminated bool) {
-	for _, output := range outputs {
-		run, ok := output.(engine.RunCompletedOutput)
-		if !ok {
-			continue
-		}
-		switch run.Outcome.Kind {
-		case engine.RunOutcomeCompleted:
+// Detect scans commands (already parsed via platform.ParseCommand) for a
+// SessionComplete/SessionFail Command and, if present, returns the
+// session.TerminalReason value describing which applied. terminated is
+// false when commands contains neither, meaning the Session remains
+// RUNNING. A script may request at most one of these per Turn; if it
+// somehow requested both, the first one found wins - this is a defensive
+// tie-break, not a documented authoring contract.
+func Detect(commands []platform.Command) (reason string, terminated bool) {
+	for _, command := range commands {
+		switch command.(type) {
+		case *platform.SessionComplete:
 			return session.TerminalReasonGameCompleted, true
-		case engine.RunOutcomeFailed:
+		case *platform.SessionFail:
 			return session.TerminalReasonGameFailed, true
-		case engine.RunOutcomeCancelled:
-			return session.TerminalReasonGameCancelled, true
 		}
 	}
 	return "", false

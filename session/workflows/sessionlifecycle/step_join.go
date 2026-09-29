@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/diegobermudez03/playhoot/game/language/v1/program"
 	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/monitoring"
 	"github.com/diegobermudez03/playhoot/session"
@@ -25,19 +24,12 @@ const (
 	outcomeLobbyFull     = "LOBBY_FULL"
 )
 
-// gamePinnedDefinitionReader is the narrow Game Management read capability
-// Join depends on to load an already-pinned immutable Game Definition by its
-// own Definition/Version UUID - never by re-resolving the Game's current
-// version.
-type gamePinnedDefinitionReader interface {
-	GetGameDefinition(ctx context.Context, gameDefinitionUUID string) (*program.Definition, error)
-}
-
 // joinRepoAPI is Join's own narrow persistence contract. LockSessionByID/
 // ClaimSessionRequest/CompleteSessionRequest are this workflow's own
 // locking/idempotency-claim mechanics, not a domain-wide protocol.
 type joinRepoAPI interface {
 	ResolveSessionForJoinCode(ctx context.Context, joinCode uint) (*internalrepo.JoinCodeResolution, error)
+	ResolveGameVersionArtifact(ctx context.Context, definitionUUID string) (*internalrepo.GameVersionArtifact, error)
 	LockSessionByID(ctx context.Context, tx *gorm.DB, sessionID uint) (*internalrepo.Session, error)
 	FindActor(ctx context.Context, tx *gorm.DB, sessionID uint, userUUID string) (*internalrepo.Actor, error)
 	CreateActor(ctx context.Context, tx *gorm.DB, sessionID uint, userUUID string) (uint, error)
@@ -86,18 +78,17 @@ func (m *Manager) Join(ctx context.Context, joinCode session.JoinCode, userUUID 
 	// Read before the mutation transaction/row lock opens, so lobby capacity
 	// stays governed by the exact version this Session was pinned to at
 	// Create, not whatever the lock might observe by the time it opens.
-	definition, err := m.pinnedGameReader.GetGameDefinition(ctx, resolution.GameDefinitionUUID)
+	artifact, err := m.joinRepo.ResolveGameVersionArtifact(ctx, resolution.GameDefinitionUUID)
 	if err != nil {
 		return session.JoinResult{}, err
 	}
-	if definition == nil {
-		monitoring.Alert(ctx, "session pinned game definition is missing")
+	if artifact == nil {
+		monitoring.Alert(ctx, "session pinned game version artifact is missing")
 		return session.JoinResult{}, session.ErrPinnedDefinitionMissing
 	}
-	playersMax := definition.Players.Max
 
 	return utils.RunInDBTransaction(ctx, m.dbServicer, func(ctx context.Context, tx *gorm.DB) (session.JoinResult, error) {
-		return m.joinSessionInTx(ctx, tx, resolution.SessionID, playersMax, joinCode, userUUID, displayName, idempotencyKey)
+		return m.joinSessionInTx(ctx, tx, resolution.SessionID, artifact.ParticipantMax, joinCode, userUUID, displayName, idempotencyKey)
 	})
 }
 
@@ -106,8 +97,9 @@ func (m *Manager) Join(ctx context.Context, joinCode session.JoinCode, userUUID 
 // unit tests without needing a real DB transaction - sessionlock/idempotency
 // mechanism calls further down this same path require a real Postgres
 // connection to run their SQL, which is instead proven by this package's
-// repository-integration/concurrency tests.
-func (m *Manager) joinSessionInTx(ctx context.Context, tx *gorm.DB, sessionID uint, playersMax int, joinCode session.JoinCode, userUUID session.UserUUID, displayName session.DisplayName, idempotencyKey session.IdempotencyKey) (session.JoinResult, error) {
+// repository-integration/concurrency tests. participantMax nil means
+// unlimited (GameVersionArtifact.ParticipantConstraints' own contract).
+func (m *Manager) joinSessionInTx(ctx context.Context, tx *gorm.DB, sessionID uint, participantMax *int, joinCode session.JoinCode, userUUID session.UserUUID, displayName session.DisplayName, idempotencyKey session.IdempotencyKey) (session.JoinResult, error) {
 	incomingPayload := joinRequestPayload{JoinCode: uint(joinCode), UserUUID: string(userUUID), DisplayName: string(displayName)}
 
 	lockedSession, err := m.joinRepo.LockSessionByID(ctx, tx, sessionID)
@@ -186,7 +178,7 @@ func (m *Manager) joinSessionInTx(ctx context.Context, tx *gorm.DB, sessionID ui
 	if err != nil {
 		return session.JoinResult{}, err
 	}
-	if playersMax > 0 && activeCount >= playersMax {
+	if participantMax != nil && activeCount >= *participantMax {
 		if err := m.joinRepo.CompleteSessionRequest(ctx, tx, requestID, &lockedSession.ID, outcomeLobbyFull, ""); err != nil {
 			return session.JoinResult{}, fmt.Errorf("completing join session request: %s", err)
 		}

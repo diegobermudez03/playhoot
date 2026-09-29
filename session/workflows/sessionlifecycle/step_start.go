@@ -6,17 +6,14 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"time"
 
-	"github.com/diegobermudez03/playhoot/game/language/v1/engine"
-	"github.com/diegobermudez03/playhoot/game/language/v1/engine/engineservice"
 	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/monitoring"
 	"github.com/diegobermudez03/playhoot/session"
-	"github.com/diegobermudez03/playhoot/session/workflows/sessionlifecycle/internal/clientoutputs"
+	"github.com/diegobermudez03/playhoot/session/internal/executor"
 	"github.com/diegobermudez03/playhoot/session/workflows/sessionlifecycle/internal/completion"
-	"github.com/diegobermudez03/playhoot/session/workflows/sessionlifecycle/internal/replay"
+	"github.com/diegobermudez03/playhoot/session/workflows/sessionlifecycle/internal/platform"
 	internalrepo "github.com/diegobermudez03/playhoot/session/workflows/sessionlifecycle/internal/repo"
 	"github.com/diegobermudez03/playhoot/utils"
 	"gorm.io/gorm"
@@ -41,14 +38,13 @@ type startRepoAPI interface {
 	LockSessionByUUID(ctx context.Context, tx *gorm.DB, sessionUUID string) (*internalrepo.Session, error)
 	FindActor(ctx context.Context, tx *gorm.DB, sessionID uint, userUUID string) (*internalrepo.Actor, error)
 	ListActiveParticipantsForRoster(ctx context.Context, tx *gorm.DB, sessionID uint) ([]internalrepo.RosterParticipant, error)
+	GetGameVersionArtifact(ctx context.Context, tx *gorm.DB, definitionUUID string) (*internalrepo.GameVersionArtifact, error)
 	SetSessionRunning(ctx context.Context, tx *gorm.DB, sessionID uint, startedAt time.Time, activityExpiresAt time.Time) error
-	CreateRuntimeTurn(ctx context.Context, tx *gorm.DB, sessionID uint, sequence uint64, sourceKind string, sourceInteractionID *uint, sourceTimerObligationID *uint, sourceCauseEventID *uint, actorID *uint) (uint, error)
-	CreateRuntimeStart(ctx context.Context, tx *gorm.DB, sessionID uint, seed uint64, rootParameters []byte) error
+	CreateRuntimeTurn(ctx context.Context, tx *gorm.DB, sessionID uint, sequence uint64, sourceKind string, sourceTimerObligationID *uint, sourceCauseEventID *uint, actorID *uint, newState json.RawMessage) (uint, error)
 	SetCurrentTurn(ctx context.Context, tx *gorm.DB, sessionID uint, currentTurnID uint) error
-	CreateRuntimeFailure(ctx context.Context, tx *gorm.DB, sessionID uint, failureKind string, errorCode string, errorMessage string, baseTurnID *uint, attemptedSequence uint64, sourceKind string, sourceInteractionID *uint, sourceTimerObligationID *uint, actorID *uint, diagnosticPayload []byte) error
+	CreateRuntimeFailure(ctx context.Context, tx *gorm.DB, sessionID uint, failureKind string, errorCode string, errorMessage string, baseTurnID *uint, attemptedSequence uint64, sourceKind string, sourceTimerObligationID *uint, actorID *uint, diagnosticPayload []byte) error
 	SetSessionTerminal(ctx context.Context, tx *gorm.DB, sessionID uint, terminalAt time.Time, terminalReason string) error
 	RevokeActiveJoinCode(ctx context.Context, tx *gorm.DB, sessionID uint, revokedAt time.Time) error
-	CloseAllActiveInteractionsForSession(ctx context.Context, tx *gorm.DB, sessionID uint, reason string) error
 	CancelAllActiveTimerObligationsForSession(ctx context.Context, tx *gorm.DB, sessionID uint, reason string) error
 	ClaimSessionRequest(ctx context.Context, tx *gorm.DB, input internalrepo.ClaimSessionRequestInput) (requestID uint, existing *internalrepo.Request, err error)
 	CompleteSessionRequest(ctx context.Context, tx *gorm.DB, requestID uint, sessionID *uint, outcome string, responsePayload string) error
@@ -61,10 +57,14 @@ type startRequestPayload struct {
 }
 
 // Start transitions a LOBBY Session to RUNNING: it verifies host authority,
-// builds the `players` root roster from active Participants, initializes
-// and executes the Game Language engine's first RuntimeTurn against the
-// Session's pinned immutable Game Definition, and atomically commits
+// builds the `players` roster from active Participants, and drives the
+// authored backend script's own first execution - a SESSION_STARTED Event
+// against no prior state (PreviousState nil) - atomically committing
 // phase=RUNNING together with the committed Turn and JoinCode revocation.
+// Start is an ordinary Execute call like every other RUNNING-phase step;
+// there is no structurally distinct entry point for it - the authored
+// script constructs its own initial state as its reaction to
+// SESSION_STARTED.
 func (m *Manager) Start(ctx context.Context, sessionUUID session.SessionUUID, userUUID session.UserUUID, idempotencyKey session.IdempotencyKey) (session.StartResult, error) {
 	defer logging.Step(ctx, "SessionLifecycle.Start").Close()
 	logging.LogFields(ctx,
@@ -177,26 +177,13 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 	// Unlike Join, this has no unlocked pre-lookup step: Start's SessionUUID
 	// already identifies the Session directly, so this read happens once the
 	// Session row is known to exist under lock.
-	definition, err := m.pinnedGameReader.GetGameDefinition(ctx, lockedSession.GameDefinitionUUID)
+	artifact, err := m.startRepo.GetGameVersionArtifact(ctx, tx, lockedSession.GameDefinitionUUID)
 	if err != nil {
 		return session.StartResult{}, err
 	}
-	if definition == nil {
-		monitoring.Alert(ctx, "session pinned game definition is missing")
+	if artifact == nil {
+		monitoring.Alert(ctx, "session pinned game version artifact is missing")
 		return session.StartResult{}, session.ErrPinnedDefinitionMissing
-	}
-
-	compiledProgram, diagnostics := engineservice.Compile(*definition)
-	if diagnostics.HasErrors() {
-		// The pinned Definition already compiled successfully at Create -
-		// an unexpected recompile failure now is a data-integrity problem,
-		// not a deterministic authored-game failure.
-		monitoring.Alert(ctx, fmt.Sprintf(
-			"pinned game definition failed to recompile at session start: session_uuid=%s game_definition_uuid=%s",
-			sessionUUID, lockedSession.GameDefinitionUUID,
-		))
-		return m.terminalizeStartFatal(ctx, tx, lockedSession, requestID, now, session.TerminalReasonRuntimeStateInvalid,
-			RuntimeFailureKindStateInvalid, RuntimeFailureErrorCodeDefinitionRecompileFailed, formatDiagnostics(diagnostics))
 	}
 
 	// The roster is built strictly from Participants active at the
@@ -206,57 +193,63 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 	if err != nil {
 		return session.StartResult{}, err
 	}
-	if len(roster) < definition.Players.Min || (definition.Players.Max > 0 && len(roster) > definition.Players.Max) {
-		// The players.max case is defensive - Join already enforces it and
-		// is not expected to ever trigger here in practice - grouped under
-		// the same ordinary LOBBY-phase decline as players.min.
+	if len(roster) < artifact.ParticipantMin || (artifact.ParticipantMax != nil && len(roster) > *artifact.ParticipantMax) {
+		// The participant-max case is defensive - Join already enforces it
+		// and is not expected to ever trigger here in practice - grouped
+		// under the same ordinary LOBBY-phase decline as participant-min.
 		if err := m.startRepo.CompleteSessionRequest(ctx, tx, requestID, &lockedSession.ID, outcomeNotEnoughPlayers, ""); err != nil {
 			return session.StartResult{}, fmt.Errorf("completing start session request: %s", err)
 		}
 		return session.StartResult{Outcome: session.StartOutcomeNotEnoughPlayers}, nil
 	}
+	known := knownActorsFromRoster(roster)
 
-	players := make([]engine.Value, len(roster))
+	players := make([]platform.ActorRef, len(roster))
 	for i, p := range roster {
-		// Each engine.UserValue.ID is derived from the Participant's
-		// internal session_actors.id - an opaque string representation,
-		// only ever compared for equality (engine.UserID's own contract).
-		// The caller's own public user identifier never enters
-		// engine/runtime state.
-		players[i] = engine.UserValue{ID: engine.UserID(strconv.FormatUint(uint64(p.ActorID), 10))}
+		players[i] = actorRefForActorID(p.ActorID)
 	}
 
-	seed := drawSeed()
-	rootParameters := map[string]engine.Value{
-		"players": engine.ListValue{ElementType: engine.UserType{}, Elements: players},
-	}
-	outputs, err := engineservice.StartTurn(compiledProgram, engine.InitializationInput{
-		RootParameters: rootParameters,
-		Seed:           seed,
-	}, engine.DefaultLimits())
+	// RootParameters has no source yet: nothing in the current platform
+	// surface lets a host supply custom Session-start parameters at
+	// Create/Start time (a future need, not yet designed) - nil is honest,
+	// not a placeholder for a feature this WORK silently invented. The
+	// authored script's own reaction to SESSION_STARTED still receives the
+	// full Players roster to construct whatever initial state it needs.
+	event := platform.NewSessionStarted(nil, players)
+	encodedEvent, err := platform.EncodeEvent(event)
 	if err != nil {
-		// Everything downstream of a successful compile that fails is
-		// treated as RUNTIME_EXECUTION_FAILED.
+		return session.StartResult{}, fmt.Errorf("encoding session started event: %s", err)
+	}
+
+	// Unlike every other RUNNING-phase step, Start has no ordinary "decline,
+	// stay as you were" path for a rejected Event: a fresh Session's first
+	// execution either succeeds or the Session never starts at all, so
+	// *executor.ScriptRejectedError is treated exactly like an
+	// *executor.ExecutorError here - both terminalize via the same fatal
+	// path, mirroring this call site's pre-existing behavior under the
+	// retired engine (StartTurn's own error already had no decline branch
+	// either).
+	output, err := m.executor.Execute(ctx, executor.ExecutionInput{
+		Script:        executor.ResolvedScript{Source: artifact.BackendScript},
+		PreviousState: nil,
+		Event:         encodedEvent,
+		Context:       executor.ExecutionContext{LogicalTime: now, RandomSeed: drawSeed()},
+	})
+	if err != nil {
 		errorCode, errorMessage := classifyExecutionError(err)
 		return m.terminalizeStartFatal(ctx, tx, lockedSession, requestID, now, session.TerminalReasonRuntimeExecutionFailed,
 			RuntimeFailureKindExecution, errorCode, errorMessage)
 	}
 
-	encodedRootParameters, err := replay.EncodeRootParameters(rootParameters)
+	commands, err := parseCommands(output.RequestedCommands, known)
 	if err != nil {
-		return session.StartResult{}, fmt.Errorf("encoding start root parameters: %s", err)
+		errorCode, errorMessage := classifyExecutionError(err)
+		return m.terminalizeStartFatal(ctx, tx, lockedSession, requestID, now, session.TerminalReasonRuntimeExecutionFailed,
+			RuntimeFailureKindExecution, errorCode, errorMessage)
 	}
-	turnID, err := m.startRepo.CreateRuntimeTurn(ctx, tx, lockedSession.ID, 1, replay.SessionStartSourceKind, nil, nil, nil, nil)
+
+	turnID, err := m.startRepo.CreateRuntimeTurn(ctx, tx, lockedSession.ID, 1, sessionStartSourceKind, nil, nil, nil, output.NewState)
 	if err != nil {
-		return session.StartResult{}, err
-	}
-	if err := m.startRepo.CreateRuntimeStart(ctx, tx, lockedSession.ID, seed, encodedRootParameters); err != nil {
-		return session.StartResult{}, err
-	}
-	if err := m.interactionsCapturer.Capture(ctx, tx, lockedSession.ID, turnID, outputs); err != nil {
-		return session.StartResult{}, err
-	}
-	if err := m.timersCapturer.Capture(ctx, tx, lockedSession.ID, turnID, outputs); err != nil {
 		return session.StartResult{}, err
 	}
 	if err := m.startRepo.SetCurrentTurn(ctx, tx, lockedSession.ID, turnID); err != nil {
@@ -266,16 +259,13 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 		return session.StartResult{}, err
 	}
 
-	// A Definition may complete/fail/cancel its own root instance on its
-	// very first transition - the Session genuinely started (Turn 1
-	// committed, started_at set above) and immediately ended, rather than
-	// never having started at all.
-	terminalReason, terminated := completion.Detect(outputs)
+	// The authored script may complete/fail its own instance on its very
+	// first execution - the Session genuinely started (Turn 1 committed,
+	// started_at set above) and immediately ended, rather than never having
+	// started at all.
+	terminalReason, terminated := completion.Detect(commands)
 	if terminated {
 		if err := m.startRepo.SetSessionTerminal(ctx, tx, lockedSession.ID, now, terminalReason); err != nil {
-			return session.StartResult{}, err
-		}
-		if err := m.startRepo.CloseAllActiveInteractionsForSession(ctx, tx, lockedSession.ID, session.InteractionClosureReasonSessionTerminated); err != nil {
 			return session.StartResult{}, err
 		}
 		if err := m.startRepo.CancelAllActiveTimerObligationsForSession(ctx, tx, lockedSession.ID, session.TimerObligationClosureReasonSessionTerminated); err != nil {
@@ -287,12 +277,7 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 		return session.StartResult{}, err
 	}
 
-	mappedOutputs, err := m.mapOutputs(ctx, tx, lockedSession.ID, clientoutputs.ClientFacing(outputs))
-	if err != nil {
-		return session.StartResult{}, fmt.Errorf("mapping client-facing outputs: %s", err)
-	}
-
-	result := session.StartResult{Outcome: session.StartOutcomeStarted, SessionUUID: session.SessionUUID(lockedSession.UUID), Outputs: mappedOutputs, TerminalReason: terminalReason}
+	result := session.StartResult{Outcome: session.StartOutcomeStarted, SessionUUID: session.SessionUUID(lockedSession.UUID), TerminalReason: terminalReason}
 	responseBytes, err := json.Marshal(result)
 	if err != nil {
 		return session.StartResult{}, fmt.Errorf("marshaling start response payload: %s", err)
@@ -311,10 +296,10 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 // completed - and replayable - outcome, so a Start that already fatally
 // terminalized the Session is never re-attempted on a same-token retry.
 // started_at is left at its canonical NULL - the Session never actually
-// ran. No session_runtime_turns/session_runtime_starts row is written.
+// ran. No session_runtime_turns row is written.
 func (m *Manager) terminalizeStartFatal(ctx context.Context, tx *gorm.DB, lockedSession *internalrepo.Session, requestID uint, terminalAt time.Time, terminalReason string, failureKind string, errorCode string, errorMessage string) (session.StartResult, error) {
 	if err := m.materializeRuntimeFailure(ctx, tx, m.startRepo, lockedSession, terminalAt, terminalReason,
-		failureKind, errorCode, errorMessage, nil, 1, replay.SessionStartSourceKind, nil, nil, nil); err != nil {
+		failureKind, errorCode, errorMessage, nil, 1, sessionStartSourceKind, nil, nil); err != nil {
 		return session.StartResult{}, err
 	}
 	if err := m.startRepo.RevokeActiveJoinCode(ctx, tx, lockedSession.ID, terminalAt); err != nil {
@@ -366,17 +351,19 @@ func interpretExistingStartClaim(existing *internalrepo.Request, incoming startR
 	return result, nil
 }
 
-// drawSeed draws InitializationInput.Seed from a fresh, unpredictable
-// source, once, per InitializationInput.Seed's own documented contract -
-// the engine itself never reads OS randomness. crypto/rand is a legitimate
-// real-entropy source for this one-time draw (this call site only - it is
-// never used inside the deterministic engine simulation itself).
+// drawSeed draws ExecutionContext.RandomSeed from a fresh, unpredictable
+// source, once per Execute call - the Executor itself never reads OS
+// randomness. crypto/rand is a legitimate real-entropy source for this
+// per-call draw. Strict deterministic replay across calls is not a
+// requirement anything currently depends on, so a fresh seed each call -
+// rather than one derived to reproduce a specific prior run - is
+// sufficient.
 func drawSeed() uint64 {
 	var buf [8]byte
 	if _, err := cryptorand.Read(buf[:]); err != nil {
 		// crypto/rand.Read failing is not a realistic operational condition
 		// on any supported platform; falling back to wall-clock time keeps
-		// Start from hard-failing on it while still drawing a value that is
+		// this from hard-failing on it while still drawing a value that is
 		// not guessable in advance.
 		return uint64(time.Now().UnixNano())
 	}

@@ -18,6 +18,11 @@ func MigrateTables(db *gorm.DB) error {
 		migration20260822000002GameImages(),
 		migration20260822000003GameHistories(),
 		migration20260822000004GameDefinitionHistories(),
+
+		// game_definitions/game_definition_histories retired: Session
+		// Runtime owns its own executable-artifact table independently of
+		// Game Management now.
+		migration20260929000000DropGameDefinitions(),
 	})
 
 	return migrator.Migrate()

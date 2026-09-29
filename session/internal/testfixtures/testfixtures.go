@@ -6,6 +6,7 @@
 package testfixtures
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -160,10 +161,76 @@ type gameVersionArtifactSeedInsert struct {
 	GameUUID       string    `gorm:"column:game_uuid"`
 	BackendScript  string    `gorm:"column:backend_script"`
 	FrontendScript string    `gorm:"column:frontend_script"`
+	ParticipantMin int       `gorm:"column:participant_min"`
+	ParticipantMax *int      `gorm:"column:participant_max"`
 	CreatedAt      time.Time `gorm:"column:created_at"`
 }
 
 func (gameVersionArtifactSeedInsert) TableName() string { return "session_game_version_artifacts" }
+
+type runtimeTurnSeedInsert struct {
+	ID         uint            `gorm:"column:id"`
+	SessionID  uint            `gorm:"column:session_id"`
+	Sequence   uint64          `gorm:"column:sequence"`
+	SourceKind string          `gorm:"column:source_kind"`
+	NewState   json.RawMessage `gorm:"column:new_state"`
+	CreatedAt  time.Time       `gorm:"column:created_at"`
+}
+
+func (runtimeTurnSeedInsert) TableName() string { return "session_runtime_turns" }
+
+// SeedRuntimeTurn inserts a session_runtime_turns row directly (bypassing
+// any Manager step), for a RUNNING-phase test that needs a Session already
+// past Start without exercising Start itself. Returns the new row's
+// internal id, the value a test typically also assigns to
+// sessions.current_turn_id itself.
+func SeedRuntimeTurn(t *testing.T, db *gorm.DB, sessionID uint, sequence uint64, sourceKind string, newState json.RawMessage) uint {
+	t.Helper()
+
+	row := runtimeTurnSeedInsert{
+		SessionID:  sessionID,
+		Sequence:   sequence,
+		SourceKind: sourceKind,
+		NewState:   newState,
+		CreatedAt:  time.Now().UTC(),
+	}
+	require.NoError(t, db.Create(&row).Error)
+	return row.ID
+}
+
+type timerObligationSeedInsert struct {
+	ID              uint      `gorm:"column:id"`
+	UUID            string    `gorm:"column:uuid"`
+	SessionID       uint      `gorm:"column:session_id"`
+	EngineSlot      string    `gorm:"column:engine_slot"`
+	DelayMs         int64     `gorm:"column:delay_ms"`
+	State           string    `gorm:"column:state"`
+	CreatedByTurnID uint      `gorm:"column:created_by_turn_id"`
+	CreatedAt       time.Time `gorm:"column:created_at"`
+}
+
+func (timerObligationSeedInsert) TableName() string { return "session_timer_obligations" }
+
+// SeedTimerObligation inserts an ACTIVE session_timer_obligations row
+// directly, since nothing yet dispatches a SCHEDULE_TIMER platform Command
+// into a row shaped like this one - a RUNNING-phase test that needs an
+// obligation to expire seeds it directly instead. Returns the new row's
+// public UUID.
+func SeedTimerObligation(t *testing.T, db *gorm.DB, sessionID uint, timer string, delayMs int64, createdByTurnID uint) string {
+	t.Helper()
+
+	row := timerObligationSeedInsert{
+		UUID:            uuid.NewString(),
+		SessionID:       sessionID,
+		EngineSlot:      timer,
+		DelayMs:         delayMs,
+		State:           session.TimerObligationStateActive,
+		CreatedByTurnID: createdByTurnID,
+		CreatedAt:       time.Now().UTC(),
+	}
+	require.NoError(t, db.Create(&row).Error)
+	return row.UUID
+}
 
 // SeedCurrentGameVersion seeds a session_game_version_artifacts row and a
 // session_games row pointing at it as the Game's current version - the
@@ -174,7 +241,9 @@ func (gameVersionArtifactSeedInsert) TableName() string { return "session_game_v
 // (its game_uuid FK requires the session_games row to already exist), then
 // an update assigning the now-existing artifact as current - mirroring this
 // package's own CreateSessionWithHost insert-then-assign pattern.
-func SeedCurrentGameVersion(t *testing.T, db *gorm.DB, backendScript, frontendScript string) GameVersionFixture {
+// participantMax nil seeds an unlimited version, matching
+// ParticipantConstraints' own "Max absent means unlimited" contract.
+func SeedCurrentGameVersion(t *testing.T, db *gorm.DB, backendScript, frontendScript string, participantMin int, participantMax *int) GameVersionFixture {
 	t.Helper()
 
 	now := time.Now().UTC()
@@ -187,6 +256,8 @@ func SeedCurrentGameVersion(t *testing.T, db *gorm.DB, backendScript, frontendSc
 		GameUUID:       gameUUID,
 		BackendScript:  backendScript,
 		FrontendScript: frontendScript,
+		ParticipantMin: participantMin,
+		ParticipantMax: participantMax,
 		CreatedAt:      now,
 	}).Error)
 	require.NoError(t, db.Exec(`UPDATE session_games SET current_definition_uuid = ? WHERE game_uuid = ?`, definitionUUID, gameUUID).Error)

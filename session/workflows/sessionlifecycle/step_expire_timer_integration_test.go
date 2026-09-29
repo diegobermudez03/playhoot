@@ -5,80 +5,37 @@ import (
 	"testing"
 	"time"
 
-	"github.com/diegobermudez03/playhoot/game/language/v1/program"
 	"github.com/diegobermudez03/playhoot/session"
+	"github.com/diegobermudez03/playhoot/session/internal/executor"
 	"github.com/diegobermudez03/playhoot/session/internal/testdb"
 	"github.com/diegobermudez03/playhoot/session/internal/testfixtures"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
 
-// timerObligationRow is this file's own minimal projection of a
-// session_timer_obligations row, for assertions.
-type timerObligationRow struct {
-	UUID            string  `gorm:"column:uuid"`
-	EngineSlot      string  `gorm:"column:engine_slot"`
-	EngineKey       []byte  `gorm:"column:engine_key"`
-	DelayMs         int64   `gorm:"column:delay_ms"`
-	State           string  `gorm:"column:state"`
-	ClosedByTurnID  *uint   `gorm:"column:closed_by_turn_id"`
-	CreatedByTurnID uint    `gorm:"column:created_by_turn_id"`
-	ClosureReason   *string `gorm:"column:closure_reason"`
-}
-
 func TestManagerExpireTimer_Integration(t *testing.T) {
 	db := testdb.OpenSessionDB(t)
 
-	t.Run("scheduled_timer_obligation_is_durably_persisted_at_start", func(t *testing.T) {
-		m := New(db, stubStartPinnedGameReader{definition: timerDefinition(1, 4, 5000)})
-
-		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
-		hostUUID := uuid.NewString()
-		hostActorID := testfixtures.SeedActor(t, db, fx.SessionID, hostUUID)
-		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
-		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
-
-		result, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), session.IdempotencyKey(uuid.NewString()))
-		require.NoError(t, err)
-		require.Equal(t, session.StartOutcomeStarted, result.Outcome)
-
-		var row timerObligationRow
-		require.NoError(t, db.Raw(`SELECT uuid, engine_slot, engine_key, delay_ms, state, created_by_turn_id, closed_by_turn_id FROM session_timer_obligations WHERE session_id = ?`, fx.SessionID).Scan(&row).Error)
-		require.NotEmpty(t, row.UUID)
-		require.Equal(t, timerSlotName, row.EngineSlot)
-		require.Nil(t, row.EngineKey)
-		require.Equal(t, int64(5000), row.DelayMs)
-		require.Equal(t, session.TimerObligationStateActive, row.State)
-		require.Nil(t, row.ClosedByTurnID)
-	})
-
 	t.Run("expiring_a_scheduled_timer_drives_a_new_runtime_turn_and_consumes_it", func(t *testing.T) {
-		m := New(db, stubStartPinnedGameReader{definition: timerDefinition(1, 4, 5000)})
+		nextState := stateJSON(t, map[string]any{"fired": true})
+		exec := startPassthroughThenExec(t, stateJSON(t, map[string]any{}), func(in executor.ExecutionInput) (executor.ExecutionOutput, error) {
+			return executor.ExecutionOutput{NewState: nextState}, nil
+		})
+		m, sessionUUID, _ := startedSessionWithExecutor(t, db, exec)
 
-		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
-		hostUUID := uuid.NewString()
-		hostActorID := testfixtures.SeedActor(t, db, fx.SessionID, hostUUID)
-		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
-		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
-
-		startResult, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), session.IdempotencyKey(uuid.NewString()))
-		require.NoError(t, err)
-		require.Equal(t, session.StartOutcomeStarted, startResult.Outcome)
-
-		var obligationUUID string
-		require.NoError(t, db.Raw(`SELECT uuid FROM session_timer_obligations WHERE session_id = ?`, fx.SessionID).Scan(&obligationUUID).Error)
-		require.NotEmpty(t, obligationUUID)
+		var currentTurnID uint
+		require.NoError(t, db.Raw(`SELECT current_turn_id FROM sessions WHERE uuid = ?`, string(sessionUUID)).Scan(&currentTurnID).Error)
+		obligationUUID := testfixtures.SeedTimerObligation(t, db, sessionIDForUUID(t, db, sessionUUID), "T", 5000, currentTurnID)
 
 		result, err := m.ExpireTimer(context.Background(), session.TimerObligationUUID(obligationUUID))
 		require.NoError(t, err)
 		require.Equal(t, session.ExpireTimerOutcomeExpired, result.Outcome)
-		require.Equal(t, session.SessionUUID(fx.SessionUUID), result.SessionUUID)
-		require.Len(t, result.Outputs, 1)
-		effect, ok := result.Outputs[0].(session.EffectEmitted)
-		require.True(t, ok, "%T", result.Outputs[0])
-		require.Equal(t, timerEffectName, effect.Effect)
+		require.Equal(t, sessionUUID, result.SessionUUID)
 
-		var obligationRow timerObligationRow
+		var obligationRow struct {
+			State          string `gorm:"column:state"`
+			ClosedByTurnID *uint  `gorm:"column:closed_by_turn_id"`
+		}
 		require.NoError(t, db.Raw(`SELECT state, closed_by_turn_id FROM session_timer_obligations WHERE uuid = ?`, obligationUUID).Scan(&obligationRow).Error)
 		require.Equal(t, session.TimerObligationStateConsumed, obligationRow.State)
 		require.NotNil(t, obligationRow.ClosedByTurnID)
@@ -87,63 +44,52 @@ func TestManagerExpireTimer_Integration(t *testing.T) {
 			SourceKind              string `gorm:"column:source_kind"`
 			SourceTimerObligationID *uint  `gorm:"column:source_timer_obligation_id"`
 			Sequence                uint64 `gorm:"column:sequence"`
+			NewState                []byte `gorm:"column:new_state"`
 		}
-		require.NoError(t, db.Raw(`SELECT source_kind, source_timer_obligation_id, sequence FROM session_runtime_turns WHERE id = ?`, obligationRow.ClosedByTurnID).Scan(&turnRow).Error)
-		require.Equal(t, "TIMER_EXPIRED", turnRow.SourceKind)
+		require.NoError(t, db.Raw(`SELECT source_kind, source_timer_obligation_id, sequence, new_state FROM session_runtime_turns WHERE id = ?`, obligationRow.ClosedByTurnID).Scan(&turnRow).Error)
+		require.Equal(t, timerExpiredSourceKind, turnRow.SourceKind)
 		require.NotNil(t, turnRow.SourceTimerObligationID)
 		require.Equal(t, uint64(2), turnRow.Sequence, "Start's own Turn is sequence 1")
+		require.JSONEq(t, string(nextState), string(turnRow.NewState))
 
-		var currentTurnID uint
-		require.NoError(t, db.Raw(`SELECT current_turn_id FROM sessions WHERE id = ?`, fx.SessionID).Scan(&currentTurnID).Error)
+		require.NoError(t, db.Raw(`SELECT current_turn_id FROM sessions WHERE uuid = ?`, string(sessionUUID)).Scan(&currentTurnID).Error)
 		require.Equal(t, *obligationRow.ClosedByTurnID, currentTurnID)
 	})
 
 	t.Run("expiring_a_scheduled_timer_renews_activity_deadline", func(t *testing.T) {
-		m := New(db, stubStartPinnedGameReader{definition: timerDefinition(1, 4, 5000)})
+		exec := startPassthroughThenExec(t, stateJSON(t, map[string]any{}), func(in executor.ExecutionInput) (executor.ExecutionOutput, error) {
+			return executor.ExecutionOutput{NewState: stateJSON(t, map[string]any{})}, nil
+		})
+		m, sessionUUID, _ := startedSessionWithExecutor(t, db, exec)
 
-		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
-		hostUUID := uuid.NewString()
-		hostActorID := testfixtures.SeedActor(t, db, fx.SessionID, hostUUID)
-		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
-		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
+		var currentTurnID uint
+		require.NoError(t, db.Raw(`SELECT current_turn_id FROM sessions WHERE uuid = ?`, string(sessionUUID)).Scan(&currentTurnID).Error)
+		obligationUUID := testfixtures.SeedTimerObligation(t, db, sessionIDForUUID(t, db, sessionUUID), "T", 5000, currentTurnID)
 
-		startResult, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), session.IdempotencyKey(uuid.NewString()))
-		require.NoError(t, err)
-		require.Equal(t, session.StartOutcomeStarted, startResult.Outcome)
-
-		var obligationUUID string
-		require.NoError(t, db.Raw(`SELECT uuid FROM session_timer_obligations WHERE session_id = ?`, fx.SessionID).Scan(&obligationUUID).Error)
-
-		before := activityExpiresAtForUUID(t, db, session.SessionUUID(fx.SessionUUID))
+		before := activityExpiresAtForUUID(t, db, sessionUUID)
 		require.NotNil(t, before)
 
 		result, err := m.ExpireTimer(context.Background(), session.TimerObligationUUID(obligationUUID))
 		require.NoError(t, err)
 		require.Equal(t, session.ExpireTimerOutcomeExpired, result.Outcome)
 
-		after := activityExpiresAtForUUID(t, db, session.SessionUUID(fx.SessionUUID))
+		after := activityExpiresAtForUUID(t, db, sessionUUID)
 		require.NotNil(t, after)
 		require.True(t, after.After(*before), "a Turn-committing expiration must renew activity_expires_at")
 	})
 
 	t.Run("stale_activity_deadline_materializes_inactivity_expiration_and_declines", func(t *testing.T) {
-		m := New(db, stubStartPinnedGameReader{definition: timerDefinition(1, 4, 5000)})
+		exec := startPassthroughThenExec(t, stateJSON(t, map[string]any{}), func(in executor.ExecutionInput) (executor.ExecutionOutput, error) {
+			return executor.ExecutionOutput{NewState: stateJSON(t, map[string]any{})}, nil
+		})
+		m, sessionUUID, _ := startedSessionWithExecutor(t, db, exec)
 
-		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
-		hostUUID := uuid.NewString()
-		hostActorID := testfixtures.SeedActor(t, db, fx.SessionID, hostUUID)
-		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
-		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
-
-		startResult, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), session.IdempotencyKey(uuid.NewString()))
-		require.NoError(t, err)
-		require.Equal(t, session.StartOutcomeStarted, startResult.Outcome)
-
-		var obligationUUID string
-		require.NoError(t, db.Raw(`SELECT uuid FROM session_timer_obligations WHERE session_id = ?`, fx.SessionID).Scan(&obligationUUID).Error)
+		var currentTurnID uint
+		require.NoError(t, db.Raw(`SELECT current_turn_id FROM sessions WHERE uuid = ?`, string(sessionUUID)).Scan(&currentTurnID).Error)
+		obligationUUID := testfixtures.SeedTimerObligation(t, db, sessionIDForUUID(t, db, sessionUUID), "T", 5000, currentTurnID)
 
 		staleDeadline := time.Now().Add(-1 * time.Minute).UTC()
-		require.NoError(t, db.Exec(`UPDATE sessions SET activity_expires_at = ? WHERE id = ?`, staleDeadline, fx.SessionID).Error)
+		require.NoError(t, db.Exec(`UPDATE sessions SET activity_expires_at = ? WHERE uuid = ?`, staleDeadline, string(sessionUUID)).Error)
 
 		result, err := m.ExpireTimer(context.Background(), session.TimerObligationUUID(obligationUUID))
 		require.NoError(t, err)
@@ -154,7 +100,7 @@ func TestManagerExpireTimer_Integration(t *testing.T) {
 			TerminalReason *string    `gorm:"column:terminal_reason"`
 			TerminalAt     *time.Time `gorm:"column:terminal_at"`
 		}
-		require.NoError(t, db.Raw(`SELECT phase, terminal_reason, terminal_at FROM sessions WHERE id = ?`, fx.SessionID).Scan(&row).Error)
+		require.NoError(t, db.Raw(`SELECT phase, terminal_reason, terminal_at FROM sessions WHERE uuid = ?`, string(sessionUUID)).Scan(&row).Error)
 		require.Equal(t, session.PhaseTerminal, row.Phase)
 		require.NotNil(t, row.TerminalReason)
 		require.Equal(t, session.TerminalReasonRuntimeInactivityExpired, *row.TerminalReason)
@@ -166,230 +112,86 @@ func TestManagerExpireTimer_Integration(t *testing.T) {
 		require.Equal(t, session.TimerObligationStateCancelled, obligationState, "SESSION-ADR-0018 terminal cleanup must cancel the still-ACTIVE obligation")
 
 		var failureCount int64
-		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_failures WHERE session_id = ?`, fx.SessionID).Scan(&failureCount).Error)
+		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_failures WHERE session_id = ?`, sessionIDForUUID(t, db, sessionUUID)).Scan(&failureCount).Error)
 		require.Equal(t, int64(0), failureCount)
 	})
 
 	t.Run("expiring_an_already_consumed_obligation_is_stale_and_creates_no_second_turn", func(t *testing.T) {
-		m := New(db, stubStartPinnedGameReader{definition: timerDefinition(1, 4, 5000)})
+		exec := startPassthroughThenExec(t, stateJSON(t, map[string]any{}), func(in executor.ExecutionInput) (executor.ExecutionOutput, error) {
+			return executor.ExecutionOutput{NewState: stateJSON(t, map[string]any{})}, nil
+		})
+		m, sessionUUID, _ := startedSessionWithExecutor(t, db, exec)
 
-		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
-		hostUUID := uuid.NewString()
-		hostActorID := testfixtures.SeedActor(t, db, fx.SessionID, hostUUID)
-		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
-		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
-
-		_, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), session.IdempotencyKey(uuid.NewString()))
-		require.NoError(t, err)
-
-		var obligationUUID string
-		require.NoError(t, db.Raw(`SELECT uuid FROM session_timer_obligations WHERE session_id = ?`, fx.SessionID).Scan(&obligationUUID).Error)
+		var currentTurnID uint
+		require.NoError(t, db.Raw(`SELECT current_turn_id FROM sessions WHERE uuid = ?`, string(sessionUUID)).Scan(&currentTurnID).Error)
+		obligationUUID := testfixtures.SeedTimerObligation(t, db, sessionIDForUUID(t, db, sessionUUID), "T", 5000, currentTurnID)
 
 		first, err := m.ExpireTimer(context.Background(), session.TimerObligationUUID(obligationUUID))
 		require.NoError(t, err)
 		require.Equal(t, session.ExpireTimerOutcomeExpired, first.Outcome)
 
 		var turnCountAfterFirst int64
-		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_turns WHERE session_id = ?`, fx.SessionID).Scan(&turnCountAfterFirst).Error)
+		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_turns WHERE session_id = ?`, sessionIDForUUID(t, db, sessionUUID)).Scan(&turnCountAfterFirst).Error)
 
 		second, err := m.ExpireTimer(context.Background(), session.TimerObligationUUID(obligationUUID))
 		require.NoError(t, err)
 		require.Equal(t, session.ExpireTimerOutcomeStale, second.Outcome)
-		require.Empty(t, second.Outputs)
 
 		var turnCountAfterSecond int64
-		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_turns WHERE session_id = ?`, fx.SessionID).Scan(&turnCountAfterSecond).Error)
+		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_turns WHERE session_id = ?`, sessionIDForUUID(t, db, sessionUUID)).Scan(&turnCountAfterSecond).Error)
 		require.Equal(t, turnCountAfterFirst, turnCountAfterSecond, "a stale delivery must not create a second RuntimeTurn")
 	})
 
+	t.Run("script_rejects_expiration_as_stale_or_cancelled", func(t *testing.T) {
+		exec := startPassthroughThenExec(t, stateJSON(t, map[string]any{}), func(in executor.ExecutionInput) (executor.ExecutionOutput, error) {
+			return executor.ExecutionOutput{}, &executor.ScriptRejectedError{Reason: "no reaction to this timer"}
+		})
+		m, sessionUUID, _ := startedSessionWithExecutor(t, db, exec)
+
+		var currentTurnID uint
+		require.NoError(t, db.Raw(`SELECT current_turn_id FROM sessions WHERE uuid = ?`, string(sessionUUID)).Scan(&currentTurnID).Error)
+		obligationUUID := testfixtures.SeedTimerObligation(t, db, sessionIDForUUID(t, db, sessionUUID), "T", 5000, currentTurnID)
+
+		result, err := m.ExpireTimer(context.Background(), session.TimerObligationUUID(obligationUUID))
+		require.NoError(t, err)
+		require.Equal(t, session.ExpireTimerOutcomeRejected, result.Outcome)
+
+		var turnCount int64
+		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_turns WHERE session_id = ?`, sessionIDForUUID(t, db, sessionUUID)).Scan(&turnCount).Error)
+		require.Equal(t, int64(1), turnCount, "a rejected expiration must not commit a Turn")
+	})
+
+	t.Run("executor_error_terminalizes_the_session", func(t *testing.T) {
+		exec := startPassthroughThenExec(t, stateJSON(t, map[string]any{}), func(in executor.ExecutionInput) (executor.ExecutionOutput, error) {
+			return executor.ExecutionOutput{}, &executor.ExecutorError{Reason: "executor unreachable"}
+		})
+		m, sessionUUID, _ := startedSessionWithExecutor(t, db, exec)
+
+		var currentTurnID uint
+		require.NoError(t, db.Raw(`SELECT current_turn_id FROM sessions WHERE uuid = ?`, string(sessionUUID)).Scan(&currentTurnID).Error)
+		obligationUUID := testfixtures.SeedTimerObligation(t, db, sessionIDForUUID(t, db, sessionUUID), "T", 5000, currentTurnID)
+
+		result, err := m.ExpireTimer(context.Background(), session.TimerObligationUUID(obligationUUID))
+		require.NoError(t, err)
+		require.Equal(t, session.ExpireTimerOutcomeRuntimeExecutionFailed, result.Outcome)
+
+		var phase string
+		require.NoError(t, db.Raw(`SELECT phase FROM sessions WHERE uuid = ?`, string(sessionUUID)).Scan(&phase).Error)
+		require.Equal(t, session.PhaseTerminal, phase)
+
+		var failureRow struct {
+			FailureKind             string `gorm:"column:failure_kind"`
+			SourceTimerObligationID *uint  `gorm:"column:source_timer_obligation_id"`
+		}
+		require.NoError(t, db.Raw(`SELECT failure_kind, source_timer_obligation_id FROM session_runtime_failures WHERE session_id = ?`, sessionIDForUUID(t, db, sessionUUID)).Scan(&failureRow).Error)
+		require.Equal(t, RuntimeFailureKindExecution, failureRow.FailureKind)
+		require.NotNil(t, failureRow.SourceTimerObligationID)
+	})
+
 	t.Run("expiring_an_unknown_obligation_uuid_reports_not_found", func(t *testing.T) {
-		m := New(db, nil)
+		m := New(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
 
 		_, err := m.ExpireTimer(context.Background(), session.TimerObligationUUID(uuid.NewString()))
 		require.ErrorIs(t, err, session.ErrTimerObligationNotFound)
-	})
-
-	t.Run("keyed_timers_under_the_same_slot_are_independent", func(t *testing.T) {
-		m := New(db, stubStartPinnedGameReader{definition: keyedTimerDefinition(1, 4)})
-
-		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
-		hostUUID := uuid.NewString()
-		hostActorID := testfixtures.SeedActor(t, db, fx.SessionID, hostUUID)
-		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
-		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
-
-		result, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), session.IdempotencyKey(uuid.NewString()))
-		require.NoError(t, err)
-		require.Equal(t, session.StartOutcomeStarted, result.Outcome)
-
-		var rows []timerObligationRow
-		require.NoError(t, db.Raw(`SELECT uuid, engine_key, state FROM session_timer_obligations WHERE session_id = ? ORDER BY id ASC`, fx.SessionID).Scan(&rows).Error)
-		require.Len(t, rows, 2, "two independent keyed timer obligations must coexist under the same slot")
-		require.NotEqual(t, rows[0].EngineKey, rows[1].EngineKey)
-		for _, r := range rows {
-			require.Equal(t, session.TimerObligationStateActive, r.State)
-		}
-
-		expireResult, err := m.ExpireTimer(context.Background(), session.TimerObligationUUID(rows[0].UUID))
-		require.NoError(t, err)
-		require.Equal(t, session.ExpireTimerOutcomeExpired, expireResult.Outcome)
-		require.Len(t, expireResult.Outputs, 1)
-		effect, ok := expireResult.Outputs[0].(session.EffectEmitted)
-		require.True(t, ok, "%T", expireResult.Outputs[0])
-		require.Equal(t, keyedTimerEffectName, effect.Effect)
-		require.Len(t, effect.Arguments, 1)
-		keyValue, ok := effect.Arguments[0].Value.(session.StringValue)
-		require.True(t, ok)
-		require.Contains(t, []string{"P0", "P1"}, keyValue.Value)
-
-		// The other key's own obligation must remain untouched.
-		var otherState string
-		require.NoError(t, db.Raw(`SELECT state FROM session_timer_obligations WHERE uuid = ?`, rows[1].UUID).Scan(&otherState).Error)
-		require.Equal(t, session.TimerObligationStateActive, otherState)
-	})
-
-	t.Run("cancelling_a_timer_marks_it_cancelled_and_a_later_expiry_is_stale", func(t *testing.T) {
-		m := New(db, stubStartPinnedGameReader{definition: timerCancelledOnAnswerDefinition(1, 4)})
-
-		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
-		hostUUID := uuid.NewString()
-		hostActorID := testfixtures.SeedActor(t, db, fx.SessionID, hostUUID)
-		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
-		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
-
-		_, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), session.IdempotencyKey(uuid.NewString()))
-		require.NoError(t, err)
-
-		var obligationUUID string
-		require.NoError(t, db.Raw(`SELECT uuid FROM session_timer_obligations WHERE session_id = ?`, fx.SessionID).Scan(&obligationUUID).Error)
-		var interactionUUID string
-		require.NoError(t, db.Raw(`SELECT uuid FROM session_interactions WHERE session_id = ?`, fx.SessionID).Scan(&interactionUUID).Error)
-
-		answerResult, err := m.AnswerInteraction(context.Background(), session.InteractionUUID(interactionUUID), session.UserUUID(hostUUID), numberAnswer(t, 1))
-		require.NoError(t, err)
-		require.Equal(t, session.AnswerInteractionOutcomeAnswered, answerResult.Outcome)
-
-		var obligationRow timerObligationRow
-		require.NoError(t, db.Raw(`SELECT state, closed_by_turn_id, closure_reason FROM session_timer_obligations WHERE uuid = ?`, obligationUUID).Scan(&obligationRow).Error)
-		require.Equal(t, session.TimerObligationStateCancelled, obligationRow.State)
-		require.NotNil(t, obligationRow.ClosedByTurnID, "cancelled by the answer's own Turn, not terminal cleanup")
-		require.Nil(t, obligationRow.ClosureReason, "an authored cancel is not a terminal-cleanup closure")
-
-		expireResult, err := m.ExpireTimer(context.Background(), session.TimerObligationUUID(obligationUUID))
-		require.NoError(t, err)
-		require.Equal(t, session.ExpireTimerOutcomeStale, expireResult.Outcome)
-	})
-
-	t.Run("scheduling_into_an_already_occupied_slot_fails_atomically_and_persists_no_obligation", func(t *testing.T) {
-		m := New(db, stubStartPinnedGameReader{definition: doubleScheduleTimerDefinition(1, 4)})
-
-		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
-		hostUUID := uuid.NewString()
-		hostActorID := testfixtures.SeedActor(t, db, fx.SessionID, hostUUID)
-		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
-		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
-
-		result, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), session.IdempotencyKey(uuid.NewString()))
-		require.NoError(t, err)
-		require.Equal(t, session.StartOutcomeRuntimeInitFailed, result.Outcome, "scheduling into an occupied slot is an engine execution error")
-
-		var obligationCount int64
-		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_timer_obligations WHERE session_id = ?`, fx.SessionID).Scan(&obligationCount).Error)
-		require.Zero(t, obligationCount, "the whole failed transition must leave no timer obligation behind")
-
-		var turnCount int64
-		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_turns WHERE session_id = ?`, fx.SessionID).Scan(&turnCount).Error)
-		require.Zero(t, turnCount)
-	})
-
-	t.Run("session_terminating_cancels_a_still_active_timer_obligation", func(t *testing.T) {
-		m := New(db, stubStartPinnedGameReader{definition: timerActiveAtTerminationDefinition(program.CompleteControl{Result: program.UnitLiteralExpression{}}, 1, 4)})
-
-		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
-		hostUUID := uuid.NewString()
-		hostActorID := testfixtures.SeedActor(t, db, fx.SessionID, hostUUID)
-		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
-		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
-
-		_, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), session.IdempotencyKey(uuid.NewString()))
-		require.NoError(t, err)
-
-		var obligationUUID string
-		require.NoError(t, db.Raw(`SELECT uuid FROM session_timer_obligations WHERE session_id = ?`, fx.SessionID).Scan(&obligationUUID).Error)
-		var interactionUUID string
-		require.NoError(t, db.Raw(`SELECT uuid FROM session_interactions WHERE session_id = ?`, fx.SessionID).Scan(&interactionUUID).Error)
-
-		answerResult, err := m.AnswerInteraction(context.Background(), session.InteractionUUID(interactionUUID), session.UserUUID(hostUUID), numberAnswer(t, 1))
-		require.NoError(t, err)
-		require.Equal(t, session.TerminalReasonGameCompleted, answerResult.TerminalReason)
-
-		var obligationRow timerObligationRow
-		require.NoError(t, db.Raw(`SELECT state, closed_by_turn_id, closure_reason FROM session_timer_obligations WHERE uuid = ?`, obligationUUID).Scan(&obligationRow).Error)
-		require.Equal(t, session.TimerObligationStateCancelled, obligationRow.State)
-		require.Nil(t, obligationRow.ClosedByTurnID, "terminal cleanup, not gameplay closure - mirrors session_interactions' own TERMINATED convention")
-		require.NotNil(t, obligationRow.ClosureReason)
-		require.Equal(t, session.TimerObligationClosureReasonSessionTerminated, *obligationRow.ClosureReason)
-
-		expireResult, err := m.ExpireTimer(context.Background(), session.TimerObligationUUID(obligationUUID))
-		require.NoError(t, err)
-		require.Equal(t, session.ExpireTimerOutcomeStale, expireResult.Outcome, "a still-in-flight physical timer firing after the Session already terminated must be a harmless stale decline")
-	})
-
-	t.Run("concurrent_expire_and_answer_for_the_same_session_never_both_execute_a_runtime_turn", func(t *testing.T) {
-		// timerCancelledOnAnswerDefinition schedules "T" and opens "Q" both at
-		// Start; answering Q closes it and cancels "T" - the two operations
-		// below race for the same Session, proving at most one of them
-		// commits a RuntimeTurn and the loser always observes the winner's
-		// already-committed state instead of executing against stale state.
-		m := New(db, stubStartPinnedGameReader{definition: timerCancelledOnAnswerDefinition(1, 4)})
-
-		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
-		hostUUID := uuid.NewString()
-		hostActorID := testfixtures.SeedActor(t, db, fx.SessionID, hostUUID)
-		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
-		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
-
-		_, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), session.IdempotencyKey(uuid.NewString()))
-		require.NoError(t, err)
-
-		var obligationUUID string
-		require.NoError(t, db.Raw(`SELECT uuid FROM session_timer_obligations WHERE session_id = ?`, fx.SessionID).Scan(&obligationUUID).Error)
-		var interactionUUID string
-		require.NoError(t, db.Raw(`SELECT uuid FROM session_interactions WHERE session_id = ?`, fx.SessionID).Scan(&interactionUUID).Error)
-
-		type answerOutcome struct {
-			result session.AnswerInteractionResult
-			err    error
-		}
-		type expireOutcome struct {
-			result session.ExpireTimerResult
-			err    error
-		}
-		answerCh := make(chan answerOutcome, 1)
-		expireCh := make(chan expireOutcome, 1)
-		go func() {
-			result, err := m.AnswerInteraction(context.Background(), session.InteractionUUID(interactionUUID), session.UserUUID(hostUUID), numberAnswer(t, 1))
-			answerCh <- answerOutcome{result, err}
-		}()
-		go func() {
-			result, err := m.ExpireTimer(context.Background(), session.TimerObligationUUID(obligationUUID))
-			expireCh <- expireOutcome{result, err}
-		}()
-
-		answer := <-answerCh
-		expire := <-expireCh
-		require.NoError(t, answer.err)
-		require.NoError(t, expire.err)
-		require.Equal(t, session.AnswerInteractionOutcomeAnswered, answer.result.Outcome, "the answer always eventually succeeds against reloaded state, regardless of arrival order relative to the timer expiration")
-		require.Contains(t, []session.ExpireTimerOutcome{session.ExpireTimerOutcomeStale, session.ExpireTimerOutcomeRejected}, expire.result.Outcome,
-			"whichever operation loses the race must observe the winner's already-committed state, never execute against stale state: Stale if the answer's own cancel already ran first, Rejected by the engine's own stale-signal backstop if the expiration reached the engine first (this fixture's root state has no transition for the timer's own expiration)")
-
-		var turnCount int64
-		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_turns WHERE session_id = ?`, fx.SessionID).Scan(&turnCount).Error)
-		require.Equal(t, int64(2), turnCount, "at most one of the two concurrent operations may ever commit a RuntimeTurn, on top of Start's own first Turn")
-
-		var obligationState string
-		require.NoError(t, db.Raw(`SELECT state FROM session_timer_obligations WHERE uuid = ?`, obligationUUID).Scan(&obligationState).Error)
-		require.Equal(t, session.TimerObligationStateCancelled, obligationState, "the answer's own authored cancel must take effect regardless of race order")
 	})
 }

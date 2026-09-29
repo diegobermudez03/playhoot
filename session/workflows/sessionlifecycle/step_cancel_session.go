@@ -7,33 +7,32 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/diegobermudez03/playhoot/game/language/v1/engine"
-	"github.com/diegobermudez03/playhoot/game/language/v1/engine/engineservice"
 	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/monitoring"
 	"github.com/diegobermudez03/playhoot/session"
-	"github.com/diegobermudez03/playhoot/session/workflows/sessionlifecycle/internal/clientoutputs"
+	"github.com/diegobermudez03/playhoot/session/internal/executor"
 	"github.com/diegobermudez03/playhoot/session/workflows/sessionlifecycle/internal/completion"
-	"github.com/diegobermudez03/playhoot/session/workflows/sessionlifecycle/internal/replay"
+	"github.com/diegobermudez03/playhoot/session/workflows/sessionlifecycle/internal/platform"
 	internalrepo "github.com/diegobermudez03/playhoot/session/workflows/sessionlifecycle/internal/repo"
 	"github.com/diegobermudez03/playhoot/utils"
 	"gorm.io/gorm"
 )
 
 // sessionCancelledCauseKind is session_cause_events.cause_kind's value for a
-// manual session cancellation whose SessionCancelled signal the engine
-// accepted (a transition matched). sessionCancelledEmptyPayload is the
-// cause event's own payload for it: session_cause_events.payload is JSONB
-// NOT NULL, and SessionCancelled itself carries no Fields to encode (see
-// replay.buildSessionCancelledSignal), so an empty JSON object is the
-// payload's entire durable content beyond the row's own actor_id.
+// manual session cancellation whose SESSION_CANCELLED event the authored
+// script accepted (requested a Command in reaction to it, or simply did not
+// reject it). sessionCancelledEmptyPayload is the cause event's own payload
+// for it: session_cause_events.payload is JSONB NOT NULL, and
+// platform.SessionCancelled itself carries no fields to encode, so an empty
+// JSON object is the payload's entire durable content beyond the row's own
+// actor_id.
 const sessionCancelledCauseKind = "SESSION_CANCELLED"
 
 var sessionCancelledEmptyPayload = []byte("{}")
 
 // Cancel session outcome labels persisted to session_requests.outcome for a
 // deterministic post-claim decline/success that must survive as a
-// replayable outcome - the same technique Start's/SubmitUserIntent's own
+// replayable outcome - the same technique Start's/SubmitPlayerEvent's own
 // outcome* constants use.
 const (
 	cancelSessionOutcomeCancelled              = "CANCELLED"
@@ -44,28 +43,23 @@ const (
 )
 
 // cancelSessionRepoAPI is CancelSession's own narrow persistence contract,
-// identical in shape to submitUserIntentRepoAPI - both steps address the
-// Session itself (not a separate interaction/obligation row) and share the
-// same cause-persistence/capture/terminal-cleanup machinery.
-// LockSessionByUUID/ClaimSessionRequest/CompleteSessionRequest are this
-// workflow's own locking/idempotency-claim mechanics, not a domain-wide
-// protocol.
+// identical in shape to submitPlayerEventRepoAPI - both steps address the
+// Session itself and share the same cause-persistence/terminal-cleanup
+// machinery. LockSessionByUUID/ClaimSessionRequest/CompleteSessionRequest
+// are this workflow's own locking/idempotency-claim mechanics, not a
+// domain-wide protocol.
 type cancelSessionRepoAPI interface {
 	LockSessionByUUID(ctx context.Context, tx *gorm.DB, sessionUUID string) (*internalrepo.Session, error)
 	FindActor(ctx context.Context, tx *gorm.DB, sessionID uint, userUUID string) (*internalrepo.Actor, error)
+	ListActiveParticipantsForRoster(ctx context.Context, tx *gorm.DB, sessionID uint) ([]internalrepo.RosterParticipant, error)
 	GetRuntimeTurn(ctx context.Context, tx *gorm.DB, turnID uint) (*internalrepo.RuntimeTurn, error)
-	GetRuntimeStart(ctx context.Context, tx *gorm.DB, sessionID uint) (*internalrepo.RuntimeStart, error)
-	ListRuntimeTurns(ctx context.Context, tx *gorm.DB, sessionID uint) ([]internalrepo.RuntimeTurnRecord, error)
-	GetInteractionByID(ctx context.Context, tx *gorm.DB, interactionID uint) (*internalrepo.Interaction, error)
-	GetTimerObligationByID(ctx context.Context, tx *gorm.DB, timerObligationID uint) (*internalrepo.TimerObligation, error)
-	GetCauseEventByID(ctx context.Context, tx *gorm.DB, causeEventID uint) (*internalrepo.CauseEvent, error)
-	CreateRuntimeTurn(ctx context.Context, tx *gorm.DB, sessionID uint, sequence uint64, sourceKind string, sourceInteractionID *uint, sourceTimerObligationID *uint, sourceCauseEventID *uint, actorID *uint) (uint, error)
+	GetGameVersionArtifact(ctx context.Context, tx *gorm.DB, definitionUUID string) (*internalrepo.GameVersionArtifact, error)
+	CreateRuntimeTurn(ctx context.Context, tx *gorm.DB, sessionID uint, sequence uint64, sourceKind string, sourceTimerObligationID *uint, sourceCauseEventID *uint, actorID *uint, newState json.RawMessage) (uint, error)
 	CreateCauseEvent(ctx context.Context, tx *gorm.DB, sessionID uint, runtimeTurnID uint, causeKind string, actorID *uint, payload []byte) (uint, error)
 	SetRuntimeTurnCauseEvent(ctx context.Context, tx *gorm.DB, turnID uint, causeEventID uint) error
 	SetCurrentTurn(ctx context.Context, tx *gorm.DB, sessionID uint, currentTurnID uint) error
 	SetSessionTerminal(ctx context.Context, tx *gorm.DB, sessionID uint, terminalAt time.Time, terminalReason string) error
-	CreateRuntimeFailure(ctx context.Context, tx *gorm.DB, sessionID uint, failureKind string, errorCode string, errorMessage string, baseTurnID *uint, attemptedSequence uint64, sourceKind string, sourceInteractionID *uint, sourceTimerObligationID *uint, actorID *uint, diagnosticPayload []byte) error
-	CloseAllActiveInteractionsForSession(ctx context.Context, tx *gorm.DB, sessionID uint, reason string) error
+	CreateRuntimeFailure(ctx context.Context, tx *gorm.DB, sessionID uint, failureKind string, errorCode string, errorMessage string, baseTurnID *uint, attemptedSequence uint64, sourceKind string, sourceTimerObligationID *uint, actorID *uint, diagnosticPayload []byte) error
 	CancelAllActiveTimerObligationsForSession(ctx context.Context, tx *gorm.DB, sessionID uint, reason string) error
 	ClaimSessionRequest(ctx context.Context, tx *gorm.DB, input internalrepo.ClaimSessionRequestInput) (requestID uint, existing *internalrepo.Request, err error)
 	CompleteSessionRequest(ctx context.Context, tx *gorm.DB, requestID uint, sessionID *uint, outcome string, responsePayload string) error
@@ -80,16 +74,15 @@ type cancelSessionRequestPayload struct {
 
 // CancelSession lets sessionUUID's own host explicitly end a RUNNING
 // Session before it would otherwise reach a terminal state on its own: it
-// delivers a SessionCancelled signal into the Session's current runtime
-// instance and always terminalizes the Session once past authorization -
-// whether because the authored game itself reacts to SessionCancelled (an
-// authored CancelControl transition, reaching a terminal run status or
-// not) or because it has no transition for it at all. A host cancel is an
-// administrative override, not gameplay input, so - unlike
-// AnswerInteraction/SubmitUserIntent/ExpireTimer - it is never a silent
-// no-op merely because the engine rejects the signal.
+// delivers a SESSION_CANCELLED Event to the authored script and always
+// terminalizes the Session once past authorization - whether because the
+// script itself reacts to it (requesting SESSION_COMPLETE/SESSION_FAIL, or
+// simply not rejecting it) or because it rejects it outright. A host
+// cancel is an administrative override, not gameplay input, so - unlike
+// SubmitPlayerEvent/ExpireTimer - it is never a silent no-op merely because
+// the script rejects the event.
 //
-// Like SubmitUserIntent, a cancellation has no pre-existing target row to
+// Like SubmitPlayerEvent, a cancellation has no pre-existing target row to
 // dedup against, so idempotencyKey is required.
 func (m *Manager) CancelSession(ctx context.Context, sessionUUID session.SessionUUID, userUUID session.UserUUID, idempotencyKey session.IdempotencyKey) (session.CancelSessionResult, error) {
 	defer logging.Step(ctx, "SessionLifecycle.CancelSession").Close()
@@ -149,8 +142,7 @@ func (m *Manager) cancelSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUI
 	// Phase-based short circuits, evaluated before host authorization,
 	// mirroring Start's own ordering: cancelling an already-TERMINAL Session
 	// (whatever the reason) is a harmless, idempotent no-op; a Session still
-	// LOBBY has no running engine instance yet to deliver a signal to (see
-	// this WORK's own Scope note on LOBBY-phase cancellation).
+	// LOBBY has no running script instance yet to deliver an event to.
 	if lockedSession.Phase == session.PhaseTerminal {
 		return m.declineCancelSession(ctx, tx, requestID, lockedSession, cancelSessionOutcomeAlreadyTerminal, session.CancelSessionOutcomeAlreadyTerminal)
 	}
@@ -184,55 +176,42 @@ func (m *Manager) cancelSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUI
 
 	now := time.Now().UTC()
 
-	definition, err := m.pinnedGameReader.GetGameDefinition(ctx, lockedSession.GameDefinitionUUID)
+	artifact, err := m.cancelSessionRepo.GetGameVersionArtifact(ctx, tx, lockedSession.GameDefinitionUUID)
 	if err != nil {
 		return session.CancelSessionResult{}, err
 	}
-	if definition == nil {
-		monitoring.Alert(ctx, "session pinned game definition is missing")
+	if artifact == nil {
+		monitoring.Alert(ctx, "session pinned game version artifact is missing")
 		return session.CancelSessionResult{}, session.ErrPinnedDefinitionMissing
 	}
-	compiledProgram, diagnostics := engineservice.Compile(*definition)
-	if diagnostics.HasErrors() {
-		monitoring.Alert(ctx, fmt.Sprintf(
-			"pinned game definition failed to recompile cancelling session: session_uuid=%s game_definition_uuid=%s",
-			lockedSession.UUID, lockedSession.GameDefinitionUUID,
-		))
-		return m.terminalizeCancelSessionFatal(ctx, tx, requestID, lockedSession, now, session.TerminalReasonRuntimeStateInvalid,
-			RuntimeFailureKindStateInvalid, RuntimeFailureErrorCodeDefinitionRecompileFailed, formatDiagnostics(diagnostics), &currentTurn.ID, currentTurn.Sequence+1, actor.ID)
+
+	roster, err := m.cancelSessionRepo.ListActiveParticipantsForRoster(ctx, tx, lockedSession.ID)
+	if err != nil {
+		return session.CancelSessionResult{}, err
+	}
+	known := knownActorsFromRoster(roster)
+
+	event := platform.NewSessionCancelled()
+	encodedEvent, err := platform.EncodeEvent(event)
+	if err != nil {
+		return session.CancelSessionResult{}, fmt.Errorf("encoding session cancelled event: %s", err)
 	}
 
-	// Current authoritative Runtime state is never loaded from a persisted
-	// Snapshot (none exists) - engineservice.AdvanceTurn internally replays
-	// every durable cause committed so far, given only the ordered signal
-	// log below.
-	input, priorSignals, err := replay.LoadPriorSignals(ctx, tx, m.cancelSessionRepo, lockedSession.ID)
+	output, err := m.executor.Execute(ctx, executor.ExecutionInput{
+		Script:        executor.ResolvedScript{Source: artifact.BackendScript},
+		PreviousState: currentTurn.NewState,
+		Event:         encodedEvent,
+		Context:       executor.ExecutionContext{LogicalTime: now, RandomSeed: drawSeed(), ActingActor: string(actorRefForActorID(actor.ID))},
+	})
 	if err != nil {
-		return session.CancelSessionResult{}, fmt.Errorf("reconstructing current runtime state: %s", err)
-	}
-
-	signal := engine.Signal{Kind: engine.SignalKindNamed, Name: "SessionCancelled"}
-
-	outputs, err := engineservice.AdvanceTurn(compiledProgram, input, priorSignals, signal, engine.DefaultLimits())
-	if err != nil {
-		if errors.Is(err, engineservice.ErrReplayDivergence) {
-			// Every element of priorSignals already succeeded once - it is
-			// durable specifically because it did - so failing to replay it
-			// identically is a data-integrity condition, never an ordinary
-			// decline.
-			monitoring.Alert(ctx, fmt.Sprintf("session %d: %s", lockedSession.ID, err))
-			return session.CancelSessionResult{}, fmt.Errorf("reconstructing current runtime state: %s", err)
-		}
-		if errors.Is(err, engineservice.ErrSignalRejected) || errors.Is(err, engineservice.ErrInputRejected) {
-			// No transition matches SessionCancelled at all. A host cancel
+		var rejected *executor.ScriptRejectedError
+		if errors.As(err, &rejected) {
+			// No reaction matches SESSION_CANCELLED at all. A host cancel
 			// still always ends the Session (the human-approved
 			// force-terminal decision) - but nothing here was ever accepted
-			// by the engine, so no RuntimeTurn/cause event is created: doing
-			// so would durably record a signal that replay would then have
-			// to replay forward and see rejected again, indistinguishable
-			// from genuine divergence/corruption (see Approved Design's "Why
-			// the rejected path creates no RuntimeTurn"). sessions.
-			// terminal_reason alone durably explains this outcome.
+			// by the script, so no RuntimeTurn/cause event is created:
+			// there is no new state to persist, and the prior state remains
+			// exactly what it was.
 			return m.terminalizeCancelSessionForced(ctx, tx, requestID, lockedSession, now)
 		}
 		errorCode, errorMessage := classifyExecutionError(err)
@@ -240,13 +219,18 @@ func (m *Manager) cancelSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUI
 			RuntimeFailureKindExecution, errorCode, errorMessage, &currentTurn.ID, currentTurn.Sequence+1, actor.ID)
 	}
 
-	// Accepted: the authored game has a transition matching SessionCancelled.
+	commands, err := parseCommands(output.RequestedCommands, known)
+	if err != nil {
+		return m.terminalizeCancelSessionForced(ctx, tx, requestID, lockedSession, now)
+	}
+
+	// Accepted: the authored script reacted to SESSION_CANCELLED.
 	// session_cause_events.runtime_turn_id is NOT NULL, so the cause event
 	// row can only be created after the Turn it belongs to already exists -
 	// its own pointer back to it is then backfilled, exactly like
-	// SubmitUserIntent's own cause persistence.
+	// SubmitPlayerEvent's own cause persistence.
 	actorID := actor.ID
-	turnID, err := m.cancelSessionRepo.CreateRuntimeTurn(ctx, tx, lockedSession.ID, currentTurn.Sequence+1, replay.SessionCancelledSourceKind, nil, nil, nil, &actorID)
+	turnID, err := m.cancelSessionRepo.CreateRuntimeTurn(ctx, tx, lockedSession.ID, currentTurn.Sequence+1, sessionCancelledSourceKind, nil, nil, &actorID, output.NewState)
 	if err != nil {
 		return session.CancelSessionResult{}, err
 	}
@@ -257,44 +241,29 @@ func (m *Manager) cancelSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUI
 	if err := m.cancelSessionRepo.SetRuntimeTurnCauseEvent(ctx, tx, turnID, causeEventID); err != nil {
 		return session.CancelSessionResult{}, err
 	}
-
-	if err := m.interactionsCapturer.Capture(ctx, tx, lockedSession.ID, turnID, outputs); err != nil {
-		return session.CancelSessionResult{}, err
-	}
-	if err := m.timersCapturer.Capture(ctx, tx, lockedSession.ID, turnID, outputs); err != nil {
-		return session.CancelSessionResult{}, err
-	}
 	if err := m.cancelSessionRepo.SetCurrentTurn(ctx, tx, lockedSession.ID, turnID); err != nil {
 		return session.CancelSessionResult{}, err
 	}
 
-	// Force-terminal always: reuse the game's own completion detection when
-	// it found one (TerminalReasonGame*); otherwise the accepted transition
+	// Force-terminal always: reuse the script's own completion request when
+	// it made one (TerminalReasonGame*); otherwise the accepted reaction
 	// moved state without ending the run, so this call terminalizes it
 	// anyway under the new TerminalReasonSessionCancelledByHost. Either way,
 	// a CancelSession call that reaches this point always ends the Session -
 	// the terminal-cleanup steps below always run, unlike every other
 	// signal-driven capability's conditional "if terminated" branch.
-	terminalReason, terminated := completion.Detect(outputs)
+	terminalReason, terminated := completion.Detect(commands)
 	if !terminated {
 		terminalReason = session.TerminalReasonSessionCancelledByHost
 	}
 	if err := m.cancelSessionRepo.SetSessionTerminal(ctx, tx, lockedSession.ID, now, terminalReason); err != nil {
 		return session.CancelSessionResult{}, err
 	}
-	if err := m.cancelSessionRepo.CloseAllActiveInteractionsForSession(ctx, tx, lockedSession.ID, session.InteractionClosureReasonSessionTerminated); err != nil {
-		return session.CancelSessionResult{}, err
-	}
 	if err := m.cancelSessionRepo.CancelAllActiveTimerObligationsForSession(ctx, tx, lockedSession.ID, session.TimerObligationClosureReasonSessionTerminated); err != nil {
 		return session.CancelSessionResult{}, err
 	}
 
-	mappedOutputs, err := m.mapOutputs(ctx, tx, lockedSession.ID, clientoutputs.ClientFacing(outputs))
-	if err != nil {
-		return session.CancelSessionResult{}, fmt.Errorf("mapping client-facing outputs: %s", err)
-	}
-
-	result := session.CancelSessionResult{Outcome: session.CancelSessionOutcomeCancelled, SessionUUID: session.SessionUUID(lockedSession.UUID), Outputs: mappedOutputs, TerminalReason: terminalReason}
+	result := session.CancelSessionResult{Outcome: session.CancelSessionOutcomeCancelled, SessionUUID: session.SessionUUID(lockedSession.UUID), TerminalReason: terminalReason}
 	responseBytes, err := json.Marshal(result)
 	if err != nil {
 		return session.CancelSessionResult{}, fmt.Errorf("marshaling cancel session response payload: %s", err)
@@ -306,8 +275,8 @@ func (m *Manager) cancelSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUI
 }
 
 // declineCancelSession completes requestID as an ordinary decline (no
-// engine effect, no state change) and reports resultOutcome, mirroring
-// declineSubmitUserIntent's shape.
+// execution effect, no state change) and reports resultOutcome, mirroring
+// declineSubmitPlayerEvent's shape.
 func (m *Manager) declineCancelSession(ctx context.Context, tx *gorm.DB, requestID uint, lockedSession *internalrepo.Session, outcomeLabel string, resultOutcome session.CancelSessionOutcome) (session.CancelSessionResult, error) {
 	if err := m.cancelSessionRepo.CompleteSessionRequest(ctx, tx, requestID, &lockedSession.ID, outcomeLabel, ""); err != nil {
 		return session.CancelSessionResult{}, fmt.Errorf("completing cancel session request: %s", err)
@@ -316,16 +285,13 @@ func (m *Manager) declineCancelSession(ctx context.Context, tx *gorm.DB, request
 }
 
 // terminalizeCancelSessionForced performs CancelSession's forced-terminal
-// path for a SessionCancelled signal the engine rejected outright (no
+// path for a SESSION_CANCELLED event the script rejected outright (no
 // RuntimeTurn, current_turn_id unchanged) - see cancelSessionInTx's own
-// ErrSignalRejected/ErrInputRejected handling for why no cause is
-// persisted. Outcome is still CancelSessionOutcomeCancelled: the Session
-// ends either way.
+// ScriptRejectedError/parse-failure handling for why no cause is persisted.
+// Outcome is still CancelSessionOutcomeCancelled: the Session ends either
+// way.
 func (m *Manager) terminalizeCancelSessionForced(ctx context.Context, tx *gorm.DB, requestID uint, lockedSession *internalrepo.Session, terminalAt time.Time) (session.CancelSessionResult, error) {
 	if err := m.cancelSessionRepo.SetSessionTerminal(ctx, tx, lockedSession.ID, terminalAt, session.TerminalReasonSessionCancelledByHost); err != nil {
-		return session.CancelSessionResult{}, err
-	}
-	if err := m.cancelSessionRepo.CloseAllActiveInteractionsForSession(ctx, tx, lockedSession.ID, session.InteractionClosureReasonSessionTerminated); err != nil {
 		return session.CancelSessionResult{}, err
 	}
 	if err := m.cancelSessionRepo.CancelAllActiveTimerObligationsForSession(ctx, tx, lockedSession.ID, session.TimerObligationClosureReasonSessionTerminated); err != nil {
@@ -344,16 +310,16 @@ func (m *Manager) terminalizeCancelSessionForced(ctx context.Context, tx *gorm.D
 
 // terminalizeCancelSessionFatal performs CancelSession's fatal path:
 // atomically terminalizes the Session, persists the session_runtime_failures
-// diagnostic record, and closes every currently-ACTIVE session_interactions
-// row and timer obligation for it, mirroring terminalizeSubmitUserIntentFatal
-// exactly, and completes the idempotency claim so a retry replays this same
-// outcome instead of re-attempting a doomed execution. Distinct from
-// terminalizeCancelSessionForced below: this is a genuine runtime failure
-// (SESSION-ADR-0016 class B/C), not the host's own intentional cancellation, so
-// only this path persists a session_runtime_failures row.
+// diagnostic record, and cancels every currently-ACTIVE timer obligation
+// for it, mirroring terminalizeSubmitPlayerEventFatal exactly, and
+// completes the idempotency claim so a retry replays this same outcome
+// instead of re-attempting a doomed execution. Distinct from
+// terminalizeCancelSessionForced above: this is a genuine infrastructure
+// failure, not the host's own intentional cancellation, so only this path
+// persists a session_runtime_failures row.
 func (m *Manager) terminalizeCancelSessionFatal(ctx context.Context, tx *gorm.DB, requestID uint, lockedSession *internalrepo.Session, terminalAt time.Time, terminalReason string, failureKind string, errorCode string, errorMessage string, baseTurnID *uint, attemptedSequence uint64, actorID uint) (session.CancelSessionResult, error) {
 	if err := m.materializeRuntimeFailure(ctx, tx, m.cancelSessionRepo, lockedSession, terminalAt, terminalReason,
-		failureKind, errorCode, errorMessage, baseTurnID, attemptedSequence, replay.SessionCancelledSourceKind, nil, nil, &actorID); err != nil {
+		failureKind, errorCode, errorMessage, baseTurnID, attemptedSequence, sessionCancelledSourceKind, nil, &actorID); err != nil {
 		return session.CancelSessionResult{}, err
 	}
 	if err := m.cancelSessionRepo.CompleteSessionRequest(ctx, tx, requestID, &lockedSession.ID, cancelSessionOutcomeRuntimeExecutionFailed, ""); err != nil {
@@ -364,7 +330,7 @@ func (m *Manager) terminalizeCancelSessionFatal(ctx context.Context, tx *gorm.DB
 
 // interpretExistingCancelSessionClaim replays an already-completed
 // idempotency claim's original outcome, mirroring
-// interpretExistingSubmitUserIntentClaim exactly.
+// interpretExistingSubmitPlayerEventClaim exactly.
 func interpretExistingCancelSessionClaim(existing *internalrepo.Request, incoming cancelSessionRequestPayload) (session.CancelSessionResult, error) {
 	if existing.Status != internalrepo.RequestStatusCompleted {
 		return session.CancelSessionResult{}, session.ErrIdempotencyInFlight

@@ -3,6 +3,7 @@
 Status: ACCEPTED
 Created: 2026-09-27
 Last status change: 2026-09-27
+Addendum (2026-09-29): the domain-split/internalization goal this record accepted is fully realized as of `WORK-0038` - Game Management owns no script/rule-versioning table or execution engine of any kind, and every Session Runtime operation resolves its pinned Game version entirely from Session Runtime's own tables. `ARCHITECTURE.md`'s own "not yet complete" annotation is removed accordingly.
 Supersedes: None
 Superseded by: ADR-0015 (in part — the "Game Language" reclassification/artifact-content-type framing only, since Game Language itself is retired by ADR-0015/GAME-ADR-0028; the domain-split decision, the independent-bounded-context/persisted-artifact-ownership shape, and the Composer/Orchestrator composition-flow decisions below are conserved and restated by ADR-0015)
 

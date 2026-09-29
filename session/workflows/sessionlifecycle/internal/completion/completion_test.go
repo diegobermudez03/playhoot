@@ -3,51 +3,42 @@ package completion
 import (
 	"testing"
 
-	"github.com/diegobermudez03/playhoot/game/language/v1/engine"
 	"github.com/diegobermudez03/playhoot/session"
+	"github.com/diegobermudez03/playhoot/session/workflows/sessionlifecycle/internal/platform"
 	"github.com/stretchr/testify/require"
 )
 
 func TestDetect(t *testing.T) {
 	t.Run("completed", func(t *testing.T) {
-		outputs := []engine.Output{
-			engine.OpenQuestionOutput{InteractionID: 1, Recipient: "1"},
-			engine.RunCompletedOutput{Outcome: engine.RunOutcome{Kind: engine.RunOutcomeCompleted, Result: engine.NumberValue{Value: 1}}},
+		commands := []platform.Command{
+			&platform.SendEvent{Recipients: []platform.ActorRef{"1"}, Name: "celebrate"},
+			&platform.SessionComplete{},
 		}
-		reason, terminated := Detect(outputs)
+		reason, terminated := Detect(commands)
 		require.True(t, terminated)
 		require.Equal(t, session.TerminalReasonGameCompleted, reason)
 	})
 
 	t.Run("failed", func(t *testing.T) {
-		outputs := []engine.Output{
-			engine.RunCompletedOutput{Outcome: engine.RunOutcome{Kind: engine.RunOutcomeFailed, Error: "oops"}},
+		commands := []platform.Command{
+			&platform.SessionFail{Reason: "oops"},
 		}
-		reason, terminated := Detect(outputs)
+		reason, terminated := Detect(commands)
 		require.True(t, terminated)
 		require.Equal(t, session.TerminalReasonGameFailed, reason)
 	})
 
-	t.Run("cancelled", func(t *testing.T) {
-		outputs := []engine.Output{
-			engine.RunCompletedOutput{Outcome: engine.RunOutcome{Kind: engine.RunOutcomeCancelled, Reason: "abandoned"}},
+	t.Run("no_terminal_command_is_not_terminated", func(t *testing.T) {
+		commands := []platform.Command{
+			&platform.SendEvent{Recipients: []platform.ActorRef{"1"}, Name: "celebrate"},
+			&platform.ScheduleTimer{Timer: "t1", DelayMS: 1000},
 		}
-		reason, terminated := Detect(outputs)
-		require.True(t, terminated)
-		require.Equal(t, session.TerminalReasonGameCancelled, reason)
-	})
-
-	t.Run("no_run_completed_output_is_not_terminated", func(t *testing.T) {
-		outputs := []engine.Output{
-			engine.OpenQuestionOutput{InteractionID: 1, Recipient: "1"},
-			engine.EmitEffectOutput{Effect: "Celebrate"},
-		}
-		reason, terminated := Detect(outputs)
+		reason, terminated := Detect(commands)
 		require.False(t, terminated)
 		require.Empty(t, reason)
 	})
 
-	t.Run("no_outputs_is_not_terminated", func(t *testing.T) {
+	t.Run("no_commands_is_not_terminated", func(t *testing.T) {
 		reason, terminated := Detect(nil)
 		require.False(t, terminated)
 		require.Empty(t, reason)

@@ -55,9 +55,8 @@ func MigrateTables(db *gorm.DB) error {
 		// migration of its own.
 		migration20260925000000SessionTimerObligations(),
 
-		// session_runtime_failures - SESSION-ADR-0016's durable fatal-diagnostic
-		// record, populated by every RuntimeTurn-producing path's fatal
-		// branch (WORK-0014).
+		// session_runtime_failures - the durable fatal-diagnostic record,
+		// populated by every RuntimeTurn-producing path's fatal branch.
 		migration20260926000000SessionRuntimeFailures(),
 
 		// sessions.activity_expires_at - the durable RUNNING-phase inactivity
@@ -69,6 +68,20 @@ func MigrateTables(db *gorm.DB) error {
 		// Create instead of reading Game Management.
 		migration20260928000000SessionGames(),
 		migration20260928000001SessionGameVersionArtifacts(),
+
+		// session_runtime_turns.new_state - the authoritative snapshot-based
+		// persisted state, replacing live-path replay reconstruction.
+		migration20260929000000SessionRuntimeTurnsNewState(),
+
+		// session_game_version_artifacts.participant_min/participant_max -
+		// structural Session admission/capacity metadata, enforced by
+		// Join/Start before any authored script runs.
+		migration20260929000002SessionGameVersionArtifactsParticipantConstraints(),
+
+		// session_interactions retired outright: the platform's closed
+		// Event/Command vocabulary has no OPEN_INTERACTION concept left,
+		// every game-defined player action is a PLAYER_EVENT.
+		migration20260929000003DropSessionInteractions(),
 	})
 
 	return migrator.Migrate()
