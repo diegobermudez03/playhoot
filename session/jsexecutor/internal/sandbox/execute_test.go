@@ -311,6 +311,136 @@ func TestExecute_CallerDeadline_KillsRunawayWorker(t *testing.T) {
 	require.Less(t, elapsed, 5*time.Second, "a caller deadline must actually kill a tight loop that never yields, not merely time out the read while the worker keeps running")
 }
 
+// TestExecute_OversizedOutput_IsRejected proves the output-size cap: a
+// script that returns a combined NewState/RequestedCommands shape larger
+// than defaultMaxOutputBytes is rejected as a business-level outcome, not
+// silently accepted or truncated.
+func TestExecute_OversizedOutput_IsRejected(t *testing.T) {
+	in := ExecutionInput{
+		Script: ResolvedScript{Source: `
+			function execute(previousState, event, context) {
+				return { newState: { big: "x".repeat(300000) }, requestedCommands: [] };
+			}
+		`},
+		PreviousState: json.RawMessage(`{}`),
+		Event:         json.RawMessage(`{}`),
+		Context:       testExecutionContext(),
+	}
+
+	_, err := Execute(context.Background(), in)
+	require.Error(t, err)
+
+	var rejected *ScriptRejectedError
+	require.ErrorAs(t, err, &rejected)
+	require.Contains(t, rejected.Reason, "byte limit")
+}
+
+// TestExecute_ExcessiveCommandCount_IsRejected proves the command-count
+// cap: a script that returns more than defaultMaxCommandCount requested
+// commands is rejected as a business-level outcome.
+func TestExecute_ExcessiveCommandCount_IsRejected(t *testing.T) {
+	in := ExecutionInput{
+		Script: ResolvedScript{Source: `
+			function execute(previousState, event, context) {
+				const commands = [];
+				for (let i = 0; i < ` + strconv.Itoa(defaultMaxCommandCount+1) + `; i++) {
+					commands.push({ type: "noop" });
+				}
+				return { newState: {}, requestedCommands: commands };
+			}
+		`},
+		PreviousState: json.RawMessage(`{}`),
+		Event:         json.RawMessage(`{}`),
+		Context:       testExecutionContext(),
+	}
+
+	_, err := Execute(context.Background(), in)
+	require.Error(t, err)
+
+	var rejected *ScriptRejectedError
+	require.ErrorAs(t, err, &rejected)
+	require.Contains(t, rejected.Reason, "command limit")
+}
+
+// TestExecute_MemoryExhaustion_IsRejectedNotCrashed proves
+// LOGICAL_CONTRACT.md's previously-untested claim: a script that allocates
+// past qjs.Option.MemoryLimit is stopped and surfaced as a clean error, not
+// a worker process crash and not a hang past the caller's deadline.
+func TestExecute_MemoryExhaustion_IsRejectedNotCrashed(t *testing.T) {
+	in := ExecutionInput{
+		// Exponential string doubling blows past defaultMemoryLimitBytes
+		// (64 MiB) within roughly 30 iterations - fast enough that this
+		// proves the memory cap itself, not the execution-time cap.
+		Script: ResolvedScript{Source: `
+			function execute(previousState, event, context) {
+				let s = "x";
+				while (true) { s = s + s; }
+			}
+		`},
+		PreviousState: json.RawMessage(`{}`),
+		Event:         json.RawMessage(`{}`),
+		Context:       testExecutionContext(),
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	_, err := Execute(ctx, in)
+	elapsed := time.Since(start)
+
+	require.Error(t, err)
+	require.Less(t, elapsed, 4*time.Second, "a memory-exhausting script must be stopped by its own memory cap, well before the execution-time/caller deadline")
+
+	// Confirmed (2026-09-29): qjs's own memory limit throws a catchable JS
+	// exception ("InternalError: out of memory"), which the existing
+	// "execute() threw" path already surfaces as a clean, business-level
+	// ScriptRejectedError - no worker crash.
+	var rejected *ScriptRejectedError
+	require.ErrorAsf(t, err, &rejected, "got %T: %v", err, err)
+}
+
+// TestExecute_StackOverflow_IsRejectedNotCrashed proves
+// LOGICAL_CONTRACT.md's previously-untested claim: unbounded recursion past
+// qjs.Option.MaxStackSize is stopped and surfaced as a clean error, not a
+// worker process crash.
+func TestExecute_StackOverflow_IsRejectedNotCrashed(t *testing.T) {
+	in := ExecutionInput{
+		Script: ResolvedScript{Source: `
+			function recurse(n) { return recurse(n + 1); }
+			function execute(previousState, event, context) {
+				recurse(0);
+			}
+		`},
+		PreviousState: json.RawMessage(`{}`),
+		Event:         json.RawMessage(`{}`),
+		Context:       testExecutionContext(),
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	_, err := Execute(ctx, in)
+	elapsed := time.Since(start)
+
+	require.Error(t, err)
+	require.Less(t, elapsed, 4*time.Second, "unbounded recursion must be stopped by its own stack cap, well before the execution-time/caller deadline")
+
+	// Confirmed (2026-09-29), unlike memory exhaustion: unbounded recursion
+	// does not throw a catchable JS exception - it is an infrastructure-level
+	// failure inside the QuickJS-on-wazero binding itself (observed as a wasm
+	// trap surfacing through the WASM runtime's own cleanup, recovered by
+	// this package's top-level panic guard, or - if that guard's own
+	// recovery cannot run - a hard worker-process crash the OS-process
+	// boundary still safely contains). Either path is a clean
+	// WorkerExecutionError to the caller, never a hang and never a crash of
+	// the caller's own process - but callers must not expect the same
+	// graceful ScriptRejectedError memory exhaustion gets.
+	var workerErr *WorkerExecutionError
+	require.ErrorAsf(t, err, &workerErr, "got %T: %v", err, err)
+}
+
 func TestExecute_ConcurrentSessionsDoNotInterfere(t *testing.T) {
 	const n = 8
 	errs := make(chan error, n)

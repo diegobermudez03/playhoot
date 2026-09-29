@@ -38,12 +38,21 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+// highConcurrencyCeiling is used by every test that isn't itself exercising
+// the concurrency ceiling, so ordinary tests never spuriously hit it.
+const highConcurrencyCeiling = 1000
+
 func startTestServer(t *testing.T) pb.ExecutorClient {
+	t.Helper()
+	return startTestServerWithCeiling(t, highConcurrencyCeiling)
+}
+
+func startTestServerWithCeiling(t *testing.T, maxConcurrentExecutions int) pb.ExecutorClient {
 	t.Helper()
 
 	lis := bufconn.Listen(1024 * 1024)
 	srv := grpc.NewServer()
-	pb.RegisterExecutorServer(srv, grpcserver.New())
+	pb.RegisterExecutorServer(srv, grpcserver.New(maxConcurrentExecutions))
 
 	go func() {
 		_ = srv.Serve(lis)
@@ -199,6 +208,57 @@ func TestExecute_CallerDeadline_ReturnsDeadlineExceeded(t *testing.T) {
 		after, globErr := filepath.Glob(pattern)
 		return globErr == nil && len(after) == len(before)
 	}, 2*time.Second, 50*time.Millisecond, "killing a runaway worker across the gRPC boundary must not leak its scratch directory")
+}
+
+// TestExecute_ConcurrencyCeiling_RejectsWithResourceExhausted proves the
+// Server's concurrency ceiling: a call arriving while the ceiling's only
+// slot is already held is rejected immediately with ResourceExhausted,
+// never queued and never left to spawn an additional worker process.
+func TestExecute_ConcurrencyCeiling_RejectsWithResourceExhausted(t *testing.T) {
+	client := startTestServerWithCeiling(t, 1)
+
+	holdCtx, holdCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer holdCancel()
+
+	started := make(chan struct{})
+	held := make(chan error, 1)
+	go func() {
+		req := &pb.ExecuteRequest{
+			Script:        []byte(`function execute() { while (true) {} }`),
+			PreviousState: []byte(`{}`),
+			Event:         []byte(`{}`),
+			Context:       testContext(),
+		}
+		close(started)
+		_, err := client.Execute(holdCtx, req)
+		held <- err
+	}()
+	<-started
+	// The semaphore is acquired synchronously as soon as the gRPC call
+	// reaches the handler, before it ever spawns the (comparatively slow)
+	// sandbox worker process - so a short, fixed settle delay is enough to
+	// make this call reliably win the race for the ceiling's only slot,
+	// rather than racing it against req2 below (whose own probing calls, if
+	// not rejected, are exactly as slow to complete as this one - a race
+	// between two similarly-slow contenders that req2 can otherwise keep
+	// winning by chance for several rounds).
+	time.Sleep(200 * time.Millisecond)
+
+	req2 := &pb.ExecuteRequest{
+		Script:        []byte(counterScript),
+		PreviousState: []byte(`{}`),
+		Event:         []byte(`{"amount": 1}`),
+		Context:       testContext(),
+	}
+	require.Eventually(t, func() bool {
+		_, err := client.Execute(context.Background(), req2)
+		return err != nil && status.Code(err) == codes.ResourceExhausted
+	}, 2*time.Second, 20*time.Millisecond, "a second call must be rejected with ResourceExhausted while the ceiling's only slot is held by the runaway first call")
+
+	require.NoError(t, holdCtx.Err(), "the holder must still be running (its own 3s deadline not yet reached) when rejection was observed")
+
+	holdCancel()
+	<-held
 }
 
 func TestExecute_MalformedRandomSeed_IsInvalidArgument(t *testing.T) {

@@ -16,14 +16,29 @@ import (
 	pb "github.com/diegobermudez03/playhoot/session/jsexecutor/proto"
 )
 
-// Server implements pb.ExecutorServer.
+// Server implements pb.ExecutorServer. sem bounds how many sandbox.Execute
+// calls may run concurrently, protecting the Executor's own host from
+// spawning an unbounded number of worker processes under a request burst -
+// a defensive ceiling on this service's own aggregate resource consumption,
+// not a per-user/business rate-limiting policy (that is Session Runtime's
+// own, separately owned, concern).
 type Server struct {
 	pb.UnimplementedExecutorServer
+	sem chan struct{}
 }
 
 // New constructs a Server ready to be registered against a grpc.Server.
-func New() *Server {
-	return &Server{}
+// maxConcurrentExecutions bounds how many Execute calls this Server allows
+// in flight at once; a call arriving once that many are already running is
+// rejected immediately with codes.ResourceExhausted rather than queued -
+// queuing would only move the same unbounded-accumulation risk from too
+// many OS processes to too many blocked callers waiting on a channel, so
+// this keeps the Server itself simple (accept or reject, no queue/timeout
+// state to manage) and leaves the backpressure decision (retry now, retry
+// later, surface a failure) to the caller, which has the business context
+// to make it.
+func New(maxConcurrentExecutions int) *Server {
+	return &Server{sem: make(chan struct{}, maxConcurrentExecutions)}
 }
 
 // Execute runs one authored-script execution. A business-level rejection
@@ -32,8 +47,17 @@ func New() *Server {
 // worker, an exceeded deadline) is returned as a non-OK gRPC status instead
 // of response data, so a caller can distinguish the two the same way gRPC
 // already distinguishes "your request was invalid/declined" from "the RPC
-// itself failed."
+// itself failed." A call exceeding the concurrency ceiling never reaches
+// the sandbox at all - it is rejected with codes.ResourceExhausted before
+// any worker process would have been spawned.
 func (s *Server) Execute(ctx context.Context, req *pb.ExecuteRequest) (*pb.ExecuteResponse, error) {
+	select {
+	case s.sem <- struct{}{}:
+		defer func() { <-s.sem }()
+	default:
+		return nil, status.Error(codes.ResourceExhausted, "executor at capacity: too many concurrent executions")
+	}
+
 	logicalTime, err := time.Parse(time.RFC3339Nano, req.GetContext().GetLogicalTime())
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid logical_time: %v", err)

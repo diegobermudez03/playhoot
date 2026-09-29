@@ -23,6 +23,17 @@ const (
 	defaultMaxExecutionTimeMillis = 5000
 )
 
+// defaultMaxOutputBytes/defaultMaxCommandCount bound a successful
+// execution's own returned shape (NewState plus RequestedCommands) -
+// distinct from the resource limits above, which bound the runtime while a
+// script is executing. Enforced by Execute itself (the caller process),
+// after decoding the worker's response, so no worker-side code needs to
+// reason about the caller's limits.
+const (
+	defaultMaxOutputBytes  = 256 * 1024
+	defaultMaxCommandCount = 100
+)
+
 type workerContext struct {
 	LogicalTime string `json:"logicalTime"`
 	RandomSeed  string `json:"randomSeed"`

@@ -167,10 +167,33 @@ func Execute(ctx context.Context, in ExecutionInput) (ExecutionOutput, error) {
 		return ExecutionOutput{}, &WorkerExecutionError{Reason: *resp.Fatal}
 	}
 
+	if len(resp.RequestedCommands) > defaultMaxCommandCount {
+		return ExecutionOutput{}, &ScriptRejectedError{Reason: fmt.Sprintf(
+			"execute() returned %d requested commands, exceeding the %d-command limit",
+			len(resp.RequestedCommands), defaultMaxCommandCount,
+		)}
+	}
+	if outputBytes := outputSize(resp); outputBytes > defaultMaxOutputBytes {
+		return ExecutionOutput{}, &ScriptRejectedError{Reason: fmt.Sprintf(
+			"execute() returned %d bytes of combined output, exceeding the %d-byte limit",
+			outputBytes, defaultMaxOutputBytes,
+		)}
+	}
+
 	return ExecutionOutput{
 		NewState:          resp.NewState,
 		RequestedCommands: resp.RequestedCommands,
 	}, nil
+}
+
+// outputSize is the combined serialized size of a successful response's
+// NewState and RequestedCommands - the shape defaultMaxOutputBytes bounds.
+func outputSize(resp workerResponse) int {
+	total := len(resp.NewState)
+	for _, cmd := range resp.RequestedCommands {
+		total += len(cmd)
+	}
+	return total
 }
 
 func truncate(s string, max int) string {

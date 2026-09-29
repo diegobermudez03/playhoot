@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -30,6 +31,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("reading configuration: %v", err)
 	}
+	maxConcurrentExecutions, err := readMaxConcurrentExecutions()
+	if err != nil {
+		log.Fatalf("reading configuration: %v", err)
+	}
 
 	lis, err := net.Listen("tcp", ":"+strconv.Itoa(port))
 	if err != nil {
@@ -37,7 +42,7 @@ func main() {
 	}
 
 	grpcServer := grpc.NewServer()
-	pb.RegisterExecutorServer(grpcServer, grpcserver.New())
+	pb.RegisterExecutorServer(grpcServer, grpcserver.New(maxConcurrentExecutions))
 
 	healthServer := health.NewServer()
 	healthgrpc.RegisterHealthServer(grpcServer, healthServer)
@@ -59,4 +64,24 @@ func readGRPCPort() (int, error) {
 		return 0, fmt.Errorf("GRPC_PORT must be a valid TCP port")
 	}
 	return port, nil
+}
+
+// readMaxConcurrentExecutions reads the Executor's own concurrency ceiling:
+// a defensive cap on how many sandbox.Execute calls may run at once,
+// protecting this service's own host from unbounded worker-process
+// spawning under a request burst. MAX_CONCURRENT_EXECUTIONS is optional -
+// unset or empty falls back to a conservative, documented engineering
+// default (runtime.NumCPU() * 4), not a business/product-reviewed number:
+// this ceiling protects the Executor's own host from aggregate overload,
+// it does not enforce any per-user/business policy.
+func readMaxConcurrentExecutions() (int, error) {
+	raw := strings.TrimSpace(os.Getenv("MAX_CONCURRENT_EXECUTIONS"))
+	if raw == "" {
+		return runtime.NumCPU() * 4, nil
+	}
+	max, err := strconv.Atoi(raw)
+	if err != nil || max < 1 {
+		return 0, fmt.Errorf("MAX_CONCURRENT_EXECUTIONS must be a positive integer")
+	}
+	return max, nil
 }
