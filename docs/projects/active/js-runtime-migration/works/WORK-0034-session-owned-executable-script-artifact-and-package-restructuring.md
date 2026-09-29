@@ -1,8 +1,8 @@
 # WORK-0034: Session-Owned Executable Script Artifact & Package Restructuring
 
-Status: IMPLEMENTING
+Status: DONE
 Created: 2026-09-27
-Last status change: 2026-09-28 (DRAFT -> READY -> IMPLEMENTING, human authorization: "Nice, proceed")
+Last status change: 2026-09-28 (IMPLEMENTING -> DONE, independent review APPROVED with no findings)
 
 Related decisions:
 - `docs/decisions/architecture/ADR-0014-management-session-domain-split.md`
@@ -151,3 +151,7 @@ Human review feedback:
 - Directly requested: rename `management/` to `game/`, reclaiming the name the old shared "Game" bounded context used, and park Game Language (`game/language/v1/...`) inside it "for now" until it is eventually retired -> applied as a further package-layout refinement within this WORK's already-approved package-restructuring scope, not a new material decision: `management/*` merged into the existing `game/` directory (which already held `language/v1/` and `docs/`), `package management` renamed to `package game` throughout, every `management.Xxx`/`playhoot/management` reference repository-wide updated (all confirmed confined to the package's own former tree plus `migrations.go` - no external caller existed to update, consistent with `Create` no longer depending on it). `go build`/`go vet`/`go test ./...` re-verified clean (same two pre-existing failures, no new ones). Documentation re-synchronized: `game/README.md` (new note explaining `game/` now names Game Management alone and that Game Language's presence there is a parking spot, not ownership), `ARCHITECTURE.md`'s package-layout block, `KNOWLEDGE_MAP.md`, `SYSTEM_MAP.md`, `domain-logic-placement.md`'s worked example, and this WORK's own Scope/Approved Design/Acceptance Criteria/Completion Record text updated throughout to `game/`.
 
 Ready for independent review: YES.
+
+**Independent review (2026-09-28)**: Performed per `docs/ai/protocols/IMPLEMENTATION_REVIEW.md` by a fresh reviewer, reasoning from the actual implementation commit's diff, current code, migrations, and documentation rather than this report. Verdict: **APPROVED**, no findings. Verification independently repeated: `go build ./...`/`go vet ./...` clean; `go test ./... -count=1` clean except the same two pre-existing `comment_standard_test.go` failures, independently confirmed pre-existing (unaffected by this WORK) by diffing the flagged files against their pre-move content; `gofmt -l`'s repository-wide hits independently confirmed to be a pre-existing CRLF/LF checkout artifact, not a regression (files this WORK added/rewrote are absent from that list). Acceptance criteria checked directly against the diff and a repository-wide (all file types) search for stale `game/management`/`game/session` import paths, which returned zero live hits. Real-Postgres integration coverage remains unexercised (same disclosed sandbox limitation).
+
+Status: DONE.

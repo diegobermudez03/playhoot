@@ -35,6 +35,10 @@ Both halves of `ADR-0016`'s topology split are now DONE. No `sessionlifecycle` c
 
 **WORK-0034 moved to DRAFT (2026-09-28), scope narrowed by explicit human decision.** Drafting surfaced that WORK-0031's original design (inherited by WORK-0034) moved all six of Session Runtime's pinned-definition reads off Game Management, but five of those six (`Join`/`Start`/`AnswerInteraction`/`SubmitUserIntent`/`CancelSession`/`ExpireTimer`) still execute gameplay through the *old* Game Language engine — handing them a JS-shaped artifact before `WORK-0038` wires in the Executor would break them. Human decision: WORK-0034 now moves only `Create`; the other five stay on Game Management, unchanged, until `WORK-0038` switches them together with the engine swap it already owns. Separately, the bootstrapping question (how `Create` learns a not-yet-seen version's content) is resolved: `Create` resolves the current version entirely from Session Runtime's own new tables, never from Game Management and never from data Composer (`WORK-0032`) passes in — Composer's own future design is now simpler (visibility gate only, no data handoff). Both resolutions, and their consequence that `ADR-0014`'s full Game-Language-internalization goal is only partially realized until `WORK-0038` lands, are recorded in WORK-0034's own file (Scope Narrowing section).
 
+**WORK-0034 is DONE (2026-09-28)** — independent review per `docs/ai/protocols/IMPLEMENTATION_REVIEW.md`, APPROVED with no findings (verification independently repeated, not merely re-read from the implementation report). `Create` now resolves entirely from Session Runtime's own `session_games`/`session_game_version_artifacts` tables; `game/`/`session/` are independent top-level packages. See the WORK's own Completion Record for the full review report.
+
+**WORK-0032 moved PLANNED -> DRAFT (2026-09-28), not yet READY.** Initial design pass found the real entry point Composer needs: `api/session/handler.go`'s `POST /sessions` already exists but is an unconditional `501` stub, and no other current WORK (`session-runtime-v1`'s `WORK-0008`/`WORK-0020` own the post-Create live/lobby experience, not this call) claims wiring it. Also found `getgame.GetPlayableGameWithCurrentVersion`, the existing visibility-read capability this WORK's Constraints already pointed to, is now orphaned (its only caller was removed by `WORK-0034`) and would reject a real, visible Game published purely as JavaScript once `WORK-0033` exists, since it also decodes a Game-Language `program.Definition`. Two Material Decisions are flagged in the WORK's own file for explicit human confirmation before READY: whether this WORK wires the HTTP endpoint itself, and whether Composer's visibility read is a new narrow Game Management capability (proposed) versus reusing the existing, now-orphaned one.
+
 ## Work
 
 | Order | Work | Status |
@@ -45,10 +49,10 @@ Both halves of `ADR-0016`'s topology split are now DONE. No `sessionlifecycle` c
 | 4 | WORK-0036 — Execution Resource Limits & Isolation Boundary (now inside the Executor service) | PLANNED |
 | 5 | WORK-0037 — Deterministic-Authoring Static Analysis / Lint Enforcement | PLANNED |
 | 6 | WORK-0044 — Game Version Artifact Model (Backend Script + Frontend Script + Contracts + Assets) | DONE |
-| 7 | WORK-0034 — Session-Owned Executable Script Artifact & Package Restructuring (supersedes cancelled WORK-0031) | IMPLEMENTING |
-| 8 | WORK-0032 — Composer-Mediated Session Creation Visibility Composition (reparented from `management-session-domain-split`) | PLANNED |
-| 9 | WORK-0038 — Snapshot-Based Session Runtime Persistence Migration (implements SESSION-ADR-0025) | PLANNED |
-| 10 | WORK-0039 — Platform Command Protocol & Runtime Validation | PLANNED |
+| 7 | WORK-0034 — Session-Owned Executable Script Artifact & Package Restructuring (supersedes cancelled WORK-0031) | DONE |
+| 8 | WORK-0032 — Composer-Mediated Session Creation Visibility Composition (reparented from `management-session-domain-split`) | DRAFT |
+| 9 | WORK-0039 — Platform Command Protocol & Runtime Validation | DRAFT |
+| 10 | WORK-0038 — Snapshot-Based Session Runtime Persistence Migration (implements SESSION-ADR-0025) | DRAFT |
 | 11 | WORK-0040 — Timer Obligations Adapted To JS Commands | PLANNED |
 | 12 | WORK-0041 — Per-Player View Computation & Privacy Verification | PLANNED |
 | 13 | WORK-0042 — Effects Delivery (Best-Effort, Restated From SESSION-ADR-0019) | PLANNED |
@@ -62,7 +66,11 @@ Both halves of `ADR-0016`'s topology split are now DONE. No `sessionlifecycle` c
 | 21 | WORK-0050 — Scoped & Revocable Authoring Authorization | PLANNED |
 | 22 | WORK-0051 — End-To-End Verification (gates project completion) | PLANNED |
 
-22 WORK total: 4 DONE, 1 IMPLEMENTING, 0 READY, 0 DRAFT, 17 PLANNED.
+22 WORK total: 5 DONE, 0 IMPLEMENTING, 0 READY, 3 DRAFT, 14 PLANNED.
+
+**WORK-0039's vocabulary revised by explicit human architectural decision (2026-09-28), same day it was drafted.** The backend JavaScript protocol must be completely presentation-agnostic: backend owns game rules/data, frontend owns presentation/UX, Playhoot owns session/platform/transport. `INTERACTION_ANSWERED`/`USER_INTENT` collapse into one generic `PLAYER_EVENT`; `OPEN_INTERACTION`/`EMIT_EFFECT`/`REQUEST_VIEW` are removed outright — `SEND_EVENT` (presentation-agnostic) replaces `EMIT_EFFECT`, and a second pure backend entry point, `project(state, viewer, context) -> ClientState`, replaces `REQUEST_VIEW` as a command entirely. Checked directly against `GAME-ADR-0028`/`ADR-0015` first, per explicit instruction: neither ADR is contradicted — both state explicitly that the exact command/event vocabulary is this WORK's own design decision, not fixed by either record. `WORK-0038` and `WORK-0040`–`WORK-0043`/`WORK-0045` updated to reflect the new terms (light-touch, since all remain undesigned beyond this vocabulary consistency pass) — most notably `WORK-0038` now flags `session_interactions`' own fate as an open design question, since the durable "open interaction" concept it encodes no longer has a platform-level reason to exist.
+
+**WORK-0038/WORK-0039 moved PLANNED -> DRAFT (2026-09-28), real design pass.** Triggered by drafting `WORK-0032`: removing Game Management's `game_definitions`/Definition concept (a directly human-requested scope item) is only safe once the five call sites `WORK-0034` left untouched (`Join`/`Start`/`AnswerInteraction`/`SubmitUserIntent`/`CancelSession`/`ExpireTimer`) stop needing it — which is exactly `WORK-0038`'s own closing condition. Rather than defer that, drafted `WORK-0039` (platform Event/Command vocabulary — confirmed the Event side is a direct re-encoding of the already-accepted Signal catalog; the Command side is genuinely new wire-contract surface) and `WORK-0038` (persisted-state placement, the concrete per-call-site swap off `engineservice`/replay, and folding in the `game_definitions`/`game/language/v1` removal as this WORK's own closure) grounded in the actual current code (confirmed zero `sessionlifecycle` call site invokes the already-DONE `Executor` port yet; confirmed exactly what's opaque/undecided vs. already fixed in the wire contract). Both remain DRAFT, not READY — each has explicit Material Decisions in its own file needing human confirmation first. `WORK-0038` also flags required coordination with `session-runtime-v1`'s `WORK-0017` (Archival), not resolved here.
 
 ## Ordering / Dependencies
 

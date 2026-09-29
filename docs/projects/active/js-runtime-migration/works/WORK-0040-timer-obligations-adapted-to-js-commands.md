@@ -20,6 +20,8 @@ Adapt Session Runtime's already-implemented durable timer-obligation mechanism (
 
 Not yet designed. Depends on `WORK-0039`'s command schema for schedule/cancel.
 
+**Vocabulary update (2026-09-28):** `WORK-0039`'s revised vocabulary uses one generic timer-identifier shape (`SCHEDULE_TIMER`/`CANCEL_TIMER`/`TIMER_EXPIRED`, each carrying a single opaque `timer` string plus optional opaque `data`) rather than separate platform concepts for a plain vs. "keyed" timer. This WORK confirms whether that single generic shape is sufficient to cover both of today's `session_timer_obligations` addressing cases (`engine_slot` alone vs. `engine_slot`+`engine_key`) — likely yes, by having the authored script itself encode any "key" as part of its own opaque `timer` identifier — or whether a narrower platform-level distinction still needs to survive; not assumed either way here.
+
 ## Scope
 
 Not yet designed.

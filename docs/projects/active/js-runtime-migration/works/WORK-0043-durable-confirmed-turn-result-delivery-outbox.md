@@ -13,11 +13,13 @@ Canonical context:
 
 ## Outcome
 
-Build the durable delivery mechanism `ADR-0015` requires for a confirmed interaction's *result* (accepted/rejected/failed), as distinct from a mere transport acknowledgement and as distinct from best-effort cosmetic effects (`WORK-0042`). `SESSION-ADR-0019` already anticipated that a future capability needing durable/irreversible delivery "must explicitly design its own delivery/idempotency/retry semantics as a separate decision" rather than inherit its own "no outbox" conclusion — this WORK is that decision made concrete. Without it, the mandate's requirement to distinguish "a transport acknowledgement" from "an accepted play" has no real mechanism.
+Build the durable delivery mechanism `ADR-0015` requires for a confirmed `PLAYER_EVENT`'s own *outcome* (accepted/rejected/failed), as distinct from a mere transport acknowledgement and as distinct from best-effort `SEND_EVENT` delivery (`WORK-0042`). `SESSION-ADR-0019` already anticipated that a future capability needing durable/irreversible delivery "must explicitly design its own delivery/idempotency/retry semantics as a separate decision" rather than inherit its own "no outbox" conclusion — this WORK is that decision made concrete. Without it, the mandate's requirement to distinguish "a transport acknowledgement" from "an accepted play" has no real mechanism.
 
 ## Context
 
 Not yet designed. Depends on `WORK-0038`'s persistence model (what "confirmed" means to read back) and must coordinate with `session-runtime-v1`'s `WORK-0020` for where delivery actually attaches to a live connection.
+
+**Vocabulary update (2026-09-28):** `WORK-0039`'s revised vocabulary has no dedicated "action result" command — a `PLAYER_EVENT`'s accept/reject outcome is already fully determined by Go itself (`*executor.ScriptRejectedError` vs. a successful `Execute` call), not something the authored script separately declares. This WORK's own scope is therefore specifically: durably delivering *that already-known Go-side outcome* back to the acting participant, not inventing a new platform command kind for it.
 
 ## Scope
 

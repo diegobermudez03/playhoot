@@ -1,4 +1,4 @@
-# WORK-0042: Effects Delivery (Best-Effort, Restated From SESSION-ADR-0019)
+# WORK-0042: SEND_EVENT Delivery (Best-Effort, Restated From SESSION-ADR-0019)
 
 Status: PLANNED
 Created: 2026-09-27
@@ -13,11 +13,13 @@ Canonical context:
 
 ## Outcome
 
-Adapt cosmetic/presentation effect delivery to the new JS command source (`WORK-0039`), restating `SESSION-ADR-0019`'s existing accepted stance unchanged: effects are best-effort, correctness never depends on a client receiving one, and correlation exists for repeated/late/absent effects. This is explicitly distinct from `WORK-0043` (durable delivery of confirmed interaction *results*, which `ADR-0015` extends beyond best-effort) — this WORK does not change delivery guarantees, only the source of what's being delivered.
+Adapt cosmetic/transient event delivery to the new JS command source (`WORK-0039`'s `SEND_EVENT`), restating `SESSION-ADR-0019`'s existing accepted stance unchanged: a `SEND_EVENT` is best-effort, correctness never depends on a client receiving one, and correlation exists for repeated/late/absent delivery. This is explicitly distinct from `WORK-0043` (durable delivery of a confirmed `PLAYER_EVENT`'s own *outcome*, which `ADR-0015` extends beyond best-effort) — this WORK does not change delivery guarantees, only the source of what's being delivered.
 
 ## Context
 
 Not yet designed. Depends on `WORK-0039`'s command vocabulary.
+
+**Vocabulary update (2026-09-28):** `WORK-0039` names this command `SEND_EVENT`, deliberately not `EMIT_EFFECT` — its `name`/`payload` are entirely game-defined and opaque to Playhoot (this WORK validates/delivers only the envelope: recipients, session, size/count limits, correlation); whether the generated frontend treats a given `SEND_EVENT` as an animation, a sound, a notification, or nothing at all is frontend logic this WORK has no visibility into and must not assume.
 
 ## Scope
 

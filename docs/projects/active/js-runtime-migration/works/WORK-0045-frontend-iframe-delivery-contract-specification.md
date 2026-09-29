@@ -18,6 +18,8 @@ Produce the accepted, canonical specification of the frontend delivery contract 
 
 Not yet designed. Depends on `WORK-0039`'s command/view vocabulary existing in at least draft form, since the contract must be concrete about what a view/effect/interaction actually contains.
 
+**Vocabulary update (2026-09-28):** `WORK-0039`'s revised vocabulary independently confirms the design points already surfaced below — the platform-agnostic-presentation stance is now the accepted backend protocol, not merely an anticipated concern. This WORK's own client-library surface should map directly onto it: `onState(...)` delivers `project`'s `ClientState`, `onEvent(...)` delivers a `SEND_EVENT`, and `send(name, payload)` becomes a `PLAYER_EVENT`. The exact method names/shapes remain this WORK's own design task, not fixed here.
+
 **Design points surfaced while drafting `WORK-0044` (2026-09-27), recorded here so they are not lost before this WORK is actually drafted — none of these are decided yet:**
 
 - The backend must never send a presentation/rendering instruction (no "show this screen," no UI-element description) — only logical events carrying data (for example, "you were dealt this card," "you lost"). The frontend script alone decides what any event means for the interface; the backend has no opinion about presentation at all. This is closer to an API boundary (backend exposes behavior/data, never presentation) than the old engine's model, where the backend's own declarative language dictated the UI tree.

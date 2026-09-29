@@ -13,11 +13,13 @@ Canonical context:
 
 ## Outcome
 
-Because authored JavaScript computes per-player views directly (there is no longer a Playhoot-trusted, compiler-enforced `Projection` guaranteeing purity), build the mechanism that verifies no player's view/command output leaks another player's or role's private data, and the mechanism to retrieve a player's current view on initial load or reconnect directly from persisted state (`WORK-0038`), without requiring every prior message to have been received. `ADR-0015` names this a required capability, not optional hardening: knowing all game state does not, by itself, guarantee an authored view is correct.
+Because authored JavaScript computes per-player views directly (there is no longer a Playhoot-trusted, compiler-enforced `Projection` guaranteeing purity), build the mechanism that verifies no player's `ClientState` leaks another player's or role's private data, and the mechanism to retrieve a player's current `ClientState` on initial load or reconnect directly from persisted state (`WORK-0038`), without requiring every prior transient `SEND_EVENT` to have been received. `ADR-0015` names this a required capability, not optional hardening: knowing all game state does not, by itself, guarantee an authored view is correct.
 
 ## Context
 
 Not yet designed. This is a genuinely new capability with no direct current-implementation precedent (the retired `Projection` compiler enforced this by construction; nothing enforces it for JS-computed views yet).
+
+**Vocabulary update (2026-09-28):** `WORK-0039`'s revised design fixes the mechanism this WORK verifies: the backend script exposes a second, pure entry point, `project(state, viewer, context) -> ClientState`, separate from `execute` — `project` cannot mutate authoritative state and cannot emit Commands (`WORK-0039`'s own Constraints). This WORK's privacy-verification mechanism operates specifically on `project`'s output for a given `viewer`, not on anything returned from `execute`'s Commands (`REQUEST_VIEW` as a command no longer exists). `ClientState`/`PlayerProjection` is the correct term for this WORK's own subject matter — never "View," since it is authorized game data, not a UI instruction, and must never itself be assumed to contain presentation concepts.
 
 ## Scope
 
