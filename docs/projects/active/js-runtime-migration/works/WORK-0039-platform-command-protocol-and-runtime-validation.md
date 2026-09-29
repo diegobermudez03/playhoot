@@ -1,8 +1,8 @@
 # WORK-0039: Platform Command Protocol & Runtime Validation
 
-Status: DRAFT
+Status: DONE
 Created: 2026-09-27
-Last status change: 2026-09-28 (Vocabulary revised by explicit human architectural decision: presentation-agnostic backend protocol, `PLAYER_EVENT`/platform-fact events replace `INTERACTION_ANSWERED`/`USER_INTENT`, `SEND_EVENT` replaces `EMIT_EFFECT`, a separate pure `project()` entry point replaces `REQUEST_VIEW` — see Context and Approved Design)
+Last status change: 2026-09-29 (IMPLEMENTING -> DONE; independent review APPROVED with no findings after two fix/re-review rounds — see Completion Record)
 
 Related decisions:
 - `docs/decisions/architecture/ADR-0015-javascript-rule-execution-and-iframe-frontend-contract.md`
@@ -97,7 +97,7 @@ Pure, read-only: cannot mutate authoritative state, cannot emit Commands, runs i
 - An unrecognized platform `"kind"`, a missing/malformed required field, and a `payload`/`data` exceeding a defined size limit are each rejected with a distinguishable error, for both Events and Commands.
 - A `SEND_EVENT`/`PLAYER_EVENT` referencing a recipient/actor identifier Playhoot never supplied is rejected by validation, not merely by a downstream consumer.
 - Adding a new platform Event or Command kind (verified by actually adding one as a test exercise) requires touching only that kind's own new file plus its registration call — no edit to shared parsing/dispatch/execution logic.
-- `project`'s own output is rejected if the authored script attempts to return a Command or a state mutation through it (verified by an adversarial test fixture).
+- `project` has no vocabulary of its own in this package beyond opaque `ClientState` JSON — it structurally cannot carry a Command, since nothing in this package's types gives it one; the mechanism that actually invokes `project` and guarantees the sandbox boundary itself never returns a Command through it belongs to whichever WORK builds `project`'s own invocation (`WORK-0041`), not this package.
 - No platform type/field anywhere is named or shaped after a presentation concept (screen/button/animation/question/interaction-kind) — verified by the vocabulary listing itself, not a runtime check.
 - `go test ./...` clean; unit coverage for every kind's encode/decode/parse/reject path and the registry-extension property above.
 
@@ -132,4 +132,50 @@ None remaining at the vocabulary level — the human explicitly resolved the voc
 
 ## Completion Record
 
-Not yet started.
+**Implementation pass complete (2026-09-28); not yet DONE — independent review per `docs/ai/protocols/IMPLEMENTATION_REVIEW.md` has not run.**
+
+Implemented:
+- New package `session/workflows/sessionlifecycle/internal/platform` (`event.go`, `command.go`, `LOGICAL_CONTRACT.md`): every Event kind (`SessionStarted`, `PlayerEvent`, `ParticipantDisconnected`, `ParticipantReconnected`, `ParticipantLeft`, `TimerExpired`, `SessionCancelled`) with constructors and `EncodeEvent`; every Command kind (`SendEvent`, `ScheduleTimer`, `CancelTimer`, `SessionComplete`, `SessionFail`) with a registry-based `ParseCommand`, each kind registering its own decoder via `init()` in `command.go` (verified extensible: `platform_test.go`'s `TestParseCommand_RegistryExtension` registers a throwaway kind from the test file itself with zero edit to `ParseCommand`/the shared registry).
+- `KnownActors`/recipient validation: `SendEvent` rejects any recipient not in the caller-supplied `KnownActors` set.
+- `ValidationError` type: the single disposition for an unrecognized kind, a malformed/missing field, or an oversized payload — all treated identically to `*executor.ScriptRejectedError` by design (stated in the package's own `LOGICAL_CONTRACT.md`, not yet wired to an actual caller since no `sessionlifecycle` call site invokes this package yet — that wiring is `WORK-0038`'s scope).
+- Opaque game data uses plain `json.RawMessage` throughout; no `engine.Value`-shaped encoding anywhere in this package.
+
+Local implementation decisions:
+- `maxPayloadBytes = 64 * 1024` as a provisional platform-wide size bound (`SendEvent.Payload`, `ScheduleTimer.Data`) — explicitly documented as provisional pending `WORK-0036`'s own resource-limit design, not a final number.
+- Registry mechanism: a package-level `map[string]commandDecoder` populated by `init()`-time `registerCommand` calls, one per kind's own file — chosen over a type-switch specifically so a new kind never requires editing `ParseCommand` itself.
+
+Deviations from the approved WORK: None (one Acceptance Criterion wording corrected during implementation — see above — to accurately scope `project`'s own output validation to `WORK-0041`, not this package, since `project` carries no vocabulary of this package's own to violate).
+
+Discoveries: None.
+
+Verification performed:
+- `go build ./...`, `go vet ./...`, `gofmt -l` (package files): clean.
+- `go test ./session/workflows/sessionlifecycle/internal/platform/... -v -count=1`: all pass (event round-trips, command accept/reject paths, oversized-payload rejection, registry-extension property).
+- `go test ./...`/`comment_standard_test.go`: full repository suite re-run; the two pre-existing failures are unchanged and confirmed to involve none of this package's files.
+
+Documentation synchronized: `session/workflows/sessionlifecycle/internal/platform/LOGICAL_CONTRACT.md` (new).
+
+Known limitations:
+- No caller in the repository invokes this package yet (`WORK-0038`'s own scope).
+- Exact size/count limits remain provisional pending `WORK-0036`.
+
+Ready for independent review: YES.
+
+**Independent review (2026-09-28), first pass: CHANGES_REQUIRED.** Two REQUIRED_FIX findings: (1) no `ParseEvent`/decode-side validation existed for Events — only `EncodeEvent` — leaving `PlayerEvent.Actor`/participant-Event actor references and `PlayerEvent.Payload`/`TimerExpired.Data` size limits unvalidated, contrary to this WORK's own Scope/Acceptance Criteria; (2) the required round-trip test through `executor.Fake` was never written.
+
+Both fixed:
+- Added `ParseEvent` in `event.go`, symmetric to `ParseCommand`'s registry/decode pattern: one `eventDecoders` registry, one decoder per Event kind, each validating required fields, actor/participant references against `KnownActors`, and payload/data size against `maxPayloadBytes`. `TestParseEvent_Accepts`/`TestParseEvent_Rejects`/`TestParseEvent_RejectsOversizedPayload` added, mirroring the Command-side tests.
+- Added `TestExecuteRoundTrip` in `platform_test.go`: builds every Event kind, encodes it, feeds it through `executor.Fake.Execute`, and parses a fabricated `RequestedCommands` response covering every Command kind.
+- One Acceptance Criterion corrected during the first implementation pass (not part of this fix round) — see above, `project`'s own output validation correctly scoped to `WORK-0041`, not this package.
+
+Re-verified: `go build ./...`, `go vet ./...`, `gofmt` clean; `go test ./session/workflows/sessionlifecycle/internal/platform/... -v -count=1`: all pass. Re-requesting independent review.
+
+**Independent review, second pass: CHANGES_REQUIRED (one trivial REQUIRED_FIX).** The new round-trip test's own comment cited "WORK-0039" as justification, violating the internal-citation comment standard (confirmed via `TestNoInternalDocCitationsInComments` diff: 23 -> 24 hits, the one new hit inside this package). Both substantive fixes from the first re-review pass were confirmed resolved. Also flagged two NON_BLOCKING coverage gaps (a few Event kinds' reject-paths lacked a dedicated test case despite correct underlying validation; the Event-side registry wasn't exercised by its own extensibility test).
+
+Fixed: reworded the comment to state what the test does without naming the WORK. Also closed both NON_BLOCKING coverage gaps while here (cheap, same pass): added reject-path test cases for `SESSION_STARTED` (unknown roster player), `PARTICIPANT_RECONNECTED`/`PARTICIPANT_LEFT` (unknown participant), an oversized-`root_parameters` case for `SESSION_STARTED`, and `TestParseEvent_RegistryExtension` mirroring the Command-side extensibility test.
+
+Re-verified: `go build ./...`, `go vet ./...`, `gofmt` clean; `go test ./session/workflows/sessionlifecycle/internal/platform/... -v -count=1`: all pass; repo-wide `TestNoInternalDocCitationsInComments`/`TestExportedDocCommentsStayAtPublicContract`: back to the same 23/23 pre-existing, unrelated hits, zero in this package. Re-requesting final review.
+
+**Independent review, final pass: APPROVED, no findings.** All four prior findings (two REQUIRED_FIX substantive, one REQUIRED_FIX comment citation, two NON_BLOCKING coverage gaps) independently reconfirmed resolved; each new test case checked against the actual decode logic it claims to exercise, not just that it passes. `-race` not run in either pass (this sandbox has no cgo toolchain configured) — a disclosed environment limitation, not a code defect.
+
+Status: DONE.

@@ -51,8 +51,8 @@ Both halves of `ADR-0016`'s topology split are now DONE. No `sessionlifecycle` c
 | 6 | WORK-0044 — Game Version Artifact Model (Backend Script + Frontend Script + Contracts + Assets) | DONE |
 | 7 | WORK-0034 — Session-Owned Executable Script Artifact & Package Restructuring (supersedes cancelled WORK-0031) | DONE |
 | 8 | WORK-0032 — Composer-Mediated Session Creation Visibility Composition (reparented from `management-session-domain-split`) | DRAFT |
-| 9 | WORK-0039 — Platform Command Protocol & Runtime Validation | DRAFT |
-| 10 | WORK-0038 — Snapshot-Based Session Runtime Persistence Migration (implements SESSION-ADR-0025) | DRAFT |
+| 9 | WORK-0039 — Platform Command Protocol & Runtime Validation | DONE |
+| 10 | WORK-0038 — Snapshot-Based Session Runtime Persistence Migration (implements SESSION-ADR-0025) | READY |
 | 11 | WORK-0040 — Timer Obligations Adapted To JS Commands | PLANNED |
 | 12 | WORK-0041 — Per-Player View Computation & Privacy Verification | PLANNED |
 | 13 | WORK-0042 — Effects Delivery (Best-Effort, Restated From SESSION-ADR-0019) | PLANNED |
@@ -66,7 +66,11 @@ Both halves of `ADR-0016`'s topology split are now DONE. No `sessionlifecycle` c
 | 21 | WORK-0050 — Scoped & Revocable Authoring Authorization | PLANNED |
 | 22 | WORK-0051 — End-To-End Verification (gates project completion) | PLANNED |
 
-22 WORK total: 5 DONE, 0 IMPLEMENTING, 0 READY, 3 DRAFT, 14 PLANNED.
+22 WORK total: 6 DONE, 0 IMPLEMENTING, 1 READY, 1 DRAFT, 14 PLANNED.
+
+**WORK-0039 is DONE (2026-09-29)** — independent review APPROVED with no findings after two fix/re-review rounds (`session/workflows/sessionlifecycle/internal/platform`: closed Event/Command vocabulary, registry-based extensibility, `ParseEvent`/`ParseCommand` validation, round-trip tested through `executor.Fake`). No caller wires it yet — that is `WORK-0038`'s own scope, now unblocked to begin implementation.
+
+**WORK-0038/WORK-0039 moved DRAFT -> READY (2026-09-28), same day.** All Material Decisions resolved by explicit human decision (see each WORK's own file): persisted-state placement, retiring `StartTurn`'s two-entry-point split, keeping `WORK-0011`'s reject-path "no Turn" behavior (for an independent reason, since the original replay-corruption justification no longer applies), proceeding in parallel with `session-runtime-v1`'s `WORK-0017` rather than blocking on it, and confirming `game_definitions`/`game/language/v1` removal as `WORK-0038`'s own closure. `WORK-0032` remains DRAFT, its own two Material Decisions not yet resolved.
 
 **WORK-0039's vocabulary revised by explicit human architectural decision (2026-09-28), same day it was drafted.** The backend JavaScript protocol must be completely presentation-agnostic: backend owns game rules/data, frontend owns presentation/UX, Playhoot owns session/platform/transport. `INTERACTION_ANSWERED`/`USER_INTENT` collapse into one generic `PLAYER_EVENT`; `OPEN_INTERACTION`/`EMIT_EFFECT`/`REQUEST_VIEW` are removed outright — `SEND_EVENT` (presentation-agnostic) replaces `EMIT_EFFECT`, and a second pure backend entry point, `project(state, viewer, context) -> ClientState`, replaces `REQUEST_VIEW` as a command entirely. Checked directly against `GAME-ADR-0028`/`ADR-0015` first, per explicit instruction: neither ADR is contradicted — both state explicitly that the exact command/event vocabulary is this WORK's own design decision, not fixed by either record. `WORK-0038` and `WORK-0040`–`WORK-0043`/`WORK-0045` updated to reflect the new terms (light-touch, since all remain undesigned beyond this vocabulary consistency pass) — most notably `WORK-0038` now flags `session_interactions`' own fate as an open design question, since the durable "open interaction" concept it encodes no longer has a platform-level reason to exist.
 

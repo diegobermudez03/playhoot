@@ -1,8 +1,8 @@
 # WORK-0038: Snapshot-Based Session Runtime Persistence Migration
 
-Status: DRAFT
+Status: READY
 Created: 2026-09-27
-Last status change: 2026-09-28 (PLANNED -> DRAFT; initial design pass grounded in the actual current replay-first implementation and the already-built Executor contract, see Context)
+Last status change: 2026-09-28 (DRAFT -> READY; all Material Decisions explicitly resolved by the human decision maker, see Completion Record section "Material Decisions — Resolved")
 
 Related decisions:
 - `session/docs/decisions/SESSION-ADR-0025-snapshot-based-session-runtime-persistence.md`
@@ -110,16 +110,17 @@ This is an explicit architectural reversal of a fully implemented, independently
 
 ## Blockers
 
-- Must jointly resolve `session-runtime-v1`'s `WORK-0017` (Archival) redesign — its own archive-payload premise assumes replay-input-log-only content and must be redesigned to also carry final persisted state; flagged in that Project's own `PROJECT.md` Coordination Flag, not resolved here. Sequencing (does this WORK block on WORK-0017's redraft, or proceed and let WORK-0017 catch up, since it hasn't started implementation either) needs an explicit human call before READY.
-- Depends on `WORK-0039` reaching READY first (needs its Event/Command vocabulary to build the actual `ExecutionInput.Event`/parse `RequestedCommands`).
+None remaining — all resolved by explicit human decision (2026-09-28), see Material Decisions below. Coordination with `session-runtime-v1`'s `WORK-0017` proceeds in parallel (neither WORK has started implementation), flagged in both Projects' own files, not a sequencing block. Still depends on `WORK-0039` implementing first (needs its Event/Command vocabulary to build the actual `ExecutionInput.Event`/parse `RequestedCommands`), but `WORK-0039` itself has no unresolved material decision either.
 
-## Material Decisions Needing Human Input
+## Material Decisions — Resolved (2026-09-28, explicit human decision)
 
-1. **Persisted-state column placement** (`session_runtime_turns.new_state`, proposed) vs. an alternative shape.
-2. **Retiring Start's `StartTurn` two-entry-point split** in favor of one `Execute` call for every Turn, including the first — a real (if small) contract simplification, not merely an implementation detail.
-3. **`WORK-0011`'s reject-path asymmetry** ("no Turn on a rejected `SessionCancelled`") — its original replay-corruption justification stops applying; confirm whether the same outcome is still wanted for an independent reason, or whether a rejected signal should now also commit a Turn (state genuinely didn't change either way, so the practical difference is only whether a "nothing happened" Turn exists in the log).
-4. **Sequencing against `session-runtime-v1`'s `WORK-0017`** (Archival) — block on it, or proceed in parallel.
-5. **Confirms the original ask this whole design thread started from**: yes, `game_definitions`/`game_definition_histories`/`game/language/v1/...` are fully removed as part of *this* WORK's own closure (not `WORK-0032`'s), once every call site no longer needs them — see Scope/Acceptance Criteria above.
+1. **Persisted-state column placement**: confirmed — `session_runtime_turns.new_state`, as proposed.
+2. **Retiring Start's `StartTurn` two-entry-point split**: confirmed — one `Execute` call for every Turn, including the first, as proposed.
+3. **`WORK-0011`'s reject-path asymmetry** ("no Turn on a rejected `SessionCancelled`"): **kept as-is** — a rejected event didn't change state, so there is no real transition to record; this holds for an independent reason (nothing happened) even though the original replay-corruption justification no longer applies. A `PLAYER_EVENT`/`SESSION_CANCELLED` rejection continues to produce no `session_runtime_turns` row, only (where applicable) `sessions.terminal_reason`.
+4. **Sequencing against `session-runtime-v1`'s `WORK-0017`**: proceed in parallel — neither WORK has started implementation; flagged in both Projects' own files rather than blocking either on the other.
+5. **`game_definitions`/`game_definition_histories`/`game/language/v1/...` removal**: confirmed as this WORK's own closure (see Scope/Acceptance Criteria above) — the original request this whole design thread started from.
+
+No material decision remains unresolved. Ready for implementation once `WORK-0039` lands.
 
 ## Completion Record
 
