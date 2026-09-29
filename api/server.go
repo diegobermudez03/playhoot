@@ -22,10 +22,6 @@
 // that transport shape needs, uniformly - a route group cannot forget to
 // add it, because it never had the chance to.
 //
-// The session route group is currently a transport skeleton with no
-// domain dependency at all (see api/session's doc comment), so NewServer
-// takes no arguments today - that changes once a real dispatch layer
-// exists behind it again.
 package api
 
 import (
@@ -51,11 +47,14 @@ type Server struct {
 // NewServer constructs a Server exposing every endpoint every route group
 // this package knows about declares, registering each one onto a shared
 // mux and wrapping it with the observability behavior its transport shape
-// requires (see restObservability/wsObservability).
-func NewServer() *Server {
+// requires (see restObservability/wsObservability). sessionCreator is
+// whatever coordinates Session creation (Orchestrator in production);
+// this package depends only on api/session's own narrow port, never on
+// orchestrator directly.
+func NewServer(sessionCreator apisession.SessionCreator) *Server {
 	mux := http.NewServeMux()
 	groups := []routeGroup{
-		apisession.NewHandler(),
+		apisession.NewHandler(sessionCreator),
 	}
 	for _, group := range groups {
 		for _, route := range group.RESTRoutes() {

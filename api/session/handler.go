@@ -1,22 +1,32 @@
-// Package session is the session workflow's route group: currently an
-// HTTP/WebSocket transport skeleton only. It registers real endpoints
-// with real connection-upgrade mechanics, but calls no domain package -
-// there is nothing to call yet, so every handler answers a fixed
-// placeholder response until a real dispatch layer exists behind it.
+// Package session is the session workflow's route group. POST /sessions
+// calls SessionCreator (Orchestrator's CreateSession in production); GET
+// /ws's join/message dispatch remains a transport skeleton (see ws.go's
+// doc comment) until session-runtime-v1's own live-connection WORK lands.
 package session
 
 import (
+	"context"
+
 	"github.com/diegobermudez03/playhoot/api/internal/routing"
+	sessionpkg "github.com/diegobermudez03/playhoot/session"
 )
 
-// Handler exposes the session workflow's endpoints. It holds no
-// dependency today - handleCreateSession and handleWebSocket are
-// currently stubs (see http.go/ws.go).
-type Handler struct{}
+// SessionCreator is this route group's own narrow dependency on whatever
+// coordinates Session creation - Orchestrator in production, satisfied
+// structurally rather than imported directly so this package never needs
+// to depend on orchestrator's own dependencies.
+type SessionCreator interface {
+	CreateSession(ctx context.Context, gameUUID sessionpkg.GameUUID, hostUserUUID sessionpkg.UserUUID, idempotencyKey sessionpkg.IdempotencyKey) (sessionpkg.CreatedSession, error)
+}
 
-// NewHandler constructs a Handler.
-func NewHandler() *Handler {
-	return &Handler{}
+// Handler exposes the session workflow's endpoints.
+type Handler struct {
+	creator SessionCreator
+}
+
+// NewHandler constructs a Handler backed by creator.
+func NewHandler(creator SessionCreator) *Handler {
+	return &Handler{creator: creator}
 }
 
 // RESTRoutes returns this group's ordinary request/response endpoints,

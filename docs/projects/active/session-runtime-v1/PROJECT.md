@@ -194,6 +194,8 @@ No required outcome from this reconciliation pass emerged ownerless - every bold
 
 Neither WORK's own file has been rewritten by this flag; whoever next drafts either should read the two records above first rather than design against stale premises.
 
+**Added (2026-09-29): WORK-0015 (Disconnect / Reconnect / Full Resync).** `js-runtime-migration`'s own `WORK-0041` (Per-Player View Computation & Privacy Verification) claims a "retrieve a player's current `ClientState` on initial load or reconnect" capability. That claim is scoped there to a pure backend computation only (given persisted state and a viewer's identity/role, compute and privacy-verify that viewer's `ClientState` via `project(state, viewer, context) -> ClientState`) - it is not a delivery/reconnect/connection-handling mechanism. This WORK (`WORK-0015`) remains the sole owner of resync-over-a-live-connection: grace/debounce timing, per-connection-role (WORK-0020) reconnect handling, and invoking `WORK-0041`'s verified computation as its own projection step rather than either WORK reimplementing the other's concern. Flagged in both Projects, not resolved here - see `js-runtime-migration/PROJECT.md`'s own Ordering/Dependencies note and `WORK-0041`'s own Coordination Flag.
+
 ## Material Decisions Needing Human Input
 
 These were found during this Project's completeness audit and reconciliation (2026-09-20). None have been silently decided; each is recorded here rather than assumed.

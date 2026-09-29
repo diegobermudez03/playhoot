@@ -11,6 +11,9 @@ import (
 	"strings"
 
 	"github.com/diegobermudez03/playhoot/api"
+	"github.com/diegobermudez03/playhoot/game/usecases/checkvisibility"
+	"github.com/diegobermudez03/playhoot/orchestrator"
+	"github.com/diegobermudez03/playhoot/session/workflows/sessionlifecycle"
 	"github.com/joho/godotenv"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -25,6 +28,7 @@ type envVariables struct {
 	DatabaseName     string
 	DatabaseSSLMode  string
 	HTTPPort         string
+	ExecutorAddr     string
 }
 
 func main() {
@@ -52,7 +56,19 @@ func main() {
 		log.Fatalf("running PostgreSQL migrations: %v", err)
 	}
 
-	server := api.NewServer()
+	manager, closeExecutor, err := sessionlifecycle.NewWithGRPCExecutor(db, envVars.ExecutorAddr)
+	if err != nil {
+		log.Fatalf("connecting to the JavaScript Executor: %v", err)
+	}
+	defer func() {
+		if err := closeExecutor(); err != nil {
+			log.Printf("closing Executor connection: %v", err)
+		}
+	}()
+
+	orch := orchestrator.New(checkvisibility.New(db), manager)
+
+	server := api.NewServer(orch)
 
 	log.Printf("listening on :%s", envVars.HTTPPort)
 	if err := http.ListenAndServe(":"+envVars.HTTPPort, server.Routes()); err != nil {
@@ -76,6 +92,7 @@ func readEnvVariables() (*envVariables, error) {
 		DatabaseName:     strings.TrimSpace(os.Getenv("DATABASE_NAME")),
 		DatabaseSSLMode:  strings.TrimSpace(os.Getenv("DATABASE_SSL_MODE")),
 		HTTPPort:         strings.TrimSpace(os.Getenv("HTTP_PORT")),
+		ExecutorAddr:     strings.TrimSpace(os.Getenv("EXECUTOR_ADDR")),
 	}
 
 	required := []struct {
@@ -90,6 +107,7 @@ func readEnvVariables() (*envVariables, error) {
 		{name: "DATABASE_NAME", value: envVars.DatabaseName},
 		{name: "DATABASE_SSL_MODE", value: envVars.DatabaseSSLMode},
 		{name: "HTTP_PORT", value: envVars.HTTPPort},
+		{name: "EXECUTOR_ADDR", value: envVars.ExecutorAddr},
 	}
 	for _, variable := range required {
 		if variable.value == "" {

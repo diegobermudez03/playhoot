@@ -2,38 +2,35 @@
 
 Status: CURRENT IMPLEMENTATION
 
-## Retrieve Playable Game With Current Version
+## Check Game Visibility
 
 ```mermaid
 sequenceDiagram
-    participant Caller
-    participant UseCase as getgame.Service
-    participant Repo as getgame.Repo
-    participant DB as Game tables
+    participant Caller as orchestrator.Orchestrator
+    participant UseCase as checkvisibility.Service
+    participant Repo as game/internal/storage.Repo
+    participant DB as games table
     participant Rules as businessservice
-    participant Language as gameservice
 
-    Caller->>UseCase: GetPlayableGameWithCurrentVersion(gameUUID)
-    UseCase->>Repo: GetGameCurrentVersion(gameUUID)
-    Repo->>DB: SELECT games + current game_definitions
-    DB-->>Repo: Game row and current version script
-    Repo-->>UseCase: game.Game
-    UseCase->>Rules: ValidateVisibility / IsPlayableVisibility
-    UseCase->>Language: DecodeJSON(script)
-    Language-->>UseCase: program.Definition
-    UseCase-->>Caller: playable game with current definition
+    Caller->>UseCase: IsVisible(gameUUID)
+    UseCase->>Repo: ResolveVisibility(gameUUID)
+    Repo->>DB: SELECT visibility FROM games WHERE uuid = ? AND deleted_at IS NULL
+    DB-->>Repo: visibility value, or no row
+    Repo-->>UseCase: *string (nil if not found)
+    UseCase->>Rules: IsPlayableVisibility(visibility)
+    UseCase-->>Caller: visible, found
 ```
 
 Implemented behavior:
 
-- Missing games return no game.
-- Non-playable visibility is rejected.
-- Invalid visibility and invalid definition scripts are treated as broken game data.
-- No caller inside this repository currently invokes this use case: Session Runtime's `Create` resolves its own current version entirely from its own tables instead (`docs/projects/active/js-runtime-migration/works/WORK-0034-session-owned-executable-script-artifact-and-package-restructuring.md`). This capability remains implemented and tested for a future caller (for example Composer's visibility gate, `docs/projects/active/js-runtime-migration/works/WORK-0032-composer-mediated-session-creation-visibility-check.md`).
+- Resolves only `games.visibility` by `games.uuid` - no join, no script/definition decode of any kind (Game Management owns no version/definition concept - see `game/docs/DATA_MODEL.md`).
+- A missing or soft-deleted Game reports `found = false`.
+- `found = true, visible = false` for `draft`/`private`; `found = true, visible = true` for `hidden`/`public` (`businessservice.IsPlayableVisibility`).
+- Called by `orchestrator.Orchestrator.CreateSession` (`docs/projects/active/js-runtime-migration/works/WORK-0032-composer-mediated-session-creation-visibility-check.md`) before it calls Session Runtime's `Create` - Game Management's only current cross-domain caller.
 
 Evidence:
 
-- `game/usecases/getgame/service.go`
-- `game/usecases/getgame/repo.go`
-- `game/usecases/getgame/service_test.go`
-- `game/usecases/getgame/repo_test.go`
+- `game/usecases/checkvisibility/service.go`
+- `game/usecases/checkvisibility/service_test.go`
+- `game/internal/storage/repo.go`
+- `game/internal/storage/repo_test.go`

@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -13,9 +14,22 @@ import (
 	"time"
 
 	"github.com/diegobermudez03/playhoot/api"
+	"github.com/diegobermudez03/playhoot/session"
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/require"
 )
+
+// fakeSessionCreator is a hand-written test double for
+// api/session.SessionCreator - the interface has one method, so a mock
+// generator adds no value over a plain struct.
+type fakeSessionCreator struct {
+	result session.CreatedSession
+	err    error
+}
+
+func (f *fakeSessionCreator) CreateSession(ctx context.Context, gameUUID session.GameUUID, hostUserUUID session.UserUUID, idempotencyKey session.IdempotencyKey) (session.CreatedSession, error) {
+	return f.result, f.err
+}
 
 // syncBuffer is a bytes.Buffer safe for one goroutine to read (via
 // String) while another writes (via Write) - slog's built-in handlers
@@ -40,18 +54,44 @@ func (s *syncBuffer) String() string {
 	return s.buf.String()
 }
 
-// TestCreateSession_NotImplemented proves the current transport-skeleton
-// contract for POST /sessions: the wire request is validated, but nothing
-// behind it exists yet - see api/session's doc comment for why.
-func TestCreateSession_NotImplemented(t *testing.T) {
-	srv := api.NewServer()
+// TestCreateSession_Created proves POST /sessions calls through to the
+// injected SessionCreator (Orchestrator in production) and maps a
+// successful result to 201.
+func TestCreateSession_Created(t *testing.T) {
+	lobbyExpiresAt := time.Now().UTC().Add(10 * time.Minute)
+	creator := &fakeSessionCreator{result: session.CreatedSession{
+		SessionUUID:    "session-1",
+		JoinCode:       1234,
+		LobbyExpiresAt: lobbyExpiresAt,
+	}}
+	srv := api.NewServer(creator)
 	ts := httptest.NewServer(srv.Routes())
 	defer ts.Close()
 
 	resp, err := http.Post(ts.URL+"/sessions", "application/json", strings.NewReader(`{"game_uuid":"g","host_user_uuid":"u","idempotency_key":"k"}`))
 	require.NoError(t, err)
 	defer resp.Body.Close()
-	require.Equal(t, http.StatusNotImplemented, resp.StatusCode)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+
+	var body map[string]any
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	require.Equal(t, "session-1", body["session_uuid"])
+	require.Equal(t, float64(1234), body["join_code"])
+}
+
+// TestCreateSession_GameNotFound proves POST /sessions maps
+// session.ErrGameNotFound (the Orchestrator's own outcome for a
+// nonexistent/not-currently-playable Game) to 404, not the default 500.
+func TestCreateSession_GameNotFound(t *testing.T) {
+	creator := &fakeSessionCreator{err: session.ErrGameNotFound}
+	srv := api.NewServer(creator)
+	ts := httptest.NewServer(srv.Routes())
+	defer ts.Close()
+
+	resp, err := http.Post(ts.URL+"/sessions", "application/json", strings.NewReader(`{"game_uuid":"g","host_user_uuid":"u","idempotency_key":"k"}`))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusNotFound, resp.StatusCode)
 }
 
 // TestWebSocket_UpgradesAndRejectsUnknownMessages proves the current
@@ -60,7 +100,7 @@ func TestCreateSession_NotImplemented(t *testing.T) {
 // but no message type has a real implementation behind it yet - every
 // message answers ERROR - see api/session's doc comment for why.
 func TestWebSocket_UpgradesAndRejectsUnknownMessages(t *testing.T) {
-	srv := api.NewServer()
+	srv := api.NewServer(&fakeSessionCreator{})
 	ts := httptest.NewServer(srv.Routes())
 	defer ts.Close()
 
@@ -98,7 +138,7 @@ func TestWebSocket_ObservabilityLogsShareOneTraceID(t *testing.T) {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, nil)))
 	defer slog.SetDefault(prev)
 
-	srv := api.NewServer()
+	srv := api.NewServer(&fakeSessionCreator{})
 	ts := httptest.NewServer(srv.Routes())
 	defer ts.Close()
 
