@@ -2,7 +2,7 @@
 
 Status: ACTIVE
 Created: 2026-09-27
-Last updated: 2026-09-29
+Last updated: 2026-09-29 (WORK-0040 DRAFT)
 
 ## Goal
 
@@ -67,7 +67,7 @@ Both halves of `ADR-0016`'s topology split are now DONE. No `sessionlifecycle` c
 | 8 | WORK-0032 — Orchestrator-Mediated Session Creation Visibility Composition (reparented from `management-session-domain-split`) | DONE |
 | 9 | WORK-0039 — Platform Command Protocol & Runtime Validation | DONE |
 | 10 | WORK-0038 — Snapshot-Based Session Runtime Persistence Migration (implements SESSION-ADR-0025) | DONE |
-| 11 | WORK-0040 — Timer Obligations Adapted To JS Commands | PLANNED |
+| 11 | WORK-0040 — Timer Obligations Adapted To JS Commands | DRAFT |
 | 12 | WORK-0041 — Per-Player View Computation & Privacy Verification | PLANNED |
 | 13 | WORK-0042 — Effects Delivery (Best-Effort, Restated From SESSION-ADR-0019) | PLANNED |
 | 14 | WORK-0043 — Durable Confirmed-Turn Result Delivery (Outbox) | PLANNED |
@@ -75,7 +75,9 @@ Both halves of `ADR-0016`'s topology split are now DONE. No `sessionlifecycle` c
 | 16 | WORK-0046 — Frontend Package Serving & Versioned Asset Delivery | PLANNED |
 | 17 | WORK-0051 — End-To-End Verification (gates project completion) | PLANNED |
 
-17 WORK total: 10 DONE, 0 IMPLEMENTING, 0 READY, 0 DRAFT, 7 PLANNED. (`WORK-0033`/`WORK-0047`/`WORK-0048`/`WORK-0049`/`WORK-0050` moved out to standalone `docs/work/active/` 2026-09-29 — see Explicitly Out Of Scope.)
+17 WORK total: 10 DONE, 0 IMPLEMENTING, 0 READY, 1 DRAFT, 6 PLANNED. (`WORK-0033`/`WORK-0047`/`WORK-0048`/`WORK-0049`/`WORK-0050` moved out to standalone `docs/work/active/` 2026-09-29 — see Explicitly Out Of Scope.)
+
+**WORK-0040 moved PLANNED -> DRAFT (2026-09-29).** Blocker resolved (`WORK-0039` DONE). Drafting checked the actual current code rather than the WORK's own original assumption, and found the gap is real and precisely where expected: `session_timer_obligations`/its repo methods already exist from the retired engine era, `ExpireTimer` already reads an obligation to build `TIMER_EXPIRED`, but nothing writes a *new* obligation - every RUNNING-phase step already parses `[]platform.Command` but only ever consumes it for `completion.Detect`; `SCHEDULE_TIMER`/`CANCEL_TIMER` are silently dropped everywhere today. Also confirmed this WORK's own previously-flagged open question is already answered by `WORK-0039`'s existing accepted design, not still open: `platform.ScheduleTimer`/`CancelTimer` carry one opaque `Timer` string with no second "key" field at all, so `SESSION-ADR-0011`'s Game-Language-specific `KeyedTimerSlot<Key>` concept has no equivalent and is superseded in substance (dated Addendum added to that record, not rewritten). Approved Design: rename `engine_slot`/`engine_key` columns to `timer`/`data` (already informally used that way) and fix the uniqueness constraint to `(session_id, timer)` only, not including `data`; a new `internal/timers.Apply` mirroring `internal/completion.Detect`'s own shape, wired into all four RUNNING-phase steps before their existing terminal-cleanup block. One deliberate, explicitly flagged divergence from the retired `SESSION-ADR-0011` philosophy: `SCHEDULE_TIMER` for an already-ACTIVE `Timer` identifier now implicitly replaces it, rather than being rejected - see the WORK's own Approved Design for the full reasoning. Not yet READY - awaiting human review of this one flagged judgment call and the DRAFT overall.
 
 **WORK-0039 is DONE (2026-09-29)** — independent review APPROVED with no findings after two fix/re-review rounds (`session/workflows/sessionlifecycle/internal/platform`: closed Event/Command vocabulary, registry-based extensibility, `ParseEvent`/`ParseCommand` validation, round-trip tested through `executor.Fake`). No caller wires it yet — that is `WORK-0038`'s own scope, now unblocked to begin implementation.
 

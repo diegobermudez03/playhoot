@@ -6,6 +6,7 @@ Last status change: 2026-09-07
 Supersedes: None
 Superseded by: None
 Legacy ID: SESSION-ADR-0011
+Addendum (2026-09-29): superseded in substance, not formally, by `docs/projects/active/js-runtime-migration/works/WORK-0040-timer-obligations-adapted-to-js-commands.md`. Game Language (this record's entire subject - `KeyedTimerSlot<Key>`, its compiler/engine support) is fully retired (`WORK-0038`). The JS execution model's own already-accepted command vocabulary (`WORK-0039`, `session/workflows/sessionlifecycle/internal/platform`) addresses a timer by exactly one opaque `Timer` string, with no second "key" dimension at all - an author needing independently addressable concurrent timers (per-player, per-team) encodes that directly into their own single `Timer` identifier. This record's actual Decision/Rationale is not implemented against any live system (its own Implementation Impact authorized no code), so nothing is being reverted - only its premise (a closed DSL with a static slot/key addressing scheme) no longer exists.
 
 ## Context
 

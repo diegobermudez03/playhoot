@@ -1,3 +1,45 @@
+Checkpoint: WORK-0040 DRAFT — READY authorization needed.
+Date: 2026-09-29
+
+## What this WORK does
+
+Wires the two timer commands a backend script can already request (`SCHEDULE_TIMER`/`CANCEL_TIMER` - accepted since `WORK-0039`) into actual persistence. Right now they're silently dropped: every step already parses them but never acts on them. This closes that gap.
+
+## Why this WORK, right now
+
+You said to proceed with the next logical work and let me choose. `WORK-0040` was the first unblocked item in the project's own ordering once `WORK-0039` landed - and checking the actual code (not assuming) confirmed the gap is real: the old timer-obligation table/columns still exist from the retired engine, `ExpireTimer` already reads from them, but nothing writes a new one when a script asks to schedule a timer.
+
+## The one thing worth your attention before READY
+
+`SESSION-ADR-0011` (the old Game-Language "keyed timer slot" decision) said scheduling a timer that's already pending must be rejected outright - the author has to explicitly cancel first. That decision doesn't carry over cleanly: the new JS command vocabulary only has one opaque `Timer` name (no separate "key"), and rejecting a whole Turn after the script already ran would need real extra machinery (re-check the database before ever creating the Turn's row, roll back cleanly otherwise).
+
+My recommendation, already reflected in the DRAFT: **scheduling a timer that's already active implicitly replaces it** (cancel old, create new) instead of erroring. This is simpler, and an author who wants strict "reject if already scheduled" behavior can always check their own game state before deciding to schedule. If you'd rather it reject/error instead, tell me and I'll change the design before READY.
+
+## What's new
+
+A column rename (`engine_slot`/`engine_key` -> `timer`/`data` - purely a rename, they already hold exactly this data informally today) plus a tightened uniqueness rule (`data` should never have been part of a timer's identity), and a small shared function (`internal/timers.Apply`, same shape as the existing `internal/completion.Detect`) wired into all four steps that can produce a RuntimeTurn.
+
+## What's explicitly NOT done by this WORK
+
+- No physical "fire the timer when the delay elapses" mechanism - that's a separate, already-tracked gap (`session-runtime-v1`'s `WORK-0020`).
+- No delivery of the other command kind, `SEND_EVENT` - that's `WORK-0042`.
+
+## Unresolved blockers
+
+None.
+
+## What READY would authorize
+
+Implementing exactly what's described above: the migration, the rename, the new shared package, and wiring it into the four existing steps - nothing about physical scheduling or event delivery.
+
+## Recommendation
+
+Ready for READY authorization if you're comfortable with the replace-on-reschedule call above - full detail in `../works/WORK-0040-timer-obligations-adapted-to-js-commands.md`.
+
+---
+
+Prior checkpoint, preserved below:
+
 Checkpoint: WORK-0037 DONE (not a new human-decision gate — informational).
 Date: 2026-09-29
 
