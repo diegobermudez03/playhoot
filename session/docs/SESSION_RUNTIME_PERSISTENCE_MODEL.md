@@ -433,6 +433,8 @@ Retention of `session_requests`, `join_codes`, and other lightweight lifecycle m
 
 This accepted persistence model does not include a generic durable outbox for Coordinator/WebSocket/client delivery - no `session_delivery_outbox`, `delivery_attempts`, persistent connection delivery offset, or per-client ACK table. Durable commit (all tables above) is the correctness boundary; live delivery is best-effort against that already-durable state and never the reverse. A reconnecting client recovers current truth through the existing resync capability (see SessionActor Semantic Presence vs Participant Admission above and SESSION-ADR-0009), not through replaying a delivery log. See SESSION-ADR-0019 for the full rationale, including why this does not extend to a future Game Language output with an externally irreversible side effect.
 
+The one class of output SESSION-ADR-0019 itself flagged as needing its own separate delivery decision - a confirmed `PLAYER_EVENT`'s own accepted/rejected/failed outcome - is resolved the same way, not by adding the durable outbox this section otherwise rejects: `session_requests` (already listed above) already durably records that outcome in the same transaction as the RuntimeTurn it resulted from, so a dedicated pull-based read (`Manager.GetSubmitPlayerEventOutcome`) recovers it on demand instead of a push-style dispatcher retrying delivery. See SESSION-ADR-0026 for the full rationale.
+
 ## Relationship Types
 
 No database-enforced foreign key constraints are assumed by this accepted design, consistent with current Game migrations. All relationships above are logical persisted references unless a future implementation decision introduces enforced FKs.

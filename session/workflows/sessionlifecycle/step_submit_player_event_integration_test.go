@@ -403,3 +403,79 @@ func TestManagerSubmitPlayerEvent_Integration(t *testing.T) {
 		require.ErrorIs(t, err, session.ErrSessionNotFound)
 	})
 }
+
+func TestManagerGetSubmitPlayerEventOutcome_Integration(t *testing.T) {
+	db := testdb.OpenSessionDB(t)
+
+	// fault_injection_recovers_a_dropped_accepted_response: SubmitPlayerEvent
+	// already durably commits its own outcome the moment its transaction
+	// commits - this test proves that a caller who never actually used that
+	// first return value (modeling a response lost after commit, before the
+	// client ever saw it) can still recover the exact same outcome
+	// afterward, without triggering a second execution.
+	t.Run("fault_injection_recovers_a_dropped_accepted_response", func(t *testing.T) {
+		nextState := stateJSON(t, map[string]any{"guesses": []any{42}})
+		exec := startPassthroughThenExec(t, stateJSON(t, map[string]any{}), func(in executor.ExecutionInput) (executor.ExecutionOutput, error) {
+			return executor.ExecutionOutput{NewState: nextState}, nil
+		})
+		m, sessionUUID, hostUUID := startedSessionWithExecutor(t, db, exec)
+		key := session.IdempotencyKey(uuid.NewString())
+
+		original, err := m.SubmitPlayerEvent(context.Background(), sessionUUID, hostUUID, "Guess", stateJSON(t, map[string]any{"value": float64(42)}), key)
+		require.NoError(t, err)
+		require.Equal(t, session.SubmitPlayerEventOutcomeAccepted, original.Outcome, "the original call must have actually committed, for this fault-injection scenario to mean anything")
+		// original is deliberately not consulted again below - modeling the
+		// caller never having received it.
+
+		recovered, err := m.GetSubmitPlayerEventOutcome(context.Background(), sessionUUID, hostUUID, key)
+		require.NoError(t, err)
+		require.Equal(t, session.GetSubmitPlayerEventOutcomeFound, recovered.Outcome)
+		require.Equal(t, original, recovered.Result, "the recovered outcome must exactly match what the original call itself committed")
+
+		var turnCount int64
+		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_runtime_turns WHERE session_id = ?`, sessionIDForUUID(t, db, sessionUUID)).Scan(&turnCount).Error)
+		require.Equal(t, int64(2), turnCount, "reading the outcome back must never re-execute or commit a further Turn")
+	})
+
+	t.Run("recovers_a_rejected_outcome", func(t *testing.T) {
+		exec := startPassthroughThenExec(t, stateJSON(t, map[string]any{}), func(in executor.ExecutionInput) (executor.ExecutionOutput, error) {
+			return executor.ExecutionOutput{}, &executor.ScriptRejectedError{Reason: "no reaction"}
+		})
+		m, sessionUUID, hostUUID := startedSessionWithExecutor(t, db, exec)
+		key := session.IdempotencyKey(uuid.NewString())
+
+		original, err := m.SubmitPlayerEvent(context.Background(), sessionUUID, hostUUID, "Guess", nil, key)
+		require.NoError(t, err)
+		require.Equal(t, session.SubmitPlayerEventOutcomeRejected, original.Outcome)
+
+		recovered, err := m.GetSubmitPlayerEventOutcome(context.Background(), sessionUUID, hostUUID, key)
+		require.NoError(t, err)
+		require.Equal(t, session.GetSubmitPlayerEventOutcomeFound, recovered.Outcome)
+		require.Equal(t, session.SubmitPlayerEventOutcomeRejected, recovered.Result.Outcome)
+	})
+
+	t.Run("not_found_for_a_key_that_was_never_submitted", func(t *testing.T) {
+		exec := startPassthroughThenExec(t, stateJSON(t, map[string]any{}), func(in executor.ExecutionInput) (executor.ExecutionOutput, error) {
+			return executor.ExecutionOutput{NewState: stateJSON(t, map[string]any{})}, nil
+		})
+		m, sessionUUID, hostUUID := startedSessionWithExecutor(t, db, exec)
+
+		result, err := m.GetSubmitPlayerEventOutcome(context.Background(), sessionUUID, hostUUID, session.IdempotencyKey(uuid.NewString()))
+		require.NoError(t, err)
+		require.Equal(t, session.GetSubmitPlayerEventOutcomeNotFound, result.Outcome)
+	})
+
+	// The "a key completed under a different session must not leak its
+	// outcome here" defensive branch is covered precisely at the unit level
+	// (TestManagerGetSubmitPlayerEventOutcome's own
+	// not_found_when_request_belongs_to_a_different_session case) - building
+	// it here would require two real Sessions sharing one host identity
+	// purely to exercise one already-precisely-covered branch, disproportionate
+	// to what a real-Postgres test needs to additionally prove.
+
+	t.Run("session_not_found", func(t *testing.T) {
+		m := New(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
+		_, err := m.GetSubmitPlayerEventOutcome(context.Background(), session.SessionUUID(uuid.NewString()), session.UserUUID(uuid.NewString()), session.IdempotencyKey(uuid.NewString()))
+		require.ErrorIs(t, err, session.ErrSessionNotFound)
+	})
+}

@@ -54,6 +54,8 @@ type submitPlayerEventRepoAPI interface {
 	CancelActiveTimerObligation(ctx context.Context, tx *gorm.DB, sessionID uint, timer string, closedByTurnID uint) error
 	ClaimSessionRequest(ctx context.Context, tx *gorm.DB, input internalrepo.ClaimSessionRequestInput) (requestID uint, existing *internalrepo.Request, err error)
 	CompleteSessionRequest(ctx context.Context, tx *gorm.DB, requestID uint, sessionID *uint, outcome string, responsePayload string) error
+	ResolveSessionForClientState(ctx context.Context, sessionUUID string) (*internalrepo.Session, error)
+	FindSessionRequest(ctx context.Context, tx *gorm.DB, userUUID, operation, idempotencyKey string) (*internalrepo.Request, error)
 }
 
 // submitPlayerEventRequestPayload is SUBMIT_PLAYER_EVENT's meaningful-field
@@ -305,6 +307,16 @@ func interpretExistingSubmitPlayerEventClaim(existing *internalrepo.Request, inc
 		return session.SubmitPlayerEventResult{}, session.ErrIdempotencyConflict
 	}
 
+	return decodeSubmitPlayerEventOutcome(existing)
+}
+
+// decodeSubmitPlayerEventOutcome decodes a completed session_requests row's
+// own recorded outcome into a SubmitPlayerEventResult - shared by
+// interpretExistingSubmitPlayerEventClaim (which additionally compares the
+// incoming request for a conflict before calling this) and
+// GetSubmitPlayerEventOutcome (which has no incoming request to compare
+// against at all, only an idempotency key to read back).
+func decodeSubmitPlayerEventOutcome(existing *internalrepo.Request) (session.SubmitPlayerEventResult, error) {
 	switch existing.Outcome {
 	case submitPlayerEventOutcomeRejected:
 		return session.SubmitPlayerEventResult{Outcome: session.SubmitPlayerEventOutcomeRejected}, nil
@@ -320,6 +332,49 @@ func interpretExistingSubmitPlayerEventClaim(existing *internalrepo.Request, inc
 		return session.SubmitPlayerEventResult{}, fmt.Errorf("decoding stored submit player event response payload: %s", err)
 	}
 	return result, nil
+}
+
+// GetSubmitPlayerEventOutcome retrieves idempotencyKey's own already-
+// completed SubmitPlayerEvent outcome, without resubmitting the original
+// name/payload - a pure, unlocked, non-transactional read against the same
+// durable record SubmitPlayerEvent's own idempotency mechanism already
+// writes (see SubmitPlayerEvent's own doc comment for the write path this
+// reads back), for a caller that never received the original response. It
+// never re-executes anything and never mutates Session state.
+func (m *Manager) GetSubmitPlayerEventOutcome(ctx context.Context, sessionUUID session.SessionUUID, userUUID session.UserUUID, idempotencyKey session.IdempotencyKey) (session.GetSubmitPlayerEventOutcomeResult, error) {
+	defer logging.Step(ctx, "SessionLifecycle.GetSubmitPlayerEventOutcome").Close()
+	logging.LogFields(ctx,
+		logging.Field("session_uuid", string(sessionUUID)),
+		logging.Field("user_uuid", string(userUUID)),
+	)
+
+	found, err := m.submitPlayerEventRepo.ResolveSessionForClientState(ctx, string(sessionUUID))
+	if err != nil {
+		return session.GetSubmitPlayerEventOutcomeResult{}, err
+	}
+	if found == nil {
+		return session.GetSubmitPlayerEventOutcomeResult{}, session.ErrSessionNotFound
+	}
+
+	db := m.dbServicer.GetDB()
+	existing, err := m.submitPlayerEventRepo.FindSessionRequest(ctx, db, string(userUUID), operationSubmitPlayerEvent, string(idempotencyKey))
+	if err != nil {
+		return session.GetSubmitPlayerEventOutcomeResult{}, err
+	}
+	// A missing row, one still PENDING (visible only under a genuine
+	// concurrent race, since claim+complete happen atomically in one
+	// transaction), or one scoped to a different Session than sessionUUID
+	// names are all reported identically: nothing this caller is authorized
+	// to read back yet.
+	if existing == nil || existing.Status != internalrepo.RequestStatusCompleted || existing.SessionID == nil || *existing.SessionID != found.ID {
+		return session.GetSubmitPlayerEventOutcomeResult{Outcome: session.GetSubmitPlayerEventOutcomeNotFound}, nil
+	}
+
+	result, err := decodeSubmitPlayerEventOutcome(existing)
+	if err != nil {
+		return session.GetSubmitPlayerEventOutcomeResult{}, err
+	}
+	return session.GetSubmitPlayerEventOutcomeResult{Outcome: session.GetSubmitPlayerEventOutcomeFound, Result: result}, nil
 }
 
 // parseCommands parses every element of raw via platform.ParseCommand,

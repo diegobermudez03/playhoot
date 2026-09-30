@@ -817,6 +817,21 @@ func (mr *MocksubmitPlayerEventRepoAPIMockRecorder) FindActor(ctx, tx, sessionID
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindActor", reflect.TypeOf((*MocksubmitPlayerEventRepoAPI)(nil).FindActor), ctx, tx, sessionID, userUUID)
 }
 
+// FindSessionRequest mocks base method.
+func (m *MocksubmitPlayerEventRepoAPI) FindSessionRequest(ctx context.Context, tx *gorm.DB, userUUID, operation, idempotencyKey string) (*repo.Request, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "FindSessionRequest", ctx, tx, userUUID, operation, idempotencyKey)
+	ret0, _ := ret[0].(*repo.Request)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// FindSessionRequest indicates an expected call of FindSessionRequest.
+func (mr *MocksubmitPlayerEventRepoAPIMockRecorder) FindSessionRequest(ctx, tx, userUUID, operation, idempotencyKey any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindSessionRequest", reflect.TypeOf((*MocksubmitPlayerEventRepoAPI)(nil).FindSessionRequest), ctx, tx, userUUID, operation, idempotencyKey)
+}
+
 // GetGameVersionArtifact mocks base method.
 func (m *MocksubmitPlayerEventRepoAPI) GetGameVersionArtifact(ctx context.Context, tx *gorm.DB, definitionUUID string) (*repo.GameVersionArtifact, error) {
 	m.ctrl.T.Helper()
@@ -889,6 +904,21 @@ func (m *MocksubmitPlayerEventRepoAPI) RenewActivityDeadline(ctx context.Context
 func (mr *MocksubmitPlayerEventRepoAPIMockRecorder) RenewActivityDeadline(ctx, tx, sessionID, activityExpiresAt any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RenewActivityDeadline", reflect.TypeOf((*MocksubmitPlayerEventRepoAPI)(nil).RenewActivityDeadline), ctx, tx, sessionID, activityExpiresAt)
+}
+
+// ResolveSessionForClientState mocks base method.
+func (m *MocksubmitPlayerEventRepoAPI) ResolveSessionForClientState(ctx context.Context, sessionUUID string) (*repo.Session, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ResolveSessionForClientState", ctx, sessionUUID)
+	ret0, _ := ret[0].(*repo.Session)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ResolveSessionForClientState indicates an expected call of ResolveSessionForClientState.
+func (mr *MocksubmitPlayerEventRepoAPIMockRecorder) ResolveSessionForClientState(ctx, sessionUUID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResolveSessionForClientState", reflect.TypeOf((*MocksubmitPlayerEventRepoAPI)(nil).ResolveSessionForClientState), ctx, sessionUUID)
 }
 
 // SetCurrentTurn mocks base method.

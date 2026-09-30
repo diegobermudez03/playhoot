@@ -194,6 +194,35 @@ type SubmitPlayerEventResult struct {
 	Events         []OutboundEvent          `json:"-"`
 }
 
+// GetSubmitPlayerEventOutcomeOutcome is GetSubmitPlayerEventOutcome's
+// expected business outcome, a value distinct from a Go error: an ordinary
+// decline a caller should branch on, not treat as a failure.
+type GetSubmitPlayerEventOutcomeOutcome string
+
+const (
+	// GetSubmitPlayerEventOutcomeFound means idempotencyKey's own
+	// SubmitPlayerEvent request already completed; Result carries its
+	// recorded outcome, exactly as the original call itself would have
+	// returned it.
+	GetSubmitPlayerEventOutcomeFound GetSubmitPlayerEventOutcomeOutcome = "FOUND"
+	// GetSubmitPlayerEventOutcomeNotFound means no completed request exists
+	// yet for idempotencyKey - it was never submitted, is still being
+	// processed, or belongs to a different session than sessionUUID names.
+	GetSubmitPlayerEventOutcomeNotFound GetSubmitPlayerEventOutcomeOutcome = "NOT_FOUND"
+)
+
+// GetSubmitPlayerEventOutcomeResult is GetSubmitPlayerEventOutcome's logical
+// outcome. Result is only populated when Outcome is
+// GetSubmitPlayerEventOutcomeFound. This is a pure read against the same
+// durable record SubmitPlayerEvent's own idempotency mechanism already
+// writes - it never re-executes anything and never mutates Session state,
+// letting a caller that never received the original response recover it
+// afterward instead of needing a durable delivery outbox.
+type GetSubmitPlayerEventOutcomeResult struct {
+	Outcome GetSubmitPlayerEventOutcomeOutcome `json:"outcome"`
+	Result  SubmitPlayerEventResult            `json:"result,omitempty"`
+}
+
 // CancelSessionOutcome is CancelSession's expected business outcome, a value
 // distinct from a Go error: an ordinary decline a caller should branch on,
 // not treat as a failure. Unlike every other signal-driven capability,

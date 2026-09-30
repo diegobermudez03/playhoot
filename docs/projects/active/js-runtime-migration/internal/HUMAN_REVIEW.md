@@ -1,3 +1,48 @@
+Checkpoint: WORK-0043 DONE (not a new human-decision gate — informational).
+Date: 2026-09-30
+
+**Update:** You said "proceed." Implemented exactly as described below, and independent review (a fresh agent with no memory of the implementation) returned APPROVED with no findings - it hand-traced the read method itself rather than trusting my claims, and ran the new unit tests to confirm. One thing worth your awareness, not a decision needed: the reviewer also had no reachable Postgres in its own environment, so the new real-Postgres fault-injection test genuinely hasn't run yet in any session - both the mocked tests covering the identical logic and the reviewer's own judgment were enough to close this without it, but it's worth running for real whenever a database is next reachable. No further decision is needed from you. Full detail: WORK-0043's own Completion Record.
+
+Original DRAFT checkpoint, preserved below:
+
+## What this WORK does
+
+Implements the pull-based decision we just talked through: a new backend read (`Manager.GetSubmitPlayerEventOutcome`) that lets a client recover a submitted action's accepted/rejected/failed outcome after the fact, without resubmitting the whole original request.
+
+## What I recorded
+
+Your decision as `session/docs/decisions/SESSION-ADR-0026-confirmed-player-event-outcome-delivery-is-pull-based.md` - accepted directly, since we reached it in one conversation rather than needing to sit as a proposal first.
+
+## The shape, if you want a quick look
+
+```go
+func (m *Manager) GetSubmitPlayerEventOutcome(ctx context.Context, sessionUUID session.SessionUUID, userUUID session.UserUUID, idempotencyKey session.IdempotencyKey) (session.GetSubmitPlayerEventOutcomeResult, error)
+```
+returning `{Outcome: "FOUND"|"NOT_FOUND", Result: SubmitPlayerEventResult}` - `FOUND` means the exact same outcome the original call itself would have returned; `NOT_FOUND` covers "never submitted," "still in flight," or "wrong session."
+
+No new table. It reads `session_requests` - the same durable record `SubmitPlayerEvent` already writes - through a new thin read method, mirroring how `GetClientState` already works.
+
+## What's explicitly NOT done by this WORK
+
+- No live-transport wiring - that's `session-runtime-v1`'s `WORK-0020`'s own concern, whenever it exists.
+- No change to `Start`/`CancelSession`/`ExpireTimer` - `ADR-0015` only requires this for `PLAYER_EVENT`.
+
+## Unresolved blockers
+
+None.
+
+## What READY would authorize
+
+Adding the new Manager method, the new repo lookup, and extracting the shared decode logic - no new schema, no transport code.
+
+## Recommendation
+
+This is a direct, mechanical implementation of the decision you just made - ready for READY authorization unless you'd like the shape adjusted. Full detail in `../works/WORK-0043-durable-confirmed-turn-result-delivery-outbox.md`.
+
+---
+
+Prior checkpoint, preserved below:
+
 Checkpoint: WORK-0055 DONE (not a new human-decision gate — informational).
 Date: 2026-09-29
 

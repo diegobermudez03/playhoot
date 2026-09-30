@@ -55,6 +55,15 @@ func fetchExistingSessionRequest(ctx context.Context, tx *gorm.DB, input ClaimSe
 	return &row, nil
 }
 
+// FindSessionRequest returns the session_requests row already owning
+// (userUUID, operation, idempotencyKey), or nil if none exists yet - a pure
+// lookup, unlike ClaimSessionRequest, which also inserts a fresh row when
+// none is found. For a caller that only wants to read back an already-
+// completed request's own outcome without claiming/completing anything.
+func (r *Repo) FindSessionRequest(ctx context.Context, tx *gorm.DB, userUUID, operation, idempotencyKey string) (*Request, error) {
+	return fetchExistingSessionRequest(ctx, tx, ClaimSessionRequestInput{UserUUID: userUUID, Operation: operation, IdempotencyKey: idempotencyKey})
+}
+
 // ClaimSessionRequest attempts to atomically own (user_uuid, operation,
 // idempotency_key). This is the Session lifecycle workflow's own
 // request-tracking shape - a different workflow in this or another domain is
