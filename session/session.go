@@ -2,7 +2,7 @@
 // lobby lifecycle phase/presence/terminal-reason values, the sentinel
 // errors, and every request/result type its Session lifecycle workflow's
 // operations (Create/Join/Leave/Start/SubmitPlayerEvent/CancelSession/
-// ExpireTimer) take or
+// ExpireTimer/GetClientState) take or
 // return. This package intentionally imports nothing beyond the standard
 // library, so a caller depending only on this contract never transitively
 // imports anything the workflow's own implementation

@@ -18,7 +18,16 @@ import (
 // This is the primary privacy guarantee: the returned value is the only
 // state a subsequent project() call ever receives. It is never handed the
 // full state and trusted to filter itself.
+//
+// schema is independently re-validated here (the same check ParseSchema
+// itself already performs) as defense-in-depth against a caller that built
+// a Schema value directly rather than through ParseSchema - an unsafe
+// Schema must never silently degrade at this layer either.
 func Filter(state json.RawMessage, viewer string, schema Schema) (json.RawMessage, error) {
+	if err := schema.validate(); err != nil {
+		return nil, err
+	}
+
 	var root interface{}
 	if len(state) > 0 {
 		if err := json.Unmarshal(state, &root); err != nil {
@@ -81,6 +90,14 @@ func filterValue(value interface{}, path []string, schema Schema, viewer string)
 			return value, bound == viewer
 		case ClassServerOnly:
 			return nil, false
+		default:
+			// An unrecognized Class (for example a Schema built by a
+			// caller that skipped ParseSchema's own validation) must
+			// never be treated as "no Rule matched here" - falling
+			// through to this path's own container/Default handling
+			// below could expose data this Rule was meant to restrict.
+			// Fail closed: behave exactly like ClassServerOnly.
+			return nil, false
 		}
 	}
 
@@ -127,6 +144,14 @@ func filterValue(value interface{}, path []string, schema Schema, viewer string)
 // When both carry a "*", the same bound segment from a Source
 // instantiation is substituted into Path to produce its own concrete
 // destination.
+//
+// If Source is entirely absent for a given instantiation (not merely a
+// falsy/empty value, but the path itself does not resolve - for example a
+// player who has not yet drawn a card at all), no derived field is written
+// for it at all, rather than a defaulted false/0 value. This never leaks
+// anything (an omitted field reveals nothing an author did not already
+// choose to omit), but an author relying on a declassified field always
+// being present should account for it sometimes being entirely absent.
 func applyDeclassifiedRule(root interface{}, out map[string]interface{}, rule Rule) {
 	pathTemplate := splitPath(rule.Path)
 	sourceTemplate := splitPath(rule.Source)

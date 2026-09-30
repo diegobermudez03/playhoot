@@ -175,6 +175,69 @@ func TestLeakCheck_IgnoresShortScalarCoincidence(t *testing.T) {
 	}
 }
 
+func TestParseSchema_RejectsUnrecognizedRuleClass(t *testing.T) {
+	// A schema-authoring typo ("prvate" instead of "private") must be
+	// rejected outright, not silently accepted and left to degrade at
+	// Filter/LeakCheck time - see this package's own independent review
+	// finding this test guards against.
+	raw := json.RawMessage(`{"rules":[{"path":"players.*.hand","class":"prvate"}]}`)
+	_, err := ParseSchema(raw)
+	if err == nil {
+		t.Fatalf("expected ParseSchema to reject an unrecognized rule class, got no error")
+	}
+}
+
+func TestParseSchema_RejectsUnrecognizedDefault(t *testing.T) {
+	raw := json.RawMessage(`{"default":"everyone"}`)
+	_, err := ParseSchema(raw)
+	if err == nil {
+		t.Fatalf("expected ParseSchema to reject an unrecognized default class, got no error")
+	}
+}
+
+func TestFilter_UnrecognizedRuleClassFailsClosed(t *testing.T) {
+	// Even if a Schema bypasses ParseSchema's own validation (hand-built in
+	// Go, as this test does), Filter itself must not silently treat an
+	// unrecognized Class as "no rule matched" - that would fall through to
+	// the path's own container/Default handling and could expose data the
+	// rule was meant to restrict. Filter now independently re-validates the
+	// Schema it is given (the same check ParseSchema performs) and rejects
+	// it outright - the strictest possible "fail closed": no output at all,
+	// rather than a merely-excluded field. Default is deliberately
+	// ClassPublic so an old, weaker fall-through bug would have been
+	// immediately visible as a leak instead.
+	schema := Schema{
+		Rules: []Rule{
+			{Path: "players.*.hand", Class: "prvate"},
+		},
+		Default: ClassPublic,
+	}
+	state := `{"players": {"p1": {"hand": ["A","K"]}, "p2": {"hand": ["7","2"]}}}`
+
+	if _, err := Filter(json.RawMessage(state), "p1", schema); err == nil {
+		t.Fatalf("expected Filter to reject a Schema with an unrecognized rule class, got no error")
+	}
+}
+
+func TestLeakCheck_UnrecognizedRuleClassFailsClosed(t *testing.T) {
+	// Mirrors TestFilter_UnrecognizedRuleClassFailsClosed: LeakCheck
+	// independently re-validates too, so it never reaches a state where it
+	// would need to decide whether the misclassified rule's data counts as
+	// excluded - it rejects the Schema outright instead.
+	schema := Schema{
+		Rules: []Rule{
+			{Path: "players.*.hand", Class: "prvate"},
+		},
+		Default: ClassPublic,
+	}
+	state := json.RawMessage(`{"players": {"p1": {"hand": ["A","K"]}, "p2": {"hand": ["7","2","9"]}}}`)
+	clientState := json.RawMessage(`{"opponentHand": ["7","2","9"]}`)
+
+	if _, err := LeakCheck(state, "p1", clientState, schema); err == nil {
+		t.Fatalf("expected LeakCheck to reject a Schema with an unrecognized rule class, got no error")
+	}
+}
+
 func TestParseSchema_EmptyIsMaximallyRestrictive(t *testing.T) {
 	schema, err := ParseSchema(nil)
 	if err != nil {

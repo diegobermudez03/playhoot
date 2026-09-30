@@ -25,7 +25,14 @@ const minLeakCheckBytes = 8
 // minLeakCheckBytes and this package's own LOGICAL_CONTRACT.md for its
 // documented limitations); it is a signal a caller should alert on, not
 // silently ignore.
+//
+// schema is independently re-validated here for the same reason Filter
+// re-validates it - see Filter's own doc comment.
 func LeakCheck(state json.RawMessage, viewer string, clientState json.RawMessage, schema Schema) ([]string, error) {
+	if err := schema.validate(); err != nil {
+		return nil, err
+	}
+
 	var root interface{}
 	if len(state) > 0 {
 		if err := json.Unmarshal(state, &root); err != nil {
@@ -78,6 +85,12 @@ func collectExcluded(value interface{}, path []string, schema Schema, viewer str
 			}
 			return
 		case ClassServerOnly:
+			*out = append(*out, value)
+			return
+		default:
+			// Mirrors filterValue's own fail-closed treatment: an
+			// unrecognized Class is collected as excluded, consistent
+			// with Filter now also treating it as ClassServerOnly.
 			*out = append(*out, value)
 			return
 		}

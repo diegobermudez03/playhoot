@@ -253,8 +253,11 @@ type ExpireTimerResult struct {
 type GetClientStateOutcome string
 
 const (
-	// GetClientStateOutcomeComputed means ClientState was computed and
-	// privacy-verified successfully.
+	// GetClientStateOutcomeComputed means ClientState was successfully
+	// computed from data the viewer is already authorized to see. It does
+	// not by itself certify the result passed every defense-in-depth check
+	// available - a caller needing that distinction has its own separate
+	// signal for it.
 	GetClientStateOutcomeComputed GetClientStateOutcome = "COMPUTED"
 	// GetClientStateOutcomeNotRunning means the Session has not yet
 	// committed a first RuntimeTurn (still LOBBY) - there is no
