@@ -1,6 +1,9 @@
 package session
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // GameUUID is a public Game identity (Create's input).
 type GameUUID string
@@ -242,4 +245,39 @@ type ExpireTimerResult struct {
 	Outcome        ExpireTimerOutcome `json:"outcome"`
 	SessionUUID    SessionUUID        `json:"session_uuid,omitempty"`
 	TerminalReason string             `json:"terminal_reason,omitempty"`
+}
+
+// GetClientStateOutcome is GetClientState's expected business outcome, a
+// value distinct from a Go error: an ordinary decline a caller should
+// branch on, not treat as a failure.
+type GetClientStateOutcome string
+
+const (
+	// GetClientStateOutcomeComputed means ClientState was computed and
+	// privacy-verified successfully.
+	GetClientStateOutcomeComputed GetClientStateOutcome = "COMPUTED"
+	// GetClientStateOutcomeNotRunning means the Session has not yet
+	// committed a first RuntimeTurn (still LOBBY) - there is no
+	// authoritative state yet to project from.
+	GetClientStateOutcomeNotRunning GetClientStateOutcome = "NOT_RUNNING"
+	// GetClientStateOutcomeNotAParticipant means the caller did not
+	// resolve to a SessionActor for this Session.
+	GetClientStateOutcomeNotAParticipant GetClientStateOutcome = "NOT_A_PARTICIPANT"
+	// GetClientStateOutcomeProjectionRejected means the authored script's
+	// own project() function declined the input (threw, or defines no
+	// project function) - a business-level outcome, not an infrastructure
+	// failure.
+	GetClientStateOutcomeProjectionRejected GetClientStateOutcome = "PROJECTION_REJECTED"
+)
+
+// GetClientStateResult is GetClientState's logical outcome. ClientState is
+// only populated when Outcome is GetClientStateOutcomeComputed - the
+// authored script's own project() output, computed only from data the
+// viewer is already authorized to see (project() never receives excluded
+// data at all, rather than being trusted with everything and checked
+// afterward).
+type GetClientStateResult struct {
+	Outcome     GetClientStateOutcome `json:"outcome"`
+	SessionUUID SessionUUID           `json:"session_uuid,omitempty"`
+	ClientState json.RawMessage       `json:"client_state,omitempty"`
 }

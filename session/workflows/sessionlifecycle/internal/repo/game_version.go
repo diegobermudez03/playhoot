@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"gorm.io/gorm"
@@ -35,41 +36,50 @@ func (r *Repo) ResolveCurrentGameDefinitionUUID(ctx context.Context, gameUUID st
 
 // GameVersionArtifact is the narrow view of a pinned
 // session_game_version_artifacts row this package's steps need: the backend
-// script the Executor evaluates, and the structural participant-count range
+// script the Executor evaluates, the structural participant-count range
 // Playhoot itself enforces before any script runs (ParticipantMax nil means
 // unlimited) - session/docs/GAME_VERSION_ARTIFACT_MODEL.md's own
-// "Participant Constraints" section. Every other artifact field
-// (FrontendScript, GameContract, Assets, PlatformContractVersion) is not
-// this package's concern.
+// "Participant Constraints" section - and ProjectionVisibility, the
+// author's own declared privacy schema a viewer-scoped filtering step
+// parses before computing that viewer's own ClientState (nil means no
+// schema declared - treated as maximally restrictive, not an error).
+// Every other artifact field (FrontendScript, GameContract, Assets,
+// PlatformContractVersion) is not this package's concern.
 type GameVersionArtifact struct {
-	BackendScript  string
-	ParticipantMin int
-	ParticipantMax *int
+	BackendScript        string
+	ParticipantMin       int
+	ParticipantMax       *int
+	ProjectionVisibility json.RawMessage
 }
 
 // gameVersionArtifactRow is this query's raw column shape.
 type gameVersionArtifactRow struct {
-	BackendScript  string `gorm:"column:backend_script"`
-	ParticipantMin int    `gorm:"column:participant_min"`
-	ParticipantMax *int   `gorm:"column:participant_max"`
+	BackendScript        string          `gorm:"column:backend_script"`
+	ParticipantMin       int             `gorm:"column:participant_min"`
+	ParticipantMax       *int            `gorm:"column:participant_max"`
+	ProjectionVisibility json.RawMessage `gorm:"column:projection_visibility"`
 }
 
 func (row gameVersionArtifactRow) toArtifact() *GameVersionArtifact {
 	return &GameVersionArtifact{
-		BackendScript:  row.BackendScript,
-		ParticipantMin: row.ParticipantMin,
-		ParticipantMax: row.ParticipantMax,
+		BackendScript:        row.BackendScript,
+		ParticipantMin:       row.ParticipantMin,
+		ParticipantMax:       row.ParticipantMax,
+		ProjectionVisibility: row.ProjectionVisibility,
 	}
 }
 
 // ResolveGameVersionArtifact is an unlocked, pre-transaction lookup by
 // definitionUUID - Join's own read, mirroring ResolveCurrentGameDefinitionUUID's
 // unlocked style: capacity must stay governed by the exact version pinned at
-// Create, read before the mutation transaction/row lock opens.
+// Create, read before the mutation transaction/row lock opens. A pure read
+// like GetClientState also uses this unlocked read - it never mutates
+// state, so no transaction/row lock is needed the way a RUNNING-phase
+// mutation's own GetGameVersionArtifact requires.
 func (r *Repo) ResolveGameVersionArtifact(ctx context.Context, definitionUUID string) (*GameVersionArtifact, error) {
 	var row gameVersionArtifactRow
 	result := r.db.WithContext(ctx).Raw(`
-		SELECT backend_script, participant_min, participant_max
+		SELECT backend_script, participant_min, participant_max, projection_visibility
 		FROM session_game_version_artifacts
 		WHERE definition_uuid = ?
 	`, definitionUUID).Scan(&row)
@@ -88,7 +98,7 @@ func (r *Repo) ResolveGameVersionArtifact(ctx context.Context, definitionUUID st
 func (r *Repo) GetGameVersionArtifact(ctx context.Context, tx *gorm.DB, definitionUUID string) (*GameVersionArtifact, error) {
 	var row gameVersionArtifactRow
 	result := tx.WithContext(ctx).Raw(`
-		SELECT backend_script, participant_min, participant_max
+		SELECT backend_script, participant_min, participant_max, projection_visibility
 		FROM session_game_version_artifacts
 		WHERE definition_uuid = ?
 	`, definitionUUID).Scan(&row)

@@ -87,6 +87,12 @@ func MigrateTables(db *gorm.DB) error {
 		// timer/data - a script addresses a timer by one opaque Timer
 		// string with no separate key dimension.
 		migration20260929000004SessionTimerObligationsTimerData(),
+
+		// session_game_version_artifacts.projection_visibility - an
+		// author's declared per-path privacy schema, consumed by a
+		// capability-based filtering step before any authored project()
+		// call.
+		migration20260929000005SessionGameVersionArtifactsProjectionVisibility(),
 	})
 
 	return migrator.Migrate()

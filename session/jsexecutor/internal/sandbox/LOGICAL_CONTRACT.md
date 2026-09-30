@@ -6,13 +6,24 @@ Records the sandboxed JavaScript execution boundary's implemented contract; see 
 
 ## Operation
 
-One logical operation: `Execute(ctx, ExecutionInput{Script, PreviousState, Event, Context}) -> (ExecutionOutput, error)`.
+Two logical operations, sharing the exact same worker process/isolation model (Execution Model, Isolation Guarantees below apply identically to both):
 
+- `Execute(ctx, ExecutionInput{Script, PreviousState, Event, Context}) -> (ExecutionOutput, error)`.
+- `Project(ctx, ProjectInput{Script, State, Viewer, Context}) -> (ProjectOutput, error)`.
+
+For `Execute`:
 - `Script` is already-resolved authored JavaScript source. This package does not fetch, cache, compile-ahead, or version it.
 - `PreviousState`/`Event` are opaque JSON values, passed through to the script unexamined.
 - `Context` carries the only sources of non-determinism authored code may observe: `LogicalTime`, `RandomSeed`, `ActingActor`. The sandbox never exposes real wall-clock time or OS randomness.
 - On success, `ExecutionOutput.NewState`/`RequestedCommands` are exactly what the script's `execute` function returned, unexamined for business meaning.
-- `error` distinguishes two categories: `*ScriptRejectedError` (the script threw, returned a malformed shape, or defines no `execute` function — a business-level outcome) and `*WorkerExecutionError` (the worker process crashed, the IPC exchange failed, or the deadline was exceeded — an infrastructure-level failure). Callers must not conflate the two.
+
+For `Project`:
+- `Script` is the same authored source `Execute` uses - both entry points live in one script.
+- `State` is already viewer-scoped, caller-constructed content. This package never sees, and has no way to reach, whatever the caller's own privacy-filtering step excluded from it - `Project` is never handed the full authoritative state.
+- `Viewer` is an opaque identifier, echoed to the script unexamined, the same way `Context.ActingActor` is for `Execute`.
+- On success, `ProjectOutput.ClientState` is exactly what the script's `project` function returned - unlike `ExecutionOutput`, no fixed shape is required or validated.
+
+For both: `error` distinguishes two categories: `*ScriptRejectedError` (the script threw, returned a malformed shape (`Execute` only) or no value at all (`Project`), or defines no `execute`/`project` function — a business-level outcome) and `*WorkerExecutionError` (the worker process crashed, the IPC exchange failed, or the deadline was exceeded — an infrastructure-level failure). Callers must not conflate the two.
 
 This package is `jsexecutor`'s own internal implementation, invoked by its gRPC handler (`jsexecutor/internal/grpcserver`). It has no caller outside `jsexecutor`.
 
@@ -29,11 +40,22 @@ function execute(previousState, event, context) {
 
 `context` is `{ logicalTime: <RFC3339Nano string>, randomSeed: <decimal string>, actingActor: <string> }`. `randomSeed` is a string, not a JS number, because a Go `uint64` can exceed `Number.MAX_SAFE_INTEGER`; authored code needing numeric random behavior must derive its own generator from this seed rather than treat it as a plain number.
 
+A script may additionally define a second global function, invoked only by `Project`, never by `Execute`:
+
+```js
+function project(state, viewer, context) {
+  // ...
+  return /* any JSON-serializable ClientState value */;
+}
+```
+
+`state` here is `Project`'s own `State` field - already viewer-scoped, never the full authoritative state `execute` receives as `previousState`. `context` for `project` carries only `logicalTime`/`randomSeed` - no `actingActor` (`viewer` above already names whose projection this is). Unlike `execute`, `project`'s return value has no required shape: whatever JSON-serializable value it returns becomes `ClientState` verbatim. `project` cannot mutate authoritative state or request platform Commands - it has no way to (its own return value is never fed back as `previousState`, and is never parsed for Commands).
+
 ## Execution Model
 
-Each `Execute` call spawns a fresh worker process (a re-exec of the same `jsexecutor` binary in worker mode, `RunAsWorkerIfRequested`), writes one JSON request to its stdin, and reads one JSON response from its stdout. The worker instantiates a fresh QuickJS-on-WebAssembly (`wazero`) runtime, evaluates the script, invokes `execute`, and exits. No state is retained between invocations — `Execute` is stateless as a library.
+Each `Execute`/`Project` call spawns a fresh worker process (a re-exec of the same `jsexecutor` binary in worker mode, `RunAsWorkerIfRequested`), writes one JSON request to its stdin, and reads one JSON response from its stdout. The worker instantiates a fresh QuickJS-on-WebAssembly (`wazero`) runtime, evaluates the script, invokes `execute` or `project` (per the request's own operation), and exits. No state is retained between invocations — both operations are stateless as a library.
 
-This spawn-per-call shape is deliberately the simplest mechanism sufficient to prove the process boundary and language contract both work. A future hardening pass may replace the process-management mechanics (pooling, reuse, resource-limit enforcement, forced termination) behind this same `Execute` signature — no caller of `Execute` needs to change when that lands.
+This spawn-per-call shape is deliberately the simplest mechanism sufficient to prove the process boundary and language contract both work. A future hardening pass may replace the process-management mechanics (pooling, reuse, resource-limit enforcement, forced termination) behind these same `Execute`/`Project` signatures — no caller needs to change when that lands.
 
 ## Isolation Guarantees
 
@@ -50,7 +72,7 @@ Every guarantee below was independently verified against the pinned QuickJS-on-`
 - **Memory limit (`qjs.Option.MemoryLimit`, 64 MiB default) is real and enforced, and fails gracefully.** Adversarially verified (WORK-0036) against a script that doubles a string exponentially (`s = s + s` in a tight loop): the runtime throws a catchable `InternalError: out of memory` well before the execution-time deadline, surfaced through the existing "`execute()` threw" path as a clean, business-level `*ScriptRejectedError` — never a worker crash, never a hang.
 - **Stack limit (`qjs.Option.MaxStackSize`, 1 MiB default) is real and enforced, but does not fail gracefully.** Adversarially verified (WORK-0036) against unbounded recursion with no base case: unlike memory exhaustion, this does not throw a catchable JS exception — it is an infrastructure-level failure inside the QuickJS-on-`wazero` binding itself (observed as a WASM trap surfacing through the runtime's own cleanup path), always recovered cleanly as a `*WorkerExecutionError`, never a hang and never a crash reaching the caller's own process. Callers must not expect the same graceful rejection memory exhaustion gets for this specific failure mode; the OS-process boundary (not this package's own internal `recover()`) is confirmed to be what actually contains it, exactly the layered-defense reasoning `GAME-ADR-0030` is built on.
 - **Execution-time limit is real and enforced** by the caller's own context deadline killing the worker process outright (see Isolation Guarantees above) — this is the authoritative backstop for any script that does not otherwise terminate on its own, adversarially verified against a plain infinite loop with no host calls.
-- **Emitted-output size and command count are bounded** (WORK-0036, `defaultMaxOutputBytes`/`defaultMaxCommandCount` in `protocol.go`, enforced by `Execute` itself after decoding the worker's response, not inside the worker): a script whose `execute` returns an oversized combined `NewState`/`RequestedCommands`, or an excessive `RequestedCommands` count, is rejected as `*ScriptRejectedError`, never silently accepted.
+- **Emitted-output size and command count are bounded** (`defaultMaxOutputBytes`/`defaultMaxCommandCount` in `protocol.go`, enforced by `Execute`/`Project` themselves after decoding the worker's response, not inside the worker): a script whose `execute` returns an oversized combined `NewState`/`RequestedCommands`, an excessive `RequestedCommands` count, or whose `project` returns an oversized `ClientState`, is rejected as `*ScriptRejectedError`, never silently accepted.
 - **A defensive concurrency ceiling exists one level above this package**, in `jsexecutor/internal/grpcserver` (WORK-0036): a burst of concurrent `Execute` calls beyond a configurable limit is rejected with a gRPC `ResourceExhausted` status before a worker process would even be spawned, protecting the Executor service's own host from unbounded process creation. This is a defensive ceiling on the Executor's own aggregate resource consumption, not a per-user/business rate-limiting policy (a different, separately owned concern).
 
 ## Explicitly Not Guaranteed Here

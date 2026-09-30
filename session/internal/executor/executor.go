@@ -42,12 +42,35 @@ type ExecutionOutput struct {
 	RequestedCommands []json.RawMessage
 }
 
+// ProjectionInput is Project's full set of explicit inputs. State is
+// already visibility-filtered, viewer-scoped content the caller
+// constructed - the Executor never receives the full authoritative state
+// for a Project call, only whatever the caller chose to include. This is a
+// capability-based privacy boundary: the untrusted script is never handed
+// data a viewer is not authorized to see, rather than being trusted with
+// everything and checked afterward.
+type ProjectionInput struct {
+	Script  ResolvedScript
+	State   json.RawMessage
+	Viewer  string
+	Context ExecutionContext
+}
+
+// ProjectionOutput is the script's computed ClientState, whatever shape the
+// authored project() function returned - no fixed shape is required of it,
+// unlike ExecutionOutput.
+type ProjectionOutput struct {
+	ClientState json.RawMessage
+}
+
 // Executor runs one authored-script execution against previousState/event/
-// context. The production implementation reaches a separately deployed
-// service over the network; a caller must not assume anything about how it
-// does so.
+// context, or one project computation against an already viewer-scoped
+// projection input. The production implementation reaches a separately
+// deployed service over the network; a caller must not assume anything
+// about how it does so.
 type Executor interface {
 	Execute(ctx context.Context, in ExecutionInput) (ExecutionOutput, error)
+	Project(ctx context.Context, in ProjectionInput) (ProjectionOutput, error)
 }
 
 // ScriptRejectedError indicates the authored script itself declined the

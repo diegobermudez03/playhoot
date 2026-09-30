@@ -13,11 +13,12 @@ GameVersionArtifact
   FrontendScript          - authored frontend source (required); format not yet decided; stored, never parsed or executed by Playhoot itself
   GameContract            - this game's own declared event/data vocabulary, alongside (not replacing) the platform's own fixed command vocabulary
   ParticipantConstraints  - required structural Session admission/capacity range: {Min, Max} (Max nil/absent means unlimited)
+  ProjectionVisibility    - optional declared per-path privacy schema (public/private/server_only plus declassified derivatives) a filtering step uses to construct project()'s own input; absent means project() exposes nothing at all
   Assets                  - optional list of {Key, Kind} - images/sounds/etc. uploaded directly to Playhoot; identified only by an internal logical Key, never a URL
   PlatformContractVersion - which version of the platform command vocabulary this artifact was authored against
 ```
 
-Both `BackendScript` and `FrontendScript` are mandatory. A valid artifact always has both scripts; there is no fallback/default-rendering path for a missing frontend script, and no "backend-only" artifact shape. `GameContract`, `Assets`, and `PlatformContractVersion` are the only fields that may be absent; `ParticipantConstraints` is required (`Max` alone may be absent, meaning unlimited).
+Both `BackendScript` and `FrontendScript` are mandatory. A valid artifact always has both scripts; there is no fallback/default-rendering path for a missing frontend script, and no "backend-only" artifact shape. `GameContract`, `ProjectionVisibility`, `Assets`, and `PlatformContractVersion` are the only fields that may be absent; `ParticipantConstraints` is required (`Max` alone may be absent, meaning unlimited).
 
 ## Participant Constraints
 
@@ -57,6 +58,12 @@ Identical to `game/docs/decisions/GAME-ADR-0001-game-capability-persistence-tran
 - Session Runtime owns its own persisted copy of this artifact, keyed by `DefinitionUUID` (`docs/projects/active/js-runtime-migration/works/WORK-0034-session-owned-executable-script-artifact-and-package-restructuring.md`).
 - Game Management's own publish-time write, and keeping both domains' representations consistent, is `docs/work/active/WORK-0033-cross-domain-game-publish-composition.md`'s concern (standalone, not part of any Project owning this document).
 - No domain imports another domain's concrete artifact type merely to declare a narrow interface against it - each consumer declares its own type against this document.
+
+## Projection Visibility
+
+**Added 2026-09-29, by explicit human decision, discovered missing while designing the per-player view computation capability this record's Backend Script did not yet name a second entry point for at all.** A Game's own declared visibility schema (`public`/`private`/`server_only` per state path, plus declassified derivatives - a small, fixed, Playhoot-computed set of primitives such as a count/length or an existence check, never authored script code) that a viewer-scoped filtering step consumes to construct the backend script's own second, pure `project(state, viewer, context)` entry point's input *before* `project` ever runs. This is the privacy boundary's primary guarantee: `project` never receives data a viewer is not authorized to see in the first place, rather than being trusted with the full authoritative state and checked afterward.
+
+Like `ParticipantConstraints`, this travels alongside `GameContract` rather than inside it, because `GameContract`'s own schema is owned by the platform command-protocol capability and is opaque to this record. `ProjectionVisibility` is optional - a Game with no declared schema exposes nothing through `project()` at all (the safe default), not everything.
 
 ## Rationale And History
 

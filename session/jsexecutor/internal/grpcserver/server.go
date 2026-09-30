@@ -118,3 +118,66 @@ func (s *Server) Execute(ctx context.Context, req *pb.ExecuteRequest) (*pb.Execu
 		},
 	}, nil
 }
+
+// Project computes one viewer's ClientState. Unlike Execute, req's own
+// projection_input is never the full authoritative state - Session
+// Runtime's own visibility-filtering step already constructed it before
+// this call, so this Server has no privacy logic of its own beyond
+// invoking the script's second pure entry point. Concurrency/error-handling
+// shape mirrors Execute exactly, including sharing the same concurrency
+// ceiling (both operations spawn the same kind of sandbox worker process).
+func (s *Server) Project(ctx context.Context, req *pb.ProjectRequest) (*pb.ProjectResponse, error) {
+	select {
+	case s.sem <- struct{}{}:
+		defer func() { <-s.sem }()
+	default:
+		return nil, status.Error(codes.ResourceExhausted, "executor at capacity: too many concurrent executions")
+	}
+
+	logicalTime, err := time.Parse(time.RFC3339Nano, req.GetContext().GetLogicalTime())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid logical_time: %v", err)
+	}
+	randomSeed, err := strconv.ParseUint(req.GetContext().GetRandomSeed(), 10, 64)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid random_seed: %v", err)
+	}
+
+	in := sandbox.ProjectInput{
+		Script: sandbox.ResolvedScript{Source: string(req.GetScript())},
+		State:  req.GetProjectionInput(),
+		Viewer: req.GetViewer(),
+		Context: sandbox.ExecutionContext{
+			LogicalTime: logicalTime,
+			RandomSeed:  randomSeed,
+		},
+	}
+
+	out, err := sandbox.Project(ctx, in)
+	if err != nil {
+		var rejected *sandbox.ScriptRejectedError
+		if errors.As(err, &rejected) {
+			return &pb.ProjectResponse{
+				Outcome: &pb.ProjectResponse_Rejected{
+					Rejected: &pb.Rejected{Reason: rejected.Reason},
+				},
+			}, nil
+		}
+
+		var workerErr *sandbox.WorkerExecutionError
+		if errors.As(err, &workerErr) {
+			if ctx.Err() == context.DeadlineExceeded {
+				return nil, status.Error(codes.DeadlineExceeded, workerErr.Error())
+			}
+			return nil, status.Error(codes.Internal, workerErr.Error())
+		}
+
+		return nil, status.Errorf(codes.Internal, "unexpected execution error: %v", err)
+	}
+
+	return &pb.ProjectResponse{
+		Outcome: &pb.ProjectResponse_Success{
+			Success: &pb.ProjectSuccess{ClientState: out.ClientState},
+		},
+	}, nil
+}

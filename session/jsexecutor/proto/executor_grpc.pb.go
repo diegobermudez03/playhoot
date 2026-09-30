@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.2
 // - protoc             v5.29.0
-// source: session/jsexecutor/proto/executor.proto
+// source: executor.proto
 
 package proto
 
@@ -20,6 +20,7 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	Executor_Execute_FullMethodName = "/jsexecutor.Executor/Execute"
+	Executor_Project_FullMethodName = "/jsexecutor.Executor/Project"
 )
 
 // ExecutorClient is the client API for Executor service.
@@ -31,6 +32,13 @@ const (
 // running that sandbox requires.
 type ExecutorClient interface {
 	Execute(ctx context.Context, in *ExecuteRequest, opts ...grpc.CallOption) (*ExecuteResponse, error)
+	// Project computes one viewer's ClientState from an already
+	// visibility-filtered ProjectRequest.projection_input - never the full
+	// authoritative state. Filtering happens entirely on the caller's own
+	// side (Session Runtime's visibility-filtering step); the Executor
+	// itself has no privacy logic of its own, only a second pure script
+	// entry point to invoke.
+	Project(ctx context.Context, in *ProjectRequest, opts ...grpc.CallOption) (*ProjectResponse, error)
 }
 
 type executorClient struct {
@@ -51,6 +59,16 @@ func (c *executorClient) Execute(ctx context.Context, in *ExecuteRequest, opts .
 	return out, nil
 }
 
+func (c *executorClient) Project(ctx context.Context, in *ProjectRequest, opts ...grpc.CallOption) (*ProjectResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ProjectResponse)
+	err := c.cc.Invoke(ctx, Executor_Project_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ExecutorServer is the server API for Executor service.
 // All implementations must embed UnimplementedExecutorServer
 // for forward compatibility.
@@ -60,6 +78,13 @@ func (c *executorClient) Execute(ctx context.Context, in *ExecuteRequest, opts .
 // running that sandbox requires.
 type ExecutorServer interface {
 	Execute(context.Context, *ExecuteRequest) (*ExecuteResponse, error)
+	// Project computes one viewer's ClientState from an already
+	// visibility-filtered ProjectRequest.projection_input - never the full
+	// authoritative state. Filtering happens entirely on the caller's own
+	// side (Session Runtime's visibility-filtering step); the Executor
+	// itself has no privacy logic of its own, only a second pure script
+	// entry point to invoke.
+	Project(context.Context, *ProjectRequest) (*ProjectResponse, error)
 	mustEmbedUnimplementedExecutorServer()
 }
 
@@ -72,6 +97,9 @@ type UnimplementedExecutorServer struct{}
 
 func (UnimplementedExecutorServer) Execute(context.Context, *ExecuteRequest) (*ExecuteResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Execute not implemented")
+}
+func (UnimplementedExecutorServer) Project(context.Context, *ProjectRequest) (*ProjectResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Project not implemented")
 }
 func (UnimplementedExecutorServer) mustEmbedUnimplementedExecutorServer() {}
 func (UnimplementedExecutorServer) testEmbeddedByValue()                  {}
@@ -112,6 +140,24 @@ func _Executor_Execute_Handler(srv interface{}, ctx context.Context, dec func(in
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Executor_Project_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ProjectRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ExecutorServer).Project(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Executor_Project_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ExecutorServer).Project(ctx, req.(*ProjectRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Executor_ServiceDesc is the grpc.ServiceDesc for Executor service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -123,7 +169,11 @@ var Executor_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "Execute",
 			Handler:    _Executor_Execute_Handler,
 		},
+		{
+			MethodName: "Project",
+			Handler:    _Executor_Project_Handler,
+		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "session/jsexecutor/proto/executor.proto",
+	Metadata: "executor.proto",
 }

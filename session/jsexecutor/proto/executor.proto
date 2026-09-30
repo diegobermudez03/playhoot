@@ -9,6 +9,13 @@ option go_package = "github.com/diegobermudez03/playhoot/session/jsexecutor/prot
 // running that sandbox requires.
 service Executor {
   rpc Execute(ExecuteRequest) returns (ExecuteResponse);
+  // Project computes one viewer's ClientState from an already
+  // visibility-filtered ProjectRequest.projection_input - never the full
+  // authoritative state. Filtering happens entirely on the caller's own
+  // side (Session Runtime's visibility-filtering step); the Executor
+  // itself has no privacy logic of its own, only a second pure script
+  // entry point to invoke.
+  rpc Project(ProjectRequest) returns (ProjectResponse);
 }
 
 message ExecuteRequest {
@@ -49,4 +56,38 @@ message Success {
 // which indicates the Executor itself failed to run the script at all.
 message Rejected {
   string reason = 1;
+}
+
+message ProjectRequest {
+  // Authored JavaScript source, the same script Execute uses.
+  bytes script = 1;
+  // Already visibility-filtered, viewer-scoped input the caller
+  // constructed. Never the full authoritative state - see this service's
+  // own Project doc comment above.
+  bytes projection_input = 2;
+  // Opaque identifier of the viewer this ClientState is being computed
+  // for.
+  string viewer = 3;
+  ProjectContext context = 4;
+}
+
+// ProjectContext is Project's own, deliberately smaller, context shape:
+// unlike ExecutionContext, it carries no acting_actor (viewer above already
+// names whose projection this is).
+message ProjectContext {
+  string logical_time = 1;
+  string random_seed = 2;
+}
+
+message ProjectResponse {
+  oneof outcome {
+    ProjectSuccess success = 1;
+    Rejected rejected = 2;
+  }
+}
+
+message ProjectSuccess {
+  // Whatever JSON value the script's project() function returned - no
+  // fixed shape is required of it, unlike ExecuteResponse.Success.
+  bytes client_state = 1;
 }

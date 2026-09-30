@@ -40,13 +40,32 @@ type workerContext struct {
 	ActingActor string `json:"actingActor"`
 }
 
+// workerOperation discriminates which of this package's two pure script
+// entry points a workerRequest asks for. Both share the same worker
+// process/runtime lifecycle (Execution Model in LOGICAL_CONTRACT.md) -
+// only which global function is invoked, and which fields of
+// workerRequest/workerResponse are meaningful, differ.
+type workerOperation string
+
+const (
+	workerOperationExecute workerOperation = "execute"
+	workerOperationProject workerOperation = "project"
+)
+
 type workerRequest struct {
-	Script        string          `json:"script"`
-	PreviousState json.RawMessage `json:"previousState"`
-	Event         json.RawMessage `json:"event"`
-	Context       workerContext   `json:"context"`
-	// ScratchDir is a fresh, empty directory the caller (Execute) created
-	// and owns cleaning up. The worker mounts it as the sandbox's
+	Operation workerOperation `json:"operation"`
+	Script    string          `json:"script"`
+	// PreviousState/Event are meaningful only for workerOperationExecute.
+	PreviousState json.RawMessage `json:"previousState,omitempty"`
+	Event         json.RawMessage `json:"event,omitempty"`
+	// State/Viewer are meaningful only for workerOperationProject. State is
+	// already the caller-constructed, viewer-scoped ProjectInput - never
+	// the full authoritative state.
+	State   json.RawMessage `json:"state,omitempty"`
+	Viewer  string          `json:"viewer,omitempty"`
+	Context workerContext   `json:"context"`
+	// ScratchDir is a fresh, empty directory the caller (Execute/Project)
+	// created and owns cleaning up. The worker mounts it as the sandbox's
 	// filesystem root; the worker creating its own would leave it orphaned
 	// on disk whenever the worker process is killed rather than exiting
 	// normally, since a killed process never runs its own deferred cleanup.
@@ -54,11 +73,13 @@ type workerRequest struct {
 }
 
 // workerResponse is the worker process's single reply. Exactly one of
-// NewState (success), Rejected (script-level outcome), or Fatal
-// (infrastructure-level failure) is populated.
+// NewState (Execute success), ClientState (Project success), Rejected
+// (script-level outcome), or Fatal (infrastructure-level failure) is
+// populated.
 type workerResponse struct {
 	NewState          json.RawMessage   `json:"newState,omitempty"`
 	RequestedCommands []json.RawMessage `json:"requestedCommands,omitempty"`
+	ClientState       json.RawMessage   `json:"clientState,omitempty"`
 	Rejected          *string           `json:"rejected,omitempty"`
 	Fatal             *string           `json:"fatal,omitempty"`
 }

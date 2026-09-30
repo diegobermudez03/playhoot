@@ -54,6 +54,27 @@ type ExecutionOutput struct {
 	RequestedCommands []RawCommand
 }
 
+// ProjectInput is Project's full set of explicit inputs. State is already
+// visibility-filtered, viewer-scoped content the caller (Session Runtime's
+// own visibility-filtering step) constructed - this package never receives
+// the full authoritative state for a Project call, only whatever the
+// caller chose to include. Viewer is an opaque identifier, echoed to the
+// script unexamined, the same way ExecutionContext.ActingActor is for
+// Execute.
+type ProjectInput struct {
+	Script  ResolvedScript
+	State   json.RawMessage
+	Viewer  string
+	Context ExecutionContext
+}
+
+// ProjectOutput is the script's computed ClientState, whatever shape the
+// authored project() function returned - no fixed shape is required of it,
+// unlike ExecutionOutput.
+type ProjectOutput struct {
+	ClientState json.RawMessage
+}
+
 // ScriptRejectedError indicates the authored script itself declined the
 // input: it threw an exception, or returned a value that does not match the
 // required {newState, requestedCommands} shape. It is a business-level
@@ -99,9 +120,89 @@ var currentWorkerArg = workerModeArg
 // one execution in flight for a given logical unit of work must enforce
 // that itself.
 func Execute(ctx context.Context, in ExecutionInput) (ExecutionOutput, error) {
+	req := workerRequest{
+		Operation:     workerOperationExecute,
+		Script:        in.Script.Source,
+		PreviousState: in.PreviousState,
+		Event:         in.Event,
+		Context:       toWorkerContext(in.Context),
+	}
+
+	resp, err := spawnWorker(ctx, req)
+	if err != nil {
+		return ExecutionOutput{}, err
+	}
+
+	if len(resp.RequestedCommands) > defaultMaxCommandCount {
+		return ExecutionOutput{}, &ScriptRejectedError{Reason: fmt.Sprintf(
+			"execute() returned %d requested commands, exceeding the %d-command limit",
+			len(resp.RequestedCommands), defaultMaxCommandCount,
+		)}
+	}
+	if outputBytes := executeOutputSize(resp); outputBytes > defaultMaxOutputBytes {
+		return ExecutionOutput{}, &ScriptRejectedError{Reason: fmt.Sprintf(
+			"execute() returned %d bytes of combined output, exceeding the %d-byte limit",
+			outputBytes, defaultMaxOutputBytes,
+		)}
+	}
+
+	return ExecutionOutput{
+		NewState:          resp.NewState,
+		RequestedCommands: resp.RequestedCommands,
+	}, nil
+}
+
+// Project runs one authored-script project() invocation, computing a
+// single viewer's ClientState from an already visibility-filtered
+// in.State - this package never sees, and never needs, the full
+// authoritative state a Project call derives from; constructing that
+// viewer-scoped input is entirely the caller's own responsibility (see
+// ProjectInput's own doc comment). Project shares Execute's exact worker
+// process/isolation model (a fresh worker process per call, the same
+// resource limits, the same caller-deadline kill) - see LOGICAL_CONTRACT.md.
+func Project(ctx context.Context, in ProjectInput) (ProjectOutput, error) {
+	req := workerRequest{
+		Operation: workerOperationProject,
+		Script:    in.Script.Source,
+		State:     in.State,
+		Viewer:    in.Viewer,
+		Context:   toWorkerContext(in.Context),
+	}
+
+	resp, err := spawnWorker(ctx, req)
+	if err != nil {
+		return ProjectOutput{}, err
+	}
+
+	if outputBytes := len(resp.ClientState); outputBytes > defaultMaxOutputBytes {
+		return ProjectOutput{}, &ScriptRejectedError{Reason: fmt.Sprintf(
+			"project() returned %d bytes, exceeding the %d-byte limit",
+			outputBytes, defaultMaxOutputBytes,
+		)}
+	}
+
+	return ProjectOutput{ClientState: resp.ClientState}, nil
+}
+
+func toWorkerContext(c ExecutionContext) workerContext {
+	return workerContext{
+		LogicalTime: c.LogicalTime.UTC().Format(time.RFC3339Nano),
+		RandomSeed:  strconv.FormatUint(c.RandomSeed, 10),
+		ActingActor: c.ActingActor,
+	}
+}
+
+// spawnWorker spawns one fresh worker process, exchanges exactly one
+// request/response over its stdin/stdout, and returns its decoded
+// response - the shared mechanics behind both Execute and Project. It
+// decodes Rejected/Fatal into the same two error categories both
+// operations report; interpreting the remaining, operation-specific
+// response fields (NewState/RequestedCommands vs. ClientState) is each
+// caller's own job.
+func spawnWorker(ctx context.Context, req workerRequest) (workerResponse, error) {
 	exePath, err := os.Executable()
 	if err != nil {
-		return ExecutionOutput{}, &WorkerExecutionError{Reason: "resolving own executable path", Cause: err}
+		return workerResponse{}, &WorkerExecutionError{Reason: "resolving own executable path", Cause: err}
 	}
 
 	// Owned here, not by the worker: a killed worker process never runs its
@@ -110,25 +211,14 @@ func Execute(ctx context.Context, in ExecutionInput) (ExecutionOutput, error) {
 	// process is never the one killed, so its own cleanup always runs.
 	scratchDir, err := os.MkdirTemp("", "playhoot-jsexecutor-*")
 	if err != nil {
-		return ExecutionOutput{}, &WorkerExecutionError{Reason: "creating sandbox scratch directory", Cause: err}
+		return workerResponse{}, &WorkerExecutionError{Reason: "creating sandbox scratch directory", Cause: err}
 	}
 	defer os.RemoveAll(scratchDir)
-
-	req := workerRequest{
-		Script:        in.Script.Source,
-		PreviousState: in.PreviousState,
-		Event:         in.Event,
-		Context: workerContext{
-			LogicalTime: in.Context.LogicalTime.UTC().Format(time.RFC3339Nano),
-			RandomSeed:  strconv.FormatUint(in.Context.RandomSeed, 10),
-			ActingActor: in.Context.ActingActor,
-		},
-		ScratchDir: scratchDir,
-	}
+	req.ScratchDir = scratchDir
 
 	reqBytes, err := json.Marshal(req)
 	if err != nil {
-		return ExecutionOutput{}, &WorkerExecutionError{Reason: "encoding worker request", Cause: err}
+		return workerResponse{}, &WorkerExecutionError{Reason: "encoding worker request", Cause: err}
 	}
 
 	cmd := exec.CommandContext(ctx, exePath, currentWorkerArg)
@@ -143,10 +233,10 @@ func Execute(ctx context.Context, in ExecutionInput) (ExecutionOutput, error) {
 
 	runErr := cmd.Run()
 	if ctx.Err() != nil {
-		return ExecutionOutput{}, &WorkerExecutionError{Reason: "execution deadline exceeded", Cause: ctx.Err()}
+		return workerResponse{}, &WorkerExecutionError{Reason: "execution deadline exceeded", Cause: ctx.Err()}
 	}
 	if runErr != nil {
-		return ExecutionOutput{}, &WorkerExecutionError{
+		return workerResponse{}, &WorkerExecutionError{
 			Reason: fmt.Sprintf("worker process failed (stderr: %q)", strings.TrimSpace(stderr.String())),
 			Cause:  runErr,
 		}
@@ -154,41 +244,27 @@ func Execute(ctx context.Context, in ExecutionInput) (ExecutionOutput, error) {
 
 	var resp workerResponse
 	if err := json.Unmarshal(stdout.Bytes(), &resp); err != nil {
-		return ExecutionOutput{}, &WorkerExecutionError{
+		return workerResponse{}, &WorkerExecutionError{
 			Reason: fmt.Sprintf("decoding worker response (stdout: %q)", truncate(stdout.String(), 256)),
 			Cause:  err,
 		}
 	}
 
 	if resp.Rejected != nil {
-		return ExecutionOutput{}, &ScriptRejectedError{Reason: *resp.Rejected}
+		return workerResponse{}, &ScriptRejectedError{Reason: *resp.Rejected}
 	}
 	if resp.Fatal != nil {
-		return ExecutionOutput{}, &WorkerExecutionError{Reason: *resp.Fatal}
+		return workerResponse{}, &WorkerExecutionError{Reason: *resp.Fatal}
 	}
 
-	if len(resp.RequestedCommands) > defaultMaxCommandCount {
-		return ExecutionOutput{}, &ScriptRejectedError{Reason: fmt.Sprintf(
-			"execute() returned %d requested commands, exceeding the %d-command limit",
-			len(resp.RequestedCommands), defaultMaxCommandCount,
-		)}
-	}
-	if outputBytes := outputSize(resp); outputBytes > defaultMaxOutputBytes {
-		return ExecutionOutput{}, &ScriptRejectedError{Reason: fmt.Sprintf(
-			"execute() returned %d bytes of combined output, exceeding the %d-byte limit",
-			outputBytes, defaultMaxOutputBytes,
-		)}
-	}
-
-	return ExecutionOutput{
-		NewState:          resp.NewState,
-		RequestedCommands: resp.RequestedCommands,
-	}, nil
+	return resp, nil
 }
 
-// outputSize is the combined serialized size of a successful response's
-// NewState and RequestedCommands - the shape defaultMaxOutputBytes bounds.
-func outputSize(resp workerResponse) int {
+// executeOutputSize is the combined serialized size of a successful
+// Execute response's NewState and RequestedCommands - the shape
+// defaultMaxOutputBytes bounds for Execute. Project bounds its own,
+// differently-shaped ClientState output directly in Project itself.
+func executeOutputSize(resp workerResponse) int {
 	total := len(resp.NewState)
 	for _, cmd := range resp.RequestedCommands {
 		total += len(cmd)

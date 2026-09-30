@@ -72,6 +72,58 @@ func (c *GRPCClient) Execute(ctx context.Context, in ExecutionInput) (ExecutionO
 	return ExecutionOutput{}, &ExecutorError{Reason: "executor unavailable after retries", Cause: lastErr}
 }
 
+func (c *GRPCClient) Project(ctx context.Context, in ProjectionInput) (ProjectionOutput, error) {
+	req := toProtoProjectRequest(in)
+
+	var lastErr error
+	for attempt := 0; attempt <= unavailableRetries; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return ProjectionOutput{}, &ExecutorError{Reason: "context done before retry", Cause: ctx.Err()}
+			case <-time.After(retryBackoff):
+			}
+		}
+
+		resp, err := c.client.Project(ctx, req)
+		if err == nil {
+			return fromProtoProjectResponse(resp)
+		}
+
+		if status.Code(err) != codes.Unavailable {
+			return ProjectionOutput{}, &ExecutorError{Reason: "executor request failed", Cause: err}
+		}
+		lastErr = err
+	}
+
+	return ProjectionOutput{}, &ExecutorError{Reason: "executor unavailable after retries", Cause: lastErr}
+}
+
+func toProtoProjectRequest(in ProjectionInput) *pb.ProjectRequest {
+	return &pb.ProjectRequest{
+		Script:          []byte(in.Script.Source),
+		ProjectionInput: in.State,
+		Viewer:          in.Viewer,
+		Context: &pb.ProjectContext{
+			LogicalTime: in.Context.LogicalTime.UTC().Format(time.RFC3339Nano),
+			RandomSeed:  strconv.FormatUint(in.Context.RandomSeed, 10),
+		},
+	}
+}
+
+func fromProtoProjectResponse(resp *pb.ProjectResponse) (ProjectionOutput, error) {
+	if rejected := resp.GetRejected(); rejected != nil {
+		return ProjectionOutput{}, &ScriptRejectedError{Reason: rejected.GetReason()}
+	}
+
+	success := resp.GetSuccess()
+	if success == nil {
+		return ProjectionOutput{}, &ExecutorError{Reason: "executor returned neither a success nor a rejected outcome"}
+	}
+
+	return ProjectionOutput{ClientState: success.GetClientState()}, nil
+}
+
 func toProtoRequest(in ExecutionInput) *pb.ExecuteRequest {
 	return &pb.ExecuteRequest{
 		Script:        []byte(in.Script.Source),

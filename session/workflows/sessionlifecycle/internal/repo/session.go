@@ -94,6 +94,27 @@ func (r *Repo) SetCurrentTurn(ctx context.Context, tx *gorm.DB, sessionID uint, 
 	return nil
 }
 
+// ResolveSessionForClientState is an unlocked, pre-transaction read of
+// sessionUUID's own sessions row - GetClientState's own read: a pure
+// computation that never mutates Session state, so no row lock is needed
+// the way every LOBBY/RUNNING-phase mutation's own LockSessionByUUID
+// requires. Returns nil, nil if no such Session exists.
+func (r *Repo) ResolveSessionForClientState(ctx context.Context, sessionUUID string) (*Session, error) {
+	var row Session
+	result := r.db.WithContext(ctx).Raw(`
+		SELECT id, uuid, game_definition_uuid, host_actor_id, phase, lobby_expires_at, activity_expires_at, current_turn_id, terminal_at, terminal_reason
+		FROM sessions
+		WHERE uuid = ?
+	`, sessionUUID).Scan(&row)
+	if result.Error != nil {
+		return nil, fmt.Errorf("resolving session for client state: %s", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return nil, nil
+	}
+	return &row, nil
+}
+
 // CreateSessionWithHost persists the Host/SessionActor Creation Cycle:
 // inserts the sessions row with host_actor_id NULL, inserts the host
 // session_actors row, then assigns host_actor_id - one cohesive structural

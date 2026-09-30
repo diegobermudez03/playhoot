@@ -110,13 +110,20 @@ func runScript(req workerRequest) workerResponse {
 		reason := "encoding context for script: " + err.Error()
 		return workerResponse{Fatal: &reason}
 	}
+	contextVal := ctx.ParseJSON(string(contextJSON))
+	defer contextVal.Free()
 
+	if req.Operation == workerOperationProject {
+		return runProject(ctx, req, contextVal)
+	}
+	return runExecute(ctx, req, contextVal)
+}
+
+func runExecute(ctx *qjs.Context, req workerRequest, contextVal *qjs.Value) workerResponse {
 	prevStateVal := ctx.ParseJSON(rawOrNull(req.PreviousState))
 	defer prevStateVal.Free()
 	eventVal := ctx.ParseJSON(rawOrNull(req.Event))
 	defer eventVal.Free()
-	contextVal := ctx.ParseJSON(string(contextJSON))
-	defer contextVal.Free()
 
 	global := ctx.Global()
 	entry := global.GetPropertyStr("execute")
@@ -155,4 +162,50 @@ func runScript(req workerRequest) workerResponse {
 		NewState:          shape.NewState,
 		RequestedCommands: shape.RequestedCommands,
 	}
+}
+
+// runProject invokes the script's second, pure entry point, project(state,
+// viewer, context). Unlike execute(), its return value has no required
+// shape - whatever JSON-serializable value the script returns becomes
+// ClientState verbatim. req.State is already the caller-constructed,
+// viewer-scoped input a privacy-filtering step upstream produced - this
+// function never sees, and has no way to reach, whatever authoritative
+// state that filtering step excluded.
+func runProject(ctx *qjs.Context, req workerRequest, contextVal *qjs.Value) workerResponse {
+	stateVal := ctx.ParseJSON(rawOrNull(req.State))
+	defer stateVal.Free()
+
+	viewerJSON, err := json.Marshal(req.Viewer)
+	if err != nil {
+		reason := "encoding viewer for script: " + err.Error()
+		return workerResponse{Fatal: &reason}
+	}
+	viewerVal := ctx.ParseJSON(string(viewerJSON))
+	defer viewerVal.Free()
+
+	global := ctx.Global()
+	entry := global.GetPropertyStr("project")
+	if !entry.IsFunction() {
+		reason := "script does not define a global project function"
+		return workerResponse{Rejected: &reason}
+	}
+
+	result, err := global.InvokeJS("project", stateVal, viewerVal, contextVal)
+	if err != nil {
+		reason := "project() threw: " + err.Error()
+		return workerResponse{Rejected: &reason}
+	}
+	defer result.Free()
+
+	resultJSON, err := result.JSONStringify()
+	if err != nil {
+		reason := "project() returned a value that cannot be serialized: " + err.Error()
+		return workerResponse{Rejected: &reason}
+	}
+	if resultJSON == "" || resultJSON == "undefined" {
+		reason := "project() did not return a value"
+		return workerResponse{Rejected: &reason}
+	}
+
+	return workerResponse{ClientState: json.RawMessage(resultJSON)}
 }

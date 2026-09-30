@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.12
 // 	protoc        v5.29.0
-// source: session/jsexecutor/proto/executor.proto
+// source: executor.proto
 
 package proto
 
@@ -35,7 +35,7 @@ type ExecuteRequest struct {
 
 func (x *ExecuteRequest) Reset() {
 	*x = ExecuteRequest{}
-	mi := &file_session_jsexecutor_proto_executor_proto_msgTypes[0]
+	mi := &file_executor_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -47,7 +47,7 @@ func (x *ExecuteRequest) String() string {
 func (*ExecuteRequest) ProtoMessage() {}
 
 func (x *ExecuteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_session_jsexecutor_proto_executor_proto_msgTypes[0]
+	mi := &file_executor_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -60,7 +60,7 @@ func (x *ExecuteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecuteRequest.ProtoReflect.Descriptor instead.
 func (*ExecuteRequest) Descriptor() ([]byte, []int) {
-	return file_session_jsexecutor_proto_executor_proto_rawDescGZIP(), []int{0}
+	return file_executor_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *ExecuteRequest) GetScript() []byte {
@@ -107,7 +107,7 @@ type ExecutionContext struct {
 
 func (x *ExecutionContext) Reset() {
 	*x = ExecutionContext{}
-	mi := &file_session_jsexecutor_proto_executor_proto_msgTypes[1]
+	mi := &file_executor_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -119,7 +119,7 @@ func (x *ExecutionContext) String() string {
 func (*ExecutionContext) ProtoMessage() {}
 
 func (x *ExecutionContext) ProtoReflect() protoreflect.Message {
-	mi := &file_session_jsexecutor_proto_executor_proto_msgTypes[1]
+	mi := &file_executor_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -132,7 +132,7 @@ func (x *ExecutionContext) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecutionContext.ProtoReflect.Descriptor instead.
 func (*ExecutionContext) Descriptor() ([]byte, []int) {
-	return file_session_jsexecutor_proto_executor_proto_rawDescGZIP(), []int{1}
+	return file_executor_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *ExecutionContext) GetLogicalTime() string {
@@ -169,7 +169,7 @@ type ExecuteResponse struct {
 
 func (x *ExecuteResponse) Reset() {
 	*x = ExecuteResponse{}
-	mi := &file_session_jsexecutor_proto_executor_proto_msgTypes[2]
+	mi := &file_executor_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -181,7 +181,7 @@ func (x *ExecuteResponse) String() string {
 func (*ExecuteResponse) ProtoMessage() {}
 
 func (x *ExecuteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_session_jsexecutor_proto_executor_proto_msgTypes[2]
+	mi := &file_executor_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -194,7 +194,7 @@ func (x *ExecuteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecuteResponse.ProtoReflect.Descriptor instead.
 func (*ExecuteResponse) Descriptor() ([]byte, []int) {
-	return file_session_jsexecutor_proto_executor_proto_rawDescGZIP(), []int{2}
+	return file_executor_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *ExecuteResponse) GetOutcome() isExecuteResponse_Outcome {
@@ -248,7 +248,7 @@ type Success struct {
 
 func (x *Success) Reset() {
 	*x = Success{}
-	mi := &file_session_jsexecutor_proto_executor_proto_msgTypes[3]
+	mi := &file_executor_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -260,7 +260,7 @@ func (x *Success) String() string {
 func (*Success) ProtoMessage() {}
 
 func (x *Success) ProtoReflect() protoreflect.Message {
-	mi := &file_session_jsexecutor_proto_executor_proto_msgTypes[3]
+	mi := &file_executor_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -273,7 +273,7 @@ func (x *Success) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Success.ProtoReflect.Descriptor instead.
 func (*Success) Descriptor() ([]byte, []int) {
-	return file_session_jsexecutor_proto_executor_proto_rawDescGZIP(), []int{3}
+	return file_executor_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *Success) GetNewState() []byte {
@@ -303,7 +303,7 @@ type Rejected struct {
 
 func (x *Rejected) Reset() {
 	*x = Rejected{}
-	mi := &file_session_jsexecutor_proto_executor_proto_msgTypes[4]
+	mi := &file_executor_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -315,7 +315,7 @@ func (x *Rejected) String() string {
 func (*Rejected) ProtoMessage() {}
 
 func (x *Rejected) ProtoReflect() protoreflect.Message {
-	mi := &file_session_jsexecutor_proto_executor_proto_msgTypes[4]
+	mi := &file_executor_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -328,7 +328,7 @@ func (x *Rejected) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Rejected.ProtoReflect.Descriptor instead.
 func (*Rejected) Descriptor() ([]byte, []int) {
-	return file_session_jsexecutor_proto_executor_proto_rawDescGZIP(), []int{4}
+	return file_executor_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *Rejected) GetReason() string {
@@ -338,11 +338,268 @@ func (x *Rejected) GetReason() string {
 	return ""
 }
 
-var File_session_jsexecutor_proto_executor_proto protoreflect.FileDescriptor
+type ProjectRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Authored JavaScript source, the same script Execute uses.
+	Script []byte `protobuf:"bytes,1,opt,name=script,proto3" json:"script,omitempty"`
+	// Already visibility-filtered, viewer-scoped input the caller
+	// constructed. Never the full authoritative state - see this service's
+	// own Project doc comment above.
+	ProjectionInput []byte `protobuf:"bytes,2,opt,name=projection_input,json=projectionInput,proto3" json:"projection_input,omitempty"`
+	// Opaque identifier of the viewer this ClientState is being computed
+	// for.
+	Viewer        string          `protobuf:"bytes,3,opt,name=viewer,proto3" json:"viewer,omitempty"`
+	Context       *ProjectContext `protobuf:"bytes,4,opt,name=context,proto3" json:"context,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
 
-const file_session_jsexecutor_proto_executor_proto_rawDesc = "" +
+func (x *ProjectRequest) Reset() {
+	*x = ProjectRequest{}
+	mi := &file_executor_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProjectRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProjectRequest) ProtoMessage() {}
+
+func (x *ProjectRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_executor_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProjectRequest.ProtoReflect.Descriptor instead.
+func (*ProjectRequest) Descriptor() ([]byte, []int) {
+	return file_executor_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ProjectRequest) GetScript() []byte {
+	if x != nil {
+		return x.Script
+	}
+	return nil
+}
+
+func (x *ProjectRequest) GetProjectionInput() []byte {
+	if x != nil {
+		return x.ProjectionInput
+	}
+	return nil
+}
+
+func (x *ProjectRequest) GetViewer() string {
+	if x != nil {
+		return x.Viewer
+	}
+	return ""
+}
+
+func (x *ProjectRequest) GetContext() *ProjectContext {
+	if x != nil {
+		return x.Context
+	}
+	return nil
+}
+
+// ProjectContext is Project's own, deliberately smaller, context shape:
+// unlike ExecutionContext, it carries no acting_actor (viewer above already
+// names whose projection this is).
+type ProjectContext struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	LogicalTime   string                 `protobuf:"bytes,1,opt,name=logical_time,json=logicalTime,proto3" json:"logical_time,omitempty"`
+	RandomSeed    string                 `protobuf:"bytes,2,opt,name=random_seed,json=randomSeed,proto3" json:"random_seed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProjectContext) Reset() {
+	*x = ProjectContext{}
+	mi := &file_executor_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProjectContext) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProjectContext) ProtoMessage() {}
+
+func (x *ProjectContext) ProtoReflect() protoreflect.Message {
+	mi := &file_executor_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProjectContext.ProtoReflect.Descriptor instead.
+func (*ProjectContext) Descriptor() ([]byte, []int) {
+	return file_executor_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *ProjectContext) GetLogicalTime() string {
+	if x != nil {
+		return x.LogicalTime
+	}
+	return ""
+}
+
+func (x *ProjectContext) GetRandomSeed() string {
+	if x != nil {
+		return x.RandomSeed
+	}
+	return ""
+}
+
+type ProjectResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Outcome:
+	//
+	//	*ProjectResponse_Success
+	//	*ProjectResponse_Rejected
+	Outcome       isProjectResponse_Outcome `protobuf_oneof:"outcome"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProjectResponse) Reset() {
+	*x = ProjectResponse{}
+	mi := &file_executor_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProjectResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProjectResponse) ProtoMessage() {}
+
+func (x *ProjectResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_executor_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProjectResponse.ProtoReflect.Descriptor instead.
+func (*ProjectResponse) Descriptor() ([]byte, []int) {
+	return file_executor_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *ProjectResponse) GetOutcome() isProjectResponse_Outcome {
+	if x != nil {
+		return x.Outcome
+	}
+	return nil
+}
+
+func (x *ProjectResponse) GetSuccess() *ProjectSuccess {
+	if x != nil {
+		if x, ok := x.Outcome.(*ProjectResponse_Success); ok {
+			return x.Success
+		}
+	}
+	return nil
+}
+
+func (x *ProjectResponse) GetRejected() *Rejected {
+	if x != nil {
+		if x, ok := x.Outcome.(*ProjectResponse_Rejected); ok {
+			return x.Rejected
+		}
+	}
+	return nil
+}
+
+type isProjectResponse_Outcome interface {
+	isProjectResponse_Outcome()
+}
+
+type ProjectResponse_Success struct {
+	Success *ProjectSuccess `protobuf:"bytes,1,opt,name=success,proto3,oneof"`
+}
+
+type ProjectResponse_Rejected struct {
+	Rejected *Rejected `protobuf:"bytes,2,opt,name=rejected,proto3,oneof"`
+}
+
+func (*ProjectResponse_Success) isProjectResponse_Outcome() {}
+
+func (*ProjectResponse_Rejected) isProjectResponse_Outcome() {}
+
+type ProjectSuccess struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Whatever JSON value the script's project() function returned - no
+	// fixed shape is required of it, unlike ExecuteResponse.Success.
+	ClientState   []byte `protobuf:"bytes,1,opt,name=client_state,json=clientState,proto3" json:"client_state,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProjectSuccess) Reset() {
+	*x = ProjectSuccess{}
+	mi := &file_executor_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProjectSuccess) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProjectSuccess) ProtoMessage() {}
+
+func (x *ProjectSuccess) ProtoReflect() protoreflect.Message {
+	mi := &file_executor_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProjectSuccess.ProtoReflect.Descriptor instead.
+func (*ProjectSuccess) Descriptor() ([]byte, []int) {
+	return file_executor_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *ProjectSuccess) GetClientState() []byte {
+	if x != nil {
+		return x.ClientState
+	}
+	return nil
+}
+
+var File_executor_proto protoreflect.FileDescriptor
+
+const file_executor_proto_rawDesc = "" +
 	"\n" +
-	"'session/jsexecutor/proto/executor.proto\x12\n" +
+	"\x0eexecutor.proto\x12\n" +
 	"jsexecutor\"\x9d\x01\n" +
 	"\x0eExecuteRequest\x12\x16\n" +
 	"\x06script\x18\x01 \x01(\fR\x06script\x12%\n" +
@@ -362,67 +619,96 @@ const file_session_jsexecutor_proto_executor_proto_rawDesc = "" +
 	"\tnew_state\x18\x01 \x01(\fR\bnewState\x12-\n" +
 	"\x12requested_commands\x18\x02 \x03(\fR\x11requestedCommands\"\"\n" +
 	"\bRejected\x12\x16\n" +
-	"\x06reason\x18\x01 \x01(\tR\x06reason2N\n" +
+	"\x06reason\x18\x01 \x01(\tR\x06reason\"\xa1\x01\n" +
+	"\x0eProjectRequest\x12\x16\n" +
+	"\x06script\x18\x01 \x01(\fR\x06script\x12)\n" +
+	"\x10projection_input\x18\x02 \x01(\fR\x0fprojectionInput\x12\x16\n" +
+	"\x06viewer\x18\x03 \x01(\tR\x06viewer\x124\n" +
+	"\acontext\x18\x04 \x01(\v2\x1a.jsexecutor.ProjectContextR\acontext\"T\n" +
+	"\x0eProjectContext\x12!\n" +
+	"\flogical_time\x18\x01 \x01(\tR\vlogicalTime\x12\x1f\n" +
+	"\vrandom_seed\x18\x02 \x01(\tR\n" +
+	"randomSeed\"\x88\x01\n" +
+	"\x0fProjectResponse\x126\n" +
+	"\asuccess\x18\x01 \x01(\v2\x1a.jsexecutor.ProjectSuccessH\x00R\asuccess\x122\n" +
+	"\brejected\x18\x02 \x01(\v2\x14.jsexecutor.RejectedH\x00R\brejectedB\t\n" +
+	"\aoutcome\"3\n" +
+	"\x0eProjectSuccess\x12!\n" +
+	"\fclient_state\x18\x01 \x01(\fR\vclientState2\x92\x01\n" +
 	"\bExecutor\x12B\n" +
-	"\aExecute\x12\x1a.jsexecutor.ExecuteRequest\x1a\x1b.jsexecutor.ExecuteResponseB>Z<github.com/diegobermudez03/playhoot/session/jsexecutor/protob\x06proto3"
+	"\aExecute\x12\x1a.jsexecutor.ExecuteRequest\x1a\x1b.jsexecutor.ExecuteResponse\x12B\n" +
+	"\aProject\x12\x1a.jsexecutor.ProjectRequest\x1a\x1b.jsexecutor.ProjectResponseB>Z<github.com/diegobermudez03/playhoot/session/jsexecutor/protob\x06proto3"
 
 var (
-	file_session_jsexecutor_proto_executor_proto_rawDescOnce sync.Once
-	file_session_jsexecutor_proto_executor_proto_rawDescData []byte
+	file_executor_proto_rawDescOnce sync.Once
+	file_executor_proto_rawDescData []byte
 )
 
-func file_session_jsexecutor_proto_executor_proto_rawDescGZIP() []byte {
-	file_session_jsexecutor_proto_executor_proto_rawDescOnce.Do(func() {
-		file_session_jsexecutor_proto_executor_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_session_jsexecutor_proto_executor_proto_rawDesc), len(file_session_jsexecutor_proto_executor_proto_rawDesc)))
+func file_executor_proto_rawDescGZIP() []byte {
+	file_executor_proto_rawDescOnce.Do(func() {
+		file_executor_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_executor_proto_rawDesc), len(file_executor_proto_rawDesc)))
 	})
-	return file_session_jsexecutor_proto_executor_proto_rawDescData
+	return file_executor_proto_rawDescData
 }
 
-var file_session_jsexecutor_proto_executor_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
-var file_session_jsexecutor_proto_executor_proto_goTypes = []any{
+var file_executor_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_executor_proto_goTypes = []any{
 	(*ExecuteRequest)(nil),   // 0: jsexecutor.ExecuteRequest
 	(*ExecutionContext)(nil), // 1: jsexecutor.ExecutionContext
 	(*ExecuteResponse)(nil),  // 2: jsexecutor.ExecuteResponse
 	(*Success)(nil),          // 3: jsexecutor.Success
 	(*Rejected)(nil),         // 4: jsexecutor.Rejected
+	(*ProjectRequest)(nil),   // 5: jsexecutor.ProjectRequest
+	(*ProjectContext)(nil),   // 6: jsexecutor.ProjectContext
+	(*ProjectResponse)(nil),  // 7: jsexecutor.ProjectResponse
+	(*ProjectSuccess)(nil),   // 8: jsexecutor.ProjectSuccess
 }
-var file_session_jsexecutor_proto_executor_proto_depIdxs = []int32{
+var file_executor_proto_depIdxs = []int32{
 	1, // 0: jsexecutor.ExecuteRequest.context:type_name -> jsexecutor.ExecutionContext
 	3, // 1: jsexecutor.ExecuteResponse.success:type_name -> jsexecutor.Success
 	4, // 2: jsexecutor.ExecuteResponse.rejected:type_name -> jsexecutor.Rejected
-	0, // 3: jsexecutor.Executor.Execute:input_type -> jsexecutor.ExecuteRequest
-	2, // 4: jsexecutor.Executor.Execute:output_type -> jsexecutor.ExecuteResponse
-	4, // [4:5] is the sub-list for method output_type
-	3, // [3:4] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	6, // 3: jsexecutor.ProjectRequest.context:type_name -> jsexecutor.ProjectContext
+	8, // 4: jsexecutor.ProjectResponse.success:type_name -> jsexecutor.ProjectSuccess
+	4, // 5: jsexecutor.ProjectResponse.rejected:type_name -> jsexecutor.Rejected
+	0, // 6: jsexecutor.Executor.Execute:input_type -> jsexecutor.ExecuteRequest
+	5, // 7: jsexecutor.Executor.Project:input_type -> jsexecutor.ProjectRequest
+	2, // 8: jsexecutor.Executor.Execute:output_type -> jsexecutor.ExecuteResponse
+	7, // 9: jsexecutor.Executor.Project:output_type -> jsexecutor.ProjectResponse
+	8, // [8:10] is the sub-list for method output_type
+	6, // [6:8] is the sub-list for method input_type
+	6, // [6:6] is the sub-list for extension type_name
+	6, // [6:6] is the sub-list for extension extendee
+	0, // [0:6] is the sub-list for field type_name
 }
 
-func init() { file_session_jsexecutor_proto_executor_proto_init() }
-func file_session_jsexecutor_proto_executor_proto_init() {
-	if File_session_jsexecutor_proto_executor_proto != nil {
+func init() { file_executor_proto_init() }
+func file_executor_proto_init() {
+	if File_executor_proto != nil {
 		return
 	}
-	file_session_jsexecutor_proto_executor_proto_msgTypes[2].OneofWrappers = []any{
+	file_executor_proto_msgTypes[2].OneofWrappers = []any{
 		(*ExecuteResponse_Success)(nil),
 		(*ExecuteResponse_Rejected)(nil),
+	}
+	file_executor_proto_msgTypes[7].OneofWrappers = []any{
+		(*ProjectResponse_Success)(nil),
+		(*ProjectResponse_Rejected)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_session_jsexecutor_proto_executor_proto_rawDesc), len(file_session_jsexecutor_proto_executor_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_executor_proto_rawDesc), len(file_executor_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_session_jsexecutor_proto_executor_proto_goTypes,
-		DependencyIndexes: file_session_jsexecutor_proto_executor_proto_depIdxs,
-		MessageInfos:      file_session_jsexecutor_proto_executor_proto_msgTypes,
+		GoTypes:           file_executor_proto_goTypes,
+		DependencyIndexes: file_executor_proto_depIdxs,
+		MessageInfos:      file_executor_proto_msgTypes,
 	}.Build()
-	File_session_jsexecutor_proto_executor_proto = out.File
-	file_session_jsexecutor_proto_executor_proto_goTypes = nil
-	file_session_jsexecutor_proto_executor_proto_depIdxs = nil
+	File_executor_proto = out.File
+	file_executor_proto_goTypes = nil
+	file_executor_proto_depIdxs = nil
 }
