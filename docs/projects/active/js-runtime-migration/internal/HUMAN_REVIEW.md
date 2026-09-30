@@ -1,3 +1,73 @@
+Checkpoint: WORK-0045 DRAFT — shape corrected per your review, ready for READY if you're satisfied.
+Date: 2026-09-29
+
+## Your five corrections, all applied
+
+1. **`playhoot.onState`/`playhoot.onEvent` are listener registrations on one host-provided object**, not something the generated frontend implements itself.
+2. **Added `revision`/`id` metadata.** `onState` now delivers `{ state, revision }`; `onEvent` now delivers `{ id, name, payload, revision }`. You're right that bare payloads gave the frontend no way to recognize a duplicate or a stale delivery, especially given `onEvent` is explicitly best-effort. This surfaced a real gap: neither `GetClientStateResult` nor `OutboundEvent` carries these today. Rather than leave that as a loose thread, I created a new WORK for it - `WORK-0055` (PLANNED) - and added a short dated note to `WORK-0041`'s and `WORK-0042`'s own already-closed files pointing to it (their own approved scope isn't reopened, this is new work building on both).
+3. **Locked the four names.** `onState`/`onEvent`/`send`/`requestAsset` are now the stable v1 surface, not renameable - a future incompatible change would be a new versioned SDK, not a silent rename.
+4. **Network isolation is now a binding requirement**, not documented convention - generated frontend code has no direct network capability of any kind, and the host/iframe configuration must enforce it.
+5. **`requestAsset` returns a safe handle** (e.g. Blob/ArrayBuffer/object URL), never a URL the game fetches itself.
+
+Also made the smaller correction you flagged: the frontend script is described as "immutable, loaded at bootstrap, not retransmitted per update" rather than the literal "once per Session" phrasing.
+
+## Recommendation
+
+If this matches what you had in mind, this is ready for READY authorization. Full detail in `../works/WORK-0045-frontend-iframe-delivery-contract-specification.md`; the new follow-up is `../works/WORK-0055-client-state-revision-and-outbound-event-correlation-identifiers.md`.
+
+---
+
+Prior checkpoint, preserved below:
+
+Checkpoint: WORK-0045 DRAFT — one decision needed before READY.
+Date: 2026-09-29
+
+## What this WORK does
+
+Writes the accepted, canonical specification for how Playhoot's own (not-yet-built) frontend talks to the sandboxed iframe that actually renders a game - the trust boundary, a small fixed API surface, how the frontend script gets loaded, and how a player action's outcome (accepted/rejected/failed) is distinguished from a mere "the message arrived" acknowledgement. It's a documentation deliverable, not code - `ADR-0015` already requires this contract to exist; this WORK makes it concrete.
+
+## Why this WORK, right now
+
+You said to pick. `WORK-0043` (the other unblocked candidate) still has a real open question - how the durable "confirmed action result" mechanism actually works (same-database table vs. an external queue) - plus it needs to coordinate with `session-runtime-v1`'s own live-connection WORK, which isn't designed yet either. `WORK-0045` has no such blocker: everything it needs to reference (the view call, the send-an-action call, the cosmetic-effects mechanism, the artifact model) is already built and DONE. It's also lower-risk (no code) and unblocks `WORK-0046` (serving the frontend package), which can't be usefully designed until this contract exists.
+
+## The one thing worth your attention before READY
+
+This WORK's own deliverable *is* an API design - the shape of the client library a future frontend will be built against. I drafted a concrete proposal rather than leave it abstract:
+
+- `onState(clientState)` - the current view (maps to `GetClientState`)
+- `onEvent(name, payload)` - a cosmetic effect (maps to `SEND_EVENT`/`OutboundEvent`)
+- `send(name, payload) -> Promise<{outcome: accepted|rejected|failed}>` - a player action (maps directly onto `SubmitPlayerEvent`'s already-existing three outcomes)
+- `requestAsset(key) -> Promise<AssetHandle>` - resolves a declared asset key, never a URL
+
+I deliberately did NOT try to design the parts this WORK doesn't own: how `send`'s promise actually gets its answer durably (`WORK-0043`'s job), how assets are actually served (`WORK-0046`'s job), or what happens on reconnect (`session-runtime-v1`'s job) - the spec names these as dependencies rather than inventing placeholder behavior for them.
+
+Tell me if this four-call shape and the names look right, or how you'd like them changed - once confirmed, I'll treat it as binding and write the actual spec document.
+
+## What's new
+
+The proposed contract above, plus a new document this WORK would create once READY: `session/docs/FRONTEND_IFRAME_CONTRACT.md`.
+
+## What's explicitly NOT done by this WORK
+
+- No frontend code, SDK, or repository - explicitly out of this Project's scope.
+- No transport wire format, asset-serving implementation, durable-delivery mechanism, or reconnect mechanism - each named as a dependency on another WORK, not invented here.
+
+## Unresolved blockers
+
+None beyond the shape confirmation above.
+
+## What READY would authorize
+
+Writing `session/docs/FRONTEND_IFRAME_CONTRACT.md` with exactly the contract described above (once you confirm or adjust it) - no code, no other document changes beyond a small cross-reference from `GAME_VERSION_ARTIFACT_MODEL.md`.
+
+## Recommendation
+
+If the four-call shape above looks right, this is ready for READY authorization. Full detail in `../works/WORK-0045-frontend-iframe-delivery-contract-specification.md`.
+
+---
+
+Prior checkpoint, preserved below:
+
 Checkpoint: WORK-0042 DONE (not a new human-decision gate — informational).
 Date: 2026-09-29
 

@@ -176,3 +176,7 @@ Verdict: **APPROVED, no findings.**
 Two documentation/drift notes were logged (not blocking): (1) independently confirmed the Documentation Impact framing (session/CURRENT_STATE.md/session/docs/FLOWS.md left untouched) is accurate, not evasive, but flagged that this is now the third consecutive WORK deferring the same documentation-catch-up gap - worth this Project's own planning attention, not a fix this WORK itself owes; (2) reconfirmed the `session-runtime-v1/PROJECT.md` cross-Project drift note is accurate and correctly not owned here.
 
 No REQUIRED_FIX or DECISION_REQUIRED finding remains. Closed to DONE.
+
+## Addendum (2026-09-29): Revision/Correlation ID Discovered Missing
+
+While drafting `WORK-0045` (the frontend iframe delivery contract), human review found that `session.OutboundEvent` needs a stable per-event correlation `id` plus its own `revision` (the producing RuntimeTurn's `Sequence`) so a frontend can recognize an already-delivered duplicate - `OutboundEvent`'s best-effort delivery (this WORK's own `SESSION-ADR-0019` restatement) means a consumer needs exactly this kind of dedup handle. Neither field existed in this WORK's own approved scope, which is unaffected and remains correct for what it set out to do. The addition is `WORK-0055`'s own new, additive scope, not a reopening of this WORK.

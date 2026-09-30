@@ -203,3 +203,7 @@ Verification: `go build ./...`/`go vet ./...` clean repository-wide across every
 Documentation synchronized: `session/workflows/sessionlifecycle/internal/visibility/LOGICAL_CONTRACT.md` (new, substantially expanded across all six review rounds), `session/jsexecutor/internal/sandbox/LOGICAL_CONTRACT.md` and `session/internal/executor/LOGICAL_CONTRACT.md` (both gained the `project`/`Project` entry point), `session/docs/GAME_VERSION_ARTIFACT_MODEL.md` (dated "Projection Visibility" addendum). `docs/projects/active/js-runtime-migration/PROJECT.md`'s Work table/Capability Coverage/narrative updated to reflect WORK-0041 DONE and WORK-0054 PLANNED.
 
 Known limitation, explicitly accepted, not a defect: the offline/publish-time differential probe (`WORK-0054`) remains unimplemented, by explicit human decision - `Filter`'s own capability-based construction is the primary guarantee and does not depend on it existing.
+
+## Addendum (2026-09-29): Revision Number Discovered Missing
+
+While drafting `WORK-0045` (the frontend iframe delivery contract), human review found that a delivered view needs an authoritative revision/sequence number so a frontend can safely discard a stale delivery - `session.GetClientStateResult` has no such field today. This WORK's own approved scope (a pure, privacy-safe view computation) is unaffected and remains correct; the addition (exposing the already-durable `RuntimeTurn.Sequence` this WORK's own `GetClientState` already reads internally) is `WORK-0055`'s own new, additive scope, not a reopening of this WORK.
