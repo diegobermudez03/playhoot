@@ -2,6 +2,7 @@ package sessionlifecycle
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -186,6 +187,32 @@ func TestManagerExpireTimer_Integration(t *testing.T) {
 		require.NoError(t, db.Raw(`SELECT failure_kind, source_timer_obligation_id FROM session_runtime_failures WHERE session_id = ?`, sessionIDForUUID(t, db, sessionUUID)).Scan(&failureRow).Error)
 		require.Equal(t, RuntimeFailureKindExecution, failureRow.FailureKind)
 		require.NotNil(t, failureRow.SourceTimerObligationID)
+	})
+
+	t.Run("expiring_a_timer_can_chain_into_scheduling_the_next_one", func(t *testing.T) {
+		exec := startPassthroughThenExec(t, stateJSON(t, map[string]any{}), func(in executor.ExecutionInput) (executor.ExecutionOutput, error) {
+			return executor.ExecutionOutput{
+				NewState:          stateJSON(t, map[string]any{"round": 2}),
+				RequestedCommands: []json.RawMessage{scheduleTimerCommand(t, "round_timer", 5000)},
+			}, nil
+		})
+		m, sessionUUID, _ := startedSessionWithExecutor(t, db, exec)
+
+		var currentTurnID uint
+		require.NoError(t, db.Raw(`SELECT current_turn_id FROM sessions WHERE uuid = ?`, string(sessionUUID)).Scan(&currentTurnID).Error)
+		obligationUUID := testfixtures.SeedTimerObligation(t, db, sessionIDForUUID(t, db, sessionUUID), "round_timer", 5000, currentTurnID)
+
+		result, err := m.ExpireTimer(context.Background(), session.TimerObligationUUID(obligationUUID))
+		require.NoError(t, err)
+		require.Equal(t, session.ExpireTimerOutcomeExpired, result.Outcome)
+
+		var rows []struct {
+			State string `gorm:"column:state"`
+		}
+		require.NoError(t, db.Raw(`SELECT state FROM session_timer_obligations WHERE session_id = ? AND timer = ? ORDER BY id`, sessionIDForUUID(t, db, sessionUUID), "round_timer").Scan(&rows).Error)
+		require.Len(t, rows, 2, "the expired obligation stays CONSUMED, and a new one is scheduled for the next round")
+		require.Equal(t, session.TimerObligationStateConsumed, rows[0].State)
+		require.Equal(t, session.TimerObligationStateActive, rows[1].State)
 	})
 
 	t.Run("expiring_an_unknown_obligation_uuid_reports_not_found", func(t *testing.T) {

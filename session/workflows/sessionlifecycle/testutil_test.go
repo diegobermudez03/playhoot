@@ -77,6 +77,23 @@ func sessionFailCommand(t *testing.T, reason string) json.RawMessage {
 	return encoded
 }
 
+// scheduleTimerCommand/cancelTimerCommand encode a platform SCHEDULE_TIMER/
+// CANCEL_TIMER Command, for a fakeExecutorAlwaysReturning fixture that needs
+// to drive timer-obligation persistence.
+func scheduleTimerCommand(t *testing.T, timer string, delayMs int64) json.RawMessage {
+	t.Helper()
+	encoded, err := json.Marshal(map[string]any{"kind": "SCHEDULE_TIMER", "timer": timer, "delay_ms": delayMs})
+	require.NoError(t, err)
+	return encoded
+}
+
+func cancelTimerCommand(t *testing.T, timer string) json.RawMessage {
+	t.Helper()
+	encoded, err := json.Marshal(map[string]string{"kind": "CANCEL_TIMER", "timer": timer})
+	require.NoError(t, err)
+	return encoded
+}
+
 // seedRunningSessionWithHost seeds a RUNNING Session (bypassing Start
 // entirely, by directly seeding session_runtime_turns/sessions rows) owned
 // by a fresh host actor, with activityExpiresAt far enough in the future to

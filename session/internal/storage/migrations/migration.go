@@ -82,6 +82,11 @@ func MigrateTables(db *gorm.DB) error {
 		// Event/Command vocabulary has no OPEN_INTERACTION concept left,
 		// every game-defined player action is a PLAYER_EVENT.
 		migration20260929000003DropSessionInteractions(),
+
+		// session_timer_obligations.engine_slot/engine_key renamed to
+		// timer/data - a script addresses a timer by one opaque Timer
+		// string with no separate key dimension.
+		migration20260929000004SessionTimerObligationsTimerData(),
 	})
 
 	return migrator.Migrate()

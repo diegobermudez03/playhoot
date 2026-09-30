@@ -15,6 +15,7 @@ import (
 	"github.com/diegobermudez03/playhoot/session/workflows/sessionlifecycle/internal/completion"
 	"github.com/diegobermudez03/playhoot/session/workflows/sessionlifecycle/internal/platform"
 	internalrepo "github.com/diegobermudez03/playhoot/session/workflows/sessionlifecycle/internal/repo"
+	"github.com/diegobermudez03/playhoot/session/workflows/sessionlifecycle/internal/timers"
 	"github.com/diegobermudez03/playhoot/utils"
 	"gorm.io/gorm"
 )
@@ -46,6 +47,8 @@ type startRepoAPI interface {
 	SetSessionTerminal(ctx context.Context, tx *gorm.DB, sessionID uint, terminalAt time.Time, terminalReason string) error
 	RevokeActiveJoinCode(ctx context.Context, tx *gorm.DB, sessionID uint, revokedAt time.Time) error
 	CancelAllActiveTimerObligationsForSession(ctx context.Context, tx *gorm.DB, sessionID uint, reason string) error
+	CreateTimerObligation(ctx context.Context, tx *gorm.DB, sessionID uint, timer string, data []byte, delayMs int64, createdByTurnID uint) (uint, error)
+	CancelActiveTimerObligation(ctx context.Context, tx *gorm.DB, sessionID uint, timer string, closedByTurnID uint) error
 	ClaimSessionRequest(ctx context.Context, tx *gorm.DB, input internalrepo.ClaimSessionRequestInput) (requestID uint, existing *internalrepo.Request, err error)
 	CompleteSessionRequest(ctx context.Context, tx *gorm.DB, requestID uint, sessionID *uint, outcome string, responsePayload string) error
 }
@@ -256,6 +259,9 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 		return session.StartResult{}, err
 	}
 	if err := m.startRepo.SetSessionRunning(ctx, tx, lockedSession.ID, now, now.Add(m.activityTTL)); err != nil {
+		return session.StartResult{}, err
+	}
+	if err := timers.Apply(ctx, tx, m.startRepo, lockedSession.ID, turnID, commands); err != nil {
 		return session.StartResult{}, err
 	}
 

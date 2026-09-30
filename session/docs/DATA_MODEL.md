@@ -133,7 +133,7 @@ classDiagram
 
 `phase` is `LOBBY | RUNNING | TERMINAL` in the currently implemented behavior (Create/Join/Leave/Start/SubmitPlayerEvent/CancelSession/ExpireTimer). `started_at` is set only once Start commits a Session's first RuntimeTurn; it remains `NULL` for a Session still in `LOBBY` or one that fatally terminalized before ever running (`terminal_reason` = `RUNTIME_EXECUTION_FAILED`). `session_runtime_turns.new_state` is the authoritative Runtime state immediately after that Turn committed, stored opaque exactly as the Executor returned it - `source_timer_obligation_id` is populated by `Manager.ExpireTimer`'s own caused Turn; `source_cause_event_id` is populated by `SubmitPlayerEvent`/`CancelSession`'s own caused Turn.
 
-`session_timer_obligations` is the durable Timer Obligation entity a committed RuntimeTurn schedules and later cancels/consumes: `id`, `uuid` (public identity), `session_id`, `engine_slot` (the opaque platform Timer identifier), `engine_key` (JSONB, an optional passthrough payload), `delay_ms`, `state` (`ACTIVE | CONSUMED | CANCELLED`), `created_by_turn_id`, `closed_by_turn_id` (`NULL` for terminal-cleanup closure), `closure_reason`, `created_at`. A partial unique index enforces at most one `ACTIVE` row per `(session_id, engine_slot, engine_key)`. Nothing currently creates a new obligation - dispatching a `SCHEDULE_TIMER` platform Command into this table is not yet implemented.
+`session_timer_obligations` is the durable Timer Obligation entity a committed RuntimeTurn schedules and later cancels/consumes, driven by a script's own `SCHEDULE_TIMER`/`CANCEL_TIMER` platform Commands: `id`, `uuid` (public identity), `session_id`, `timer` (the opaque identifier a script's commands address it by), `data` (JSONB, an optional passthrough payload echoed back unchanged on expiration - never part of a timer's identity), `delay_ms`, `state` (`ACTIVE | CONSUMED | CANCELLED`), `created_by_turn_id`, `closed_by_turn_id` (`NULL` for terminal-cleanup closure), `closure_reason`, `created_at`. A partial unique index enforces at most one `ACTIVE` row per `(session_id, timer)`. Scheduling an already-ACTIVE `timer` replaces it (the existing row is cancelled, a new one created) rather than being rejected.
 
 ```mermaid
 classDiagram
@@ -141,8 +141,8 @@ classDiagram
         id
         uuid
         session_id
-        engine_slot
-        engine_key
+        timer
+        data
         delay_ms
         state
         created_by_turn_id

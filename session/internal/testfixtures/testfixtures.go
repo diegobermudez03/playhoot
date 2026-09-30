@@ -202,7 +202,7 @@ type timerObligationSeedInsert struct {
 	ID              uint      `gorm:"column:id"`
 	UUID            string    `gorm:"column:uuid"`
 	SessionID       uint      `gorm:"column:session_id"`
-	EngineSlot      string    `gorm:"column:engine_slot"`
+	Timer           string    `gorm:"column:timer"`
 	DelayMs         int64     `gorm:"column:delay_ms"`
 	State           string    `gorm:"column:state"`
 	CreatedByTurnID uint      `gorm:"column:created_by_turn_id"`
@@ -212,17 +212,17 @@ type timerObligationSeedInsert struct {
 func (timerObligationSeedInsert) TableName() string { return "session_timer_obligations" }
 
 // SeedTimerObligation inserts an ACTIVE session_timer_obligations row
-// directly, since nothing yet dispatches a SCHEDULE_TIMER platform Command
-// into a row shaped like this one - a RUNNING-phase test that needs an
-// obligation to expire seeds it directly instead. Returns the new row's
-// public UUID.
+// directly - a test exercising expiration seeds the obligation it expires
+// directly, rather than first executing a ScheduleTimer command through the
+// full RUNNING-phase machinery merely to set up its own starting state.
+// Returns the new row's public UUID.
 func SeedTimerObligation(t *testing.T, db *gorm.DB, sessionID uint, timer string, delayMs int64, createdByTurnID uint) string {
 	t.Helper()
 
 	row := timerObligationSeedInsert{
 		UUID:            uuid.NewString(),
 		SessionID:       sessionID,
-		EngineSlot:      timer,
+		Timer:           timer,
 		DelayMs:         delayMs,
 		State:           session.TimerObligationStateActive,
 		CreatedByTurnID: createdByTurnID,

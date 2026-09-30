@@ -1,5 +1,9 @@
-Checkpoint: WORK-0040 DRAFT — READY authorization needed.
+Checkpoint: WORK-0040 DONE (not a new human-decision gate — informational).
 Date: 2026-09-29
+
+**Update:** you confirmed the replace-on-reschedule design after discussion. Implementation is complete and independent review (two rounds - one found a doc-only inconsistency, fixed) returned APPROVED with no findings. `go build`/`go vet`/`go test ./...` are clean except the two confirmed pre-existing, unrelated failures already documented elsewhere in this Project. No further decision is needed from you. Full detail: WORK-0040's own Completion Record.
+
+Original DRAFT/READY-authorization checkpoint, preserved below:
 
 ## What this WORK does
 

@@ -249,6 +249,108 @@ func TestManagerSubmitPlayerEvent_Integration(t *testing.T) {
 		require.Equal(t, int64(1), turnCount, "no further Turn may ever commit against a TERMINAL Session")
 	})
 
+	t.Run("schedule_timer_command_persists_an_active_obligation", func(t *testing.T) {
+		exec := startPassthroughThenExec(t, stateJSON(t, map[string]any{}), func(in executor.ExecutionInput) (executor.ExecutionOutput, error) {
+			return executor.ExecutionOutput{NewState: stateJSON(t, map[string]any{}), RequestedCommands: []json.RawMessage{scheduleTimerCommand(t, "round_timer", 5000)}}, nil
+		})
+		m, sessionUUID, hostUUID := startedSessionWithExecutor(t, db, exec)
+
+		result, err := m.SubmitPlayerEvent(context.Background(), sessionUUID, hostUUID, "Guess", nil, session.IdempotencyKey(uuid.NewString()))
+		require.NoError(t, err)
+		require.Equal(t, session.SubmitPlayerEventOutcomeAccepted, result.Outcome)
+
+		var row struct {
+			Timer   string `gorm:"column:timer"`
+			DelayMs int64  `gorm:"column:delay_ms"`
+			State   string `gorm:"column:state"`
+		}
+		require.NoError(t, db.Raw(`SELECT timer, delay_ms, state FROM session_timer_obligations WHERE session_id = ?`, sessionIDForUUID(t, db, sessionUUID)).Scan(&row).Error)
+		require.Equal(t, "round_timer", row.Timer)
+		require.Equal(t, int64(5000), row.DelayMs)
+		require.Equal(t, session.TimerObligationStateActive, row.State)
+	})
+
+	t.Run("cancel_timer_command_cancels_the_matching_active_obligation", func(t *testing.T) {
+		exec := startPassthroughThenExec(t, stateJSON(t, map[string]any{}), func(in executor.ExecutionInput) (executor.ExecutionOutput, error) {
+			return executor.ExecutionOutput{NewState: stateJSON(t, map[string]any{}), RequestedCommands: []json.RawMessage{scheduleTimerCommand(t, "round_timer", 5000)}}, nil
+		})
+		m, sessionUUID, hostUUID := startedSessionWithExecutor(t, db, exec)
+		_, err := m.SubmitPlayerEvent(context.Background(), sessionUUID, hostUUID, "Guess", nil, session.IdempotencyKey(uuid.NewString()))
+		require.NoError(t, err)
+
+		exec.ExecuteFunc = func(ctx context.Context, in executor.ExecutionInput) (executor.ExecutionOutput, error) {
+			return executor.ExecutionOutput{NewState: stateJSON(t, map[string]any{}), RequestedCommands: []json.RawMessage{cancelTimerCommand(t, "round_timer")}}, nil
+		}
+		result, err := m.SubmitPlayerEvent(context.Background(), sessionUUID, hostUUID, "Guess", nil, session.IdempotencyKey(uuid.NewString()))
+		require.NoError(t, err)
+		require.Equal(t, session.SubmitPlayerEventOutcomeAccepted, result.Outcome)
+
+		var state string
+		require.NoError(t, db.Raw(`SELECT state FROM session_timer_obligations WHERE session_id = ? AND timer = ?`, sessionIDForUUID(t, db, sessionUUID), "round_timer").Scan(&state).Error)
+		require.Equal(t, session.TimerObligationStateCancelled, state)
+	})
+
+	t.Run("cancel_timer_command_with_no_matching_obligation_is_a_no_op", func(t *testing.T) {
+		exec := startPassthroughThenExec(t, stateJSON(t, map[string]any{}), func(in executor.ExecutionInput) (executor.ExecutionOutput, error) {
+			return executor.ExecutionOutput{NewState: stateJSON(t, map[string]any{}), RequestedCommands: []json.RawMessage{cancelTimerCommand(t, "never_scheduled")}}, nil
+		})
+		m, sessionUUID, hostUUID := startedSessionWithExecutor(t, db, exec)
+
+		result, err := m.SubmitPlayerEvent(context.Background(), sessionUUID, hostUUID, "Guess", nil, session.IdempotencyKey(uuid.NewString()))
+		require.NoError(t, err)
+		require.Equal(t, session.SubmitPlayerEventOutcomeAccepted, result.Outcome, "a CANCEL_TIMER with nothing to cancel must not be rejected")
+
+		var count int64
+		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_timer_obligations WHERE session_id = ?`, sessionIDForUUID(t, db, sessionUUID)).Scan(&count).Error)
+		require.Equal(t, int64(0), count)
+	})
+
+	t.Run("rescheduling_an_already_active_timer_replaces_it", func(t *testing.T) {
+		exec := startPassthroughThenExec(t, stateJSON(t, map[string]any{}), func(in executor.ExecutionInput) (executor.ExecutionOutput, error) {
+			return executor.ExecutionOutput{NewState: stateJSON(t, map[string]any{}), RequestedCommands: []json.RawMessage{scheduleTimerCommand(t, "round_timer", 5000)}}, nil
+		})
+		m, sessionUUID, hostUUID := startedSessionWithExecutor(t, db, exec)
+		_, err := m.SubmitPlayerEvent(context.Background(), sessionUUID, hostUUID, "Guess", nil, session.IdempotencyKey(uuid.NewString()))
+		require.NoError(t, err)
+
+		exec.ExecuteFunc = func(ctx context.Context, in executor.ExecutionInput) (executor.ExecutionOutput, error) {
+			return executor.ExecutionOutput{NewState: stateJSON(t, map[string]any{}), RequestedCommands: []json.RawMessage{scheduleTimerCommand(t, "round_timer", 9000)}}, nil
+		}
+		result, err := m.SubmitPlayerEvent(context.Background(), sessionUUID, hostUUID, "Guess", nil, session.IdempotencyKey(uuid.NewString()))
+		require.NoError(t, err)
+		require.Equal(t, session.SubmitPlayerEventOutcomeAccepted, result.Outcome)
+
+		var rows []struct {
+			DelayMs int64  `gorm:"column:delay_ms"`
+			State   string `gorm:"column:state"`
+		}
+		require.NoError(t, db.Raw(`SELECT delay_ms, state FROM session_timer_obligations WHERE session_id = ? AND timer = ? ORDER BY id`, sessionIDForUUID(t, db, sessionUUID), "round_timer").Scan(&rows).Error)
+		require.Len(t, rows, 2, "the old row is cancelled, not deleted, and a new row is created")
+		require.Equal(t, session.TimerObligationStateCancelled, rows[0].State)
+		require.Equal(t, int64(5000), rows[0].DelayMs)
+		require.Equal(t, session.TimerObligationStateActive, rows[1].State)
+		require.Equal(t, int64(9000), rows[1].DelayMs)
+	})
+
+	t.Run("a_turn_that_both_schedules_a_timer_and_completes_leaves_no_active_obligation", func(t *testing.T) {
+		exec := startPassthroughThenExec(t, stateJSON(t, map[string]any{}), func(in executor.ExecutionInput) (executor.ExecutionOutput, error) {
+			return executor.ExecutionOutput{
+				NewState:          stateJSON(t, map[string]any{}),
+				RequestedCommands: []json.RawMessage{scheduleTimerCommand(t, "round_timer", 5000), sessionCompleteCommand(t)},
+			}, nil
+		})
+		m, sessionUUID, hostUUID := startedSessionWithExecutor(t, db, exec)
+
+		result, err := m.SubmitPlayerEvent(context.Background(), sessionUUID, hostUUID, "Guess", nil, session.IdempotencyKey(uuid.NewString()))
+		require.NoError(t, err)
+		require.Equal(t, session.SubmitPlayerEventOutcomeAccepted, result.Outcome)
+		require.Equal(t, session.TerminalReasonGameCompleted, result.TerminalReason)
+
+		var count int64
+		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM session_timer_obligations WHERE session_id = ? AND state = ?`, sessionIDForUUID(t, db, sessionUUID), session.TimerObligationStateActive).Scan(&count).Error)
+		require.Equal(t, int64(0), count, "terminal cleanup must cancel the obligation the same Turn just created")
+	})
+
 	t.Run("session_not_found", func(t *testing.T) {
 		m := New(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
 		_, err := m.SubmitPlayerEvent(context.Background(), session.SessionUUID(uuid.NewString()), session.UserUUID(uuid.NewString()), "Guess", nil, session.IdempotencyKey(uuid.NewString()))

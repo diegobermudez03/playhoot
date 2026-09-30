@@ -14,6 +14,7 @@ import (
 	"github.com/diegobermudez03/playhoot/session/workflows/sessionlifecycle/internal/completion"
 	"github.com/diegobermudez03/playhoot/session/workflows/sessionlifecycle/internal/platform"
 	internalrepo "github.com/diegobermudez03/playhoot/session/workflows/sessionlifecycle/internal/repo"
+	"github.com/diegobermudez03/playhoot/session/workflows/sessionlifecycle/internal/timers"
 	"github.com/diegobermudez03/playhoot/utils"
 	"gorm.io/gorm"
 )
@@ -35,6 +36,8 @@ type expireTimerRepoAPI interface {
 	SetSessionTerminal(ctx context.Context, tx *gorm.DB, sessionID uint, terminalAt time.Time, terminalReason string) error
 	CreateRuntimeFailure(ctx context.Context, tx *gorm.DB, sessionID uint, failureKind string, errorCode string, errorMessage string, baseTurnID *uint, attemptedSequence uint64, sourceKind string, sourceTimerObligationID *uint, actorID *uint, diagnosticPayload []byte) error
 	CancelAllActiveTimerObligationsForSession(ctx context.Context, tx *gorm.DB, sessionID uint, reason string) error
+	CreateTimerObligation(ctx context.Context, tx *gorm.DB, sessionID uint, timer string, data []byte, delayMs int64, createdByTurnID uint) (uint, error)
+	CancelActiveTimerObligation(ctx context.Context, tx *gorm.DB, sessionID uint, timer string, closedByTurnID uint) error
 }
 
 // ExpireTimer submits the previously scheduled timer identified by
@@ -134,10 +137,7 @@ func (m *Manager) expireTimerInTx(ctx context.Context, tx *gorm.DB, sessionID ui
 	}
 	known := knownActorsFromRoster(roster)
 
-	// EngineSlot is already the opaque Timer identifier TIMER_EXPIRED needs;
-	// EngineKey is passed through as-is as Data rather than decoded, since
-	// nothing currently creates an obligation with a non-nil EngineKey.
-	event := platform.NewTimerExpired(obligation.EngineSlot, obligation.EngineKey)
+	event := platform.NewTimerExpired(obligation.Timer, obligation.Data)
 	encodedEvent, err := platform.EncodeEvent(event)
 	if err != nil {
 		return session.ExpireTimerResult{}, fmt.Errorf("encoding timer expired event: %s", err)
@@ -178,6 +178,9 @@ func (m *Manager) expireTimerInTx(ctx context.Context, tx *gorm.DB, sessionID ui
 		return session.ExpireTimerResult{}, err
 	}
 	if err := m.expireTimerRepo.RenewActivityDeadline(ctx, tx, lockedSession.ID, now.Add(m.activityTTL)); err != nil {
+		return session.ExpireTimerResult{}, err
+	}
+	if err := timers.Apply(ctx, tx, m.expireTimerRepo, lockedSession.ID, turnID, commands); err != nil {
 		return session.ExpireTimerResult{}, err
 	}
 

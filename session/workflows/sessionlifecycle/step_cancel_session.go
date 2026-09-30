@@ -14,6 +14,7 @@ import (
 	"github.com/diegobermudez03/playhoot/session/workflows/sessionlifecycle/internal/completion"
 	"github.com/diegobermudez03/playhoot/session/workflows/sessionlifecycle/internal/platform"
 	internalrepo "github.com/diegobermudez03/playhoot/session/workflows/sessionlifecycle/internal/repo"
+	"github.com/diegobermudez03/playhoot/session/workflows/sessionlifecycle/internal/timers"
 	"github.com/diegobermudez03/playhoot/utils"
 	"gorm.io/gorm"
 )
@@ -61,6 +62,8 @@ type cancelSessionRepoAPI interface {
 	SetSessionTerminal(ctx context.Context, tx *gorm.DB, sessionID uint, terminalAt time.Time, terminalReason string) error
 	CreateRuntimeFailure(ctx context.Context, tx *gorm.DB, sessionID uint, failureKind string, errorCode string, errorMessage string, baseTurnID *uint, attemptedSequence uint64, sourceKind string, sourceTimerObligationID *uint, actorID *uint, diagnosticPayload []byte) error
 	CancelAllActiveTimerObligationsForSession(ctx context.Context, tx *gorm.DB, sessionID uint, reason string) error
+	CreateTimerObligation(ctx context.Context, tx *gorm.DB, sessionID uint, timer string, data []byte, delayMs int64, createdByTurnID uint) (uint, error)
+	CancelActiveTimerObligation(ctx context.Context, tx *gorm.DB, sessionID uint, timer string, closedByTurnID uint) error
 	ClaimSessionRequest(ctx context.Context, tx *gorm.DB, input internalrepo.ClaimSessionRequestInput) (requestID uint, existing *internalrepo.Request, err error)
 	CompleteSessionRequest(ctx context.Context, tx *gorm.DB, requestID uint, sessionID *uint, outcome string, responsePayload string) error
 }
@@ -242,6 +245,9 @@ func (m *Manager) cancelSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUI
 		return session.CancelSessionResult{}, err
 	}
 	if err := m.cancelSessionRepo.SetCurrentTurn(ctx, tx, lockedSession.ID, turnID); err != nil {
+		return session.CancelSessionResult{}, err
+	}
+	if err := timers.Apply(ctx, tx, m.cancelSessionRepo, lockedSession.ID, turnID, commands); err != nil {
 		return session.CancelSessionResult{}, err
 	}
 
