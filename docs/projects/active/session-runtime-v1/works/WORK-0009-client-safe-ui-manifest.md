@@ -1,8 +1,8 @@
 # WORK-0009: Client-Safe Game UI Manifest
 
-Status: PLANNED
+Status: CANCELLED
 Created: 2026-09-20
-Last status change: 2026-09-20
+Last status change: 2026-09-30 (PLANNED -> CANCELLED)
 
 Related decisions:
 - GAME-ADR-0001 (Game Management/Session Runtime persistence and transaction boundary; pinned Definition resolution)
@@ -61,4 +61,4 @@ Not yet assessed in detail; expected to touch `game/language/v1/program/README.m
 
 ## Completion Record
 
-Not started. PLANNED.
+CANCELLED 2026-09-30 by explicit human decision, superseded by `docs/projects/active/js-runtime-migration/works/WORK-0046-frontend-package-serving-and-versioned-asset-delivery.md`. This WORK's premise, a manifest derived from Game Language's declarative UI tree (`ui.go`/`view.go`/`presentation.go`), no longer exists: Game Language is fully retired. Its underlying need, a client-safe, version-pinned way to know what to render, is covered by serving the Session's pinned frontend script and assets. Nothing was implemented; no code or data to unwind.

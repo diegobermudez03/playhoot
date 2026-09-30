@@ -1,57 +1,169 @@
 # WORK-0046: Frontend Package Serving & Versioned Asset Delivery
 
-Status: PLANNED
+Status: READY
 Created: 2026-09-27
-Last status change: 2026-09-27
+Last status change: 2026-09-30 (DRAFT -> READY)
 
 Related decisions:
+- `session/docs/decisions/SESSION-ADR-0027-game-version-content-lives-in-private-object-storage.md`
 - `docs/decisions/architecture/ADR-0015-javascript-rule-execution-and-iframe-frontend-contract.md`
+- `docs/decisions/architecture/ADR-0016-javascript-executor-separately-deployed-infrastructure-service.md`
 
 Canonical context:
-- `docs/projects/active/session-runtime-v1/works/WORK-0009-client-safe-game-ui-manifest.md` (overlapping concern — see Reconciliation below)
+- `session/docs/GAME_VERSION_ARTIFACT_MODEL.md`
+- `session/docs/FRONTEND_IFRAME_CONTRACT.md`
 
 ## Outcome
 
-Build the backend capability to store and serve a Session's pinned `FrontendScript`/assets (per `WORK-0044`'s artifact model — the frontend script is stored content, not a separately-built package) so Playhoot's own (separately built) frontend can load the correct iframe-delivered script for a given Session's version. This directly overlaps `session-runtime-v1`'s own `WORK-0009` (Client-Safe Game UI Manifest, PLANNED) — that WORK's original premise (a manifest describing Game Language's declarative UI tree) is retired along with Game Language itself; its actual need (some client-safe, version-pinned way to know what to render) is superseded by this WORK's frontend-script-serving capability. This reconciliation is flagged here and in `session-runtime-v1`'s own `PROJECT.md`, not silently resolved by duplicating both.
+Game version content (backend script, frontend script, assets) lives in private object storage; Session Runtime's database keeps only the metadata needed to locate and verify it. A participant of a Session can obtain, from the exact version the Session is pinned to, short-lived signed access to that version's frontend script and to any declared asset, so Playhoot's own trusted host frontend can fetch the bytes directly from storage and hand the generated iframe a safe handle. Session Runtime itself does not proxy those bytes. The backend script never reaches a browser: Session Runtime fetches it from storage and sends it to the Executor exactly as today.
+
+This WORK supersedes `session-runtime-v1`'s `WORK-0009` (Client-Safe Game UI Manifest): that WORK's premise (a manifest of Game Language's declarative UI tree) is retired, and its real need, a version-pinned client-safe way to know what to render, is exactly what serving the pinned frontend script covers. `WORK-0009` is CANCELLED by the human decision recorded below.
 
 ## Context
 
-Not yet designed. Depends on `WORK-0044` and `WORK-0045`.
+Ground truth checked against current code (2026-09-30), not assumed:
+
+- `session_game_version_artifacts` (`session/internal/storage/migrations/20260928000001_session_game_version_artifacts.go`) stores `backend_script` and `frontend_script` as `TEXT NOT NULL`, and `assets` as a JSONB list of `{Key, Kind}` with no bytes anywhere.
+- Nothing reads `frontend_script` today. `internal/repo.GameVersionArtifact` deliberately excludes it.
+- `backend_script` is read by every RUNNING-phase step inside its transaction, under the session row lock (`GetGameVersionArtifact`), and by `GetClientState` through the unlocked `ResolveGameVersionArtifact`.
+- No object-storage client, port, dependency, or configuration exists anywhere in the repository.
+- `api/` exposes one REST route (`POST /sessions`) and a WebSocket skeleton. No caller authentication exists: `POST /sessions` takes `host_user_uuid` from the request body.
+- `Manager.GetClientState` is the established precedent for a participant-authorized, unlocked, pure read with typed outcomes.
+
+`FRONTEND_IFRAME_CONTRACT.md` already fixes that generated frontend code has no network capability and never receives a URL: `playhoot.requestAsset(key)` resolves to a Playhoot-provided handle. The trusted host frontend is Playhoot's own code and may hold signed URLs and credentials. This WORK's design relies on that split and does not weaken it.
+
+## Human Decisions (2026-09-30)
+
+1. `WORK-0009` is cancelled as superseded by this WORK.
+2. Scripts and assets are not stored in the database. Private object storage holds content; the database holds only what is needed to obtain it. This applies to all three of backend script, frontend script and assets, in this WORK.
+3. Bytes reach the browser through short-lived signed URLs issued to the trusted host frontend, not by Session Runtime proxying or streaming them. The generated iframe never receives a storage URL.
+4. Serving is exposed as Manager read capabilities plus thin HTTP endpoints. Caller authentication is not invented here.
+5. Build a narrow `ObjectStore` port, a native Google Cloud Storage adapter (`cloud.google.com/go/storage`), and an in-memory fake. The port keeps Session Runtime independent of the provider; configuration and authentication are GCS-specific rather than pretending every object store is identical. Decided 2026-09-30, replacing the earlier S3-compatible proposal.
+6. The caller's `user_uuid` is a request parameter on the new HTTP endpoints, following `POST /sessions`' precedent. Each handler carries a code comment stating this is temporary: it is to be replaced by an identity package and middleware that derives the caller from an authenticated request, at which point the parameter is removed. The Manager reads themselves keep taking `userUUID`, which is unaffected by that change.
+7. No production data exists in `backend_script`/`frontend_script`, so the migration replaces the columns with locators and needs no backfill.
+8. Object storage as a Session Runtime dependency is recorded as `SESSION-ADR-0027` (ACCEPTED).
 
 ## Scope
 
-Not yet designed.
+### In Scope
+
+- An `ObjectStore` port in Session Runtime (`Get`, `Put`, `PresignGet`), a native Google Cloud Storage adapter, and an in-memory fake. `Put` exists for the fake, adapter tests and the future publish workflow; this WORK's production paths only call `Get` and `PresignGet`.
+- Schema change: `session_game_version_artifacts` drops `backend_script`, `frontend_script` and the `assets` JSONB column, and gains a locator (object key, SHA-256, size) for each script. A new `session_game_version_assets` table holds one row per declared asset: `definition_uuid`, logical `key`, `kind`, object key, SHA-256, size, content type; unique on `(definition_uuid, key)`.
+- Backend script loading: every place that reads `BackendScript` today resolves it through the locator, fetches from `ObjectStore`, verifies the SHA-256, and caches the verified bytes keyed by hash. Session Runtime continues to send the script inline to the Executor, so `ADR-0016` and the Executor's wire contract are unchanged.
+- `Manager.GetFrontendScriptAccess` and `Manager.GetAssetAccess`: participant-authorized, pinned-version-only, unlocked reads that return a signed URL plus the metadata the host frontend needs to verify what it fetched.
+- HTTP endpoints in `api/session` exposing those two reads.
+- Configuration limited to `GCS_PROJECT_ID`, `GCS_BUCKET` and `GCS_SIGNED_URL_TTL`. Authentication uses Application Default Credentials / the deployment's service identity (for example Workload Identity on Cloud Run or GKE). Signed URLs are produced through Google-managed signing (IAM Credentials `signBlob`), so no service-account private key is stored in configuration or secrets unless demonstrably unavoidable, and that exception would need its own decision.
+- Cancelling `session-runtime-v1`'s `WORK-0009` and updating both Projects' tracking files.
+
+### Out Of Scope
+
+- Uploading or publishing content into the store, and keeping Game Management's and Session Runtime's representations consistent on publish. That belongs to the future game-creation Project (`docs/work/active/WORK-0033-cross-domain-game-publish-composition.md`). Tests seed content through the port directly.
+- Deployment manifests, bucket provisioning, IAM policy, and CORS configuration for the real bucket. No service in this repository has a deployment manifest yet. CORS on the bucket for the host frontend's origin is a required deployment fact, recorded in Documentation Impact.
+- A CDN or CDN-signed URLs. Classified LATER (see Design Notes).
+- Caller authentication for the HTTP endpoints.
+- The frontend application, its SDK, and `AssetHandle`'s in-browser implementation. Building them is out of this Project's scope.
+- Live-connection transport (`session-runtime-v1`'s `WORK-0020`) and reconnect (`WORK-0015`).
+- Deduplication across games beyond what content-addressed keys give for free.
 
 ## Approved Design
 
-Not yet designed.
+Approved by the human 2026-09-30, including the two follow-ups recorded under Human Decisions.
+
+### Stored shape
+
+```text
+session_game_version_artifacts (per definition_uuid, immutable)
+  backend_script_key, backend_script_sha256, backend_script_size
+  frontend_script_key, frontend_script_sha256, frontend_script_size
+  (game_contract, participant_min/max, projection_visibility,
+   platform_contract_version unchanged)
+
+session_game_version_assets (one row per declared asset)
+  definition_uuid, key, kind, object_key, sha256, size, content_type
+  unique (definition_uuid, key)
+```
+
+Object keys are content-addressed by SHA-256 (for example `scripts/<sha256>` and `assets/<sha256>`), so a published version references immutable content and identical bytes deduplicate physically. The exact key layout is Implementation Freedom; the content-addressed property and the verified hash are not.
+
+### Backend script path
+
+- The steady-state RUNNING-phase path must not hold the session row lock across an object-storage round trip. Because a pinned artifact is immutable, its locator can be read unlocked before the transaction opens (the same reasoning `Join` and `GetClientState` already use), and a cold cache is warmed there.
+- The verified-bytes cache is keyed by SHA-256. Immutability makes it trivially safe to cache and never needs invalidation. Its size bound is Implementation Freedom.
+- A hash mismatch on read is a hard failure with a monitoring alert, never a silent fallback. A missing object for a pinned locator is treated like the existing missing-pinned-artifact case (`ErrPinnedDefinitionMissing` plus alert).
+
+### Serving
+
+```text
+GetFrontendScriptAccess(ctx, sessionUUID, userUUID)
+GetAssetAccess(ctx, sessionUUID, userUUID, key)
+  -> Result{ Outcome, URL, ExpiresAt, SHA256, ContentType, Size }
+  Outcomes: Success, SessionNotFound (error), NotAParticipant, AssetNotFound (assets only)
+```
+
+- Both mirror `GetClientState`: resolve the session, check the caller is a participant, read the pinned artifact, sign a URL for exactly that one object. They never mutate state and never lock the session row.
+- Available to any participant in any phase, since the pin exists from `Create` and the frontend loads once at iframe bootstrap.
+- The signed URL is short-lived (default 120 seconds, configurable), read-only, and scoped to a single object.
+- The response carries the stored SHA-256 so the trusted host frontend can verify what it fetched.
+- HTTP: `GET /sessions/{session_uuid}/frontend-script` and `GET /sessions/{session_uuid}/assets/{key}`, both returning the JSON above. The caller's `user_uuid` is a query parameter, following the `POST /sessions` precedent until real authentication exists. Status mapping: 200, 403 not a participant, 404 session or asset not found.
+
+### Design Notes
+
+- Signed URLs protect storage access control, not content secrecy. A participant authorized to receive bytes can keep them. The frontend script is not a secret by definition.
+- The URL is a bearer credential until it expires and cannot be revoked. The short TTL, private bucket and single-object scope bound that.
+- A CDN with signed URLs is the natural later optimization if bandwidth cost matters. Reevaluate when asset traffic becomes a measurable cost.
 
 ## Constraints and Invariants
 
-- Must serve exactly the version a Session is pinned to (`GAME-ADR-0001`'s immutability invariant), never a Game's current/latest version.
+- Must serve exactly the version a Session is pinned to (`GAME-ADR-0001`'s immutability invariant), never a Game's current or latest version.
+- The generated iframe never receives a storage URL. Signed URLs are issued only for consumption by the trusted host frontend.
+- The backend script never reaches a browser or any endpoint added by this WORK.
+- Content referenced by a locator is immutable. Every read verifies the stored SHA-256.
+- Credentials never appear in code, configuration files checked into the repository, or logs. Signed URLs must not be logged.
+- No object-storage round trip while holding a session row lock on the steady-state path.
+- Session Runtime owns its own storage locators. Game Management's tables are not referenced (`ARCHITECTURE.md -> Cross-Domain Public Entity References`).
+- Exported doc comments must not cite internal packages or WORK/ADR identifiers (`docs/engineering/standards/`).
 
 ## Acceptance Criteria
 
-Not yet designed.
+Not yet defined in full; expected once the design is approved. At minimum:
+
+- No test or code path stores or reads script bytes from a database column.
+- Executing a Session end to end through the fake store produces identical results to today.
+- A tampered object (hash mismatch) fails closed and raises a monitoring alert.
+- A non-participant, and a participant of a different session, cannot obtain access.
+- A Session pinned to version A never receives version B's content after B is published.
+- The `ObjectStore` adapter passes the same contract test suite as the fake.
 
 ## Implementation Freedom
 
-Not yet designed.
+- Object key layout, cache size and eviction, signed-URL TTL default within the stated range, and private helper structure.
+- How the GCS adapter obtains signing capability under the no-private-key constraint (for example the client's IAM-based signing option), provided the constraint holds.
 
 ## Verification
 
-Not yet designed.
+Not yet defined. Expected: unit tests against the fake, a shared port contract test run against both fake and adapter, integration tests for the migrated schema, and an adapter test against a GCS emulator or a real test bucket if one is reachable (same environment caveat as prior WORK). Signed-URL generation under Google-managed signing cannot be fully exercised without real GCP credentials, so it may remain unverified in a sandbox and must be reported as such.
 
 ## Documentation Impact
 
 ### Current-State Documentation After Implementation
 
-- `session-runtime-v1`'s `PROJECT.md` — `WORK-0009` marked superseded by this WORK once this WORK is DRAFT/READY.
+- `session/docs/GAME_VERSION_ARTIFACT_MODEL.md`: dated addendum. `BackendScript`/`FrontendScript` are stored as locators to private object storage, not inline; assets gain a table. `WORK-0044`'s record is amended by addendum, not rewritten.
+- `session/docs/FRONTEND_IFRAME_CONTRACT.md`: fill in the "Frontend Script Loading" serving mechanism and `requestAsset`'s resolution, keeping the four locked `playhoot.*` names and shapes untouched. `AssetHandle`'s in-browser shape stays deferred to the frontend.
+- `session/docs/DATA_MODEL.md`: the new columns and table.
+- `session/README.md`: the object-storage dependency.
+- `docs/projects/active/session-runtime-v1/PROJECT.md`: `WORK-0009` marked CANCELLED.
+- Deployment facts for whoever provisions the bucket: private GCS bucket, CORS allowing GET from the host frontend's origin, and the service identity granted object read plus permission to sign (Service Account Token Creator on itself for `signBlob`).
+- `session/docs/decisions/SESSION-ADR-0027-game-version-content-lives-in-private-object-storage.md` (ACCEPTED 2026-09-30) records object storage as a Session Runtime infrastructure dependency; its index row is already added.
 
 ## Blockers
 
-- Depends on `WORK-0044`, `WORK-0045`.
-- Reconciliation with `session-runtime-v1`'s `WORK-0009` needs explicit human confirmation (cancel WORK-0009 as superseded, vs. keep a narrower WORK-0009 for something this WORK doesn't cover) before either moves to DRAFT.
+None outstanding. Resolved 2026-09-30: design approved, dependency confirmed (native GCS), no backfill needed, `SESSION-ADR-0027` accepted.
+
+Previously listed, now closed:
+- ~~Human authorization of this DRAFT.~~
+- ~~Dependency/provider confirmation~~ Resolved 2026-09-30: native Google Cloud Storage (`cloud.google.com/go/storage`) behind the `ObjectStore` port.
+- ~~Assumption to confirm: no production data exists~~ Confirmed 2026-09-30: the database holds no data, no backfill needed.
+- Accepted risk to keep visible: externalizing `backend_script` adds a storage dependency to gameplay. A storage outage now stops actions on a cold cache, where before only Postgres mattered. Mitigated by the immutable hash-keyed cache and the pre-transaction warm, not eliminated.
 
 ## Completion Record
 

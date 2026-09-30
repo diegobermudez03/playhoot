@@ -38,8 +38,9 @@ This index is the Session Runtime decision family under the repository-wide rout
 | [SESSION-ADR-0024](SESSION-ADR-0024-role-aware-live-connections.md) | Role-Aware Live Connections — Admin and Participant | ACCEPTED | 2026-09-20 | GAME-ADR-0025 | `session/README.md` |
 | [SESSION-ADR-0025](SESSION-ADR-0025-snapshot-based-session-runtime-persistence.md) | Snapshot-Based Session Runtime Persistence (Reverting Replay-First) | ACCEPTED | 2026-09-27 | GAME-ADR-0029 | `session/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md`, `session/README.md`, `docs/projects/active/session-runtime-v1/PROJECT.md` |
 | [SESSION-ADR-0026](SESSION-ADR-0026-confirmed-player-event-outcome-delivery-is-pull-based.md) | Confirmed PLAYER_EVENT Outcome Delivery Is Pull-Based, No Durable Outbox | ACCEPTED | 2026-09-29 | None | `session/docs/SESSION_RUNTIME_PERSISTENCE_MODEL.md` (pending `WORK-0043`) |
+| [SESSION-ADR-0027](SESSION-ADR-0027-game-version-content-lives-in-private-object-storage.md) | Game Version Content Lives In Private Object Storage, Delivered By Short-Lived Signed URLs | ACCEPTED | 2026-09-30 | None | `session/docs/GAME_VERSION_ARTIFACT_MODEL.md`, `session/docs/FRONTEND_IFRAME_CONTRACT.md` (pending `WORK-0046`) |
 
-Next Session ADR: `SESSION-ADR-0027`.
+Next Session ADR: `SESSION-ADR-0028`.
 
 SESSION-ADR-0023 supersedes SESSION-ADR-0006's Snapshot-persistence decision (formerly GAME-ADR-0007/GAME-ADR-0024) and SESSION-ADR-0008's object-storage archival decision (formerly GAME-ADR-0009) **in part only** — see SESSION-ADR-0023's own header for the precise scope; the rest of each superseded record (RuntimeTurn/RuntimeStep conceptual model, archive-metadata-entity concept, verified-hard-delete policy) remains valid and is restated by SESSION-ADR-0023. SESSION-ADR-0024 refines (does not supersede) SESSION-ADR-0001 and SESSION-ADR-0004. `game/docs/decisions/GAME-ADR-0026` generalizes (does not supersede) SESSION-ADR-0011's keyed-slot concept. `game/docs/decisions/GAME-ADR-0027` refines SESSION-ADR-0018 (Step-chain-bound enforcement location only) and generalizes SESSION-ADR-0023 (replay ownership, not the no-persisted-Snapshot principle).
 
