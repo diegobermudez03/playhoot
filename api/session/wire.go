@@ -19,6 +19,20 @@ type createSessionResponse struct {
 	LobbyExpiresAt time.Time `json:"lobby_expires_at"`
 }
 
+// contentAccessResponse is the wire shape of GET
+// /sessions/{session_uuid}/frontend-script and
+// /sessions/{session_uuid}/assets/{key}: a short-lived signed URL for exactly
+// one stored object, plus the hash, type and size the caller verifies what it
+// fetched against. The URL is for Playhoot's trusted host frontend only and
+// must never be passed to game code running inside the sandboxed iframe.
+type contentAccessResponse struct {
+	URL         string    `json:"url"`
+	ExpiresAt   time.Time `json:"expires_at"`
+	SHA256      string    `json:"sha256"`
+	ContentType string    `json:"content_type"`
+	Size        int64     `json:"size"`
+}
+
 // joinDeclineResponse is GET /ws's plain-HTTP wire shape for a Join call
 // that completed but did not result in an active Participant (a
 // deterministic decline, not an error) - the connection is never upgraded

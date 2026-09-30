@@ -64,7 +64,7 @@ func TestCreateSession_Created(t *testing.T) {
 		JoinCode:       1234,
 		LobbyExpiresAt: lobbyExpiresAt,
 	}}
-	srv := api.NewServer(creator)
+	srv := api.NewServer(creator, &fakeContentAccessor{})
 	ts := httptest.NewServer(srv.Routes())
 	defer ts.Close()
 
@@ -84,7 +84,7 @@ func TestCreateSession_Created(t *testing.T) {
 // nonexistent/not-currently-playable Game) to 404, not the default 500.
 func TestCreateSession_GameNotFound(t *testing.T) {
 	creator := &fakeSessionCreator{err: session.ErrGameNotFound}
-	srv := api.NewServer(creator)
+	srv := api.NewServer(creator, &fakeContentAccessor{})
 	ts := httptest.NewServer(srv.Routes())
 	defer ts.Close()
 
@@ -100,7 +100,7 @@ func TestCreateSession_GameNotFound(t *testing.T) {
 // but no message type has a real implementation behind it yet - every
 // message answers ERROR - see api/session's doc comment for why.
 func TestWebSocket_UpgradesAndRejectsUnknownMessages(t *testing.T) {
-	srv := api.NewServer(&fakeSessionCreator{})
+	srv := api.NewServer(&fakeSessionCreator{}, &fakeContentAccessor{})
 	ts := httptest.NewServer(srv.Routes())
 	defer ts.Close()
 
@@ -138,7 +138,7 @@ func TestWebSocket_ObservabilityLogsShareOneTraceID(t *testing.T) {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, nil)))
 	defer slog.SetDefault(prev)
 
-	srv := api.NewServer(&fakeSessionCreator{})
+	srv := api.NewServer(&fakeSessionCreator{}, &fakeContentAccessor{})
 	ts := httptest.NewServer(srv.Routes())
 	defer ts.Close()
 

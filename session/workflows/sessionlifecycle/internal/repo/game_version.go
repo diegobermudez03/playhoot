@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/diegobermudez03/playhoot/session/internal/objectstore"
 	"gorm.io/gorm"
 )
 
@@ -35,18 +36,19 @@ func (r *Repo) ResolveCurrentGameDefinitionUUID(ctx context.Context, gameUUID st
 }
 
 // GameVersionArtifact is the narrow view of a pinned
-// session_game_version_artifacts row this package's steps need: the backend
-// script the Executor evaluates, the structural participant-count range
-// Playhoot itself enforces before any script runs (ParticipantMax nil means
-// unlimited) - session/docs/GAME_VERSION_ARTIFACT_MODEL.md's own
+// session_game_version_artifacts row this package's steps need: where the
+// backend script the Executor evaluates is stored (BackendScript - the bytes
+// themselves live in object storage and are loaded through a verified
+// loader, never held in the database), the structural participant-count
+// range Playhoot itself enforces before any script runs (ParticipantMax nil
+// means unlimited) - session/docs/GAME_VERSION_ARTIFACT_MODEL.md's own
 // "Participant Constraints" section - and ProjectionVisibility, the
 // author's own declared privacy schema a viewer-scoped filtering step
 // parses before computing that viewer's own ClientState (nil means no
 // schema declared - treated as maximally restrictive, not an error).
-// Every other artifact field (FrontendScript, GameContract, Assets,
-// PlatformContractVersion) is not this package's concern.
+// Every other artifact field is not this package's concern.
 type GameVersionArtifact struct {
-	BackendScript        string
+	BackendScript        objectstore.Locator
 	ParticipantMin       int
 	ParticipantMax       *int
 	ProjectionVisibility json.RawMessage
@@ -54,15 +56,19 @@ type GameVersionArtifact struct {
 
 // gameVersionArtifactRow is this query's raw column shape.
 type gameVersionArtifactRow struct {
-	BackendScript        string          `gorm:"column:backend_script"`
+	BackendScriptKey     string          `gorm:"column:backend_script_key"`
+	BackendScriptSHA256  string          `gorm:"column:backend_script_sha256"`
+	BackendScriptSize    int64           `gorm:"column:backend_script_size"`
 	ParticipantMin       int             `gorm:"column:participant_min"`
 	ParticipantMax       *int            `gorm:"column:participant_max"`
 	ProjectionVisibility json.RawMessage `gorm:"column:projection_visibility"`
 }
 
+const gameVersionArtifactColumns = `backend_script_key, backend_script_sha256, backend_script_size, participant_min, participant_max, projection_visibility`
+
 func (row gameVersionArtifactRow) toArtifact() *GameVersionArtifact {
 	return &GameVersionArtifact{
-		BackendScript:        row.BackendScript,
+		BackendScript:        objectstore.Locator{ObjectKey: row.BackendScriptKey, SHA256: row.BackendScriptSHA256, Size: row.BackendScriptSize},
 		ParticipantMin:       row.ParticipantMin,
 		ParticipantMax:       row.ParticipantMax,
 		ProjectionVisibility: row.ProjectionVisibility,
@@ -79,7 +85,7 @@ func (row gameVersionArtifactRow) toArtifact() *GameVersionArtifact {
 func (r *Repo) ResolveGameVersionArtifact(ctx context.Context, definitionUUID string) (*GameVersionArtifact, error) {
 	var row gameVersionArtifactRow
 	result := r.db.WithContext(ctx).Raw(`
-		SELECT backend_script, participant_min, participant_max, projection_visibility
+		SELECT `+gameVersionArtifactColumns+`
 		FROM session_game_version_artifacts
 		WHERE definition_uuid = ?
 	`, definitionUUID).Scan(&row)
@@ -98,7 +104,7 @@ func (r *Repo) ResolveGameVersionArtifact(ctx context.Context, definitionUUID st
 func (r *Repo) GetGameVersionArtifact(ctx context.Context, tx *gorm.DB, definitionUUID string) (*GameVersionArtifact, error) {
 	var row gameVersionArtifactRow
 	result := tx.WithContext(ctx).Raw(`
-		SELECT backend_script, participant_min, participant_max, projection_visibility
+		SELECT `+gameVersionArtifactColumns+`
 		FROM session_game_version_artifacts
 		WHERE definition_uuid = ?
 	`, definitionUUID).Scan(&row)
@@ -109,4 +115,68 @@ func (r *Repo) GetGameVersionArtifact(ctx context.Context, tx *gorm.DB, definiti
 		return nil, nil
 	}
 	return row.toArtifact(), nil
+}
+
+// ContentObject is one servable stored object of a pinned version: where it
+// lives and what a reader needs to verify and interpret what it fetches.
+type ContentObject struct {
+	Locator     objectstore.Locator
+	ContentType string
+}
+
+// frontendScriptContentType is the content type recorded for every frontend
+// script: its language/format is not decided, so it is served as opaque
+// JavaScript source text.
+const frontendScriptContentType = "text/javascript"
+
+// ResolveFrontendScriptObject is an unlocked read of definitionUUID's
+// frontend script locator. Returns nil, nil if no such version exists.
+func (r *Repo) ResolveFrontendScriptObject(ctx context.Context, definitionUUID string) (*ContentObject, error) {
+	var row struct {
+		Key    string `gorm:"column:frontend_script_key"`
+		SHA256 string `gorm:"column:frontend_script_sha256"`
+		Size   int64  `gorm:"column:frontend_script_size"`
+	}
+	result := r.db.WithContext(ctx).Raw(`
+		SELECT frontend_script_key, frontend_script_sha256, frontend_script_size
+		FROM session_game_version_artifacts
+		WHERE definition_uuid = ?
+	`, definitionUUID).Scan(&row)
+	if result.Error != nil {
+		return nil, fmt.Errorf("resolving frontend script object: %s", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return nil, nil
+	}
+	return &ContentObject{
+		Locator:     objectstore.Locator{ObjectKey: row.Key, SHA256: row.SHA256, Size: row.Size},
+		ContentType: frontendScriptContentType,
+	}, nil
+}
+
+// ResolveAssetObject is an unlocked read of the asset declared under
+// (definitionUUID, key). Returns nil, nil if that version declares no asset
+// with that key.
+func (r *Repo) ResolveAssetObject(ctx context.Context, definitionUUID, key string) (*ContentObject, error) {
+	var row struct {
+		ObjectKey   string `gorm:"column:object_key"`
+		SHA256      string `gorm:"column:sha256"`
+		Size        int64  `gorm:"column:size"`
+		ContentType string `gorm:"column:content_type"`
+	}
+	result := r.db.WithContext(ctx).Raw(`
+		SELECT object_key, sha256, size, content_type
+		FROM session_game_version_assets
+		WHERE definition_uuid = ? AND key = ?
+	`, definitionUUID, key).Scan(&row)
+	if result.Error != nil {
+		return nil, fmt.Errorf("resolving asset object: %s", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return nil, nil
+	}
+	return &ContentObject{
+		Locator:     objectstore.Locator{ObjectKey: row.ObjectKey, SHA256: row.SHA256, Size: row.Size},
+		ContentType: row.ContentType,
+	}, nil
 }

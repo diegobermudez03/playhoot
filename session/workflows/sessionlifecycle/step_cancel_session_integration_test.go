@@ -176,7 +176,7 @@ func TestManagerCancelSession_Integration(t *testing.T) {
 		hostActorID := testfixtures.SeedActor(t, db, fx.SessionID, hostUUIDStr)
 		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
 
-		m := New(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
+		m := newTestManager(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
 		result, err := m.CancelSession(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUIDStr), session.IdempotencyKey(uuid.NewString()))
 		require.NoError(t, err)
 		require.Equal(t, session.CancelSessionOutcomeNotRunning, result.Outcome)
@@ -235,7 +235,7 @@ func TestManagerCancelSession_Integration(t *testing.T) {
 		gv := testfixtures.SeedCurrentGameVersion(t, db, "function backend() {}", "function frontend() {}", 1, nil)
 		require.NoError(t, db.Exec(`UPDATE sessions SET game_definition_uuid = ? WHERE id = ?`, gv.DefinitionUUID, fx.SessionID).Error)
 
-		m := New(db, fakeExecutorFailing("executor unreachable"))
+		m := newTestManager(db, fakeExecutorFailing("executor unreachable"))
 		_, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUIDStr), session.IdempotencyKey(uuid.NewString()))
 		require.NoError(t, err)
 
@@ -275,7 +275,7 @@ func TestManagerCancelSession_Integration(t *testing.T) {
 	})
 
 	t.Run("session_not_found", func(t *testing.T) {
-		m := New(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
+		m := newTestManager(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
 		_, err := m.CancelSession(context.Background(), session.SessionUUID(uuid.NewString()), session.UserUUID(uuid.NewString()), session.IdempotencyKey(uuid.NewString()))
 		require.ErrorIs(t, err, session.ErrSessionNotFound)
 	})

@@ -398,7 +398,7 @@ func TestManagerSubmitPlayerEvent_Integration(t *testing.T) {
 	})
 
 	t.Run("session_not_found", func(t *testing.T) {
-		m := New(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
+		m := newTestManager(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
 		_, err := m.SubmitPlayerEvent(context.Background(), session.SessionUUID(uuid.NewString()), session.UserUUID(uuid.NewString()), "Guess", nil, session.IdempotencyKey(uuid.NewString()))
 		require.ErrorIs(t, err, session.ErrSessionNotFound)
 	})
@@ -474,7 +474,7 @@ func TestManagerGetSubmitPlayerEventOutcome_Integration(t *testing.T) {
 	// to what a real-Postgres test needs to additionally prove.
 
 	t.Run("session_not_found", func(t *testing.T) {
-		m := New(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
+		m := newTestManager(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
 		_, err := m.GetSubmitPlayerEventOutcome(context.Background(), session.SessionUUID(uuid.NewString()), session.UserUUID(uuid.NewString()), session.IdempotencyKey(uuid.NewString()))
 		require.ErrorIs(t, err, session.ErrSessionNotFound)
 	})

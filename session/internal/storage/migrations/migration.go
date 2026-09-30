@@ -93,6 +93,11 @@ func MigrateTables(db *gorm.DB) error {
 		// capability-based filtering step before any authored project()
 		// call.
 		migration20260929000005SessionGameVersionArtifactsProjectionVisibility(),
+
+		// session_game_version_artifacts script content moves to private
+		// object storage (locator + hash per script); declared assets get
+		// their own table of locators.
+		migration20260930000000SessionGameVersionContentLocators(),
 	})
 
 	return migrator.Migrate()

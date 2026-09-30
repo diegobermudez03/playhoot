@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/diegobermudez03/playhoot/api"
 	"github.com/diegobermudez03/playhoot/game/usecases/checkvisibility"
@@ -29,6 +31,9 @@ type envVariables struct {
 	DatabaseSSLMode  string
 	HTTPPort         string
 	ExecutorAddr     string
+	GCSProjectID     string
+	GCSBucket        string
+	GCSSignedURLTTL  time.Duration
 }
 
 func main() {
@@ -56,19 +61,24 @@ func main() {
 		log.Fatalf("running PostgreSQL migrations: %v", err)
 	}
 
-	manager, closeExecutor, err := sessionlifecycle.NewWithGRPCExecutor(db, envVars.ExecutorAddr)
+	manager, closeInfrastructure, err := sessionlifecycle.NewProduction(context.Background(), db, sessionlifecycle.ProductionConfig{
+		ExecutorAddr: envVars.ExecutorAddr,
+		GCSProjectID: envVars.GCSProjectID,
+		GCSBucket:    envVars.GCSBucket,
+		SignedURLTTL: envVars.GCSSignedURLTTL,
+	})
 	if err != nil {
-		log.Fatalf("connecting to the JavaScript Executor: %v", err)
+		log.Fatalf("connecting to the JavaScript Executor and object storage: %v", err)
 	}
 	defer func() {
-		if err := closeExecutor(); err != nil {
-			log.Printf("closing Executor connection: %v", err)
+		if err := closeInfrastructure(); err != nil {
+			log.Printf("closing Executor and object storage connections: %v", err)
 		}
 	}()
 
 	orch := orchestrator.New(checkvisibility.New(db), manager)
 
-	server := api.NewServer(orch)
+	server := api.NewServer(orch, manager)
 
 	log.Printf("listening on :%s", envVars.HTTPPort)
 	if err := http.ListenAndServe(":"+envVars.HTTPPort, server.Routes()); err != nil {
@@ -93,6 +103,8 @@ func readEnvVariables() (*envVariables, error) {
 		DatabaseSSLMode:  strings.TrimSpace(os.Getenv("DATABASE_SSL_MODE")),
 		HTTPPort:         strings.TrimSpace(os.Getenv("HTTP_PORT")),
 		ExecutorAddr:     strings.TrimSpace(os.Getenv("EXECUTOR_ADDR")),
+		GCSProjectID:     strings.TrimSpace(os.Getenv("GCS_PROJECT_ID")),
+		GCSBucket:        strings.TrimSpace(os.Getenv("GCS_BUCKET")),
 	}
 
 	required := []struct {
@@ -108,6 +120,8 @@ func readEnvVariables() (*envVariables, error) {
 		{name: "DATABASE_SSL_MODE", value: envVars.DatabaseSSLMode},
 		{name: "HTTP_PORT", value: envVars.HTTPPort},
 		{name: "EXECUTOR_ADDR", value: envVars.ExecutorAddr},
+		{name: "GCS_PROJECT_ID", value: envVars.GCSProjectID},
+		{name: "GCS_BUCKET", value: envVars.GCSBucket},
 	}
 	for _, variable := range required {
 		if variable.value == "" {
@@ -123,6 +137,16 @@ func readEnvVariables() (*envVariables, error) {
 	httpPort, err := strconv.Atoi(envVars.HTTPPort)
 	if err != nil || httpPort < 1 || httpPort > 65535 {
 		return nil, fmt.Errorf("HTTP_PORT must be a valid TCP port")
+	}
+
+	// GCS_SIGNED_URL_TTL is optional (a Go duration such as "2m"); unset
+	// keeps the default.
+	if rawTTL := strings.TrimSpace(os.Getenv("GCS_SIGNED_URL_TTL")); rawTTL != "" {
+		ttl, err := time.ParseDuration(rawTTL)
+		if err != nil || ttl <= 0 {
+			return nil, fmt.Errorf("GCS_SIGNED_URL_TTL must be a positive duration such as 2m")
+		}
+		envVars.GCSSignedURLTTL = ttl
 	}
 
 	return envVars, nil

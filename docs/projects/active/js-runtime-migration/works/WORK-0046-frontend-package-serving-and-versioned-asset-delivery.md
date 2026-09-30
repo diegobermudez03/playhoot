@@ -1,8 +1,8 @@
 # WORK-0046: Frontend Package Serving & Versioned Asset Delivery
 
-Status: READY
+Status: IMPLEMENTING
 Created: 2026-09-27
-Last status change: 2026-09-30 (DRAFT -> READY)
+Last status change: 2026-09-30 (READY -> IMPLEMENTING)
 
 Related decisions:
 - `session/docs/decisions/SESSION-ADR-0027-game-version-content-lives-in-private-object-storage.md`
@@ -125,7 +125,7 @@ GetAssetAccess(ctx, sessionUUID, userUUID, key)
 
 ## Acceptance Criteria
 
-Not yet defined in full; expected once the design is approved. At minimum:
+Met (see Completion Record for evidence):
 
 - No test or code path stores or reads script bytes from a database column.
 - Executing a Session end to end through the fake store produces identical results to today.
@@ -141,7 +141,7 @@ Not yet defined in full; expected once the design is approved. At minimum:
 
 ## Verification
 
-Not yet defined. Expected: unit tests against the fake, a shared port contract test run against both fake and adapter, integration tests for the migrated schema, and an adapter test against a GCS emulator or a real test bucket if one is reachable (same environment caveat as prior WORK). Signed-URL generation under Google-managed signing cannot be fully exercised without real GCP credentials, so it may remain unverified in a sandbox and must be reported as such.
+Performed: unit tests against the fake, a shared port contract test run against both fake and adapter, integration tests for the migrated schema, and an adapter test against a GCS emulator or a real test bucket if one is reachable (same environment caveat as prior WORK). Signed-URL generation under Google-managed signing cannot be fully exercised without real GCP credentials, so it may remain unverified in a sandbox and must be reported as such.
 
 ## Documentation Impact
 
@@ -167,4 +167,36 @@ Previously listed, now closed:
 
 ## Completion Record
 
-Not yet started.
+Implementation complete 2026-09-30, pending independent review (`docs/ai/protocols/IMPLEMENTATION_REVIEW.md`). Status stays IMPLEMENTING until that review returns.
+
+### What was built
+
+- `session/internal/objectstore`: the `Store` port (`Get`, `Put`, `PresignGet`), `Locator` (object key, SHA-256, size) with content-addressed `LocatorFor`/`PutContent`, a hash-verifying `Loader` with a bounded hash-keyed in-memory cache, an in-memory `Fake` (with `GetErr` and `Corrupt` hooks and a per-key `GetCount`), a native Google Cloud Storage adapter (`cloud.google.com/go/storage`, Application Default Credentials, signed URLs through Google-managed signing with no locally held private key), and `storetest.RunContract`, a shared behavioral suite run against both the fake and (when configured) the real adapter.
+- Migration `20260930000000_session_game_version_content_locators`: `session_game_version_artifacts` drops `backend_script`, `frontend_script` and `assets`, gaining key/SHA-256/size columns for each script; new `session_game_version_assets` table, unique per `(definition_uuid, key)`, FK to the artifact.
+- `Manager.New` now requires an `objectstore.Store`. All four RUNNING-phase steps (`Start`, `SubmitPlayerEvent`, `CancelSession`, `ExpireTimer`) and `GetClientState` load the backend script through `backendScriptSource`; a missing or hash-mismatched object alerts and fails the step (the transaction rolls back), a plain storage failure only fails it. `Join` warms the cache in the background.
+- `Manager.GetFrontendScriptAccess`/`GetAssetAccess` (`content_access.go`) and `session.ContentAccessResult`/`ContentAccessOutcome`: unlocked reads that require the caller to be a participant, resolve only the Session's pinned version, and sign exactly that one object. Default signed-URL TTL is 2 minutes.
+- `api/session`: `GET /sessions/{session_uuid}/frontend-script` and `GET /sessions/{session_uuid}/assets/{key}` (200 / 400 / 403 / 404 / 500). Each handler carries a comment that the `user_uuid` query parameter is temporary until an identity package and middleware exist. Signed URLs are never logged.
+- `sessionlifecycle.NewProduction` replaces `NewWithGRPCExecutor` as the supported entry point for `main.go`; `main.go` now requires `GCS_PROJECT_ID` and `GCS_BUCKET`, with optional `GCS_SIGNED_URL_TTL`.
+- Documentation: `SESSION-ADR-0027` (accepted earlier the same day); addenda/updates to `GAME_VERSION_ARTIFACT_MODEL.md`, `FRONTEND_IFRAME_CONTRACT.md`, `DATA_MODEL.md`, `session/README.md`, `session/CURRENT_STATE.md`.
+
+### Deviation from the Approved Design, reported
+
+The Approved Design said a cold cache would be warmed "pre-transaction" for every RUNNING-phase step. Implemented narrower: `Join` warms the cache in the background (its artifact read is already unlocked and pre-transaction), and each RUNNING-phase step loads on demand. A step on an instance that never handled `Join` for that Session therefore fetches the script once *inside* its transaction, under the Session row lock. The stated invariant ("no storage round trip under the row lock on the steady-state path") holds - once loaded, no later step touches storage - but the first step per script per instance can. Closing that fully would need an extra unlocked session read before every step's transaction. Not done; flagged for the reviewer and the human.
+
+### Verification
+
+Run against a real local Postgres (the disposable-database test harness), not skipped:
+
+- `go build ./...` and `go vet ./...` clean.
+- `go test ./... -count=1`: everything passes except two failures both confirmed pre-existing and unrelated - `TestNoInternalDocCitationsInComments` (3 hits, all in `20260926000000_session_runtime_failures.go`, a file this WORK does not touch) and `TestManagerJoin_Integration_ConcurrentOperationRacingLobbyExpiration`, which was independently re-run on a clean checkout of `HEAD` in a separate worktree and failed on 2 of 3 runs there (flaky, not caused by this change).
+- New tests, all passing: object store contract (fake), loader (verification, caching, tamper, missing, outage, eviction), `TestBackendScriptLoadedFromObjectStorage_Integration` (executor receives the stored bytes; script fetched once across two steps; tampered / missing / unreachable object each fail closed and leave the Session in LOBBY with no turn), `TestContentAccess_Integration` (participant granted for exactly the pinned object; non-participant and other-session participant declined with no URL; unknown session; declared vs undeclared asset; a Session pinned to version A never receives version B's script or B-only asset), `TestGameVersionAssets_Integration` (unique and FK constraints), `TestManagerContentAccess` (mocked decision logic), and the API handler tests for every status.
+
+### Not verified
+
+- **The Google Cloud Storage adapter and real signed-URL generation.** They need real GCP credentials and a bucket, which this environment does not have. `TestGCSSatisfiesStoreContract` exists and skips unless `GCS_TEST_PROJECT_ID`/`GCS_TEST_BUCKET` are set. Specifically unverified: that the client's IAM-based signing works without a private key for the deployed service identity (it needs permission to sign for itself), and that CORS on the bucket lets the host frontend fetch.
+- `main.go` startup with the new configuration was compiled but not run: it now needs GCP credentials and the two new environment variables, so a local run without them fails at startup by design.
+- The unlocked `Manager` reads were not exercised under concurrency.
+
+### Independent Review
+
+Not yet performed.

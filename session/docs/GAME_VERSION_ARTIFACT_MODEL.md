@@ -48,6 +48,14 @@ Optional. Each asset is identified by an internal logical `Key` (its name, or wh
 
 This is a deliberate security decision, not a placeholder: a frontend script is injected/untrusted content, and an arbitrary external URL it happens to contain cannot be trusted the way platform-hosted, platform-validated content can (unknown content type, unverified origin, potential tracking or attack surface). How a key is actually resolved into real bytes/location at serving time is a separate WORK's concern (`docs/projects/active/js-runtime-migration/works/WORK-0046-frontend-package-serving-and-versioned-asset-delivery.md`); this record only fixes that the artifact stores keys, never links. `session/docs/FRONTEND_IFRAME_CONTRACT.md` (`WORK-0045`) fixes the client-library shape a frontend script uses to resolve one (`playhoot.requestAsset(key)`, returning a safe handle, never a URL).
 
+## Content Storage
+
+**Added 2026-09-30, by explicit human decision (`session/docs/decisions/SESSION-ADR-0027-game-version-content-lives-in-private-object-storage.md`).** The fields above describe what an artifact *is*; this section fixes where its bytes live. `BackendScript`, `FrontendScript` and every asset are stored as immutable objects in private object storage, not in Session Runtime's database. The database keeps only a locator for each - the object key, the content's SHA-256 (lowercase hex) and its size, plus MIME type and logical `Key` for an asset - and never a URL. Objects are content-addressed by hash, and every read verifies the hash: a mismatch fails closed with an alert rather than serving unverified content.
+
+Nothing else in this record changes. `BackendScript` is still opaque to the Executor's caller and is still sent inline to the Executor: Session Runtime reads and verifies it from storage, then hands the source to the Executor exactly as before, and it never reaches a browser. `FrontendScript` and assets reach the browser only through short-lived signed URLs issued to Playhoot's own trusted host frontend after Session Runtime confirms the caller participates in the Session and resolves the version that Session is pinned to. The generated iframe never receives such a URL (`session/docs/FRONTEND_IFRAME_CONTRACT.md`).
+
+Where the earlier sections say a script is "stored directly" or that Playhoot "stores this script's own content directly", read that as "stores it directly, as an immutable object it owns", not as an inline database column - the no-build-pipeline, no-package-reference model those sections establish is unchanged.
+
 ## Immutability
 
 Identical to `game/docs/decisions/GAME-ADR-0001-game-capability-persistence-transaction-boundary.md`'s existing invariant: once a Session pins `DefinitionUUID`, every field of that artifact is fixed for the Session's whole lifetime, including `FrontendScript` and `Assets` - a later-published update to the same Game does not retroactively change what an in-progress Session serves.

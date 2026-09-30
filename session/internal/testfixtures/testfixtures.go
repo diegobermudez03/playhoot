@@ -6,15 +6,28 @@
 package testfixtures
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 	"time"
 
 	"github.com/diegobermudez03/playhoot/session"
+	"github.com/diegobermudez03/playhoot/session/internal/objectstore"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
+
+// contentStore is the one in-memory object store every seeded game version's
+// content is written to. Sharing a single store across tests is safe because
+// content is addressed by its hash: seeding identical bytes twice is a no-op
+// and different bytes never collide.
+var contentStore = objectstore.NewFake()
+
+// ContentStore returns the shared in-memory object store that
+// SeedCurrentGameVersion and SeedAsset write into. A Manager under test must
+// be constructed with it so seeded scripts resolve.
+func ContentStore() *objectstore.Fake { return contentStore }
 
 // SessionFixture identifies a seeded sessions row.
 type SessionFixture struct {
@@ -159,11 +172,15 @@ type gameVersionArtifactSeedInsert struct {
 	ID             uint      `gorm:"column:id"`
 	DefinitionUUID string    `gorm:"column:definition_uuid"`
 	GameUUID       string    `gorm:"column:game_uuid"`
-	BackendScript  string    `gorm:"column:backend_script"`
-	FrontendScript string    `gorm:"column:frontend_script"`
-	ParticipantMin int       `gorm:"column:participant_min"`
-	ParticipantMax *int      `gorm:"column:participant_max"`
-	CreatedAt      time.Time `gorm:"column:created_at"`
+	BackendScriptKey     string    `gorm:"column:backend_script_key"`
+	BackendScriptSHA256  string    `gorm:"column:backend_script_sha256"`
+	BackendScriptSize    int64     `gorm:"column:backend_script_size"`
+	FrontendScriptKey    string    `gorm:"column:frontend_script_key"`
+	FrontendScriptSHA256 string    `gorm:"column:frontend_script_sha256"`
+	FrontendScriptSize   int64     `gorm:"column:frontend_script_size"`
+	ParticipantMin       int       `gorm:"column:participant_min"`
+	ParticipantMax       *int      `gorm:"column:participant_max"`
+	CreatedAt            time.Time `gorm:"column:created_at"`
 }
 
 func (gameVersionArtifactSeedInsert) TableName() string { return "session_game_version_artifacts" }
@@ -250,17 +267,60 @@ func SeedCurrentGameVersion(t *testing.T, db *gorm.DB, backendScript, frontendSc
 	gameUUID := uuid.NewString()
 	definitionUUID := uuid.NewString()
 
+	backendLocator, err := objectstore.PutContent(context.Background(), contentStore, "scripts", []byte(backendScript), "text/javascript")
+	require.NoError(t, err)
+	frontendLocator, err := objectstore.PutContent(context.Background(), contentStore, "scripts", []byte(frontendScript), "text/javascript")
+	require.NoError(t, err)
+
 	require.NoError(t, db.Create(&gameSeedInsert{GameUUID: gameUUID, CreatedAt: now, UpdatedAt: now}).Error)
 	require.NoError(t, db.Create(&gameVersionArtifactSeedInsert{
-		DefinitionUUID: definitionUUID,
-		GameUUID:       gameUUID,
-		BackendScript:  backendScript,
-		FrontendScript: frontendScript,
-		ParticipantMin: participantMin,
-		ParticipantMax: participantMax,
-		CreatedAt:      now,
+		DefinitionUUID:       definitionUUID,
+		GameUUID:             gameUUID,
+		BackendScriptKey:     backendLocator.ObjectKey,
+		BackendScriptSHA256:  backendLocator.SHA256,
+		BackendScriptSize:    backendLocator.Size,
+		FrontendScriptKey:    frontendLocator.ObjectKey,
+		FrontendScriptSHA256: frontendLocator.SHA256,
+		FrontendScriptSize:   frontendLocator.Size,
+		ParticipantMin:       participantMin,
+		ParticipantMax:       participantMax,
+		CreatedAt:            now,
 	}).Error)
 	require.NoError(t, db.Exec(`UPDATE session_games SET current_definition_uuid = ? WHERE game_uuid = ?`, definitionUUID, gameUUID).Error)
 
 	return GameVersionFixture{GameUUID: gameUUID, DefinitionUUID: definitionUUID}
+}
+
+type assetSeedInsert struct {
+	DefinitionUUID string    `gorm:"column:definition_uuid"`
+	Key            string    `gorm:"column:key"`
+	Kind           string    `gorm:"column:kind"`
+	ObjectKey      string    `gorm:"column:object_key"`
+	SHA256         string    `gorm:"column:sha256"`
+	Size           int64     `gorm:"column:size"`
+	ContentType    string    `gorm:"column:content_type"`
+	CreatedAt      time.Time `gorm:"column:created_at"`
+}
+
+func (assetSeedInsert) TableName() string { return "session_game_version_assets" }
+
+// SeedAsset stores content in the shared object store and declares it as
+// asset key (of the given kind and content type) on definitionUUID, returning
+// its Locator.
+func SeedAsset(t *testing.T, db *gorm.DB, definitionUUID, key, kind, contentType string, content []byte) objectstore.Locator {
+	t.Helper()
+
+	locator, err := objectstore.PutContent(context.Background(), contentStore, "assets", content, contentType)
+	require.NoError(t, err)
+	require.NoError(t, db.Create(&assetSeedInsert{
+		DefinitionUUID: definitionUUID,
+		Key:            key,
+		Kind:           kind,
+		ObjectKey:      locator.ObjectKey,
+		SHA256:         locator.SHA256,
+		Size:           locator.Size,
+		ContentType:    contentType,
+		CreatedAt:      time.Now().UTC(),
+	}).Error)
+	return locator
 }

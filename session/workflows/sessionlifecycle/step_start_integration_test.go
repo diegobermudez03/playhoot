@@ -17,7 +17,7 @@ func TestManagerStart_Integration(t *testing.T) {
 
 	t.Run("host_starts_session_and_persists_first_runtime_turn_with_executor_new_state", func(t *testing.T) {
 		newState := stateJSON(t, map[string]any{"phase": "running", "score": float64(0)})
-		m := New(db, fakeExecutorAlwaysReturning(newState))
+		m := newTestManager(db, fakeExecutorAlwaysReturning(newState))
 
 		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
 		gv := testfixtures.SeedCurrentGameVersion(t, db, "function backend() {}", "function frontend() {}", 1, nil)
@@ -75,7 +75,7 @@ func TestManagerStart_Integration(t *testing.T) {
 
 	t.Run("first_turn_requesting_session_complete_terminalizes_session_immediately", func(t *testing.T) {
 		newState := stateJSON(t, map[string]any{"done": true})
-		m := New(db, fakeExecutorAlwaysReturning(newState, sessionCompleteCommand(t)))
+		m := newTestManager(db, fakeExecutorAlwaysReturning(newState, sessionCompleteCommand(t)))
 
 		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
 		gv := testfixtures.SeedCurrentGameVersion(t, db, "function backend() {}", "function frontend() {}", 1, nil)
@@ -117,7 +117,7 @@ func TestManagerStart_Integration(t *testing.T) {
 
 		hostRef := string(actorRefForActorID(hostActorID))
 		payload := stateJSON(t, map[string]any{"sound": "chime"})
-		m := New(db, fakeExecutorAlwaysReturning(
+		m := newTestManager(db, fakeExecutorAlwaysReturning(
 			stateJSON(t, map[string]any{}),
 			sendEventCommand(t, []string{hostRef}, "welcome", payload),
 		))
@@ -140,7 +140,7 @@ func TestManagerStart_Integration(t *testing.T) {
 		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
 
 		hostRef := string(actorRefForActorID(hostActorID))
-		m := New(db, fakeExecutorAlwaysReturning(
+		m := newTestManager(db, fakeExecutorAlwaysReturning(
 			stateJSON(t, map[string]any{}),
 			sendEventCommand(t, []string{hostRef}, "welcome", stateJSON(t, map[string]any{})),
 		))
@@ -155,7 +155,7 @@ func TestManagerStart_Integration(t *testing.T) {
 	})
 
 	t.Run("rejects_start_by_non_host", func(t *testing.T) {
-		m := New(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
+		m := newTestManager(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
 
 		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
 		gv := testfixtures.SeedCurrentGameVersion(t, db, "function backend() {}", "function frontend() {}", 1, nil)
@@ -177,7 +177,7 @@ func TestManagerStart_Integration(t *testing.T) {
 	})
 
 	t.Run("rejects_start_with_fewer_than_participant_min", func(t *testing.T) {
-		m := New(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
+		m := newTestManager(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
 
 		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
 		gv := testfixtures.SeedCurrentGameVersion(t, db, "function backend() {}", "function frontend() {}", 2, nil)
@@ -194,7 +194,7 @@ func TestManagerStart_Integration(t *testing.T) {
 	})
 
 	t.Run("lazily_materializes_expired_lobby_and_rejects", func(t *testing.T) {
-		m := New(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
+		m := newTestManager(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
 
 		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(-1*time.Minute))
 		gv := testfixtures.SeedCurrentGameVersion(t, db, "function backend() {}", "function frontend() {}", 1, nil)
@@ -214,7 +214,7 @@ func TestManagerStart_Integration(t *testing.T) {
 	})
 
 	t.Run("retried_start_with_same_idempotency_key_replays_started", func(t *testing.T) {
-		m := New(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
+		m := newTestManager(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
 
 		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
 		gv := testfixtures.SeedCurrentGameVersion(t, db, "function backend() {}", "function frontend() {}", 1, nil)
@@ -241,7 +241,7 @@ func TestManagerStart_Integration(t *testing.T) {
 	})
 
 	t.Run("rejects_conflicting_payload_under_same_token", func(t *testing.T) {
-		m := New(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
+		m := newTestManager(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
 
 		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
 		gv := testfixtures.SeedCurrentGameVersion(t, db, "function backend() {}", "function frontend() {}", 1, nil)
@@ -266,7 +266,7 @@ func TestManagerStart_Integration(t *testing.T) {
 	})
 
 	t.Run("fatal_executor_error_terminalizes_and_replays_without_re_executing", func(t *testing.T) {
-		m := New(db, fakeExecutorFailing("executor unreachable"))
+		m := newTestManager(db, fakeExecutorFailing("executor unreachable"))
 
 		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
 		gv := testfixtures.SeedCurrentGameVersion(t, db, "function backend() {}", "function frontend() {}", 1, nil)
@@ -331,7 +331,7 @@ func TestManagerStart_Integration(t *testing.T) {
 	})
 
 	t.Run("two_concurrent_starts_never_both_execute_a_runtime_turn", func(t *testing.T) {
-		m := New(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
+		m := newTestManager(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
 
 		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
 		gv := testfixtures.SeedCurrentGameVersion(t, db, "function backend() {}", "function frontend() {}", 1, nil)

@@ -239,7 +239,7 @@ func TestManagerExpireTimer_Integration(t *testing.T) {
 	})
 
 	t.Run("expiring_an_unknown_obligation_uuid_reports_not_found", func(t *testing.T) {
-		m := New(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
+		m := newTestManager(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
 
 		_, err := m.ExpireTimer(context.Background(), session.TimerObligationUUID(uuid.NewString()))
 		require.ErrorIs(t, err, session.ErrTimerObligationNotFound)

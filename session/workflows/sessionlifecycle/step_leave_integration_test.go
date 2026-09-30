@@ -14,7 +14,7 @@ import (
 
 func TestManagerLeave_Integration(t *testing.T) {
 	db := testdb.OpenSessionDB(t)
-	m := New(db, nil)
+	m := newTestManager(db, nil)
 
 	t.Run("active_participant_leaves_and_slot_is_released", func(t *testing.T) {
 		userUUID := uuid.NewString()

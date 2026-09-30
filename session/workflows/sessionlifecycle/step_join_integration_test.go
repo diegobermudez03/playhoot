@@ -97,7 +97,7 @@ func TestManagerJoin_Integration(t *testing.T) {
 			tc := setup(t, db)
 			fx, joinCode, userUUID := tc.before(t, db)
 
-			m := New(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
+			m := newTestManager(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
 			result, err := m.Join(context.Background(), joinCode, userUUID, "Alice", session.IdempotencyKey("join-key-"+uuid.NewString()))
 			tc.assert(t, db, fx, userUUID, result, err)
 		})
@@ -113,7 +113,7 @@ func TestManagerJoin_Integration_TokenSemantics(t *testing.T) {
 	db := testdb.OpenSessionDB(t)
 	fx := seedLobbySessionWithParticipantMax(t, db, time.Now().Add(10*time.Minute), intPtr(4))
 	testfixtures.SeedJoinCode(t, db, fx.SessionID, 2211, false)
-	m := New(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
+	m := newTestManager(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
 	userUUID := session.UserUUID(uuid.NewString())
 
 	first, err := m.Join(context.Background(), 2211, userUUID, "Casey", "join-key-replay")
@@ -156,7 +156,7 @@ func TestManagerJoin_Integration_DifferentUsersSameKeyDoNotCollide(t *testing.T)
 	db := testdb.OpenSessionDB(t)
 	fx := seedLobbySessionWithParticipantMax(t, db, time.Now().Add(10*time.Minute), intPtr(4))
 	testfixtures.SeedJoinCode(t, db, fx.SessionID, 2212, false)
-	m := New(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
+	m := newTestManager(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
 
 	_, err := m.Join(context.Background(), 2212, session.UserUUID(uuid.NewString()), "A", "shared-join-key")
 	require.NoError(t, err)
@@ -185,7 +185,7 @@ func TestManagerJoin_Integration_PinnedDefinitionImmutability(t *testing.T) {
 	// session_games at all.
 	testfixtures.SeedCurrentGameVersion(t, db, "function backend() {}", "function frontend() {}", 1, intPtr(4))
 
-	m := New(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
+	m := newTestManager(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
 
 	result, err := m.Join(context.Background(), 2213, session.UserUUID(uuid.NewString()), "Late Joiner", "join-key-pinned")
 	require.NoError(t, err)
@@ -200,7 +200,7 @@ func TestManagerJoin_Integration_ConcurrentJoinsForFinalSlot(t *testing.T) {
 	db := testdb.OpenSessionDB(t)
 	fx := seedLobbySessionWithParticipantMax(t, db, time.Now().Add(10*time.Minute), intPtr(1))
 	testfixtures.SeedJoinCode(t, db, fx.SessionID, 6001, false)
-	m := New(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
+	m := newTestManager(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
 
 	userA := session.UserUUID(uuid.NewString())
 	userB := session.UserUUID(uuid.NewString())
@@ -258,7 +258,7 @@ func TestManagerJoin_Integration_ConcurrentJoinsForFinalSlot(t *testing.T) {
 // determines a consistent, non-corrupted final state.
 func TestManagerJoin_Integration_ConcurrentJoinRacingLeave(t *testing.T) {
 	db := testdb.OpenSessionDB(t)
-	m := New(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
+	m := newTestManager(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
 
 	fx := seedLobbySessionWithParticipantMax(t, db, time.Now().Add(10*time.Minute), intPtr(1))
 	testfixtures.SeedJoinCode(t, db, fx.SessionID, 7001, false)
@@ -313,7 +313,7 @@ func TestManagerJoin_Integration_ConcurrentJoinRacingLeave(t *testing.T) {
 // other.
 func TestManagerJoin_Integration_ConcurrentOperationRacingLobbyExpiration(t *testing.T) {
 	db := testdb.OpenSessionDB(t)
-	m := New(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
+	m := newTestManager(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
 
 	fx := seedLobbySessionWithParticipantMax(t, db, time.Now().Add(-1*time.Minute), intPtr(4))
 	testfixtures.SeedJoinCode(t, db, fx.SessionID, 7002, false)

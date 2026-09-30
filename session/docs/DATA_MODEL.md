@@ -6,7 +6,7 @@ Game Management's own tables (`games`/`game_images`/`game_histories`) are docume
 
 ## Game Version Artifact Tables
 
-`session_games`/`session_game_version_artifacts` are Session Runtime's own persisted copy of the executable Game Version Artifact (`session/docs/GAME_VERSION_ARTIFACT_MODEL.md`), read by `Create` and by every RUNNING-phase step. `session_games` holds one row per Game public UUID, pointing at its current pinnable version; `session_game_version_artifacts` holds one row per immutable version, storing the mandatory `backend_script`/`frontend_script`, the required `participant_min`/`participant_max` structural capacity range (`participant_max` nullable, meaning unlimited), plus the optional `game_contract`/`assets`/`platform_contract_version` fields the artifact model defines. `game_uuid` on the artifact table is Session Runtime's own addition beyond the artifact model itself, needed to resolve "current version for this Game" without a Game Management call - it is not part of `GameVersionArtifact`'s own canonical shape. The two tables carry a real, same-domain FK pair (not a logical reference): `session_game_version_artifacts.game_uuid -> session_games.game_uuid`, and `session_games.current_definition_uuid -> session_game_version_artifacts.definition_uuid`. Nothing yet populates these tables for a real, published Game version - the publish path is not yet implemented.
+`session_games`/`session_game_version_artifacts` are Session Runtime's own persisted copy of the executable Game Version Artifact (`session/docs/GAME_VERSION_ARTIFACT_MODEL.md`), read by `Create` and by every RUNNING-phase step. `session_games` holds one row per Game public UUID, pointing at its current pinnable version; `session_game_version_artifacts` holds one row per immutable version, storing, for each of the mandatory backend and frontend scripts, only a locator into private object storage (`*_script_key`, `*_script_sha256`, `*_script_size` - never the script text itself), the required `participant_min`/`participant_max` structural capacity range (`participant_max` nullable, meaning unlimited), plus the optional `game_contract`/`platform_contract_version` fields the artifact model defines. `session_game_version_assets` holds one row per asset a version declares - its logical `key`, `kind`, `content_type`, and the same object locator (`object_key`, `sha256`, `size`) - unique per `(definition_uuid, key)` and with a real FK to `session_game_version_artifacts.definition_uuid`. Script and asset bytes live in private object storage, content-addressed by SHA-256 and verified on every read; no URL is ever persisted (`session/docs/decisions/SESSION-ADR-0027-game-version-content-lives-in-private-object-storage.md`). `game_uuid` on the artifact table is Session Runtime's own addition beyond the artifact model itself, needed to resolve "current version for this Game" without a Game Management call - it is not part of `GameVersionArtifact`'s own canonical shape. The two tables carry a real, same-domain FK pair (not a logical reference): `session_game_version_artifacts.game_uuid -> session_games.game_uuid`, and `session_games.current_definition_uuid -> session_game_version_artifacts.definition_uuid`. Nothing yet populates these tables for a real, published Game version - the publish path is not yet implemented.
 
 ```mermaid
 classDiagram
@@ -21,16 +21,31 @@ classDiagram
         id
         definition_uuid
         game_uuid
-        backend_script
-        frontend_script
+        backend_script_key
+        backend_script_sha256
+        backend_script_size
+        frontend_script_key
+        frontend_script_sha256
+        frontend_script_size
         participant_min
         participant_max
         game_contract
-        assets
         platform_contract_version
         created_at
     }
+    class session_game_version_assets {
+        id
+        definition_uuid
+        key
+        kind
+        object_key
+        sha256
+        size
+        content_type
+        created_at
+    }
 
+    session_game_version_artifacts "1" --> "*" session_game_version_assets : "session_game_version_assets.definition_uuid -> session_game_version_artifacts.definition_uuid"
     session_games "1" --> "*" session_game_version_artifacts : "session_game_version_artifacts.game_uuid -> session_games.game_uuid"
     session_game_version_artifacts "0..1 current" --> "1" session_games : "session_games.current_definition_uuid -> session_game_version_artifacts.definition_uuid"
 ```
@@ -189,6 +204,7 @@ Database-enforced foreign keys:
 
 - `session_game_version_artifacts.game_uuid -> session_games.game_uuid`
 - `session_games.current_definition_uuid -> session_game_version_artifacts.definition_uuid`
+- `session_game_version_assets.definition_uuid -> session_game_version_artifacts.definition_uuid`
 
 Logical persisted references:
 

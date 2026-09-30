@@ -14,6 +14,14 @@ import (
 	"gorm.io/gorm"
 )
 
+// newTestManager constructs a Manager whose object store is the shared
+// in-memory store testfixtures.SeedCurrentGameVersion writes seeded script
+// content into, so a seeded version's scripts resolve through the same store
+// the Manager reads from.
+func newTestManager(db *gorm.DB, exec executor.Executor) *Manager {
+	return New(db, exec, testfixtures.ContentStore())
+}
+
 // stateJSON is a small convenience for building a deterministic
 // json.RawMessage state value in test cases, standing in for whatever
 // opaque shape an authored backend script would actually produce.
@@ -175,7 +183,7 @@ func activityExpiresAtForUUID(t *testing.T, db *gorm.DB, sessionUUID session.Ses
 func startedSessionWithExecutor(t *testing.T, db *gorm.DB, exec executor.Executor) (m *Manager, sessionUUID session.SessionUUID, hostUUID session.UserUUID) {
 	t.Helper()
 
-	m = New(db, exec)
+	m = newTestManager(db, exec)
 
 	fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
 	gv := testfixtures.SeedCurrentGameVersion(t, db, "function backend() {}", "function frontend() {}", 1, nil)

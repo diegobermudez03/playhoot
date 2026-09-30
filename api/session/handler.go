@@ -19,14 +19,24 @@ type SessionCreator interface {
 	CreateSession(ctx context.Context, gameUUID sessionpkg.GameUUID, hostUserUUID sessionpkg.UserUUID, idempotencyKey sessionpkg.IdempotencyKey) (sessionpkg.CreatedSession, error)
 }
 
+// ContentAccessor is this route group's own narrow dependency on whatever
+// grants a participant short-lived access to a Session's pinned frontend
+// script and assets - Session Runtime's Manager in production. Both reads
+// return a signed URL meant only for Playhoot's own trusted host frontend.
+type ContentAccessor interface {
+	GetFrontendScriptAccess(ctx context.Context, sessionUUID sessionpkg.SessionUUID, userUUID sessionpkg.UserUUID) (sessionpkg.ContentAccessResult, error)
+	GetAssetAccess(ctx context.Context, sessionUUID sessionpkg.SessionUUID, userUUID sessionpkg.UserUUID, key string) (sessionpkg.ContentAccessResult, error)
+}
+
 // Handler exposes the session workflow's endpoints.
 type Handler struct {
 	creator SessionCreator
+	content ContentAccessor
 }
 
-// NewHandler constructs a Handler backed by creator.
-func NewHandler(creator SessionCreator) *Handler {
-	return &Handler{creator: creator}
+// NewHandler constructs a Handler backed by creator and content.
+func NewHandler(creator SessionCreator, content ContentAccessor) *Handler {
+	return &Handler{creator: creator, content: content}
 }
 
 // RESTRoutes returns this group's ordinary request/response endpoints,
@@ -35,6 +45,8 @@ func NewHandler(creator SessionCreator) *Handler {
 func (h *Handler) RESTRoutes() []routing.Route {
 	return []routing.Route{
 		{Pattern: "POST /sessions", Handler: h.handleCreateSession},
+		{Pattern: "GET /sessions/{session_uuid}/frontend-script", Handler: h.handleGetFrontendScript},
+		{Pattern: "GET /sessions/{session_uuid}/assets/{key}", Handler: h.handleGetAsset},
 	}
 }
 

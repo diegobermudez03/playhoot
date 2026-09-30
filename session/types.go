@@ -352,3 +352,36 @@ type GetClientStateResult struct {
 	ClientState json.RawMessage       `json:"client_state,omitempty"`
 	Revision    uint64                `json:"revision,omitempty"`
 }
+
+// ContentAccessOutcome is the expected business outcome of asking for access
+// to a Session's pinned frontend script or asset - a value distinct from a Go
+// error, an ordinary decline a caller should branch on.
+type ContentAccessOutcome string
+
+const (
+	// ContentAccessOutcomeGranted means URL is a short-lived, read-only
+	// signed URL for exactly the requested object.
+	ContentAccessOutcomeGranted ContentAccessOutcome = "GRANTED"
+	// ContentAccessOutcomeNotAParticipant means the caller did not resolve
+	// to a SessionActor for this Session.
+	ContentAccessOutcomeNotAParticipant ContentAccessOutcome = "NOT_A_PARTICIPANT"
+	// ContentAccessOutcomeContentNotFound means the Session's pinned
+	// version declares no such content - an asset key it never declared.
+	ContentAccessOutcomeContentNotFound ContentAccessOutcome = "CONTENT_NOT_FOUND"
+)
+
+// ContentAccessResult is GetFrontendScriptAccess/GetAssetAccess's result. URL,
+// ExpiresAt, SHA256, ContentType and Size are only populated when Outcome is
+// ContentAccessOutcomeGranted. URL is a bearer credential until ExpiresAt and
+// is meant for Playhoot's own trusted host frontend only - never for game code
+// running inside a sandboxed iframe. SHA256 (lowercase hex) and Size describe
+// the immutable content the URL serves, letting the host frontend verify what
+// it fetched.
+type ContentAccessResult struct {
+	Outcome     ContentAccessOutcome `json:"outcome"`
+	URL         string               `json:"url,omitempty"`
+	ExpiresAt   time.Time            `json:"expires_at,omitempty"`
+	SHA256      string               `json:"sha256,omitempty"`
+	ContentType string               `json:"content_type,omitempty"`
+	Size        int64                `json:"size,omitempty"`
+}

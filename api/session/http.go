@@ -64,3 +64,83 @@ func writeCreateSessionError(w http.ResponseWriter, ctx context.Context, err err
 		httpx.WriteError(w, http.StatusInternalServerError, "creating session failed")
 	}
 }
+
+// handleGetFrontendScript returns short-lived signed access to the frontend
+// script of the version the Session is pinned to.
+//
+// TEMPORARY: the caller is identified by the user_uuid query parameter, the
+// same interim approach POST /sessions takes with host_user_uuid. It exists
+// only until an identity package and middleware derive the caller from an
+// authenticated request; at that point this parameter is removed and the
+// caller comes from the request context. Until then anyone can claim any
+// user_uuid, so this endpoint must not be exposed beyond trusted callers.
+func (h *Handler) handleGetFrontendScript(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	sessionUUID := r.PathValue("session_uuid")
+	userUUID := r.URL.Query().Get("user_uuid")
+	logging.LogFields(ctx,
+		logging.Field("session_uuid", sessionUUID),
+		logging.Field("user_uuid", userUUID),
+	)
+	if userUUID == "" {
+		httpx.WriteError(w, http.StatusBadRequest, "user_uuid is required")
+		return
+	}
+
+	result, err := h.content.GetFrontendScriptAccess(ctx, sessionpkg.SessionUUID(sessionUUID), sessionpkg.UserUUID(userUUID))
+	writeContentAccess(w, ctx, result, err)
+}
+
+// handleGetAsset returns short-lived signed access to one asset declared by
+// the version the Session is pinned to, addressed by the game's own logical
+// asset key. user_uuid is temporary in the same way as
+// handleGetFrontendScript's - see its comment.
+func (h *Handler) handleGetAsset(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	sessionUUID := r.PathValue("session_uuid")
+	key := r.PathValue("key")
+	userUUID := r.URL.Query().Get("user_uuid")
+	logging.LogFields(ctx,
+		logging.Field("session_uuid", sessionUUID),
+		logging.Field("user_uuid", userUUID),
+		logging.Field("asset_key", key),
+	)
+	if userUUID == "" {
+		httpx.WriteError(w, http.StatusBadRequest, "user_uuid is required")
+		return
+	}
+
+	result, err := h.content.GetAssetAccess(ctx, sessionpkg.SessionUUID(sessionUUID), sessionpkg.UserUUID(userUUID), key)
+	writeContentAccess(w, ctx, result, err)
+}
+
+// writeContentAccess maps a content access result to the HTTP status a client
+// should branch on. The signed URL itself is deliberately never logged.
+func writeContentAccess(w http.ResponseWriter, ctx context.Context, result sessionpkg.ContentAccessResult, err error) {
+	if err != nil {
+		logging.LogError(ctx, err)
+		if errors.Is(err, sessionpkg.ErrSessionNotFound) {
+			httpx.WriteError(w, http.StatusNotFound, "session not found")
+			return
+		}
+		httpx.WriteError(w, http.StatusInternalServerError, "granting content access failed")
+		return
+	}
+
+	switch result.Outcome {
+	case sessionpkg.ContentAccessOutcomeGranted:
+		httpx.WriteJSON(w, http.StatusOK, contentAccessResponse{
+			URL:         result.URL,
+			ExpiresAt:   result.ExpiresAt,
+			SHA256:      result.SHA256,
+			ContentType: result.ContentType,
+			Size:        result.Size,
+		})
+	case sessionpkg.ContentAccessOutcomeNotAParticipant:
+		httpx.WriteError(w, http.StatusForbidden, "not a participant of this session")
+	case sessionpkg.ContentAccessOutcomeContentNotFound:
+		httpx.WriteError(w, http.StatusNotFound, "content not found for this session's game version")
+	default:
+		httpx.WriteError(w, http.StatusInternalServerError, "granting content access failed")
+	}
+}

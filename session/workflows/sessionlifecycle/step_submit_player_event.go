@@ -192,8 +192,13 @@ func (m *Manager) submitPlayerEventInTx(ctx context.Context, tx *gorm.DB, sessio
 		return session.SubmitPlayerEventResult{}, fmt.Errorf("encoding player event: %s", err)
 	}
 
+	script, err := m.backendScriptSource(ctx, artifact)
+	if err != nil {
+		return session.SubmitPlayerEventResult{}, err
+	}
+
 	output, err := m.executor.Execute(ctx, executor.ExecutionInput{
-		Script:        executor.ResolvedScript{Source: artifact.BackendScript},
+		Script:        script,
 		PreviousState: currentTurn.NewState,
 		Event:         encodedEvent,
 		Context:       executor.ExecutionContext{LogicalTime: now, RandomSeed: drawSeed(), ActingActor: string(actorRef)},

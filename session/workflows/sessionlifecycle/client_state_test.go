@@ -8,6 +8,7 @@ import (
 
 	"github.com/diegobermudez03/playhoot/session"
 	"github.com/diegobermudez03/playhoot/session/internal/executor"
+	"github.com/diegobermudez03/playhoot/session/internal/objectstore"
 	internalrepo "github.com/diegobermudez03/playhoot/session/workflows/sessionlifecycle/internal/repo"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -29,6 +30,13 @@ func (fakeDBServicer) GetDB() *gorm.DB { return nil }
 func TestManagerGetClientState(t *testing.T) {
 	repoErr := errors.New("repo failed")
 	turnID := uint(7)
+	store := objectstore.NewFake()
+	putScript := func(t *testing.T, source string) objectstore.Locator {
+		t.Helper()
+		locator, err := objectstore.PutContent(context.Background(), store, "scripts", []byte(source), "text/javascript")
+		require.NoError(t, err)
+		return locator
+	}
 
 	tests := map[string]func(t *testing.T, repo *MockgetClientStateRepoAPI) (executor.Executor, func(session.GetClientStateResult, error)){
 		"session_not_found": func(t *testing.T, repo *MockgetClientStateRepoAPI) (executor.Executor, func(session.GetClientStateResult, error)) {
@@ -71,7 +79,7 @@ func TestManagerGetClientState(t *testing.T) {
 			repo.EXPECT().ResolveSessionForClientState(gomock.Any(), "missing-uuid").Return(&internalrepo.Session{ID: 1, GameDefinitionUUID: "def-uuid", CurrentTurnID: &turnID}, nil)
 			repo.EXPECT().FindActor(gomock.Any(), gomock.Any(), uint(1), "user-uuid").Return(&internalrepo.Actor{ID: 42}, nil)
 			repo.EXPECT().GetRuntimeTurn(gomock.Any(), gomock.Any(), turnID).Return(&internalrepo.RuntimeTurn{ID: turnID, NewState: json.RawMessage(`{}`)}, nil)
-			repo.EXPECT().ResolveGameVersionArtifact(gomock.Any(), "def-uuid").Return(&internalrepo.GameVersionArtifact{BackendScript: "function project() {}"}, nil)
+			repo.EXPECT().ResolveGameVersionArtifact(gomock.Any(), "def-uuid").Return(&internalrepo.GameVersionArtifact{BackendScript: putScript(t, "function project() {}")}, nil)
 			exec := &executor.Fake{ProjectFunc: func(ctx context.Context, in executor.ProjectionInput) (executor.ProjectionOutput, error) {
 				return executor.ProjectionOutput{}, &executor.ScriptRejectedError{Reason: "no project function"}
 			}}
@@ -88,7 +96,7 @@ func TestManagerGetClientState(t *testing.T) {
 			repo.EXPECT().FindActor(gomock.Any(), gomock.Any(), uint(1), "user-uuid").Return(&internalrepo.Actor{ID: 42}, nil)
 			repo.EXPECT().GetRuntimeTurn(gomock.Any(), gomock.Any(), turnID).Return(&internalrepo.RuntimeTurn{ID: turnID, Sequence: 3, NewState: state}, nil)
 			repo.EXPECT().ResolveGameVersionArtifact(gomock.Any(), "def-uuid").Return(&internalrepo.GameVersionArtifact{
-				BackendScript:        "function project(state, viewer, context) { return state; }",
+				BackendScript:        putScript(t, "function project(state, viewer, context) { return state; }"),
 				ProjectionVisibility: visibility,
 			}, nil)
 
@@ -96,6 +104,7 @@ func TestManagerGetClientState(t *testing.T) {
 			exec := &executor.Fake{ProjectFunc: func(ctx context.Context, in executor.ProjectionInput) (executor.ProjectionOutput, error) {
 				capturedState = in.State
 				require.Equal(t, "42", in.Viewer)
+				require.Equal(t, "function project(state, viewer, context) { return state; }", in.Script.Source, "the Executor must receive the script loaded from object storage")
 				return executor.ProjectionOutput{ClientState: in.State}, nil
 			}}
 			return exec, func(result session.GetClientStateResult, err error) {
@@ -122,7 +131,7 @@ func TestManagerGetClientState(t *testing.T) {
 			repo := NewMockgetClientStateRepoAPI(ctrl)
 			exec, assert := setup(t, repo)
 
-			m := &Manager{getClientStateRepo: repo, dbServicer: fakeDBServicer{}, executor: exec}
+			m := &Manager{getClientStateRepo: repo, dbServicer: fakeDBServicer{}, executor: exec, scripts: objectstore.NewLoader(store, 0)}
 			result, err := m.GetClientState(context.Background(), "missing-uuid", "user-uuid")
 			assert(result, err)
 		})

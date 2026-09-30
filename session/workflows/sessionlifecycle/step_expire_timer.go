@@ -143,8 +143,13 @@ func (m *Manager) expireTimerInTx(ctx context.Context, tx *gorm.DB, sessionID ui
 		return session.ExpireTimerResult{}, fmt.Errorf("encoding timer expired event: %s", err)
 	}
 
+	script, err := m.backendScriptSource(ctx, artifact)
+	if err != nil {
+		return session.ExpireTimerResult{}, err
+	}
+
 	output, err := m.executor.Execute(ctx, executor.ExecutionInput{
-		Script:        executor.ResolvedScript{Source: artifact.BackendScript},
+		Script:        script,
 		PreviousState: currentTurn.NewState,
 		Event:         encodedEvent,
 		Context:       executor.ExecutionContext{LogicalTime: now, RandomSeed: drawSeed()},

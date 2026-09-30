@@ -48,13 +48,15 @@ type Server struct {
 // this package knows about declares, registering each one onto a shared
 // mux and wrapping it with the observability behavior its transport shape
 // requires (see restObservability/wsObservability). sessionCreator is
-// whatever coordinates Session creation (Orchestrator in production);
-// this package depends only on api/session's own narrow port, never on
-// orchestrator directly.
-func NewServer(sessionCreator apisession.SessionCreator) *Server {
+// whatever coordinates Session creation (Orchestrator in production) and
+// contentAccessor whatever grants a participant access to a Session's
+// pinned frontend script and assets (Session Runtime's Manager in
+// production); this package depends only on api/session's own narrow
+// ports, never on orchestrator or the Manager directly.
+func NewServer(sessionCreator apisession.SessionCreator, contentAccessor apisession.ContentAccessor) *Server {
 	mux := http.NewServeMux()
 	groups := []routeGroup{
-		apisession.NewHandler(sessionCreator),
+		apisession.NewHandler(sessionCreator, contentAccessor),
 	}
 	for _, group := range groups {
 		for _, route := range group.RESTRoutes() {

@@ -16,16 +16,22 @@
 package sessionlifecycle
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"time"
 
+	"github.com/diegobermudez03/playhoot/monitoring"
+
 	"github.com/diegobermudez03/playhoot/session/internal/executor"
+	"github.com/diegobermudez03/playhoot/session/internal/objectstore"
 	"github.com/diegobermudez03/playhoot/session/workflows/sessionlifecycle/internal/activity"
 	"github.com/diegobermudez03/playhoot/session/workflows/sessionlifecycle/internal/expiration"
 	internalrepo "github.com/diegobermudez03/playhoot/session/workflows/sessionlifecycle/internal/repo"
 	"gorm.io/gorm"
 )
 
-//go:generate mockgen -package=sessionlifecycle -destination=mocks_test.go . createRepoAPI,joinRepoAPI,leaveRepoAPI,startRepoAPI,submitPlayerEventRepoAPI,expireTimerRepoAPI,cancelSessionRepoAPI,getClientStateRepoAPI
+//go:generate mockgen -package=sessionlifecycle -destination=mocks_test.go . createRepoAPI,joinRepoAPI,leaveRepoAPI,startRepoAPI,submitPlayerEventRepoAPI,expireTimerRepoAPI,cancelSessionRepoAPI,getClientStateRepoAPI,contentAccessRepoAPI
 
 // defaultLobbyTTL is the lobby lifetime applied when no other TTL
 // configuration is supplied.
@@ -34,6 +40,11 @@ const defaultLobbyTTL = 10 * time.Minute
 // defaultActivityTTL is the RUNNING-phase inactivity deadline applied when no
 // other TTL configuration is supplied.
 const defaultActivityTTL = 10 * time.Minute
+
+// defaultSignedURLTTL is how long a signed content URL stays valid when no
+// other TTL is supplied: long enough for a browser to start the download,
+// short enough that a leaked URL is worth little.
+const defaultSignedURLTTL = 2 * time.Minute
 
 // Session lifecycle idempotency operation labels, scoping each command's
 // idempotency identity to (UserUUID, operation, IdempotencyKey).
@@ -77,6 +88,7 @@ type Manager struct {
 	submitPlayerEventRepo submitPlayerEventRepoAPI
 	cancelSessionRepo     cancelSessionRepoAPI
 	getClientStateRepo    getClientStateRepoAPI
+	contentAccessRepo     contentAccessRepoAPI
 
 	dbServicer dbServicer
 
@@ -85,8 +97,15 @@ type Manager struct {
 
 	executor executor.Executor
 
-	lobbyTTL    time.Duration
-	activityTTL time.Duration
+	// objectStore holds every game version's immutable content; scripts
+	// loads and hash-verifies a backend script from it, remembering
+	// verified bytes so the steady-state path never touches storage.
+	objectStore objectstore.Store
+	scripts     *objectstore.Loader
+
+	lobbyTTL     time.Duration
+	activityTTL  time.Duration
+	signedURLTTL time.Duration
 }
 
 // dbServicer is the narrow capability Manager needs to open a DB
@@ -102,8 +121,10 @@ type dbServicer interface {
 // no Game Management reader at all: it resolves the Game's current
 // pinnable version, and every RUNNING-phase step resolves its pinned
 // artifact, entirely from Session Runtime's own tables through
-// internal/repo.
-func New(db *gorm.DB, exec executor.Executor) *Manager {
+// internal/repo. store is the private object storage holding every game
+// version's script and asset bytes - the database records only where they
+// are and how to verify them.
+func New(db *gorm.DB, exec executor.Executor, store objectstore.Store) *Manager {
 	r := internalrepo.New(db)
 	return &Manager{
 		createRepo:            r,
@@ -114,11 +135,50 @@ func New(db *gorm.DB, exec executor.Executor) *Manager {
 		submitPlayerEventRepo: r,
 		cancelSessionRepo:     r,
 		getClientStateRepo:    r,
+		contentAccessRepo:     r,
 		dbServicer:            r,
 		lobbyExpirer:          expiration.NewExpirer(r),
 		activityExpirer:       activity.NewExpirer(r),
 		executor:              exec,
+		objectStore:           store,
+		scripts:               objectstore.NewLoader(store, objectstore.DefaultLoaderEntries),
 		lobbyTTL:              defaultLobbyTTL,
 		activityTTL:           defaultActivityTTL,
+		signedURLTTL:          defaultSignedURLTTL,
 	}
+}
+
+// backendScriptSource loads artifact's backend script from object storage,
+// verified against the hash its locator recorded, ready to hand to the
+// Executor. Verified bytes are remembered, so once a script has been loaded
+// on this instance no later call touches storage. A missing or corrupt
+// object is an invariant break - a pinned version's content must always be
+// present and unchanged - so it alerts as well as failing; a plain
+// transport failure only fails.
+func (m *Manager) backendScriptSource(ctx context.Context, artifact *internalrepo.GameVersionArtifact) (executor.ResolvedScript, error) {
+	source, err := m.scripts.Load(ctx, artifact.BackendScript)
+	if err != nil {
+		if errors.Is(err, objectstore.ErrNotFound) || errors.Is(err, objectstore.ErrHashMismatch) {
+			monitoring.Alert(ctx, "session pinned backend script is missing or corrupt in object storage")
+		}
+		return executor.ResolvedScript{}, fmt.Errorf("loading backend script: %w", err)
+	}
+	return executor.ResolvedScript{Source: string(source)}, nil
+}
+
+// warmBackendScript loads artifact's backend script in the background so the
+// first RUNNING-phase step for a Session on this instance usually finds it
+// already verified and in memory, instead of fetching from storage while it
+// holds the Session row lock. Best-effort only: it never blocks or fails its
+// caller, and a step that finds the script still cold simply loads it itself.
+func (m *Manager) warmBackendScript(ctx context.Context, artifact *internalrepo.GameVersionArtifact) {
+	if m.scripts == nil {
+		return
+	}
+	warmCtx := context.WithoutCancel(ctx)
+	go func() {
+		warmCtx, cancel := context.WithTimeout(warmCtx, 10*time.Second)
+		defer cancel()
+		_, _ = m.scripts.Load(warmCtx, artifact.BackendScript)
+	}()
 }

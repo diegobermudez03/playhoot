@@ -87,6 +87,8 @@ func (m *Manager) Join(ctx context.Context, joinCode session.JoinCode, userUUID 
 		return session.JoinResult{}, session.ErrPinnedDefinitionMissing
 	}
 
+	m.warmBackendScript(ctx, artifact)
+
 	return utils.RunInDBTransaction(ctx, m.dbServicer, func(ctx context.Context, tx *gorm.DB) (session.JoinResult, error) {
 		return m.joinSessionInTx(ctx, tx, resolution.SessionID, artifact.ParticipantMax, joinCode, userUUID, displayName, idempotencyKey)
 	})

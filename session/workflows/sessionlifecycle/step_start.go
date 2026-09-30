@@ -224,6 +224,11 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 		return session.StartResult{}, fmt.Errorf("encoding session started event: %s", err)
 	}
 
+	script, err := m.backendScriptSource(ctx, artifact)
+	if err != nil {
+		return session.StartResult{}, err
+	}
+
 	// Unlike every other RUNNING-phase step, Start has no ordinary "decline,
 	// stay as you were" path for a rejected Event: a fresh Session's first
 	// execution either succeeds or the Session never starts at all, so
@@ -233,7 +238,7 @@ func (m *Manager) startSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUID
 	// retired engine (StartTurn's own error already had no decline branch
 	// either).
 	output, err := m.executor.Execute(ctx, executor.ExecutionInput{
-		Script:        executor.ResolvedScript{Source: artifact.BackendScript},
+		Script:        script,
 		PreviousState: nil,
 		Event:         encodedEvent,
 		Context:       executor.ExecutionContext{LogicalTime: now, RandomSeed: drawSeed()},

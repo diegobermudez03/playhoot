@@ -200,8 +200,13 @@ func (m *Manager) cancelSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUI
 		return session.CancelSessionResult{}, fmt.Errorf("encoding session cancelled event: %s", err)
 	}
 
+	script, err := m.backendScriptSource(ctx, artifact)
+	if err != nil {
+		return session.CancelSessionResult{}, err
+	}
+
 	output, err := m.executor.Execute(ctx, executor.ExecutionInput{
-		Script:        executor.ResolvedScript{Source: artifact.BackendScript},
+		Script:        script,
 		PreviousState: currentTurn.NewState,
 		Event:         encodedEvent,
 		Context:       executor.ExecutionContext{LogicalTime: now, RandomSeed: drawSeed(), ActingActor: string(actorRefForActorID(actor.ID))},

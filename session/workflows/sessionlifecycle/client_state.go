@@ -107,8 +107,13 @@ func (m *Manager) GetClientState(ctx context.Context, sessionUUID session.Sessio
 		return session.GetClientStateResult{}, fmt.Errorf("filtering projection input: %s", err)
 	}
 
+	script, err := m.backendScriptSource(ctx, artifact)
+	if err != nil {
+		return session.GetClientStateResult{}, err
+	}
+
 	out, err := m.executor.Project(ctx, executor.ProjectionInput{
-		Script:  executor.ResolvedScript{Source: artifact.BackendScript},
+		Script:  script,
 		State:   projectionInput,
 		Viewer:  viewer,
 		Context: executor.ExecutionContext{LogicalTime: time.Now().UTC(), RandomSeed: drawSeed()},
