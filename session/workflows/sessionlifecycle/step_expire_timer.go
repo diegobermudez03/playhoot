@@ -194,7 +194,7 @@ func (m *Manager) expireTimerInTx(ctx context.Context, tx *gorm.DB, sessionID ui
 		}
 	}
 
-	return session.ExpireTimerResult{Outcome: session.ExpireTimerOutcomeExpired, SessionUUID: session.SessionUUID(lockedSession.UUID), TerminalReason: terminalReason, Events: collectOutboundEvents(commands)}, nil
+	return session.ExpireTimerResult{Outcome: session.ExpireTimerOutcomeExpired, SessionUUID: session.SessionUUID(lockedSession.UUID), TerminalReason: terminalReason, Events: collectOutboundEvents(currentTurn.Sequence+1, commands)}, nil
 }
 
 // terminalizeExpireTimerFatal performs ExpireTimer's fatal path: atomically

@@ -126,7 +126,7 @@ func TestManagerStart_Integration(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, session.StartOutcomeStarted, result.Outcome)
 		require.Equal(t, []session.OutboundEvent{
-			{Recipients: []session.ActorRef{session.ActorRef(hostRef)}, Name: "welcome", Payload: payload},
+			{ID: "1:0", Recipients: []session.ActorRef{session.ActorRef(hostRef)}, Name: "welcome", Payload: payload, Revision: 1},
 		}, result.Events)
 	})
 

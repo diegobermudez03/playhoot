@@ -1,3 +1,42 @@
+Checkpoint: WORK-0055 DONE (not a new human-decision gate — informational).
+Date: 2026-09-29
+
+**Update:** You said "proceed." Implemented exactly as described below, and independent review (a fresh agent with no memory of the implementation) returned APPROVED with no findings - it independently re-traced every call site's sequence math by hand rather than trusting the claim. One thing I caught and fixed myself before calling it done: my own first-draft code comment cited an internal decision-record path directly, which this repo's own comment standard forbids - reworded to state the reasoning plainly instead. No further decision is needed from you. Full detail: WORK-0055's own Completion Record.
+
+## What this WORK does
+
+Adds the two fields `WORK-0045`'s own contract (which you already approved) requires but the backend doesn't have yet: a `revision` number on the view (`GetClientStateResult`), and an `id`/`revision` pair on each cosmetic event (`OutboundEvent`). Both are what let a future frontend safely discard a stale view or recognize a duplicate best-effort event.
+
+## Why this is different from the last two checkpoints
+
+`WORK-0042`/`WORK-0045` each needed you to approve a *new* API shape. This one doesn't - the field names (`revision`/`id`) are already exactly what you approved in `FRONTEND_IFRAME_CONTRACT.md`. This WORK is just wiring the backend to actually produce them, using data that's already sitting right there: every RUNNING-phase call already knows which Turn's `Sequence` it just committed, it just doesn't return it yet.
+
+## What's new
+
+- `GetClientStateResult.Revision` - the Turn's own sequence number.
+- `OutboundEvent.ID`/`OutboundEvent.Revision` - a stable, deterministic identifier (derived from the Turn's sequence plus the event's own position in that Turn's command list) and that same sequence number.
+
+## What's explicitly NOT done by this WORK
+
+- No live delivery - same as before, nothing pushes these to a real client yet.
+- No change to how `id` looks on the wire beyond "stable and deterministic" - the exact string format is my own implementation choice, not part of the contract.
+
+## Unresolved blockers
+
+None.
+
+## What READY would authorize
+
+Adding these two fields, updating the four RUNNING-phase steps and `GetClientState` to populate them, and extending the existing tests to cover them - no new API shape decisions, no scope beyond what `WORK-0045` already committed to.
+
+## Recommendation
+
+This is a mechanical follow-through on something you already approved - ready for READY authorization unless you'd like to change the `id` encoding approach. Full detail in `../works/WORK-0055-client-state-revision-and-outbound-event-correlation-identifiers.md`.
+
+---
+
+Prior checkpoint, preserved below:
+
 Checkpoint: WORK-0045 DONE (not a new human-decision gate — informational).
 Date: 2026-09-29
 

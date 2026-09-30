@@ -127,11 +127,19 @@ type ActorRef string
 // never resolved to any transport identity by this package. Name/Payload
 // are entirely game-defined and opaque; only the envelope (Recipients) is
 // Playhoot's own. Nothing here claims delivery has happened - it hasn't;
-// no live-transport layer exists yet to attempt it.
+// no live-transport layer exists yet to attempt it. Delivering this event is
+// best-effort and may be duplicated, delayed, or missed entirely: ID is a
+// stable, deterministic per-event correlation identifier (reproducible for
+// the same underlying command across a delivery retry - never randomly
+// regenerated), and Revision is the sequence number of the RuntimeTurn that
+// produced this event - together they let a future delivery consumer
+// recognize an already-applied duplicate and discard a stale event.
 type OutboundEvent struct {
+	ID         string          `json:"id"`
 	Recipients []ActorRef      `json:"recipients"`
 	Name       string          `json:"name"`
 	Payload    json.RawMessage `json:"payload"`
+	Revision   uint64          `json:"revision"`
 }
 
 // StartResult is Start's logical outcome. SessionUUID is only populated
@@ -301,14 +309,17 @@ const (
 	GetClientStateOutcomeProjectionRejected GetClientStateOutcome = "PROJECTION_REJECTED"
 )
 
-// GetClientStateResult is GetClientState's logical outcome. ClientState is
-// only populated when Outcome is GetClientStateOutcomeComputed - the
-// authored script's own project() output, computed only from data the
-// viewer is already authorized to see (project() never receives excluded
-// data at all, rather than being trusted with everything and checked
-// afterward).
+// GetClientStateResult is GetClientState's logical outcome. ClientState and
+// Revision are only populated when Outcome is GetClientStateOutcomeComputed
+// - ClientState is the authored script's own project() output, computed
+// only from data the viewer is already authorized to see (project() never
+// receives excluded data at all, rather than being trusted with everything
+// and checked afterward); Revision is the sequence number of the RuntimeTurn
+// ClientState was computed from, letting a caller discard a delivery no
+// newer than one it already applied.
 type GetClientStateResult struct {
 	Outcome     GetClientStateOutcome `json:"outcome"`
 	SessionUUID SessionUUID           `json:"session_uuid,omitempty"`
 	ClientState json.RawMessage       `json:"client_state,omitempty"`
+	Revision    uint64                `json:"revision,omitempty"`
 }

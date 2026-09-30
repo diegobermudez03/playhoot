@@ -86,7 +86,7 @@ func TestManagerGetClientState(t *testing.T) {
 
 			repo.EXPECT().ResolveSessionForClientState(gomock.Any(), "missing-uuid").Return(&internalrepo.Session{ID: 1, GameDefinitionUUID: "def-uuid", CurrentTurnID: &turnID}, nil)
 			repo.EXPECT().FindActor(gomock.Any(), gomock.Any(), uint(1), "user-uuid").Return(&internalrepo.Actor{ID: 42}, nil)
-			repo.EXPECT().GetRuntimeTurn(gomock.Any(), gomock.Any(), turnID).Return(&internalrepo.RuntimeTurn{ID: turnID, NewState: state}, nil)
+			repo.EXPECT().GetRuntimeTurn(gomock.Any(), gomock.Any(), turnID).Return(&internalrepo.RuntimeTurn{ID: turnID, Sequence: 3, NewState: state}, nil)
 			repo.EXPECT().ResolveGameVersionArtifact(gomock.Any(), "def-uuid").Return(&internalrepo.GameVersionArtifact{
 				BackendScript:        "function project(state, viewer, context) { return state; }",
 				ProjectionVisibility: visibility,
@@ -101,6 +101,7 @@ func TestManagerGetClientState(t *testing.T) {
 			return exec, func(result session.GetClientStateResult, err error) {
 				require.NoError(t, err)
 				require.Equal(t, session.GetClientStateOutcomeComputed, result.Outcome)
+				require.Equal(t, uint64(3), result.Revision, "Revision must be the loaded RuntimeTurn's own Sequence")
 
 				var parsed map[string]interface{}
 				require.NoError(t, json.Unmarshal(capturedState, &parsed))

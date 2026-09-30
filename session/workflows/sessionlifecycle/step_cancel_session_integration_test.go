@@ -120,7 +120,7 @@ func TestManagerCancelSession_Integration(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, session.CancelSessionOutcomeCancelled, result.Outcome)
 		require.Equal(t, []session.OutboundEvent{
-			{Recipients: []session.ActorRef{session.ActorRef(hostRef)}, Name: "farewell", Payload: stateJSON(t, map[string]any{})},
+			{ID: "2:0", Recipients: []session.ActorRef{session.ActorRef(hostRef)}, Name: "farewell", Payload: stateJSON(t, map[string]any{}), Revision: 2},
 		}, result.Events)
 	})
 

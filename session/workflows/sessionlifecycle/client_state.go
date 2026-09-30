@@ -138,5 +138,6 @@ func (m *Manager) GetClientState(ctx context.Context, sessionUUID session.Sessio
 		Outcome:     session.GetClientStateOutcomeComputed,
 		SessionUUID: sessionUUID,
 		ClientState: out.ClientState,
+		Revision:    currentTurn.Sequence,
 	}, nil
 }

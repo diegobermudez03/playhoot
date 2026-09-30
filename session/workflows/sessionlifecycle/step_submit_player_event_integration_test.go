@@ -108,8 +108,8 @@ func TestManagerSubmitPlayerEvent_Integration(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, session.SubmitPlayerEventOutcomeAccepted, result.Outcome)
 		require.Equal(t, []session.OutboundEvent{
-			{Recipients: []session.ActorRef{session.ActorRef(hostRef)}, Name: "first", Payload: stateJSON(t, map[string]any{"n": float64(1)})},
-			{Recipients: []session.ActorRef{session.ActorRef(hostRef)}, Name: "second", Payload: stateJSON(t, map[string]any{"n": float64(2)})},
+			{ID: "2:0", Recipients: []session.ActorRef{session.ActorRef(hostRef)}, Name: "first", Payload: stateJSON(t, map[string]any{"n": float64(1)}), Revision: 2},
+			{ID: "2:1", Recipients: []session.ActorRef{session.ActorRef(hostRef)}, Name: "second", Payload: stateJSON(t, map[string]any{"n": float64(2)}), Revision: 2},
 		}, result.Events)
 	})
 

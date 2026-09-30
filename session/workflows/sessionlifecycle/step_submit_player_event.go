@@ -253,7 +253,7 @@ func (m *Manager) submitPlayerEventInTx(ctx context.Context, tx *gorm.DB, sessio
 		}
 	}
 
-	result := session.SubmitPlayerEventResult{Outcome: session.SubmitPlayerEventOutcomeAccepted, SessionUUID: session.SessionUUID(lockedSession.UUID), TerminalReason: terminalReason, Events: collectOutboundEvents(commands)}
+	result := session.SubmitPlayerEventResult{Outcome: session.SubmitPlayerEventOutcomeAccepted, SessionUUID: session.SessionUUID(lockedSession.UUID), TerminalReason: terminalReason, Events: collectOutboundEvents(currentTurn.Sequence+1, commands)}
 	responseBytes, err := json.Marshal(result)
 	if err != nil {
 		return session.SubmitPlayerEventResult{}, fmt.Errorf("marshaling submit player event response payload: %s", err)
