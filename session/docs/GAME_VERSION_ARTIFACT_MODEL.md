@@ -34,7 +34,7 @@ Authored JavaScript, executed by the separately deployed JavaScript Executor (`s
 
 ## Frontend Script
 
-Authored frontend source. Its own language/format (React, plain JavaScript, or something else) is not decided by this record - a future frontend-specific design WORK (`docs/projects/active/js-runtime-migration/works/WORK-0045-frontend-iframe-delivery-contract-specification.md`) owns that, along with the actual backend/frontend communication protocol and asset-request mechanism.
+Authored frontend source. Its own language/format (React, plain JavaScript, or something else) is not decided by this record - a future frontend-specific design WORK (`docs/projects/active/js-runtime-migration/works/WORK-0045-frontend-iframe-delivery-contract-specification.md`) owns that, along with the actual backend/frontend communication protocol and asset-request mechanism. `WORK-0045`'s own accepted contract is `session/docs/FRONTEND_IFRAME_CONTRACT.md` - the client-library surface (`playhoot.onState`/`onEvent`/`send`/`requestAsset`) a frontend script communicates through.
 
 What is decided: Playhoot stores this script's own content directly, the same way it stores `BackendScript` - there is no separate build/publish pipeline producing a package for Playhoot to merely reference. Playhoot's own backend never parses or executes this content; it is opaque payload, handed off to whatever actually renders the game (a future frontend client, loaded in an isolated iframe per `ADR-0015`) exactly as `BackendScript` is opaque payload to Session Runtime before the Executor evaluates it.
 
@@ -46,7 +46,7 @@ Opaque data from this record's own perspective - a JSON value (or similar), whos
 
 Optional. Each asset is identified by an internal logical `Key` (its name, or whatever the platform assigns) and a `Kind` (image, sound, etc.) - **never a URL**, and never resolvable to one by the frontend script itself. Only assets uploaded directly to Playhoot are supported; an external link is not a valid asset reference at all, regardless of format.
 
-This is a deliberate security decision, not a placeholder: a frontend script is injected/untrusted content, and an arbitrary external URL it happens to contain cannot be trusted the way platform-hosted, platform-validated content can (unknown content type, unverified origin, potential tracking or attack surface). How a key is actually resolved into real bytes/location at serving time is a separate WORK's concern (`docs/projects/active/js-runtime-migration/works/WORK-0046-frontend-package-serving-and-versioned-asset-delivery.md`); this record only fixes that the artifact stores keys, never links.
+This is a deliberate security decision, not a placeholder: a frontend script is injected/untrusted content, and an arbitrary external URL it happens to contain cannot be trusted the way platform-hosted, platform-validated content can (unknown content type, unverified origin, potential tracking or attack surface). How a key is actually resolved into real bytes/location at serving time is a separate WORK's concern (`docs/projects/active/js-runtime-migration/works/WORK-0046-frontend-package-serving-and-versioned-asset-delivery.md`); this record only fixes that the artifact stores keys, never links. `session/docs/FRONTEND_IFRAME_CONTRACT.md` (`WORK-0045`) fixes the client-library shape a frontend script uses to resolve one (`playhoot.requestAsset(key)`, returning a safe handle, never a URL).
 
 ## Immutability
 

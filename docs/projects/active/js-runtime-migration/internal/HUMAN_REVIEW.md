@@ -1,5 +1,7 @@
-Checkpoint: WORK-0045 DRAFT — shape corrected per your review, ready for READY if you're satisfied.
+Checkpoint: WORK-0045 DONE (not a new human-decision gate — informational).
 Date: 2026-09-29
+
+**Update:** You said "proceed." `session/docs/FRONTEND_IFRAME_CONTRACT.md` now exists as the canonical spec, plus two small cross-reference additions in `GAME_VERSION_ARTIFACT_MODEL.md`. Independent review (a fresh agent with no memory of the implementation) returned APPROVED, one small NON_BLOCKING finding fixed opportunistically (clarified that `onState`'s own delivery reliability belongs to the future live-transport layer, while this contract fixes the recovery path - it's always callable again). No further decision is needed from you. Full detail: WORK-0045's own Completion Record.
 
 ## Your five corrections, all applied
 

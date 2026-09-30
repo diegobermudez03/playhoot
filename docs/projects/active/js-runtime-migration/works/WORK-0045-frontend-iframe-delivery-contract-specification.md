@@ -1,8 +1,8 @@
 # WORK-0045: Frontend Iframe Delivery Contract Specification
 
-Status: DRAFT
+Status: DONE
 Created: 2026-09-27
-Last status change: 2026-09-29 (human reviewed the first proposed shape and corrected it on five points, all incorporated below - see "Human Decision: API Shape Corrected"; not yet READY, awaiting final confirmation of the revised shape)
+Last status change: 2026-09-29 (independent review returned APPROVED with one NON_BLOCKING finding, fixed opportunistically same day; closed)
 
 Related decisions:
 - `docs/decisions/architecture/ADR-0015-javascript-rule-execution-and-iframe-frontend-contract.md`
@@ -111,8 +111,52 @@ A smaller wording correction, same review: "loaded once per Session" is now phra
 
 ## Blockers
 
-None remaining — `WORK-0039` (this WORK's only recorded blocker) is DONE. All five corrections above are incorporated; awaiting final human confirmation of this revised shape before DRAFT -> READY.
+None.
 
 ## Completion Record
 
-Not yet started.
+### Implementation Report (2026-09-29)
+
+Work: `docs/projects/active/js-runtime-migration/works/WORK-0045-frontend-iframe-delivery-contract-specification.md`
+
+Work status: IMPLEMENTING
+
+Implemented:
+- New canonical specification document, `session/docs/FRONTEND_IFRAME_CONTRACT.md`, covering exactly the Approved Design above: trust boundary/network isolation (stated as a binding, host-enforced requirement), the locked four-call `playhoot.*` surface (`onState`/`onEvent`/`send`/`requestAsset`) with each call's own data shape and delivery-guarantee class, frontend script loading (immutable, loaded once at bootstrap), the accepted/rejected/failed mapping onto `SubmitPlayerEventOutcome`, and an explicit "What This Document Defers" section naming every dependency this WORK does not own (transport wire format, asset-resolution mechanism, `WORK-0043`'s durable delivery, `WORK-0055`'s revision/id backing, `session-runtime-v1`'s reconnect mechanism, the frontend SDK itself).
+- `session/docs/GAME_VERSION_ARTIFACT_MODEL.md`'s "Frontend Script"/"Assets" sections each gained a one-line cross-reference to the new document (they previously pointed at this WORK by number only).
+
+Local implementation decisions:
+- Document section ordering/structure (Implementation Freedom per this WORK's own text).
+- None beyond that.
+
+Deviations from the approved WORK:
+- None.
+
+Discoveries:
+- None new during this implementation pass - the one genuine discovery this WORK produced (the `revision`/`id` gap on `GetClientStateResult`/`OutboundEvent`) was already surfaced and acted on during drafting (new `WORK-0055`, PLANNED; dated addenda on `WORK-0041`/`WORK-0042`'s own already-DONE files) before this pass began.
+
+Verification performed:
+- Re-read the finished `FRONTEND_IFRAME_CONTRACT.md` against `ADR-0015`'s own text point by point: trust boundary/no-embedded-credentials/restricted-permissions (Decision, "Frontend delivery" section), the three conceptual client-library categories (receive view/receive effects/send interaction) plus the separately-required asset-request mechanism (this WORK's own Outcome, consistent with `WORK-0044`'s already-accepted asset model), and the accepted/rejected/failed distinction beyond mere transport ack ("Delivery is not uniformly best-effort") - no contradiction found.
+- Confirmed every cross-referenced WORK path this document cites actually exists at that exact path (`WORK-0043`, `WORK-0046`, `WORK-0055`, `session-runtime-v1`'s `WORK-0015`/`WORK-0020`).
+- No code verification - this WORK produces no production code, per its own Verification section.
+
+Documentation synchronized:
+- `session/docs/FRONTEND_IFRAME_CONTRACT.md` (new).
+- `session/docs/GAME_VERSION_ARTIFACT_MODEL.md` (two cross-reference additions).
+
+Known limitations:
+- None beyond what this WORK's own Approved Design already scoped as deferred (see the document's own "What This Document Defers" section).
+
+Ready for independent review:
+YES.
+
+### Independent Review (2026-09-29)
+
+A fresh agent, with no access to this session's own context, reviewed this WORK per `docs/ai/protocols/IMPLEMENTATION_REVIEW.md`. It confirmed the exact uncommitted change-set via `git status`/`git diff --stat` (no scope ambiguity), cross-checked all five corrections from "Human Decision: API Shape Corrected" directly against the delivered `FRONTEND_IFRAME_CONTRACT.md` text (not merely accepted the WORK's own claim), read `ADR-0015` in full and checked the document against it point by point, verified every cross-referenced path actually exists, confirmed the "What This Document Defers" section is honest, diffed `GAME_VERSION_ARTIFACT_MODEL.md` (two cross-reference lines only), diffed `PROJECT.md`/`AI_CONTEXT.md`/`HUMAN_REVIEW.md` for internal consistency, read `WORK-0055` to confirm it doesn't pre-design what it defers, read `session/types.go` directly to confirm the `revision`/`id` discovery is factually real (not fabricated), and read the `WORK-0041`/`WORK-0042` addenda to confirm neither rewrites its own closed approved scope.
+
+Verdict: **APPROVED**, one NON_BLOCKING finding.
+
+Finding and fix:
+1. **(LOW, NON_BLOCKING)** `onState`'s own delivery-guarantee class wasn't stated as explicitly as `onEvent`'s/`send`'s. **Fixed anyway** (cheap, clearly improves the deliverable): added a clarifying paragraph to `onState`'s own section stating that a specific push attempt's delivery reliability is the live-transport layer's own property, not fixed by this contract, but that `onState` being callable again at any time is the recovery path this contract does fix - so a client that missed a push is never permanently stale.
+
+Re-verified after applying the fix: no unresolved REQUIRED_FIX or DECISION_REQUIRED finding remains. Closed to DONE.
