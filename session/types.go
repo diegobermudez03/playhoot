@@ -113,16 +113,40 @@ const (
 	StartOutcomeRuntimeInitFailed StartOutcome = "RUNTIME_INIT_FAILED"
 )
 
+// ActorRef is an opaque, session-scoped actor identity - the same identity
+// the executed backend script's own SEND_EVENT recipients are already
+// validated against before an OutboundEvent is ever constructed. It is
+// stable within one Session only, and is deliberately not a UserUUID or any
+// other transport/routing identity: whatever future delivery layer consumes
+// an OutboundEvent decides how, or whether, to map this to a connection or
+// routing identity of its own.
+type ActorRef string
+
+// OutboundEvent is one game-defined SEND_EVENT command a RUNNING-phase
+// call's own execute pass requested. Recipients are session-scoped only,
+// never resolved to any transport identity by this package. Name/Payload
+// are entirely game-defined and opaque; only the envelope (Recipients) is
+// Playhoot's own. Nothing here claims delivery has happened - it hasn't;
+// no live-transport layer exists yet to attempt it.
+type OutboundEvent struct {
+	Recipients []ActorRef      `json:"recipients"`
+	Name       string          `json:"name"`
+	Payload    json.RawMessage `json:"payload"`
+}
+
 // StartResult is Start's logical outcome. SessionUUID is only populated
 // when Outcome is StartOutcomeStarted. TerminalReason is populated (one of
-// TerminalReasonGame*) whenever this same Turn also ended the Session. This
-// type carries no client-facing view/effect payload - a per-player view and
-// any transient game-defined occurrence are each obtained through their own
-// separate, dedicated call.
+// TerminalReasonGame*) whenever this same Turn also ended the Session. A
+// per-player view is obtained through its own separate, dedicated call
+// (GetClientState); Events carries only this call's own transient
+// SEND_EVENT occurrences, in memory, never persisted (see its own doc
+// comment) - it is nil whenever this call did not itself execute the
+// backend script (a decline, a replayed retry, or a fatal path).
 type StartResult struct {
-	Outcome        StartOutcome `json:"outcome"`
-	SessionUUID    SessionUUID  `json:"session_uuid,omitempty"`
-	TerminalReason string       `json:"terminal_reason,omitempty"`
+	Outcome        StartOutcome    `json:"outcome"`
+	SessionUUID    SessionUUID     `json:"session_uuid,omitempty"`
+	TerminalReason string          `json:"terminal_reason,omitempty"`
+	Events         []OutboundEvent `json:"-"`
 }
 
 // SubmitPlayerEventOutcome is SubmitPlayerEvent's expected business
@@ -154,11 +178,12 @@ const (
 // SubmitPlayerEventResult is SubmitPlayerEvent's logical outcome.
 // TerminalReason is populated (one of TerminalReasonGame*) whenever this
 // same event also ended the Session. See StartResult's own doc comment for
-// why this type carries no client-facing Output payload.
+// Events' meaning and nil conditions.
 type SubmitPlayerEventResult struct {
 	Outcome        SubmitPlayerEventOutcome `json:"outcome"`
 	SessionUUID    SessionUUID              `json:"session_uuid,omitempty"`
 	TerminalReason string                   `json:"terminal_reason,omitempty"`
+	Events         []OutboundEvent          `json:"-"`
 }
 
 // CancelSessionOutcome is CancelSession's expected business outcome, a value
@@ -199,12 +224,14 @@ const (
 
 // CancelSessionResult is CancelSession's logical outcome. TerminalReason is
 // always populated when Outcome is CancelSessionOutcomeCancelled. See
-// StartResult's own doc comment for why this type carries no client-facing
-// Output payload.
+// StartResult's own doc comment for Events' meaning and nil conditions;
+// Events is also nil whenever the authored script rejected SessionCancelled
+// outright (no execute pass to gather it from).
 type CancelSessionResult struct {
 	Outcome        CancelSessionOutcome `json:"outcome"`
 	SessionUUID    SessionUUID          `json:"session_uuid,omitempty"`
 	TerminalReason string               `json:"terminal_reason,omitempty"`
+	Events         []OutboundEvent      `json:"-"`
 }
 
 // TimerObligationUUID is a session_timer_obligations row's public identity -
@@ -239,12 +266,13 @@ const (
 // outcome except an unresolved timerObligationUUID, reported as
 // ErrTimerObligationNotFound instead). TerminalReason is populated (one of
 // TerminalReasonGame*) whenever this same expiration also ended the
-// Session. See StartResult's own doc comment for why this type carries no
-// client-facing Output payload.
+// Session. See StartResult's own doc comment for Events' meaning and nil
+// conditions.
 type ExpireTimerResult struct {
 	Outcome        ExpireTimerOutcome `json:"outcome"`
 	SessionUUID    SessionUUID        `json:"session_uuid,omitempty"`
 	TerminalReason string             `json:"terminal_reason,omitempty"`
+	Events         []OutboundEvent    `json:"-"`
 }
 
 // GetClientStateOutcome is GetClientState's expected business outcome, a

@@ -79,6 +79,29 @@ func TestManagerExpireTimer_Integration(t *testing.T) {
 		require.True(t, after.After(*before), "a Turn-committing expiration must renew activity_expires_at")
 	})
 
+	t.Run("expiring_a_scheduled_timer_requesting_send_event_returns_it_in_memory", func(t *testing.T) {
+		var hostRef string
+		exec := startPassthroughThenExec(t, stateJSON(t, map[string]any{}), func(in executor.ExecutionInput) (executor.ExecutionOutput, error) {
+			return executor.ExecutionOutput{
+				NewState:          stateJSON(t, map[string]any{}),
+				RequestedCommands: []json.RawMessage{sendEventCommand(t, []string{hostRef}, "ding", stateJSON(t, map[string]any{}))},
+			}, nil
+		})
+		m, sessionUUID, hostUUID := startedSessionWithExecutor(t, db, exec)
+		hostRef = string(actorRefForActorID(actorIDForUUID(t, db, sessionUUID, hostUUID)))
+
+		var currentTurnID uint
+		require.NoError(t, db.Raw(`SELECT current_turn_id FROM sessions WHERE uuid = ?`, string(sessionUUID)).Scan(&currentTurnID).Error)
+		obligationUUID := testfixtures.SeedTimerObligation(t, db, sessionIDForUUID(t, db, sessionUUID), "T", 5000, currentTurnID)
+
+		result, err := m.ExpireTimer(context.Background(), session.TimerObligationUUID(obligationUUID))
+		require.NoError(t, err)
+		require.Equal(t, session.ExpireTimerOutcomeExpired, result.Outcome)
+		require.Equal(t, []session.OutboundEvent{
+			{Recipients: []session.ActorRef{session.ActorRef(hostRef)}, Name: "ding", Payload: stateJSON(t, map[string]any{})},
+		}, result.Events)
+	})
+
 	t.Run("stale_activity_deadline_materializes_inactivity_expiration_and_declines", func(t *testing.T) {
 		exec := startPassthroughThenExec(t, stateJSON(t, map[string]any{}), func(in executor.ExecutionInput) (executor.ExecutionOutput, error) {
 			return executor.ExecutionOutput{NewState: stateJSON(t, map[string]any{})}, nil

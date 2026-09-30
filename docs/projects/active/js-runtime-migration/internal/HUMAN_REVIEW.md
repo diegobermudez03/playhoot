@@ -1,3 +1,64 @@
+Checkpoint: WORK-0042 DONE (not a new human-decision gate — informational).
+Date: 2026-09-29
+
+**Update:** You said "proceed." Implementation completed exactly per the corrected shape below, and independent review (a fresh agent with no memory of the implementation) returned **APPROVED with no findings** - it independently re-verified every claim against the actual diff/code/tests rather than trusting the implementation report, including the specific nil-on-replay guarantee and confirming the same two pre-existing test failures are genuinely unrelated. One thing worth your awareness, not a decision needed now: this is the third consecutive WORK in this Project to flag (not fix) the same stale-documentation gap in `session/CURRENT_STATE.md`/`session/docs/FLOWS.md` (both still describe the fully retired Game-Language-engine mechanism). It's accumulating - a dedicated documentation-catch-up WORK is probably due soon, whenever you'd like to schedule one. No further decision is needed from you on WORK-0042 itself. Full detail: WORK-0042's own Completion Record.
+
+Original DRAFT/READY-authorization checkpoint, preserved below:
+
+## What this WORK does
+
+`SEND_EVENT` (a backend script asking Playhoot to send a cosmetic/transient occurrence to one or more players — animation, sound, notification, whatever the frontend chooses to do with it) is already validated by every RUNNING-phase call today, then silently thrown away. This WORK makes it available in memory on that call's own result. It does not build any live-transport layer itself — nothing in the repository can push a message to a connected client yet, and this WORK does not pretend otherwise.
+
+## Why this WORK, right now
+
+You said to continue with the next logical work. `WORK-0042` is the first unblocked item in the project's own ordering (its only recorded blocker, `WORK-0039`, is DONE); `WORK-0043` — the other candidate at this point — needs an outbox-mechanism decision and cross-project coordination resolved first, so it's more blocked.
+
+Checking the actual code (not this WORK's own prior text) found that text stale: it assumed an older in-memory "Output" return mechanism (built for the retired Game-Language engine) still existed for this WORK to adapt. It doesn't — `WORK-0038` deleted it outright, with no replacement. The real gap is simpler and more direct: every RUNNING-phase step already parses and validates a `SEND_EVENT` command, then drops it — the same "validated but never used" gap `WORK-0040` found and fixed for timers.
+
+## Your four corrections, all applied
+
+You reviewed my first pass and were right on all four points:
+
+1. **Naming.** `DeliveredEvent` was wrong — nothing is delivered by this WORK; it stops before any live-transport attempt, and could easily be produced yet never reach a client. Renamed to `OutboundEvent`.
+2. **No replay of transient events.** I'd proposed re-returning the same events on an idempotency replay, reasoning from "correlation exists for repeated delivery" — but that contradicted `SEND_EVENT`'s own best-effort/no-outbox nature. A missed transient event on replay is fine; `project()`/`ClientState` restores correctness independently, and `WORK-0043` (not this WORK) owns the class of output that actually needs durable retry semantics. Fixed: replay now returns nil `Events`. This also means no correlation/event-id field is needed on the type at all, since nothing is ever re-emitted.
+3. **No early transport-identity resolution.** I'd resolved `Recipients` to `UserUUID`, quietly deciding the future Coordinator's routing identity before any WORK has actually decided what it is (`session-runtime-v1`'s `WORK-0020`, still DRAFT). Fixed: `Recipients` stays a session-scoped `session.ActorRef` — the same identity already validated today — and resolving it to a routing identity is left entirely to whichever WORK builds the delivery layer.
+4. **No silent recipient drop.** I'd had the (now-removed) resolution step defensively drop a recipient it couldn't resolve. You're right that would have been an invariant violation, not a normal best-effort limitation — but it's moot now anyway: removing the resolution step per point 3 removes the failure mode entirely. The remaining helper is a pure, infallible type conversion.
+
+## What's new (revised)
+
+```go
+type ActorRef string // session-scoped, mirrors the already-validated identity
+
+type OutboundEvent struct {
+    Recipients []ActorRef
+    Name       string
+    Payload    json.RawMessage
+}
+```
+— an `Events []OutboundEvent` field on all four Result types, and a small pure helper (`collectOutboundEvents`) with no database access at all.
+
+## What's explicitly NOT done by this WORK
+
+- No live delivery to a connected client, and no decision about what identity that layer will route on — both belong to `session-runtime-v1`'s `WORK-0020`.
+- No durable outbox, no replay of missed events — this stays best-effort, exactly as already decided.
+- `WORK-0043`'s durable confirmed-outcome delivery is untouched.
+
+## Unresolved blockers
+
+None.
+
+## What READY would authorize
+
+Implementing exactly what's described: the new `session.ActorRef`/`OutboundEvent` types and `Events` field, the pure collection helper, and wiring it into the four existing steps — nothing about live transport, identity resolution, or durability.
+
+## Recommendation
+
+If the revised shape above matches what you had in mind, this is ready for READY authorization. Full detail in `../works/WORK-0042-effects-delivery-best-effort.md`.
+
+---
+
+Prior checkpoint, preserved below:
+
 Checkpoint: WORK-0040 DONE (not a new human-decision gate — informational).
 Date: 2026-09-29
 

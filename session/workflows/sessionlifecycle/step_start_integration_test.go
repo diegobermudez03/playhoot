@@ -106,6 +106,54 @@ func TestManagerStart_Integration(t *testing.T) {
 		require.Equal(t, int64(1), turnCount, "Turn 1 is durably persisted even though the game ended on it")
 	})
 
+	t.Run("first_turn_requesting_send_event_returns_it_in_memory_in_order", func(t *testing.T) {
+		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
+		gv := testfixtures.SeedCurrentGameVersion(t, db, "function backend() {}", "function frontend() {}", 1, nil)
+		require.NoError(t, db.Exec(`UPDATE sessions SET game_definition_uuid = ? WHERE id = ?`, gv.DefinitionUUID, fx.SessionID).Error)
+		hostUUID := uuid.NewString()
+		hostActorID := testfixtures.SeedActor(t, db, fx.SessionID, hostUUID)
+		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
+		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
+
+		hostRef := string(actorRefForActorID(hostActorID))
+		payload := stateJSON(t, map[string]any{"sound": "chime"})
+		m := New(db, fakeExecutorAlwaysReturning(
+			stateJSON(t, map[string]any{}),
+			sendEventCommand(t, []string{hostRef}, "welcome", payload),
+		))
+
+		result, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), "start-key-send-event")
+		require.NoError(t, err)
+		require.Equal(t, session.StartOutcomeStarted, result.Outcome)
+		require.Equal(t, []session.OutboundEvent{
+			{Recipients: []session.ActorRef{session.ActorRef(hostRef)}, Name: "welcome", Payload: payload},
+		}, result.Events)
+	})
+
+	t.Run("retried_start_with_same_idempotency_key_returns_nil_events_on_replay", func(t *testing.T) {
+		fx := testfixtures.SeedLobbySession(t, db, time.Now().Add(10*time.Minute))
+		gv := testfixtures.SeedCurrentGameVersion(t, db, "function backend() {}", "function frontend() {}", 1, nil)
+		require.NoError(t, db.Exec(`UPDATE sessions SET game_definition_uuid = ? WHERE id = ?`, gv.DefinitionUUID, fx.SessionID).Error)
+		hostUUID := uuid.NewString()
+		hostActorID := testfixtures.SeedActor(t, db, fx.SessionID, hostUUID)
+		require.NoError(t, db.Exec(`UPDATE sessions SET host_actor_id = ? WHERE id = ?`, hostActorID, fx.SessionID).Error)
+		testfixtures.SeedParticipantForActor(t, db, hostActorID, "Host")
+
+		hostRef := string(actorRefForActorID(hostActorID))
+		m := New(db, fakeExecutorAlwaysReturning(
+			stateJSON(t, map[string]any{}),
+			sendEventCommand(t, []string{hostRef}, "welcome", stateJSON(t, map[string]any{})),
+		))
+
+		first, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), "start-key-send-event-replay")
+		require.NoError(t, err)
+		require.NotEmpty(t, first.Events, "the original call must have actually collected the requested event")
+
+		second, err := m.Start(context.Background(), session.SessionUUID(fx.SessionUUID), session.UserUUID(hostUUID), "start-key-send-event-replay")
+		require.NoError(t, err)
+		require.Nil(t, second.Events, "a replayed idempotency claim must never reconstruct/re-emit the original call's transient events")
+	})
+
 	t.Run("rejects_start_by_non_host", func(t *testing.T) {
 		m := New(db, fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{})))
 

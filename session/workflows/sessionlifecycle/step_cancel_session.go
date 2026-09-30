@@ -269,7 +269,7 @@ func (m *Manager) cancelSessionInTx(ctx context.Context, tx *gorm.DB, sessionUUI
 		return session.CancelSessionResult{}, err
 	}
 
-	result := session.CancelSessionResult{Outcome: session.CancelSessionOutcomeCancelled, SessionUUID: session.SessionUUID(lockedSession.UUID), TerminalReason: terminalReason}
+	result := session.CancelSessionResult{Outcome: session.CancelSessionOutcomeCancelled, SessionUUID: session.SessionUUID(lockedSession.UUID), TerminalReason: terminalReason, Events: collectOutboundEvents(commands)}
 	responseBytes, err := json.Marshal(result)
 	if err != nil {
 		return session.CancelSessionResult{}, fmt.Errorf("marshaling cancel session response payload: %s", err)

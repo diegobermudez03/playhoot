@@ -88,6 +88,52 @@ func TestManagerSubmitPlayerEvent_Integration(t *testing.T) {
 		require.True(t, after.After(*before), "a Turn-committing event must renew activity_expires_at")
 	})
 
+	t.Run("accepted_event_requesting_send_event_returns_it_in_memory_in_order", func(t *testing.T) {
+		var hostRef string
+		exec := startPassthroughThenExec(t, stateJSON(t, map[string]any{}), func(in executor.ExecutionInput) (executor.ExecutionOutput, error) {
+			payload1 := stateJSON(t, map[string]any{"n": float64(1)})
+			payload2 := stateJSON(t, map[string]any{"n": float64(2)})
+			return executor.ExecutionOutput{
+				NewState: stateJSON(t, map[string]any{}),
+				RequestedCommands: []json.RawMessage{
+					sendEventCommand(t, []string{hostRef}, "first", payload1),
+					sendEventCommand(t, []string{hostRef}, "second", payload2),
+				},
+			}, nil
+		})
+		m, sessionUUID, hostUUID := startedSessionWithExecutor(t, db, exec)
+		hostRef = string(actorRefForActorID(actorIDForUUID(t, db, sessionUUID, hostUUID)))
+
+		result, err := m.SubmitPlayerEvent(context.Background(), sessionUUID, hostUUID, "Guess", nil, session.IdempotencyKey(uuid.NewString()))
+		require.NoError(t, err)
+		require.Equal(t, session.SubmitPlayerEventOutcomeAccepted, result.Outcome)
+		require.Equal(t, []session.OutboundEvent{
+			{Recipients: []session.ActorRef{session.ActorRef(hostRef)}, Name: "first", Payload: stateJSON(t, map[string]any{"n": float64(1)})},
+			{Recipients: []session.ActorRef{session.ActorRef(hostRef)}, Name: "second", Payload: stateJSON(t, map[string]any{"n": float64(2)})},
+		}, result.Events)
+	})
+
+	t.Run("retried_submission_with_same_idempotency_key_returns_nil_events_on_replay", func(t *testing.T) {
+		var hostRef string
+		exec := startPassthroughThenExec(t, stateJSON(t, map[string]any{}), func(in executor.ExecutionInput) (executor.ExecutionOutput, error) {
+			return executor.ExecutionOutput{
+				NewState:          stateJSON(t, map[string]any{}),
+				RequestedCommands: []json.RawMessage{sendEventCommand(t, []string{hostRef}, "first", stateJSON(t, map[string]any{}))},
+			}, nil
+		})
+		m, sessionUUID, hostUUID := startedSessionWithExecutor(t, db, exec)
+		hostRef = string(actorRefForActorID(actorIDForUUID(t, db, sessionUUID, hostUUID)))
+		key := session.IdempotencyKey(uuid.NewString())
+
+		first, err := m.SubmitPlayerEvent(context.Background(), sessionUUID, hostUUID, "Guess", nil, key)
+		require.NoError(t, err)
+		require.NotEmpty(t, first.Events, "the original call must have actually collected the requested event")
+
+		second, err := m.SubmitPlayerEvent(context.Background(), sessionUUID, hostUUID, "Guess", nil, key)
+		require.NoError(t, err)
+		require.Nil(t, second.Events, "a replayed idempotency claim must never reconstruct/re-emit the original call's transient events")
+	})
+
 	t.Run("stale_activity_deadline_materializes_inactivity_expiration_and_declines", func(t *testing.T) {
 		exec := startPassthroughThenExec(t, stateJSON(t, map[string]any{}), func(in executor.ExecutionInput) (executor.ExecutionOutput, error) {
 			return executor.ExecutionOutput{NewState: stateJSON(t, map[string]any{})}, nil

@@ -105,6 +105,58 @@ func TestManagerCancelSession_Integration(t *testing.T) {
 		require.Zero(t, failureCount)
 	})
 
+	t.Run("accepted_and_script_requests_send_event_returns_it_in_memory", func(t *testing.T) {
+		var hostRef string
+		exec := startPassthroughThenExec(t, stateJSON(t, map[string]any{}), func(in executor.ExecutionInput) (executor.ExecutionOutput, error) {
+			return executor.ExecutionOutput{
+				NewState:          stateJSON(t, map[string]any{}),
+				RequestedCommands: []json.RawMessage{sendEventCommand(t, []string{hostRef}, "farewell", stateJSON(t, map[string]any{}))},
+			}, nil
+		})
+		m, sessionUUID, hostUUID := startedSessionWithExecutor(t, db, exec)
+		hostRef = string(actorRefForActorID(actorIDForUUID(t, db, sessionUUID, hostUUID)))
+
+		result, err := m.CancelSession(context.Background(), sessionUUID, hostUUID, session.IdempotencyKey(uuid.NewString()))
+		require.NoError(t, err)
+		require.Equal(t, session.CancelSessionOutcomeCancelled, result.Outcome)
+		require.Equal(t, []session.OutboundEvent{
+			{Recipients: []session.ActorRef{session.ActorRef(hostRef)}, Name: "farewell", Payload: stateJSON(t, map[string]any{})},
+		}, result.Events)
+	})
+
+	t.Run("rejected_by_the_script_returns_nil_events_since_no_execute_pass_ran", func(t *testing.T) {
+		exec := startPassthroughThenExec(t, stateJSON(t, map[string]any{}), func(in executor.ExecutionInput) (executor.ExecutionOutput, error) {
+			return executor.ExecutionOutput{}, &executor.ScriptRejectedError{Reason: "no reaction to SESSION_CANCELLED"}
+		})
+		m, sessionUUID, hostUUID := startedSessionWithExecutor(t, db, exec)
+
+		result, err := m.CancelSession(context.Background(), sessionUUID, hostUUID, session.IdempotencyKey(uuid.NewString()))
+		require.NoError(t, err)
+		require.Equal(t, session.CancelSessionOutcomeCancelled, result.Outcome)
+		require.Nil(t, result.Events)
+	})
+
+	t.Run("retried_cancellation_with_same_idempotency_key_returns_nil_events_on_replay", func(t *testing.T) {
+		var hostRef string
+		exec := startPassthroughThenExec(t, stateJSON(t, map[string]any{}), func(in executor.ExecutionInput) (executor.ExecutionOutput, error) {
+			return executor.ExecutionOutput{
+				NewState:          stateJSON(t, map[string]any{}),
+				RequestedCommands: []json.RawMessage{sendEventCommand(t, []string{hostRef}, "farewell", stateJSON(t, map[string]any{}))},
+			}, nil
+		})
+		m, sessionUUID, hostUUID := startedSessionWithExecutor(t, db, exec)
+		hostRef = string(actorRefForActorID(actorIDForUUID(t, db, sessionUUID, hostUUID)))
+		key := session.IdempotencyKey(uuid.NewString())
+
+		first, err := m.CancelSession(context.Background(), sessionUUID, hostUUID, key)
+		require.NoError(t, err)
+		require.NotEmpty(t, first.Events, "the original call must have actually collected the requested event")
+
+		second, err := m.CancelSession(context.Background(), sessionUUID, hostUUID, key)
+		require.NoError(t, err)
+		require.Nil(t, second.Events, "a replayed idempotency claim must never reconstruct/re-emit the original call's transient events")
+	})
+
 	t.Run("caller_not_the_host_is_rejected_without_reaching_the_executor", func(t *testing.T) {
 		exec := fakeExecutorAlwaysReturning(stateJSON(t, map[string]any{}))
 		m, sessionUUID, _ := startedSessionWithExecutor(t, db, exec)

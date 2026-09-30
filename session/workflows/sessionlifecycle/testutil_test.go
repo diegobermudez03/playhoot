@@ -94,6 +94,31 @@ func cancelTimerCommand(t *testing.T, timer string) json.RawMessage {
 	return encoded
 }
 
+// sendEventCommand encodes a platform SEND_EVENT Command addressed to
+// recipients (opaque platform.ActorRef strings - see actorRefForActorID),
+// for a fakeExecutorAlwaysReturning fixture that needs to drive outbound
+// event collection.
+func sendEventCommand(t *testing.T, recipients []string, name string, payload json.RawMessage) json.RawMessage {
+	t.Helper()
+	encoded, err := json.Marshal(map[string]any{"kind": "SEND_EVENT", "recipients": recipients, "name": name, "payload": payload})
+	require.NoError(t, err)
+	return encoded
+}
+
+// actorIDForUUID resolves userUUID's own internal session_actors.id within
+// sessionUUID, for a test that needs a real, currently-known
+// platform.ActorRef to address a SEND_EVENT command to.
+func actorIDForUUID(t *testing.T, db *gorm.DB, sessionUUID session.SessionUUID, userUUID session.UserUUID) uint {
+	t.Helper()
+	var id uint
+	require.NoError(t, db.Raw(`
+		SELECT sa.id FROM session_actors sa
+		JOIN sessions s ON s.id = sa.session_id
+		WHERE s.uuid = ? AND sa.user_uuid = ?
+	`, string(sessionUUID), string(userUUID)).Scan(&id).Error)
+	return id
+}
+
 // seedRunningSessionWithHost seeds a RUNNING Session (bypassing Start
 // entirely, by directly seeding session_runtime_turns/sessions rows) owned
 // by a fresh host actor, with activityExpiresAt far enough in the future to
