@@ -2,9 +2,8 @@
 
 Status: CURRENT IMPLEMENTATION
 
-Session Runtime's own persisted copy of the executable Game Version Artifact (`session_games`/`session_game_version_artifacts`) is documented in `session/docs/DATA_MODEL.md`, not here - no database transaction spans Game Management-owned and Session-Runtime-owned tables (`ARCHITECTURE.md -> State and Transaction Boundaries`).
+Game Management owns no script/rule-versioning table: `games.current_definition_id`/`game_definitions`/`game_definition_histories` were retired outright. No database transaction spans Game Management-owned and Session-Runtime-owned tables (`ARCHITECTURE.md -> State and Transaction Boundaries`).
 
-Game Management owns no script/rule-versioning table of its own: `games.current_definition_id`/`game_definitions`/`game_definition_histories` (Game Language's own versioning precedent) are retired outright, not relocated. Session Runtime owns the only executable Game Version Artifact table (`session_game_version_artifacts`, see `session/docs/DATA_MODEL.md`).
 
 ```mermaid
 classDiagram

@@ -62,7 +62,7 @@ Templates must not define the expressive limits of Playhoot.
 
 ## Game Expressivity Target
 
-- The product should not validate its language only with quiz-style games.
+- The product should not validate its capabilities only with quiz-style games.
 - For the V1 product capability target, Playhoot should cover a spectrum from simple quizzes through substantially stateful, turn-based/card/board games with complexity roughly comparable to mechanics found in games such as Parques, UNO, or poker.
 - This is a capability and expressivity target.
 - It does not mean those exact games must ship in the initial public catalog.

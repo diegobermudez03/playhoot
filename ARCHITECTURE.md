@@ -22,7 +22,7 @@ Playhoot is initially a modular monolith.
 - Technical / Supporting Library: provides reusable behavior without owning business state.
 - Coordination Layer: coordinates work across business domains without owning participating domains' business rules.
 - Transport / Application Edge: exposes user-facing transport entry points and translates transport requests/responses.
-- Infrastructure Service: a separately deployed technical workload, callable over an internal network protocol, that exists for an operational reason (isolating untrusted/high-risk execution, independent scaling, a materially smaller privilege set) rather than a business reason. It is not a business bounded context and does not decide domain behavior; a business domain that depends on one does so through a narrow port/interface it owns, not by depending on the service's own implementation details. Being a separate *deployment* does not by itself make it a repository-wide capability: an Infrastructure Service that exists solely to serve one domain may be placed inside that domain's own package tree (documenting, not merely implying, that no other domain may depend on it) rather than beside `identity/`/`composer/`/`orchestrator/`; placement signals ownership, deployment topology does not follow package location. See `docs/decisions/architecture/ADR-0016-javascript-executor-separately-deployed-infrastructure-service.md` and `session/jsexecutor/README.md` for a worked example (the JavaScript Executor, placed inside `session/` for exactly this reason).
+- Infrastructure Service: a separately deployed technical workload, callable over an internal network protocol, that exists for an operational reason (isolating untrusted/high-risk execution, independent scaling, a materially smaller privilege set) rather than a business reason. It is not a business bounded context and does not decide domain behavior; a business domain that depends on one does so through a narrow port/interface it owns, not by depending on the service's own implementation details. Being a separate *deployment* does not by itself make it a repository-wide capability: an Infrastructure Service that exists solely to serve one domain may be placed inside that domain's own package tree (documenting, not merely implying, that no other domain may depend on it); placement signals ownership, deployment topology does not follow package location. No Infrastructure Service currently exists.
 
 Domain != package. Domain != folder. Domain != deployment. Domain != service.
 
@@ -44,26 +44,24 @@ A trusted authentication/application layer may establish which `Identity.User` i
 
 The accepted business bounded contexts currently normalized here are Game Management, Session Runtime, and Identity.
 
-Game Management and Session Runtime are independent business bounded contexts, siblings to Identity and to `composer/`/`orchestrator/` - not capabilities nested under a shared "Game" bounded context. This is `docs/decisions/architecture/ADR-0014-management-session-domain-split.md` (ACCEPTED), implemented for the package/domain-boundary split itself by `docs/projects/active/js-runtime-migration/works/WORK-0034-session-owned-executable-script-artifact-and-package-restructuring.md`.
+Game Management and Session Runtime are independent business bounded contexts, siblings to Identity and to `composer/`/`orchestrator/` - not capabilities nested under a shared "Game" bounded context. This is `docs/decisions/architecture/ADR-0014-management-session-domain-split.md` (ACCEPTED).
 
 - Game Management: authored game lifecycle concerns (`game/README.md`).
-- Session Runtime: execution/session lifecycle concerns, including its own persisted copy of the executable Game Version Artifact it runs (`session/README.md`).
+- Session Runtime: execution/session lifecycle concerns (`session/README.md`).
 
-Game Language has been retired entirely, per `docs/decisions/architecture/ADR-0015-javascript-rule-execution-and-iframe-frontend-contract.md` (ACCEPTED), in favor of sandboxed JavaScript owned by Session Runtime, plus a mandatory, directly-stored frontend script delivered through an isolated iframe (`session/docs/GAME_VERSION_ARTIFACT_MODEL.md`). No production code path imports `program`/`engine`/`engineservice`/`gameservice`; every Session Runtime operation that resolves a pinned Game version reads it entirely from Session Runtime's own tables and executes the pinned backend script through the separately deployed JavaScript Executor (`session/internal/executor`, `session/jsexecutor`).
+Session Runtime is being redesigned as a real-time runtime that supports both discrete and continuous games, with authored JavaScript scripts executed inside Session Runtime's own process rather than by a separately deployed service (`session/docs/decisions/SESSION-ADR-0028-real-time-session-runtime-supersedes-discrete-turn-architecture.md`, ACCEPTED). The previous implementation was removed; the new design is not yet defined beyond that decision, and `session/README.md` owns its current description.
 
-Game Management and Session Runtime do not share a persistence or transaction boundary; their independent persistence/transaction ownership is recorded in `session/README.md`'s own Capability Persistence and Transaction Boundary section and `game/docs/decisions/GAME-ADR-0001-game-capability-persistence-transaction-boundary.md` (superseded in part by ADR-0014 - see that ADR's header).
+Game Management and Session Runtime do not share a persistence or transaction boundary (`game/docs/decisions/GAME-ADR-0001-game-capability-persistence-transaction-boundary.md`, superseded in part by ADR-0014 - see that ADR's header).
 
 The current physical package layout:
 
 ```text
 game/               # Game Management's own package (package game)
-  language/v1/      # Game Language - Session Runtime's execution dependency, parked here, not yet relocated
-  docs/             # specialized/historical docs (decisions, persistence model, artifact model)
+  docs/             # decisions, data model, flows
 session/            # Session Runtime's own package (package session)
-  jsexecutor/       # separately deployed JavaScript Executor, session-owned
 ```
 
-`game/` reclaims the name the old shared "Game" bounded context used, now naming Game Management alone - Game Language's presence inside it is a parking spot, not ownership; see `game/README.md`'s own Internal Structure section.
+`game/` names Game Management alone, after the old shared "Game" bounded context was dissolved into Game Management and Session Runtime.
 
 Identity owns stable Playhoot identity for people interacting with the platform. Its public cross-domain referenceable entity is `User`, identified by stable public `UserUUID` under the Cross-Domain Public Entity References rule below.
 

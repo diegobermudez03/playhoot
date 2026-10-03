@@ -88,7 +88,7 @@ Typical characteristics include:
 
 The platform is not initially intended to generate every possible kind of video game.
 
-The initial product scope should favor games defined mainly by rules and state rather than games defined mainly by real-time movement, physics, combat, animation, or large 3D worlds.
+The platform supports both discrete games (interactions are individual, fixed events) and continuous games (interactions can be a continuous stream, such as movement) - `docs/decisions/product/PDR-0001-support-discrete-and-continuous-games.md`. It is not initially intended to generate every possible kind of video game; which continuous genres are in scope for the initial launch is not yet decided.
 
 ## Intended Game Categories
 
@@ -568,7 +568,7 @@ The creator remains responsible for the product idea, rules, style, and final de
 
 ## Initial Product Boundary
 
-The initial focus should be rule-driven social games with a moderate number of users and limited real-time physical simulation.
+The initial focus should be rule-driven social games with a moderate number of users. Continuous interaction is supported (PDR-0001); how far the initial launch goes into physical simulation is undecided.
 
 Strong initial candidates include:
 
@@ -585,7 +585,7 @@ Strong initial candidates include:
 - social deduction;
 - narrative choices.
 
-The following are not initial priorities:
+The following were not initial priorities before continuous games were accepted (PDR-0001). This list is under review and must not be read as a current decision:
 
 - open worlds;
 - platformers;

@@ -44,6 +44,24 @@ Do not reconstruct current behavior from the changelog when current workflow art
 
 Do not include full diffs, commit dumps, every implementation detail, or copied runbook contents. Git remains the detailed change history.
 
+## 2026-10-03 - Archived pre-pivot history out of default agent context
+
+**Change**
+- Moved all project/WORK/workspace history, superseded and session-lifecycle-specific decision records, and package-local contracts of the removed Session Runtime implementation under `docs/archive/pre-realtime-pivot/`, mirroring original paths.
+- Added a rule (`AGENTS.md`, `docs/ai/KNOWLEDGE_MAP.md`, the archive's own `README.md`) that agents load the archive only when the user explicitly asks about project history.
+- `docs/projects/active/`, `docs/projects/completed/`, `docs/work/active/` and `docs/ai/workspaces/active/` are empty; WORK numbering continues at `WORK-0056`.
+
+**Reason**
+- Session Runtime was redesigned (`session/docs/decisions/SESSION-ADR-0028-real-time-session-runtime-supersedes-discrete-turn-architecture.md`); keeping the previous design's records in the routed documentation would make every agent pay to understand a history with no bearing on current work.
+
+**Affected workflow artifacts**
+- `AGENTS.md`
+- `docs/ai/KNOWLEDGE_MAP.md`
+- `docs/archive/pre-realtime-pivot/README.md` (new)
+
+**Compatibility / migration**
+- Archived documents keep their original content; cross-references into and out of the archive are not maintained. The removed code is in Git at tag `pre-realtime-pivot`.
+
 ## 2026-09-20 - Replaced Slice tracking with Project + WORK, added PLANNED status
 
 **Change**

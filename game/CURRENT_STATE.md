@@ -2,7 +2,7 @@
 
 Status: CURRENT IMPLEMENTATION
 
-Session Runtime's own current-state doc is `session/CURRENT_STATE.md` - Game Management and Session Runtime are independent top-level packages (`docs/decisions/architecture/ADR-0014-management-session-domain-split.md`). Session Runtime depends on Game Management for nothing directly: `Create` resolves entirely from its own tables (`WORK-0034`), and its five other pinned-artifact-reading operations do too. Game Management's only current cross-domain caller is Orchestrator's `CreateSession` visibility gate (`docs/projects/active/js-runtime-migration/works/WORK-0032-composer-mediated-session-creation-visibility-check.md`).
+Session Runtime's own current-state doc is `session/CURRENT_STATE.md` - Game Management and Session Runtime are independent top-level packages (`docs/decisions/architecture/ADR-0014-management-session-domain-split.md`). Game Management currently has no cross-domain caller: Orchestrator's former `CreateSession` visibility gate was removed with the previous Session Runtime implementation, and `game/usecases/checkvisibility` is kept, tested, and unwired.
 
 ## Capability Status
 

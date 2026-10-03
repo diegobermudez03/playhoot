@@ -35,6 +35,19 @@ Before performing non-trivial work:
 11. Do not scan every Markdown document by default. Load context through the
     Knowledge Map.
 
+## Project Status And History
+
+Playhoot's Session Runtime is being redesigned as a real-time runtime that
+supports discrete and continuous games (`session/docs/decisions/SESSION-ADR-0028-real-time-session-runtime-supersedes-discrete-turn-architecture.md`).
+The previous implementation and its documentation were removed or archived.
+Treat `session/` as structure plus helpers, not as a working Session Runtime.
+
+`docs/archive/pre-realtime-pivot/` holds the history of the previous design
+(cancelled projects, old WORK, superseded decisions, old package contracts).
+Do NOT read it for normal work, and do not treat anything in it as current
+truth. Read it only when the user explicitly asks about the history of the
+project. The old code is in Git at tag `pre-realtime-pivot`.
+
 ## Engineering Standards
 
 Canonical reusable engineering standards live under:

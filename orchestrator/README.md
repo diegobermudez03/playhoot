@@ -12,8 +12,8 @@ Domains expose operations that protect their own responsibilities. Orchestrator 
 
 This README does not canonize a universal orchestration, choreography, transport, event, or queue mechanism.
 
-## Example: `CreateSession`
+## Current state
 
-`Orchestrator.CreateSession` (`createsession.go`) is this package's first concrete workflow: it reads Game Management's visibility state for a `gameUUID` (`game/usecases/checkvisibility`), and only if the Game exists and is currently playable/visible does it call Session Runtime's `sessionlifecycle.Manager.Create`. A not-visible/not-found result short-circuits before Session Runtime is ever called, returning `session.ErrGameNotFound` unchanged - the same sentinel `Create` itself already returns for its own not-found case. This is a Cross-Domain Write (creating a Session), not a Cross-Domain Read, because it results in a persisted Session/JoinCode/idempotency-claim row - see `docs/projects/active/js-runtime-migration/works/WORK-0032-composer-mediated-session-creation-visibility-check.md`.
+No workflows are implemented. The previous `CreateSession` workflow was removed with the previous Session Runtime implementation. A workflow is added as a method on `Orchestrator`, declaring its own narrow interfaces for the domain capabilities it calls.
 
 See `../ARCHITECTURE.md` for global architecture rules.

@@ -11,7 +11,7 @@ Architecture decision-record ownership follows architectural scope: a decision w
 | Scope | Family | Prefix | Index |
 | --- | --- | --- | --- |
 | Global / cross-domain | Architecture | `ADR-NNNN` | `docs/decisions/architecture/INDEX.md` |
-| Game Management (plus foundational/shared and Game Language's own internal-mechanics decisions, pending its retirement) | Game | `GAME-ADR-NNNN` | `game/docs/decisions/INDEX.md` |
+| Game Management | Game | `GAME-ADR-NNNN` | `game/docs/decisions/INDEX.md` |
 | Session Runtime | Session | `SESSION-ADR-NNNN` | `session/docs/decisions/INDEX.md` |
 | Identity | Identity | `IDENTITY-ADR-NNNN` | `identity/docs/decisions/INDEX.md` |
 
@@ -21,7 +21,7 @@ Do not duplicate the same decision in more than one family. A consuming domain l
 
 ## Legacy Migration
 
-Existing accepted ADRs were migrated from the previously centralized `docs/decisions/architecture/` directory to this scope-based model on 2026-09-07. On 2026-09-28, following the Game Management/Session Runtime domain split, most of the `Game` family's records further migrated into the new `Session` family. `docs/decisions/LEGACY_ADR_ID_MAP.md` resolves every legacy identifier (from either migration) to its current canonical ID and location. The global family's next allocation must not reuse any legacy ID recorded there — see that file for the current high-water mark rule.
+Existing accepted ADRs were migrated from the previously centralized `docs/decisions/architecture/` directory to this scope-based model on 2026-09-07. On 2026-09-28, following the Game Management/Session Runtime domain split, most of the `Game` family's records further migrated into the new `Session` family. `docs/archive/pre-realtime-pivot/docs/decisions/LEGACY_ADR_ID_MAP.md` (archived, history only) resolves those legacy identifiers; read it only to resolve an old reference. The global family's next allocation must not reuse any legacy ID: legacy global-style IDs existed through `ADR-0013`, and the next global ADR is `ADR-0017` (see `docs/decisions/architecture/INDEX.md`).
 
 ## Product Decision Records
 

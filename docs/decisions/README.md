@@ -79,7 +79,7 @@ Determine the next number from the existing records/index for that specific fami
 
 ### Historical high-water mark
 
-Playhoot's ADRs were originally centralized under `docs/decisions/architecture/` before scope-based domain families existed. When those records were migrated to their owning domain family, their old `ADR-NNNN` identifiers became historical/legacy — see `docs/decisions/LEGACY_ADR_ID_MAP.md`. A newly allocated **global** ADR must never reuse a legacy `ADR-NNNN` identifier, including one that migrated to a domain family; use the recorded high-water mark plus one (or a later existing global ADR, whichever is greater) rather than filling an apparent gap. Domain families created after that migration are unaffected by the legacy high-water mark; they simply start their own sequence at `0001`.
+Playhoot's ADRs were originally centralized under `docs/decisions/architecture/` before scope-based domain families existed. When those records were migrated to their owning domain family, their old `ADR-NNNN` identifiers became historical/legacy — see `docs/archive/pre-realtime-pivot/docs/decisions/LEGACY_ADR_ID_MAP.md`. A newly allocated **global** ADR must never reuse a legacy `ADR-NNNN` identifier, including one that migrated to a domain family; use the recorded high-water mark plus one (or a later existing global ADR, whichever is greater) rather than filling an apparent gap. Domain families created after that migration are unaffected by the legacy high-water mark; they simply start their own sequence at `0001`.
 
 Never renumber historical records because another record was rejected, superseded, or deprecated. Filenames should remain stable after creation except for an exceptional repository-maintenance reason (such as the scope-based migration itself).
 
@@ -179,7 +179,7 @@ Do not edit the old decision text to make it appear as though the new decision h
 
 ### Exceptional repository-maintenance migration
 
-An exceptional repository-maintenance operation (such as the ADR ownership/routing migration to scope-based families) may move/rename a record and update its identifier and internal cross-references without changing its status, rationale, alternatives, consequences, or created date. A migrated record keeps a `Legacy ID:` metadata line (alongside `Status`/`Created`/`Supersedes`) recording its prior identifier, and the move is recorded in a durable mapping (`docs/decisions/LEGACY_ADR_ID_MAP.md`) so historical references remain resolvable. This is not the normal historical-immutability path and must not be used to reverse, reinterpret, or reword an accepted/rejected decision.
+An exceptional repository-maintenance operation (such as the ADR ownership/routing migration to scope-based families) may move/rename a record and update its identifier and internal cross-references without changing its status, rationale, alternatives, consequences, or created date. A migrated record keeps a `Legacy ID:` metadata line (alongside `Status`/`Created`/`Supersedes`) recording its prior identifier, and the move is recorded in a durable mapping (`docs/archive/pre-realtime-pivot/docs/decisions/LEGACY_ADR_ID_MAP.md`) so historical references remain resolvable. This is not the normal historical-immutability path and must not be used to reverse, reinterpret, or reword an accepted/rejected decision.
 
 ## One Fact, One Owner
 
