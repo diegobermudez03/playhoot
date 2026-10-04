@@ -115,17 +115,10 @@ This operation creates the live session manager if it hasnt been created, how do
   - If user is not authenticated nor has a linked guest user, then a new guest user is created for user and tokens are `RETURNED` along with the generated user uuid, FE should store those tokens so that other operations are linked with that same guest user, for most domains they dont know the difference between actual account and guest user, they just treat with user uuid, is `/identity` the one that knows the difference and can resolve each specific account, also `identity` is the one that will perform request allowing/denial based on guest vs account permissions, other domains dont need to know, if user decides to upgrade the account to an actual account, we'll upgrade that guest acount, so that they keep all what they did with the guest account, we depend on the FE to reuse the tokens and not cleaning them up. For guest users we'll ask for the username, so if no username received then we might need to hand the request back to request the FE to ask for the username so that we can link the guest user
 - `RECEIVES` user uuid
 - Calls -> `/play/runtime` join - PASSES user uuid and join code
-  - Calls -> `/play/session` join player - PASSES user uuid and join code
-    - Opens tx
-    - Resolves session by join code
-    - validates eligibility (not expired code, session in "LOBBY" state, allowed number of players, etc)
-    - joins user as player
-    - commits tx
-    - `RETURNS` bool user joined and resolved session uuid
-  - `RECEIVES` bool if user was joined successfully and resolved session uuid
   - locking lookup in memory sessions manager to get the session uuid's live manager
-  - if it doesnt exist, then it registers it
+  - if it doesnt exist, then it registers it (it may have to fetch session data from session subpkg in this case)
   - then in that memory session manager, we check if there was already a live connection for that player (if request was duplicated), if there is, then we close that connection, we signal upstream to close WS connection
+  - if it was new player, we validate the players count, validate that playuer is able to join
   - then we register the current connection
   - `RETURNS` success or not, and if success, then returns the channel/callback or whatever specific approach so that upstream layer can connect the actual live WS connection with that manager
 - `RECEIVES` success or not and the live connection mechanism stuff
@@ -141,6 +134,8 @@ This operation creates the live session manager if it hasnt been created, how do
 - this applies for all WS connections, we need to have a mechanism so that we are tolerant to brief disconnections, if WS is disconnected but then a new request is sent like 0.1-3 seconds after then we should be able to reconnect them without even reaching the game script, after those 3 seconds then we can start the disconnection process, but I dont know in which layer should this live
   - Should `/api` be the one handling this? so that if it disconnects, it simply waits those 3 seconds for another WS request, so that it can link that new WS request with the channels/callbacks for the player?
   - or should this be handled at `/play/runtime` layer, so `/api` inmediatly tells runtime about the disconnection but is runtime the one that waits before processing the disconnection?
+- something important, I originally wrote this step as making a call to the session subpkg to record the player connected to the session, but I decided thats not needed, we dont care if a player clicked join but then decided not to proceed with the game, he was never an actual player, we only record in DB when the session actually starts, but since I originally wrote it as making that session call, there might be some text referencing that which I forgot to update
+- player count validation is made at runtime layer, so when the session manager is created we must get the info of the players so that we store them inside the session manager, so we dont need to perform that session subpkgh call
 
 # Start session message
 
@@ -159,12 +154,13 @@ This operation creates the live session manager if it hasnt been created, how do
 
 - > `/api` `live WS message with start event`
 - sends message to `/play/runtime` manager using communication mechanism yet to be defined
-  - Call -> `/play/session` start session - user uuid and session uuid (runtime sessionn manager has that data)
+  - Call -> `/play/session` start session - input players connected, message originator user uuid and session uuid (runtime sessionn manager has that data)
     - Opens tx
     - Fetches session from DB
-    - validates that session can be started (number of connected players, state, expiration, etc)
+    - validates that session can be started (number of players, state, expiration, etc)
     - checks if user uuid is same from session creator
     - marks session as started
+    - records all the connected players to the session
     - fetches scripts and stuff
     - commits tx
     - `RETURNS` scripts or validation error
@@ -187,13 +183,60 @@ This operation creates the live session manager if it hasnt been created, how do
 - this one applies for all ws connection messages, they go directly to a specific session manager, and session manager will serialize their processing, but anywways when we do DB oeperations we should also lock session just in case
 - I was thinking, the sandbox context is allowed to be expired, every interaction between the session manager and the sandbox should be prepared to get a "no context" error so that it re-initializes and creates a new context
 - I was thinking, we shouldnt rely on the BE script to handle the per user projection, that should be enforced somehow, even maybe as a separate script, having 1 script which performs global state computation, and a separate one which only receives the global state and returns the per player state, the reason is for replay but also correctness, but for replay, we"ll simply have some reconstructed history of the global state, not the per user state, so we have to use the projection script to generate the per user state which then is sent to the replay FE which is simply the same FE script
+- players are recorded as joined only when the session actually starts
 
 # Player disconnection
 
+### input
+
+- nothing, is live connection, BE already has the data linked
+
+### other details
+
+- This one is the durable player disconnection, as mentioned earlier the short network disconnection should be recovered internally by either the transport or the runtime layer, it has no effect on the overall session, this one is the actual durable one, which can happen when the player purposely disconnects, so the FE ws connection will send an actual disconnection message or when the network disconnection takes more than the given 3 seconds for the reconnection
+- for the more than 3 seconds disconnection I dont know yet where the event would be triggered, as I dont know if we should keep that reconnection recovery at transport layer or runtime layer, if it was transport `/api`, then the disconnection message is sent by the `/api` layer to the `/runtime` one, but if its the runtime the one that handles it then is an internal event, for the sake of the flow I'll make it as if the message was always received from outside (which would be the case only for purposely player disconnection where the FE ws connection will send the actual disconnection message, meaning, it wont wait for the 3 seconds delay)
+- naturally idempotent, if already disconnected then nothing needs to happen I mean, it can happen that we receive multiple times the disconnect message, and only the last one closes the WS connection
+
+### flow
+
+- > `/api` `live WS message with disconnection event`
+- sends message to `/play/runtime` manager using communication mechanism yet to be defined
+  - resolves the user uuid for that connection and the session uuid
+  - if session is in LOBBY state, then simply removes the player fromm the session manager, no running session so no need to call script
+  - if session is already running, then we call (or send message, yet to be defined how they'll communicate) `/play/runtime/sandbox` for that session context with the player disconnection event
+    - executes disconnection event in the script
+    - `RETURNS` the delta changes (yet to be defined actually but we're thinking on replicating state in `/play/runtime` and receiving deltas from these calls, using version number to validate we are sync)
+  - `RECEIVES` the delta with the new state and user projections
+  - (resulting state might be session terminated, in that case we'd perform whats described in the session t ermination flow)
+  - replicates local session manager state with delta and submits new delta states to each player (using internal communication transport-runtime strategy yet to be defined)
+- sends WS messages to players with deltas of player states
+
 # Player rejoin
 
+### input
+
+- authorization tokens (required, even if its guest user, if its reconnecting then there must be at least a guest user associated)
+- session uuid
+
+### other details
+
+- this one is the rejoin when the player actually disconnected but wants to reconnect, this is not the 3 seconds delay for network recovery
+- eligbility must be set explicitely by the game, game must define if players can reconnect and whats the time window for it, even with that, script can perform internal logic to decide if allowing it or not
+
+### flow
+
 # Admin rejoin
+
+# checkpoint
+
+# tick
+
+# command
+
+# impulse
 
 # Get current full state for player (for reconnection or reconciliation)
 
 # Session recovery (internal pod error or stuff)
+
+# Session termination
