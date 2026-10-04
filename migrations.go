@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	gamemigrations "github.com/diegobermudez03/playhoot/game/migration"
-	sessionmigrations "github.com/diegobermudez03/playhoot/session/migration"
+	sessionmigrations "github.com/diegobermudez03/playhoot/play/session/migration"
 	"gorm.io/gorm"
 )
 

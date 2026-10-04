@@ -1,7 +1,7 @@
 package migration
 
 import (
-	"github.com/diegobermudez03/playhoot/session/internal/storage/migrations"
+	"github.com/diegobermudez03/playhoot/play/session/internal/migrations"
 	"gorm.io/gorm"
 )
 
