@@ -258,11 +258,207 @@ Is a Restful endpoint with the session uuid of the session or even join code als
 
 Right now cant differentiate this one from the replay one
 
-# sample
+I reallly dont know exactly how this one would work, what I imagine is
 
-# command
+- `/play/runtime` internally has a timer which triggers the checkpoint
+- session manager takes a snapshot of the global state, and persists it in persistent storage
+- I have no idea if the persistent storage should be relational DB or another type
+- What I have in mind is to make these checkpoints best effort, when the checkpoint is triggered, it inmediatly marks it as completed and schedules next checkpoint, then it tries to persist the snapshot, if the persist attempt fails, doesnt matter, we wont retry, we'll wait to next checkpoint
 
-# impulse
+# FE BE COMMUNICATION PROTOCOL
+
+I'll try to document how I see the entire protocol working.
+
+SO in my mind there will be 2 types of messages:
+
+- Commands: These are pretty straightforward, follow the request-reply pattern, is a single message which requests something and receives an unique response (and other players side effects) for it, games such as cards games, board games would run enterily on top of commands, even though they use the same websocket connection for messaging, it is to build a request-reply pattern (discrete communication)
+- Samples: These are for live communication, which can represent movement, real time continuous communication.
+
+In both types is important to understand whats the result, the result is in general purposes:
+
+- response data for the action user
+- new state deltas per player, these are projections, script must implement fuinctions which receive the global game state, the per player projection, and returns the delta of the per player projection state
+  - For every state change we have the concept of version number, same as we have between the `/play/runtime` and `/play/runtime/sandbox`, where runtime checks that it is in sync with sandbox by using version number, if not it reconciles, the same applies for projections between players and BE, player must follow the version number, the state interactions are built on top of deltas and manually calcualting new state, not on top of sending the full state always, so its important for components to make sure the deltas received have the expected version number, we can expose a verification endpoint so that clients can every a while confirm that the manually calculated state corresponds to the actual expected state for the given version number
+
+## command
+
+### input
+
+- the request will have a specific body payload defined for that type of command, the input is just that payload
+
+### flow
+
+- > `/api` `live WS message with command event`
+- sends message to `/play/runtime` manager using communication mechanism yet to be defined
+  - write command into buffer of actions to be submitted
+
+  - then async the reader of the buffer will eventually take the command
+  - sends the command to `/play/runtime/sandbox` using the session context
+    - sandbox executes the command
+    - sandbox `RETURNS` the delta of the global and per player projections state
+  - `RECIVES` the delta of the states and stuff
+  - updates runtime mirror of the global state using deltas
+  - Sends messages to players with new deltas of their states
+
+## sample
+
+Samples are way more complicated, i was thinking a lot of things:
+
+- this is what make the games be device dependent, because the continuous input capability depend on where it comes from (keyboard, mouse, finger), but BE game shouldnt be aware of the FE component and way of manipulation.
+- so I think that the game itself simply defines inputs, those are logical inputs, not specific physical interaction entry points, but logical ones, so instead of defining `key right` it would be `move right`.
+  - then the BE isnt aware of what physycal stuff is needed or a given game, it just knows the operations that can be applied on it
+  - it becomes FE script responsability to map those operations to their inputs, ofcourse we'll have some kindof thing to store that in the BE so that our BE is smart and every search or stuff endpoint is queried by current type of device and we show games allowed for that device, but that will be metadata at that point, the BE engine itself shouldnt care technically
+  - so if FE script can map the inputs to every device, thenn game can be played for every device, is the FE script the one that knows about the interaction with user
+    - but, the geenrated script is not the one that will connect with the keyuboard events, or mouse events, it;ll just interact with abstractions, recall that the script is dangerous if we give it access to the device with no constraints, so is our FE sandbox the one that provides built in abstractions to interact with touch, mouse, keyboard, etc, the script internally maps those abstractions into the operations
+    - our sandbox will also provde the reader methods such as `isMobileDevice()`
+    - so a game could for instance check if its mobile device, if it is, it can build the keys it needs as UI components, so that it allows to play the game even with no actual keyboaard, if its not mobile device then it uses directly the provided abstractions to interact with keyboard events, but again, is FE script the one that gives support to different devices, the game definition itself only defines type of samples, and its up to FE script to know how those samples are generated
+- the samples should always represent what the client is doint, and BE calculatee whats the outcome of that (this is for samples, not commands), so what we receive in every sample is the current state of the inputs, nothig calculated, just the current value
+
+So lets say a game defines that its inputs are (this is just pseudo stuff):
+
+```
+  movement_right -> bool
+  movement_left -> bool
+  movement_up -> bool
+  movement_down -> bool
+
+  selector_position -> (x,y)
+```
+
+where the movements inputs are mapped to keys or buttons, where value is only true if pressed at that given time and false if not
+for those the FE doesnt tell "based on the movement pressed player position is X,Y", it simply says "at this moment the movmeent right was pressed", BE will calculate whats the position
+
+But another type of operation may have a different type of input, in this case the selector, which could be the finger, or the mouse, that one is a position, but is not a logical internal game position, is literally the position of the mouse/finger at that tgiven time in relation to the game's screen area, is up to the BE to decide what to do with that position, if that position maps to some internal game position as the characteer position, then thats fine, but again, we're not technically allowing the FE to decide internal part of the game, its resonsability is just informing how the user is interacting with the game.
+
+So, every X time (lets say 100ms) the client will send its current state of inputs, but additionally it can send always that it detects a change, so for instance, every time the key of move right is pressed, it can submit the sample, then when its stopped being pressed, it can send another sample, without waiting for the 100ms round, but its just for the changes, not like sending everytime the key is pressed, is sending everytime the curretn state of inputs has changed. but for stuff like mouse, which is compkletely continuous and can change evry ms we do have to not allow submit sample on every change but rate limit it.
+
+(just a note, when I say that we send the delta, I dont mean that for instance, if the projection state had a field position in x, which before was 50 and we just calculated that now is 80, then we send 30, thats now that I mean, we'll be sending the new 80, what I mean by delta is that we;ll only be returning the fields that had a change in their values)
+
+Now, from the BE, we'll be receiving the periodic input states, we'll mark each one with its received timestamp, that one will be used for velocity, speed, aceleration calculations. Its not perfect as the timestamp doesnt correspond to the actual time when the action happened at FE, but when it was received, so it has latency, but its the safest option, as we for sure dont want to trust the FE, we'll be pasing those durations to the script so that it can (if needed) calculate speed, velocity, etc, BUT, we wont be sending the actual timsetamp, script doesnt care when the game is being played, we'll be sending based on the time since the game was started.
+
+So, the BE receives a periodic input from a client, what it does is that it marks it with the current timestamp, and then it enqueues it into the for processing updates queue, but this enqueueing is smart, it;ll check the previous state, and it;ll only cntain the fields that actually had a change, lets say that previous sample already had movement_right pressed down, then we will keep thatt one and wont be repeating it in the new sample, that field would only appear once we receive a sample where it has a new value, this is kindof of a dedup, because if we decide to process a tick for every 100ms, and we received 20 samples in those 100ms, we want to be smart, most probably from those 20 samples only 3 of them had changes, then we'll be sending only those 3 changing samples to the script.
+
+But so then going back, when the sample is received, its just marked with the timestamp, its deduped based on the previously enqueued waiting for tick samples for that given user, and thats all.
+
+then, the controller has the ticks worker, which every X time takes the enqueued buffer for a given player, and it passes that list of samples(which is already deduped) to the BE script, BE script must expose the entry point for samples processing, which receives the list of samples with the times (based on game initiation)
+
+Because of the mechanism of how we treat samples we can use samples for both samples and impulses, because we could have stuff like:
+
+```
+  s1: movement_right: true
+  s2: movement_right: false
+  s3: movement_right: false
+  s4: movement_right: false
+  s5: movement_right: false
+  s6: movement_right: true
+  s7: movement_right: true
+```
+
+thjat will become and be processed as:
+
+```
+  s1 at t0: movement_right: true
+  s2 at t2: movement_right: false
+  s6 at t6: movement_right: true
+```
+
+so if logical behavior was continous movement, we;ll process it very accurate, as we will even take into account the internal changes within the ticks, but also, if logically it was impulses (like if game cares about number of times when the key was pressed) then we also have that information
+
+Now its important to understand how the FE would work, we already know how it'll communicate with BE, what signals its going to send, and whats going to receive in exchange (the delta of the current player projection state), but then, whats the FE going to do? here we have to differentiate between how the player sees its own changes and how it sees other players changes:
+
+- For own changes, the FE script can be predictive, if the rule is that when pressing right the movement will be at 5units per second, then FE can inmediatly show that change without waiting for BE to send the new state, the space constraints are shared between FE and BE scripts, we probably should eventually provide built in functions/libraries so that all that shared behavior is provided and dont need to be writen from scratch always, but what I mean is that, for intance, is like fortnite, BE must know that there's a wall at position x=5, y=10, so that when it calculate sthat the player is there it doesnt allow to move more, but the FE also knows about that constraint, so the FE when its predictive, before waiting for BE feedback, can also stop the movement when it detects that, ideally what the FE predicts should be very close to what BE actually says, the discrpeancy should only be because of the network latency (if movement started at ms=0 in FE, it may be taken for calculationn as started as ms=14 in BE), BE only needs to know about the space constraints that affect what happens in the game, the decisions, etc, but it doesnt need to know about FE stuff, how the game sees, decorations, animations, etc, for the BE its just a space determined by x and y axis, where there might be stuff in some places, for instance, if there's a circular object, BE dont neccesarily need to have a complex geometrical calculation in the fgemoetrical space for that circle, it could do it, but it could also simply mark the space where that circle is with small square areas, so it wont be 100% accurate, but close enough. But then the point is, FE sends signals, FE inmediatly renders, applies space constraints, then, whent he BE sends the response, the FE might reconcile if the difference is too much, or do nothing if its very close, but here there's something important, and this makes the versioning vbery important, suppose this
+
+```
+ FE sends s1 at t1
+ FE sends s2 at t2
+ FE sends s3 at t3
+ FE sends s4 at t4
+ FE sends s5 at t5
+ BE takes s1-s5 to processing at t5
+ FE sends s6 at t6
+ FE sends s7 at t7
+ BE finishes processing s1-s5, returns expected result state to player
+ FE receives s1-s5 expected state, meaning, expected state at t5
+ but FE was already rendering t7, so if FE goes back to t5 it would be ignoring the already predicted rendered changes for t6 and t7, so FE needs to understand that whats receeiving is the reconciliation for time t5, it should understand what changes it has applied since then, and then it can reconcile but smartly, so, it should know for instance
+
+ FE at t5 thought pos_x=5.6
+ FE at t7 has pos_x=6.7
+ But BE reconciliation for t5 returned pos_x=5.3
+ FE considers the gap to big, but it understands is a gap for t5, not t7, so it applies backwards changes to reconcile, basically, the difference in pos_x at t5 was of -0.3, then it can smoothly change current pos_x=pos_x-0.3
+```
+
+Important to understand, reconciliations should be normalized, meaning, smooth. Regarding space constraints, I use the example of space and movement because is what is easier to assimilate for this type of continuous games, but it could be a completely different game, which doesnt has movement, but still, if there's a continuous action in the FE which is restricted by some constraints, then those constraints whichever they are need to exist in both FE and BE, because BE needs to know about them in order to decide whats allowed and not, but FE also should know so it can use its own prediction instead of waiting for BE state, BE returned state should ideally be for reconciliation only, which shouldnt be much needed.
+
+And now, there;s the other scenario, how player sees other players state, in that case, is pretty different, because for own changes it predicts base on its inputs, for other players they wont receive the other players inputs, just the state, the state that they receive is part of the players projection, I mean, each player will have its own projection, is that projection the one that contains the others players state, whcih the BE decides what part of their states to show, so projection could be like:
+
+```
+{
+  "current_pos_x" : 45.0,
+  "current_pos_y" : 78.0,
+  "powers" : [
+    {
+      "name" : "fire",
+      "damage_level" : 90,
+      "remaining_capacity" : 78.3
+    }
+  ],
+  "health" : {
+    "stamine" : 34,
+    "shield" : 10
+  },
+  "team" : {
+    "name": "red".
+    "team_players_count" : 3,
+    "remaining_alive_players" : ["josue_934", "juan3445"]
+  },
+  "players" : [
+    {
+      "name" : "josue_934",
+      "current_pos_x" : 12.0,
+      "current_pos_y" : 45.0
+    },
+    {
+      "name" : "juan3445",
+      "current_pos_x" : 49.0,
+      "current_pos_y" : 34.0
+    },
+    {
+      "name" : "evil_guy45",
+      "current_pos_x" : 20.0,
+      "current_pos_y" : 37.0
+    }
+  ]
+}
+```
+
+so in the example above, the players projection shoes its own information of the game, and then it has a players list, which is what shows the other players state, and thats part of the players projection, and in this case it only shows their positions, the game doesnt consider that a player must know anything else, like their powers, health, etc (this is just for a random example), in this case just for this example there's a list which is part of the players styate which tells what players are part of his team, meaning all other players are not part of the team, like evil_guy45.
+
+Now, we'd also have predictive behavior for other players, bu tits important to understand and accept that what I see from the other players will always have lag, because for them we;ll always be some samples in the past, as we;ll be renderfing based on what we receive from the BE state, which as already understood before is stale data, how old is it depends on how often we want to process ticks, if we process ticks every 50ms, and lets assume a 30ms operational latency (processing time + network latency) then we'd always be seeing 80ms in the past for the other players, which is acceptable for the type of games that this platform aims to.
+
+In order to achieve the predictive behavior FE can store for each other players the list of the last X states, so that it can normalized the changes and predict whats happening next, so if last states have beend ecreasing the speed, then it can continue with that acceleration evenn before receiving the next sample, if next sample shows that that player actually started increasing acceleration within that tick, then it reconciles.
+
+Another thing is how authoratice qwe want the BE to be, that depends on the game scripts design, but we can decide if we want to stick with a single approach and provide built in functions/libraries for that, the other option could be not storing the list of latest players states, that option assumes that FE is the one predicting what to do based on the history, meaning, FE is calculating speed, acceleration, etc. the other option would be to have BE state always sending that info, so FE only uses last state, BE state would also tell, for example, for a movement game, it would tell the current speed and acceleration of that player, the only responsability of the FE is to smoothly change to that speed, so if FE had that player 2 speeed in x was 9.8, and then it just received a new BE state with speed 3.4, then the FE responsability is to simply go from 9.8 to 3.4 smoothly, and after that, it'll keep the 3.4 till it gets new speed, or even, the BE could send current acceleration, so even after reaching 3.4, if it has that acceleration was 0.3, then it continues applying that acceleration to the 3.4, lets say that for next BE received state it already had the speed in x at 1.2 since it was applying the acceleration, and BE tells that is actually 1.7 and acceleration changed to 0.4, then FE reconciles but now reconciliation is smaller that what would be if it had to go from 3.4 to 1.7, all this is taking into consideration a movement game, but again, then this reconciliation mechanism would need to be enforced also for every FE-BE communication, its not always about position.
+
+Another example I can think of, is lets say a game where you click buttons to send power attacks, but the capability of powers you have depend on stuff, then it would be the same, the BE would be sending values which Fe uses to predict how much power is it expected to have as capability, I dont know, lets imagine, how many attacks of fire left
+
+```
+  initial_fire_attacks_capability: 1000
+  s1 FE 240 attacjks
+  s2 FE 230 attacks
+  s3 FE 390 attacks
+  BE receives first 3 samples and processes, determines that new fiee capability is 936, and tells FE "fire attack capability is decreasing at a rate of X"
+  Then FE continues sending attacks based on teh new 936 capability but it dinamically changes its value base on its prediction
+  NExt BE processign BE tells a new rate and capability
+```
+
+This example is a random example where the capability of attacks is some internal calculation, is not capability - fire attacks, lets imagine it does a lot of thinks to calculate the capabiklity.
+What could happen is that FE bnecause of its prediction for a few ms doesnt allow player to send attacks because it thinks it reached the max, but then BE tells that player actually has more attacks, which is fine, is just a few ms, or the other way around, FE allows player to press button to send fire attacks, even though player couldnt, is fine, for a few ms the player clicked fire attacks which had no actual effect.
+
+- Now that I mention this, BE should assume that FE can send not allowed samples, because FE might think that an operation was allowd even though it want, backend script should be smart to understand this and simply ignore them as they are not allowed and have no effect, is not an error, is expected
+
+I think I changed the topic, I was erxplaining about how we see other players changes, but I ended writing an example of a player with its own state, but its also what I wanted to say about other players, what could happen with this approach is a player seeing other players sending fire attacks still even though they are not or they actually have no more capability, its fine, we assume that if an operation is a sample and not a command then its continuous and its no problem if we're inconsuistent for a few ms.
+
+FINAL NOTE: this was the last section wirtten, so other places might refer to different mechanism, separating impulse and sample, and stuff, but this was the latest section written, so assume that everything here represents my actual current idea of how it should work
 
 # internal triggered events
 
@@ -334,3 +530,5 @@ Can be terminated with
 
 - games HAVE no external world interaction, scripts cannot access external world, and runtime platform shouldnt support any external world interaction asked by the script, this is for future, like, script shouldnt be able to perform payment requests, grant external permissions, etc, because for starters the session strategy is to have checkpoints but accpet data loss in case of failure, and simply continue from last checkpoint, if we were to perform exteernal action like charging a payment, that payment might be loss even though charged
 - Scripts are inmutable once published in a version, a game version can only be played (session created) once its state is PUBLISHED, and once its state switches to PUBLISHED, the scripts are inmutable, and there's no such thing as deleting a game version, the game might get deleted, but the data of the game version still exists, unplayable though as the first filter is checking the actual game domain game state
+
+- just thought of the following, havent integrated it in the described flows, but we'll have to differentiate between mobile and desktop support, if mobile then game only tracks finger related events and UI buttons and stuff, whereas if its desktop then we support mouse and keyboard input, for the ticks, its very important, so a game version will be marked with the allowed device type (if the game only uses mouse/Ui buttons then it can be played in both desktop and mobile) and we'd have to receive that context in the join endpoint to determine if player can join or not
