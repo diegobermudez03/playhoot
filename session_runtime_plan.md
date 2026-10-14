@@ -466,7 +466,35 @@ Like timers, BE script can ask to controller to setup a timer, then controller s
 
 # Get current full state for player (for reconnection or reconciliation)
 
+This one is just an endpoint which internally:
+
+- runtime calls sandbox
+  - sandox in its own session already has the current global state, it applies the projection of that state for the requested player
+  - returns the projection
+- runtime returns the state for the given player
+
+thats all
+
 # Session recovery (internal pod error or stuff)
+
+This one is pretty easy, even if the join endpoint is the one that upgrades to ws, we'll still expose a separated ws only endpoint, which is used for direct connection when the player had already join (used for recovery, rejoin, etc), flow goes like:
+
+- api receives request with session uuid
+- here at some point I dont knoe exactly how but the gateway must check that there's no alive pod for the requested session uuid, so just by receiving this request will assign a new pod the session id, it redirects the request to that pod
+- api calls identity (tokens required, valid user, even if its guest user this endpoint is used when the player already joined a game, therefore there must be an associateed guest user)
+  - identity validates user, returns user uuid
+- api calls runtime to reconnect
+  - runtime detects no live controller for session, so it creates new one
+  - creating new controller implies fetching the last state of that session, the game script, create the sandbox connection for that session, get the latest global state (latest chjeckpoint) and set it, so that both runtime and sandbox continue starting from there
+    - sandbox call to create session
+  - runtime returns stuff for live connection
+- api stablishes live connection
+
+the example above is for the first reconnection conection, which creates the new controller, but if the controller was already created by another request, then it would go the same way simply that without the setting new controller or pod
+
+another thing is, for this flow, I was thinking that it should detect when it stopped because of some external error, I mention somewhere else in this document that the controller could have an expiration, for that expiration it'd mark the controller clearly as expired but like normally, in that case is an expected stop, but for an external error, is unexpected we'd notice because there's no signal of the session controler being stopped intentionally, so for that case, I was thinking to always after the first reconnect execute a 30second time for every client to reconnect, after thgose 30seconds if some players didnt reconnec tthen we process the logical disconnection directly with the script.
+
+But then, now I'm wondering, I dont think the expiration idea makes sense, because lets say after expiration all clients connections closed, then, there's new activity, that reclives the controller, but how will the controller find the other players?, you know what, this was written after that expiration idea stuff, so I was thinking lets simply remove that idea, we can still haver an expiration, lets say 30min without activity, and that will cancel the session completely
 
 # Session termination
 
@@ -474,6 +502,10 @@ Can be terminated with
 
 - Cancelled
 - finished
+
+- finished is when the game naturally finishes, that must be a signal that the script returns, so that the runtime identifies that there's a finish, the signal can be accompanied with some final state, then the runtime will close the sandbox connection and will send the final message with the state to all players, and will inmediatly close their ws connections, FE script can show whatever it wants with that final state.
+
+All other terminations are considered as cancelled, if all players leave the session, then it was canceled, if the host canceled the session, if it was expired, or if there was an error and the session was never reconnected, in which case a batch will find those sessions and mark them as canceled, but we'll have a separated field, like "cause" which differentiate between them, is important we know if it was canceled because of host, players, expiration or external error
 
 # RECONCILIATION CRONJOBS
 
