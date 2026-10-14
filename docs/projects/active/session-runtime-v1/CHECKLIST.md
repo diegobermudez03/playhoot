@@ -94,7 +94,7 @@ Source of behavior: `plans/session_runtime/Playhoot_Session_Runtime_Architecture
 
 ## D. Create Session endpoint (§2)
 
-Progress note (2026-10-13): the `/api` edge is written and was smoke-checked with fakes, but has no tests and no real Identity/Orchestrator behind it (`main` uses `unwired.go` stand-ins). Items below stay unchecked until they are implemented behind the ports and verified.
+Progress note (2026-10-13): the `/api` edge is written and unit-tested with mocks (handler, authorization middleware, REST metric), but has no real Identity/Orchestrator behind it (Identity is a placeholder; `main` uses an `unwired.go` stand-in for the Orchestrator). Items below stay unchecked until they are implemented behind the ports and verified.
 
 - [ ] REST endpoint receives: account auth, game UUID, frontend idempotency token
 - [ ] Identity resolves userUUID and verifies CREATE_SESSION

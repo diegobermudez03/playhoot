@@ -45,6 +45,6 @@ A route's own `Middlewares` (`[]routing.Middleware`, each `func(http.HandlerFunc
 
 ### Authorization: a per-route middleware backed by Identity
 
-A route that needs an authenticated caller declares `auth.Require(authorizer, operation)` (`api/internal/auth`) in its `Middlewares`. The middleware extracts the `Authorization: Bearer <jwt>` token and asks Identity (the `Authorizer` port) for the caller's `UserUUID` and whether that caller may perform the route's named operation (`identity.Operation`); `401` for a missing/invalid token, `403` when Identity forbids the operation. The handler behind it reads the caller with `auth.UserUUID(ctx)`. The api never interprets the token.
+A route that needs an authenticated caller declares `auth.Require(authorizer, operation)` (`api/internal/auth`) in its `Middlewares`. The middleware extracts the `Authorization: Bearer <jwt>` token and asks Identity (its own unexported `authorizer` port) for the caller's `UserUUID` and whether that caller may perform the route's named operation (`identity.Operation`); `401` for a missing/invalid token, `403` when Identity forbids the operation. The handler behind it reads the caller with `auth.UserUUID(ctx)`. The api never interprets the token.
 
 See `../ARCHITECTURE.md` for global architecture rules.

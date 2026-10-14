@@ -25,13 +25,15 @@
 package api
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 
-	"github.com/diegobermudez03/playhoot/api/internal/auth"
 	"github.com/diegobermudez03/playhoot/api/internal/routing"
 	apisession "github.com/diegobermudez03/playhoot/api/session"
+	"github.com/diegobermudez03/playhoot/identity"
 	"github.com/diegobermudez03/playhoot/logging"
+	sessionpkg "github.com/diegobermudez03/playhoot/play"
 )
 
 // routeGroup exposes one workflow/feature's endpoints, split by transport
@@ -39,6 +41,18 @@ import (
 type routeGroup interface {
 	RESTRoutes() []routing.Route
 	WebSocketRoutes() []routing.Route
+}
+
+// authorizer is Identity as this package needs it: token and operation in,
+// the caller's UserUUID and whether the operation is allowed out.
+type authorizer interface {
+	Authorize(ctx context.Context, token identity.AccessToken, operation identity.Operation) (identity.UserUUID, identity.AccessDecision, error)
+}
+
+// sessionCreator is whatever coordinates Session creation (Orchestrator in
+// production) as this package needs it.
+type sessionCreator interface {
+	CreateSession(ctx context.Context, userUUID identity.UserUUID, gameUUID sessionpkg.GameUUID, idempotencyKey sessionpkg.IdempotencyKey) (sessionpkg.CreateSessionResult, error)
 }
 
 // Server composes every route group into one HTTP handler.
@@ -54,7 +68,7 @@ type Server struct {
 // coordinates Session creation (Orchestrator in production); this package
 // depends only on its own narrow ports for them, never on orchestrator or
 // a domain's implementation directly.
-func NewServer(authorizer auth.Authorizer,sessionCreator apisession.SessionCreator) *Server {
+func NewServer(authorizer authorizer, sessionCreator sessionCreator) *Server {
 	mux := http.NewServeMux()
 	groups := []routeGroup{
 		apisession.NewHandler(authorizer, sessionCreator),

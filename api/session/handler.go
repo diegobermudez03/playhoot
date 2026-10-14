@@ -1,5 +1,5 @@
 // Package session is the session workflow's route group. POST /sessions
-// creates a Session through SessionCreator (Orchestrator's CreateSession in
+// creates a Session through sessionCreator (Orchestrator's CreateSession in
 // production), for a caller Identity has authorized. The live WebSocket
 // endpoints will be added as the Session Runtime's real-time design is
 // accepted.
@@ -14,7 +14,9 @@ import (
 	sessionpkg "github.com/diegobermudez03/playhoot/play"
 )
 
-// SessionCreator is this route group's own narrow dependency on whatever
+//go:generate mockgen -package=session -destination=session_creator_mock_test.go . sessionCreator
+
+// sessionCreator is this route group's own narrow dependency on whatever
 // coordinates Session creation - Orchestrator in production, satisfied
 // structurally rather than imported directly so this package never needs
 // to depend on orchestrator's own dependencies.
@@ -25,19 +27,25 @@ import (
 // reusing a key for a different request returns
 // sessionpkg.ErrIdempotencyConflict, and any other error is an unexpected
 // failure.
-type SessionCreator interface {
+type sessionCreator interface {
 	CreateSession(ctx context.Context, userUUID identity.UserUUID, gameUUID sessionpkg.GameUUID, idempotencyKey sessionpkg.IdempotencyKey) (sessionpkg.CreateSessionResult, error)
+}
+
+// authorizer is this route group's own narrow dependency on Identity, used
+// only to build the authorization middleware its routes declare.
+type authorizer interface {
+	Authorize(ctx context.Context, token identity.AccessToken, operation identity.Operation) (identity.UserUUID, identity.AccessDecision, error)
 }
 
 // Handler exposes the session workflow's endpoints.
 type Handler struct {
-	authorizer auth.Authorizer
-	creator    SessionCreator
+	authorizer authorizer
+	creator    sessionCreator
 }
 
 // NewHandler constructs a Handler. authorizer is Identity's side of the
 // authorization middleware its routes declare.
-func NewHandler(authorizer auth.Authorizer, creator SessionCreator) *Handler {
+func NewHandler(authorizer authorizer, creator sessionCreator) *Handler {
 	return &Handler{authorizer: authorizer, creator: creator}
 }
 

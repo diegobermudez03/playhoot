@@ -19,7 +19,8 @@ Last updated: 2026-10-13
 ## Progress (not duplicating git)
 
 - monitoring/metrics entry-point API done (emission to a backend pending).
-- Create Session, /api edge written without tests: `POST /sessions`, `api/internal/auth` middleware (Identity port `Authorizer`), `SessionCreator` port in `api/session`; public contract types in `identity/identity.go` and `play/session.go`. Identity is wired to a placeholder (`identity/usecases/authorize`: random UserUUID, always allowed; real behavior must make CREATE_SESSION require an account, not a guest). The Orchestrator stand-in in `unwired.go` at repo root must be removed once CreateSession exists.
+- Create Session, /api edge written without tests: `POST /sessions`, `api/internal/auth` middleware (unexported Identity port `authorizer`), unexported `sessionCreator` port in `api/session`; public contract types in `identity/identity.go` and `play/session.go`. Identity is wired to a placeholder (`identity/usecases/authorize`: random UserUUID, always allowed; real behavior must make CREATE_SESSION require an account, not a guest). The Orchestrator stand-in in `unwired.go` at repo root must be removed once CreateSession exists.
+- Unit tests (table of callbacks + gomock, per the user's test style) exist for the `/api` edge: create-session handler, `auth.Require`/`bearerToken`/`UserUUID`, REST request metric, status recorder, `restObservability`. Mocks regenerate with `go generate` in `api/internal/auth` and `api/session`.
 - Still open for create session: Orchestrator CreateSession, /game playable check, /play/session durable creation, idempotency ownership, join code generation, tests, metrics emission.
 - `play/session/internal/...` does not compile (imports still point at the old `session/` path); pre-existing, unrelated.
 

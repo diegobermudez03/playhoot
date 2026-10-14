@@ -17,7 +17,9 @@ import (
 	"github.com/diegobermudez03/playhoot/monitoring/metrics"
 )
 
-// Authorizer is this package's narrow dependency on Identity. It receives
+//go:generate mockgen -package=auth -destination=authorizer_mock_test.go . authorizer
+
+// authorizer is this package's narrow dependency on Identity. It receives
 // the raw token and the operation the route performs, and answers with the
 // caller's UserUUID and whether the operation is allowed.
 //
@@ -25,7 +27,7 @@ import (
 // a nil error. A non-nil error means Identity could not evaluate the
 // request at all. The returned UserUUID is only meaningful when the
 // decision is identity.AccessAllowed.
-type Authorizer interface {
+type authorizer interface {
 	Authorize(ctx context.Context, token identity.AccessToken, operation identity.Operation) (identity.UserUUID, identity.AccessDecision, error)
 }
 
@@ -53,6 +55,13 @@ var (
 
 type userUUIDContextKey struct{}
 
+// WithUserUUID returns a context carrying userUUID as the authorized caller.
+// Require uses it once Identity allows a request; it is exported so a handler
+// can be exercised without running the middleware in front of it.
+func WithUserUUID(ctx context.Context, userUUID identity.UserUUID) context.Context {
+	return context.WithValue(ctx, userUUIDContextKey{}, userUUID)
+}
+
 // UserUUID returns the caller's UserUUID, set by Require. It reports false
 // when the request did not pass through Require, which a handler behind it
 // must treat as a wiring bug rather than an unauthenticated caller.
@@ -67,7 +76,7 @@ func UserUUID(ctx context.Context) (identity.UserUUID, bool) {
 //
 // It assumes the request context already carries a started request log, as
 // every route registered by api.Server does.
-func Require(authorizer Authorizer, operation identity.Operation) routing.Middleware {
+func Require(authorizer authorizer, operation identity.Operation) routing.Middleware {
 	return func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
@@ -105,7 +114,7 @@ func Require(authorizer Authorizer, operation identity.Operation) routing.Middle
 			switch result {
 			case decisionAllowed:
 				logging.LogFields(ctx, logging.Field("user_uuid", string(userUUID)))
-				next(w, r.WithContext(context.WithValue(ctx, userUUIDContextKey{}, userUUID)))
+				next(w, r.WithContext(WithUserUUID(ctx, userUUID)))
 			case decisionUnauthenticated:
 				writeUnauthenticated(w, "invalid or expired token")
 			case decisionForbidden:
