@@ -1,0 +1,502 @@
+# Session Runtime v1 - Completion Checklist
+
+Status: ACTIVE TRACKING (non-authoritative for design; the architecture plan owns behavior)
+
+Source of behavior: `plans/session_runtime/Playhoot_Session_Runtime_Architecture_Plan_with_TOC.docx` ("plan"). Section numbers below (`§N`) refer to that plan. Section Y (Observability) is not in the plan; it is a mandatory addition of this project.
+
+## How To Use
+
+- This is an end-state list, not a task order. The human directs the implementation order.
+- Tick `[x]` only when the behavior is implemented AND verified (test or other concrete evidence). Code that merely exists is not done.
+- Optionally append an owner/evidence note after an item, e.g. `- WORK-0123`.
+- If the human's instructions skip an item, or an instruction conflicts with a plan requirement, raise it before ticking anything.
+- Items marked `(decision)` need a human design decision before they can be implemented; the plan leaves the choice open (§31).
+
+---
+
+## A. Cross-cutting foundations
+
+### A1. Owner registry and single-owner invariant (§1 topology, §30.1)
+- [ ] Owner abstraction exists: Resolve(sessionID), Claim(sessionID), Release(sessionID)
+- [ ] Exactly one Runtime pod owns an active Session; two pods can never mutate the same Session concurrently (decision: lease/epoch/fencing mechanism)
+- [ ] Browser never learns a pod address; routing is resolved before the request reaches Session logic
+- [ ] Owner released on Session termination and on controller destruction
+- [ ] Owner loss is detectable (needed by recovery and reconciliation)
+
+### A2. API <-> Runtime duplex boundary (§1)
+- [ ] /api owns the WebSocket; Runtime owns the logical connection; Runtime does not know WebSocket details
+- [ ] API reports: transport attached, transport detached, inbound message
+- [ ] Runtime emits: send outbound message, close transport, replace transport
+- [ ] Identity + owner routing happen before upgrade; logical admission happens after upgrade
+- [ ] Rejected admission sends a rejection and closes the socket
+- [ ] Late messages from an obsolete transport are ignored via Runtime-internal connection generation (§19)
+
+### A3. Join code and routing (§1, §2)
+- [ ] Join code -> sessionUUID resolution -> owner resolve/claim -> route to pod
+- [ ] Join code is only a friendly identifier, never authN/authZ
+- [ ] Join code expiration uses platform time
+
+### A4. Identity integration (§1, §2, §4)
+- [ ] Account token -> account userUUID
+- [ ] Guest token -> existing guest userUUID
+- [ ] No identity -> guest created, returned userUUID + guest credentials for the FE to keep
+- [ ] CREATE_SESSION capability check (real account required, guest-only rejected)
+- [ ] Other domains receive only userUUID (no account/guest awareness)
+- [ ] Identity does not decide object-level permissions (creator check lives in Session)
+
+### A5. Two clocks (§1)
+- [ ] Game/Session effective time: monotonic, starts at RUNNING, persisted in checkpoints, freezes during Runtime outage
+- [ ] Platform time used for: transport grace, owner lease/heartbeat, join-code expiry, recovery window, inactivity limit, max lifetime
+- [ ] A logical game pause does not freeze game time
+
+### A6. One authoritative timeline (§1)
+- [ ] Single logical mutation lane per Session
+- [ ] Every accepted operation gets server-owned sessionTime + serverOrder; client never supplies authoritative timestamps
+- [ ] Timeline carries: SAMPLE transitions, COMMAND, timer firing, update(), playerDisconnected, playerRejoined, playerLeft
+- [ ] executedThroughSessionTime advances on any materialized operation (not only Samples)
+- [ ] Sandbox receives elapsed effective time since the previous materialized operation
+- [ ] Batching never changes semantic ordering (§7)
+
+### A7. Message model and role gating (§26, §27)
+- [ ] Platform messages vs game messages are distinct categories
+- [ ] Connection role (PLAYER/ADMIN) is authoritative for what it may send
+- [ ] ADMIN can never send SAMPLE/COMMAND
+- [ ] Contract validation happens before JavaScript is called
+
+---
+
+## B. GameVersion and manifest contract (§1)
+
+- [ ] Session pins exactly one GameVersion for its whole lifetime and for replay
+- [ ] Only PUBLISHED versions can create Sessions
+- [ ] Published version artifacts are immutable and never physically deleted (backend JS, frontend package, manifest, assets)
+- [ ] Artifacts addressed by locator + hash + size + metadata; content never silently changes
+- [ ] Runtime manifest declares: SAMPLE input defs/types, defaults (when not inferable), COMMAND names + payload schemas, optional entrypoints present (update, playerRejoined), required input capabilities, frontend/backend artifact identity
+- [ ] Manifest drives: pre-JS rejection of malformed/undeclared input, discovery filtering by capability, update()/rejoin support detection
+- [ ] Logical deletion/supersession of a game affects only new Sessions, not old Sessions/replays (§30.28)
+
+---
+
+## C. Durable Session lifecycle (`/play/session`) (§1)
+
+- [ ] Session persistence: lifecycle states (LOBBY, RUNNING, FINISHED, CANCELLED, EXPIRED, ABORTED) with enforced transitions
+- [ ] endCause recorded on terminal transitions (HOST_CANCELLED, ALL_PLAYERS_LEFT, INACTIVITY_TIMEOUT, MAX_LIFETIME, GAME_START_FAILURE, SCRIPT_FAILURE, RUNTIME_RECOVERY_TIMEOUT, UNRECOVERABLE_INFRA_FAILURE, ...)
+- [ ] Pinned GameVersion reference stored
+- [ ] creatorUUID stored
+- [ ] Join code + expiry stored
+- [ ] Durable participant roster (userUUID <-> ParticipantID) written only at Start
+- [ ] Recovery checkpoint reference/metadata stored
+- [ ] Runtime never writes Session tables directly; all durable operations go through the /play/session boundary
+- [ ] Migrations for all of the above
+- [ ] `DATA_MODEL.md` created and matching the implementation
+
+---
+
+## D. Create Session endpoint (§2)
+
+- [ ] REST endpoint receives: account auth, game UUID, frontend idempotency token
+- [ ] Identity resolves userUUID and verifies CREATE_SESSION
+- [ ] Orchestrator composes the operation
+- [ ] /game validates the Game is currently playable/visible for this user
+- [ ] /play/session resolves the executable GameVersion and requires PUBLISHED
+- [ ] GameVersion pinned
+- [ ] Session created in LOBBY
+- [ ] Join code created with platform-time expiration
+- [ ] creatorUUID stored
+- [ ] Response: sessionUUID + joinCode + useful lobby metadata
+- [ ] Idempotent by frontend token (replay returns the same outcome; conflict semantics per `docs/engineering/standards/idempotency.md`)
+- [ ] No Runtime controller created at this point
+- [ ] Creator is not automatically a player
+
+---
+
+## E. Admin join (§3, §18)
+
+- [ ] Authenticated account required
+- [ ] Owner pod resolved before upgrade
+- [ ] Runtime asks /play/session to validate: Session exists + connectable state + userUUID == creatorUUID
+- [ ] Accepted: ADMIN logical connection registered; no gameplay participant, no extra durable membership row
+- [ ] Rejected: rejection sent, socket closed
+- [ ] Multiple simultaneous ADMIN connections for the same creator
+- [ ] Admin selects a player perspective; receives exactly projection(P), FULL, with a new baseline per selection
+- [ ] No omniscient admin projection
+- [ ] Admin reconnect = just another admin WebSocket (no game-level admin rejoin)
+- [ ] Admin connections do not receive participant SAMPLE acknowledgements
+
+---
+
+## F. Player lobby join (§4)
+
+- [ ] Join by join code or Session UUID; guest display name when a new guest is created
+- [ ] Identity resolution (see A4)
+- [ ] Owner resolve/claim
+- [ ] Logical admission serialized through the SessionController (two users racing for the last slot cannot both be accepted)
+- [ ] Checks: Session still LOBBY, player count / GameVersion constraints, device/control capabilities vs manifest
+- [ ] Same user's older PLAYER transport replaced if needed
+- [ ] Accepted: ephemeral lobby member (not durable)
+- [ ] Rejected: JOIN_REJECTED sent, socket closed
+- [ ] Lobby pod loss: Session stays LOBBY, players can rejoin the lobby; no lobby checkpoint
+- [ ] No late join of new participants once RUNNING (§30.6)
+
+---
+
+## G. Start Session (§5)
+
+- [ ] START accepted from creator's ADMIN or PLAYER connection; no identity token in the live message
+- [ ] Controller serializes START; lobby roster frozen for the attempt
+- [ ] Stable ParticipantIDs assigned (userUUID -> P1..Pn)
+- [ ] /play/session validates: LOBBY, not expired, caller is creator, participant count valid, pinned GameVersion available; returns artifact/manifest references
+- [ ] Sandbox context created for the pinned GameVersion
+- [ ] start(participants, controlled context) executed; success returns initial full state + timers/events + initial PRNG state + context revision
+- [ ] Initial recovery checkpoint written strongly/durably BEFORE RUNNING (§30.3)
+- [ ] Final Start transaction: revalidate, persist roster, store checkpoint reference, mark RUNNING
+- [ ] Orphan checkpoint (written, but DB transition failed) is tolerated and cleanable; a RUNNING Session without recoverable initial state is impossible
+- [ ] Runtime commits live mirror; project() for each player; START + FULL initial projection sent
+- [ ] start() script failure: retry once from the same pre-start state with fresh context
+- [ ] Second failure: Session ABORTED / GAME_START_FAILURE, never RUNNING, clients informed, transports closed
+- [ ] After Start: recovery, replay, and checkpoint scheduling begin; script sees only ParticipantIDs
+
+---
+
+## H. SessionController (§6)
+
+- [ ] Exactly one active controller per active Session on the owner pod
+- [ ] Owns live state: connections, userUUID<->ParticipantID map, participant status, per-participant logical SAMPLE state, SAMPLE ingress/dedup buffers, COMMAND pending/processed tokens, timeline ordering, effective Session time, executedThroughSessionTime, pending timers, Sandbox context ID, confirmed state mirror, PRNG state, contextRevision, projection cache, per-viewer replication state, checkpoint orchestration, replay capture orchestration
+- [ ] Three state levels distinct and consistent: Sandbox context / Runtime confirmed mirror / durable checkpoint
+- [ ] Controller created only when a Session first needs live behavior
+- [ ] Controller destroyed on terminal states (with owner release and Sandbox context destruction)
+
+---
+
+## I. SAMPLE protocol (§7, §13)
+
+- [ ] SAMPLE is a full logical input snapshot; defaults applied from manifest (type-inferred zero or explicit default)
+- [ ] Per-participant monotonic client sequence; gaps allowed; Runtime never waits for a missing sequence
+- [ ] maxAcceptedSampleSequence[P] and consumedThroughSampleSequence[P] tracked
+- [ ] Sequence <= high-water mark is stale/duplicate and ignored
+- [ ] Normalize then dedupe against current accepted input state (identical refreshes are not transitions)
+- [ ] Every distinct accepted transition preserved until processed ("latest wins" is NOT the model; §30.11)
+- [ ] Refreshes still advance max accepted sequence and are acknowledged once materialized
+- [ ] Acknowledgement (consumedThroughSampleSequence) can advance without a projection change; not sent to ADMIN connections
+- [ ] SAMPLE transitions from all players merged into the global timeline
+- [ ] Adjacent Samples batched into one samples(...) call only when no other operation belongs between them
+- [ ] Device switch: new transport starts above the highest accepted in-memory sequence
+- [ ] After crash: checkpoint sequence is the baseline; higher client values with gaps accepted
+- [ ] Unknown/undeclared input, bad shape, and oversize SAMPLE rejected pre-JS
+
+---
+
+## J. COMMAND protocol (§8)
+
+- [ ] COMMAND(token, name, payload), token scoped to Session + ParticipantID; separate namespace from SAMPLE sequence
+- [ ] Pre-JS validation: declared name, payload schema, size limits, message valid for this connection role
+- [ ] Token pending -> not enqueued twice
+- [ ] Token processed (including logical game rejection) -> later retry returns ALREADY_PROCESSED-equivalent
+- [ ] Original response is not persisted for idempotency
+- [ ] Processed tokens retained for the Session lifetime and included in checkpoints; pending tokens memory-only
+- [ ] Command can trigger an early execution boundary, processing older pending operations first
+- [ ] command(...) executed via Sandbox; full successful result committed; correlated response sent
+- [ ] Immediate projection flush when observable state changed
+- [ ] Response offered to Replay (best effort) with its target participant
+- [ ] Logical rejection (NOT_YOUR_TURN, etc.) is a normal result; Session continues
+
+---
+
+## K. Periodic processing and update() (§9)
+
+- [ ] Normal live processing cadence (~100 ms, platform tuning value)
+- [ ] Boundary: drain pending timeline -> confirm state -> project -> compare with cache -> send changes/acks
+- [ ] Commands and timers can trigger earlier boundaries
+- [ ] If update() is not declared, Runtime does not execute JS merely because time passes
+- [ ] If declared, update() called frequently but with no exact-interval guarantee; receives current Session time + elapsed game time
+- [ ] No unbounded backlog of missed updates
+- [ ] Consistent budget violations abort the Session as a script/runtime failure
+- [ ] update() and timers do not count as human activity (see U)
+
+---
+
+## L. Timers and logical events (§10)
+
+- [ ] scheduleTimer(id, dueAt|delay, data) and cancelTimer(id) available to the script
+- [ ] Runtime owns the schedule; timers use effective game time
+- [ ] Due timer enters the global timeline and calls timer(...); may trigger an early boundary
+- [ ] Pending timers included in checkpoints; recovery preserves remaining game-time distance
+- [ ] Logical events emitted by mutating functions; delivered live only after the batch commits
+- [ ] Events offered to Replay as best effort; never durable authoritative effects
+
+---
+
+## M. Sandbox execution (§11, §1 entrypoints, §1 determinism)
+
+- [ ] Entrypoints: start, samples, command, update (optional), timer, playerDisconnected, playerRejoined (optional), playerLeft, project
+- [ ] Mutating entrypoints return full new global state + events + timer changes + terminal FINISHED signal + COMMAND response
+- [ ] project(globalState, participant, context) is pure and deterministic (no wall clock, no random, not even the controlled PRNG)
+- [ ] Controlled deterministic PRNG; state is part of Runtime state and checkpoints; no uncontrolled Math.random as source of truth
+- [ ] No access to DB, files, secrets, network, processes, or uncontrolled wall clock
+- [ ] A batch of ordered operations is atomic: no partial output escapes (state, events, timers, responses, terminal signal commit as one)
+- [ ] Terminal FINISHED mid-batch: later operations ignored
+- [ ] Context revision advances on every successful batch, separate from projection revision and SAMPLE sequence
+- [ ] Executor/infrastructure failure: discard context, recreate from the last confirmed Runtime mirror, retry batch
+- [ ] Script failure arrives as a valid protocol response with SCRIPT_ERROR body; retry once from the same confirmed pre-batch state
+- [ ] Retry success: continue and raise monitoring/alert (flaky execution); retry failure: Session ABORTED / SCRIPT_FAILURE
+- [ ] Sandbox-only death: recreate from the Runtime mirror without rolling back to checkpoint
+- [ ] Runtime death: old sidecar context treated as orphaned; new owner recovers from durable state only
+- [ ] Idle contexts evictable and recreatable; update() games keep the context hot
+- [ ] Resource limits: CPU/execution budget, memory, deadline, state/output size, protection against non-cooperative code (see W)
+
+---
+
+## N. Projection, replication, resync (§12)
+
+- [ ] Runtime keeps the current full projection per ParticipantID
+- [ ] Script returns full projections; Runtime computes patches/deltas as optimization (decision: patch representation)
+- [ ] Revision continuity belongs to each viewer connection, not to the participant projection
+- [ ] FULL projection + fresh baseline on: new transport attach, admin selects a player, reconnect, recovery
+- [ ] Resync is a platform operation (FE or Runtime requests); sends FULL projection + current consumed SAMPLE ack (PLAYER) + fresh baseline
+- [ ] After pod recovery the cache is rebuilt via project()
+- [ ] Immediate flush on Command completion, important events, Start, Finish
+- [ ] Raw global state never reaches the browser (§30.19)
+
+---
+
+## O. Connection resilience and participant lifecycle (§14-§19)
+
+### O1. Transport loss and reattach (§14)
+- [ ] Transport detach reported immediately by /api
+- [ ] Participant stays CONNECTED for the platform-time grace (~3 s)
+- [ ] Logical SAMPLE state reset to defaults immediately on detach
+- [ ] No playerDisconnected() during grace
+- [ ] Reattach within grace: FULL projection + fresh baseline; FE sends full SAMPLE snapshot; no playerDisconnected/playerRejoined calls
+
+### O2. Logical disconnect (§15)
+- [ ] Grace expiry inserts playerDisconnected(P) into the timeline
+- [ ] Participant status becomes DISCONNECTED
+- [ ] Game without playerRejoined(): no route back
+- [ ] All remaining participants disconnected and no rejoin capability: Session proceeds toward termination per platform rules
+- [ ] With rejoin support, controller stays active, bounded by inactivity and max lifetime
+
+### O3. Explicit leave (§16)
+- [ ] LEAVE resets inputs, inserts playerLeft(P) immediately (no grace), status LEFT, transport closed
+- [ ] LEFT is permanent (no later rejoin)
+- [ ] All gameplay participants gone/left: Session cancelled (ALL_PLAYERS_LEFT)
+
+### O4. Rejoin (§17)
+- [ ] Owner resolved; userUUID -> existing ParticipantID
+- [ ] Reject: LEFT, never a participant, game without playerRejoined
+- [ ] playerRejoined(P) inserted into the timeline; script decides (state, game time, deadlines)
+- [ ] Rejected -> REJOIN_REJECTED + socket closed
+- [ ] Accepted -> CONNECTED, PLAYER connection attached, inputs at defaults, FULL projection + fresh baseline, FE sends snapshot
+- [ ] Transport dying right after accepted rejoin starts a normal grace flow (rejoin not rolled back)
+
+### O5. Device switch (§19)
+- [ ] At most one active PLAYER transport per participant
+- [ ] New transport replaces old; old closed; no playerDisconnected/playerRejoined
+- [ ] Inputs reset to defaults; new transport gets FULL projection + highest accepted SAMPLE sequence baseline
+
+---
+
+## P. Recovery checkpoint (§20)
+
+- [ ] Checkpoint contains: global state, executedThroughSessionTime, contextRevision, PRNG state, pending timers, processed COMMAND tokens per participant, consumedThroughSampleSequence per participant, participant status (CONNECTED/DISCONNECTED/LEFT), other controller state needed for exact recovery
+- [ ] Checkpoint excludes: current SAMPLE values, pending transitions, pending COMMANDs, projection cache, projection revisions, WebSocket state
+- [ ] State and metadata describe the same materialized execution boundary (never state through SAMPLE 100 with consumed sequence 103)
+- [ ] Strong initial checkpoint (see G)
+- [ ] Periodic checkpoints: best effort, asynchronous, taken from an immutable snapshot at a safe boundary, never blocking gameplay on the external write
+- [ ] Checkpoint failure does not stop the Session; later checkpoints can succeed
+- [ ] Storage technology chosen and implemented (decision)
+
+---
+
+## Q. Recovery after Runtime pod loss (§21)
+
+- [ ] Lazy: no eager recreation of crashed Sessions
+- [ ] First reconnect: owner registry sees no valid owner -> claims new pod -> request routed
+- [ ] New pod creates the controller, loads Session + pinned GameVersion + latest checkpoint
+- [ ] Restores state, timers, PRNG, sequences, participant statuses
+- [ ] All logical inputs default
+- [ ] Fresh Sandbox context from recovered state; projections rebuilt via project()
+- [ ] Requesting connection attached by role; FULL projection + fresh baseline sent
+- [ ] Game time resumes from the checkpoint value (outage not added)
+- [ ] Recovery window (platform time, ~30 s): previously-CONNECTED participants may return without being converted to disconnects
+- [ ] At window end, playerDisconnected() inserted for previously-connected participants who never returned
+- [ ] Participants DISCONNECTED in the checkpoint return only via real playerRejoined flow; LEFT remain unable to rejoin
+- [ ] Rollback to the last checkpoint is handled; clients reconcile on the full projection
+
+---
+
+## R. Replay recording - producer side (§22)
+
+- [ ] Replay data contract defined: sessionUUID, gameVersionID, replay format version, participant metadata (ParticipantIDs), full base state, gameTime per state point, sampled state deltas, logical events, COMMAND responses with target participant, timeline order for equal gameTime (decision: encoding/compression/storage technology)
+- [ ] No recovery-only data in replay (sequences, tokens, timers, PRNG, connection state, lease)
+- [ ] Capture cadence independent from execution cadence and chunk duration (three separate knobs)
+- [ ] Replay Recorder receives immutable consistent captures at safe boundaries (never reads mutable state)
+- [ ] Chunk = FULL_STATE first, then STATE_DELTA, EVENT, COMMAND_RESPONSE records
+- [ ] Sealed chunks persisted asynchronously; the next chunk starts capturing immediately
+- [ ] Bounded memory queue; retry on failure; when exhausted, degrade/drop best-effort history without stopping gameplay
+- [ ] Transient records keep visibility/target (broadcast, participant-targeted, COMMAND response); a P1-private response is never replayable under P2
+- [ ] Final state: durable final Replay point persisted BEFORE the durable FINISHED transition and cleanup; final chunk may be shorter
+- [ ] Raw global state stored backend-only
+
+---
+
+## S. Session termination (§23)
+
+- [ ] FINISHED: Sandbox success with FINISHED -> commit -> force durable final Replay state / game result -> durable FINISHED -> final live state/events to connected users -> close transports -> destroy Sandbox context + controller -> release owner
+- [ ] CANCELLED (host), EXPIRED (lobby/inactivity), ABORTED (unrecoverable) complete without calling JavaScript
+- [ ] Clients receive a platform terminal message with cause
+- [ ] FINISHED Sessions are historical only; no live reactivation (§30.26)
+
+---
+
+## T. Reconciliation / lifecycle jobs (§24)
+
+- [ ] Expired LOBBY Sessions marked EXPIRED
+- [ ] RUNNING without a valid live owner: not aborted immediately; after the recovery/owner-loss window, marked ABORTED with the right cause
+- [ ] "Valid owner" defined by the owner registry/lease (see A1)
+- [ ] No transparent suspension of healthy controllers; a running Session stays live while meaningfully active
+
+---
+
+## U. Inactivity and lifetime (§25)
+
+- [ ] Maximum Session lifetime enforced
+- [ ] Meaningful-inactivity timeout enforced
+- [ ] Counts as activity: distinct SAMPLE changes after dedup, COMMANDs
+- [ ] Does NOT count: identical refreshes, ping/pong, acks/resync metadata, update() calls, timer firings
+- [ ] An update() game cannot consume compute indefinitely without human interaction
+
+---
+
+## V. Errors (§27)
+
+- [ ] Protocol/contract errors rejected pre-JS (malformed message, undeclared command, bad payload, bad SAMPLE shape, over-limit, wrong role)
+- [ ] Logical game results returned as normal data; Session continues
+- [ ] Script/runtime failure handled per M (retry once, then abort)
+- [ ] Infrastructure failure handled per M (recreate + retry)
+- [ ] No partial state/events/timers/responses ever escape a failed batch
+
+---
+
+## W. Rate limits and resource controls (§28)
+
+- [ ] SAMPLE: per-participant ingress rate, max distinct transitions per window, bounded pending buffer, payload size, identical-refresh dedup
+- [ ] COMMAND: per-participant token bucket, max pending, bounded queue, payload size
+- [ ] WebSocket: messages/s, bytes/s, max message size, outbound backpressure protection
+- [ ] Sandbox: CPU/execution budget, memory, deadline, state/output size, non-cooperative code protection
+- [ ] Session: max lifetime, inactivity timeout, owner/recovery deadlines, bounded Replay and checkpoint queues
+- [ ] Scripts cannot request higher tick rates or unbounded buffers
+- [ ] All numeric values chosen and configurable (decision)
+
+---
+
+## X. Security (§29)
+
+- [ ] Backend JS has no external-world access
+- [ ] Frontend package never receives backend script, raw state, or credentials
+- [ ] Assets reached only through Playhoot-controlled handles / signed access
+- [ ] All mutations pass through one ordered lane per Session
+- [ ] Contract validated before executing authored JavaScript
+- [ ] Script exceptions treated as implementation failures, not game rejections
+- [ ] Published artifacts immutable and retained
+
+---
+
+## Y. Observability: monitoring and metrics (MANDATORY, not in the plan)
+
+Foundation (existing: `logging` package, `monitoring` package with alerts only, `docs/engineering/standards/logging.md`):
+- [ ] Metrics capability exists in `monitoring` (no metrics implementation exists today) (decision: provider/format)
+- [ ] Metrics applied centrally for REST and WebSocket in `api` Server, per the Centralized Observability rule
+- [ ] Per-message logging on live connections follows the logging standard (each inbound message is its own entry point; trace correlated per connection)
+- [ ] Alerts use the monitoring abstraction; internal inconsistencies follow `data-integrity.md`
+- [ ] Metric cardinality is controlled (no per-session or per-user labels on high-volume metrics)
+
+Session lifecycle:
+- [ ] Sessions by state and endCause (created, started, finished, cancelled, expired, aborted)
+- [ ] Active controllers and active Sessions per pod
+- [ ] Create-session / join / start / rejoin outcomes (accepted vs rejected, by reason) and latency
+- [ ] Start duration end-to-end and start-failure counts (incl. orphan checkpoints)
+
+Connections and protocol:
+- [ ] Open WebSockets by role (PLAYER/ADMIN); attach/detach rates; transport-grace expirations
+- [ ] Logical disconnects, leaves, rejoins (accepted/rejected), device switches
+- [ ] Protocol/contract rejections by reason; rate-limit hits by limit type
+- [ ] Inbound/outbound message and byte rates; outbound backpressure/slow-consumer events
+
+Execution timeline:
+- [ ] Processing boundary duration, batch size, queue depth (pending timeline operations)
+- [ ] Boundary lag vs target cadence (~100 ms); update() call interval and skipped/dropped updates
+- [ ] SAMPLE: accepted vs deduped vs stale; pending-transition buffer depth
+- [ ] COMMAND: rate, latency (receive -> response), ALREADY_PROCESSED count, logical rejections vs structural rejections
+- [ ] Timers: scheduled, fired, firing lateness
+
+Sandbox:
+- [ ] Execution latency per entrypoint (start, samples, command, update, timer, project, ...)
+- [ ] Script errors, infra errors, retry counts and retry outcomes (flaky-script alert), resource-limit violations
+- [ ] Context creates/recreates/evictions; state size and output size
+- [ ] Sandbox sidecar health/restarts
+
+Projection and replication:
+- [ ] Projection computation latency; projection/patch size; full-vs-patch send ratio
+- [ ] Resync requests and reasons
+
+Recovery and ownership:
+- [ ] Checkpoint success/failure, duration, size, age of latest successful checkpoint per active Session (alert on stale)
+- [ ] Recoveries performed, recovery duration, recovery-window expirations
+- [ ] Owner claim/release/lease-loss events; any detection of dual ownership (critical alert)
+- [ ] Reconciliation jobs: Sessions expired/aborted per run, job failures
+
+Replay:
+- [ ] Capture rate, chunk size/duration, persistence latency, retry count
+- [ ] Queue depth and dropped chunks/records (alert on drops)
+- [ ] Final-state persistence success/failure (critical alert)
+
+Alerts and dashboards:
+- [ ] Alerts defined for: dual ownership, sandbox retry-after-script-error, repeated session aborts, checkpoint staleness, replay drops, final replay failure, boundary lag, sandbox sidecar unhealthy, queue saturation
+- [ ] Dashboards for: lifecycle funnel, live load (controllers/connections/boundary lag), sandbox health, recovery/checkpoint health, replay pipeline
+- [ ] Per-Session log correlation: one trace per connection, Session/Participant identifiers present in logs (without sensitive data)
+
+---
+
+## Z. Documentation synchronization
+
+- [ ] Accepted architecture promoted from the plan `.docx` to durable owners (ADR(s), `play/README.md`, `ARCHITECTURE.md` as needed) (decision: form/timing)
+- [ ] `play/CURRENT_STATE.md` reflects the implemented state
+- [ ] `play/docs/DATA_MODEL.md` and `play/docs/FLOWS.md` created and accurate
+- [ ] `docs/architecture/CROSS_DOMAIN_FLOWS.md` and `SYSTEM_MAP.md` updated for implemented flows
+- [ ] `docs/ai/KNOWLEDGE_MAP.md` row for Session Runtime updated (and `session/` vs `play/` path drift resolved)
+- [ ] Observability decisions captured in the right owner (standard/ADR), not only in code
+
+---
+
+## Invariants verification (§30)
+
+Each needs at least one test or other concrete evidence before ticking.
+
+- [ ] 1. One Session, one live owner
+- [ ] 2. One authoritative timeline; per-player buffers are never authority
+- [ ] 3. RUNNING implies recoverable initial state
+- [ ] 4. Lobby membership is ephemeral; durable participants only at Start
+- [ ] 5. ParticipantID is the script's identity; userUUID stays platform-side
+- [ ] 6. No late new players after Start
+- [ ] 7. Transport recovery is not game rejoin
+- [ ] 8. Disconnect resets inputs immediately
+- [ ] 9. Explicit leave is permanent
+- [ ] 10. SAMPLE sequence vs COMMAND token identity rules
+- [ ] 11. Distinct SAMPLE transitions preserved; refreshes deduped
+- [ ] 12. COMMAND logical rejection still consumes its token
+- [ ] 13. Game time is not wall time
+- [ ] 14. update() is frequent, not exact
+- [ ] 15. Timers belong to Runtime, checkpointed, game-time based
+- [ ] 16. Sandbox has no external side effects; ambiguous calls discarded and retried from the mirror
+- [ ] 17. Failed execution has no partial output
+- [ ] 18. project() is pure and deterministic
+- [ ] 19. Projection privacy is backend-only
+- [ ] 20. Projection revision belongs to the viewer stream
+- [ ] 21. Full resync always available
+- [ ] 22. Recovery may roll back
+- [ ] 23. Recovery and Replay are separate
+- [ ] 24. Replay never blocks gameplay indefinitely
+- [ ] 25. FINISHED has a durable ending
+- [ ] 26. Finished Sessions are historical, not live
+- [ ] 27. Platform termination does not depend on script cleanup
+- [ ] 28. Published GameVersion stays available
