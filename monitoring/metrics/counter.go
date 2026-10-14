@@ -14,7 +14,7 @@ type Counter struct {
 // NewCounter declares a counter. Pass one label per dimension; each recording
 // call must then provide one value for each of them.
 func NewCounter(name string, help string, labels ...Label) *Counter {
-	return &Counter{instrument: newInstrument(kindCounter, name, help, labels)}
+	return &Counter{instrument: newInstrument(kindCounter, name, help, labels, nil)}
 }
 
 // Inc adds one.

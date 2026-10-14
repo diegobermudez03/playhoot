@@ -10,7 +10,7 @@ type Gauge struct {
 
 // NewGauge declares a gauge.
 func NewGauge(name string, help string, labels ...Label) *Gauge {
-	return &Gauge{instrument: newInstrument(kindGauge, name, help, labels)}
+	return &Gauge{instrument: newInstrument(kindGauge, name, help, labels, nil)}
 }
 
 // Set replaces the current value.

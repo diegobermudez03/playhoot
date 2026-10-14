@@ -11,7 +11,6 @@ import (
 // payload sizes, into fixed buckets.
 type Histogram struct {
 	instrument
-	buckets []float64
 }
 
 // LatencyBuckets returns bucket upper bounds, in seconds, suited to request
@@ -35,10 +34,7 @@ func NewHistogram(name string, help string, buckets []float64, labels ...Label) 
 			panic(fmt.Sprintf("metrics: histogram %q buckets must be strictly increasing", name))
 		}
 	}
-	return &Histogram{
-		instrument: newInstrument(kindHistogram, name, help, labels),
-		buckets:    append([]float64(nil), buckets...),
-	}
+	return &Histogram{instrument: newInstrument(kindHistogram, name, help, labels, buckets)}
 }
 
 // Observe records one observation.

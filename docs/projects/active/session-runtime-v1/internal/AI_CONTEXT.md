@@ -16,6 +16,13 @@ Last updated: 2026-10-13
 - CHECKLIST.md is the end-state verification list. Tick items only when implemented AND verified. When the human's instructions skip a checklist item, surface it.
 - Monitoring and metrics are mandatory for completion even though the plan lists them as deferred implementation detail (plan section 31).
 
+## Progress (not duplicating git)
+
+- monitoring/metrics entry-point API done (emission to a backend pending).
+- Create Session, /api edge written without tests: `POST /sessions`, `api/internal/auth` middleware (Identity port `Authorizer`), `SessionCreator` port in `api/session`; public contract types in `identity/identity.go` and `play/session.go`. Identity is wired to a placeholder (`identity/usecases/authorize`: random UserUUID, always allowed; real behavior must make CREATE_SESSION require an account, not a guest). The Orchestrator stand-in in `unwired.go` at repo root must be removed once CreateSession exists.
+- Still open for create session: Orchestrator CreateSession, /game playable check, /play/session durable creation, idempotency ownership, join code generation, tests, metrics emission.
+- `play/session/internal/...` does not compile (imports still point at the old `session/` path); pre-existing, unrelated.
+
 ## Context notes
 
 - The plan lives only as a .docx. To read it: copy it to the scratchpad, unzip, and extract `word/document.xml` text. Promotion to durable owners is pending a human decision (see PROJECT.md).

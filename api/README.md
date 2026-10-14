@@ -39,6 +39,12 @@ A route's own `Middlewares` (`[]routing.Middleware`, each `func(http.HandlerFunc
 
 ## The session route group
 
-`api/session` is the session workflow's route group, and today the only one. It declares no endpoints yet: the previous session endpoints (create, content access, WebSocket) were removed with the previous Session Runtime implementation, and new ones are added as the real-time design is accepted.
+`api/session` is the session workflow's route group, and today the only one. It declares `POST /sessions` (create a Session); the previous content-access and WebSocket endpoints were removed with the previous Session Runtime implementation, and new ones are added as the real-time design is accepted.
+
+`POST /sessions` takes `{game_uuid, idempotency_key}` and returns `201 {session_uuid, join_code, lobby_expires_at}`; `404` when the Game is not playable for the caller, `409` when the idempotency key was used for a different request, `400` for an invalid body. The creator is never part of the request: it is the caller Identity resolves from the bearer token.
+
+### Authorization: a per-route middleware backed by Identity
+
+A route that needs an authenticated caller declares `auth.Require(authorizer, operation)` (`api/internal/auth`) in its `Middlewares`. The middleware extracts the `Authorization: Bearer <jwt>` token and asks Identity (the `Authorizer` port) for the caller's `UserUUID` and whether that caller may perform the route's named operation (`identity.Operation`); `401` for a missing/invalid token, `403` when Identity forbids the operation. The handler behind it reads the caller with `auth.UserUUID(ctx)`. The api never interprets the token.
 
 See `../ARCHITECTURE.md` for global architecture rules.

@@ -7,10 +7,12 @@
 // declares domain metrics itself. Callers never see how or where metrics are
 // exported.
 //
-// Every misuse that would break the metric contract (invalid names,
-// duplicate metrics, undeclared or missing label values, too many series)
-// panics, because these are programming errors and cardinality must stay
-// bounded.
+// Declaring a metric or label again with exactly the same definition is
+// allowed and returns the existing one, so declarations can live in code
+// that runs more than once. Every misuse that would break the metric contract
+// (invalid names, a conflicting redeclaration, undeclared or missing label
+// values, too many series) panics, because these are programming errors and
+// cardinality must stay bounded.
 package metrics
 
 import (
@@ -31,9 +33,9 @@ const maxSeriesPerMetric = 1000
 var metricNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
 var registry = struct {
-	mu    sync.Mutex
-	names map[string]struct{}
-}{names: map[string]struct{}{}}
+	mu          sync.Mutex
+	instruments map[string]instrument
+}{instruments: map[string]instrument{}}
 
 type kind string
 
@@ -54,15 +56,38 @@ const (
 // instrument holds what every metric kind shares: its identity, its labels,
 // and the recording path.
 type instrument struct {
-	name   string
-	help   string
-	kind   kind
-	labels []Label
+	name    string
+	help    string
+	kind    kind
+	labels  []Label
+	buckets []float64
 }
 
-// newInstrument validates the declaration and reserves name. Metric names are
-// global to the process, so a second metric with the same name panics.
-func newInstrument(kind kind, name string, help string, labels []Label) instrument {
+// sameDefinition reports whether other declares exactly the same metric.
+// Labels are interned, so comparing them by identity compares their values.
+func (i instrument) sameDefinition(other instrument) bool {
+	if i.name != other.name || i.help != other.help || i.kind != other.kind ||
+		len(i.labels) != len(other.labels) || len(i.buckets) != len(other.buckets) {
+		return false
+	}
+	for index := range i.labels {
+		if i.labels[index].def != other.labels[index].def {
+			return false
+		}
+	}
+	for index := range i.buckets {
+		if i.buckets[index] != other.buckets[index] {
+			return false
+		}
+	}
+	return true
+}
+
+// newInstrument validates the declaration and reserves its name. Metric names
+// are global to the process: declaring a metric again with exactly the same
+// definition returns the existing one, while declaring the same name with a
+// different definition panics. buckets is only used by histograms.
+func newInstrument(kind kind, name string, help string, labels []Label, buckets []float64) instrument {
 	if !metricNamePattern.MatchString(name) {
 		panic(fmt.Sprintf("metrics: invalid metric name %q, must be lower snake_case", name))
 	}
@@ -86,19 +111,24 @@ func newInstrument(kind kind, name string, help string, labels []Label) instrume
 		}
 	}
 
+	declared := instrument{
+		name:    name,
+		help:    help,
+		kind:    kind,
+		labels:  append([]Label(nil), labels...),
+		buckets: append([]float64(nil), buckets...),
+	}
+
 	registry.mu.Lock()
 	defer registry.mu.Unlock()
-	if _, exists := registry.names[name]; exists {
-		panic(fmt.Sprintf("metrics: metric %q is already declared", name))
+	if existing, exists := registry.instruments[name]; exists {
+		if !existing.sameDefinition(declared) {
+			panic(fmt.Sprintf("metrics: metric %q is already declared with a different definition", name))
+		}
+		return existing
 	}
-	registry.names[name] = struct{}{}
-
-	return instrument{
-		name:   name,
-		help:   help,
-		kind:   kind,
-		labels: append([]Label(nil), labels...),
-	}
+	registry.instruments[name] = declared
+	return declared
 }
 
 // resolve returns the label values in the metric's declared label order. The

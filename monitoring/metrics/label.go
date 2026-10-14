@@ -3,6 +3,9 @@ package metrics
 import (
 	"fmt"
 	"regexp"
+	"sort"
+	"strings"
+	"sync"
 )
 
 var labelNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
@@ -37,7 +40,19 @@ type LabelValue struct {
 	value string
 }
 
+// labelRegistry interns labels by their name and set of values, so declaring
+// the same label again yields the same label. This is what lets metrics
+// declared from code that can run more than once (for example, when a server
+// is built) be redeclared without conflict.
+var labelRegistry = struct {
+	mu     sync.Mutex
+	labels map[string]*labelDef
+}{labels: map[string]*labelDef{}}
+
 // NewLabel declares a label called name whose only allowed values are values.
+// Declaring a label with the same name and the same set of values again
+// returns the same label.
+//
 // It panics on an invalid or reserved name, on no values, and on empty or
 // duplicated values, since all of those are programming errors that must
 // surface at startup.
@@ -63,11 +78,22 @@ func NewLabel(name string, values ...string) Label {
 		index[value] = struct{}{}
 	}
 
-	return Label{def: &labelDef{
+	sorted := append([]string(nil), values...)
+	sort.Strings(sorted)
+	key := name + "\x00" + strings.Join(sorted, "\x00")
+
+	labelRegistry.mu.Lock()
+	defer labelRegistry.mu.Unlock()
+	if existing, ok := labelRegistry.labels[key]; ok {
+		return Label{def: existing}
+	}
+	def := &labelDef{
 		name:   name,
 		values: append([]string(nil), values...),
 		index:  index,
-	}}
+	}
+	labelRegistry.labels[key] = def
+	return Label{def: def}
 }
 
 // Name returns the label's name.

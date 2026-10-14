@@ -94,6 +94,8 @@ Source of behavior: `plans/session_runtime/Playhoot_Session_Runtime_Architecture
 
 ## D. Create Session endpoint (§2)
 
+Progress note (2026-10-13): the `/api` edge is written and was smoke-checked with fakes, but has no tests and no real Identity/Orchestrator behind it (`main` uses `unwired.go` stand-ins). Items below stay unchecked until they are implemented behind the ports and verified.
+
 - [ ] REST endpoint receives: account auth, game UUID, frontend idempotency token
 - [ ] Identity resolves userUUID and verifies CREATE_SESSION
 - [ ] Orchestrator composes the operation
@@ -406,7 +408,7 @@ Source of behavior: `plans/session_runtime/Playhoot_Session_Runtime_Architecture
 Foundation (existing: `logging` package, `monitoring` package with alerts only, `docs/engineering/standards/logging.md`):
 - [x] Metrics entry-point API exists: `monitoring/metrics` (Counter, Gauge, Histogram; domain-declared closed-set labels; every call written to the request log). Emission is not implemented yet.
 - [ ] Metrics emission to the real backend implemented in `monitoring/metrics` (decision: provider/format; GCP Cloud Run target)
-- [ ] Metrics applied centrally for REST and WebSocket in `api` Server, per the Centralized Observability rule
+- [ ] Metrics applied centrally for REST and WebSocket in `api` Server, per the Centralized Observability rule (REST done: `api_http_requests_total{route,status}` in `restObservability`; WebSocket pending)
 - [ ] Per-message logging on live connections follows the logging standard (each inbound message is its own entry point; trace correlated per connection)
 - [ ] Alerts use the monitoring abstraction; internal inconsistencies follow `data-integrity.md`
 - [ ] Metric cardinality is controlled (no per-session or per-user labels on high-volume metrics)

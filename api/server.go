@@ -14,7 +14,7 @@
 // but each one is still registered and testable on its own.
 //
 // A route group never touches an *http.ServeMux or starts its own
-// request log: it only declares its endpoints (Route.go's Route: a
+// request log: it only declares its endpoints (routing.Route: a
 // pattern, a handler, and any route-specific middlewares), split by
 // transport shape (RESTRoutes, WebSocketRoutes - an SSERoutes will join
 // them once anything needs it). Server is what actually registers them
@@ -28,6 +28,8 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/diegobermudez03/playhoot/api/internal/auth"
+	"github.com/diegobermudez03/playhoot/api/internal/routing"
 	apisession "github.com/diegobermudez03/playhoot/api/session"
 	"github.com/diegobermudez03/playhoot/logging"
 )
@@ -35,8 +37,8 @@ import (
 // routeGroup exposes one workflow/feature's endpoints, split by transport
 // shape. Either method may return an empty slice.
 type routeGroup interface {
-	RESTRoutes() []Route
-	WebSocketRoutes() []Route
+	RESTRoutes() []routing.Route
+	WebSocketRoutes() []routing.Route
 }
 
 // Server composes every route group into one HTTP handler.
@@ -47,26 +49,41 @@ type Server struct {
 // NewServer constructs a Server exposing every endpoint every route group
 // this package knows about declares, registering each one onto a shared
 // mux and wrapping it with the observability behavior its transport shape
-// requires (see restObservability/wsObservability). A route group that
-// needs a dependency declares its own narrow port for it, never importing
-// orchestrator or a domain's implementation directly.
-func NewServer() *Server {
+// requires (see restObservability/wsObservability). authorizer is Identity
+// (token -> UserUUID and operation access) and sessionCreator whatever
+// coordinates Session creation (Orchestrator in production); this package
+// depends only on its own narrow ports for them, never on orchestrator or
+// a domain's implementation directly.
+func NewServer(authorizer auth.Authorizer,sessionCreator apisession.SessionCreator) *Server {
 	mux := http.NewServeMux()
 	groups := []routeGroup{
-		apisession.NewHandler(),
+		apisession.NewHandler(authorizer, sessionCreator),
 	}
+	var restRoutes, wsRoutes []routing.Route
 	for _, group := range groups {
-		for _, route := range group.RESTRoutes() {
-			// Observability goes first (outermost), so it sees every
-			// request/response regardless of what a route-specific
-			// middleware does to it.
-			mws := append([]Middleware{restObservability(route.Pattern)}, route.Middlewares...)
-			mux.HandleFunc(route.Pattern, chain(mws, route.Handler))
+		restRoutes = append(restRoutes, group.RESTRoutes()...)
+		wsRoutes = append(wsRoutes, group.WebSocketRoutes()...)
+	}
+
+	var restRequestMetrics *restMetrics
+	if len(restRoutes) > 0 {
+		patterns := make([]string, len(restRoutes))
+		for i, route := range restRoutes {
+			patterns[i] = route.Pattern
 		}
-		for _, route := range group.WebSocketRoutes() {
-			mws := append([]Middleware{wsObservability(route.Pattern)}, route.Middlewares...)
-			mux.HandleFunc(route.Pattern, chain(mws, route.Handler))
-		}
+		restRequestMetrics = newRESTMetrics(patterns)
+	}
+
+	for _, route := range restRoutes {
+		// Observability goes first (outermost), so it sees every
+		// request/response regardless of what a route-specific
+		// middleware does to it.
+		mws := append([]routing.Middleware{restObservability(route.Pattern, restRequestMetrics)}, route.Middlewares...)
+		mux.HandleFunc(route.Pattern, chain(mws, route.Handler))
+	}
+	for _, route := range wsRoutes {
+		mws := append([]routing.Middleware{wsObservability(route.Pattern)}, route.Middlewares...)
+		mux.HandleFunc(route.Pattern, chain(mws, route.Handler))
 	}
 	return &Server{mux: mux}
 }
@@ -78,12 +95,19 @@ func NewServer() *Server {
 // to call logging.Start/FinishRequestLog itself; every handler can assume
 // ctx already carries a started log, because this wrapper is the only
 // place in the whole request path that ever starts one.
-func restObservability(pattern string) Middleware {
+//
+// Once the handler returns, and before the log flushes, it also counts the
+// request under its route and the status code the handler wrote, so the
+// metric is written into the same request log.
+func restObservability(pattern string, requestMetrics *restMetrics) routing.Middleware {
 	return func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			ctx := logging.Start(r.Context())
 			defer logging.FinishRequestLog(ctx, slog.Default(), pattern)
-			next(w, r.WithContext(ctx))
+
+			recorder := newStatusRecorder(w)
+			next(recorder, r.WithContext(ctx))
+			requestMetrics.record(ctx, pattern, recorder.status)
 		}
 	}
 }
@@ -99,7 +123,7 @@ func restObservability(pattern string) Middleware {
 // handler's own responsibility to log, each as its own Start/
 // FinishRequestLog pair, which will share this same trace ID since it
 // runs against a context this wrapper already attached one to.
-func wsObservability(pattern string) Middleware {
+func wsObservability(pattern string) routing.Middleware {
 	return func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			ctx := logging.Start(r.Context())

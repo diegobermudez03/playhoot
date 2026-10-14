@@ -40,6 +40,22 @@ func TestNewLabel(t *testing.T) {
 	}
 }
 
+func TestRedeclaration(t *testing.T) {
+	label := NewLabel("redeclared_label", "a", "b")
+	NewHistogram("redeclared_duration_seconds", "Help.", []float64{1, 2}, label)
+	NewGauge("redeclared_gauge", "Help.")
+
+	// An identical label declaration is the same label, so values resolved
+	// from either are accepted by a metric declared with the other.
+	sameLabel := NewLabel("redeclared_label", "b", "a")
+	redeclared := NewHistogram("redeclared_duration_seconds", "Help.", []float64{1, 2}, sameLabel)
+	require.NotPanics(t, func() { redeclared.Observe(context.Background(), 1, label.Value("a")) })
+
+	require.Panics(t, func() { NewHistogram("redeclared_duration_seconds", "Help.", []float64{1, 3}, label) })
+	require.Panics(t, func() { NewHistogram("redeclared_duration_seconds", "Help.", []float64{1, 2}) })
+	require.Panics(t, func() { NewCounter("redeclared_gauge", "Help.") })
+}
+
 func TestLabelValue(t *testing.T) {
 	label := NewLabel("result", "accepted", "rejected")
 
@@ -74,9 +90,16 @@ func TestNewInstrument(t *testing.T) {
 			build:       func() *Counter { return NewCounter("instrument_nohelp_total", "") },
 			expectPanic: true,
 		},
-		"duplicate_name": {
+		"same_name_different_labels": {
 			build:       func() *Counter { return NewCounter("instrument_taken_total", "Help.") },
 			expectPanic: true,
+		},
+		"same_name_different_help": {
+			build:       func() *Counter { return NewCounter("instrument_taken_total", "Other help.", label) },
+			expectPanic: true,
+		},
+		"identical_redeclaration": {
+			build: func() *Counter { return NewCounter("instrument_taken_total", "Help.", label) },
 		},
 		"zero_value_label": {
 			build:       func() *Counter { return NewCounter("instrument_zero_label_total", "Help.", Label{}) },
