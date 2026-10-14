@@ -4,8 +4,8 @@ Current stage: tracking set up; waiting for the human's first implementation ins
 Current execution surface: CODEBASE AGENT
 Related durable artifacts: docs/projects/active/session-runtime-v1/PROJECT.md, docs/projects/active/session-runtime-v1/CHECKLIST.md, plans/session_runtime/Playhoot_Session_Runtime_Architecture_Plan_with_TOC.docx, play/docs/decisions/SESSION-ADR-0028-real-time-session-runtime-supersedes-discrete-turn-architecture.md
 Blocked by: nothing
-Next action: wait for the human's instruction on what to implement first; map it to checklist IDs
-Last durable checkpoint: Project, checklist and this file created (2026-10-13)
+Next action: wait for the human's next instruction; map it to checklist IDs
+Last durable checkpoint: monitoring/metrics entry-point API implemented and tested (2026-10-13); emission to a backend still pending
 Last updated: 2026-10-13
 
 ## Working agreement (human decisions)

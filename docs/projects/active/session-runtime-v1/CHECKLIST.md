@@ -404,7 +404,8 @@ Source of behavior: `plans/session_runtime/Playhoot_Session_Runtime_Architecture
 ## Y. Observability: monitoring and metrics (MANDATORY, not in the plan)
 
 Foundation (existing: `logging` package, `monitoring` package with alerts only, `docs/engineering/standards/logging.md`):
-- [ ] Metrics capability exists in `monitoring` (no metrics implementation exists today) (decision: provider/format)
+- [x] Metrics entry-point API exists: `monitoring/metrics` (Counter, Gauge, Histogram; domain-declared closed-set labels; every call written to the request log). Emission is not implemented yet.
+- [ ] Metrics emission to the real backend implemented in `monitoring/metrics` (decision: provider/format; GCP Cloud Run target)
 - [ ] Metrics applied centrally for REST and WebSocket in `api` Server, per the Centralized Observability rule
 - [ ] Per-message logging on live connections follows the logging standard (each inbound message is its own entry point; trace correlated per connection)
 - [ ] Alerts use the monitoring abstraction; internal inconsistencies follow `data-integrity.md`

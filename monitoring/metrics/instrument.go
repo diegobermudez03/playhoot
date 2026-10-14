@@ -1,0 +1,154 @@
+// Package metrics is the entry point for recording operational metrics:
+// counters, gauges and histograms with closed-set labels.
+//
+// This package only provides the generic mechanism. The package that owns a
+// piece of behavior declares its own metrics and label values (typically as
+// package-level variables) and records through them; this package never
+// declares domain metrics itself. Callers never see how or where metrics are
+// exported.
+//
+// Every misuse that would break the metric contract (invalid names,
+// duplicate metrics, undeclared or missing label values, too many series)
+// panics, because these are programming errors and cardinality must stay
+// bounded.
+package metrics
+
+import (
+	"context"
+	"fmt"
+	"math"
+	"regexp"
+	"sync"
+
+	"github.com/diegobermudez03/playhoot/logging"
+)
+
+// maxSeriesPerMetric bounds the number of distinct label combinations one
+// metric can produce, so that several individually small labels cannot
+// multiply into an unbounded number of series.
+const maxSeriesPerMetric = 1000
+
+var metricNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+
+var registry = struct {
+	mu    sync.Mutex
+	names map[string]struct{}
+}{names: map[string]struct{}{}}
+
+type kind string
+
+const (
+	kindCounter   kind = "counter"
+	kindGauge     kind = "gauge"
+	kindHistogram kind = "histogram"
+)
+
+type operation string
+
+const (
+	operationAdd     operation = "add"
+	operationSet     operation = "set"
+	operationObserve operation = "observe"
+)
+
+// instrument holds what every metric kind shares: its identity, its labels,
+// and the recording path.
+type instrument struct {
+	name   string
+	help   string
+	kind   kind
+	labels []Label
+}
+
+// newInstrument validates the declaration and reserves name. Metric names are
+// global to the process, so a second metric with the same name panics.
+func newInstrument(kind kind, name string, help string, labels []Label) instrument {
+	if !metricNamePattern.MatchString(name) {
+		panic(fmt.Sprintf("metrics: invalid metric name %q, must be lower snake_case", name))
+	}
+	if help == "" {
+		panic(fmt.Sprintf("metrics: metric %q has no help text", name))
+	}
+
+	series := 1
+	seen := make(map[*labelDef]struct{}, len(labels))
+	for _, label := range labels {
+		if label.def == nil {
+			panic(fmt.Sprintf("metrics: metric %q uses an undeclared label, create it with NewLabel", name))
+		}
+		if _, duplicate := seen[label.def]; duplicate {
+			panic(fmt.Sprintf("metrics: metric %q uses label %q twice", name, label.def.name))
+		}
+		seen[label.def] = struct{}{}
+		series *= len(label.def.values)
+		if series > maxSeriesPerMetric {
+			panic(fmt.Sprintf("metrics: metric %q would exceed %d label combinations", name, maxSeriesPerMetric))
+		}
+	}
+
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+	if _, exists := registry.names[name]; exists {
+		panic(fmt.Sprintf("metrics: metric %q is already declared", name))
+	}
+	registry.names[name] = struct{}{}
+
+	return instrument{
+		name:   name,
+		help:   help,
+		kind:   kind,
+		labels: append([]Label(nil), labels...),
+	}
+}
+
+// resolve returns the label values in the metric's declared label order. The
+// caller may pass them in any order, but must pass exactly one value for each
+// of the metric's labels.
+func (i instrument) resolve(values []LabelValue) []string {
+	if len(values) != len(i.labels) {
+		panic(fmt.Sprintf("metrics: metric %q takes %d label values, got %d", i.name, len(i.labels), len(values)))
+	}
+
+	resolved := make([]string, len(i.labels))
+	filled := make([]bool, len(i.labels))
+	for _, value := range values {
+		position := -1
+		for index, label := range i.labels {
+			if label.def == value.def {
+				position = index
+				break
+			}
+		}
+		if position == -1 {
+			panic(fmt.Sprintf("metrics: metric %q does not have the label of value %q", i.name, value.value))
+		}
+		if filled[position] {
+			panic(fmt.Sprintf("metrics: metric %q got label %q twice", i.name, i.labels[position].def.name))
+		}
+		filled[position] = true
+		resolved[position] = value.value
+	}
+	return resolved
+}
+
+// record validates a measurement and emits it. Like monitoring.Alert, every
+// call is also written to the request log carried by ctx, so a point on a
+// dashboard can be matched with the logs of the requests that produced it.
+func (i instrument) record(ctx context.Context, operation operation, amount float64, values []LabelValue) {
+	if math.IsNaN(amount) || math.IsInf(amount, 0) {
+		panic(fmt.Sprintf("metrics: metric %q recorded a non-finite value", i.name))
+	}
+	resolved := i.resolve(values)
+
+	labels := make(map[string]string, len(resolved))
+	for index, label := range i.labels {
+		labels[label.def.name] = resolved[index]
+	}
+	logging.LogLoopFields(ctx, "metrics",
+		logging.Field("metric", i.name),
+		logging.Field("operation", string(operation)),
+		logging.Field("value", amount),
+		logging.Field("labels", labels),
+	)
+	// TODO: forward the measurement to the metrics backend once one is integrated.
+}
