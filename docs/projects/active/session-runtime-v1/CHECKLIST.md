@@ -30,6 +30,7 @@ Source of behavior: `plans/session_runtime/Playhoot_Session_Runtime_Architecture
 - [ ] Identity + owner routing happen before upgrade; logical admission happens after upgrade
 - [ ] Rejected admission sends a rejection and closes the socket
 - [ ] Late messages from an obsolete transport are ignored via Runtime-internal connection generation (§19)
+- [ ] Graceful shutdown covers live connections: on SIGTERM, WebSocket transports are closed (via `http.Server.RegisterOnShutdown`, since `Shutdown` does not track hijacked connections) and the Runtime stops its controllers cleanly within the shutdown window. HTTP request draining is done (`main.go`).
 
 ### A3. Join code and routing (§1, §2)
 - [ ] Join code -> sessionUUID resolution -> owner resolve/claim -> route to pod
@@ -79,7 +80,7 @@ Source of behavior: `plans/session_runtime/Playhoot_Session_Runtime_Architecture
 
 ## C. Durable Session lifecycle (`/play/session`) (§1)
 
-Progress note (2026-10-15): schema and Session creation are in `play/session` (see `play/docs/DATA_MODEL.md`). Unit tests pass; repository tests have not run against Postgres yet, so nothing here is ticked.
+Progress note (2026-10-15): schema and Session creation are in `play/session` (see `play/docs/DATA_MODEL.md`). Unit and repository tests pass (repository tests run by the human against Postgres). Integration tests for the full operation (`step_create_session_integration_test.go`, incl. concurrent retries) are written and still need a Postgres run.
 
 - [ ] Session persistence: lifecycle states (LOBBY, RUNNING, FINISHED, CANCELLED, EXPIRED, ABORTED) with enforced transitions
 - [ ] endCause recorded on terminal transitions (HOST_CANCELLED, ALL_PLAYERS_LEFT, INACTIVITY_TIMEOUT, MAX_LIFETIME, GAME_START_FAILURE, SCRIPT_FAILURE, RUNTIME_RECOVERY_TIMEOUT, UNRECOVERABLE_INFRA_FAILURE, ...)
@@ -479,10 +480,10 @@ Alerts and dashboards:
 
 Everything here is wired into the running system, so a request flows through it, but it returns hardcoded or failing answers. It must never be mistaken for implemented behavior. Items marked "out of scope" are not part of this project (which focuses on `play/`) and stay open after it ends; the owning domain's `CURRENT_STATE.md` also records them. Tick an item only when the real behavior replaces the placeholder.
 
-- [ ] Identity authorization (`identity/usecases/authorize`, out of scope): ignores the token, returns a random UserUUID per call, allows every operation. Real behavior: validate the JWT, resolve the stable UserUUID, decide per operation; `CREATE_SESSION` must require an account and forbid guests.
+- [ ] Identity authorization (`identity/usecases/authorize`, out of scope): recognizes only hardcoded test tokens (`test-user-1`, `test-user-2`, `test-guest`), each mapped to a fixed UserUUID; any other token is unauthenticated. Must never be deployed as-is. Real behavior: validate the JWT, resolve the stable UserUUID, decide per operation; `CREATE_SESSION` must require an account and forbid guests.
 - [ ] Game playability check (`game/usecases/checkplayability`, out of scope): answers `true` for any Game and user. Real behavior: the Game exists, has a published version, and is visible to the user.
 - [x] Session creation stand-in (`unwiredSessionCreation` in `unwired.go`, in scope): always failed. Replaced by `sessionlifecycle.Manager.CreateSession` on 2026-10-15; `unwired.go` was deleted.
-- [ ] No flow creates `play_games` / `play_game_versions` (in scope, see B): nothing registers Games or marks a version EXECUTABLE yet, so every Session creation answers `game_unavailable` until those rows are seeded by hand. Real behavior: the operation that validates a version's scripts, freezes it, and sets it EXECUTABLE as the Game's current version.
+- [ ] No flow creates `play_games` / `play_game_versions` (in scope, see B): nothing registers Games or marks a version EXECUTABLE yet, so every Session creation answers `game_unavailable` until those rows exist (outside production, test-data migrations seed one playable and one unavailable Game; see `play/CURRENT_STATE.md`). Real behavior: the operation that validates a version's scripts, freezes it, and sets it EXECUTABLE as the Game's current version.
 - [ ] Metrics emission (`monitoring/metrics`, `record`): measurements are only written to the request log; nothing is sent to a metrics backend (see Y).
 
 ## Invariants verification (§30)

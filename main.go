@@ -1,14 +1,19 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/diegobermudez03/playhoot/api"
 	"github.com/diegobermudez03/playhoot/game/usecases/checkplayability"
@@ -31,20 +36,33 @@ type envVariables struct {
 	HTTPPort         string
 }
 
+// shutdownTimeout bounds how long in-flight requests get to finish once the
+// process is asked to stop. Cloud Run sends SIGTERM and kills the container
+// 10 seconds later, so this leaves room to close the database afterwards.
+const shutdownTimeout = 8 * time.Second
+
 func main() {
+	if err := run(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+// run starts the application and blocks until it stops. It returns instead
+// of exiting so deferred cleanup (closing the database) always runs.
+func run() error {
 	envVars, err := readEnvVariables()
 	if err != nil {
-		log.Fatalf("reading environment variables: %v", err)
+		return fmt.Errorf("reading environment variables: %w", err)
 	}
 
 	db, err := openPostgres(envVars)
 	if err != nil {
-		log.Fatalf("opening PostgreSQL: %v", err)
+		return fmt.Errorf("opening PostgreSQL: %w", err)
 	}
 
 	sqlDB, err := db.DB()
 	if err != nil {
-		log.Fatalf("getting PostgreSQL connection: %v", err)
+		return fmt.Errorf("getting PostgreSQL connection: %w", err)
 	}
 	defer func() {
 		if err := sqlDB.Close(); err != nil {
@@ -53,16 +71,56 @@ func main() {
 	}()
 
 	if err := PostgresMigrate(db); err != nil {
-		log.Fatalf("running PostgreSQL migrations: %v", err)
+		return fmt.Errorf("running PostgreSQL migrations: %w", err)
+	}
+	if !strings.EqualFold(envVars.Environment, "production") {
+		if err := PostgresSeed(db); err != nil {
+			return fmt.Errorf("seeding PostgreSQL test data: %w", err)
+		}
 	}
 
 	playLifecycle := playlifecycle.New(checkplayability.New(), sessionlifecycle.New(db))
 	server := api.NewServer(authorize.New(), playLifecycle)
 
-	log.Printf("listening on :%s", envVars.HTTPPort)
-	if err := http.ListenAndServe(":"+envVars.HTTPPort, server.Routes()); err != nil {
-		log.Fatalf("serving HTTP: %v", err)
+	httpServer := &http.Server{
+		Addr:              ":" + envVars.HTTPPort,
+		Handler:           server.Routes(),
+		ReadHeaderTimeout: 10 * time.Second,
 	}
+
+	stopCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	serveErr := make(chan error, 1)
+	go func() {
+		log.Printf("listening on %s", httpServer.Addr)
+		serveErr <- httpServer.ListenAndServe()
+	}()
+
+	select {
+	case err := <-serveErr:
+		// The server stopped on its own (for example, the port was taken).
+		return fmt.Errorf("serving HTTP: %w", err)
+	case <-stopCtx.Done():
+	}
+
+	// A second signal while shutting down kills the process immediately.
+	stop()
+	log.Printf("shutting down, waiting up to %s for in-flight requests", shutdownTimeout)
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+	// Shutdown stops accepting connections and waits for active requests.
+	// Hijacked connections (WebSockets) are not tracked by it; once live
+	// connections exist they must be closed through RegisterOnShutdown.
+	if err := httpServer.Shutdown(shutdownCtx); err != nil {
+		return fmt.Errorf("shutting down HTTP server: %w", err)
+	}
+	if err := <-serveErr; !errors.Is(err, http.ErrServerClosed) {
+		return fmt.Errorf("serving HTTP: %w", err)
+	}
+	log.Printf("stopped")
+	return nil
 }
 
 func readEnvVariables() (*envVariables, error) {

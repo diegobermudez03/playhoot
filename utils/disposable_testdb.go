@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"net"
@@ -12,11 +13,16 @@ import (
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
-	"github.com/stretchr/testify/require"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
+// DisposableTestDB is a throwaway database shared by every test of one test
+// binary (one package run). It is created on first use, migrated once, and
+// dropped when the run ends, so tests in the run share data on purpose.
+//
+// A package using it must run its tests through Run from TestMain; Open
+// fails otherwise, since nothing else would drop the database.
 type DisposableTestDB struct {
 	Key        string
 	NameSuffix string
@@ -24,11 +30,11 @@ type DisposableTestDB struct {
 }
 
 type disposableTestDBState struct {
+	running      bool
 	db           *gorm.DB
 	sqlDB        *sql.DB
 	baseSQLDB    *sql.DB
 	databaseName string
-	refCount     int
 }
 
 type disposableTestDBConfig struct {
@@ -46,6 +52,44 @@ var disposableTestDBRegistry struct {
 	states map[string]*disposableTestDBState
 }
 
+// disposableTestDBLockID is the Postgres advisory lock that serializes
+// creating a disposable database with sweeping orphaned ones, so a sweep
+// never drops a database another test binary has just created but not yet
+// connected to.
+const disposableTestDBLockID = 7302190014
+
+// Run runs the package's tests (m.Run) and drops the disposable database
+// afterwards if any test created it. Call it from TestMain:
+//
+//	func TestMain(m *testing.M) { os.Exit(db.Run(m)) }
+func (h DisposableTestDB) Run(m *testing.M) int {
+	disposableTestDBRegistry.mu.Lock()
+	if disposableTestDBRegistry.states == nil {
+		disposableTestDBRegistry.states = map[string]*disposableTestDBState{}
+	}
+	disposableTestDBRegistry.states[h.Key] = &disposableTestDBState{running: true}
+	disposableTestDBRegistry.mu.Unlock()
+
+	code := m.Run()
+
+	disposableTestDBRegistry.mu.Lock()
+	state := disposableTestDBRegistry.states[h.Key]
+	delete(disposableTestDBRegistry.states, h.Key)
+	disposableTestDBRegistry.mu.Unlock()
+
+	if state != nil && state.db != nil {
+		if err := state.dispose(); err != nil {
+			fmt.Fprintf(os.Stderr, "dropping disposable test database %s: %v\n", state.databaseName, err)
+			if code == 0 {
+				code = 1
+			}
+		}
+	}
+	return code
+}
+
+// Open returns the run's disposable database, creating and migrating it on
+// first use. Tests are skipped when no test database is configured.
 func (h DisposableTestDB) Open(t *testing.T) *gorm.DB {
 	t.Helper()
 
@@ -57,66 +101,128 @@ func (h DisposableTestDB) Open(t *testing.T) *gorm.DB {
 	disposableTestDBRegistry.mu.Lock()
 	defer disposableTestDBRegistry.mu.Unlock()
 
-	if disposableTestDBRegistry.states == nil {
-		disposableTestDBRegistry.states = map[string]*disposableTestDBState{}
-	}
-
 	state := disposableTestDBRegistry.states[h.Key]
-	if state == nil {
-		state = &disposableTestDBState{}
-		disposableTestDBRegistry.states[h.Key] = state
+	if state == nil || !state.running {
+		t.Fatalf("disposable test database %q used without Run: add `func TestMain(m *testing.M) { os.Exit(<testdb>.Run(m)) }` to this package", h.Key)
 	}
 
 	if state.db == nil {
-		baseSQLDB, err := sql.Open("pgx", cfg.dsn(cfg.baseDatabaseName))
-		require.NoError(t, err)
-
-		databaseName := fmt.Sprintf("%s_%s_%d", cfg.databaseName, h.NameSuffix, os.Getpid())
-		require.NoError(t, recreateDisposableTestDatabase(baseSQLDB, databaseName))
-
-		db, err := gorm.Open(postgres.Open(cfg.dsn(databaseName)), &gorm.Config{})
-		require.NoError(t, err)
-
-		sqlDB, err := db.DB()
-		require.NoError(t, err)
-
-		require.NoError(t, h.Migrate(db))
-
-		state.db = db
-		state.sqlDB = sqlDB
-		state.baseSQLDB = baseSQLDB
-		state.databaseName = databaseName
+		if err := h.create(cfg, state); err != nil {
+			t.Fatalf("creating disposable test database: %v", err)
+		}
 	}
-
-	state.refCount++
-	t.Cleanup(func() {
-		h.close(t)
-	})
-
 	return state.db
 }
 
-func (h DisposableTestDB) close(t *testing.T) {
-	t.Helper()
-
-	disposableTestDBRegistry.mu.Lock()
-	defer disposableTestDBRegistry.mu.Unlock()
-
-	state := disposableTestDBRegistry.states[h.Key]
-	if state == nil {
-		return
+// create sweeps orphaned databases, then creates, connects to and migrates
+// this run's database. If anything fails after the database exists, it is
+// dropped again so a failed setup leaves nothing behind.
+func (h DisposableTestDB) create(cfg disposableTestDBConfig, state *disposableTestDBState) error {
+	ctx := context.Background()
+	baseSQLDB, err := sql.Open("pgx", cfg.dsn(cfg.baseDatabaseName))
+	if err != nil {
+		return err
 	}
 
-	state.refCount--
-	if state.refCount > 0 {
-		return
+	prefix := fmt.Sprintf("%s_%s_", cfg.databaseName, h.NameSuffix)
+	databaseName := fmt.Sprintf("%s%d", prefix, os.Getpid())
+
+	lockConn, err := baseSQLDB.Conn(ctx)
+	if err != nil {
+		baseSQLDB.Close()
+		return err
+	}
+	defer lockConn.Close()
+	if _, err := lockConn.ExecContext(ctx, `SELECT pg_advisory_lock($1)`, disposableTestDBLockID); err != nil {
+		baseSQLDB.Close()
+		return err
+	}
+	defer lockConn.ExecContext(ctx, `SELECT pg_advisory_unlock($1)`, disposableTestDBLockID)
+
+	if err := sweepOrphanedDisposableTestDatabases(baseSQLDB, prefix); err != nil {
+		baseSQLDB.Close()
+		return fmt.Errorf("sweeping orphaned test databases: %w", err)
+	}
+	if err := recreateDisposableTestDatabase(baseSQLDB, databaseName); err != nil {
+		baseSQLDB.Close()
+		return err
 	}
 
-	require.NoError(t, state.sqlDB.Close())
-	require.NoError(t, dropDisposableTestDatabase(state.baseSQLDB, state.databaseName))
-	require.NoError(t, state.baseSQLDB.Close())
+	fail := func(err error) error {
+		if dropErr := dropDisposableTestDatabase(baseSQLDB, databaseName); dropErr != nil {
+			err = fmt.Errorf("%w (and dropping it failed: %s)", err, dropErr)
+		}
+		baseSQLDB.Close()
+		return err
+	}
 
-	delete(disposableTestDBRegistry.states, h.Key)
+	db, err := gorm.Open(postgres.Open(cfg.dsn(databaseName)), &gorm.Config{})
+	if err != nil {
+		return fail(err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fail(err)
+	}
+	// Hold an open connection from here on, so the sweep of any other run
+	// sees this database as in use.
+	if err := sqlDB.Ping(); err != nil {
+		sqlDB.Close()
+		return fail(err)
+	}
+	if err := h.Migrate(db); err != nil {
+		sqlDB.Close()
+		return fail(fmt.Errorf("migrating: %w", err))
+	}
+
+	state.db = db
+	state.sqlDB = sqlDB
+	state.baseSQLDB = baseSQLDB
+	state.databaseName = databaseName
+	return nil
+}
+
+func (s *disposableTestDBState) dispose() error {
+	defer s.baseSQLDB.Close()
+	if err := s.sqlDB.Close(); err != nil {
+		return err
+	}
+	return dropDisposableTestDatabase(s.baseSQLDB, s.databaseName)
+}
+
+// sweepOrphanedDisposableTestDatabases drops databases left behind by earlier
+// runs that died before dropping their own (interrupted, killed, timed out):
+// those with this prefix that nobody is connected to.
+func sweepOrphanedDisposableTestDatabases(db *sql.DB, prefix string) error {
+	rows, err := db.Query(`
+		SELECT d.datname
+		FROM pg_database d
+		WHERE starts_with(d.datname, $1)
+		  AND NOT EXISTS (SELECT 1 FROM pg_stat_activity a WHERE a.datname = d.datname)
+	`, prefix)
+	if err != nil {
+		return err
+	}
+	var orphaned []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			rows.Close()
+			return err
+		}
+		orphaned = append(orphaned, name)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	for _, name := range orphaned {
+		if err := dropDisposableTestDatabase(db, name); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func readDisposableTestDBConfig() (disposableTestDBConfig, bool) {

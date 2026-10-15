@@ -20,3 +20,9 @@ func OpenSessionDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	return sessionDB.Open(t)
 }
+
+// Run runs a package's tests with the session test database and drops it
+// afterwards. Every package calling OpenSessionDB must call it from TestMain.
+func Run(m *testing.M) int {
+	return sessionDB.Run(m)
+}

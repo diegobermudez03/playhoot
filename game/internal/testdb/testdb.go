@@ -20,3 +20,9 @@ func OpenGameDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	return gameDB.Open(t)
 }
+
+// Run runs a package's tests with the game test database and drops it
+// afterwards. Every package calling OpenGameDB must call it from TestMain.
+func Run(m *testing.M) int {
+	return gameDB.Run(m)
+}
