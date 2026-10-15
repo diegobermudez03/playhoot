@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/diegobermudez03/playhoot/session/internal/objectstore"
+	"github.com/diegobermudez03/playhoot/play/session/internal/objectstore"
 	"github.com/stretchr/testify/require"
 )
 

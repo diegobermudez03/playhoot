@@ -65,7 +65,7 @@ DOMAIN-DEPENDENT entries apply only to accepted domains. They do not mean every 
 | Domain | Model | Current State | Data Model | Flows |
 | --- | --- | --- | --- | --- |
 | Game Management | `game/README.md` | `game/CURRENT_STATE.md` | `game/docs/DATA_MODEL.md` | `game/docs/FLOWS.md` |
-| Session Runtime (under redesign) | `session/README.md` | `session/CURRENT_STATE.md` |  |  |
+| Session Runtime (under redesign) | `session/README.md` | `session/CURRENT_STATE.md` | `play/docs/DATA_MODEL.md` |  |
 | Identity | `identity/README.md` | `identity/CURRENT_STATE.md` |  |  |
 
 ## Specialized Documentation

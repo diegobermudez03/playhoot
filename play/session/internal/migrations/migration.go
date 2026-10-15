@@ -9,7 +9,9 @@ import (
 // Register a new migration by appending it to the list, in chronological
 // order.
 func MigrateTables(db *gorm.DB) error {
-	migrations := []*gormigrate.Migration{}
+	migrations := []*gormigrate.Migration{
+		migration20261015000000PlaySessions(),
+	}
 
 	// gormigrate refuses to run with an empty list.
 	if len(migrations) == 0 {

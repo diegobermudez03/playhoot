@@ -47,6 +47,6 @@ Orchestrator (like Composer) is the only layer allowed to depend on other domain
 
 ## Current state
 
-One group exists, `playlifecycle`, with one operation: `CreateSession`. It asks Game Management whether the Game is playable for the user (a yes/no answer); if not, it returns the `game_unavailable` outcome without creating anything, otherwise it calls the Session domain to create the Session and returns that result as is (a Session-domain type, no new one). It holds no state and passes the idempotency key through to the Session domain, which owns idempotency. Game Management's side is a placeholder that always answers playable, and the Session side is a stand-in that always fails (see the placeholders list in the Session Runtime project checklist).
+One group exists, `playlifecycle`, with one operation: `CreateSession`. It asks Game Management whether the Game is playable for the user (a yes/no answer); if not, it returns the `game_unavailable` outcome without creating anything, otherwise it calls the Session domain to create the Session and returns that result as is (a Session-domain type, no new one). It holds no state and passes the idempotency key through to the Session domain, which owns idempotency. Game Management's side is a placeholder that always answers playable, and the Session side is the real `play/session` creation, which answers `game_unavailable` until some flow registers games with an executable version (see the placeholders list in the Session Runtime project checklist).
 
 See `../ARCHITECTURE.md` for global architecture rules.

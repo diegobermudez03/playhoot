@@ -6,8 +6,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/diegobermudez03/playhoot/session/internal/objectstore"
-	"github.com/diegobermudez03/playhoot/session/internal/objectstore/storetest"
+	"github.com/diegobermudez03/playhoot/play/session/internal/objectstore"
+	"github.com/diegobermudez03/playhoot/play/session/internal/objectstore/storetest"
 	"github.com/stretchr/testify/require"
 )
 

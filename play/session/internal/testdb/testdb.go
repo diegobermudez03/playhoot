@@ -3,7 +3,7 @@ package testdb
 import (
 	"testing"
 
-	sessionmigration "github.com/diegobermudez03/playhoot/session/migration"
+	sessionmigration "github.com/diegobermudez03/playhoot/play/session/migration"
 	"github.com/diegobermudez03/playhoot/utils"
 	"gorm.io/gorm"
 )

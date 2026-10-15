@@ -68,7 +68,7 @@ Source of behavior: `plans/session_runtime/Playhoot_Session_Runtime_Architecture
 ## B. GameVersion and manifest contract (§1)
 
 - [ ] Session pins exactly one GameVersion for its whole lifetime and for replay
-- [ ] Only PUBLISHED versions can create Sessions
+- [ ] Only versions in the executable state can create Sessions (the plan says PUBLISHED; this domain names its own state EXECUTABLE: immutable, scripts ready to run)
 - [ ] Published version artifacts are immutable and never physically deleted (backend JS, frontend package, manifest, assets)
 - [ ] Artifacts addressed by locator + hash + size + metadata; content never silently changes
 - [ ] Runtime manifest declares: SAMPLE input defs/types, defaults (when not inferable), COMMAND names + payload schemas, optional entrypoints present (update, playerRejoined), required input capabilities, frontend/backend artifact identity
@@ -79,6 +79,8 @@ Source of behavior: `plans/session_runtime/Playhoot_Session_Runtime_Architecture
 
 ## C. Durable Session lifecycle (`/play/session`) (§1)
 
+Progress note (2026-10-15): schema and Session creation are in `play/session` (see `play/docs/DATA_MODEL.md`). Unit tests pass; repository tests have not run against Postgres yet, so nothing here is ticked.
+
 - [ ] Session persistence: lifecycle states (LOBBY, RUNNING, FINISHED, CANCELLED, EXPIRED, ABORTED) with enforced transitions
 - [ ] endCause recorded on terminal transitions (HOST_CANCELLED, ALL_PLAYERS_LEFT, INACTIVITY_TIMEOUT, MAX_LIFETIME, GAME_START_FAILURE, SCRIPT_FAILURE, RUNTIME_RECOVERY_TIMEOUT, UNRECOVERABLE_INFRA_FAILURE, ...)
 - [ ] Pinned GameVersion reference stored
@@ -88,7 +90,7 @@ Source of behavior: `plans/session_runtime/Playhoot_Session_Runtime_Architecture
 - [ ] Recovery checkpoint reference/metadata stored
 - [ ] Runtime never writes Session tables directly; all durable operations go through the /play/session boundary
 - [ ] Migrations for all of the above
-- [ ] `DATA_MODEL.md` created and matching the implementation
+- [ ] `DATA_MODEL.md` created and matching the implementation (created as `play/docs/DATA_MODEL.md`; keep it current as the schema grows)
 
 ---
 
@@ -100,7 +102,7 @@ Progress note (2026-10-13): the `/api` edge is written and unit-tested with mock
 - [ ] Identity resolves userUUID and verifies CREATE_SESSION
 - [ ] Orchestrator composes the operation
 - [ ] /game validates the Game is currently playable/visible for this user
-- [ ] /play/session resolves the executable GameVersion and requires PUBLISHED
+- [ ] /play/session resolves the executable GameVersion and requires it to be EXECUTABLE
 - [ ] GameVersion pinned
 - [ ] Session created in LOBBY
 - [ ] Join code created with platform-time expiration
@@ -479,7 +481,8 @@ Everything here is wired into the running system, so a request flows through it,
 
 - [ ] Identity authorization (`identity/usecases/authorize`, out of scope): ignores the token, returns a random UserUUID per call, allows every operation. Real behavior: validate the JWT, resolve the stable UserUUID, decide per operation; `CREATE_SESSION` must require an account and forbid guests.
 - [ ] Game playability check (`game/usecases/checkplayability`, out of scope): answers `true` for any Game and user. Real behavior: the Game exists, has a published version, and is visible to the user.
-- [ ] Session creation stand-in (`unwiredSessionCreation` in `unwired.go`, in scope): always fails, so `POST /sessions` returns 500. Replaced by the Session domain's `CreateSession` (see C and D).
+- [x] Session creation stand-in (`unwiredSessionCreation` in `unwired.go`, in scope): always failed. Replaced by `sessionlifecycle.Manager.CreateSession` on 2026-10-15; `unwired.go` was deleted.
+- [ ] No flow creates `play_games` / `play_game_versions` (in scope, see B): nothing registers Games or marks a version EXECUTABLE yet, so every Session creation answers `game_unavailable` until those rows are seeded by hand. Real behavior: the operation that validates a version's scripts, freezes it, and sets it EXECUTABLE as the Game's current version.
 - [ ] Metrics emission (`monitoring/metrics`, `record`): measurements are only written to the request log; nothing is sent to a metrics backend (see Y).
 
 ## Invariants verification (§30)
