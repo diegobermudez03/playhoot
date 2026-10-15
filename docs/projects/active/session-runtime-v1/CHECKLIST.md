@@ -473,6 +473,15 @@ Alerts and dashboards:
 
 ---
 
+## Placeholders left behind (code that exists and is called, but does nothing real)
+
+Everything here is wired into the running system, so a request flows through it, but it returns hardcoded or failing answers. It must never be mistaken for implemented behavior. Items marked "out of scope" are not part of this project (which focuses on `play/`) and stay open after it ends; the owning domain's `CURRENT_STATE.md` also records them. Tick an item only when the real behavior replaces the placeholder.
+
+- [ ] Identity authorization (`identity/usecases/authorize`, out of scope): ignores the token, returns a random UserUUID per call, allows every operation. Real behavior: validate the JWT, resolve the stable UserUUID, decide per operation; `CREATE_SESSION` must require an account and forbid guests.
+- [ ] Game playability check (`game/usecases/checkplayability`, out of scope): answers `true` for any Game and user. Real behavior: the Game exists, has a published version, and is visible to the user.
+- [ ] Session creation stand-in (`unwiredSessionCreation` in `unwired.go`, in scope): always fails, so `POST /sessions` returns 500. Replaced by the Session domain's `CreateSession` (see C and D).
+- [ ] Metrics emission (`monitoring/metrics`, `record`): measurements are only written to the request log; nothing is sent to a metrics backend (see Y).
+
 ## Invariants verification (§30)
 
 Each needs at least one test or other concrete evidence before ticking.

@@ -24,19 +24,19 @@ func TestRequire(t *testing.T) {
 		expectedBody       string
 		expectedAuthHeader string
 		expectedNextCalled bool
-		expectedCaller     identity.UserUUID
+		expectedCaller     string
 	}
 
 	const (
 		operation  = identity.OperationCreateSession
-		callerUUID = identity.UserUUID("0f8fad5b-d9cb-469f-a165-70867728950e")
+		callerUUID = "0f8fad5b-d9cb-469f-a165-70867728950e"
 	)
 
 	tests := map[string]func(t *testing.T, deps dependencies) test{
 		"allowed": func(t *testing.T, deps dependencies) test {
 			ctx := context.Background()
 			deps.authorizer.EXPECT().
-				Authorize(ctx, identity.AccessToken("jwt-token"), operation).
+				Authorize(ctx, "jwt-token", operation).
 				Return(callerUUID, identity.AccessAllowed, nil)
 			return test{
 				ctx:                ctx,
@@ -49,7 +49,7 @@ func TestRequire(t *testing.T) {
 		"allowed_with_lowercase_scheme": func(t *testing.T, deps dependencies) test {
 			ctx := context.Background()
 			deps.authorizer.EXPECT().
-				Authorize(ctx, identity.AccessToken("jwt-token"), operation).
+				Authorize(ctx, "jwt-token", operation).
 				Return(callerUUID, identity.AccessAllowed, nil)
 			return test{
 				ctx:                ctx,
@@ -88,8 +88,8 @@ func TestRequire(t *testing.T) {
 		"identity_says_unauthenticated": func(t *testing.T, deps dependencies) test {
 			ctx := context.Background()
 			deps.authorizer.EXPECT().
-				Authorize(ctx, identity.AccessToken("expired"), operation).
-				Return(identity.UserUUID(""), identity.AccessUnauthenticated, nil)
+				Authorize(ctx, "expired", operation).
+				Return("", identity.AccessUnauthenticated, nil)
 			return test{
 				ctx:                ctx,
 				authorization:      "Bearer expired",
@@ -101,7 +101,7 @@ func TestRequire(t *testing.T) {
 		"identity_says_forbidden": func(t *testing.T, deps dependencies) test {
 			ctx := context.Background()
 			deps.authorizer.EXPECT().
-				Authorize(ctx, identity.AccessToken("guest-token"), operation).
+				Authorize(ctx, "guest-token", operation).
 				Return(callerUUID, identity.AccessForbidden, nil)
 			return test{
 				ctx:           ctx,
@@ -113,8 +113,8 @@ func TestRequire(t *testing.T) {
 		"identity_fails": func(t *testing.T, deps dependencies) test {
 			ctx := context.Background()
 			deps.authorizer.EXPECT().
-				Authorize(ctx, identity.AccessToken("jwt-token"), operation).
-				Return(identity.UserUUID(""), identity.AccessDecision(""), errors.New("identity down"))
+				Authorize(ctx, "jwt-token", operation).
+				Return("", identity.AccessDecision(""), errors.New("identity down"))
 			return test{
 				ctx:           ctx,
 				authorization: "Bearer jwt-token",
@@ -125,8 +125,8 @@ func TestRequire(t *testing.T) {
 		"allowed_without_a_caller": func(t *testing.T, deps dependencies) test {
 			ctx := context.Background()
 			deps.authorizer.EXPECT().
-				Authorize(ctx, identity.AccessToken("jwt-token"), operation).
-				Return(identity.UserUUID(""), identity.AccessAllowed, nil)
+				Authorize(ctx, "jwt-token", operation).
+				Return("", identity.AccessAllowed, nil)
 			return test{
 				ctx:           ctx,
 				authorization: "Bearer jwt-token",
@@ -137,7 +137,7 @@ func TestRequire(t *testing.T) {
 		"unknown_decision": func(t *testing.T, deps dependencies) test {
 			ctx := context.Background()
 			deps.authorizer.EXPECT().
-				Authorize(ctx, identity.AccessToken("jwt-token"), operation).
+				Authorize(ctx, "jwt-token", operation).
 				Return(callerUUID, identity.AccessDecision("something_new"), nil)
 			return test{
 				ctx:           ctx,
@@ -155,7 +155,7 @@ func TestRequire(t *testing.T) {
 			tc := setup(t, deps)
 
 			nextCalled := false
-			var caller identity.UserUUID
+			var caller string
 			next := func(w http.ResponseWriter, r *http.Request) {
 				nextCalled = true
 				caller, _ = UserUUID(r.Context())
@@ -186,7 +186,7 @@ func TestRequire(t *testing.T) {
 func TestBearerToken(t *testing.T) {
 	type test struct {
 		authorization string
-		expectedToken identity.AccessToken
+		expectedToken string
 		expectedOK    bool
 	}
 
@@ -236,7 +236,7 @@ func TestBearerToken(t *testing.T) {
 func TestUserUUID(t *testing.T) {
 	type test struct {
 		ctx           context.Context
-		expectedUUID  identity.UserUUID
+		expectedUUID  string
 		expectedFound bool
 	}
 

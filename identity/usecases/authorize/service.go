@@ -35,6 +35,6 @@ func New() *Service {
 // User may do. In particular, identity.OperationCreateSession is expected to
 // require an actual account: a guest user must be answered with
 // identity.AccessForbidden, not allowed.
-func (s *Service) Authorize(_ context.Context, _ identity.AccessToken, _ identity.Operation) (identity.UserUUID, identity.AccessDecision, error) {
-	return identity.UserUUID(uuid.NewString()), identity.AccessAllowed, nil
+func (s *Service) Authorize(_ context.Context, _ string, _ identity.Operation) (string, identity.AccessDecision, error) {
+	return uuid.NewString(), identity.AccessAllowed, nil
 }

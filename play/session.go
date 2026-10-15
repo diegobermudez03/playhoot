@@ -5,27 +5,15 @@
 //
 // The contract is partial: the Session Runtime is being redesigned as a
 // real-time runtime, and its public types are declared here as that design
-// is accepted.
+// is accepted. Identifiers (a Session's, a Game's, a user's), the join code
+// and the idempotency key are plain strings; they only get a named type if
+// they ever carry behavior of their own.
 package session
 
 import (
 	"errors"
 	"time"
 )
-
-// SessionUUID is the stable public identifier of a Session.
-type SessionUUID string
-
-// GameUUID identifies the Game a Session is created from.
-type GameUUID string
-
-// IdempotencyKey is the client-generated token that makes a state-changing
-// request safe to retry.
-type IdempotencyKey string
-
-// JoinCode is the human-friendly code players use to find a Session. It is
-// only an identifier, never proof of authorization.
-type JoinCode string
 
 // CreateSessionOutcome is the decision a CreateSession call reached.
 type CreateSessionOutcome string
@@ -45,9 +33,14 @@ const (
 // JoinCode and ExpiresAt are only meaningful when Outcome is
 // CreateSessionCreated.
 type CreateSessionResult struct {
-	Outcome     CreateSessionOutcome
-	SessionUUID SessionUUID
-	JoinCode    JoinCode
+	Outcome CreateSessionOutcome
+
+	// SessionUUID identifies the created Session.
+	SessionUUID string
+
+	// JoinCode is the human-friendly code players use to find the Session.
+	// It is only an identifier, never proof of authorization.
+	JoinCode string
 
 	// ExpiresAt is when the lobby (and its join code) stops being usable if
 	// the Session has not started.

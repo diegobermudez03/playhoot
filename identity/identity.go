@@ -3,17 +3,10 @@
 // intentionally imports nothing beyond the standard library.
 //
 // The contract is partial: only what callers already need is declared, and
-// more is added as Identity's capabilities are accepted.
+// more is added as Identity's capabilities are accepted. A user's UUID and a
+// credential token are plain strings in Identity's methods; they only get a
+// named type if they ever carry behavior of their own.
 package identity
-
-// UserUUID is the stable public identifier of an Identity User. It names
-// the same person whether they act as a guest or with an account.
-type UserUUID string
-
-// AccessToken is the credential a caller presents to prove who they are
-// (a JWT). Only Identity interprets it; every other package treats it as an
-// opaque string and never logs it.
-type AccessToken string
 
 // Operation names a coarse operation Identity decides whether a caller may
 // perform at all. Object-level permissions (for example, whether a caller

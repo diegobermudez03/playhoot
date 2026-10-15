@@ -28,13 +28,13 @@ import (
 // sessionpkg.ErrIdempotencyConflict, and any other error is an unexpected
 // failure.
 type sessionCreator interface {
-	CreateSession(ctx context.Context, userUUID identity.UserUUID, gameUUID sessionpkg.GameUUID, idempotencyKey sessionpkg.IdempotencyKey) (sessionpkg.CreateSessionResult, error)
+	CreateSession(ctx context.Context, userUUID string, gameUUID string, idempotencyKey string) (sessionpkg.CreateSessionResult, error)
 }
 
 // authorizer is this route group's own narrow dependency on Identity, used
 // only to build the authorization middleware its routes declare.
 type authorizer interface {
-	Authorize(ctx context.Context, token identity.AccessToken, operation identity.Operation) (identity.UserUUID, identity.AccessDecision, error)
+	Authorize(ctx context.Context, token string, operation identity.Operation) (string, identity.AccessDecision, error)
 }
 
 // Handler exposes the session workflow's endpoints.

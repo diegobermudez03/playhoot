@@ -62,8 +62,8 @@ func (h *Handler) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 
 	created, err := h.creator.CreateSession(ctx,
 		userUUID,
-		sessionpkg.GameUUID(gameUUID.String()),
-		sessionpkg.IdempotencyKey(req.IdempotencyKey),
+		gameUUID.String(),
+		req.IdempotencyKey,
 	)
 	if err != nil {
 		logging.LogError(ctx, err)
@@ -77,10 +77,10 @@ func (h *Handler) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 
 	switch created.Outcome {
 	case sessionpkg.CreateSessionCreated:
-		logging.LogFields(ctx, logging.Field("session_uuid", string(created.SessionUUID)))
+		logging.LogFields(ctx, logging.Field("session_uuid", created.SessionUUID))
 		httpx.WriteJSON(w, http.StatusCreated, createSessionResponse{
-			SessionUUID:    string(created.SessionUUID),
-			JoinCode:       string(created.JoinCode),
+			SessionUUID:    created.SessionUUID,
+			JoinCode:       created.JoinCode,
 			LobbyExpiresAt: created.ExpiresAt,
 		})
 	case sessionpkg.CreateSessionGameUnavailable:

@@ -10,6 +10,10 @@ Session Runtime's own current-state doc is `session/CURRENT_STATE.md` - Game Man
 | --- | --- | --- |
 | Game Management | PARTIAL | Persisted authored game/image/history schema exists (no version/definition concept - see `game/docs/DATA_MODEL.md`); checking whether a Game is currently playable/visible by UUID is implemented and tested (`game/usecases/checkvisibility`). Create/edit/publish lifecycle operations were not found in the inspected code. |
 
+## Placeholders (wired, but not real behavior)
+
+- `game/usecases/checkplayability` (`IsPlayable`) is called by the play-lifecycle orchestration when a Session is created, but it ignores its arguments and always answers `true`. Real behavior (the Game exists, has a published version, and is visible to the user) is not implemented and is outside the current Session Runtime project.
+
 ## Current Gaps
 
 - Game Management lifecycle operations (create/edit/publish a Game) were not found implemented anywhere in this repository.

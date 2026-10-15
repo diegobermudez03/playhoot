@@ -13,7 +13,6 @@ import (
 	context "context"
 	reflect "reflect"
 
-	identity "github.com/diegobermudez03/playhoot/identity"
 	session "github.com/diegobermudez03/playhoot/play"
 	gomock "go.uber.org/mock/gomock"
 )
@@ -43,7 +42,7 @@ func (m *MocksessionCreator) EXPECT() *MocksessionCreatorMockRecorder {
 }
 
 // CreateSession mocks base method.
-func (m *MocksessionCreator) CreateSession(ctx context.Context, userUUID identity.UserUUID, gameUUID session.GameUUID, idempotencyKey session.IdempotencyKey) (session.CreateSessionResult, error) {
+func (m *MocksessionCreator) CreateSession(ctx context.Context, userUUID, gameUUID, idempotencyKey string) (session.CreateSessionResult, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CreateSession", ctx, userUUID, gameUUID, idempotencyKey)
 	ret0, _ := ret[0].(session.CreateSessionResult)

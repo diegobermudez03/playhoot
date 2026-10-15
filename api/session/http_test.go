@@ -13,7 +13,6 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/diegobermudez03/playhoot/api/internal/auth"
-	"github.com/diegobermudez03/playhoot/identity"
 	sessionpkg "github.com/diegobermudez03/playhoot/play"
 )
 
@@ -29,7 +28,7 @@ func TestHandleCreateSession(t *testing.T) {
 	}
 
 	const (
-		callerUUID = identity.UserUUID("0f8fad5b-d9cb-469f-a165-70867728950e")
+		callerUUID = "0f8fad5b-d9cb-469f-a165-70867728950e"
 		gameUUID   = "7c9e6679-7425-40de-944b-e07fc1f90ae7"
 	)
 	expiresAt := time.Date(2026, 10, 14, 12, 30, 0, 0, time.UTC)
@@ -42,7 +41,7 @@ func TestHandleCreateSession(t *testing.T) {
 		"session_created": func(t *testing.T, deps dependencies) test {
 			ctx := callerCtx()
 			deps.creator.EXPECT().
-				CreateSession(ctx, callerUUID, sessionpkg.GameUUID(gameUUID), sessionpkg.IdempotencyKey("key-1")).
+				CreateSession(ctx, callerUUID, gameUUID, "key-1").
 				Return(sessionpkg.CreateSessionResult{
 					Outcome:     sessionpkg.CreateSessionCreated,
 					SessionUUID: "session-1",
@@ -59,7 +58,7 @@ func TestHandleCreateSession(t *testing.T) {
 		"game_uuid_is_normalized_before_calling_creator": func(t *testing.T, deps dependencies) test {
 			ctx := callerCtx()
 			deps.creator.EXPECT().
-				CreateSession(ctx, callerUUID, sessionpkg.GameUUID(gameUUID), sessionpkg.IdempotencyKey("key-1")).
+				CreateSession(ctx, callerUUID, gameUUID, "key-1").
 				Return(sessionpkg.CreateSessionResult{
 					Outcome:     sessionpkg.CreateSessionCreated,
 					SessionUUID: "session-1",
@@ -77,7 +76,7 @@ func TestHandleCreateSession(t *testing.T) {
 			ctx := callerCtx()
 			key := strings.Repeat("k", maxIdempotencyKeyLength)
 			deps.creator.EXPECT().
-				CreateSession(ctx, callerUUID, sessionpkg.GameUUID(gameUUID), sessionpkg.IdempotencyKey(key)).
+				CreateSession(ctx, callerUUID, gameUUID, key).
 				Return(sessionpkg.CreateSessionResult{
 					Outcome:     sessionpkg.CreateSessionCreated,
 					SessionUUID: "session-1",
@@ -94,7 +93,7 @@ func TestHandleCreateSession(t *testing.T) {
 		"game_unavailable": func(t *testing.T, deps dependencies) test {
 			ctx := callerCtx()
 			deps.creator.EXPECT().
-				CreateSession(ctx, callerUUID, sessionpkg.GameUUID(gameUUID), sessionpkg.IdempotencyKey("key-1")).
+				CreateSession(ctx, callerUUID, gameUUID, "key-1").
 				Return(sessionpkg.CreateSessionResult{Outcome: sessionpkg.CreateSessionGameUnavailable}, nil)
 			return test{
 				ctx:          ctx,
@@ -106,7 +105,7 @@ func TestHandleCreateSession(t *testing.T) {
 		"idempotency_conflict": func(t *testing.T, deps dependencies) test {
 			ctx := callerCtx()
 			deps.creator.EXPECT().
-				CreateSession(ctx, callerUUID, sessionpkg.GameUUID(gameUUID), sessionpkg.IdempotencyKey("key-1")).
+				CreateSession(ctx, callerUUID, gameUUID, "key-1").
 				Return(sessionpkg.CreateSessionResult{}, sessionpkg.ErrIdempotencyConflict)
 			return test{
 				ctx:          ctx,
@@ -118,7 +117,7 @@ func TestHandleCreateSession(t *testing.T) {
 		"idempotency_conflict_wrapped": func(t *testing.T, deps dependencies) test {
 			ctx := callerCtx()
 			deps.creator.EXPECT().
-				CreateSession(ctx, callerUUID, sessionpkg.GameUUID(gameUUID), sessionpkg.IdempotencyKey("key-1")).
+				CreateSession(ctx, callerUUID, gameUUID, "key-1").
 				Return(sessionpkg.CreateSessionResult{}, errors.Join(errors.New("claiming"), sessionpkg.ErrIdempotencyConflict))
 			return test{
 				ctx:          ctx,
@@ -130,7 +129,7 @@ func TestHandleCreateSession(t *testing.T) {
 		"creator_fails": func(t *testing.T, deps dependencies) test {
 			ctx := callerCtx()
 			deps.creator.EXPECT().
-				CreateSession(ctx, callerUUID, sessionpkg.GameUUID(gameUUID), sessionpkg.IdempotencyKey("key-1")).
+				CreateSession(ctx, callerUUID, gameUUID, "key-1").
 				Return(sessionpkg.CreateSessionResult{}, errors.New("database down"))
 			return test{
 				ctx:          ctx,
@@ -142,7 +141,7 @@ func TestHandleCreateSession(t *testing.T) {
 		"creator_returns_unknown_outcome": func(t *testing.T, deps dependencies) test {
 			ctx := callerCtx()
 			deps.creator.EXPECT().
-				CreateSession(ctx, callerUUID, sessionpkg.GameUUID(gameUUID), sessionpkg.IdempotencyKey("key-1")).
+				CreateSession(ctx, callerUUID, gameUUID, "key-1").
 				Return(sessionpkg.CreateSessionResult{Outcome: "something_new"}, nil)
 			return test{
 				ctx:          ctx,

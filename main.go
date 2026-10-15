@@ -11,7 +11,9 @@ import (
 	"strings"
 
 	"github.com/diegobermudez03/playhoot/api"
+	"github.com/diegobermudez03/playhoot/game/usecases/checkplayability"
 	"github.com/diegobermudez03/playhoot/identity/usecases/authorize"
+	"github.com/diegobermudez03/playhoot/orchestrator/playlifecycle"
 	"github.com/joho/godotenv"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -53,7 +55,8 @@ func main() {
 		log.Fatalf("running PostgreSQL migrations: %v", err)
 	}
 
-	server := api.NewServer(authorize.New(), unwiredSessionCreator{})
+	playLifecycle := playlifecycle.New(checkplayability.New(), unwiredSessionCreation{})
+	server := api.NewServer(authorize.New(), playLifecycle)
 
 	log.Printf("listening on :%s", envVars.HTTPPort)
 	if err := http.ListenAndServe(":"+envVars.HTTPPort, server.Routes()); err != nil {

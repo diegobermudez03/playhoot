@@ -46,13 +46,13 @@ type routeGroup interface {
 // authorizer is Identity as this package needs it: token and operation in,
 // the caller's UserUUID and whether the operation is allowed out.
 type authorizer interface {
-	Authorize(ctx context.Context, token identity.AccessToken, operation identity.Operation) (identity.UserUUID, identity.AccessDecision, error)
+	Authorize(ctx context.Context, token string, operation identity.Operation) (string, identity.AccessDecision, error)
 }
 
 // sessionCreator is whatever coordinates Session creation (Orchestrator in
 // production) as this package needs it.
 type sessionCreator interface {
-	CreateSession(ctx context.Context, userUUID identity.UserUUID, gameUUID sessionpkg.GameUUID, idempotencyKey sessionpkg.IdempotencyKey) (sessionpkg.CreateSessionResult, error)
+	CreateSession(ctx context.Context, userUUID string, gameUUID string, idempotencyKey string) (sessionpkg.CreateSessionResult, error)
 }
 
 // Server composes every route group into one HTTP handler.

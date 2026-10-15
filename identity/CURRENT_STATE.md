@@ -8,6 +8,11 @@ Status: CURRENT IMPLEMENTATION
 | --- | --- | --- |
 | User Identity | NOT IMPLEMENTED | No Identity implementation, persistence, public capabilities, authentication/account behavior, or profile/display behavior is currently documented as implemented. |
 
+## Placeholders (wired, but not real behavior)
+
+- `identity/usecases/authorize` (`Authorize`) is called by the API's authorization middleware on every protected route, but it ignores the token, returns a fresh random UserUUID on every call, and allows every operation. Real behavior (validate the JWT, resolve the stable UserUUID, decide per operation; creating a Session requires an account, not a guest) is not implemented and is outside the current Session Runtime project.
+- `identity/identity.go` declares the `Operation` and `AccessDecision` values that capability uses.
+
 ## Known Drift
 
 - Identity has an accepted domain model, but no implementation exists yet.
