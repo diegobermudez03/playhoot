@@ -405,10 +405,12 @@ Progress note (2026-10-13): the `/api` edge is written and unit-tested with mock
 
 ## Y. Observability: monitoring and metrics (MANDATORY, not in the plan)
 
+Ownership rule (`docs/engineering/standards/metrics.md`): business-outcome metrics below (sessions created, joins, starts, recoveries, ...) are declared and recorded by the Session domain, the owner of that logic, never by an endpoint. The API edge only measures HTTP per route (request count by status, duration), centrally in `restObservability`.
+
 Foundation (existing: `logging` package, `monitoring` package with alerts only, `docs/engineering/standards/logging.md`):
 - [x] Metrics entry-point API exists: `monitoring/metrics` (Counter, Gauge, Histogram; domain-declared closed-set labels; every call written to the request log). Emission is not implemented yet.
 - [ ] Metrics emission to the real backend implemented in `monitoring/metrics` (decision: provider/format; GCP Cloud Run target)
-- [ ] Metrics applied centrally for REST and WebSocket in `api` Server, per the Centralized Observability rule (REST done: `api_http_requests_total{route,status}` in `restObservability`; WebSocket pending)
+- [ ] Metrics applied centrally for REST and WebSocket in `api` Server, per the Centralized Observability rule (REST done: `api_http_requests_total{route,status}` and `api_http_request_duration_seconds{route}` in `restObservability`; WebSocket pending)
 - [ ] Per-message logging on live connections follows the logging standard (each inbound message is its own entry point; trace correlated per connection)
 - [ ] Alerts use the monitoring abstraction; internal inconsistencies follow `data-integrity.md`
 - [ ] Metric cardinality is controlled (no per-session or per-user labels on high-volume metrics)

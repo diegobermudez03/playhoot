@@ -110,18 +110,21 @@ func NewServer(authorizer authorizer, sessionCreator sessionCreator) *Server {
 // ctx already carries a started log, because this wrapper is the only
 // place in the whole request path that ever starts one.
 //
-// Once the handler returns, and before the log flushes, it also counts the
-// request under its route and the status code the handler wrote, so the
-// metric is written into the same request log.
+// Once the handler returns, and before the log flushes, it also measures the
+// request under its route: how long it took and the status code the handler
+// wrote. Every route therefore gets request count and duration without
+// declaring anything, and the measurements are written into the same request
+// log.
 func restObservability(pattern string, requestMetrics *restMetrics) routing.Middleware {
 	return func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			ctx := logging.Start(r.Context())
 			defer logging.FinishRequestLog(ctx, slog.Default(), pattern)
 
+			started := requestMetrics.now()
 			recorder := newStatusRecorder(w)
 			next(recorder, r.WithContext(ctx))
-			requestMetrics.record(ctx, pattern, recorder.status)
+			requestMetrics.record(ctx, pattern, recorder.status, requestMetrics.now().Sub(started))
 		}
 	}
 }

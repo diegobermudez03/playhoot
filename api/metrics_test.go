@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -15,7 +16,7 @@ import (
 )
 
 // metricsTestPattern must match the route set the real server declares: the
-// request metric's route label is shared process-wide, so declaring it with a
+// request metrics' route label is shared process-wide, so declaring it with a
 // different set in the same test binary would conflict.
 const metricsTestPattern = "POST /sessions"
 
@@ -34,12 +35,22 @@ func flushedMetrics(t *testing.T, ctx context.Context) []map[string]any {
 	return entry.Metrics
 }
 
-func requestMetric(route string, status string) map[string]any {
-	return map[string]any{
-		"metric":    "api_http_requests_total",
-		"operation": "add",
-		"value":     float64(1),
-		"labels":    map[string]any{"route": route, "status": status},
+// requestMeasurements is what restMetrics.record writes for one request: the
+// count under its status, then its duration.
+func requestMeasurements(route string, status string, seconds float64) []map[string]any {
+	return []map[string]any{
+		{
+			"metric":    "api_http_requests_total",
+			"operation": "add",
+			"value":     float64(1),
+			"labels":    map[string]any{"route": route, "status": status},
+		},
+		{
+			"metric":    "api_http_request_duration_seconds",
+			"operation": "observe",
+			"value":     seconds,
+			"labels":    map[string]any{"route": route},
+		},
 	}
 }
 
@@ -47,6 +58,7 @@ func TestRESTMetricsRecord(t *testing.T) {
 	type test struct {
 		pattern         string
 		status          int
+		elapsed         time.Duration
 		expectedMetrics []map[string]any
 		expectPanic     bool
 	}
@@ -56,28 +68,39 @@ func TestRESTMetricsRecord(t *testing.T) {
 			return test{
 				pattern:         metricsTestPattern,
 				status:          http.StatusCreated,
-				expectedMetrics: []map[string]any{requestMetric(metricsTestPattern, "201")},
+				elapsed:         250 * time.Millisecond,
+				expectedMetrics: requestMeasurements(metricsTestPattern, "201", 0.25),
 			}
 		},
 		"every_tracked_status_keeps_its_own_value": func(t *testing.T) test {
 			return test{
 				pattern:         metricsTestPattern,
 				status:          http.StatusGatewayTimeout,
-				expectedMetrics: []map[string]any{requestMetric(metricsTestPattern, "504")},
+				elapsed:         2 * time.Second,
+				expectedMetrics: requestMeasurements(metricsTestPattern, "504", 2),
 			}
 		},
 		"untracked_status_is_counted_as_other": func(t *testing.T) test {
 			return test{
 				pattern:         metricsTestPattern,
 				status:          http.StatusTeapot,
-				expectedMetrics: []map[string]any{requestMetric(metricsTestPattern, "other")},
+				elapsed:         10 * time.Millisecond,
+				expectedMetrics: requestMeasurements(metricsTestPattern, "other", 0.01),
 			}
 		},
 		"status_outside_http_range_is_counted_as_other": func(t *testing.T) test {
 			return test{
 				pattern:         metricsTestPattern,
 				status:          999,
-				expectedMetrics: []map[string]any{requestMetric(metricsTestPattern, "other")},
+				elapsed:         time.Second,
+				expectedMetrics: requestMeasurements(metricsTestPattern, "other", 1),
+			}
+		},
+		"zero_duration_is_recorded": func(t *testing.T) test {
+			return test{
+				pattern:         metricsTestPattern,
+				status:          http.StatusOK,
+				expectedMetrics: requestMeasurements(metricsTestPattern, "200", 0),
 			}
 		},
 		"route_that_was_not_declared": func(t *testing.T) test {
@@ -92,10 +115,10 @@ func TestRESTMetricsRecord(t *testing.T) {
 			ctx := logging.Start(context.Background())
 
 			if tc.expectPanic {
-				require.Panics(t, func() { requestMetrics.record(ctx, tc.pattern, tc.status) })
+				require.Panics(t, func() { requestMetrics.record(ctx, tc.pattern, tc.status, tc.elapsed) })
 				return
 			}
-			requestMetrics.record(ctx, tc.pattern, tc.status)
+			requestMetrics.record(ctx, tc.pattern, tc.status, tc.elapsed)
 
 			require.Equal(t, tc.expectedMetrics, flushedMetrics(t, ctx))
 		})

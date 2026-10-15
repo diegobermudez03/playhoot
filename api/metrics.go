@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/diegobermudez03/playhoot/monitoring/metrics"
 )
@@ -20,13 +21,17 @@ var trackedStatusCodes = []int{
 
 const otherStatus = "other"
 
-// restMetrics counts finished REST requests by the route they matched and
-// the status code they answered with.
+// restMetrics measures finished REST requests the same way for every route:
+// how many ended with each HTTP status code, and how long they took. It only
+// describes the HTTP exchange; what an operation means for its own domain
+// (for example how many Sessions were created) is that domain's to count.
 type restMetrics struct {
 	requests    *metrics.Counter
+	duration    *metrics.Histogram
 	routes      map[string]metrics.LabelValue
 	statuses    map[int]metrics.LabelValue
 	otherStatus metrics.LabelValue
+	now         func() time.Time
 }
 
 // newRESTMetrics declares the request metric for the given route patterns.
@@ -49,9 +54,16 @@ func newRESTMetrics(patterns []string) *restMetrics {
 			"Finished REST requests, by matched route and response status code.",
 			routeLabel, statusLabel,
 		),
+		duration: metrics.NewHistogram(
+			"api_http_request_duration_seconds",
+			"Time taken to serve REST requests, by matched route.",
+			metrics.LatencyBuckets(),
+			routeLabel,
+		),
 		routes:      make(map[string]metrics.LabelValue, len(patterns)),
 		statuses:    make(map[int]metrics.LabelValue, len(trackedStatusCodes)),
 		otherStatus: statusLabel.Value(otherStatus),
+		now:         time.Now,
 	}
 	for _, pattern := range patterns {
 		m.routes[pattern] = routeLabel.Value(pattern)
@@ -62,14 +74,16 @@ func newRESTMetrics(patterns []string) *restMetrics {
 	return m
 }
 
-// record counts one finished request. pattern must be one of the patterns
-// the metric was declared with.
-func (m *restMetrics) record(ctx context.Context, pattern string, status int) {
+// record measures one finished request that took elapsed and answered with
+// status. pattern must be one of the patterns the metrics were declared with.
+func (m *restMetrics) record(ctx context.Context, pattern string, status int, elapsed time.Duration) {
 	statusValue, tracked := m.statuses[status]
 	if !tracked {
 		statusValue = m.otherStatus
 	}
-	m.requests.Inc(ctx, m.routes[pattern], statusValue)
+	route := m.routes[pattern]
+	m.requests.Inc(ctx, route, statusValue)
+	m.duration.ObserveDuration(ctx, elapsed, route)
 }
 
 // statusRecorder remembers the status code a handler wrote, which
