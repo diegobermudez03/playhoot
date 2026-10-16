@@ -23,23 +23,27 @@ The detailed model (what it owns, its entities, persistence, protocol, recovery)
 
 Session Runtime is an independent top-level package/business bounded context, a sibling to Game Management (`game/`), `identity/`, `composer/`, and `orchestrator/` (`docs/decisions/architecture/ADR-0014-management-session-domain-split.md`).
 
-The previous implementation was removed. What remains is structure and reusable helpers:
+The previous implementation was removed. Current layout:
 
 ```text
-session/
-  session.go                  # public contract package (empty for now)
-  migration/                  # exposes Migrate(db) to the application's migrations.go
-  usecases/                   # single-capability use cases (empty)
-  workflows/
-    sessionlifecycle/         # workflow layout: Manager + internal/repo (repo.go keeps the db-handle/transaction pattern)
-  internal/
-    storage/                  # schema documentation and migrations/ (the registry, with no migrations yet)
-    sandbox/                  # QuickJS-on-WebAssembly script execution in an isolated worker process; helper functions, not wired to anything
-    objectstore/              # object storage port with GCS and in-memory implementations, and a verifying cache; not wired to anything
-    pgerrs/                   # PostgreSQL error classification helpers
-    testdb/                   # disposable test database for this package
+play/
+  session.go                  # Session public contract (CreateSessionOutcome, CreateSessionResult, ErrIdempotencyConflict)
+  docs/                       # DATA_MODEL.md, FLOWS.md, decisions/
+  runtime/
+    sandbox/                  # QuickJS-on-WebAssembly script execution in an isolated worker process; not wired to anything yet
+  session/
+    migration/                # exposes Migrate(db) and Seed(db) (test data) to the application's migrations.go
+    usecases/                 # single-capability use cases (empty)
+    workflows/
+      sessionlifecycle/       # Manager + one file per step (step_create_session.go) + internal/repo
+    internal/
+      business/<behavior>/    # business definitions and pure logic shared by steps (sessionstatus, gameversion)
+      migrations/             # schema migrations (play_* tables) and seed_* test-data migrations
+      objectstore/            # object storage port (GCS, in-memory) and verifying cache; not wired, storetest does not build
+      pgerrs/                 # PostgreSQL error classification helpers
+      testdb/                 # disposable test database for this domain (packages call testdb.Run from TestMain)
 ```
 
-`sandbox` and `objectstore` are kept as reusable code without a current caller; how scripts and game content are loaded and executed in the new design is not decided.
+`sandbox` and `objectstore` are kept as reusable code without a current caller. Tables are prefixed `play_` and have no foreign keys (references are indexed and kept correct by the application).
 
 Package placement and layering rules are in `docs/engineering/standards/domain-logic-placement.md`.

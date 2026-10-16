@@ -6,7 +6,7 @@ Status: CURRENT IMPLEMENTATION
 
 | Area | Status | Notes |
 | --- | --- | --- |
-| Session creation | IMPLEMENTED (unverified against a database) | `play/session/workflows/sessionlifecycle` (`Manager.CreateSession`): idempotent per user and key, pins the Game's current EXECUTABLE version, creates the Session in LOBBY with a join code. Unit-tested with mocks; its repository tests pass against Postgres; integration tests of the full operation exist and still need a Postgres run. Called by the play-lifecycle orchestration behind `POST /sessions`. |
+| Session creation | IMPLEMENTED | `play/session/workflows/sessionlifecycle` (`Manager.CreateSession`): idempotent per user and key, pins the Game's current EXECUTABLE version, creates the Session in LOBBY with a join code. Unit, repository and integration tests (incl. concurrent retries) pass, and `POST /sessions` was tested by hand locally. Flow: `play/docs/FLOWS.md`. |
 | Game versions | SCHEMA ONLY | `play_games` / `play_game_versions` exist and are read by Session creation, but nothing creates them yet, so every creation answers `game_unavailable` until they are seeded. |
 | Live Session Runtime | NOT IMPLEMENTED | No controller, live connections, or game execution. The direction is the real-time runtime of `play/docs/decisions/SESSION-ADR-0028-real-time-session-runtime-supersedes-discrete-turn-architecture.md`. |
 | Script execution helpers | HELPER ONLY | `play/runtime/sandbox` runs a JavaScript source in an isolated QuickJS-on-WebAssembly worker process. Not called by anything. |
@@ -23,4 +23,4 @@ Status: CURRENT IMPLEMENTATION
 
 ## Evidence
 
-- `play/session/workflows/sessionlifecycle/`, `play/session/internal/migrations/`, `play/runtime/sandbox/`, `play/session/internal/objectstore/`.
+- `play/session/workflows/sessionlifecycle/` (tests incl. `step_create_session_integration_test.go`), `play/session/internal/migrations/`, `play/runtime/sandbox/`, `play/session/internal/objectstore/`.

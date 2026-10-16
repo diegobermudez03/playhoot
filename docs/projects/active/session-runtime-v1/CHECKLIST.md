@@ -35,15 +35,15 @@ Source of behavior: `plans/session_runtime/Playhoot_Session_Runtime_Architecture
 ### A3. Join code and routing (§1, §2)
 - [ ] Join code -> sessionUUID resolution -> owner resolve/claim -> route to pod
 - [ ] Join code is only a friendly identifier, never authN/authZ
-- [ ] Join code expiration uses platform time
+- [x] Join code expiration uses platform time
 
 ### A4. Identity integration (§1, §2, §4)
 - [ ] Account token -> account userUUID
 - [ ] Guest token -> existing guest userUUID
 - [ ] No identity -> guest created, returned userUUID + guest credentials for the FE to keep
 - [ ] CREATE_SESSION capability check (real account required, guest-only rejected)
-- [ ] Other domains receive only userUUID (no account/guest awareness)
-- [ ] Identity does not decide object-level permissions (creator check lives in Session)
+- [x] Other domains receive only userUUID (no account/guest awareness)
+- [x] Identity does not decide object-level permissions (creator check lives in Session)
 
 ### A5. Two clocks (§1)
 - [ ] Game/Session effective time: monotonic, starts at RUNNING, persisted in checkpoints, freezes during Runtime outage
@@ -69,7 +69,7 @@ Source of behavior: `plans/session_runtime/Playhoot_Session_Runtime_Architecture
 ## B. GameVersion and manifest contract (§1)
 
 - [ ] Session pins exactly one GameVersion for its whole lifetime and for replay
-- [ ] Only versions in the executable state can create Sessions (the plan says PUBLISHED; this domain names its own state EXECUTABLE: immutable, scripts ready to run)
+- [x] Only versions in the executable state can create Sessions (the plan says PUBLISHED; this domain names its own state EXECUTABLE: immutable, scripts ready to run)
 - [ ] Published version artifacts are immutable and never physically deleted (backend JS, frontend package, manifest, assets)
 - [ ] Artifacts addressed by locator + hash + size + metadata; content never silently changes
 - [ ] Runtime manifest declares: SAMPLE input defs/types, defaults (when not inferable), COMMAND names + payload schemas, optional entrypoints present (update, playerRejoined), required input capabilities, frontend/backend artifact identity
@@ -80,38 +80,38 @@ Source of behavior: `plans/session_runtime/Playhoot_Session_Runtime_Architecture
 
 ## C. Durable Session lifecycle (`/play/session`) (§1)
 
-Progress note (2026-10-15): schema and Session creation are in `play/session` (see `play/docs/DATA_MODEL.md`). Unit and repository tests pass (repository tests run by the human against Postgres). Integration tests for the full operation (`step_create_session_integration_test.go`, incl. concurrent retries) are written and still need a Postgres run.
+Progress note (2026-10-15): the parts Session creation needs are done and verified; lifecycle transitions, end causes, roster and checkpoints come with later operations.
 
 - [ ] Session persistence: lifecycle states (LOBBY, RUNNING, FINISHED, CANCELLED, EXPIRED, ABORTED) with enforced transitions
 - [ ] endCause recorded on terminal transitions (HOST_CANCELLED, ALL_PLAYERS_LEFT, INACTIVITY_TIMEOUT, MAX_LIFETIME, GAME_START_FAILURE, SCRIPT_FAILURE, RUNTIME_RECOVERY_TIMEOUT, UNRECOVERABLE_INFRA_FAILURE, ...)
-- [ ] Pinned GameVersion reference stored
-- [ ] creatorUUID stored
-- [ ] Join code + expiry stored
+- [x] Pinned GameVersion reference stored
+- [x] creatorUUID stored
+- [x] Join code + expiry stored
 - [ ] Durable participant roster (userUUID <-> ParticipantID) written only at Start
 - [ ] Recovery checkpoint reference/metadata stored
 - [ ] Runtime never writes Session tables directly; all durable operations go through the /play/session boundary
 - [ ] Migrations for all of the above
-- [ ] `DATA_MODEL.md` created and matching the implementation (created as `play/docs/DATA_MODEL.md`; keep it current as the schema grows)
+- [x] `DATA_MODEL.md` created and matching the implementation (created as `play/docs/DATA_MODEL.md`; keep it current as the schema grows)
 
 ---
 
 ## D. Create Session endpoint (§2)
 
-Progress note (2026-10-13): the `/api` edge is written and unit-tested with mocks (handler, authorization middleware, REST metric), but has no real Identity/Orchestrator behind it (Identity is a placeholder; `main` uses an `unwired.go` stand-in for the Orchestrator). Items below stay unchecked until they are implemented behind the ports and verified.
+Completed 2026-10-15: implemented end to end and verified (unit, repository and integration tests, manual local test of `POST /sessions`). Flows: `play/docs/FLOWS.md`, `docs/architecture/CROSS_DOMAIN_FLOWS.md`. Known behavior kept as is: a retry after the Game stopped being playable answers `game_unavailable` (see PROJECT.md decisions).
 
-- [ ] REST endpoint receives: account auth, game UUID, frontend idempotency token
-- [ ] Identity resolves userUUID and verifies CREATE_SESSION
-- [ ] Orchestrator composes the operation
-- [ ] /game validates the Game is currently playable/visible for this user
-- [ ] /play/session resolves the executable GameVersion and requires it to be EXECUTABLE
-- [ ] GameVersion pinned
-- [ ] Session created in LOBBY
-- [ ] Join code created with platform-time expiration
-- [ ] creatorUUID stored
-- [ ] Response: sessionUUID + joinCode + useful lobby metadata
-- [ ] Idempotent by frontend token (replay returns the same outcome; conflict semantics per `docs/engineering/standards/idempotency.md`)
-- [ ] No Runtime controller created at this point
-- [ ] Creator is not automatically a player
+- [x] REST endpoint receives: account auth, game UUID, frontend idempotency token
+- [x] Identity resolves userUUID and verifies CREATE_SESSION (the Session Runtime side is done: the endpoint calls Identity and honors its decision; Identity's real behavior is out of scope and tracked under Placeholders)
+- [x] Orchestrator composes the operation
+- [x] /game validates the Game is currently playable/visible for this user (the orchestration calls Game Management and honors its answer; Game's real check is out of scope and tracked under Placeholders)
+- [x] /play/session resolves the executable GameVersion and requires it to be EXECUTABLE
+- [x] GameVersion pinned
+- [x] Session created in LOBBY
+- [x] Join code created with platform-time expiration
+- [x] creatorUUID stored
+- [x] Response: sessionUUID + joinCode + useful lobby metadata
+- [x] Idempotent by frontend token (replay returns the same outcome; conflict semantics per `docs/engineering/standards/idempotency.md`)
+- [x] No Runtime controller created at this point
+- [x] Creator is not automatically a player
 
 ---
 

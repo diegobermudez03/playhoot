@@ -2,7 +2,7 @@
 
 Status: ACTIVE
 Created: 2026-10-13
-Last updated: 2026-10-13
+Last updated: 2026-10-15
 
 ## Goal
 
@@ -19,7 +19,9 @@ The plan is the architectural skeleton; concrete implementation is decided step 
 
 ## Current Work
 
-No WORK exists yet. The human directs the order of implementation; WORK items are created as that direction is given (see "Material Decisions Needing Human Input").
+Done so far, in the order the human directed: metrics entry points (`monitoring/metrics`), and Create Session end to end (API endpoint and auth middleware, play-lifecycle orchestration, Session domain creation with schema, test data and tests), completed 2026-10-15; see CHECKLIST.md section D. Nothing is in progress; the next step is the human's call.
+
+No WORK files exist: the human directs each step in conversation (see "Material Decisions Needing Human Input").
 
 ## Work
 
@@ -42,6 +44,7 @@ When a WORK is created, the capabilities it owns are referenced from the checkli
 1. **WORK materialization vs. Invariant 1.** `docs/projects/README.md` Invariant 1 says every known required outcome must have at least a PLANNED WORK. The human asked for a checklist instead of an up-front task breakdown. Until told otherwise, the checklist acts as the capability coverage matrix and WORK items are created when the human directs each step. Confirm this is the intended exception, or ask for PLANNED WORK per checklist section.
 2. **Durability of the plan document.** The accepted architecture currently exists only as a `.docx` under `plans/`. Under the repo's one-fact-one-owner rule it should eventually be promoted to its durable owners (SESSION-ADR(s), `play/README.md`, `docs/architecture/CROSS_DOMAIN_FLOWS.md`, `play/docs/FLOWS.md`, etc.) and/or converted to Markdown. Not done yet; needs the human's decision on form and timing.
 3. **Directory-name drift.** `AGENTS.md`, `docs/ai/KNOWLEDGE_MAP.md`, and the Session docs refer to `session/`, but the checkout has the domain at `play/` (`play/session`, `play/runtime/sandbox`). Reported, not changed.
+4. **Create Session retry after the Game stops being playable.** The orchestration asks Game Management before the Session domain looks at the idempotency key, so such a retry answers `game_unavailable` instead of replaying the created Session. Kept as is for now; revisit if it matters (option: let the Session domain replay a known key before the playability check).
 
 ## Completion Criteria
 
