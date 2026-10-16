@@ -51,12 +51,9 @@ type session struct {
 
 func (session) TableName() string { return "play_sessions" }
 
-// ClaimCreateSessionRequest claims the idempotency identity (userUUID,
-// idempotencyKey) for a request about gameUUID. When the identity is free it
-// is claimed and its id returned with a nil existing request; otherwise the
-// already-claimed request is returned and the id is zero. Two concurrent
-// claims of the same identity resolve to exactly one claim: the second waits
-// for the first transaction and then sees its committed request.
+// ClaimCreateSessionRequest claims (userUUID, idempotencyKey), or returns the
+// request that already holds it. A concurrent claim of the same identity waits
+// for the first transaction and then sees its request.
 func (r *Repo) ClaimCreateSessionRequest(ctx context.Context, tx *gorm.DB, userUUID string, idempotencyKey string, gameUUID string) (uint, *CreateSessionRequest, error) {
 	var claimedID uint
 	claim := tx.WithContext(ctx).Raw(`

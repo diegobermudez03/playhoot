@@ -37,6 +37,18 @@ func TestAuthorize(t *testing.T) {
 				expectedUserUUID: "aaaaaaaa-aaaa-4aaa-8aaa-0000000000ff", expectedDecision: identity.AccessForbidden,
 			}
 		},
+		"guest_cannot_join_sessions_as_admin": func(t *testing.T) test {
+			return test{
+				token: "test-guest", operation: identity.OperationJoinSessionAsAdmin,
+				expectedUserUUID: "aaaaaaaa-aaaa-4aaa-8aaa-0000000000ff", expectedDecision: identity.AccessForbidden,
+			}
+		},
+		"test_user_can_join_sessions_as_admin": func(t *testing.T) test {
+			return test{
+				token: "test-user-1", operation: identity.OperationJoinSessionAsAdmin,
+				expectedUserUUID: "aaaaaaaa-aaaa-4aaa-8aaa-000000000001", expectedDecision: identity.AccessAllowed,
+			}
+		},
 		"guest_is_allowed_other_operations": func(t *testing.T) test {
 			return test{
 				token: "test-guest", operation: identity.Operation("JOIN_SESSION"),

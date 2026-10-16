@@ -28,14 +28,9 @@ type sessionCreator interface {
 	CreateSession(ctx context.Context, userUUID string, gameUUID string, idempotencyKey string) (sessionpkg.CreateSessionResult, error)
 }
 
-// CreateSession creates a Session for userUUID from gameUUID. It first asks
-// Game Management whether the Game is playable for that user; if it is not,
-// no Session is created and the result reports the Game as unavailable.
-// Otherwise the Session domain creates the Session and its result is
-// returned as is.
-//
-// userUUID is only forwarded: this package never interprets it or talks to
-// Identity.
+// CreateSession creates a Session for userUUID from gameUUID if Game
+// Management says the Game is playable for them; otherwise it reports the
+// Game as unavailable.
 func (m *Manager) CreateSession(ctx context.Context, userUUID string, gameUUID string, idempotencyKey string) (sessionpkg.CreateSessionResult, error) {
 	step := logging.Step(ctx, "orchestrator.create_session")
 	defer step.Close()

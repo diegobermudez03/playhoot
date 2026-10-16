@@ -121,15 +121,9 @@ func TestExecute_MalformedReturnShape_IsRejected(t *testing.T) {
 	}
 }
 
-// capabilityProbeScript checks two different kinds of isolation: globals
-// that bare QuickJS simply never defines (a vacuous check on its own — it
-// would pass even with no sandboxing at all), and an actual attempted
-// filesystem escape through QuickJS's own std module, which IS reachable
-// unless the sandbox's mounted root is confined to an empty scratch
-// directory. "go.mod" only exists at the real repository root, never inside
-// a fresh per-invocation scratch directory, so successfully reading it would
-// prove a real isolation failure, not merely the absence of unrelated
-// Node/browser globals.
+// capabilityProbeScript checks that Node/browser globals are absent and that
+// reading go.mod (present only at the repository root) fails, proving the
+// filesystem is confined to the scratch directory.
 const capabilityProbeScript = `
 function execute(previousState, event, context) {
 	const noAmbientGlobals =
@@ -427,16 +421,9 @@ func TestExecute_StackOverflow_IsRejectedNotCrashed(t *testing.T) {
 	require.Error(t, err)
 	require.Less(t, elapsed, 4*time.Second, "unbounded recursion must be stopped by its own stack cap, well before the execution-time/caller deadline")
 
-	// Confirmed (2026-09-29), unlike memory exhaustion: unbounded recursion
-	// does not throw a catchable JS exception - it is an infrastructure-level
-	// failure inside the QuickJS-on-wazero binding itself (observed as a wasm
-	// trap surfacing through the WASM runtime's own cleanup, recovered by
-	// this package's top-level panic guard, or - if that guard's own
-	// recovery cannot run - a hard worker-process crash the OS-process
-	// boundary still safely contains). Either path is a clean
-	// WorkerExecutionError to the caller, never a hang and never a crash of
-	// the caller's own process - but callers must not expect the same
-	// graceful ScriptRejectedError memory exhaustion gets.
+	// Unbounded recursion is not a catchable JS exception: it fails inside the
+	// WASM runtime and surfaces as a WorkerExecutionError, unlike memory
+	// exhaustion's ScriptRejectedError.
 	var workerErr *WorkerExecutionError
 	require.ErrorAsf(t, err, &workerErr, "got %T: %v", err, err)
 }

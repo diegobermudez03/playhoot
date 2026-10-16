@@ -54,13 +54,8 @@ type ExecutionOutput struct {
 	RequestedCommands []RawCommand
 }
 
-// ProjectInput is Project's full set of explicit inputs. State is already
-// visibility-filtered, viewer-scoped content the caller (Session Runtime's
-// own visibility-filtering step) constructed - this package never receives
-// the full authoritative state for a Project call, only whatever the
-// caller chose to include. Viewer is an opaque identifier, echoed to the
-// script unexamined, the same way ExecutionContext.ActingActor is for
-// Execute.
+// ProjectInput is Project's input. State is already filtered to what the
+// viewer may see; this package never receives the full state.
 type ProjectInput struct {
 	Script  ResolvedScript
 	State   json.RawMessage
@@ -111,14 +106,9 @@ func (e *WorkerExecutionError) Unwrap() error { return e.Cause }
 // without changing Execute's own production behavior.
 var currentWorkerArg = workerModeArg
 
-// Execute runs one authored-script execution against previousState/event/
-// context inside a QuickJS-on-WebAssembly sandbox, hosted in a process
-// separate from the caller's own. Execute is stateless as a library — no
-// invocation depends on or mutates state left behind by an unrelated prior
-// invocation — and is safe for concurrent use across different callers; it
-// does not itself serialize concurrent calls, so a caller that needs at most
-// one execution in flight for a given logical unit of work must enforce
-// that itself.
+// Execute runs one authored-script execution in an isolated worker process.
+// It is stateless and safe for concurrent use; callers that need one
+// execution at a time must serialize it themselves.
 func Execute(ctx context.Context, in ExecutionInput) (ExecutionOutput, error) {
 	req := workerRequest{
 		Operation:     workerOperationExecute,
@@ -152,14 +142,8 @@ func Execute(ctx context.Context, in ExecutionInput) (ExecutionOutput, error) {
 	}, nil
 }
 
-// Project runs one authored-script project() invocation, computing a
-// single viewer's ClientState from an already visibility-filtered
-// in.State - this package never sees, and never needs, the full
-// authoritative state a Project call derives from; constructing that
-// viewer-scoped input is entirely the caller's own responsibility (see
-// ProjectInput's own doc comment). Project shares Execute's exact worker
-// process/isolation model (a fresh worker process per call, the same
-// resource limits, the same caller-deadline kill) - see LOGICAL_CONTRACT.md.
+// Project computes one viewer's ClientState from already viewer-filtered
+// state, with the same worker isolation as Execute.
 func Project(ctx context.Context, in ProjectInput) (ProjectOutput, error) {
 	req := workerRequest{
 		Operation: workerOperationProject,
@@ -192,13 +176,8 @@ func toWorkerContext(c ExecutionContext) workerContext {
 	}
 }
 
-// spawnWorker spawns one fresh worker process, exchanges exactly one
-// request/response over its stdin/stdout, and returns its decoded
-// response - the shared mechanics behind both Execute and Project. It
-// decodes Rejected/Fatal into the same two error categories both
-// operations report; interpreting the remaining, operation-specific
-// response fields (NewState/RequestedCommands vs. ClientState) is each
-// caller's own job.
+// spawnWorker runs one request/response against a fresh worker process,
+// mapping rejections and fatal failures to the shared error kinds.
 func spawnWorker(ctx context.Context, req workerRequest) (workerResponse, error) {
 	exePath, err := os.Executable()
 	if err != nil {

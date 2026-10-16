@@ -23,12 +23,8 @@ type labelDef struct {
 	index  map[string]struct{}
 }
 
-// Label is a metric dimension with a closed set of allowed values. Closing
-// the set at declaration is what bounds a metric's cardinality: a caller can
-// never record a value that was not declared up front.
-//
-// A Label is declared once, by the package that owns the metric, and can be
-// shared by several metrics.
+// Label is a metric dimension with a closed set of allowed values, which is
+// what bounds a metric's cardinality. It can be shared by several metrics.
 type Label struct {
 	def *labelDef
 }
@@ -49,13 +45,8 @@ var labelRegistry = struct {
 	labels map[string]*labelDef
 }{labels: map[string]*labelDef{}}
 
-// NewLabel declares a label called name whose only allowed values are values.
-// Declaring a label with the same name and the same set of values again
-// returns the same label.
-//
-// It panics on an invalid or reserved name, on no values, and on empty or
-// duplicated values, since all of those are programming errors that must
-// surface at startup.
+// NewLabel declares a label whose only allowed values are values; redeclaring
+// it identically returns the same label. Invalid declarations panic.
 func NewLabel(name string, values ...string) Label {
 	if !labelNamePattern.MatchString(name) {
 		panic(fmt.Sprintf("metrics: invalid label name %q, must be lower snake_case", name))

@@ -214,7 +214,7 @@ func TestHandleCreateSession(t *testing.T) {
 			deps := dependencies{creator: NewMocksessionCreator(ctrl)}
 			tc := setup(t, deps)
 
-			handler := NewHandler(nil, deps.creator)
+			handler := NewHandler(nil, deps.creator, nil, nil, nil)
 			request := httptest.NewRequest(http.MethodPost, "/sessions", strings.NewReader(tc.body)).WithContext(tc.ctx)
 			recorder := httptest.NewRecorder()
 

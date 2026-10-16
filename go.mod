@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	cloud.google.com/go/storage v1.68.0
+	github.com/coder/websocket v1.8.15
 	github.com/fastschema/qjs v0.0.6
 	github.com/go-gormigrate/gormigrate/v2 v2.1.6
 	github.com/google/uuid v1.6.0

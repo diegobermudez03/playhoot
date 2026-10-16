@@ -68,15 +68,10 @@ type createSessionAttempt struct {
 	replayed bool
 }
 
-// CreateSession creates a Session in LOBBY for userUUID, pinned to the
-// version gameUUID currently points to, with a join code valid until the
-// lobby expires.
-//
-// It is idempotent per (userUUID, idempotencyKey): a retry with the same key
-// and Game answers what the first request answered, and the same key with a
-// different Game returns sessionpkg.ErrIdempotencyConflict. A Game this
-// domain does not know, or that points to no version, is reported as the
-// game_unavailable outcome, which is also what a retry answers.
+// CreateSession creates a Session in LOBBY pinned to gameUUID's current
+// version, with a join code valid until the lobby expires. It is idempotent per
+// (userUUID, idempotencyKey); reusing a key for another Game returns
+// sessionpkg.ErrIdempotencyConflict.
 func (m *Manager) CreateSession(ctx context.Context, userUUID string, gameUUID string, idempotencyKey string) (sessionpkg.CreateSessionResult, error) {
 	defer logging.Step(ctx, "sessionlifecycle.create_session").Close()
 

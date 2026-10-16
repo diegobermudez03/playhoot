@@ -9,26 +9,17 @@ import "encoding/json"
 // initialization.
 const workerModeArg = "__playhoot_jsexecutor_worker__"
 
-// Best-effort resource defaults enforced by the QuickJS runtime itself.
-// These alone are not a sufficient resource-limit guarantee: a tight loop
-// that never yields back to the runtime can outlast them, so the caller's
-// own context deadline (enforced by killing the whole worker process) is
-// what a runaway execution's termination actually depends on. This
-// implementation assumes MaxExecutionTime's unit is milliseconds based on
-// the upstream field name alone; that assumption has not been independently
-// verified against the library's own behavior.
+// Best-effort limits enforced by QuickJS itself. A loop that never yields can
+// outlast them, so termination really depends on the caller's deadline, which
+// kills the worker process. MaxExecutionTime is assumed to be milliseconds.
 const (
 	defaultMemoryLimitBytes       = 64 * 1024 * 1024
 	defaultMaxStackSizeBytes      = 1 * 1024 * 1024
 	defaultMaxExecutionTimeMillis = 5000
 )
 
-// defaultMaxOutputBytes/defaultMaxCommandCount bound a successful
-// execution's own returned shape (NewState plus RequestedCommands) -
-// distinct from the resource limits above, which bound the runtime while a
-// script is executing. Enforced by Execute itself (the caller process),
-// after decoding the worker's response, so no worker-side code needs to
-// reason about the caller's limits.
+// defaultMaxOutputBytes and defaultMaxCommandCount bound a successful
+// execution's result; Execute enforces them after decoding the response.
 const (
 	defaultMaxOutputBytes  = 256 * 1024
 	defaultMaxCommandCount = 100

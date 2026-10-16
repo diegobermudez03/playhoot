@@ -18,22 +18,13 @@ const (
 	maxIdempotencyKeyLength   = 128
 )
 
-// handleCreateSession assumes r's context already carries a started request
-// log (Server's own restObservability wraps every REST route with one) and
-// that auth.Require already authorized the caller - it only ever calls
-// logging.LogFields/LogError, never Start or FinishRequestLog itself.
-//
-// It records no metrics of its own: how long the request took and how it
-// ended over HTTP is counted for every route by restObservability, and how
-// many Sessions were actually created is for the Session domain to count,
-// since this endpoint is only one way in.
+// handleCreateSession creates a Session for the authorized caller.
 func (h *Handler) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	userUUID, ok := auth.UserUUID(ctx)
 	if !ok {
-		// Reaching the handler without the middleware's caller is a wiring
-		// bug, never an anonymous caller to serve.
+		// Only possible if the route was registered without its middleware.
 		logging.LogFields(ctx, logging.Field("wiring_error", "create session reached without an authorized caller"))
 		httpx.WriteError(w, http.StatusInternalServerError, "creating session failed")
 		return

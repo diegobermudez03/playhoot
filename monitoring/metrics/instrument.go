@@ -1,18 +1,7 @@
-// Package metrics is the entry point for recording operational metrics:
-// counters, gauges and histograms with closed-set labels.
-//
-// This package only provides the generic mechanism. The package that owns a
-// piece of behavior declares its own metrics and label values (typically as
-// package-level variables) and records through them; this package never
-// declares domain metrics itself. Callers never see how or where metrics are
-// exported.
-//
-// Declaring a metric or label again with exactly the same definition is
-// allowed and returns the existing one, so declarations can live in code
-// that runs more than once. Every misuse that would break the metric contract
-// (invalid names, a conflicting redeclaration, undeclared or missing label
-// values, too many series) panics, because these are programming errors and
-// cardinality must stay bounded.
+// Package metrics records counters, gauges and histograms with closed-set
+// labels. Owning packages declare their own metrics; redeclaring identically
+// returns the existing one, and misuse panics because cardinality must stay
+// bounded.
 package metrics
 
 import (

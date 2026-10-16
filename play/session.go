@@ -1,13 +1,5 @@
-// Package session is the Session Runtime capability's public contract: the
-// types, values and errors a caller depends on without importing the
-// implementation behind them. It intentionally imports nothing beyond the
-// standard library.
-//
-// The contract is partial: the Session Runtime is being redesigned as a
-// real-time runtime, and its public types are declared here as that design
-// is accepted. Identifiers (a Session's, a Game's, a user's), the join code
-// and the idempotency key are plain strings; they only get a named type if
-// they ever carry behavior of their own.
+// Package session is the Session Runtime's public contract. It imports only
+// the standard library and grows as the real-time design is accepted.
 package session
 
 import (

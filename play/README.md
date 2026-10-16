@@ -12,6 +12,10 @@ Session Runtime is being rebuilt as a real-time runtime (`session/docs/decisions
 
 The detailed model (what it owns, its entities, persistence, protocol, recovery) is not yet defined and is intentionally not documented here. Until accepted decisions say otherwise, nothing in this directory is a commitment about it.
 
+## Live Session Ownership
+
+An active Session has exactly one owning Runtime instance. Ownership (locate-or-claim, epoch, release, and later lease and heartbeat) is the Runtime's; getting a request to the owner is the API edge's (`play/docs/decisions/SESSION-ADR-0029-live-session-ownership-and-owner-routing.md`, which also lists what must exist before more than one instance may own Sessions).
+
 ## Does Not Own
 
 - Transport/network connections (API owns the transport edge).
@@ -30,7 +34,12 @@ play/
   session.go                  # Session public contract (CreateSessionOutcome, CreateSessionResult, ErrIdempotencyConflict)
   docs/                       # DATA_MODEL.md, FLOWS.md, decisions/
   runtime/
+    runtime.go                # live Runtime public contract (OwnerPlacement, Connection channels, message catalog, AttachAdminResult)
     sandbox/                  # QuickJS-on-WebAssembly script execution in an isolated worker process; not wired to anything yet
+    usecases/
+      ownership/              # LocateOrClaimOwner (placeholder: single instance, no registry)
+    workflows/
+      liveconnection/         # Manager.AttachAdmin (placeholder: admits everyone)
   session/
     migration/                # exposes Migrate(db) and Seed(db) (test data) to the application's migrations.go
     usecases/                 # single-capability use cases (empty)

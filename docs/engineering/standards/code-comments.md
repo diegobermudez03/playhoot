@@ -69,11 +69,41 @@ obvious from well-named code, no comment is needed.
 
 Comments should be concise, stable under implementation changes, written at
 the abstraction level of the symbol being documented, and focused on
-purpose/contract or non-obvious reasoning rather than mechanics. Prefer
-one-line comments; two or three lines are acceptable when genuinely
-necessary. A long comment is justified only by a real invariant, subtle
-reasoning, protocol requirement, or similar information that cannot be
-clearly expressed through code.
+purpose/contract or non-obvious reasoning rather than mechanics.
+
+### Length Limit
+
+A doc comment (package, function/method, type, constant, variable, struct
+field) is normally one to three lines and never more than five. Five lines
+are for a contract that genuinely needs them: a concurrency rule, a
+lifecycle, a subtle invariant. The limit is enforced by a test.
+
+Detail that does not fit belongs somewhere else, not in a longer comment:
+
+- what an endpoint answers (status codes, wire shapes, error bodies) belongs
+  in the API documentation (for example `api/README.md`) and in its tests;
+- how a flow works end to end belongs in the domain's flow documentation;
+- what a placeholder will eventually do belongs in the owning domain's
+  `CURRENT_STATE.md` (see Placeholders below);
+- a step-by-step account of the body belongs nowhere: the code already
+  says it.
+
+A system with hundreds of endpoints and functions cannot keep each one's
+full behavior in prose above it; the comment states the contract, and the
+code, tests and documentation carry the rest.
+
+### Placeholders
+
+Code that is wired but not real yet says so in one line, `Placeholder:`
+followed by what it does now. Its intended behavior is tracked in the owning
+domain's `CURRENT_STATE.md`, not narrated in the comment.
+
+```go
+// LocateOrClaimOwner returns the owner of sessionUUID, atomically claiming
+// the Session when it has none.
+//
+// Placeholder: reports every Session as owned here, without looking it up.
+```
 
 ## By Symbol Kind
 
@@ -212,6 +242,27 @@ Slice number. Default to no citation at all. If one is included anyway (for
 a maintainer who wants to trace the deeper design record), it must be
 strictly supplementary: the sentence must already be complete and correct
 with the citation deleted.
+
+## Exported Doc Comments Never Name Unexported Identifiers
+
+A reader of an exported symbol's documentation (GoDoc, an IDE hover, another
+package) cannot see the package's unexported functions, types or variables.
+An exported doc comment that names one (`see restObservability`,
+`unlike the helper parseRow`) sends the reader somewhere they cannot go. State
+the behavior itself instead. Parameter and result names are not identifiers
+of the package and may be named. Unexported symbols' own comments may name
+other unexported symbols freely.
+
+```go
+// Bad: the caller cannot see either function.
+// NewServer ... wrapping each route with the observability behavior its
+// transport shape requires (see restObservability/wsObservability).
+```
+
+```go
+// Good: the behavior, from the caller's side.
+// NewServer constructs a Server exposing every route group's endpoints.
+```
 
 ## Public API Comments Stay At The Public Contract
 
@@ -398,14 +449,16 @@ cannot communicate.
 ## Enforcement
 
 Code review and this standard are the primary enforcement mechanism; no
-general linter checks comment content. Two tests in `comment_standard_test.go`
-(root package) run as part of `go test ./...` and mechanically catch two
-specific, common violations: `TestNoInternalDocCitationsInComments` catches a
+general linter checks comment content. Three tests in `comment_standard_test.go`
+(root package) run as part of `go test ./...` and mechanically catch specific,
+common violations: `TestNoInternalDocCitationsInComments` catches a
 comment citing an ADR/WORK/Blocker/Slice reference or a
 `docs/work|engineering|ai/` path as the reason something is true;
 `TestExportedDocCommentsStayAtPublicContract` catches an exported
 declaration's doc comment referencing a lower-layer/`internal/` package (see
-Public API Comments Stay At The Public Contract above). Neither catches most
+Public API Comments Stay At The Public Contract above);
+`TestDocCommentLength` fails any doc comment longer than five lines in a
+non-generated file (see Length Limit above). Neither catches most
 of what this standard covers (narrating the function body, describing
 current callers instead of what a symbol represents, historical "previously
 X, now Y" phrasing, implementation narration that names no package, etc.).
@@ -413,6 +466,12 @@ Code review remains required for the rest.
 
 During code review, flag in particular:
 
+- a doc comment longer than three lines that is not a genuine contract
+  (concurrency, lifecycle, invariant), even though the test only fails above
+  five;
+- an exported doc comment naming an unexported identifier of its package;
+- a placeholder comment describing its eventual behavior instead of one
+  `Placeholder:` line;
 - a comment narrating the function body instead of its contract;
 - a struct/field/type comment describing current callers or consumers
   instead of what the symbol represents;

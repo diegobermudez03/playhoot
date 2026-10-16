@@ -19,6 +19,8 @@ import (
 	"github.com/diegobermudez03/playhoot/game/usecases/checkplayability"
 	"github.com/diegobermudez03/playhoot/identity/usecases/authorize"
 	"github.com/diegobermudez03/playhoot/orchestrator/playlifecycle"
+	"github.com/diegobermudez03/playhoot/play/runtime/usecases/ownership"
+	"github.com/diegobermudez03/playhoot/play/runtime/workflows/liveconnection"
 	"github.com/diegobermudez03/playhoot/play/session/workflows/sessionlifecycle"
 	"github.com/joho/godotenv"
 	"gorm.io/driver/postgres"
@@ -34,6 +36,10 @@ type envVariables struct {
 	DatabaseName     string
 	DatabaseSSLMode  string
 	HTTPPort         string
+
+	// WebSocketAllowedOrigins are extra origin hosts browser pages may open
+	// live connections from. Optional.
+	WebSocketAllowedOrigins []string
 }
 
 // shutdownTimeout bounds how long in-flight requests get to finish once the
@@ -80,7 +86,13 @@ func run() error {
 	}
 
 	playLifecycle := playlifecycle.New(checkplayability.New(), sessionlifecycle.New(db))
-	server := api.NewServer(authorize.New(), playLifecycle)
+	server := api.NewServer(
+		authorize.New(),
+		playLifecycle,
+		ownership.New(),
+		liveconnection.New(),
+		envVars.WebSocketAllowedOrigins,
+	)
 
 	httpServer := &http.Server{
 		Addr:              ":" + envVars.HTTPPort,
@@ -139,6 +151,8 @@ func readEnvVariables() (*envVariables, error) {
 		DatabaseName:     strings.TrimSpace(os.Getenv("DATABASE_NAME")),
 		DatabaseSSLMode:  strings.TrimSpace(os.Getenv("DATABASE_SSL_MODE")),
 		HTTPPort:         strings.TrimSpace(os.Getenv("HTTP_PORT")),
+
+		WebSocketAllowedOrigins: splitList(os.Getenv("WEBSOCKET_ALLOWED_ORIGINS")),
 	}
 
 	required := []struct {
@@ -171,6 +185,17 @@ func readEnvVariables() (*envVariables, error) {
 	}
 
 	return envVars, nil
+}
+
+// splitList parses a comma-separated list, dropping empty entries.
+func splitList(value string) []string {
+	var items []string
+	for _, item := range strings.Split(value, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			items = append(items, item)
+		}
+	}
+	return items
 }
 
 func openPostgres(envVars *envVariables) (*gorm.DB, error) {

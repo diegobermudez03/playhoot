@@ -10,7 +10,7 @@ Status: CURRENT IMPLEMENTATION
 
 ## Placeholders (wired, but not real behavior)
 
-- `identity/usecases/authorize` (`Authorize`) is called by the API's authorization middleware on every protected route, but it does not validate tokens: it only recognizes hardcoded test tokens (`test-user-1`, `test-user-2` -> fixed UserUUIDs, allowed; `test-guest` -> forbidden from creating Sessions; anything else unauthenticated). Real behavior (validate the JWT, resolve the stable UserUUID, decide per operation; creating a Session requires an account, not a guest) is not implemented and is outside the current Session Runtime project.
+- `identity/usecases/authorize` (`Authorize`) is called by the API's authorization middleware on every protected route, but it does not validate tokens: it only recognizes hardcoded test tokens (`test-user-1`, `test-user-2` -> fixed UserUUIDs, allowed; `test-guest` -> forbidden from the account-only operations, creating a Session and joining one as admin; anything else unauthenticated). Real behavior (validate the JWT, resolve the stable UserUUID, decide per operation; creating a Session and joining one as admin require an account, not a guest) is not implemented and is outside the current Session Runtime project.
 - `identity/identity.go` declares the `Operation` and `AccessDecision` values that capability uses.
 
 ## Known Drift

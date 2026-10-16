@@ -1,11 +1,12 @@
-// Package auth is the API edge's authentication and coarse authorization
-// middleware. It never interprets a token itself: it extracts the bearer
-// token from the request and asks Identity who the caller is and whether
-// that caller may perform the route's operation.
+// Package auth is the API edge's authorization middleware: it extracts the
+// caller's bearer token and asks Identity who they are and whether they may
+// perform the route's operation.
 package auth
 
 import (
 	"context"
+	"encoding/base64"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -19,25 +20,20 @@ import (
 
 //go:generate mockgen -package=auth -destination=authorizer_mock_test.go . authorizer
 
-// authorizer is this package's narrow dependency on Identity. It receives
-// the raw token and the operation the route performs, and answers with the
-// caller's UserUUID and whether the operation is allowed.
-//
-// A caller who is simply not allowed is reported through the decision, with
-// a nil error. A non-nil error means Identity could not evaluate the
-// request at all. The returned UserUUID is only meaningful when the
-// decision is identity.AccessAllowed.
+// authorizer resolves a token to the caller's UserUUID and decides whether
+// they may perform operation. A refusal is a decision, not an error.
 type authorizer interface {
 	Authorize(ctx context.Context, token string, operation identity.Operation) (string, identity.AccessDecision, error)
 }
 
 var (
-	decisionLabel = metrics.NewLabel("decision", "allowed", "unauthenticated", "forbidden", "missing_token", "error")
+	decisionLabel = metrics.NewLabel("decision", "allowed", "unauthenticated", "forbidden", "missing_token", "malformed_token", "error")
 
 	decisionAllowed         = decisionLabel.Value("allowed")
 	decisionUnauthenticated = decisionLabel.Value("unauthenticated")
 	decisionForbidden       = decisionLabel.Value("forbidden")
 	decisionMissingToken    = decisionLabel.Value("missing_token")
+	decisionMalformedToken  = decisionLabel.Value("malformed_token")
 	decisionError           = decisionLabel.Value("error")
 
 	authorizationTotal = metrics.NewCounter(
@@ -55,35 +51,57 @@ var (
 
 type userUUIDContextKey struct{}
 
-// WithUserUUID returns a context carrying userUUID as the authorized caller.
-// Require uses it once Identity allows a request; it is exported so a handler
-// can be exercised without running the middleware in front of it.
+// WithUserUUID returns ctx carrying userUUID as the authorized caller.
 func WithUserUUID(ctx context.Context, userUUID string) context.Context {
 	return context.WithValue(ctx, userUUIDContextKey{}, userUUID)
 }
 
-// UserUUID returns the caller's UserUUID, set by Require. It reports false
-// when the request did not pass through Require, which a handler behind it
-// must treat as a wiring bug rather than an unauthenticated caller.
+// UserUUID returns the authorized caller, or false when the request was not
+// authorized by this package's middleware.
 func UserUUID(ctx context.Context) (string, bool) {
 	userUUID, ok := ctx.Value(userUUIDContextKey{}).(string)
 	return userUUID, ok && userUUID != ""
 }
 
-// Require returns a middleware that only lets a request through when
-// Identity allows its bearer token to perform operation, and makes the
-// caller's UserUUID available to the handler through UserUUID.
-//
-// It assumes the request context already carries a started request log, as
-// every route registered by api.Server does.
+// webSocketBearerProtocolPrefix carries a bearer token as a WebSocket
+// subprotocol (the token follows, as unpadded base64url), because browsers
+// cannot set headers on a WebSocket handshake. The same scheme as Kubernetes.
+const webSocketBearerProtocolPrefix = "base64url.bearer.authorization.playhoot."
+
+var (
+	errMissingToken   = errors.New("missing bearer token")
+	errMalformedToken = errors.New("malformed bearer token")
+)
+
+// tokenSource extracts a request's bearer token.
+type tokenSource func(r *http.Request) (string, error)
+
+// Require lets a request through only when Identity allows its bearer token
+// (Authorization header) to perform operation.
 func Require(authorizer authorizer, operation identity.Operation) routing.Middleware {
+	return requireToken(authorizer, operation, headerToken)
+}
+
+// RequireWebSocket is Require for a WebSocket handshake: the token comes from
+// the Authorization header or, for browsers, the bearer token subprotocol
+// "base64url.bearer.authorization.playhoot.<base64url token>".
+func RequireWebSocket(authorizer authorizer, operation identity.Operation) routing.Middleware {
+	return requireToken(authorizer, operation, webSocketToken)
+}
+
+func requireToken(authorizer authorizer, operation identity.Operation, tokenFrom tokenSource) routing.Middleware {
 	return func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
 			logging.LogFields(ctx, logging.Field("operation", string(operation)))
 
-			token, ok := bearerToken(r)
-			if !ok {
+			token, err := tokenFrom(r)
+			if errors.Is(err, errMalformedToken) {
+				authorizationTotal.Inc(ctx, decisionMalformedToken)
+				writeUnauthenticated(w, "malformed bearer token")
+				return
+			}
+			if err != nil {
 				authorizationTotal.Inc(ctx, decisionMissingToken)
 				writeUnauthenticated(w, "missing bearer token")
 				return
@@ -124,6 +142,35 @@ func Require(authorizer authorizer, operation identity.Operation) routing.Middle
 			}
 		}
 	}
+}
+
+func headerToken(r *http.Request) (string, error) {
+	token, ok := bearerToken(r)
+	if !ok {
+		return "", errMissingToken
+	}
+	return token, nil
+}
+
+// webSocketToken prefers the Authorization header over the subprotocol.
+func webSocketToken(r *http.Request) (string, error) {
+	if token, ok := bearerToken(r); ok {
+		return token, nil
+	}
+	for _, header := range r.Header.Values("Sec-WebSocket-Protocol") {
+		for _, protocol := range strings.Split(header, ",") {
+			encoded, found := strings.CutPrefix(strings.TrimSpace(protocol), webSocketBearerProtocolPrefix)
+			if !found {
+				continue
+			}
+			token, err := base64.RawURLEncoding.DecodeString(encoded)
+			if err != nil || strings.TrimSpace(string(token)) == "" {
+				return "", errMalformedToken
+			}
+			return string(token), nil
+		}
+	}
+	return "", errMissingToken
 }
 
 // bearerToken extracts the token from an "Authorization: Bearer <token>"

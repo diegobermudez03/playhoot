@@ -14,12 +14,9 @@ import (
 // scripts are small; anything larger is not a script this port serves.
 const maxObjectBytes = 16 << 20
 
-// GCS is a Store backed by one private Google Cloud Storage bucket.
-// Authentication uses Application Default Credentials, so a deployed
-// service authenticates as its own service identity. Signed URLs are
-// produced without a locally held private key: the client signs through the
-// IAM Credentials API on behalf of that identity, so the identity needs
-// permission to sign for itself.
+// GCS is a Store backed by one private Google Cloud Storage bucket. It signs
+// URLs through the IAM Credentials API as its own identity, so that identity
+// needs permission to sign for itself.
 type GCS struct {
 	client *storage.Client
 	bucket string

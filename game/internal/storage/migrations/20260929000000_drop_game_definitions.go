@@ -5,12 +5,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// migration20260929000000DropGameDefinitions drops
-// game_definitions/game_definition_histories and games.current_definition_id:
-// these existed only to hold a Game-Language-shaped script per version.
-// Session Runtime now owns its own executable-artifact table
-// (session_game_version_artifacts) independently of Game Management, and
-// nothing reads these tables live anymore.
+// migration20260929000000DropGameDefinitions drops the per-version script
+// tables and games.current_definition_id, which nothing reads anymore.
 func migration20260929000000DropGameDefinitions() *gormigrate.Migration {
 	return &gormigrate.Migration{
 		ID: "20260929000000_drop_game_definitions",

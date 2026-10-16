@@ -17,12 +17,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// DisposableTestDB is a throwaway database shared by every test of one test
-// binary (one package run). It is created on first use, migrated once, and
-// dropped when the run ends, so tests in the run share data on purpose.
-//
-// A package using it must run its tests through Run from TestMain; Open
-// fails otherwise, since nothing else would drop the database.
+// DisposableTestDB is a database shared by every test of one test binary,
+// dropped when the run ends. Packages using it must run tests through Run
+// from TestMain.
 type DisposableTestDB struct {
 	Key        string
 	NameSuffix string

@@ -1,11 +1,5 @@
-// Package identity is Identity's public contract: the types and values a
-// caller depends on without importing the implementation behind them. It
-// intentionally imports nothing beyond the standard library.
-//
-// The contract is partial: only what callers already need is declared, and
-// more is added as Identity's capabilities are accepted. A user's UUID and a
-// credential token are plain strings in Identity's methods; they only get a
-// named type if they ever carry behavior of their own.
+// Package identity is Identity's public contract. It imports only the standard
+// library and grows as Identity's capabilities are accepted.
 package identity
 
 // Operation names a coarse operation Identity decides whether a caller may
@@ -17,6 +11,10 @@ const (
 	// OperationCreateSession is creating a new Session. It requires a real
 	// account, not a guest-only identity.
 	OperationCreateSession Operation = "CREATE_SESSION"
+
+	// OperationJoinSessionAsAdmin is opening an admin connection to a live
+	// Session. It requires a real account, not a guest-only identity.
+	OperationJoinSessionAsAdmin Operation = "JOIN_SESSION_AS_ADMIN"
 )
 
 // AccessDecision is Identity's answer to whether a caller may perform an

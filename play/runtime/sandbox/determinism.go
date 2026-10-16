@@ -2,18 +2,10 @@ package sandbox
 
 import "fmt"
 
-// buildDeterminismPrelude returns a script that must be evaluated before any
-// authored code runs, in the same global scope that code will run in. It
-// replaces the language's own ambient Date/Math.random with versions
-// derived from logicalTimeMs/randomSeed, so authored code cannot observe
-// real wall-clock time or OS randomness merely by calling them directly (as
-// opposed to reading the context parameter execute() receives). It also
-// removes other ambient globals the underlying runtime exposes by default
-// that would otherwise leak a real elapsed-time signal even though nothing
-// in this package explicitly wires them in. It does not need to neutralize
-// host-environment-variable access: the process this script runs in is
-// started with no environment at all, so there is nothing for it to read
-// regardless of what the language itself exposes.
+// buildDeterminismPrelude returns a script to evaluate before authored code,
+// in the same scope, replacing Date, Math.random and other ambient time or
+// randomness sources with ones derived from logicalTimeMs and randomSeed.
+// Environment variables need no neutralizing: the worker has no environment.
 func buildDeterminismPrelude(logicalTimeMs int64, randomSeed uint64) string {
 	seed := uint32(randomSeed ^ (randomSeed >> 32))
 	if seed == 0 {

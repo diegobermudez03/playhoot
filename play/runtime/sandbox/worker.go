@@ -11,12 +11,9 @@ import (
 	"github.com/fastschema/qjs"
 )
 
-// RunAsWorkerIfRequested checks whether the current process was invoked in
-// sandbox worker mode (the sentinel argument Execute passes when spawning a
-// worker). If so, it runs exactly one request/response cycle against stdin/
-// stdout and returns true — the caller must exit the process immediately
-// afterward without falling through to normal application startup, since the
-// worker process is a plain re-exec of the same binary, not a distinct one.
+// RunAsWorkerIfRequested runs one worker request/response when the process was
+// started in sandbox worker mode, and returns true. The caller must then exit,
+// since the worker is a re-exec of the same binary.
 func RunAsWorkerIfRequested() bool {
 	if len(os.Args) < 2 || os.Args[1] != workerModeArg {
 		return false
@@ -164,13 +161,8 @@ func runExecute(ctx *qjs.Context, req workerRequest, contextVal *qjs.Value) work
 	}
 }
 
-// runProject invokes the script's second, pure entry point, project(state,
-// viewer, context). Unlike execute(), its return value has no required
-// shape - whatever JSON-serializable value the script returns becomes
-// ClientState verbatim. req.State is already the caller-constructed,
-// viewer-scoped input a privacy-filtering step upstream produced - this
-// function never sees, and has no way to reach, whatever authoritative
-// state that filtering step excluded.
+// runProject invokes the script's pure project(state, viewer, context); its
+// return value, whatever its shape, becomes ClientState.
 func runProject(ctx *qjs.Context, req workerRequest, contextVal *qjs.Value) workerResponse {
 	stateVal := ctx.ParseJSON(rawOrNull(req.State))
 	defer stateVal.Free()

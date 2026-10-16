@@ -19,7 +19,7 @@ The plan is the architectural skeleton; concrete implementation is decided step 
 
 ## Current Work
 
-Done so far, in the order the human directed: metrics entry points (`monitoring/metrics`), and Create Session end to end (API endpoint and auth middleware, play-lifecycle orchestration, Session domain creation with schema, test data and tests), completed 2026-10-15; see CHECKLIST.md section D. Nothing is in progress; the next step is the human's call.
+Done so far, in the order the human directed: metrics entry points (`monitoring/metrics`), and Create Session end to end (API endpoint and auth middleware, play-lifecycle orchestration, Session domain creation with schema, test data and tests), completed 2026-10-15; see CHECKLIST.md section D. Admin join's API layer (2026-10-15): live Session ownership and owner routing decided (`play/docs/decisions/SESSION-ADR-0029-live-session-ownership-and-owner-routing.md`), `GET /sessions/{sessionUUID}/admin` implemented on the API side with the Runtime's ownership and admission as placeholders; see CHECKLIST.md sections A1, A2 and E.
 
 No WORK files exist: the human directs each step in conversation (see "Material Decisions Needing Human Input").
 

@@ -1,9 +1,5 @@
-// Package sessionlifecycle is the durable Session lifecycle workflow: one
-// Manager exposing the lifecycle steps (today, creating a Session) as its
-// methods, each step in its own file. The Manager decides business/lifecycle
-// policy (transaction scope, idempotency meaning, join code allocation); its
-// internal/repo reports facts and performs the mutations the Manager
-// requests.
+// Package sessionlifecycle is the durable Session lifecycle workflow: a
+// Manager whose methods are the lifecycle steps, one file per step.
 package sessionlifecycle
 
 import (

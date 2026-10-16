@@ -55,13 +55,8 @@ func Field(key string, value any) logField {
 	}
 }
 
-// WithTraceID attaches traceID to ctx so that a later Start call - anywhere
-// in this same causal chain, including a value never seen by this package
-// before - reuses it instead of minting a new one. This is the mechanism a
-// future inbound trace header (once this system splits into multiple
-// deployed services) would use to make an incoming request's trace ID
-// this process's own; today, Start's own trace-ID-per-connection reuse
-// (see its doc comment) is this function's only caller.
+// WithTraceID attaches traceID to ctx so later Start calls reuse it, for
+// example to continue a trace received from another service.
 func WithTraceID(ctx context.Context, traceID string) context.Context {
 	return context.WithValue(ctx, traceIDContextKey{}, traceID)
 }
@@ -80,31 +75,9 @@ func SpanID(ctx context.Context) (string, bool) {
 	return spanID, ok
 }
 
-// Start begins a new request log and returns the ctx it lives on.
-//
-// If ctx already carries a trace ID (attached by an earlier Start call
-// further up this same causal chain, or by WithTraceID), that same trace
-// ID is reused; otherwise a fresh one is minted. This is what lets a
-// long-lived WebSocket connection's many separate per-message request
-// logs - each its own Start/FinishRequestLog pair - still share one trace
-// ID with the connection-level log that opened it, so they can all be
-// correlated later even though each is flushed as its own independent
-// structured log line.
-//
-// Start also always mints a fresh span ID for this specific call - unlike
-// the trace ID, the span ID is never reused, since it identifies this one
-// unit of work alone (this one message, this one connection-open event),
-// not the whole causal chain it belongs to. If ctx already carries a span
-// ID from an enclosing Start call, that ID becomes this new span's
-// parent_span_id, forming a parent/child tree of spans under one shared
-// trace: a WebSocket connection's own open event is the root span, and
-// the join handshake and every individual message are its direct
-// children, each identifiable on its own (by span_id) while still
-// traceable back to the connection that carried them (by trace_id and
-// parent_span_id). A future call this span makes to another
-// separately-deployed service would carry this same trace ID plus this
-// span's own ID as that call's parent_span_id, extending the same tree
-// across a process boundary without any further change here.
+// Start begins a new request log on ctx. It reuses ctx's trace ID (or mints
+// one) and starts a new span whose parent is ctx's span, so every exchange of
+// a long-lived connection is its own log line yet traceable to the connection.
 func Start(ctx context.Context) context.Context {
 	traceID, ok := TraceID(ctx)
 	if !ok {
@@ -215,23 +188,9 @@ func LogLoopFields(ctx context.Context, loopName string, fields ...logField) {
 	})
 }
 
-// LogStandalone emits one structured log line for a log that is not
-// caused by, and cannot be attributed to, any single request/connection
-// already tracked via Start/Step/LogFields/LogError - for example a
-// server-initiated push fanned out across multiple recipient connections,
-// or a goroutine with no owning request context. This is the Logging
-// Standard's documented "server-initiated push" gap, given a real,
-// package-native answer instead of a caller reaching for the standard
-// library's log package.
-//
-// tags are fixed, low-cardinality values identifying where in the system
-// the log came from (e.g. "websocket", "session") - a standalone log
-// already sits outside this package's normal per-request correlation, so
-// tags are what make it possible to filter/find in aggregate instead of
-// disappearing into an unstructured stream. At least one tag is required;
-// a call with none logs "untagged" rather than silently dropping the tag
-// requirement, so a missing tag is visible in the log stream itself
-// instead of unnoticed.
+// LogStandalone writes one log line not attributable to any tracked request,
+// such as a server-initiated push. tags are fixed, low-cardinality values to
+// find it by; with none it is tagged "untagged" so the omission is visible.
 func LogStandalone(logger *slog.Logger, tags []string, message string, fields ...logField) {
 	if logger == nil {
 		return

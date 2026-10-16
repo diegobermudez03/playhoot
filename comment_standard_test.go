@@ -12,12 +12,8 @@ import (
 	"testing"
 )
 
-// internalCitationPattern matches the shapes of internal decision-tracking
-// reference this repository's own engineering comment standard forbids
-// citing as the reason something is true in a source comment: an ADR
-// number, a WORK number, a Blocker/Slice reference, or a path into this
-// repository's own docs tree. The actual reasoning must be written out in
-// plain language instead of pointing at a document for it.
+// internalCitationPattern matches citations of internal decision documents
+// (ADR, WORK, Blocker, Slice, docs paths) used in place of a reason.
 var internalCitationPattern = regexp.MustCompile(`(?i)\b(?:[A-Z]+-)?ADR-\d+\b|\bWORK-\d{4}\b|\bBlocker \d+\b|\bSlice \d+\b|\bdocs/(?:work|engineering|ai)/`)
 
 // TestNoInternalDocCitationsInComments walks every tracked .go file's
@@ -65,16 +61,9 @@ func TestNoInternalDocCitationsInComments(t *testing.T) {
 	}
 }
 
-// lowerLayerPackageIdentifiers names package identifiers this repository's
-// own domains use for engine/runtime/infrastructure-layer implementation -
-// never part of any domain's own public contract. An exported doc comment
-// referencing one of these (e.g. "see engineservice.EncodeValue") asks the
-// reader to understand a layer the public symbol exists to abstract away,
-// even though the package itself is perfectly importable (not Go-internal).
-// Extend this list, with a one-line reason, whenever another such layer
-// appears - for example, a future domain's own internal execution engine.
-// This list only matters for a reference NOT already part of the
-// declaration's own signature - see qualifiedIdentsInType below.
+// lowerLayerPackageIdentifiers are engine/infrastructure packages a public doc
+// comment must not send the reader to; extend it, with a reason, when a new
+// such layer appears.
 var lowerLayerPackageIdentifiers = map[string]string{
 	"engine":        "Game Language's execution engine - session's own public contract exists specifically so callers never need it",
 	"engineservice": "the engine's own service/codec layer - same reason as engine",
@@ -86,13 +75,8 @@ var lowerLayerPackageIdentifiers = map[string]string{
 // "internalrepo.TimerObligation".
 var qualifiedSymbolPattern = regexp.MustCompile(`\b([a-z][a-zA-Z0-9]*)\.[A-Z][a-zA-Z0-9]*\b`)
 
-// qualifiedIdentsInType collects every package identifier referenced by a
-// SelectorExpr (pkg.Symbol) anywhere inside expr - the type expression of a
-// declaration's own signature (its parameters/results, or a type alias's
-// underlying type). A package already appearing here is already part of
-// what the declaration's exported signature forces any caller to see - a
-// doc comment naming it too is not introducing a new hidden dependency, it
-// is describing an already-unavoidable one.
+// qualifiedIdentsInType collects the package identifiers used in a
+// declaration's signature; a comment naming those adds no hidden dependency.
 func qualifiedIdentsInType(expr ast.Node) map[string]bool {
 	idents := map[string]bool{}
 	if expr == nil {
@@ -125,22 +109,9 @@ func receiverIsExportedOrAbsent(recv *ast.FieldList) bool {
 	return ok && ast.IsExported(ident.Name)
 }
 
-// TestExportedDocCommentsStayAtPublicContract walks every tracked,
-// non-test .go file outside any internal/ directory and fails if an
-// exported top-level declaration's doc comment references a
-// package-qualified symbol whose import path contains "/internal/", or
-// whose local package identifier is on lowerLayerPackageIdentifiers -
-// unless that same package already appears in the declaration's own
-// signature (see qualifiedIdentsInType), in which case the caller cannot
-// avoid seeing it regardless of the comment.
-//
-// This mechanically catches the concrete half of this repository's "Public
-// API Comments Stay At The Public Contract" standard: a public method's own
-// doc comment must never send the reader to a lower architectural layer
-// merely to understand how to call it, when that layer is not otherwise
-// forced on the caller by the signature itself. It cannot catch the softer
-// half (implementation narration that names no package) - that remains a
-// code-review responsibility.
+// TestExportedDocCommentsStayAtPublicContract fails when an exported doc
+// comment names an internal/ or lower-layer package its signature does not
+// already expose. Narration that names no package is left to code review.
 func TestExportedDocCommentsStayAtPublicContract(t *testing.T) {
 	var violations []string
 
@@ -242,5 +213,91 @@ func TestExportedDocCommentsStayAtPublicContract(t *testing.T) {
 	if len(violations) > 0 {
 		t.Errorf("found %d exported doc comment(s) referencing a lower-layer/internal package not otherwise part of the declaration's own signature - describe the public contract self-sufficiently instead (see the engineering standards directory's code-comments doc, \"Public API Comments Stay At The Public Contract\"):\n%s",
 			len(violations), strings.Join(violations, "\n"))
+	}
+}
+
+// maxDocCommentLines bounds every doc comment; detail that does not fit
+// belongs in docs, tests or clearer code.
+const maxDocCommentLines = 5
+
+// docCommentLines counts a doc comment's lines, leaving out tool directives
+// such as //go:generate.
+func docCommentLines(fset *token.FileSet, doc *ast.CommentGroup) int {
+	lines := 0
+	for _, comment := range doc.List {
+		if strings.HasPrefix(comment.Text, "//go:") || strings.HasPrefix(comment.Text, "//nolint") {
+			continue
+		}
+		lines += fset.Position(comment.End()).Line - fset.Position(comment.Pos()).Line + 1
+	}
+	return lines
+}
+
+// TestDocCommentLength fails on any doc comment (package, declaration or
+// struct field) longer than maxDocCommentLines, in every non-generated file.
+func TestDocCommentLength(t *testing.T) {
+	var violations []string
+
+	err := filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			if info.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") {
+			return nil
+		}
+
+		fset := token.NewFileSet()
+		file, parseErr := parser.ParseFile(fset, path, nil, parser.ParseComments)
+		if parseErr != nil {
+			return fmt.Errorf("parsing %s: %w", path, parseErr)
+		}
+		if ast.IsGenerated(file) {
+			return nil
+		}
+
+		check := func(doc *ast.CommentGroup, name string) {
+			if doc == nil {
+				return
+			}
+			if lines := docCommentLines(fset, doc); lines > maxDocCommentLines {
+				violations = append(violations, fmt.Sprintf("%s: %s (%d lines)", fset.Position(doc.Pos()), name, lines))
+			}
+		}
+
+		check(file.Doc, "package "+file.Name.Name)
+		ast.Inspect(file, func(n ast.Node) bool {
+			switch d := n.(type) {
+			case *ast.FuncDecl:
+				check(d.Doc, d.Name.Name)
+			case *ast.GenDecl:
+				check(d.Doc, d.Tok.String())
+			case *ast.TypeSpec:
+				check(d.Doc, d.Name.Name)
+			case *ast.ValueSpec:
+				check(d.Doc, d.Names[0].Name)
+			case *ast.Field:
+				name := "field"
+				if len(d.Names) > 0 {
+					name = d.Names[0].Name
+				}
+				check(d.Doc, name)
+			}
+			return true
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walking repository for .go files: %v", err)
+	}
+
+	if len(violations) > 0 {
+		t.Errorf("found %d doc comment(s) longer than %d lines - keep the contract to 1-3 lines and move detail to docs or tests (see the engineering standards directory's code-comments doc):\n%s",
+			len(violations), maxDocCommentLines, strings.Join(violations, "\n"))
 	}
 }

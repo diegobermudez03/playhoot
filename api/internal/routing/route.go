@@ -11,13 +11,9 @@ import "net/http"
 // behavior before and/or after calling it.
 type Middleware func(http.HandlerFunc) http.HandlerFunc
 
-// Route is one endpoint a route group exposes: the http.ServeMux pattern
-// it registers under (e.g. "POST /sessions"), the handler itself, and any
-// middlewares specific to this one route (an authorization check some
-// endpoints need and others don't, a rate limiter, and so on). A
-// middleware every endpoint needs regardless of route group - today,
-// observability - is not declared here; Server applies it to every route
-// uniformly.
+// Route is one endpoint a route group exposes: its http.ServeMux pattern, its
+// handler and its route-specific middlewares. Middlewares every route needs
+// are applied by Server, not declared here.
 type Route struct {
 	Pattern     string
 	Handler     http.HandlerFunc

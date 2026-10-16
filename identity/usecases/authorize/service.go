@@ -1,10 +1,7 @@
-// Package authorize is Identity's capability for turning a caller's
-// credential into a UserUUID and deciding whether that caller may perform a
-// coarse operation.
+// Package authorize resolves a caller's credential to a UserUUID and decides
+// whether they may perform a coarse operation.
 //
-// This is a placeholder: it does not validate tokens. It recognizes a fixed
-// set of test tokens so the callers of this capability can be built, wired
-// and tested by hand before Identity's real behavior exists.
+// Placeholder: it only recognizes fixed test tokens and validates nothing.
 package authorize
 
 import (
@@ -28,6 +25,13 @@ var testTokens = map[string]testUser{
 	"test-guest":  {userUUID: "aaaaaaaa-aaaa-4aaa-8aaa-0000000000ff", guest: true},
 }
 
+// accountOnlyOperations are the operations a guest-only identity may never
+// perform.
+var accountOnlyOperations = map[identity.Operation]bool{
+	identity.OperationCreateSession:      true,
+	identity.OperationJoinSessionAsAdmin: true,
+}
+
 // Service is Identity's authorization use case.
 type Service struct{}
 
@@ -36,24 +40,17 @@ func New() *Service {
 	return &Service{}
 }
 
-// Authorize answers who the caller is and whether they may perform
-// operation.
+// Authorize returns the caller's UserUUID and whether they may perform
+// operation. Account-only operations are forbidden to guests.
 //
-// For now it only knows the hardcoded test tokens: any other token is
-// unauthenticated, the guest test token is forbidden from creating Sessions,
-// and every other operation is allowed.
-//
-// Eventually the token (a JWT) is validated and resolved to the caller's
-// stable UserUUID, and each operation is allowed or forbidden by what that
-// User may do. In particular, identity.OperationCreateSession is expected to
-// require an actual account: a guest user must be answered with
-// identity.AccessForbidden, not allowed.
+// Placeholder: only the fixed test tokens are known; any other is
+// unauthenticated.
 func (s *Service) Authorize(_ context.Context, token string, operation identity.Operation) (string, identity.AccessDecision, error) {
 	user, ok := testTokens[token]
 	if !ok {
 		return "", identity.AccessUnauthenticated, nil
 	}
-	if user.guest && operation == identity.OperationCreateSession {
+	if user.guest && accountOnlyOperations[operation] {
 		return user.userUUID, identity.AccessForbidden, nil
 	}
 	return user.userUUID, identity.AccessAllowed, nil
