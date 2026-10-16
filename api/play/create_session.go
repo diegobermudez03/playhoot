@@ -1,9 +1,10 @@
-package session
+package play
 
 import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -12,6 +13,18 @@ import (
 	"github.com/diegobermudez03/playhoot/logging"
 	sessionpkg "github.com/diegobermudez03/playhoot/play"
 )
+
+// createSessionRequest never names the creator: it is the authorized caller.
+type createSessionRequest struct {
+	GameUUID       string `json:"game_uuid"`
+	IdempotencyKey string `json:"idempotency_key"`
+}
+
+type createSessionResponse struct {
+	SessionUUID    string    `json:"session_uuid"`
+	JoinCode       string    `json:"join_code"`
+	LobbyExpiresAt time.Time `json:"lobby_expires_at"`
+}
 
 const (
 	maxCreateSessionBodyBytes = 4 << 10

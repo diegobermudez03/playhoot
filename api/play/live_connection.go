@@ -1,6 +1,4 @@
-// Package wsx is the WebSocket plumbing shared by live routes: upgrading,
-// serving a connection against the Runtime's channels, and handshake logs.
-package wsx
+package play
 
 import (
 	"context"
@@ -8,35 +6,33 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-	"sync"
 
 	"github.com/coder/websocket"
 
 	"github.com/diegobermudez03/playhoot/api/internal/httpx"
-	"github.com/diegobermudez03/playhoot/api/internal/livewire"
 	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/play/runtime"
 )
 
-// Subprotocol is the only WebSocket subprotocol live connections speak.
-const Subprotocol = "playhoot.v1"
+// liveSubprotocol is the only WebSocket subprotocol live connections speak.
+const liveSubprotocol = "playhoot.v1"
 
-var errSubprotocolNotOffered = errors.New("client did not offer the " + Subprotocol + " subprotocol")
+var errSubprotocolNotOffered = errors.New("client did not offer the " + liveSubprotocol + " subprotocol")
 
 // maxMessageBytes only protects the edge; the Runtime enforces its own
 // limits per kind of message.
 const maxMessageBytes = 32 << 10
 
-// Accept upgrades the request to a WebSocket speaking Subprotocol, from the
-// server's own origin or one matching originPatterns. On error the request
-// has already been answered.
-func Accept(w http.ResponseWriter, r *http.Request, originPatterns []string) (*websocket.Conn, error) {
+// acceptLive upgrades the request to a WebSocket speaking liveSubprotocol,
+// from the server's own origin or one matching originPatterns. On error the
+// request has already been answered.
+func acceptLive(w http.ResponseWriter, r *http.Request, originPatterns []string) (*websocket.Conn, error) {
 	if !offersSubprotocol(r) {
-		httpx.WriteError(w, http.StatusBadRequest, "the "+Subprotocol+" WebSocket subprotocol is required")
+		httpx.WriteError(w, http.StatusBadRequest, "the "+liveSubprotocol+" WebSocket subprotocol is required")
 		return nil, errSubprotocolNotOffered
 	}
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		Subprotocols:   []string{Subprotocol},
+		Subprotocols:   []string{liveSubprotocol},
 		OriginPatterns: originPatterns,
 	})
 	if err != nil {
@@ -49,7 +45,7 @@ func Accept(w http.ResponseWriter, r *http.Request, originPatterns []string) (*w
 func offersSubprotocol(r *http.Request) bool {
 	for _, header := range r.Header.Values("Sec-WebSocket-Protocol") {
 		for _, protocol := range strings.Split(header, ",") {
-			if strings.TrimSpace(protocol) == Subprotocol {
+			if strings.TrimSpace(protocol) == liveSubprotocol {
 				return true
 			}
 		}
@@ -57,10 +53,10 @@ func offersSubprotocol(r *http.Request) bool {
 	return false
 }
 
-// Serve moves messages between conn and connection until the connection
+// serveLive moves messages between conn and the Runtime's connection until it
 // ends, and returns once Inbound is closed. Frames that are not client
 // messages end the connection without reaching the Runtime.
-func Serve(ctx context.Context, conn *websocket.Conn, connection runtime.Connection) {
+func serveLive(ctx context.Context, conn *websocket.Conn, connection runtime.Connection) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -89,8 +85,8 @@ func readClient(ctx context.Context, conn *websocket.Conn, inbound chan<- runtim
 			_ = conn.Close(websocket.StatusUnsupportedData, "only text messages are accepted")
 			return
 		}
-		message, err := livewire.DecodeClientMessage(data)
-		if errors.Is(err, livewire.ErrUnknownMessageType) {
+		message, err := decodeClientMessage(data)
+		if errors.Is(err, errUnknownMessageType) {
 			_ = conn.Close(websocket.StatusPolicyViolation, "unknown message type")
 			return
 		}
@@ -115,7 +111,7 @@ func writeClient(ctx context.Context, conn *websocket.Conn, outbound <-chan runt
 			if !ok {
 				if ctx.Err() == nil {
 					logFailure(ctx, "runtime closed the connection without a close message")
-					Abort(conn)
+					abort(conn)
 				}
 				return
 			}
@@ -123,10 +119,10 @@ func writeClient(ctx context.Context, conn *websocket.Conn, outbound <-chan runt
 				_ = conn.Close(closeStatus(closing.Reason), string(closing.Reason))
 				return
 			}
-			data, err := livewire.EncodeServerMessage(message)
+			data, err := encodeServerMessage(message)
 			if err != nil {
 				logFailure(ctx, err.Error())
-				Abort(conn)
+				abort(conn)
 				return
 			}
 			if err := conn.Write(ctx, websocket.MessageText, data); err != nil {
@@ -153,32 +149,7 @@ func logFailure(ctx context.Context, failure string) {
 	logging.FinishRequestLog(failureCtx, slog.Default(), "live connection failure")
 }
 
-// Abort closes conn as a server failure; it is a no-op on a closed conn.
-func Abort(conn *websocket.Conn) {
+// abort closes conn as a server failure; it is a no-op on a closed conn.
+func abort(conn *websocket.Conn) {
 	_ = conn.Close(websocket.StatusInternalError, "internal error")
-}
-
-type handshakeContextKey struct{}
-
-type handshakeLog struct {
-	once    sync.Once
-	ctx     context.Context
-	message string
-}
-
-// StartHandshake starts the handshake's own log as a child span of ctx.
-func StartHandshake(ctx context.Context, pattern string) context.Context {
-	handshakeCtx := logging.Start(ctx)
-	return context.WithValue(handshakeCtx, handshakeContextKey{}, &handshakeLog{ctx: handshakeCtx, message: pattern + " handshake"})
-}
-
-// FinishHandshake flushes the handshake log; only the first call does.
-func FinishHandshake(ctx context.Context) {
-	handshake, ok := ctx.Value(handshakeContextKey{}).(*handshakeLog)
-	if !ok {
-		return
-	}
-	handshake.once.Do(func() {
-		logging.FinishRequestLog(handshake.ctx, slog.Default(), handshake.message)
-	})
 }

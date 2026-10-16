@@ -20,7 +20,7 @@ Source of behavior: `plans/session_runtime/Playhoot_Session_Runtime_Architecture
 
 Decided 2026-10-15 in SESSION-ADR-0029: ownership in `play/runtime`, routing at the API edge, one atomic locate-or-claim, epoch as fencing token, placement policy inside the ownership implementation.
 
-Progress note (2026-10-15): the API side is implemented and tested (`api/internal/ownerrouting`, before every live upgrade); `LocateOrClaimOwner` itself is a placeholder (see Placeholders). Release and the registry are not implemented.
+Progress note (2026-10-15): the API side is implemented and tested (`api/play/owner_routing.go`, before every live upgrade); `LocateOrClaimOwner` itself is a placeholder (see Placeholders). Release and the registry are not implemented.
 
 - [ ] Owner abstraction exists: Resolve(sessionID), Claim(sessionID), Release(sessionID)
 - [ ] Exactly one Runtime pod owns an active Session; two pods can never mutate the same Session concurrently (decision: lease/epoch/fencing mechanism)
@@ -31,7 +31,7 @@ Progress note (2026-10-15): the API side is implemented and tested (`api/interna
 
 ### A2. API <-> Runtime duplex boundary (§1)
 
-Progress note (2026-10-15): the boundary is channels of Runtime-defined message types, decided with the human: `AttachAdmin` returns a `runtime.Connection` (`Inbound` written and closed by the API when the client leaves, `Outbound` written by the Runtime, which ends the connection with a `Close` message), contract in `play/runtime/runtime.go`. The Runtime never sees the socket; the API maps messages to JSON frames (`api/internal/livewire`) and serves both directions (`api/internal/wsx`). The message catalog grows as messages are needed (today `Rejected` and `Close`). The Runtime side is a placeholder. Live connections now exist, so the graceful shutdown item below is a real gap: SIGTERM does not close them yet.
+Progress note (2026-10-15): the boundary is channels of Runtime-defined message types, decided with the human: `AttachAdmin` returns a `runtime.Connection` (`Inbound` written and closed by the API when the client leaves, `Outbound` written by the Runtime, which ends the connection with a `Close` message), contract in `play/runtime/runtime.go`. The Runtime never sees the socket; the API maps messages to JSON frames (`api/play/live_messages.go`) and serves both directions (`api/play/live_connection.go`). The message catalog grows as messages are needed (today `Rejected` and `Close`). The Runtime side is a placeholder. Live connections now exist, so the graceful shutdown item below is a real gap: SIGTERM does not close them yet.
 - [ ] /api owns the WebSocket; Runtime owns the logical connection; Runtime does not know WebSocket details
 - [ ] API reports: transport attached, transport detached, inbound message
 - [ ] Runtime emits: send outbound message, close transport, replace transport
@@ -496,7 +496,7 @@ Everything here is wired into the running system, so a request flows through it,
 - [ ] No flow creates `play_games` / `play_game_versions` (in scope, see B): nothing registers Games or marks a version EXECUTABLE yet, so every Session creation answers `game_unavailable` until those rows exist (outside production, test-data migrations seed one playable and one unavailable Game; see `play/CURRENT_STATE.md`). Real behavior: the operation that validates a version's scripts, freezes it, and sets it EXECUTABLE as the Game's current version.
 - [ ] Live Session ownership (`play/runtime/usecases/ownership`, in scope, see A1): `LocateOrClaimOwner` answers `owned_here` with epoch 1 for any Session UUID, without looking the Session up or keeping a registry. Real behavior: claim only Sessions in LOBBY/RUNNING, in-process registry with release; shared registry + lease/heartbeat before multi-instance (SESSION-ADR-0029).
 - [ ] Admin admission (`play/runtime/workflows/liveconnection`, in scope, see E): `AttachAdmin` admits every caller; its Connection never sends anything and discards what the client sends. Real behavior: epoch check, durable Session validation (exists, connectable, caller is creator), ADMIN logical connection on the controller, rejection + close otherwise.
-- [ ] Forwarding to a remote owner (`api/internal/ownerrouting`, in scope, see A1): a Session owned by another instance is answered `503`; unreachable while single-instance. Real behavior: proxy the connection to the owner (gateway), decided with the multi-instance topology.
+- [ ] Forwarding to a remote owner (`api/play/owner_routing.go`, in scope, see A1): a Session owned by another instance is answered `503`; unreachable while single-instance. Real behavior: proxy the connection to the owner (gateway), decided with the multi-instance topology.
 - [ ] Metrics emission (`monitoring/metrics`, `record`): measurements are only written to the request log; nothing is sent to a metrics backend (see Y).
 
 ## Invariants verification (§30)

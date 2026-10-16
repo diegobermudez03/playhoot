@@ -1,8 +1,5 @@
-// Package routing declares the shared vocabulary a route group (e.g.
-// api/session) and Server (api/server.go) both need to hand endpoints
-// back and forth without either importing the other - a route group
-// lives under api/, and api itself composes every route group, so
-// neither can import the other directly without a cycle.
+// Package routing is the vocabulary route groups and Server share without
+// importing each other: route declarations and the WebSocket handshake log.
 package routing
 
 import "net/http"

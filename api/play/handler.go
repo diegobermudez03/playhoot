@@ -1,20 +1,20 @@
-// Package session is the session workflow's route group: creating a
-// Session and the live connections to it.
-package session
+// Package play is the route group of the play domain: creating Sessions and
+// the live connections to them. Each endpoint's handler has its own file.
+package play
 
 import (
 	"context"
 
 	"github.com/diegobermudez03/playhoot/api/internal/auth"
-	"github.com/diegobermudez03/playhoot/api/internal/ownerrouting"
 	"github.com/diegobermudez03/playhoot/api/internal/routing"
 	"github.com/diegobermudez03/playhoot/identity"
 	sessionpkg "github.com/diegobermudez03/playhoot/play"
 	"github.com/diegobermudez03/playhoot/play/runtime"
 )
 
-//go:generate mockgen -package=session -destination=session_creator_mock_test.go . sessionCreator
-//go:generate mockgen -package=session -destination=admin_attacher_mock_test.go . adminAttacher
+//go:generate mockgen -package=play -destination=session_creator_mock_test.go . sessionCreator
+//go:generate mockgen -package=play -destination=owner_locator_mock_test.go . ownerLocator
+//go:generate mockgen -package=play -destination=admin_attacher_mock_test.go . adminAttacher
 
 // sessionCreator creates Sessions idempotently per key. A decline is reported
 // through the result's Outcome; a reused key returns
@@ -28,7 +28,7 @@ type authorizer interface {
 	Authorize(ctx context.Context, token string, operation identity.Operation) (string, identity.AccessDecision, error)
 }
 
-// ownerLocator is the Runtime's live Session ownership.
+// ownerLocator returns a Session's owner, claiming one when there is none.
 type ownerLocator interface {
 	LocateOrClaimOwner(ctx context.Context, sessionUUID string) (runtime.OwnerPlacement, error)
 }
@@ -39,7 +39,7 @@ type adminAttacher interface {
 	AttachAdmin(ctx context.Context, sessionUUID string, userUUID string, ownerEpoch int64) (runtime.AttachAdminResult, error)
 }
 
-// Handler exposes the session workflow's endpoints.
+// Handler exposes the play domain's endpoints.
 type Handler struct {
 	authorizer              authorizer
 	creator                 sessionCreator
@@ -82,7 +82,7 @@ func (h *Handler) WebSocketRoutes() []routing.Route {
 			Handler: h.handleAdminJoin,
 			Middlewares: []routing.Middleware{
 				auth.RequireWebSocket(h.authorizer, identity.OperationJoinSessionAsAdmin),
-				ownerrouting.Require(h.owners, "sessionUUID"),
+				requireOwner(h.owners, "sessionUUID"),
 			},
 		},
 	}

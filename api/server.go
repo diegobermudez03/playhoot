@@ -4,17 +4,12 @@
 package api
 
 import (
-	"context"
 	"log/slog"
 	"net/http"
 
 	"github.com/diegobermudez03/playhoot/api/internal/routing"
-	"github.com/diegobermudez03/playhoot/api/internal/wsx"
-	apisession "github.com/diegobermudez03/playhoot/api/session"
-	"github.com/diegobermudez03/playhoot/identity"
+	apiplay "github.com/diegobermudez03/playhoot/api/play"
 	"github.com/diegobermudez03/playhoot/logging"
-	sessionpkg "github.com/diegobermudez03/playhoot/play"
-	"github.com/diegobermudez03/playhoot/play/runtime"
 )
 
 // routeGroup exposes one workflow/feature's endpoints, split by transport
@@ -22,28 +17,6 @@ import (
 type routeGroup interface {
 	RESTRoutes() []routing.Route
 	WebSocketRoutes() []routing.Route
-}
-
-// authorizer is Identity as this package needs it: token and operation in,
-// the caller's UserUUID and whether the operation is allowed out.
-type authorizer interface {
-	Authorize(ctx context.Context, token string, operation identity.Operation) (string, identity.AccessDecision, error)
-}
-
-// sessionCreator is whatever coordinates Session creation (Orchestrator in
-// production) as this package needs it.
-type sessionCreator interface {
-	CreateSession(ctx context.Context, userUUID string, gameUUID string, idempotencyKey string) (sessionpkg.CreateSessionResult, error)
-}
-
-// ownerLocator is the Runtime's live Session ownership.
-type ownerLocator interface {
-	LocateOrClaimOwner(ctx context.Context, sessionUUID string) (runtime.OwnerPlacement, error)
-}
-
-// adminAttacher is the Runtime's admission of admin connections.
-type adminAttacher interface {
-	AttachAdmin(ctx context.Context, sessionUUID string, userUUID string, ownerEpoch int64) (runtime.AttachAdminResult, error)
 }
 
 // Server composes every route group into one HTTP handler.
@@ -57,7 +30,7 @@ type Server struct {
 func NewServer(authorizer authorizer, sessionCreator sessionCreator, owners ownerLocator, admins adminAttacher, webSocketOriginPatterns []string) *Server {
 	mux := http.NewServeMux()
 	groups := []routeGroup{
-		apisession.NewHandler(authorizer, sessionCreator, owners, admins, webSocketOriginPatterns),
+		apiplay.NewHandler(authorizer, sessionCreator, owners, admins, webSocketOriginPatterns),
 	}
 	var restRoutes, wsRoutes []routing.Route
 	for _, group := range groups {
@@ -120,12 +93,21 @@ func wsObservability(pattern string) routing.Middleware {
 				logging.FinishRequestLog(closeCtx, slog.Default(), pattern)
 			}()
 
-			handshakeCtx := wsx.StartHandshake(ctx, pattern)
-			defer wsx.FinishHandshake(handshakeCtx)
+			handshakeCtx := routing.StartHandshakeLog(ctx, pattern)
+			defer routing.FinishHandshakeLog(handshakeCtx)
 
 			next(w, r.WithContext(handshakeCtx))
 		}
 	}
+}
+
+// chain wraps final in mws, mws[0] outermost, so the list reads in the order
+// a request passes through it.
+func chain(mws []routing.Middleware, final http.HandlerFunc) http.HandlerFunc {
+	for i := len(mws) - 1; i >= 0; i-- {
+		final = mws[i](final)
+	}
+	return final
 }
 
 // Routes returns Server's HTTP handler.

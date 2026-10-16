@@ -1,4 +1,4 @@
-package wsx
+package play
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 	"github.com/diegobermudez03/playhoot/play/runtime"
 )
 
-func TestServe(t *testing.T) {
+func TestServeLive(t *testing.T) {
 	type clientMessage struct {
 		messageType websocket.MessageType
 		data        string
@@ -113,17 +113,17 @@ func TestServe(t *testing.T) {
 			served := make(chan struct{})
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				defer close(served)
-				conn, err := Accept(w, r, nil)
+				conn, err := acceptLive(w, r, nil)
 				if err != nil {
 					return
 				}
-				Serve(r.Context(), conn, runtime.Connection{Inbound: inbound, Outbound: outbound})
+				serveLive(r.Context(), conn, runtime.Connection{Inbound: inbound, Outbound: outbound})
 			}))
 			t.Cleanup(server.Close)
 
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			conn, _, err := websocket.Dial(ctx, server.URL, &websocket.DialOptions{Subprotocols: []string{Subprotocol}})
+			conn, _, err := websocket.Dial(ctx, server.URL, &websocket.DialOptions{Subprotocols: []string{liveSubprotocol}})
 			require.NoError(t, err)
 
 			for _, message := range tc.clientSends {
@@ -147,10 +147,10 @@ func TestServe(t *testing.T) {
 			select {
 			case <-served:
 			case <-ctx.Done():
-				t.Fatal("Serve did not return")
+				t.Fatal("serveLive did not return")
 			}
 			_, open := <-inbound
-			require.False(t, open, "Inbound must be closed once Serve returns")
+			require.False(t, open, "Inbound must be closed once serveLive returns")
 		})
 	}
 }

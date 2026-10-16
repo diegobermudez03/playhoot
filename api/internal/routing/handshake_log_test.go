@@ -1,4 +1,4 @@
-package wsx
+package routing
 
 import (
 	"bytes"
@@ -13,7 +13,7 @@ import (
 	"github.com/diegobermudez03/playhoot/logging"
 )
 
-func TestFinishHandshake(t *testing.T) {
+func TestFinishHandshakeLog(t *testing.T) {
 	type test struct {
 		ctx              context.Context
 		finishCalls      int
@@ -23,14 +23,14 @@ func TestFinishHandshake(t *testing.T) {
 	tests := map[string]func(t *testing.T) test{
 		"first_call_flushes_the_handshake_log": func(t *testing.T) test {
 			return test{
-				ctx:              StartHandshake(logging.Start(context.Background()), "GET /sessions/{sessionUUID}/admin"),
+				ctx:              StartHandshakeLog(logging.Start(context.Background()), "GET /sessions/{sessionUUID}/admin"),
 				finishCalls:      1,
 				expectedMessages: []string{"GET /sessions/{sessionUUID}/admin handshake"},
 			}
 		},
 		"later_calls_do_not_flush_it_again": func(t *testing.T) test {
 			return test{
-				ctx:              StartHandshake(logging.Start(context.Background()), "GET /sessions/{sessionUUID}/admin"),
+				ctx:              StartHandshakeLog(logging.Start(context.Background()), "GET /sessions/{sessionUUID}/admin"),
 				finishCalls:      3,
 				expectedMessages: []string{"GET /sessions/{sessionUUID}/admin handshake"},
 			}
@@ -53,7 +53,7 @@ func TestFinishHandshake(t *testing.T) {
 			t.Cleanup(func() { slog.SetDefault(previous) })
 
 			for range tc.finishCalls {
-				FinishHandshake(tc.ctx)
+				FinishHandshakeLog(tc.ctx)
 			}
 
 			var messages []string

@@ -1,4 +1,4 @@
-package livewire
+package play
 
 import (
 	"testing"
@@ -17,22 +17,22 @@ func TestDecodeClientMessage(t *testing.T) {
 
 	tests := map[string]func(t *testing.T) test{
 		"not_json": func(t *testing.T) test {
-			return test{data: []byte(`not json`), expectedErr: ErrMalformedMessage}
+			return test{data: []byte(`not json`), expectedErr: errMalformedMessage}
 		},
 		"not_an_object": func(t *testing.T) test {
-			return test{data: []byte(`["rejected"]`), expectedErr: ErrMalformedMessage}
+			return test{data: []byte(`["rejected"]`), expectedErr: errMalformedMessage}
 		},
 		"no_type": func(t *testing.T) test {
-			return test{data: []byte(`{"reason":"x"}`), expectedErr: ErrMalformedMessage}
+			return test{data: []byte(`{"reason":"x"}`), expectedErr: errMalformedMessage}
 		},
 		"type_not_a_string": func(t *testing.T) test {
-			return test{data: []byte(`{"type":3}`), expectedErr: ErrMalformedMessage}
+			return test{data: []byte(`{"type":3}`), expectedErr: errMalformedMessage}
 		},
 		"unknown_type": func(t *testing.T) test {
-			return test{data: []byte(`{"type":"teleport"}`), expectedErr: ErrUnknownMessageType}
+			return test{data: []byte(`{"type":"teleport"}`), expectedErr: errUnknownMessageType}
 		},
 		"server_message_type_is_not_a_client_message": func(t *testing.T) test {
-			return test{data: []byte(`{"type":"rejected","reason":"not_creator"}`), expectedErr: ErrUnknownMessageType}
+			return test{data: []byte(`{"type":"rejected","reason":"not_creator"}`), expectedErr: errUnknownMessageType}
 		},
 	}
 
@@ -40,7 +40,7 @@ func TestDecodeClientMessage(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			tc := setup(t)
 
-			message, err := DecodeClientMessage(tc.data)
+			message, err := decodeClientMessage(tc.data)
 
 			require.Equal(t, tc.expectedMessage, message)
 			require.ErrorIs(t, err, tc.expectedErr)
@@ -63,10 +63,10 @@ func TestEncodeServerMessage(t *testing.T) {
 			}
 		},
 		"close_is_not_a_wire_message": func(t *testing.T) test {
-			return test{message: runtime.Close{Reason: runtime.CloseAdmissionRejected}, expectedErr: ErrUnknownMessageType}
+			return test{message: runtime.Close{Reason: runtime.CloseAdmissionRejected}, expectedErr: errUnknownMessageType}
 		},
 		"nil_message": func(t *testing.T) test {
-			return test{message: nil, expectedErr: ErrUnknownMessageType}
+			return test{message: nil, expectedErr: errUnknownMessageType}
 		},
 	}
 
@@ -74,7 +74,7 @@ func TestEncodeServerMessage(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			tc := setup(t)
 
-			data, err := EncodeServerMessage(tc.message)
+			data, err := encodeServerMessage(tc.message)
 
 			require.ErrorIs(t, err, tc.expectedErr)
 			if tc.expectedJSON != "" {

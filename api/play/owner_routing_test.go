@@ -1,4 +1,4 @@
-package ownerrouting
+package play
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 	"github.com/diegobermudez03/playhoot/play/runtime"
 )
 
-func TestRequire(t *testing.T) {
+func TestRequireOwner(t *testing.T) {
 	type dependencies struct {
 		locator *MockownerLocator
 	}
@@ -128,7 +128,7 @@ func TestRequire(t *testing.T) {
 			var routedEpoch int64
 			next := func(w http.ResponseWriter, r *http.Request) {
 				nextCalled = true
-				routedSessionUUID, routedEpoch, _ = OwnedSession(r.Context())
+				routedSessionUUID, routedEpoch, _ = routedSessionFrom(r.Context())
 				w.WriteHeader(http.StatusNoContent)
 			}
 
@@ -136,7 +136,7 @@ func TestRequire(t *testing.T) {
 			request.SetPathValue("sessionUUID", tc.sessionUUID)
 			recorder := httptest.NewRecorder()
 
-			Require(deps.locator, "sessionUUID")(next)(recorder, request)
+			requireOwner(deps.locator, "sessionUUID")(next)(recorder, request)
 
 			require.Equal(t, tc.expectedCode, recorder.Code)
 			require.Equal(t, tc.expectedNextCalled, nextCalled)
@@ -151,7 +151,7 @@ func TestRequire(t *testing.T) {
 	}
 }
 
-func TestOwnedSession(t *testing.T) {
+func TestRoutedSessionFrom(t *testing.T) {
 	type test struct {
 		ctx                 context.Context
 		expectedSessionUUID string
@@ -162,7 +162,7 @@ func TestOwnedSession(t *testing.T) {
 	tests := map[string]func(t *testing.T) test{
 		"session_present": func(t *testing.T) test {
 			return test{
-				ctx:                 WithOwnedSession(context.Background(), "session-1", 3),
+				ctx:                 withRoutedSession(context.Background(), "session-1", 3),
 				expectedSessionUUID: "session-1",
 				expectedEpoch:       3,
 				expectedFound:       true,
@@ -172,7 +172,7 @@ func TestOwnedSession(t *testing.T) {
 			return test{ctx: context.Background()}
 		},
 		"empty_session_is_not_a_session": func(t *testing.T) test {
-			return test{ctx: WithOwnedSession(context.Background(), "", 3), expectedEpoch: 3}
+			return test{ctx: withRoutedSession(context.Background(), "", 3), expectedEpoch: 3}
 		},
 	}
 
@@ -180,7 +180,7 @@ func TestOwnedSession(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			tc := setup(t)
 
-			sessionUUID, epoch, found := OwnedSession(tc.ctx)
+			sessionUUID, epoch, found := routedSessionFrom(tc.ctx)
 
 			require.Equal(t, tc.expectedSessionUUID, sessionUUID)
 			require.Equal(t, tc.expectedEpoch, epoch)

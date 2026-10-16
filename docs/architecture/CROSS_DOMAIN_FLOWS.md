@@ -74,5 +74,5 @@ sequenceDiagram
 Implemented behavior:
 
 - Identity and owner routing both happen before the upgrade, in that order, so an unauthorized caller never makes a Session owned. Logical admission happens after the upgrade, in the Runtime.
-- The Runtime defines the live message types and never sees the socket; the API maps them to and from JSON frames (`api/internal/livewire`).
+- The Runtime defines the live message types and never sees the socket; the API maps them to and from JSON frames (`api/play/live_messages.go`).
 - Ownership (`LocateOrClaimOwner`) and admission (`AttachAdmin`) are placeholders today: every Session is owned by this instance under epoch 1, and every authorized caller is admitted, with its messages discarded (`play/CURRENT_STATE.md`). Identity's authorization is the same placeholder as for Create Session.

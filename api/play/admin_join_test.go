@@ -1,4 +1,4 @@
-package session
+package play
 
 import (
 	"context"
@@ -13,7 +13,6 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/diegobermudez03/playhoot/api/internal/auth"
-	"github.com/diegobermudez03/playhoot/api/internal/ownerrouting"
 	"github.com/diegobermudez03/playhoot/play/runtime"
 )
 
@@ -160,7 +159,7 @@ func TestHandleAdminJoin(t *testing.T) {
 				defer close(handlerDone)
 				ctx := r.Context()
 				if !tc.unrouted {
-					ctx = ownerrouting.WithOwnedSession(auth.WithUserUUID(ctx, callerUUID), sessionUUID, ownerEpoch)
+					ctx = withRoutedSession(auth.WithUserUUID(ctx, callerUUID), sessionUUID, ownerEpoch)
 				}
 				handler.handleAdminJoin(w, r.WithContext(ctx))
 			}))
