@@ -5,7 +5,6 @@ import (
 	"errors"
 
 	"github.com/diegobermudez03/playhoot/play/runtime"
-	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
 
 var errNotWired = errors.New("capability is not implemented yet")
@@ -17,13 +16,4 @@ type unwiredPlayerAdmission struct{}
 
 func (unwiredPlayerAdmission) AttachPlayer(context.Context, string, string, int64) (runtime.AttachPlayerResult, error) {
 	return runtime.AttachPlayerResult{}, errNotWired
-}
-
-// unwiredJoinCodes stands in for the durable Session's join code lookup.
-//
-// Placeholder: every call fails, so joining by join code answers 500.
-type unwiredJoinCodes struct{}
-
-func (unwiredJoinCodes) ResolveJoinCode(context.Context, string) (sessionpkg.JoinCodeResolution, error) {
-	return sessionpkg.JoinCodeResolution{}, errNotWired
 }

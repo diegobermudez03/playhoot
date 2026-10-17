@@ -60,3 +60,15 @@ Implemented behavior:
 | LOBBY with `lobby_expires_at` still in the future | `eligible` |
 | LOBBY past `lobby_expires_at` | `session_not_joinable`; the expiry is not recorded here |
 | FINISHED, CANCELLED, EXPIRED, ABORTED | `session_not_joinable` |
+
+## Join Code Resolution
+
+`resolvejoincode.Service.ResolveJoinCode(joinCode)`, called by the API before owner routing when a player joins by join code (`GET /join/{joinCode}`). It only reads `play_session_join_codes` joined with `play_sessions`. The code is matched in upper case, so codes typed in lower case resolve too.
+
+| Join code | Answer |
+| --- | --- |
+| Unreleased row holding the code, `expires_at` still in the future | `found`, with that Session's UUID |
+| Unreleased row past `expires_at` | `not_found`; the code is not released here |
+| Only released rows, or no row | `not_found` |
+
+The Session's state is not checked: a code expires with its lobby, and a Session that already started is rejected by the Runtime's admission (`session_started`).

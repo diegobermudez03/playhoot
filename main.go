@@ -22,6 +22,7 @@ import (
 	"github.com/diegobermudez03/playhoot/play/runtime/usecases/ownership"
 	"github.com/diegobermudez03/playhoot/play/runtime/workflows/liveconnection"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/checkadminjoin"
+	"github.com/diegobermudez03/playhoot/play/session/usecases/resolvejoincode"
 	"github.com/diegobermudez03/playhoot/play/session/workflows/sessionlifecycle"
 	"github.com/joho/godotenv"
 	"gorm.io/driver/postgres"
@@ -93,7 +94,7 @@ func run() error {
 		ownership.New(),
 		liveconnection.New(checkadminjoin.New(db)),
 		unwiredPlayerAdmission{},
-		unwiredJoinCodes{},
+		resolvejoincode.New(db),
 		envVars.WebSocketAllowedOrigins,
 	)
 
