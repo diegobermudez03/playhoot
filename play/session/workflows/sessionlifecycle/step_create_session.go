@@ -14,7 +14,7 @@ import (
 	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/monitoring"
 	"github.com/diegobermudez03/playhoot/monitoring/metrics"
-	sessionpkg "github.com/diegobermudez03/playhoot/play"
+	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 	"github.com/diegobermudez03/playhoot/play/session/internal/business/gameversion"
 	"github.com/diegobermudez03/playhoot/play/session/internal/business/sessionstatus"
 	internalrepo "github.com/diegobermudez03/playhoot/play/session/workflows/sessionlifecycle/internal/repo"

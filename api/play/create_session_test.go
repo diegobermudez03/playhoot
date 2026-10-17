@@ -13,7 +13,7 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/diegobermudez03/playhoot/api/internal/auth"
-	sessionpkg "github.com/diegobermudez03/playhoot/play"
+	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
 
 func TestHandleCreateSession(t *testing.T) {

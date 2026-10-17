@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
-	sessionpkg "github.com/diegobermudez03/playhoot/play"
+	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
 
 func TestCreateSession(t *testing.T) {

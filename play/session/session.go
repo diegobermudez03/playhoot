@@ -1,5 +1,5 @@
-// Package session is the Session Runtime's public contract. It imports only
-// the standard library and grows as the real-time design is accepted.
+// Package session is the durable Session's public contract: the types its
+// operations take and return. It imports only the standard library.
 package session
 
 import (

@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/diegobermudez03/playhoot/logging"
-	sessionpkg "github.com/diegobermudez03/playhoot/play"
+	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
 
 //go:generate mockgen -package=playlifecycle -destination=create_session_mock_test.go . gamePlayabilityChecker,sessionCreator

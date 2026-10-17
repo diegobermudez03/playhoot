@@ -11,8 +11,8 @@ import (
 	"github.com/diegobermudez03/playhoot/api/internal/live"
 	"github.com/diegobermudez03/playhoot/api/internal/routing"
 	"github.com/diegobermudez03/playhoot/identity"
-	sessionpkg "github.com/diegobermudez03/playhoot/play"
 	"github.com/diegobermudez03/playhoot/play/runtime"
+	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
 
 //go:generate mockgen -package=play -destination=session_creator_mock_test.go . sessionCreator

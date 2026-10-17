@@ -13,7 +13,7 @@ import (
 	context "context"
 	reflect "reflect"
 
-	session "github.com/diegobermudez03/playhoot/play"
+	session "github.com/diegobermudez03/playhoot/play/session"
 	gomock "go.uber.org/mock/gomock"
 )
 

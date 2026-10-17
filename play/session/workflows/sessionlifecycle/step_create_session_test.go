@@ -11,7 +11,7 @@ import (
 	"go.uber.org/mock/gomock"
 	"gorm.io/gorm"
 
-	sessionpkg "github.com/diegobermudez03/playhoot/play"
+	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 	internalrepo "github.com/diegobermudez03/playhoot/play/session/workflows/sessionlifecycle/internal/repo"
 )
 

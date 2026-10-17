@@ -30,8 +30,7 @@ Session Runtime is an independent top-level package/business bounded context, a 
 The previous implementation was removed. Current layout:
 
 ```text
-play/
-  session.go                  # Session public contract (CreateSessionOutcome, CreateSessionResult, ErrIdempotencyConflict)
+play/                         # a folder, not a Go package: each subpackage exposes its own types at its root
   docs/                       # DATA_MODEL.md, FLOWS.md, decisions/
   runtime/
     runtime.go                # live Runtime public contract (OwnerPlacement, AttachAdminResult, AdminConnection operations and types)
@@ -39,10 +38,11 @@ play/
     usecases/
       ownership/              # LocateOrClaimOwner (placeholder: single instance, no registry)
     workflows/
-      liveconnection/         # Manager.AttachAdmin: eligibility check, then attach to the Session's controller
+      liveconnection/         # Manager + one file per operation (step_attach_admin.go: eligibility check, then attach to the Session's controller)
     internal/
       controller/             # per-instance controller registry and the Session controller (today: ADMIN connections only)
   session/
+    session.go                # durable Session public contract (CreateSession types, ErrIdempotencyConflict, AdminJoinEligibility)
     migration/                # exposes Migrate(db) and Seed(db) (test data) to the application's migrations.go
     usecases/
       checkadminjoin/         # EligibleToJoinAsAdmin (placeholder: always eligible)

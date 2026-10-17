@@ -8,8 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
-	sessionpkg "github.com/diegobermudez03/playhoot/play"
 	"github.com/diegobermudez03/playhoot/play/runtime"
+	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
 
 func TestAttachAdmin(t *testing.T) {

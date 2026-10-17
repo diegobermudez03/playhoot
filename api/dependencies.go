@@ -4,8 +4,8 @@ import (
 	"context"
 
 	"github.com/diegobermudez03/playhoot/identity"
-	sessionpkg "github.com/diegobermudez03/playhoot/play"
 	"github.com/diegobermudez03/playhoot/play/runtime"
+	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
 
 // authorizer is Identity's coarse authorization.

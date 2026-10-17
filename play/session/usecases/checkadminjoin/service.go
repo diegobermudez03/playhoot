@@ -7,7 +7,7 @@ package checkadminjoin
 import (
 	"context"
 
-	sessionpkg "github.com/diegobermudez03/playhoot/play"
+	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
 
 // Service is the admin-join eligibility use case.
