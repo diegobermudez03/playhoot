@@ -45,7 +45,7 @@ play/                         # a folder, not a Go package: each subpackage expo
     session.go                # durable Session public contract (CreateSession types, ErrIdempotencyConflict, AdminJoinEligibility)
     migration/                # exposes Migrate(db) and Seed(db) (test data) to the application's migrations.go
     usecases/
-      checkadminjoin/         # EligibleToJoinAsAdmin (placeholder: always eligible)
+      checkadminjoin/         # EligibleToJoinAsAdmin + internal/repo
     workflows/
       sessionlifecycle/       # Manager + one file per step (step_create_session.go) + internal/repo
     internal/

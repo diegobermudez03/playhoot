@@ -91,7 +91,7 @@ func run() error {
 		authorize.New(),
 		playLifecycle,
 		ownership.New(),
-		liveconnection.New(checkadminjoin.New()),
+		liveconnection.New(checkadminjoin.New(db)),
 		envVars.WebSocketAllowedOrigins,
 	)
 

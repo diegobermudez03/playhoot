@@ -47,3 +47,16 @@ Implemented behavior:
 - The Session starts in `LOBBY` with a 30-minute lobby; its join code expires with the lobby. Join codes are 6 characters from an alphabet without look-alike characters; a code held by an active join code is skipped, one held by an expired join code is released and reused.
 - No Runtime controller and no participant are created; the creator is not a player.
 - Counts `play_session_create_total{outcome=created|game_unavailable|replayed}` once the transaction committed.
+
+## Admin Join Eligibility
+
+`checkadminjoin.Service.EligibleToJoinAsAdmin(sessionUUID, userUUID)`, called by the live Runtime before it attaches an admin connection (see `docs/architecture/CROSS_DOMAIN_FLOWS.md`, Admin Join). It only reads `play_sessions`.
+
+| Session | Answer |
+| --- | --- |
+| No Session with that UUID (or not a UUID) | `session_not_found` |
+| Created by another user | `not_creator` (whatever its state) |
+| RUNNING | `eligible` |
+| LOBBY with `lobby_expires_at` still in the future | `eligible` |
+| LOBBY past `lobby_expires_at` | `session_not_joinable`; the expiry is not recorded here |
+| FINISHED, CANCELLED, EXPIRED, ABORTED | `session_not_joinable` |
