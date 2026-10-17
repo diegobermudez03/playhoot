@@ -1,7 +1,9 @@
 // Package runtime is the live Session Runtime's public contract. It imports
-// only the standard library; the message catalog grows as messages are
-// needed.
+// only the standard library; each kind of live connection declares its own
+// operations and messages as they are needed.
 package runtime
+
+import "context"
 
 // OwnerOutcome is where the live owner of a Session was found.
 type OwnerOutcome string
@@ -32,32 +34,13 @@ type OwnerPlacement struct {
 	Epoch int64
 }
 
-// Connection is a client's live connection as two channels of Runtime
-// messages. The transport side writes Inbound and closes it when the client
-// leaves; the Runtime writes Outbound and ends the connection by sending a
-// Close and then closing Outbound. The Runtime must never block writing to
-// Outbound: a client too slow to keep up is the Runtime's to disconnect.
-type Connection struct {
-	Inbound  chan<- ClientMessage
-	Outbound <-chan ServerMessage
-}
+// AttachOutcome is whether a connection was admitted into a Session.
+type AttachOutcome string
 
-// ClientMessage is a message a client sends to the Runtime.
-type ClientMessage interface {
-	isClientMessage()
-}
-
-// ServerMessage is a message the Runtime sends to a client.
-type ServerMessage interface {
-	isServerMessage()
-}
-
-// Rejected tells the client it was not admitted; a Close follows it.
-type Rejected struct {
-	Reason RejectReason
-}
-
-func (Rejected) isServerMessage() {}
+const (
+	AttachAccepted AttachOutcome = "accepted"
+	AttachRejected AttachOutcome = "rejected"
+)
 
 // RejectReason is why a connection was not admitted.
 type RejectReason string
@@ -71,33 +54,88 @@ const (
 	RejectOwnerChanged RejectReason = "owner_changed"
 )
 
-// Close ends the connection with Reason. It is the last message on a
-// connection and is not delivered as a message.
-type Close struct {
-	Reason CloseReason
+// EndReason is why the Runtime ended a live connection.
+type EndReason string
+
+const (
+	// EndDisconnected means the connection's Disconnect was called.
+	EndDisconnected EndReason = "disconnected"
+
+	// EndSessionEnded means the Session reached a terminal state.
+	EndSessionEnded EndReason = "session_ended"
+)
+
+// ConnectionEnd is how a live connection ended on the Runtime's side.
+type ConnectionEnd struct {
+	Reason EndReason
 }
 
-func (Close) isServerMessage() {}
-
-// CloseReason is why the Runtime ends a connection.
-type CloseReason string
-
-const (
-	CloseAdmissionRejected CloseReason = "admission_rejected"
-)
-
-// AttachOutcome is whether a connection was admitted into a Session.
-type AttachOutcome string
-
-const (
-	AttachAccepted AttachOutcome = "accepted"
-	AttachRejected AttachOutcome = "rejected"
-)
-
-// AttachAdminResult is the outcome of attaching an admin connection. Its
-// Connection is served either way; a rejected one only delivers the
-// rejection and closes.
+// AttachAdminResult is the outcome of attaching an admin connection.
+// Rejection is set only when rejected, Connection only when accepted.
 type AttachAdminResult struct {
 	Outcome    AttachOutcome
-	Connection Connection
+	Rejection  RejectReason
+	Connection AdminConnection
+}
+
+// AdminConnection is everything a caller can do with an admitted admin
+// connection. The caller must run NextView and Ended until they report the
+// end, and call Disconnect once when the client is gone.
+type AdminConnection struct {
+	// SelectPerspective switches the participant whose view this connection
+	// receives; a FULL view of them follows through NextView.
+	SelectPerspective func(ctx context.Context, participantID string) (SelectPerspectiveResult, error)
+
+	// CancelSession ends the Session as cancelled by its creator.
+	CancelSession func(ctx context.Context) (CancelSessionResult, error)
+
+	// NextView blocks until the next view of the selected participant. Every
+	// view produced before the connection ended is returned before false.
+	NextView func(ctx context.Context) (PlayerView, bool)
+
+	// Ended blocks until the connection ends and reports why; false means
+	// ctx was done first.
+	Ended func(ctx context.Context) (ConnectionEnd, bool)
+
+	// Disconnect tells the Runtime the client is gone. Calling it again has
+	// no effect.
+	Disconnect func()
+}
+
+// PlayerView is one participant's view of the game, as their projection.
+type PlayerView struct {
+	ParticipantID string
+
+	// Full means State replaces the previous view rather than patching it.
+	Full bool
+
+	// State is the projection the game's script returned, as JSON whose shape
+	// only the game defines.
+	State []byte
+}
+
+// SelectPerspectiveOutcome is the decision a SelectPerspective call reached.
+type SelectPerspectiveOutcome string
+
+const (
+	PerspectiveSelected           SelectPerspectiveOutcome = "selected"
+	PerspectiveUnknownParticipant SelectPerspectiveOutcome = "unknown_participant"
+)
+
+// SelectPerspectiveResult is the outcome of selecting a perspective.
+type SelectPerspectiveResult struct {
+	Outcome SelectPerspectiveOutcome
+}
+
+// CancelSessionOutcome is the decision a CancelSession call reached.
+type CancelSessionOutcome string
+
+const (
+	SessionCancelled    CancelSessionOutcome = "cancelled"
+	SessionAlreadyEnded CancelSessionOutcome = "already_ended"
+)
+
+// CancelSessionResult is the outcome of cancelling a Session.
+type CancelSessionResult struct {
+	Outcome CancelSessionOutcome
 }

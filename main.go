@@ -122,11 +122,16 @@ func run() error {
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
-	// Shutdown stops accepting connections and waits for active requests.
-	// Hijacked connections (WebSockets) are not tracked by it; once live
-	// connections exist they must be closed through RegisterOnShutdown.
-	if err := httpServer.Shutdown(shutdownCtx); err != nil {
-		return fmt.Errorf("shutting down HTTP server: %w", err)
+	// The HTTP server stops first so no new live connection is admitted;
+	// it does not track hijacked (WebSocket) connections, which the API
+	// server closes itself.
+	httpErr := httpServer.Shutdown(shutdownCtx)
+	liveErr := server.Shutdown(shutdownCtx)
+	if httpErr != nil {
+		return fmt.Errorf("shutting down HTTP server: %w", httpErr)
+	}
+	if liveErr != nil {
+		return fmt.Errorf("closing live connections: %w", liveErr)
 	}
 	if err := <-serveErr; !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("serving HTTP: %w", err)

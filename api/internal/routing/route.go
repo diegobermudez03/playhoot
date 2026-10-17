@@ -1,5 +1,5 @@
-// Package routing is the vocabulary route groups and Server share without
-// importing each other: route declarations and the WebSocket handshake log.
+// Package routing is the route vocabulary route groups and Server share
+// without importing each other.
 package routing
 
 import "net/http"

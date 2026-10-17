@@ -2,9 +2,11 @@ package play
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,8 +15,93 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/diegobermudez03/playhoot/api/internal/auth"
+	"github.com/diegobermudez03/playhoot/api/internal/livecontrol"
 	"github.com/diegobermudez03/playhoot/play/runtime"
 )
+
+// fakeAdmin is a Runtime admin connection whose views and end the test
+// controls, recording what the handler asked of it.
+type fakeAdmin struct {
+	views     chan runtime.PlayerView
+	selectErr error
+	// finalView, when set, is produced by CancelSession right before the
+	// Session ends.
+	finalView *runtime.PlayerView
+
+	endOnce sync.Once
+	ended   chan struct{}
+	reason  runtime.EndReason
+
+	mu          sync.Mutex
+	selected    []string
+	disconnects int
+}
+
+func newFakeAdmin(views ...runtime.PlayerView) *fakeAdmin {
+	admin := &fakeAdmin{views: make(chan runtime.PlayerView, len(views)+1), ended: make(chan struct{})}
+	for _, view := range views {
+		admin.views <- view
+	}
+	return admin
+}
+
+func (f *fakeAdmin) end(reason runtime.EndReason) {
+	f.endOnce.Do(func() {
+		f.reason = reason
+		close(f.ended)
+	})
+}
+
+func (f *fakeAdmin) connection() runtime.AdminConnection {
+	return runtime.AdminConnection{
+		SelectPerspective: func(_ context.Context, participantID string) (runtime.SelectPerspectiveResult, error) {
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			f.selected = append(f.selected, participantID)
+			if f.selectErr != nil {
+				return runtime.SelectPerspectiveResult{}, f.selectErr
+			}
+			return runtime.SelectPerspectiveResult{Outcome: runtime.PerspectiveSelected}, nil
+		},
+		CancelSession: func(context.Context) (runtime.CancelSessionResult, error) {
+			if f.finalView != nil {
+				f.views <- *f.finalView
+			}
+			f.end(runtime.EndSessionEnded)
+			return runtime.CancelSessionResult{Outcome: runtime.SessionCancelled}, nil
+		},
+		NextView: func(ctx context.Context) (runtime.PlayerView, bool) {
+			select {
+			case view := <-f.views:
+				return view, true
+			case <-f.ended:
+				// Views produced before the end still come first.
+				select {
+				case view := <-f.views:
+					return view, true
+				default:
+					return runtime.PlayerView{}, false
+				}
+			case <-ctx.Done():
+				return runtime.PlayerView{}, false
+			}
+		},
+		Ended: func(ctx context.Context) (runtime.ConnectionEnd, bool) {
+			select {
+			case <-f.ended:
+				return runtime.ConnectionEnd{Reason: f.reason}, true
+			case <-ctx.Done():
+				return runtime.ConnectionEnd{}, false
+			}
+		},
+		Disconnect: func() {
+			f.mu.Lock()
+			f.disconnects++
+			f.mu.Unlock()
+			f.end(runtime.EndDisconnected)
+		},
+	}
+}
 
 func TestHandleAdminJoin(t *testing.T) {
 	type dependencies struct {
@@ -23,17 +110,26 @@ func TestHandleAdminJoin(t *testing.T) {
 	type test struct {
 		// unrouted leaves the request without the caller and Session the
 		// middlewares put on its context.
-		unrouted       bool
+		unrouted bool
+		// shuttingDown starts the server's shutdown before the request.
+		shuttingDown   bool
 		protocols      []string
 		origin         string
 		originPatterns []string
-		// clientCloses ends the connection from the client right away;
-		// otherwise the client reads until the server ends it.
+		admin          *fakeAdmin
+		clientSends    []string
+		// clientCloses ends the connection from the client once it received
+		// expectedReceived; otherwise it reads until the server ends it.
 		clientCloses bool
 
-		expectedDialStatus  int
-		expectedReceived    []string
-		expectedCloseStatus websocket.StatusCode
+		expectedDialStatus int
+		expectedReceived   []string
+		// expectedReceivedAnyOrder are messages sent concurrently, whose
+		// relative order is not defined.
+		expectedReceivedAnyOrder []string
+		expectedCloseStatus      websocket.StatusCode
+		expectedSelected         []string
+		expectedDisconnects      int
 	}
 
 	const (
@@ -41,45 +137,104 @@ func TestHandleAdminJoin(t *testing.T) {
 		sessionUUID = "7c9e6679-7425-40de-944b-e07fc1f90ae7"
 		ownerEpoch  = int64(3)
 	)
-	// connection returns a Runtime connection whose Outbound already holds
-	// messages, closed after them.
-	connection := func(messages ...runtime.ServerMessage) runtime.Connection {
-		outbound := make(chan runtime.ServerMessage, len(messages))
-		for _, message := range messages {
-			outbound <- message
-		}
-		close(outbound)
-		return runtime.Connection{Inbound: make(chan runtime.ClientMessage, 1), Outbound: outbound}
-	}
-	// openConnection returns a Runtime connection that has nothing to send
-	// yet.
-	openConnection := func() runtime.Connection {
-		return runtime.Connection{
-			Inbound:  make(chan runtime.ClientMessage, 1),
-			Outbound: make(chan runtime.ServerMessage),
-		}
+	accept := func(deps dependencies, admin *fakeAdmin) {
+		deps.admins.EXPECT().
+			AttachAdmin(gomock.Any(), sessionUUID, callerUUID, ownerEpoch).
+			Return(runtime.AttachAdminResult{Outcome: runtime.AttachAccepted, Connection: admin.connection()}, nil)
 	}
 
 	tests := map[string]func(t *testing.T, deps dependencies) test{
-		"accepted_connection_is_served": func(t *testing.T, deps dependencies) test {
-			deps.admins.EXPECT().
-				AttachAdmin(gomock.Any(), sessionUUID, callerUUID, ownerEpoch).
-				Return(runtime.AttachAdminResult{Outcome: runtime.AttachAccepted, Connection: openConnection()}, nil)
+		"selecting_a_perspective_is_answered": func(t *testing.T, deps dependencies) test {
+			admin := newFakeAdmin()
+			accept(deps, admin)
 			return test{
-				protocols:    []string{"playhoot.v1"},
-				clientCloses: true,
+				protocols:           []string{"playhoot.v1"},
+				admin:               admin,
+				clientSends:         []string{`{"type":"select_perspective","participant_id":"P2"}`},
+				clientCloses:        true,
+				expectedReceived:    []string{`{"type":"select_perspective_result","outcome":"selected"}`},
+				expectedSelected:    []string{"P2"},
+				expectedDisconnects: 1,
 			}
 		},
-		"rejected_connection_delivers_its_rejection_and_closes": func(t *testing.T, deps dependencies) test {
+		"views_are_delivered_with_the_game_state_as_is": func(t *testing.T, deps dependencies) test {
+			admin := newFakeAdmin(runtime.PlayerView{ParticipantID: "P1", Full: true, State: []byte(`{"score":3}`)})
+			accept(deps, admin)
+			return test{
+				protocols:           []string{"playhoot.v1"},
+				admin:               admin,
+				clientCloses:        true,
+				expectedReceived:    []string{`{"type":"player_view","participant_id":"P1","full":true,"state":{"score":3}}`},
+				expectedDisconnects: 1,
+			}
+		},
+		"cancelling_is_answered_then_the_runtime_ends_the_connection": func(t *testing.T, deps dependencies) test {
+			admin := newFakeAdmin()
+			accept(deps, admin)
+			return test{
+				protocols:           []string{"playhoot.v1"},
+				admin:               admin,
+				clientSends:         []string{`{"type":"cancel_session"}`},
+				expectedReceived:    []string{`{"type":"cancel_session_result","outcome":"cancelled"}`},
+				expectedCloseStatus: websocket.StatusNormalClosure,
+				expectedDisconnects: 1,
+			}
+		},
+		"cancelling_delivers_the_answer_and_the_final_view_before_closing": func(t *testing.T, deps dependencies) test {
+			admin := newFakeAdmin()
+			admin.finalView = &runtime.PlayerView{ParticipantID: "P1", Full: true, State: []byte(`{"over":true}`)}
+			accept(deps, admin)
+			return test{
+				protocols:   []string{"playhoot.v1"},
+				admin:       admin,
+				clientSends: []string{`{"type":"cancel_session"}`},
+				expectedReceivedAnyOrder: []string{
+					`{"type":"cancel_session_result","outcome":"cancelled"}`,
+					`{"type":"player_view","participant_id":"P1","full":true,"state":{"over":true}}`,
+				},
+				expectedCloseStatus: websocket.StatusNormalClosure,
+				expectedDisconnects: 1,
+			}
+		},
+		"perspective_without_participant_is_malformed": func(t *testing.T, deps dependencies) test {
+			admin := newFakeAdmin()
+			accept(deps, admin)
+			return test{
+				protocols:           []string{"playhoot.v1"},
+				admin:               admin,
+				clientSends:         []string{`{"type":"select_perspective"}`},
+				expectedCloseStatus: websocket.StatusInvalidFramePayloadData,
+				expectedDisconnects: 1,
+			}
+		},
+		"unknown_message_type_ends_the_connection": func(t *testing.T, deps dependencies) test {
+			admin := newFakeAdmin()
+			accept(deps, admin)
+			return test{
+				protocols:           []string{"playhoot.v1"},
+				admin:               admin,
+				clientSends:         []string{`{"type":"sample"}`},
+				expectedCloseStatus: websocket.StatusPolicyViolation,
+				expectedDisconnects: 1,
+			}
+		},
+		"runtime_operation_failing_is_a_server_failure": func(t *testing.T, deps dependencies) test {
+			admin := newFakeAdmin()
+			admin.selectErr = errors.New("runtime down")
+			accept(deps, admin)
+			return test{
+				protocols:           []string{"playhoot.v1"},
+				admin:               admin,
+				clientSends:         []string{`{"type":"select_perspective","participant_id":"P2"}`},
+				expectedCloseStatus: websocket.StatusInternalError,
+				expectedSelected:    []string{"P2"},
+				expectedDisconnects: 1,
+			}
+		},
+		"rejected_connection_receives_the_reason_and_closes": func(t *testing.T, deps dependencies) test {
 			deps.admins.EXPECT().
 				AttachAdmin(gomock.Any(), sessionUUID, callerUUID, ownerEpoch).
-				Return(runtime.AttachAdminResult{
-					Outcome: runtime.AttachRejected,
-					Connection: connection(
-						runtime.Rejected{Reason: runtime.RejectNotCreator},
-						runtime.Close{Reason: runtime.CloseAdmissionRejected},
-					),
-				}, nil)
+				Return(runtime.AttachAdminResult{Outcome: runtime.AttachRejected, Rejection: runtime.RejectNotCreator}, nil)
 			return test{
 				protocols:           []string{"playhoot.v1"},
 				expectedReceived:    []string{`{"type":"rejected","reason":"not_creator"}`},
@@ -95,7 +250,7 @@ func TestHandleAdminJoin(t *testing.T) {
 				expectedCloseStatus: websocket.StatusInternalError,
 			}
 		},
-		"connection_without_channels": func(t *testing.T, deps dependencies) test {
+		"accepted_without_operations": func(t *testing.T, deps dependencies) test {
 			deps.admins.EXPECT().
 				AttachAdmin(gomock.Any(), sessionUUID, callerUUID, ownerEpoch).
 				Return(runtime.AttachAdminResult{Outcome: runtime.AttachAccepted}, nil)
@@ -107,21 +262,33 @@ func TestHandleAdminJoin(t *testing.T) {
 		"unknown_outcome": func(t *testing.T, deps dependencies) test {
 			deps.admins.EXPECT().
 				AttachAdmin(gomock.Any(), sessionUUID, callerUUID, ownerEpoch).
-				Return(runtime.AttachAdminResult{Outcome: "something_new", Connection: openConnection()}, nil)
+				Return(runtime.AttachAdminResult{Outcome: "something_new"}, nil)
 			return test{
 				protocols:           []string{"playhoot.v1"},
 				expectedCloseStatus: websocket.StatusInternalError,
 			}
 		},
-		"allowed_cross_origin": func(t *testing.T, deps dependencies) test {
-			deps.admins.EXPECT().
-				AttachAdmin(gomock.Any(), sessionUUID, callerUUID, ownerEpoch).
-				Return(runtime.AttachAdminResult{Outcome: runtime.AttachAccepted, Connection: openConnection()}, nil)
+		"admitted_connection_is_refused_while_shutting_down": func(t *testing.T, deps dependencies) test {
+			admin := newFakeAdmin()
+			accept(deps, admin)
 			return test{
-				protocols:      []string{"playhoot.v1"},
-				origin:         "https://app.example.com",
-				originPatterns: []string{"app.example.com"},
-				clientCloses:   true,
+				shuttingDown:        true,
+				protocols:           []string{"playhoot.v1"},
+				admin:               admin,
+				expectedCloseStatus: websocket.StatusGoingAway,
+				expectedDisconnects: 1,
+			}
+		},
+		"allowed_cross_origin": func(t *testing.T, deps dependencies) test {
+			admin := newFakeAdmin()
+			accept(deps, admin)
+			return test{
+				protocols:           []string{"playhoot.v1"},
+				origin:              "https://app.example.com",
+				originPatterns:      []string{"app.example.com"},
+				admin:               admin,
+				clientCloses:        true,
+				expectedDisconnects: 1,
 			}
 		},
 		"disallowed_cross_origin_is_not_upgraded": func(t *testing.T, deps dependencies) test {
@@ -153,7 +320,11 @@ func TestHandleAdminJoin(t *testing.T) {
 			deps := dependencies{admins: NewMockadminAttacher(ctrl)}
 			tc := setup(t, deps)
 
-			handler := NewHandler(nil, nil, nil, deps.admins, tc.originPatterns)
+			live := livecontrol.New()
+			if tc.shuttingDown {
+				require.NoError(t, live.Shutdown(context.Background()))
+			}
+			handler := NewHandler(nil, nil, nil, deps.admins, live, tc.originPatterns)
 			handlerDone := make(chan struct{})
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				defer close(handlerDone)
@@ -177,32 +348,67 @@ func TestHandleAdminJoin(t *testing.T) {
 			})
 
 			var received []string
-			switch {
-			case tc.expectedDialStatus != 0:
+			if tc.expectedDialStatus != 0 {
 				require.Error(t, err)
 				require.Equal(t, tc.expectedDialStatus, response.StatusCode)
-			case tc.clientCloses:
+			} else {
 				require.NoError(t, err)
 				require.Equal(t, "playhoot.v1", conn.Subprotocol())
-				require.NoError(t, conn.Close(websocket.StatusNormalClosure, ""))
-			default:
-				require.NoError(t, err)
-				for {
-					_, data, err := conn.Read(ctx)
-					if err != nil {
-						require.Equal(t, tc.expectedCloseStatus, websocket.CloseStatus(err))
-						break
+				for _, message := range tc.clientSends {
+					require.NoError(t, conn.Write(ctx, websocket.MessageText, []byte(message)))
+				}
+				if tc.clientCloses {
+					for range tc.expectedReceived {
+						_, data, err := conn.Read(ctx)
+						require.NoError(t, err)
+						received = append(received, string(data))
 					}
-					received = append(received, string(data))
+					require.NoError(t, conn.Close(websocket.StatusNormalClosure, ""))
+				} else {
+					for {
+						_, data, err := conn.Read(ctx)
+						if err != nil {
+							require.Equal(t, tc.expectedCloseStatus, websocket.CloseStatus(err))
+							break
+						}
+						received = append(received, string(data))
+					}
 				}
 			}
-			require.Equal(t, tc.expectedReceived, received)
+			if tc.expectedReceivedAnyOrder != nil {
+				require.ElementsMatch(t, normalizeJSON(t, tc.expectedReceivedAnyOrder), normalizeJSON(t, received))
+			} else {
+				require.Len(t, received, len(tc.expectedReceived))
+				for i, expected := range tc.expectedReceived {
+					require.JSONEq(t, expected, received[i])
+				}
+			}
 
 			select {
 			case <-handlerDone:
 			case <-ctx.Done():
 				t.Fatal("handler did not return")
 			}
+			require.NoError(t, live.Shutdown(ctx), "the served connection must end")
+			if tc.admin != nil {
+				tc.admin.mu.Lock()
+				defer tc.admin.mu.Unlock()
+				require.Equal(t, tc.expectedSelected, tc.admin.selected)
+				require.Equal(t, tc.expectedDisconnects, tc.admin.disconnects)
+			}
 		})
 	}
+}
+
+// normalizeJSON re-encodes each message so equal JSON compares equal.
+func normalizeJSON(t *testing.T, messages []string) []string {
+	normalized := make([]string, len(messages))
+	for i, message := range messages {
+		var value any
+		require.NoError(t, json.Unmarshal([]byte(message), &value))
+		encoded, err := json.Marshal(value)
+		require.NoError(t, err)
+		normalized[i] = string(encoded)
+	}
+	return normalized
 }

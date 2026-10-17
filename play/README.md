@@ -34,7 +34,7 @@ play/
   session.go                  # Session public contract (CreateSessionOutcome, CreateSessionResult, ErrIdempotencyConflict)
   docs/                       # DATA_MODEL.md, FLOWS.md, decisions/
   runtime/
-    runtime.go                # live Runtime public contract (OwnerPlacement, Connection channels, message catalog, AttachAdminResult)
+    runtime.go                # live Runtime public contract (OwnerPlacement, AttachAdminResult, AdminConnection operations and types)
     sandbox/                  # QuickJS-on-WebAssembly script execution in an isolated worker process; not wired to anything yet
     usecases/
       ownership/              # LocateOrClaimOwner (placeholder: single instance, no registry)

@@ -54,25 +54,28 @@ sequenceDiagram
     Owner-->>API: owned here (epoch) / session unavailable (404) / owned elsewhere (503, no forwarding yet)
     API->>API: upgrade (playhoot.v1, allowed origin)
     API->>Live: AttachAdmin(sessionUUID, userUUID, epoch)
-    Live-->>API: outcome + Connection {Inbound, Outbound channels}
-    par client to Runtime
-        loop until the client leaves
-            Client->>API: text frame
-            API->>Live: decoded message on Inbound
+    alt rejected
+        Live-->>API: rejected + reason
+        API->>Client: rejected message, close 1008
+    else accepted
+        Live-->>API: AdminConnection operations
+        par client requests
+            Client->>API: select_perspective / cancel_session
+            API->>Live: SelectPerspective / CancelSession
+            API->>Client: result message
+        and views
+            API->>Live: NextView (blocks)
+            API->>Client: player_view message
+        and end
+            API->>Live: Ended (blocks)
+            API->>Client: close with the end reason
         end
-        API->>Live: close Inbound
-    and Runtime to client
-        loop until Close
-            Live->>API: message on Outbound (rejected connection: Rejected)
-            API->>Client: encoded text frame
-        end
-        Live->>API: Close on Outbound
-        API->>Client: WebSocket close with the Close's reason
+        API->>Live: Disconnect
     end
 ```
 
 Implemented behavior:
 
 - Identity and owner routing both happen before the upgrade, in that order, so an unauthorized caller never makes a Session owned. Logical admission happens after the upgrade, in the Runtime.
-- The Runtime defines the live message types and never sees the socket; the API maps them to and from JSON frames (`api/play/live_messages.go`).
-- Ownership (`LocateOrClaimOwner`) and admission (`AttachAdmin`) are placeholders today: every Session is owned by this instance under epoch 1, and every authorized caller is admitted, with its messages discarded (`play/CURRENT_STATE.md`). Identity's authorization is the same placeholder as for Create Session.
+- The Runtime defines each kind of connection's operations and types and never sees the socket; each API endpoint maps them to and from its own JSON messages (`api/play/admin_join.go`).
+- Ownership (`LocateOrClaimOwner`) and admission (`AttachAdmin`) are placeholders today: every Session is owned by this instance under epoch 1, and every authorized caller is admitted, any perspective is accepted without views, and cancelling only ends the connection (`play/CURRENT_STATE.md`). Identity's authorization is the same placeholder as for Create Session.

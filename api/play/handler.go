@@ -39,23 +39,31 @@ type adminAttacher interface {
 	AttachAdmin(ctx context.Context, sessionUUID string, userUUID string, ownerEpoch int64) (runtime.AttachAdminResult, error)
 }
 
+// liveRunner runs admitted live connections until they end or the server
+// shuts down; it refuses new ones once shutdown started.
+type liveRunner interface {
+	Go(serve func(shutdown context.Context)) bool
+}
+
 // Handler exposes the play domain's endpoints.
 type Handler struct {
 	authorizer              authorizer
 	creator                 sessionCreator
 	owners                  ownerLocator
 	admins                  adminAttacher
+	live                    liveRunner
 	webSocketOriginPatterns []string
 }
 
 // NewHandler constructs a Handler. webSocketOriginPatterns are the extra
 // origin hosts browser pages may open live connections from.
-func NewHandler(authorizer authorizer, creator sessionCreator, owners ownerLocator, admins adminAttacher, webSocketOriginPatterns []string) *Handler {
+func NewHandler(authorizer authorizer, creator sessionCreator, owners ownerLocator, admins adminAttacher, live liveRunner, webSocketOriginPatterns []string) *Handler {
 	return &Handler{
 		authorizer:              authorizer,
 		creator:                 creator,
 		owners:                  owners,
 		admins:                  admins,
+		live:                    live,
 		webSocketOriginPatterns: webSocketOriginPatterns,
 	}
 }

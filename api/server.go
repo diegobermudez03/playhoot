@@ -4,9 +4,11 @@
 package api
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 
+	"github.com/diegobermudez03/playhoot/api/internal/livecontrol"
 	"github.com/diegobermudez03/playhoot/api/internal/routing"
 	apiplay "github.com/diegobermudez03/playhoot/api/play"
 	"github.com/diegobermudez03/playhoot/logging"
@@ -21,7 +23,8 @@ type routeGroup interface {
 
 // Server composes every route group into one HTTP handler.
 type Server struct {
-	mux *http.ServeMux
+	mux  *http.ServeMux
+	live *livecontrol.Controller
 }
 
 // NewServer constructs a Server exposing every route group's endpoints.
@@ -29,8 +32,9 @@ type Server struct {
 // browser pages may open live connections from.
 func NewServer(authorizer authorizer, sessionCreator sessionCreator, owners ownerLocator, admins adminAttacher, webSocketOriginPatterns []string) *Server {
 	mux := http.NewServeMux()
+	live := livecontrol.New()
 	groups := []routeGroup{
-		apiplay.NewHandler(authorizer, sessionCreator, owners, admins, webSocketOriginPatterns),
+		apiplay.NewHandler(authorizer, sessionCreator, owners, admins, live, webSocketOriginPatterns),
 	}
 	var restRoutes, wsRoutes []routing.Route
 	for _, group := range groups {
@@ -58,7 +62,7 @@ func NewServer(authorizer authorizer, sessionCreator sessionCreator, owners owne
 		mws := append([]routing.Middleware{wsObservability(route.Pattern)}, route.Middlewares...)
 		mux.HandleFunc(route.Pattern, chain(mws, route.Handler))
 	}
-	return &Server{mux: mux}
+	return &Server{mux: mux, live: live}
 }
 
 // restObservability starts and flushes the request log of every REST route
@@ -77,26 +81,16 @@ func restObservability(pattern string, requestMetrics *restMetrics) routing.Midd
 	}
 }
 
-// wsObservability logs a WebSocket connection's opening and closing as two
-// separate lines, since the connection may live for hours, and starts the
-// handshake's own log because the route's middlewares log into it.
+// wsObservability starts and flushes the request log of a WebSocket route's
+// handshake. Handlers return once the connection is admitted and running, so
+// the line is written then; the connection logs its own end under the same
+// trace.
 func wsObservability(pattern string) routing.Middleware {
 	return func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			ctx := logging.Start(r.Context())
-			logging.LogFields(ctx, logging.Field("event", "opened"))
-			logging.FinishRequestLog(ctx, slog.Default(), pattern)
-
-			defer func() {
-				closeCtx := logging.Start(ctx)
-				logging.LogFields(closeCtx, logging.Field("event", "closed"))
-				logging.FinishRequestLog(closeCtx, slog.Default(), pattern)
-			}()
-
-			handshakeCtx := routing.StartHandshakeLog(ctx, pattern)
-			defer routing.FinishHandshakeLog(handshakeCtx)
-
-			next(w, r.WithContext(handshakeCtx))
+			defer logging.FinishRequestLog(ctx, slog.Default(), pattern)
+			next(w, r.WithContext(ctx))
 		}
 	}
 }
@@ -108,6 +102,12 @@ func chain(mws []routing.Middleware, final http.HandlerFunc) http.HandlerFunc {
 		final = mws[i](final)
 	}
 	return final
+}
+
+// Shutdown closes every live connection and waits for them until ctx is done.
+// Call it after the HTTP server stopped accepting requests.
+func (s *Server) Shutdown(ctx context.Context) error {
+	return s.live.Shutdown(ctx)
 }
 
 // Routes returns Server's HTTP handler.

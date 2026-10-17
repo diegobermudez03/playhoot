@@ -1,20 +1,59 @@
 package play
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
 	"net/http"
+	"sync"
+
+	"github.com/coder/websocket"
 
 	"github.com/diegobermudez03/playhoot/api/internal/auth"
 	"github.com/diegobermudez03/playhoot/api/internal/httpx"
-	"github.com/diegobermudez03/playhoot/api/internal/routing"
+	"github.com/diegobermudez03/playhoot/api/internal/wsx"
 	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/play/runtime"
 )
 
-// handleAdminJoin upgrades the creator's admin connection and serves it.
-// Admission is the Runtime's decision: an open WebSocket is not yet admitted.
+// Admin wire messages: every frame is a JSON object whose "type" names it.
+const (
+	adminSelectPerspective       = "select_perspective"
+	adminCancelSession           = "cancel_session"
+	adminSelectPerspectiveResult = "select_perspective_result"
+	adminCancelSessionResult     = "cancel_session_result"
+	adminPlayerView              = "player_view"
+	adminRejected                = "rejected"
+)
+
+type adminSelectPerspectiveRequest struct {
+	ParticipantID string `json:"participant_id"`
+}
+
+type adminOutcomeMessage struct {
+	Type    string `json:"type"`
+	Outcome string `json:"outcome"`
+}
+
+type adminPlayerViewMessage struct {
+	Type          string          `json:"type"`
+	ParticipantID string          `json:"participant_id"`
+	Full          bool            `json:"full"`
+	State         json.RawMessage `json:"state"`
+}
+
+type adminRejectedMessage struct {
+	Type   string `json:"type"`
+	Reason string `json:"reason"`
+}
+
+var errIncompleteAdminConnection = errors.New("admin connection is missing operations")
+
+// handleAdminJoin upgrades the creator's admin connection and hands it to the
+// live connections. Admission is the Runtime's decision: an open WebSocket is
+// not yet admitted.
 func (h *Handler) handleAdminJoin(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	defer routing.FinishHandshakeLog(ctx)
 
 	userUUID, callerOK := auth.UserUUID(ctx)
 	sessionUUID, ownerEpoch, routedOK := routedSessionFrom(ctx)
@@ -25,28 +64,152 @@ func (h *Handler) handleAdminJoin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	conn, err := acceptLive(w, r, h.webSocketOriginPatterns)
+	conn, err := wsx.Accept(w, r, h.webSocketOriginPatterns)
 	if err != nil {
 		// Accept already answered the request.
 		logging.LogError(ctx, err)
 		return
 	}
+	// The request's context must not be used past the upgrade; the
+	// connection keeps its values (trace, request log) but not its lifetime.
+	ctx = context.WithoutCancel(ctx)
 
 	attached, err := h.admins.AttachAdmin(ctx, sessionUUID, userUUID, ownerEpoch)
 	if err != nil {
 		logging.LogError(ctx, err)
-		abort(conn)
+		wsx.Abort(conn)
 		return
 	}
 	logging.LogFields(ctx, logging.Field("attach_outcome", string(attached.Outcome)))
 
-	known := attached.Outcome == runtime.AttachAccepted || attached.Outcome == runtime.AttachRejected
-	if !known || attached.Connection.Inbound == nil || attached.Connection.Outbound == nil {
-		logging.LogFields(ctx, logging.Field("attach_error", "admission result cannot be served"))
-		abort(conn)
+	switch attached.Outcome {
+	case runtime.AttachRejected:
+		logging.LogFields(ctx, logging.Field("reject_reason", string(attached.Rejection)))
+		_, _ = writeMessage(ctx, conn, adminRejectedMessage{Type: adminRejected, Reason: string(attached.Rejection)})
+		_ = conn.Close(websocket.StatusPolicyViolation, "admission rejected")
+		return
+	case runtime.AttachAccepted:
+	default:
+		logging.LogFields(ctx, logging.Field("attach_error", "unknown admission outcome"))
+		wsx.Abort(conn)
 		return
 	}
 
-	routing.FinishHandshakeLog(ctx)
-	serveLive(ctx, conn, attached.Connection)
+	admin := attached.Connection
+	if admin.SelectPerspective == nil || admin.CancelSession == nil || admin.NextView == nil || admin.Ended == nil || admin.Disconnect == nil {
+		logging.LogError(ctx, errIncompleteAdminConnection)
+		wsx.Abort(conn)
+		return
+	}
+	session := newAdminSession(conn, admin)
+	served := h.live.Go(func(shutdown context.Context) {
+		serveLive(ctx, shutdown, conn, admin.Disconnect, session.answerRequests, session.sendViews, session.closeOnRuntimeEnd)
+	})
+	if !served {
+		_ = conn.Close(websocket.StatusGoingAway, "server shutting down")
+		admin.Disconnect()
+		logging.LogFields(ctx, logging.Field("connection", "refused_shutting_down"))
+		return
+	}
+	logging.LogFields(ctx, logging.Field("connection", "opened"))
+}
+
+// adminSession is one served admin connection.
+type adminSession struct {
+	conn  *websocket.Conn
+	admin runtime.AdminConnection
+
+	// answering is held while a request is answered, so the connection is
+	// never closed between the Runtime's answer and its delivery.
+	answering sync.Mutex
+	// viewsSent is closed once every view the Runtime produced was sent.
+	viewsSent chan struct{}
+}
+
+func newAdminSession(conn *websocket.Conn, admin runtime.AdminConnection) *adminSession {
+	return &adminSession{conn: conn, admin: admin, viewsSent: make(chan struct{})}
+}
+
+// answerRequests answers each request the admin sends, in order.
+func (s *adminSession) answerRequests(ctx context.Context) (connectionEnd, bool) {
+	for {
+		messageType, data, end, ended := readMessage(ctx, s.conn)
+		if ended || messageType == "" {
+			return end, ended
+		}
+		if end, ended := s.answer(ctx, messageType, data); ended || ctx.Err() != nil {
+			return end, ended
+		}
+	}
+}
+
+func (s *adminSession) answer(ctx context.Context, messageType string, data []byte) (connectionEnd, bool) {
+	s.answering.Lock()
+	defer s.answering.Unlock()
+
+	var response adminOutcomeMessage
+	switch messageType {
+	case adminSelectPerspective:
+		var request adminSelectPerspectiveRequest
+		if err := json.Unmarshal(data, &request); err != nil || request.ParticipantID == "" {
+			return closeMalformed(s.conn), true
+		}
+		result, err := s.admin.SelectPerspective(ctx, request.ParticipantID)
+		if err != nil {
+			return closeServerFailure(s.conn, err), true
+		}
+		response = adminOutcomeMessage{Type: adminSelectPerspectiveResult, Outcome: string(result.Outcome)}
+	case adminCancelSession:
+		result, err := s.admin.CancelSession(ctx)
+		if err != nil {
+			return closeServerFailure(s.conn, err), true
+		}
+		response = adminOutcomeMessage{Type: adminCancelSessionResult, Outcome: string(result.Outcome)}
+	default:
+		return closeUnknownType(s.conn, messageType), true
+	}
+	return writeMessage(ctx, s.conn, response)
+}
+
+// sendViews sends every view of the selected participant, in order.
+func (s *adminSession) sendViews(ctx context.Context) (connectionEnd, bool) {
+	defer close(s.viewsSent)
+	for {
+		view, ok := s.admin.NextView(ctx)
+		if !ok {
+			return connectionEnd{}, false
+		}
+		message := adminPlayerViewMessage{
+			Type:          adminPlayerView,
+			ParticipantID: view.ParticipantID,
+			Full:          view.Full,
+			State:         view.State,
+		}
+		if end, ended := writeMessage(ctx, s.conn, message); ended || ctx.Err() != nil {
+			return end, ended
+		}
+	}
+}
+
+// closeOnRuntimeEnd closes the connection once the Runtime ends it, after its
+// last views and any answer in progress were delivered.
+func (s *adminSession) closeOnRuntimeEnd(ctx context.Context) (connectionEnd, bool) {
+	end, ok := s.admin.Ended(ctx)
+	if !ok {
+		return connectionEnd{}, false
+	}
+	select {
+	case <-s.viewsSent:
+	case <-ctx.Done():
+		return connectionEnd{}, false
+	}
+	s.answering.Lock()
+	defer s.answering.Unlock()
+
+	status := websocket.StatusInternalError
+	if end.Reason == runtime.EndSessionEnded || end.Reason == runtime.EndDisconnected {
+		status = websocket.StatusNormalClosure
+	}
+	_ = s.conn.Close(status, string(end.Reason))
+	return connectionEnd{cause: causeRuntimeEnded, detail: string(end.Reason)}, true
 }
