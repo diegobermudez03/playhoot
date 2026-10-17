@@ -11,6 +11,7 @@ import (
 
 	"github.com/diegobermudez03/playhoot/api/internal/auth"
 	"github.com/diegobermudez03/playhoot/api/internal/httpx"
+	"github.com/diegobermudez03/playhoot/api/internal/live"
 	"github.com/diegobermudez03/playhoot/api/internal/wsx"
 	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/play/runtime"
@@ -85,7 +86,7 @@ func (h *Handler) handleAdminJoin(w http.ResponseWriter, r *http.Request) {
 	switch attached.Outcome {
 	case runtime.AttachRejected:
 		logging.LogFields(ctx, logging.Field("reject_reason", string(attached.Rejection)))
-		_, _ = writeMessage(ctx, conn, adminRejectedMessage{Type: adminRejected, Reason: string(attached.Rejection)})
+		_, _ = live.WriteMessage(ctx, conn, adminRejectedMessage{Type: adminRejected, Reason: string(attached.Rejection)})
 		_ = conn.Close(websocket.StatusPolicyViolation, "admission rejected")
 		return
 	case runtime.AttachAccepted:
@@ -103,7 +104,7 @@ func (h *Handler) handleAdminJoin(w http.ResponseWriter, r *http.Request) {
 	}
 	session := newAdminSession(conn, admin)
 	served := h.live.Go(func(shutdown context.Context) {
-		serveLive(ctx, shutdown, conn, admin.Disconnect, session.answerRequests, session.sendViews, session.closeOnRuntimeEnd)
+		live.Serve(ctx, shutdown, conn, admin.Disconnect, session.answerRequests, session.sendViews, session.closeOnRuntimeEnd)
 	})
 	if !served {
 		_ = conn.Close(websocket.StatusGoingAway, "server shutting down")
@@ -131,9 +132,9 @@ func newAdminSession(conn *websocket.Conn, admin runtime.AdminConnection) *admin
 }
 
 // answerRequests answers each request the admin sends, in order.
-func (s *adminSession) answerRequests(ctx context.Context) (connectionEnd, bool) {
+func (s *adminSession) answerRequests(ctx context.Context) (live.End, bool) {
 	for {
-		messageType, data, end, ended := readMessage(ctx, s.conn)
+		messageType, data, end, ended := live.ReadMessage(ctx, s.conn)
 		if ended || messageType == "" {
 			return end, ended
 		}
@@ -143,7 +144,7 @@ func (s *adminSession) answerRequests(ctx context.Context) (connectionEnd, bool)
 	}
 }
 
-func (s *adminSession) answer(ctx context.Context, messageType string, data []byte) (connectionEnd, bool) {
+func (s *adminSession) answer(ctx context.Context, messageType string, data []byte) (live.End, bool) {
 	s.answering.Lock()
 	defer s.answering.Unlock()
 
@@ -152,32 +153,32 @@ func (s *adminSession) answer(ctx context.Context, messageType string, data []by
 	case adminSelectPerspective:
 		var request adminSelectPerspectiveRequest
 		if err := json.Unmarshal(data, &request); err != nil || request.ParticipantID == "" {
-			return closeMalformed(s.conn), true
+			return live.CloseMalformed(s.conn), true
 		}
 		result, err := s.admin.SelectPerspective(ctx, request.ParticipantID)
 		if err != nil {
-			return closeServerFailure(s.conn, err), true
+			return live.CloseServerFailure(s.conn, err), true
 		}
 		response = adminOutcomeMessage{Type: adminSelectPerspectiveResult, Outcome: string(result.Outcome)}
 	case adminCancelSession:
 		result, err := s.admin.CancelSession(ctx)
 		if err != nil {
-			return closeServerFailure(s.conn, err), true
+			return live.CloseServerFailure(s.conn, err), true
 		}
 		response = adminOutcomeMessage{Type: adminCancelSessionResult, Outcome: string(result.Outcome)}
 	default:
-		return closeUnknownType(s.conn, messageType), true
+		return live.CloseUnknownType(s.conn, messageType), true
 	}
-	return writeMessage(ctx, s.conn, response)
+	return live.WriteMessage(ctx, s.conn, response)
 }
 
 // sendViews sends every view of the selected participant, in order.
-func (s *adminSession) sendViews(ctx context.Context) (connectionEnd, bool) {
+func (s *adminSession) sendViews(ctx context.Context) (live.End, bool) {
 	defer close(s.viewsSent)
 	for {
 		view, ok := s.admin.NextView(ctx)
 		if !ok {
-			return connectionEnd{}, false
+			return live.End{}, false
 		}
 		message := adminPlayerViewMessage{
 			Type:          adminPlayerView,
@@ -185,7 +186,7 @@ func (s *adminSession) sendViews(ctx context.Context) (connectionEnd, bool) {
 			Full:          view.Full,
 			State:         view.State,
 		}
-		if end, ended := writeMessage(ctx, s.conn, message); ended || ctx.Err() != nil {
+		if end, ended := live.WriteMessage(ctx, s.conn, message); ended || ctx.Err() != nil {
 			return end, ended
 		}
 	}
@@ -193,15 +194,15 @@ func (s *adminSession) sendViews(ctx context.Context) (connectionEnd, bool) {
 
 // closeOnRuntimeEnd closes the connection once the Runtime ends it, after its
 // last views and any answer in progress were delivered.
-func (s *adminSession) closeOnRuntimeEnd(ctx context.Context) (connectionEnd, bool) {
+func (s *adminSession) closeOnRuntimeEnd(ctx context.Context) (live.End, bool) {
 	end, ok := s.admin.Ended(ctx)
 	if !ok {
-		return connectionEnd{}, false
+		return live.End{}, false
 	}
 	select {
 	case <-s.viewsSent:
 	case <-ctx.Done():
-		return connectionEnd{}, false
+		return live.End{}, false
 	}
 	s.answering.Lock()
 	defer s.answering.Unlock()
@@ -211,5 +212,5 @@ func (s *adminSession) closeOnRuntimeEnd(ctx context.Context) (connectionEnd, bo
 		status = websocket.StatusNormalClosure
 	}
 	_ = s.conn.Close(status, string(end.Reason))
-	return connectionEnd{cause: causeRuntimeEnded, detail: string(end.Reason)}, true
+	return live.End{Cause: live.CauseEndedByOwner, Detail: string(end.Reason)}, true
 }

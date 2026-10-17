@@ -1,4 +1,4 @@
-package livecontrol
+package live
 
 import (
 	"context"

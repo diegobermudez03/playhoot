@@ -8,7 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/diegobermudez03/playhoot/api/internal/livecontrol"
+	"github.com/diegobermudez03/playhoot/api/internal/live"
 	"github.com/diegobermudez03/playhoot/api/internal/routing"
 	apiplay "github.com/diegobermudez03/playhoot/api/play"
 	"github.com/diegobermudez03/playhoot/logging"
@@ -24,7 +24,7 @@ type routeGroup interface {
 // Server composes every route group into one HTTP handler.
 type Server struct {
 	mux  *http.ServeMux
-	live *livecontrol.Controller
+	live *live.Controller
 }
 
 // NewServer constructs a Server exposing every route group's endpoints.
@@ -32,9 +32,9 @@ type Server struct {
 // browser pages may open live connections from.
 func NewServer(authorizer authorizer, sessionCreator sessionCreator, owners ownerLocator, admins adminAttacher, webSocketOriginPatterns []string) *Server {
 	mux := http.NewServeMux()
-	live := livecontrol.New()
+	liveConnections := live.New()
 	groups := []routeGroup{
-		apiplay.NewHandler(authorizer, sessionCreator, owners, admins, live, webSocketOriginPatterns),
+		apiplay.NewHandler(authorizer, sessionCreator, owners, admins, liveConnections, webSocketOriginPatterns),
 	}
 	var restRoutes, wsRoutes []routing.Route
 	for _, group := range groups {
@@ -62,7 +62,7 @@ func NewServer(authorizer authorizer, sessionCreator sessionCreator, owners owne
 		mws := append([]routing.Middleware{wsObservability(route.Pattern)}, route.Middlewares...)
 		mux.HandleFunc(route.Pattern, chain(mws, route.Handler))
 	}
-	return &Server{mux: mux, live: live}
+	return &Server{mux: mux, live: liveConnections}
 }
 
 // restObservability starts and flushes the request log of every REST route

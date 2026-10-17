@@ -1,6 +1,4 @@
-// Package livecontrol owns the goroutines of the API edge's live connections,
-// so they can be told to end and waited for on shutdown.
-package livecontrol
+package live
 
 import (
 	"context"

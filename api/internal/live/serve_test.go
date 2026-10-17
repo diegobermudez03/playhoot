@@ -1,4 +1,4 @@
-package play
+package live
 
 import (
 	"bytes"
@@ -17,14 +17,14 @@ import (
 	"github.com/diegobermudez03/playhoot/api/internal/wsx"
 )
 
-func TestServeLive(t *testing.T) {
+func TestServe(t *testing.T) {
 	type clientMessage struct {
 		messageType websocket.MessageType
 		data        string
 	}
 	type test struct {
 		// loops are the connection's loops, built once conn exists.
-		loops        func(conn *websocket.Conn) []liveLoop
+		loops        func(conn *websocket.Conn) []Loop
 		shuttingDown bool
 		clientSends  []clientMessage
 		// clientCloses ends the connection from the client; otherwise the
@@ -32,28 +32,28 @@ func TestServeLive(t *testing.T) {
 		clientCloses bool
 
 		expectedCloseStatus websocket.StatusCode
-		expectedCloseCause  closeCause
+		expectedCloseCause  Cause
 		expectedCloseDetail string
 	}
 
-	waitForCancel := func(ctx context.Context) (connectionEnd, bool) {
+	waitForCancel := func(ctx context.Context) (End, bool) {
 		<-ctx.Done()
-		return connectionEnd{}, false
+		return End{}, false
 	}
-	stopUndecided := func(context.Context) (connectionEnd, bool) {
-		return connectionEnd{}, false
+	stopUndecided := func(context.Context) (End, bool) {
+		return End{}, false
 	}
-	endAfter := func(conn *websocket.Conn, delay time.Duration) liveLoop {
-		return func(context.Context) (connectionEnd, bool) {
+	endAfter := func(conn *websocket.Conn, delay time.Duration) Loop {
+		return func(context.Context) (End, bool) {
 			time.Sleep(delay)
 			_ = conn.Close(websocket.StatusNormalClosure, "session_ended")
-			return connectionEnd{cause: causeRuntimeEnded, detail: "session_ended"}, true
+			return End{Cause: CauseEndedByOwner, Detail: "session_ended"}, true
 		}
 	}
-	readUntilEnd := func(conn *websocket.Conn) liveLoop {
-		return func(ctx context.Context) (connectionEnd, bool) {
+	readUntilEnd := func(conn *websocket.Conn) Loop {
+		return func(ctx context.Context) (End, bool) {
 			for {
-				messageType, _, end, ended := readMessage(ctx, conn)
+				messageType, _, end, ended := ReadMessage(ctx, conn)
 				if ended || messageType == "" {
 					return end, ended
 				}
@@ -64,69 +64,69 @@ func TestServeLive(t *testing.T) {
 	tests := map[string]func(t *testing.T) test{
 		"first_loop_to_end_the_connection_stops_the_rest": func(t *testing.T) test {
 			return test{
-				loops: func(conn *websocket.Conn) []liveLoop {
-					return []liveLoop{waitForCancel, endAfter(conn, 0)}
+				loops: func(conn *websocket.Conn) []Loop {
+					return []Loop{waitForCancel, endAfter(conn, 0)}
 				},
 				expectedCloseStatus: websocket.StatusNormalClosure,
-				expectedCloseCause:  causeRuntimeEnded,
+				expectedCloseCause:  CauseEndedByOwner,
 				expectedCloseDetail: "session_ended",
 			}
 		},
 		"loop_stopping_without_ending_does_not_end_the_connection": func(t *testing.T) test {
 			return test{
-				loops: func(conn *websocket.Conn) []liveLoop {
-					return []liveLoop{stopUndecided, endAfter(conn, 20*time.Millisecond)}
+				loops: func(conn *websocket.Conn) []Loop {
+					return []Loop{stopUndecided, endAfter(conn, 20*time.Millisecond)}
 				},
 				expectedCloseStatus: websocket.StatusNormalClosure,
-				expectedCloseCause:  causeRuntimeEnded,
+				expectedCloseCause:  CauseEndedByOwner,
 				expectedCloseDetail: "session_ended",
 			}
 		},
 		"every_loop_stopping_without_ending_is_a_server_failure": func(t *testing.T) test {
 			return test{
-				loops:               func(*websocket.Conn) []liveLoop { return []liveLoop{stopUndecided} },
+				loops:               func(*websocket.Conn) []Loop { return []Loop{stopUndecided} },
 				expectedCloseStatus: websocket.StatusInternalError,
-				expectedCloseCause:  causeServerFailure,
+				expectedCloseCause:  CauseServerFailure,
 				expectedCloseDetail: "every loop stopped without ending the connection",
 			}
 		},
 		"shutdown_ends_the_connection_as_going_away": func(t *testing.T) test {
 			return test{
-				loops:               func(*websocket.Conn) []liveLoop { return []liveLoop{waitForCancel} },
+				loops:               func(*websocket.Conn) []Loop { return []Loop{waitForCancel} },
 				shuttingDown:        true,
 				expectedCloseStatus: websocket.StatusGoingAway,
-				expectedCloseCause:  causeServerShutdown,
+				expectedCloseCause:  CauseServerShutdown,
 			}
 		},
 		"client_closing_ends_the_connection": func(t *testing.T) test {
 			return test{
-				loops:              func(conn *websocket.Conn) []liveLoop { return []liveLoop{readUntilEnd(conn), waitForCancel} },
+				loops:              func(conn *websocket.Conn) []Loop { return []Loop{readUntilEnd(conn), waitForCancel} },
 				clientCloses:       true,
-				expectedCloseCause: causeClientClosed,
+				expectedCloseCause: CauseClientClosed,
 			}
 		},
 		"malformed_client_message_ends_the_connection": func(t *testing.T) test {
 			return test{
-				loops:               func(conn *websocket.Conn) []liveLoop { return []liveLoop{readUntilEnd(conn)} },
+				loops:               func(conn *websocket.Conn) []Loop { return []Loop{readUntilEnd(conn)} },
 				clientSends:         []clientMessage{{messageType: websocket.MessageText, data: `not json`}},
 				expectedCloseStatus: websocket.StatusInvalidFramePayloadData,
-				expectedCloseCause:  causeMalformedMessage,
+				expectedCloseCause:  CauseMalformedMessage,
 			}
 		},
 		"message_without_a_type_is_malformed": func(t *testing.T) test {
 			return test{
-				loops:               func(conn *websocket.Conn) []liveLoop { return []liveLoop{readUntilEnd(conn)} },
+				loops:               func(conn *websocket.Conn) []Loop { return []Loop{readUntilEnd(conn)} },
 				clientSends:         []clientMessage{{messageType: websocket.MessageText, data: `{"participant_id":"P1"}`}},
 				expectedCloseStatus: websocket.StatusInvalidFramePayloadData,
-				expectedCloseCause:  causeMalformedMessage,
+				expectedCloseCause:  CauseMalformedMessage,
 			}
 		},
 		"binary_client_message_ends_the_connection": func(t *testing.T) test {
 			return test{
-				loops:               func(conn *websocket.Conn) []liveLoop { return []liveLoop{readUntilEnd(conn)} },
+				loops:               func(conn *websocket.Conn) []Loop { return []Loop{readUntilEnd(conn)} },
 				clientSends:         []clientMessage{{messageType: websocket.MessageBinary, data: "\x01\x02"}},
 				expectedCloseStatus: websocket.StatusUnsupportedData,
-				expectedCloseCause:  causeBinaryFrame,
+				expectedCloseCause:  CauseBinaryFrame,
 			}
 		},
 	}
@@ -154,7 +154,7 @@ func TestServeLive(t *testing.T) {
 				if err != nil {
 					return
 				}
-				serveLive(context.WithoutCancel(r.Context()), shutdown, conn, func() { disconnects.Add(1) }, tc.loops(conn)...)
+				Serve(context.WithoutCancel(r.Context()), shutdown, conn, func() { disconnects.Add(1) }, tc.loops(conn)...)
 			}))
 			t.Cleanup(server.Close)
 
@@ -176,7 +176,7 @@ func TestServeLive(t *testing.T) {
 			select {
 			case <-served:
 			case <-ctx.Done():
-				t.Fatal("serveLive did not return")
+				t.Fatal("Serve did not return")
 			}
 			require.Equal(t, int32(1), disconnects.Load())
 

@@ -15,7 +15,7 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/diegobermudez03/playhoot/api/internal/auth"
-	"github.com/diegobermudez03/playhoot/api/internal/livecontrol"
+	"github.com/diegobermudez03/playhoot/api/internal/live"
 	"github.com/diegobermudez03/playhoot/play/runtime"
 )
 
@@ -320,11 +320,11 @@ func TestHandleAdminJoin(t *testing.T) {
 			deps := dependencies{admins: NewMockadminAttacher(ctrl)}
 			tc := setup(t, deps)
 
-			live := livecontrol.New()
+			connections := live.New()
 			if tc.shuttingDown {
-				require.NoError(t, live.Shutdown(context.Background()))
+				require.NoError(t, connections.Shutdown(context.Background()))
 			}
-			handler := NewHandler(nil, nil, nil, deps.admins, live, tc.originPatterns)
+			handler := NewHandler(nil, nil, nil, deps.admins, connections, tc.originPatterns)
 			handlerDone := make(chan struct{})
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				defer close(handlerDone)
@@ -389,7 +389,7 @@ func TestHandleAdminJoin(t *testing.T) {
 			case <-ctx.Done():
 				t.Fatal("handler did not return")
 			}
-			require.NoError(t, live.Shutdown(ctx), "the served connection must end")
+			require.NoError(t, connections.Shutdown(ctx), "the served connection must end")
 			if tc.admin != nil {
 				tc.admin.mu.Lock()
 				defer tc.admin.mu.Unlock()
