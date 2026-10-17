@@ -42,13 +42,20 @@ func NewServer(authorizer authorizer, sessionCreator sessionCreator, owners owne
 		wsRoutes = append(wsRoutes, group.WebSocketRoutes()...)
 	}
 
-	var restRequestMetrics *restMetrics
+	var restRequestMetrics, handshakeMetrics *requestMetrics
 	if len(restRoutes) > 0 {
 		patterns := make([]string, len(restRoutes))
 		for i, route := range restRoutes {
 			patterns[i] = route.Pattern
 		}
 		restRequestMetrics = newRESTMetrics(patterns)
+	}
+	if len(wsRoutes) > 0 {
+		patterns := make([]string, len(wsRoutes))
+		for i, route := range wsRoutes {
+			patterns[i] = route.Pattern
+		}
+		handshakeMetrics = newHandshakeMetrics(patterns)
 	}
 
 	for _, route := range restRoutes {
@@ -59,7 +66,7 @@ func NewServer(authorizer authorizer, sessionCreator sessionCreator, owners owne
 		mux.HandleFunc(route.Pattern, chain(mws, route.Handler))
 	}
 	for _, route := range wsRoutes {
-		mws := append([]routing.Middleware{wsObservability(route.Pattern)}, route.Middlewares...)
+		mws := append([]routing.Middleware{wsObservability(route.Pattern, handshakeMetrics)}, route.Middlewares...)
 		mux.HandleFunc(route.Pattern, chain(mws, route.Handler))
 	}
 	return &Server{mux: mux, live: liveConnections}
@@ -67,7 +74,7 @@ func NewServer(authorizer authorizer, sessionCreator sessionCreator, owners owne
 
 // restObservability starts and flushes the request log of every REST route
 // and records its request count and duration, so handlers never do either.
-func restObservability(pattern string, requestMetrics *restMetrics) routing.Middleware {
+func restObservability(pattern string, requestMetrics *requestMetrics) routing.Middleware {
 	return func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			ctx := logging.Start(r.Context())
@@ -82,15 +89,21 @@ func restObservability(pattern string, requestMetrics *restMetrics) routing.Midd
 }
 
 // wsObservability starts and flushes the request log of a WebSocket route's
-// handshake. Handlers return once the connection is admitted and running, so
-// the line is written then; the connection logs its own end under the same
-// trace.
-func wsObservability(pattern string) routing.Middleware {
+// handshake and records how it ended (101 when upgraded) and how long it took.
+// Handlers return once the connection is admitted and running; the connection
+// logs and measures its own life.
+func wsObservability(pattern string, handshakeMetrics *requestMetrics) routing.Middleware {
 	return func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			ctx := logging.Start(r.Context())
 			defer logging.FinishRequestLog(ctx, slog.Default(), pattern)
-			next(w, r.WithContext(ctx))
+
+			started := handshakeMetrics.now()
+			// The recorder unwraps to the real writer, so the upgrade can
+			// still hijack the connection.
+			recorder := newStatusRecorder(w)
+			next(recorder, r.WithContext(ctx))
+			handshakeMetrics.record(ctx, pattern, recorder.status, handshakeMetrics.now().Sub(started))
 		}
 	}
 }

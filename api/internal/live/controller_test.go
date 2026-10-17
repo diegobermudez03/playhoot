@@ -47,7 +47,7 @@ func TestShutdown(t *testing.T) {
 			tc := setup(t)
 			controller := New()
 			for range tc.connections {
-				require.True(t, controller.Go(tc.serve))
+				require.True(t, controller.start(tc.serve))
 			}
 
 			ctx, cancel := context.WithTimeout(context.Background(), tc.deadline)
@@ -55,7 +55,7 @@ func TestShutdown(t *testing.T) {
 			err := controller.Shutdown(ctx)
 
 			require.ErrorIs(t, err, tc.expectedErr)
-			require.False(t, controller.Go(func(context.Context) { t.Error("connection started after shutdown") }))
+			require.False(t, controller.start(func(context.Context) { t.Error("connection started after shutdown") }))
 		})
 	}
 }

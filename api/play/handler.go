@@ -5,7 +5,10 @@ package play
 import (
 	"context"
 
+	"github.com/coder/websocket"
+
 	"github.com/diegobermudez03/playhoot/api/internal/auth"
+	"github.com/diegobermudez03/playhoot/api/internal/live"
 	"github.com/diegobermudez03/playhoot/api/internal/routing"
 	"github.com/diegobermudez03/playhoot/identity"
 	sessionpkg "github.com/diegobermudez03/playhoot/play"
@@ -39,10 +42,10 @@ type adminAttacher interface {
 	AttachAdmin(ctx context.Context, sessionUUID string, userUUID string, ownerEpoch int64) (runtime.AttachAdminResult, error)
 }
 
-// liveRunner runs admitted live connections until they end or the server
-// shuts down; it refuses new ones once shutdown started.
+// liveRunner serves admitted live connections in the background until they
+// end or the server shuts down; it refuses new ones once shutdown started.
 type liveRunner interface {
-	Go(serve func(shutdown context.Context)) bool
+	Serve(ctx context.Context, conn *websocket.Conn, disconnect func(), loops ...live.Loop) bool
 }
 
 // Handler exposes the play domain's endpoints.

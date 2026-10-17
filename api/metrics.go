@@ -10,8 +10,8 @@ import (
 )
 
 // trackedStatusCodes are the HTTP status codes this API distinguishes in its
-// request metric. Any other code is counted as "other", so a handler writing
-// an unexpected code can never introduce a new series.
+// REST request metric. Any other code is counted as "other", so a handler
+// writing an unexpected code can never introduce a new series.
 var trackedStatusCodes = []int{
 	200, 201, 204,
 	301, 302, 304,
@@ -19,13 +19,23 @@ var trackedStatusCodes = []int{
 	500, 501, 502, 503, 504,
 }
 
+// handshakeStatusCodes are the codes a WebSocket handshake can end with: 101
+// when it was upgraded, otherwise why it was refused before the upgrade.
+var handshakeStatusCodes = []int{101, 400, 401, 403, 404, 405, 429, 500, 501, 503}
+
 const otherStatus = "other"
 
-// restMetrics measures finished REST requests the same way for every route:
-// how many ended with each HTTP status code, and how long they took. It only
-// describes the HTTP exchange; what an operation means for its own domain
-// (for example how many Sessions were created) is that domain's to count.
-type restMetrics struct {
+// requestMetricNames names one transport's request metrics.
+type requestMetricNames struct {
+	requests, requestsHelp string
+	duration, durationHelp string
+}
+
+// requestMetrics measures finished HTTP requests the same way for every
+// route: how many ended with each status code, and how long they took. It
+// only describes the HTTP exchange; what an operation means for its own
+// domain is that domain's to count.
+type requestMetrics struct {
 	requests    *metrics.Counter
 	duration    *metrics.Histogram
 	routes      map[string]metrics.LabelValue
@@ -34,41 +44,51 @@ type restMetrics struct {
 	now         func() time.Time
 }
 
-// newRESTMetrics declares the request metric for the given route patterns.
-// The patterns become the closed set of values of the route label, which is
-// why the metric is declared here, once every route is known, instead of
-// where the routes are declared.
-func newRESTMetrics(patterns []string) *restMetrics {
+// newRESTMetrics declares the REST request metrics for the given route
+// patterns, which become the closed set of the route label; that is why it is
+// declared once every route is known.
+func newRESTMetrics(patterns []string) *requestMetrics {
+	return newRequestMetrics(requestMetricNames{
+		requests:     "api_http_requests_total",
+		requestsHelp: "Finished REST requests, by matched route and response status code.",
+		duration:     "api_http_request_duration_seconds",
+		durationHelp: "Time taken to serve REST requests, by matched route.",
+	}, patterns, trackedStatusCodes)
+}
+
+// newHandshakeMetrics declares the WebSocket handshake metrics for the given
+// route patterns.
+func newHandshakeMetrics(patterns []string) *requestMetrics {
+	return newRequestMetrics(requestMetricNames{
+		requests:     "api_websocket_handshakes_total",
+		requestsHelp: "Finished WebSocket handshakes, by matched route and status code (101 when upgraded).",
+		duration:     "api_websocket_handshake_duration_seconds",
+		durationHelp: "Time taken to answer WebSocket handshakes, by matched route.",
+	}, patterns, handshakeStatusCodes)
+}
+
+func newRequestMetrics(names requestMetricNames, patterns []string, statusCodes []int) *requestMetrics {
 	routeLabel := metrics.NewLabel("route", patterns...)
 
-	statusValues := make([]string, 0, len(trackedStatusCodes)+1)
-	for _, code := range trackedStatusCodes {
+	statusValues := make([]string, 0, len(statusCodes)+1)
+	for _, code := range statusCodes {
 		statusValues = append(statusValues, strconv.Itoa(code))
 	}
 	statusValues = append(statusValues, otherStatus)
 	statusLabel := metrics.NewLabel("status", statusValues...)
 
-	m := &restMetrics{
-		requests: metrics.NewCounter(
-			"api_http_requests_total",
-			"Finished REST requests, by matched route and response status code.",
-			routeLabel, statusLabel,
-		),
-		duration: metrics.NewHistogram(
-			"api_http_request_duration_seconds",
-			"Time taken to serve REST requests, by matched route.",
-			metrics.LatencyBuckets(),
-			routeLabel,
-		),
+	m := &requestMetrics{
+		requests:    metrics.NewCounter(names.requests, names.requestsHelp, routeLabel, statusLabel),
+		duration:    metrics.NewHistogram(names.duration, names.durationHelp, metrics.LatencyBuckets(), routeLabel),
 		routes:      make(map[string]metrics.LabelValue, len(patterns)),
-		statuses:    make(map[int]metrics.LabelValue, len(trackedStatusCodes)),
+		statuses:    make(map[int]metrics.LabelValue, len(statusCodes)),
 		otherStatus: statusLabel.Value(otherStatus),
 		now:         time.Now,
 	}
 	for _, pattern := range patterns {
 		m.routes[pattern] = routeLabel.Value(pattern)
 	}
-	for _, code := range trackedStatusCodes {
+	for _, code := range statusCodes {
 		m.statuses[code] = statusLabel.Value(strconv.Itoa(code))
 	}
 	return m
@@ -76,7 +96,7 @@ func newRESTMetrics(patterns []string) *restMetrics {
 
 // record measures one finished request that took elapsed and answered with
 // status. pattern must be one of the patterns the metrics were declared with.
-func (m *restMetrics) record(ctx context.Context, pattern string, status int, elapsed time.Duration) {
+func (m *requestMetrics) record(ctx context.Context, pattern string, status int, elapsed time.Duration) {
 	statusValue, tracked := m.statuses[status]
 	if !tracked {
 		statusValue = m.otherStatus

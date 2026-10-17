@@ -103,16 +103,7 @@ func (h *Handler) handleAdminJoin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	session := newAdminSession(conn, admin)
-	served := h.live.Go(func(shutdown context.Context) {
-		live.Serve(ctx, shutdown, conn, admin.Disconnect, session.answerRequests, session.sendViews, session.closeOnRuntimeEnd)
-	})
-	if !served {
-		_ = conn.Close(websocket.StatusGoingAway, "server shutting down")
-		admin.Disconnect()
-		logging.LogFields(ctx, logging.Field("connection", "refused_shutting_down"))
-		return
-	}
-	logging.LogFields(ctx, logging.Field("connection", "opened"))
+	h.live.Serve(ctx, conn, admin.Disconnect, session.answerRequests, session.sendViews, session.closeOnRuntimeEnd)
 }
 
 // adminSession is one served admin connection.

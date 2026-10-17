@@ -1,6 +1,6 @@
 // Package live runs the API edge's live connections: it owns their goroutines
-// so they can be ended on shutdown, drives each connection's loops, and reads
-// and writes its JSON messages. It knows no domain.
+// so they can be ended on shutdown, drives each connection's loops, reads and
+// writes its JSON messages, and measures them. It knows no domain.
 package live
 
 import (
@@ -45,11 +45,11 @@ type loopResult struct {
 	ended bool
 }
 
-// Serve runs loops on conn until one ends the connection or shutdown is
-// cancelled, then stops the rest, calls disconnect, and logs the end under
-// ctx's trace. ctx must not be the request's context, which ends at the
-// upgrade.
-func Serve(ctx context.Context, shutdown context.Context, conn *websocket.Conn, disconnect func(), loops ...Loop) {
+// serve runs loops on conn until one ends the connection or shutdown is
+// cancelled, then stops the rest, calls disconnect, and logs and measures the
+// end under ctx's trace. ctx must not be the request's context, which ends at
+// the upgrade.
+func serve(ctx context.Context, shutdown context.Context, conn *websocket.Conn, disconnect func(), loops ...Loop) {
 	started := time.Now()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -149,6 +149,9 @@ func WriteMessage(ctx context.Context, conn *websocket.Conn, message any) (End, 
 
 func logConnectionEnd(ctx context.Context, end End, duration time.Duration) {
 	endCtx := logging.Start(ctx)
+	connectionsActive.Dec(endCtx)
+	connectionsClosed.Inc(endCtx, causeLabel.Value(string(end.Cause)))
+	connectionDuration.ObserveDuration(endCtx, duration)
 	logging.LogFields(endCtx,
 		logging.Field("close_cause", string(end.Cause)),
 		logging.Field("connection_duration_ms", duration.Milliseconds()),

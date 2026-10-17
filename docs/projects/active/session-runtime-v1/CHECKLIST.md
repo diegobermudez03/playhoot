@@ -418,12 +418,12 @@ Progress note (2026-10-15): `GET /sessions/{sessionUUID}/admin` is implemented a
 
 ## Y. Observability: monitoring and metrics (MANDATORY, not in the plan)
 
-Ownership rule (`docs/engineering/standards/metrics.md`): business-outcome metrics below (sessions created, joins, starts, recoveries, ...) are declared and recorded by the Session domain, the owner of that logic, never by an endpoint. The API edge only measures HTTP per route (request count by status, duration), centrally in `restObservability`.
+Ownership rule (`docs/engineering/standards/metrics.md`): business-outcome metrics below (sessions created, joins, starts, recoveries, ...) are declared and recorded by the Session domain, the owner of that logic, never by an endpoint. The API edge only measures its own transport: HTTP per route (request count by status, duration) centrally in `restObservability` and `wsObservability`, and the live connections it runs in `api/internal/live`.
 
 Foundation (existing: `logging` package, `monitoring` package with alerts only, `docs/engineering/standards/logging.md`):
 - [x] Metrics entry-point API exists: `monitoring/metrics` (Counter, Gauge, Histogram; domain-declared closed-set labels; every call written to the request log). Emission is not implemented yet.
 - [ ] Metrics emission to the real backend implemented in `monitoring/metrics` (decision: provider/format; GCP Cloud Run target)
-- [ ] Metrics applied centrally for REST and WebSocket in `api` Server, per the Centralized Observability rule (REST done: `api_http_requests_total{route,status}` and `api_http_request_duration_seconds{route}` in `restObservability`; WebSocket pending)
+- [x] Metrics applied centrally for REST and WebSocket in `api` Server, per the Centralized Observability rule (`api_http_requests_total{route,status}` and `api_http_request_duration_seconds{route}` in `restObservability`; `api_websocket_handshakes_total{route,status}` and `api_websocket_handshake_duration_seconds{route}` in `wsObservability`)
 - [ ] Per-message logging on live connections follows the logging standard (each inbound message is its own entry point; trace correlated per connection)
 - [ ] Alerts use the monitoring abstraction; internal inconsistencies follow `data-integrity.md`
 - [ ] Metric cardinality is controlled (no per-session or per-user labels on high-volume metrics)
@@ -435,10 +435,10 @@ Session lifecycle:
 - [ ] Start duration end-to-end and start-failure counts (incl. orphan checkpoints)
 
 Connections and protocol:
-- [ ] Open WebSockets by role (PLAYER/ADMIN); attach/detach rates; transport-grace expirations
+- [ ] Open WebSockets by role (PLAYER/ADMIN); attach/detach rates; transport-grace expirations (API side so far, without role: `api_live_connections_active`, `api_live_connections_closed_total{close_cause}`, `api_live_connection_duration_seconds` in `api/internal/live`; per-role and admission counts belong to the Runtime)
 - [ ] Logical disconnects, leaves, rejoins (accepted/rejected), device switches
 - [ ] Protocol/contract rejections by reason; rate-limit hits by limit type
-- [ ] Inbound/outbound message and byte rates; outbound backpressure/slow-consumer events
+- [ ] Inbound/outbound message and byte rates; outbound backpressure/slow-consumer events (network message counts belong in `api/internal/live`; per-Session aggregates such as messages per Session belong to the Runtime)
 
 Execution timeline:
 - [ ] Processing boundary duration, batch size, queue depth (pending timeline operations)

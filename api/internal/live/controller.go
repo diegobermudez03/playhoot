@@ -3,9 +3,14 @@ package live
 import (
 	"context"
 	"sync"
+
+	"github.com/coder/websocket"
+
+	"github.com/diegobermudez03/playhoot/logging"
 )
 
-// Controller runs live connections and ends them on Shutdown.
+// Controller runs the live connections of this instance and ends them on
+// Shutdown.
 type Controller struct {
 	mu       sync.Mutex
 	stopping bool
@@ -21,10 +26,29 @@ func New() *Controller {
 	return &Controller{shutdown: shutdown, signalShutdown: signalShutdown}
 }
 
-// Go runs serve in its own goroutine. serve's shutdown context is cancelled
-// when Shutdown starts, and it must then end its connection promptly. Go
-// returns false, without running serve, once Shutdown has started.
-func (c *Controller) Go(serve func(shutdown context.Context)) bool {
+// Serve runs conn's loops in the background until one ends the connection or
+// the server shuts down, then calls disconnect. ctx must outlive the request.
+// Once Shutdown started it refuses instead: it closes conn as going away,
+// calls disconnect, and returns false.
+func (c *Controller) Serve(ctx context.Context, conn *websocket.Conn, disconnect func(), loops ...Loop) bool {
+	// Counted before starting, while ctx's request log is still open, so the
+	// connection's own end is never recorded first.
+	connectionsActive.Inc(ctx)
+	started := c.start(func(shutdown context.Context) {
+		serve(ctx, shutdown, conn, disconnect, loops...)
+	})
+	if !started {
+		connectionsActive.Dec(ctx)
+		_ = conn.Close(websocket.StatusGoingAway, "server shutting down")
+		disconnect()
+		logging.LogFields(ctx, logging.Field("connection", "refused_shutting_down"))
+		return false
+	}
+	logging.LogFields(ctx, logging.Field("connection", "opened"))
+	return true
+}
+
+func (c *Controller) start(run func(shutdown context.Context)) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.stopping {
@@ -33,7 +57,7 @@ func (c *Controller) Go(serve func(shutdown context.Context)) bool {
 	c.running.Add(1)
 	go func() {
 		defer c.running.Done()
-		serve(c.shutdown)
+		run(c.shutdown)
 	}()
 	return true
 }

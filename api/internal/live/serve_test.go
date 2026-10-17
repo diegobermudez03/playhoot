@@ -154,7 +154,7 @@ func TestServe(t *testing.T) {
 				if err != nil {
 					return
 				}
-				Serve(context.WithoutCancel(r.Context()), shutdown, conn, func() { disconnects.Add(1) }, tc.loops(conn)...)
+				serve(context.WithoutCancel(r.Context()), shutdown, conn, func() { disconnects.Add(1) }, tc.loops(conn)...)
 			}))
 			t.Cleanup(server.Close)
 
@@ -181,14 +181,22 @@ func TestServe(t *testing.T) {
 			require.Equal(t, int32(1), disconnects.Load())
 
 			var record struct {
-				Msg         string `json:"msg"`
-				CloseCause  string `json:"close_cause"`
-				CloseDetail string `json:"close_detail"`
+				Msg         string           `json:"msg"`
+				CloseCause  string           `json:"close_cause"`
+				CloseDetail string           `json:"close_detail"`
+				Metrics     []map[string]any `json:"metrics"`
 			}
 			require.NoError(t, json.Unmarshal(bytes.TrimSpace(output.Bytes()), &record))
 			require.Equal(t, "live connection closed", record.Msg)
 			require.Equal(t, string(tc.expectedCloseCause), record.CloseCause)
 			require.Equal(t, tc.expectedCloseDetail, record.CloseDetail)
+			require.Len(t, record.Metrics, 3)
+			require.Equal(t, map[string]any{"metric": "api_live_connections_active", "operation": "add", "value": float64(-1), "labels": map[string]any{}}, record.Metrics[0])
+			require.Equal(t, map[string]any{
+				"metric": "api_live_connections_closed_total", "operation": "add", "value": float64(1),
+				"labels": map[string]any{"close_cause": string(tc.expectedCloseCause)},
+			}, record.Metrics[1])
+			require.Equal(t, "api_live_connection_duration_seconds", record.Metrics[2]["metric"])
 		})
 	}
 }

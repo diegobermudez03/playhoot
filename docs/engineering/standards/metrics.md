@@ -20,8 +20,10 @@ A metric is declared and recorded by the domain/package that owns the logic whos
   - requests finished, by matched route and HTTP status code (the HTTP status is the success/error signal at this level);
   - request duration, by matched route (to see which endpoints are slowest and the typical duration per request type).
 
+  WebSocket routes are measured the same way, centrally in `wsObservability`, as the HTTP exchange they are: handshakes by route and status (`101` when upgraded, otherwise why it was refused before the upgrade) and handshake duration. What happens after the upgrade (whether the connection was admitted, what it exchanged) is not an HTTP outcome and is not measured there.
+
   Handlers do not record request counts, outcomes, or durations themselves.
-- **A component may measure its own behavior.** A middleware or other edge component may declare metrics about what it itself does, as the component that owns that behavior. For example, the authorization middleware counts its checks by outcome (allowed, unauthenticated, forbidden, missing token, error) and the time Identity took to answer. These describe the middleware, not Identity's domain; they do not replace metrics Identity may declare about its own logic.
+- **A component may measure its own behavior.** A middleware or other edge component may declare metrics about what it itself does, as the component that owns that behavior. For example, the authorization middleware counts its checks by outcome (allowed, unauthenticated, forbidden, missing token, error) and the time Identity took to answer, and the live connection controller (`api/internal/live`) measures the connections it runs: how many are active, how long they lasted, and why they closed. These describe the middleware, not Identity's domain; they do not replace metrics Identity may declare about its own logic.
 
 ## Labels Have Closed Value Sets
 
