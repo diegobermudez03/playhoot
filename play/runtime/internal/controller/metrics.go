@@ -1,0 +1,14 @@
+package controller
+
+import "github.com/diegobermudez03/playhoot/monitoring/metrics"
+
+var (
+	controllersCreated = metrics.NewCounter(
+		"play_runtime_controllers_created_total",
+		"Session controllers this instance created.",
+	)
+	controllersRetired = metrics.NewCounter(
+		"play_runtime_controllers_retired_total",
+		"Session controllers replaced because their ownership epoch was stale.",
+	)
+)

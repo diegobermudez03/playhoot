@@ -39,10 +39,13 @@ play/
     usecases/
       ownership/              # LocateOrClaimOwner (placeholder: single instance, no registry)
     workflows/
-      liveconnection/         # Manager.AttachAdmin (placeholder: admits everyone)
+      liveconnection/         # Manager.AttachAdmin: eligibility check, then attach to the Session's controller
+    internal/
+      controller/             # per-instance controller registry and the Session controller (today: ADMIN connections only)
   session/
     migration/                # exposes Migrate(db) and Seed(db) (test data) to the application's migrations.go
-    usecases/                 # single-capability use cases (empty)
+    usecases/
+      checkadminjoin/         # EligibleToJoinAsAdmin (placeholder: always eligible)
     workflows/
       sessionlifecycle/       # Manager + one file per step (step_create_session.go) + internal/repo
     internal/

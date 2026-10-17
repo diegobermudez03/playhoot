@@ -199,8 +199,12 @@ func (s *adminSession) closeOnRuntimeEnd(ctx context.Context) (live.End, bool) {
 	defer s.answering.Unlock()
 
 	status := websocket.StatusInternalError
-	if end.Reason == runtime.EndSessionEnded || end.Reason == runtime.EndDisconnected {
+	switch end.Reason {
+	case runtime.EndSessionEnded, runtime.EndDisconnected:
 		status = websocket.StatusNormalClosure
+	case runtime.EndOwnerChanged:
+		// Tells the client to reconnect, which routes it to the current owner.
+		status = websocket.StatusServiceRestart
 	}
 	_ = s.conn.Close(status, string(end.Reason))
 	return live.End{Cause: live.CauseEndedByOwner, Detail: string(end.Reason)}, true

@@ -54,6 +54,7 @@ sequenceDiagram
     Owner-->>API: owned here (epoch) / session unavailable (404) / owned elsewhere (503, no forwarding yet)
     API->>API: upgrade (playhoot.v1, allowed origin)
     API->>Live: AttachAdmin(sessionUUID, userUUID, epoch)
+    Live->>Live: EligibleToJoinAsAdmin (play/session), then find or create the Session's controller
     alt rejected
         Live-->>API: rejected + reason
         API->>Client: rejected message, close 1008
@@ -78,4 +79,4 @@ Implemented behavior:
 
 - Identity and owner routing both happen before the upgrade, in that order, so an unauthorized caller never makes a Session owned. Logical admission happens after the upgrade, in the Runtime.
 - The Runtime defines each kind of connection's operations and types and never sees the socket; each API endpoint maps them to and from its own JSON messages (`api/play/admin_join.go`).
-- Ownership (`LocateOrClaimOwner`) and admission (`AttachAdmin`) are placeholders today: every Session is owned by this instance under epoch 1, and every authorized caller is admitted, any perspective is accepted without views, and cancelling only ends the connection (`play/CURRENT_STATE.md`). Identity's authorization is the same placeholder as for Create Session.
+- Ownership (`LocateOrClaimOwner`) is a placeholder today (every Session is owned by this instance under epoch 1). Admission is real on the Runtime side (eligibility, controller find-or-create, ADMIN connection registered), but the durable admin eligibility check answers eligible for everyone, and the admin operations answer "not implemented" (`play/CURRENT_STATE.md`). Identity's authorization is the same placeholder as for Create Session.

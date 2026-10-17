@@ -42,3 +42,20 @@ type CreateSessionResult struct {
 // ErrIdempotencyConflict is returned when an idempotency key is reused for a
 // request that differs from the one it was first used with.
 var ErrIdempotencyConflict = errors.New("idempotency key reused with a conflicting request")
+
+// AdminJoinEligibility is whether a user may open an admin connection to a
+// Session.
+type AdminJoinEligibility string
+
+const (
+	// AdminJoinEligible means the Session is in LOBBY or RUNNING and the user
+	// created it.
+	AdminJoinEligible AdminJoinEligibility = "eligible"
+
+	AdminJoinSessionNotFound AdminJoinEligibility = "session_not_found"
+
+	// AdminJoinSessionNotJoinable means the Session already ended.
+	AdminJoinSessionNotJoinable AdminJoinEligibility = "session_not_joinable"
+
+	AdminJoinNotCreator AdminJoinEligibility = "not_creator"
+)

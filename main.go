@@ -21,6 +21,7 @@ import (
 	"github.com/diegobermudez03/playhoot/orchestrator/playlifecycle"
 	"github.com/diegobermudez03/playhoot/play/runtime/usecases/ownership"
 	"github.com/diegobermudez03/playhoot/play/runtime/workflows/liveconnection"
+	"github.com/diegobermudez03/playhoot/play/session/usecases/checkadminjoin"
 	"github.com/diegobermudez03/playhoot/play/session/workflows/sessionlifecycle"
 	"github.com/joho/godotenv"
 	"gorm.io/driver/postgres"
@@ -90,7 +91,7 @@ func run() error {
 		authorize.New(),
 		playLifecycle,
 		ownership.New(),
-		liveconnection.New(),
+		liveconnection.New(checkadminjoin.New()),
 		envVars.WebSocketAllowedOrigins,
 	)
 

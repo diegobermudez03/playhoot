@@ -1,78 +1,64 @@
 // Package liveconnection is the workflow of a client's live connection to a
 // Session, from admission until it ends.
-//
-// Placeholder: there is no live Session yet, so every caller is admitted.
 package liveconnection
 
 import (
 	"context"
-	"sync"
+	"fmt"
 
+	sessionpkg "github.com/diegobermudez03/playhoot/play"
 	"github.com/diegobermudez03/playhoot/play/runtime"
+	"github.com/diegobermudez03/playhoot/play/runtime/internal/controller"
 )
 
-// Manager is the live connection workflow controller.
-type Manager struct{}
+//go:generate mockgen -package=liveconnection -destination=admin_join_checker_mock_test.go . adminJoinChecker
 
-// New constructs a Manager.
-func New() *Manager {
-	return &Manager{}
+// adminJoinChecker is the durable Session's side of admitting an admin.
+type adminJoinChecker interface {
+	EligibleToJoinAsAdmin(ctx context.Context, sessionUUID string, userUUID string) (sessionpkg.AdminJoinEligibility, error)
+}
+
+// Manager is the live connection workflow controller.
+type Manager struct {
+	sessions    adminJoinChecker
+	controllers *controller.Registry
+}
+
+// New constructs a Manager. sessions decides who may join a Session as admin.
+func New(sessions adminJoinChecker) *Manager {
+	return &Manager{sessions: sessions, controllers: controller.NewRegistry()}
 }
 
 // AttachAdmin admits userUUID's admin connection into sessionUUID, routed
-// here under ownerEpoch. An error means admission could not be decided.
-//
-// Placeholder: admits everyone, sends no views, and cancelling only ends the
-// connection.
-func (m *Manager) AttachAdmin(_ context.Context, _ string, _ string, _ int64) (runtime.AttachAdminResult, error) {
-	connection := newPlaceholderConnection()
+// here under ownerEpoch, creating the Session's controller if it has none. An
+// error means admission could not be decided.
+func (m *Manager) AttachAdmin(ctx context.Context, sessionUUID string, userUUID string, ownerEpoch int64) (runtime.AttachAdminResult, error) {
+	eligibility, err := m.sessions.EligibleToJoinAsAdmin(ctx, sessionUUID, userUUID)
+	if err != nil {
+		return runtime.AttachAdminResult{}, fmt.Errorf("checking admin eligibility: %w", err)
+	}
+	switch eligibility {
+	case sessionpkg.AdminJoinEligible:
+	case sessionpkg.AdminJoinNotCreator:
+		return rejectAdmin(ctx, runtime.RejectNotCreator), nil
+	case sessionpkg.AdminJoinSessionNotFound, sessionpkg.AdminJoinSessionNotJoinable:
+		return rejectAdmin(ctx, runtime.RejectSessionUnavailable), nil
+	default:
+		return runtime.AttachAdminResult{}, fmt.Errorf("unknown admin eligibility %q", eligibility)
+	}
+
+	sessionController, ok := m.controllers.ControllerFor(ctx, sessionUUID, ownerEpoch)
+	if !ok {
+		return rejectAdmin(ctx, runtime.RejectOwnerChanged), nil
+	}
+	adminAttaches.Inc(ctx, attachOutcomeLabel.Value("accepted"))
 	return runtime.AttachAdminResult{
-		Outcome: runtime.AttachAccepted,
-		Connection: runtime.AdminConnection{
-			SelectPerspective: func(context.Context, string) (runtime.SelectPerspectiveResult, error) {
-				return runtime.SelectPerspectiveResult{Outcome: runtime.PerspectiveSelected}, nil
-			},
-			CancelSession: func(context.Context) (runtime.CancelSessionResult, error) {
-				connection.end(runtime.EndSessionEnded)
-				return runtime.CancelSessionResult{Outcome: runtime.SessionCancelled}, nil
-			},
-			NextView: func(ctx context.Context) (runtime.PlayerView, bool) {
-				select {
-				case <-connection.ended:
-				case <-ctx.Done():
-				}
-				return runtime.PlayerView{}, false
-			},
-			Ended: connection.wait,
-			Disconnect: func() {
-				connection.end(runtime.EndDisconnected)
-			},
-		},
+		Outcome:    runtime.AttachAccepted,
+		Connection: sessionController.AttachAdmin(userUUID),
 	}, nil
 }
 
-type placeholderConnection struct {
-	once   sync.Once
-	ended  chan struct{}
-	reason runtime.EndReason
-}
-
-func newPlaceholderConnection() *placeholderConnection {
-	return &placeholderConnection{ended: make(chan struct{})}
-}
-
-func (c *placeholderConnection) end(reason runtime.EndReason) {
-	c.once.Do(func() {
-		c.reason = reason
-		close(c.ended)
-	})
-}
-
-func (c *placeholderConnection) wait(ctx context.Context) (runtime.ConnectionEnd, bool) {
-	select {
-	case <-c.ended:
-		return runtime.ConnectionEnd{Reason: c.reason}, true
-	case <-ctx.Done():
-		return runtime.ConnectionEnd{}, false
-	}
+func rejectAdmin(ctx context.Context, reason runtime.RejectReason) runtime.AttachAdminResult {
+	adminAttaches.Inc(ctx, attachOutcomeLabel.Value(string(reason)))
+	return runtime.AttachAdminResult{Outcome: runtime.AttachRejected, Rejection: reason}
 }

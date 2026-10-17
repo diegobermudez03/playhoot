@@ -20,7 +20,7 @@ Source of behavior: `plans/session_runtime/Playhoot_Session_Runtime_Architecture
 
 Decided 2026-10-15 in SESSION-ADR-0029: ownership in `play/runtime`, routing at the API edge, one atomic locate-or-claim, epoch as fencing token, placement policy inside the ownership implementation.
 
-Progress note (2026-10-15): the API side is implemented and tested (`api/play/owner_routing.go`, before every live upgrade); `LocateOrClaimOwner` itself is a placeholder (see Placeholders). Release and the registry are not implemented.
+Progress note (2026-10-15): the API side is implemented and tested (`api/play/owner_routing.go`, before every live upgrade); `LocateOrClaimOwner` itself is a placeholder (see Placeholders). Release and the registry are not implemented. The Runtime already fences by epoch when attaching (2026-10-17): a request under an older epoch than the Session's controller is rejected (`owner_changed`); a request under a newer one retires the stale controller (its connections end with `owner_changed`, closed as 1012 so clients reconnect) and creates a new one. Recovering the new controller's state is pending (Q).
 
 - [ ] Owner abstraction exists: Resolve(sessionID), Claim(sessionID), Release(sessionID)
 - [ ] Exactly one Runtime pod owns an active Session; two pods can never mutate the same Session concurrently (decision: lease/epoch/fencing mechanism)
@@ -125,17 +125,18 @@ Completed 2026-10-15: implemented end to end and verified (unit, repository and 
 
 ## E. Admin join (§3, §18)
 
-Progress note (2026-10-15): `GET /sessions/{sessionUUID}/admin` is implemented and tested on the API side (WebSocket auth with header or Kubernetes-style token subprotocol, `JOIN_SESSION_AS_ADMIN`, owner routing, `playhoot.v1` upgrade with origin check, attach, message pump) and tested by hand locally. Ownership and `AttachAdmin` are placeholders (see Placeholders), so no Runtime-side item below is done.
+Progress note (2026-10-17): admission is implemented end to end. The API side (WebSocket auth with header or Kubernetes-style token subprotocol, `JOIN_SESSION_AS_ADMIN`, owner routing, `playhoot.v1` upgrade with origin check, admin wire messages) and the Runtime side (`liveconnection.Manager.AttachAdmin`: asks the durable Session `EligibleToJoinAsAdmin`, then finds or creates the Session's controller and registers the ADMIN connection) are tested. Still placeholders: the durable eligibility check (always eligible) and ownership (see Placeholders). Pending: the admin messages themselves; `SelectPerspective` and `CancelSession` exist but answer "not implemented" (the API closes the connection as a server failure), and no view is ever produced.
 
 - [x] Authenticated account required (the Session Runtime side is done: the route requires `JOIN_SESSION_AS_ADMIN`, which Identity must answer forbidden for guests; Identity's real behavior is out of scope and tracked under Placeholders)
-- [ ] Owner pod resolved before upgrade
-- [ ] Runtime asks /play/session to validate: Session exists + connectable state + userUUID == creatorUUID
-- [ ] Accepted: ADMIN logical connection registered; no gameplay participant, no extra durable membership row
-- [ ] Rejected: rejection sent, socket closed
-- [ ] Multiple simultaneous ADMIN connections for the same creator
+- [x] Owner pod resolved before upgrade (the routing step is done; ownership itself is a placeholder tracked under Placeholders)
+- [x] Runtime asks /play/session to validate: Session exists + connectable state + userUUID == creatorUUID (the Runtime side is done: it calls `EligibleToJoinAsAdmin` and honors the answer; the durable check is a placeholder tracked under Placeholders)
+- [x] Accepted: ADMIN logical connection registered; no gameplay participant, no extra durable membership row
+- [x] Rejected: rejection sent, socket closed
+- [x] Multiple simultaneous ADMIN connections for the same creator
+- [ ] Admin operations implemented: `SelectPerspective` and `CancelSession` (today they answer "not implemented")
 - [ ] Admin selects a player perspective; receives exactly projection(P), FULL, with a new baseline per selection
 - [ ] No omniscient admin projection
-- [ ] Admin reconnect = just another admin WebSocket (no game-level admin rejoin)
+- [x] Admin reconnect = just another admin WebSocket (no game-level admin rejoin)
 - [ ] Admin connections do not receive participant SAMPLE acknowledgements
 
 ---
@@ -175,10 +176,12 @@ Progress note (2026-10-15): `GET /sessions/{sessionUUID}/admin` is implemented a
 
 ## H. SessionController (§6)
 
+Progress note (2026-10-17): a first, minimal controller exists (`play/runtime/internal/controller`): a per-instance registry finds or creates one controller per Session (refusing one under another ownership epoch), and the controller only holds its attached ADMIN connections. Admission is serialized with a mutex, not yet a single mutation lane. Controllers are never destroyed yet.
+
 - [ ] Exactly one active controller per active Session on the owner pod
 - [ ] Owns live state: connections, userUUID<->ParticipantID map, participant status, per-participant logical SAMPLE state, SAMPLE ingress/dedup buffers, COMMAND pending/processed tokens, timeline ordering, effective Session time, executedThroughSessionTime, pending timers, Sandbox context ID, confirmed state mirror, PRNG state, contextRevision, projection cache, per-viewer replication state, checkpoint orchestration, replay capture orchestration
 - [ ] Three state levels distinct and consistent: Sandbox context / Runtime confirmed mirror / durable checkpoint
-- [ ] Controller created only when a Session first needs live behavior
+- [x] Controller created only when a Session first needs live behavior (created on the first admitted live connection)
 - [ ] Controller destroyed on terminal states (with owner release and Sandbox context destruction)
 
 ---
@@ -495,7 +498,9 @@ Everything here is wired into the running system, so a request flows through it,
 - [x] Session creation stand-in (`unwiredSessionCreation` in `unwired.go`, in scope): always failed. Replaced by `sessionlifecycle.Manager.CreateSession` on 2026-10-15; `unwired.go` was deleted.
 - [ ] No flow creates `play_games` / `play_game_versions` (in scope, see B): nothing registers Games or marks a version EXECUTABLE yet, so every Session creation answers `game_unavailable` until those rows exist (outside production, test-data migrations seed one playable and one unavailable Game; see `play/CURRENT_STATE.md`). Real behavior: the operation that validates a version's scripts, freezes it, and sets it EXECUTABLE as the Game's current version.
 - [ ] Live Session ownership (`play/runtime/usecases/ownership`, in scope, see A1): `LocateOrClaimOwner` answers `owned_here` with epoch 1 for any Session UUID, without looking the Session up or keeping a registry. Real behavior: claim only Sessions in LOBBY/RUNNING, in-process registry with release; shared registry + lease/heartbeat before multi-instance (SESSION-ADR-0029).
-- [ ] Admin admission (`play/runtime/workflows/liveconnection`, in scope, see E): `AttachAdmin` admits every caller; selecting a perspective is accepted but no view is ever sent, and cancelling only ends the connection. Real behavior: epoch check, durable Session validation (exists, connectable, caller is creator), ADMIN logical connection on the controller, rejection + close otherwise.
+- [ ] Admin join eligibility (`play/session/usecases/checkadminjoin`, in scope, see E): `EligibleToJoinAsAdmin` answers eligible for every user and Session. Real behavior: the Session exists, is in LOBBY or RUNNING, and the user is its creator.
+- [ ] Admin operations (`play/runtime/internal/controller`, in scope, see E): `SelectPerspective` and `CancelSession` return "not implemented" and `NextView` never produces a view. Real behavior: perspective selection with FULL projection, host cancellation.
+- [ ] Controller lifetime (`play/runtime/internal/controller`, in scope, see H): controllers are created but never destroyed or released, so they accumulate for the process lifetime. Real behavior: destroyed on terminal states with owner release.
 - [ ] Forwarding to a remote owner (`api/play/owner_routing.go`, in scope, see A1): a Session owned by another instance is answered `503`; unreachable while single-instance. Real behavior: proxy the connection to the owner (gateway), decided with the multi-instance topology.
 - [ ] Metrics emission (`monitoring/metrics`, `record`): measurements are only written to the request log; nothing is sent to a metrics backend (see Y).
 

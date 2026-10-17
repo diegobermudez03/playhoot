@@ -52,6 +52,13 @@ func (f *fakeAdmin) end(reason runtime.EndReason) {
 	})
 }
 
+// endedBy returns a fake admin the Runtime has already ended with reason.
+func endedBy(reason runtime.EndReason) *fakeAdmin {
+	admin := newFakeAdmin()
+	admin.end(reason)
+	return admin
+}
+
 func (f *fakeAdmin) connection() runtime.AdminConnection {
 	return runtime.AdminConnection{
 		SelectPerspective: func(_ context.Context, participantID string) (runtime.SelectPerspectiveResult, error) {
@@ -193,6 +200,16 @@ func TestHandleAdminJoin(t *testing.T) {
 					`{"type":"player_view","participant_id":"P1","full":true,"state":{"over":true}}`,
 				},
 				expectedCloseStatus: websocket.StatusNormalClosure,
+				expectedDisconnects: 1,
+			}
+		},
+		"connection_ended_for_an_owner_change_asks_the_client_to_reconnect": func(t *testing.T, deps dependencies) test {
+			admin := endedBy(runtime.EndOwnerChanged)
+			accept(deps, admin)
+			return test{
+				protocols:           []string{"playhoot.v1"},
+				admin:               admin,
+				expectedCloseStatus: websocket.StatusServiceRestart,
 				expectedDisconnects: 1,
 			}
 		},

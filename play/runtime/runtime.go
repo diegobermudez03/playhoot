@@ -63,6 +63,10 @@ const (
 
 	// EndSessionEnded means the Session reached a terminal state.
 	EndSessionEnded EndReason = "session_ended"
+
+	// EndOwnerChanged means this instance no longer serves the Session under
+	// the connection's ownership; the client should reconnect.
+	EndOwnerChanged EndReason = "owner_changed"
 )
 
 // ConnectionEnd is how a live connection ended on the Runtime's side.
