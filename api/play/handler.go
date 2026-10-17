@@ -75,7 +75,7 @@ func NewHandler(authorizer authorizer, creator sessionCreator, owners ownerLocat
 func (h *Handler) RESTRoutes() []routing.Route {
 	return []routing.Route{
 		{
-			Pattern: "POST /sessions",
+			Pattern: "POST /v1/sessions",
 			Handler: h.handleCreateSession,
 			Middlewares: []routing.Middleware{
 				auth.Require(h.authorizer, identity.OperationCreateSession),
@@ -89,7 +89,7 @@ func (h *Handler) RESTRoutes() []routing.Route {
 func (h *Handler) WebSocketRoutes() []routing.Route {
 	return []routing.Route{
 		{
-			Pattern: "GET /sessions/{sessionUUID}/admin",
+			Pattern: "GET /v1/sessions/{sessionUUID}/admin",
 			Handler: h.handleAdminJoin,
 			Middlewares: []routing.Middleware{
 				auth.RequireWebSocket(h.authorizer, identity.OperationJoinSessionAsAdmin),
