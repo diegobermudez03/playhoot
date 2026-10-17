@@ -15,6 +15,10 @@ const (
 	// OperationJoinSessionAsAdmin is opening an admin connection to a live
 	// Session. It requires a real account, not a guest-only identity.
 	OperationJoinSessionAsAdmin Operation = "JOIN_SESSION_AS_ADMIN"
+
+	// OperationJoinSessionAsPlayer is opening a player connection to a live
+	// Session. Guests may perform it.
+	OperationJoinSessionAsPlayer Operation = "JOIN_SESSION_AS_PLAYER"
 )
 
 // AccessDecision is Identity's answer to whether a caller may perform an

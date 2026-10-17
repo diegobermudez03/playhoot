@@ -23,6 +23,7 @@ import (
 // controls, recording what the handler asked of it.
 type fakeAdmin struct {
 	views     chan runtime.PlayerView
+	lobby     chan runtime.LobbyUpdate
 	selectErr error
 	// finalView, when set, is produced by CancelSession right before the
 	// Session ends.
@@ -38,7 +39,11 @@ type fakeAdmin struct {
 }
 
 func newFakeAdmin(views ...runtime.PlayerView) *fakeAdmin {
-	admin := &fakeAdmin{views: make(chan runtime.PlayerView, len(views)+1), ended: make(chan struct{})}
+	admin := &fakeAdmin{
+		views: make(chan runtime.PlayerView, len(views)+1),
+		lobby: make(chan runtime.LobbyUpdate, 4),
+		ended: make(chan struct{}),
+	}
 	for _, view := range views {
 		admin.views <- view
 	}
@@ -70,6 +75,9 @@ func (f *fakeAdmin) connection() runtime.AdminConnection {
 			}
 			return runtime.SelectPerspectiveResult{Outcome: runtime.PerspectiveSelected}, nil
 		},
+		StartSession: func(context.Context) (runtime.StartSessionResult, error) {
+			return runtime.StartSessionResult{Outcome: runtime.StartInvalidPlayerCount}, nil
+		},
 		CancelSession: func(context.Context) (runtime.CancelSessionResult, error) {
 			if f.finalView != nil {
 				f.views <- *f.finalView
@@ -77,21 +85,11 @@ func (f *fakeAdmin) connection() runtime.AdminConnection {
 			f.end(runtime.EndSessionEnded)
 			return runtime.CancelSessionResult{Outcome: runtime.SessionCancelled}, nil
 		},
+		NextLobbyUpdate: func(ctx context.Context) (runtime.LobbyUpdate, bool) {
+			return nextOf(ctx, f.lobby, f.ended)
+		},
 		NextView: func(ctx context.Context) (runtime.PlayerView, bool) {
-			select {
-			case view := <-f.views:
-				return view, true
-			case <-f.ended:
-				// Views produced before the end still come first.
-				select {
-				case view := <-f.views:
-					return view, true
-				default:
-					return runtime.PlayerView{}, false
-				}
-			case <-ctx.Done():
-				return runtime.PlayerView{}, false
-			}
+			return nextOf(ctx, f.views, f.ended)
 		},
 		Ended: func(ctx context.Context) (runtime.ConnectionEnd, bool) {
 			select {
@@ -107,6 +105,25 @@ func (f *fakeAdmin) connection() runtime.AdminConnection {
 			f.mu.Unlock()
 			f.end(runtime.EndDisconnected)
 		},
+	}
+}
+
+// nextOf is a Runtime stream: the next item of items, where items produced
+// before ended still come first.
+func nextOf[T any](ctx context.Context, items chan T, ended chan struct{}) (T, bool) {
+	var none T
+	select {
+	case item := <-items:
+		return item, true
+	case <-ended:
+		select {
+		case item := <-items:
+			return item, true
+		default:
+			return none, false
+		}
+	case <-ctx.Done():
+		return none, false
 	}
 }
 
@@ -172,6 +189,37 @@ func TestHandleAdminJoin(t *testing.T) {
 				admin:               admin,
 				clientCloses:        true,
 				expectedReceived:    []string{`{"type":"player_view","participant_id":"P1","full":true,"state":{"score":3}}`},
+				expectedDisconnects: 1,
+			}
+		},
+		"starting_is_answered": func(t *testing.T, deps dependencies) test {
+			admin := newFakeAdmin()
+			accept(deps, admin)
+			return test{
+				protocols:           []string{"playhoot.v1"},
+				admin:               admin,
+				clientSends:         []string{`{"type":"start_session"}`},
+				clientCloses:        true,
+				expectedReceived:    []string{`{"type":"start_session_result","outcome":"invalid_player_count"}`},
+				expectedDisconnects: 1,
+			}
+		},
+		"lobby_updates_are_delivered_until_the_lobby_closes": func(t *testing.T, deps dependencies) test {
+			admin := newFakeAdmin()
+			admin.lobby <- runtime.LobbyUpdate{Members: []runtime.LobbyMember{{UserUUID: "u1"}, {UserUUID: "u2"}}}
+			admin.lobby <- runtime.LobbyUpdate{Closed: true}
+			// Never sent: nothing follows lobby_closed.
+			admin.lobby <- runtime.LobbyUpdate{Members: []runtime.LobbyMember{{UserUUID: "u3"}}}
+			admin.end(runtime.EndSessionEnded)
+			accept(deps, admin)
+			return test{
+				protocols: []string{"playhoot.v1"},
+				admin:     admin,
+				expectedReceived: []string{
+					`{"type":"lobby_update","members":[{"user_uuid":"u1"},{"user_uuid":"u2"}]}`,
+					`{"type":"lobby_closed"}`,
+				},
+				expectedCloseStatus: websocket.StatusNormalClosure,
 				expectedDisconnects: 1,
 			}
 		},
@@ -341,7 +389,7 @@ func TestHandleAdminJoin(t *testing.T) {
 			if tc.shuttingDown {
 				require.NoError(t, connections.Shutdown(context.Background()))
 			}
-			handler := NewHandler(nil, nil, nil, deps.admins, connections, tc.originPatterns)
+			handler := NewHandler(nil, nil, nil, deps.admins, nil, nil, connections, tc.originPatterns)
 			handlerDone := make(chan struct{})
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				defer close(handlerDone)

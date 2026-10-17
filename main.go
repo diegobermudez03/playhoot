@@ -92,6 +92,8 @@ func run() error {
 		playLifecycle,
 		ownership.New(),
 		liveconnection.New(checkadminjoin.New(db)),
+		unwiredPlayerAdmission{},
+		unwiredJoinCodes{},
 		envVars.WebSocketAllowedOrigins,
 	)
 

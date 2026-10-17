@@ -30,11 +30,11 @@ type Server struct {
 // NewServer constructs a Server exposing every route group's endpoints.
 // webSocketOriginPatterns are the extra origin hosts (path.Match patterns)
 // browser pages may open live connections from.
-func NewServer(authorizer authorizer, sessionCreator sessionCreator, owners ownerLocator, admins adminAttacher, webSocketOriginPatterns []string) *Server {
+func NewServer(authorizer authorizer, sessionCreator sessionCreator, owners ownerLocator, admins adminAttacher, players playerAttacher, joinCodes joinCodeResolver, webSocketOriginPatterns []string) *Server {
 	mux := http.NewServeMux()
 	liveConnections := live.New()
 	groups := []routeGroup{
-		apiplay.NewHandler(authorizer, sessionCreator, owners, admins, liveConnections, webSocketOriginPatterns),
+		apiplay.NewHandler(authorizer, sessionCreator, owners, admins, players, joinCodes, liveConnections, webSocketOriginPatterns),
 	}
 	var restRoutes, wsRoutes []routing.Route
 	for _, group := range groups {

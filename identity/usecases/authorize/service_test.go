@@ -49,9 +49,9 @@ func TestAuthorize(t *testing.T) {
 				expectedUserUUID: "aaaaaaaa-aaaa-4aaa-8aaa-000000000001", expectedDecision: identity.AccessAllowed,
 			}
 		},
-		"guest_is_allowed_other_operations": func(t *testing.T) test {
+		"guest_can_join_sessions_as_player": func(t *testing.T) test {
 			return test{
-				token: "test-guest", operation: identity.Operation("JOIN_SESSION"),
+				token: "test-guest", operation: identity.OperationJoinSessionAsPlayer,
 				expectedUserUUID: "aaaaaaaa-aaaa-4aaa-8aaa-0000000000ff", expectedDecision: identity.AccessAllowed,
 			}
 		},

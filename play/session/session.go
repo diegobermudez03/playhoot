@@ -59,3 +59,21 @@ const (
 
 	AdminJoinNotCreator AdminJoinEligibility = "not_creator"
 )
+
+// JoinCodeOutcome is whether a join code names a Session.
+type JoinCodeOutcome string
+
+const (
+	JoinCodeFound JoinCodeOutcome = "found"
+
+	// JoinCodeNotFound means the code is unknown, released or expired; the
+	// cases are deliberately not distinguished.
+	JoinCodeNotFound JoinCodeOutcome = "not_found"
+)
+
+// JoinCodeResolution is the Session a join code names. SessionUUID is set
+// only when Outcome is JoinCodeFound.
+type JoinCodeResolution struct {
+	Outcome     JoinCodeOutcome
+	SessionUUID string
+}

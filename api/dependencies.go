@@ -27,3 +27,13 @@ type ownerLocator interface {
 type adminAttacher interface {
 	AttachAdmin(ctx context.Context, sessionUUID string, userUUID string, ownerEpoch int64) (runtime.AttachAdminResult, error)
 }
+
+// playerAttacher is the Runtime's admission of player connections.
+type playerAttacher interface {
+	AttachPlayer(ctx context.Context, sessionUUID string, userUUID string, ownerEpoch int64) (runtime.AttachPlayerResult, error)
+}
+
+// joinCodeResolver is the durable Session's join code lookup.
+type joinCodeResolver interface {
+	ResolveJoinCode(ctx context.Context, joinCode string) (sessionpkg.JoinCodeResolution, error)
+}

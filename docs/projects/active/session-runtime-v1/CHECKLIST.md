@@ -22,33 +22,33 @@ Decided 2026-10-15 in SESSION-ADR-0029: ownership in `play/runtime`, routing at 
 
 Progress note (2026-10-15): the API side is implemented and tested (`api/play/owner_routing.go`, before every live upgrade); `LocateOrClaimOwner` itself is a placeholder (see Placeholders). Release and the registry are not implemented. The Runtime already fences by epoch when attaching (2026-10-17): a request under an older epoch than the Session's controller is rejected (`owner_changed`); a request under a newer one retires the stale controller (its connections end with `owner_changed`, closed as 1012 so clients reconnect) and creates a new one. Recovering the new controller's state is pending (Q).
 
-- [ ] Owner abstraction exists: Resolve(sessionID), Claim(sessionID), Release(sessionID)
+- [ ] Owner abstraction exists: Resolve(sessionID), Claim(sessionID), Release(sessionID) (Resolve and Claim exist as one atomic `LocateOrClaimOwner`, today a placeholder; Release does not exist yet)
 - [ ] Exactly one Runtime pod owns an active Session; two pods can never mutate the same Session concurrently (decision: lease/epoch/fencing mechanism)
-- [ ] Browser never learns a pod address; routing is resolved before the request reaches Session logic
+- [x] Browser never learns a pod address; routing is resolved before the request reaches Session logic (`OwnerPlacement.Address` never reaches a client; routing runs before the upgrade)
 - [ ] Owner released on Session termination and on controller destruction
 - [ ] Owner loss is detectable (needed by recovery and reconciliation)
 - [ ] Before more than one instance may own Sessions (separate gateway, or more than one instance of the single binary): shared registry, owner-renewed lease + heartbeat, self-fencing, epoch on owner-only durable writes, gateway-to-Runtime trusted identity, addressable-instance deployment. Instructions: `play/docs/decisions/SESSION-ADR-0029-live-session-ownership-and-owner-routing.md`
 
 ### A2. API <-> Runtime duplex boundary (§1)
 
-Progress note (2026-10-17): the boundary, decided with the human, is a set of operations per kind of connection, returned by the Runtime as function fields over its own types (`runtime.AdminConnection`: `SelectPerspective`, `CancelSession`, `NextView`, `Ended`, `Disconnect`; contract in `play/runtime/runtime.go`). The Runtime never sees the socket; each API endpoint owns its wire messages and drives its connection's operations (`api/play/admin_join.go`), with the shared, domain-free loop orchestration in `api/internal/live`. Player connections will get their own operations and types. The Runtime side is a placeholder. Graceful shutdown of live connections is implemented on the API side (`api/internal/live`: every connection runs under the controller, which on shutdown closes it with 1001 and calls its Disconnect, and waits within the shutdown window); the Runtime stopping its controllers is still open.
-- [ ] /api owns the WebSocket; Runtime owns the logical connection; Runtime does not know WebSocket details
-- [ ] API reports: transport attached, transport detached, inbound message
-- [ ] Runtime emits: send outbound message, close transport, replace transport
-- [ ] Identity + owner routing happen before upgrade; logical admission happens after upgrade
-- [ ] Rejected admission sends a rejection and closes the socket
+Progress note (2026-10-17): the boundary, decided with the human, is a set of operations per kind of connection, returned by the Runtime as function fields over its own types (`runtime.AdminConnection`: `SelectPerspective`, `CancelSession`, `NextView`, `Ended`, `Disconnect`; contract in `play/runtime/runtime.go`). This replaces the plan's generic attach/detach/inbound and send/close/replace vocabulary: attach is `AttachAdmin`, detach is `Disconnect`, inbound messages are the typed operations, outbound messages are `NextView`, and closing is `Ended`. The Runtime never sees the socket; each API endpoint owns its wire messages and drives its connection's operations (`api/play/admin_join.go`), with the shared, domain-free loop orchestration in `api/internal/live`. Implemented for ADMIN connections and verified by tests and a manual test; player connections will get their own operations and types. Graceful shutdown of live connections is implemented on the API side (`api/internal/live`: every connection runs under the controller, which on shutdown closes it with 1001 and calls its Disconnect, and waits within the shutdown window); the Runtime stopping its controllers is still open, and so is delivering answers that are in flight when shutdown starts (they are cut today).
+- [x] /api owns the WebSocket; Runtime owns the logical connection; Runtime does not know WebSocket details
+- [ ] API reports: transport attached, transport detached, inbound message (done for ADMIN as `AttachAdmin`, `Disconnect` and the typed admin operations; PLAYER done on the API side as `AttachPlayer`, `Disconnect` and the typed player operations, 2026-10-17, but the Runtime does not implement `AttachPlayer` yet: see F)
+- [ ] Runtime emits: send outbound message, close transport, replace transport (done for ADMIN as `NextView` and `Ended`; replacing a transport belongs to device switch, O5)
+- [x] Identity + owner routing happen before upgrade; logical admission happens after upgrade
+- [x] Rejected admission sends a rejection and closes the socket
 - [ ] Late messages from an obsolete transport are ignored via Runtime-internal connection generation (§19)
-- [ ] Graceful shutdown covers live connections: on SIGTERM, WebSocket transports are closed (via `http.Server.RegisterOnShutdown`, since `Shutdown` does not track hijacked connections) and the Runtime stops its controllers cleanly within the shutdown window. HTTP request draining is done (`main.go`).
+- [ ] Graceful shutdown covers live connections: on SIGTERM, WebSocket transports are closed and the Runtime stops its controllers cleanly within the shutdown window. Done: HTTP request draining (`main.go`) and closing live connections (`Server.Shutdown` → `api/internal/live`, after `http.Server.Shutdown`, which does not track hijacked connections). Pending: the Runtime stopping its controllers, and delivering in-flight answers before closing.
 
 ### A3. Join code and routing (§1, §2)
-- [ ] Join code -> sessionUUID resolution -> owner resolve/claim -> route to pod
+- [ ] Join code -> sessionUUID resolution -> owner resolve/claim -> route to pod (API side done and tested 2026-10-17: `GET /v1/join/{joinCode}` resolves the code (`api/play/join_code_routing.go`) before owner routing; the resolution itself, `ResolveJoinCode` in `play/session`, is not implemented: see Placeholders)
 - [ ] Join code is only a friendly identifier, never authN/authZ
 - [x] Join code expiration uses platform time
 
 ### A4. Identity integration (§1, §2, §4)
 - [ ] Account token -> account userUUID
 - [ ] Guest token -> existing guest userUUID
-- [ ] No identity -> guest created, returned userUUID + guest credentials for the FE to keep
+- [ ] No identity -> guest created, returned userUUID + guest credentials for the FE to keep (pending, out of scope for the API step of player join: a player without a token is refused `401` today; the comment on the player routes in `api/play/handler.go` marks it. Open: how the credentials reach the FE, since a browser cannot read headers of a WebSocket handshake: a first live message, or a REST call before connecting. The guest display name is part of this input)
 - [ ] CREATE_SESSION capability check (real account required, guest-only rejected)
 - [x] Other domains receive only userUUID (no account/guest awareness)
 - [x] Identity does not decide object-level permissions (creator check lives in Session)
@@ -68,8 +68,8 @@ Progress note (2026-10-17): the boundary, decided with the human, is a set of op
 
 ### A7. Message model and role gating (§26, §27)
 - [ ] Platform messages vs game messages are distinct categories
-- [ ] Connection role (PLAYER/ADMIN) is authoritative for what it may send
-- [ ] ADMIN can never send SAMPLE/COMMAND
+- [x] Connection role (PLAYER/ADMIN) is authoritative for what it may send (each endpoint only accepts its own message catalog; any other type closes with 1008 before reaching the Runtime; tested for both, 2026-10-17)
+- [x] ADMIN can never send SAMPLE/COMMAND (the admin catalog has no such message; any other type closes the connection with 1008 before reaching the Runtime)
 - [ ] Contract validation happens before JavaScript is called
 
 ---
@@ -125,7 +125,12 @@ Completed 2026-10-15: implemented end to end and verified (unit, repository and 
 
 ## E. Admin join (§3, §18)
 
-Progress note (2026-10-17): admission is implemented end to end. The API side (WebSocket auth with header or Kubernetes-style token subprotocol, `JOIN_SESSION_AS_ADMIN`, owner routing, `playhoot.v1` upgrade with origin check, admin wire messages) and the Runtime side (`liveconnection.Manager.AttachAdmin`: asks the durable Session `EligibleToJoinAsAdmin`, then finds or creates the Session's controller and registers the ADMIN connection) are tested. The durable eligibility check is real (2026-10-17). Still a placeholder: ownership (see Placeholders). Pending: the admin messages themselves; `SelectPerspective` and `CancelSession` exist but answer "not implemented" (the API closes the connection as a server failure), and no view is ever produced.
+Admin join (connection and admission) completed 2026-10-17: implemented end to end and verified by unit, repository and WebSocket tests and by a manual test from Postman. API side: WebSocket auth with header or Kubernetes-style token subprotocol, `JOIN_SESSION_AS_ADMIN`, owner routing, `playhoot.v1` upgrade with origin check, admin wire messages, live connection controller with graceful shutdown, handshake and connection metrics. Runtime side: `liveconnection.Manager.AttachAdmin` asks the durable Session `EligibleToJoinAsAdmin` (real check), then finds or creates the Session's controller (epoch-fenced) and registers the ADMIN connection.
+
+Left for future steps, on purpose:
+- The admin operations themselves: `SelectPerspective` and `CancelSession` are wired end to end but answer "not implemented" (the API closes the connection with 1011), and `NextView` never produces a view.
+- Ownership is still a placeholder (every Session owned here under epoch 1), and forwarding to another owner does not exist (see A1 and Placeholders).
+- The controller only holds ADMIN connections, serializes with a mutex instead of the single mutation lane, and is never destroyed (see H).
 
 - [x] Authenticated account required (the Session Runtime side is done: the route requires `JOIN_SESSION_AS_ADMIN`, which Identity must answer forbidden for guests; Identity's real behavior is out of scope and tracked under Placeholders)
 - [x] Owner pod resolved before upgrade (the routing step is done; ownership itself is a placeholder tracked under Placeholders)
@@ -133,7 +138,9 @@ Progress note (2026-10-17): admission is implemented end to end. The API side (W
 - [x] Accepted: ADMIN logical connection registered; no gameplay participant, no extra durable membership row
 - [x] Rejected: rejection sent, socket closed
 - [x] Multiple simultaneous ADMIN connections for the same creator
-- [ ] Admin operations implemented: `SelectPerspective` and `CancelSession` (today they answer "not implemented")
+- [ ] Admin operations implemented: `SelectPerspective`, `StartSession` and `CancelSession` (today they answer "not implemented"), and `NextLobbyUpdate` (never produces an update today)
+- [ ] Admin receives lobby updates until the lobby closes (`lobby_update`, then `lobby_closed` when the Session starts; API side done and tested 2026-10-17)
+- [ ] Creator who also plays may not watch another participant: `SelectPerspective` answers `creator_is_playing` while the creator has a PLAYER connection (decided by the human 2026-10-17; the outcome is declared, the controller check is not implemented)
 - [ ] Admin selects a player perspective; receives exactly projection(P), FULL, with a new baseline per selection
 - [ ] No omniscient admin projection
 - [x] Admin reconnect = just another admin WebSocket (no game-level admin rejoin)
@@ -142,6 +149,8 @@ Progress note (2026-10-17): admission is implemented end to end. The API side (W
 ---
 
 ## F. Player lobby join (§4)
+
+Progress note (2026-10-17): the API layer is implemented and tested. `GET /v1/sessions/{sessionUUID}/player` and `GET /v1/join/{joinCode}` authorize `JOIN_SESSION_AS_PLAYER` (Identity's placeholder allows guests), resolve the join code, route to the owner, upgrade, and serve the `runtime.PlayerConnection` the Runtime returns (`api/play/player_join.go`). The contract, decided with the human, declares every player operation now so the controller work knows what it must implement: `Leave`, `Sample`, `Command`, `Resync`, `NextLobbyUpdate`, `NextView` (own view with `ConsumedThroughSampleSequence`), `Ended`, `Disconnect` (`play/runtime/runtime.go`). Admins and players are always separate connections, even for a creator who plays. Not implemented: the Runtime's `AttachPlayer` and the durable `ResolveJoinCode` (both stand-ins in `unwired.go` that fail, see Placeholders), and guest creation (see A4).
 
 - [ ] Join by join code or Session UUID; guest display name when a new guest is created
 - [ ] Identity resolution (see A4)
@@ -158,7 +167,7 @@ Progress note (2026-10-17): admission is implemented end to end. The API side (W
 
 ## G. Start Session (§5)
 
-- [ ] START accepted from creator's ADMIN or PLAYER connection; no identity token in the live message
+- [ ] START accepted only from the creator's ADMIN connection; no identity token in the live message (changed from the plan, which also accepts the creator's PLAYER connection, by the human on 2026-10-17: admin and player are always separate connections, and starting and cancelling are admin operations. `AdminConnection.StartSession` and the `start_session` message are declared and wired; the Runtime answers "not implemented")
 - [ ] Controller serializes START; lobby roster frozen for the attempt
 - [ ] Stable ParticipantIDs assigned (userUUID -> P1..Pn)
 - [ ] /play/session validates: LOBBY, not expired, caller is creator, participant count valid, pinned GameVersion available; returns artifact/manifest references
@@ -400,6 +409,7 @@ Progress note (2026-10-17): a first, minimal controller exists (`play/runtime/in
 - [ ] SAMPLE: per-participant ingress rate, max distinct transitions per window, bounded pending buffer, payload size, identical-refresh dedup
 - [ ] COMMAND: per-participant token bucket, max pending, bounded queue, payload size
 - [ ] WebSocket: messages/s, bytes/s, max message size, outbound backpressure protection
+- [ ] Per-message-type rate limiting at the API edge (pending task, requested by the human 2026-10-17). Every live connection reads with one loop that hands each message to its type's own lane (`api/internal/live/lanes.go`: one goroutine per type, so SAMPLEs only wait for SAMPLEs, COMMANDs for COMMANDs, resyncs for resyncs). Handing off never blocks, so a lane's queue is unbounded: until this limit exists, a client sending faster than its lane is handled grows that queue without bound. The limit must be enforced per type before enqueueing, and bound each lane's queue.
 - [ ] Sandbox: CPU/execution budget, memory, deadline, state/output size, non-cooperative code protection
 - [ ] Session: max lifetime, inactivity timeout, owner/recovery deadlines, bounded Replay and checkpoint queues
 - [ ] Scripts cannot request higher tick rates or unbounded buffers
@@ -493,13 +503,15 @@ Alerts and dashboards:
 
 Everything here is wired into the running system, so a request flows through it, but it returns hardcoded or failing answers. It must never be mistaken for implemented behavior. Items marked "out of scope" are not part of this project (which focuses on `play/`) and stay open after it ends; the owning domain's `CURRENT_STATE.md` also records them. Tick an item only when the real behavior replaces the placeholder.
 
-- [ ] Identity authorization (`identity/usecases/authorize`, out of scope): recognizes only hardcoded test tokens (`test-user-1`, `test-user-2`, `test-guest`), each mapped to a fixed UserUUID; any other token is unauthenticated, and the guest is forbidden from `CREATE_SESSION` and `JOIN_SESSION_AS_ADMIN`. Must never be deployed as-is. Real behavior: validate the JWT, resolve the stable UserUUID, decide per operation; `CREATE_SESSION` and `JOIN_SESSION_AS_ADMIN` must require an account and forbid guests.
+- [ ] Identity authorization (`identity/usecases/authorize`, out of scope): recognizes only hardcoded test tokens (`test-user-1`, `test-user-2`, `test-guest`), each mapped to a fixed UserUUID; any other token is unauthenticated, and the guest is forbidden from `CREATE_SESSION` and `JOIN_SESSION_AS_ADMIN` (allowed `JOIN_SESSION_AS_PLAYER`, like every other operation). Must never be deployed as-is. Real behavior: validate the JWT, resolve the stable UserUUID, decide per operation; `CREATE_SESSION` and `JOIN_SESSION_AS_ADMIN` must require an account and forbid guests.
 - [ ] Game playability check (`game/usecases/checkplayability`, out of scope): answers `true` for any Game and user. Real behavior: the Game exists, has a published version, and is visible to the user.
 - [x] Session creation stand-in (`unwiredSessionCreation` in `unwired.go`, in scope): always failed. Replaced by `sessionlifecycle.Manager.CreateSession` on 2026-10-15; `unwired.go` was deleted.
 - [ ] No flow creates `play_games` / `play_game_versions` (in scope, see B): nothing registers Games or marks a version EXECUTABLE yet, so every Session creation answers `game_unavailable` until those rows exist (outside production, test-data migrations seed one playable and one unavailable Game; see `play/CURRENT_STATE.md`). Real behavior: the operation that validates a version's scripts, freezes it, and sets it EXECUTABLE as the Game's current version.
 - [ ] Live Session ownership (`play/runtime/usecases/ownership`, in scope, see A1): `LocateOrClaimOwner` answers `owned_here` with epoch 1 for any Session UUID, without looking the Session up or keeping a registry. Real behavior: claim only Sessions in LOBBY/RUNNING, in-process registry with release; shared registry + lease/heartbeat before multi-instance (SESSION-ADR-0029).
 - [x] Admin join eligibility (`play/session/usecases/checkadminjoin`, in scope, see E): replaced by the real check on 2026-10-17 (the Session exists, the user created it, and it is RUNNING or in a LOBBY whose expiry has not passed).
-- [ ] Admin operations (`play/runtime/internal/controller`, in scope, see E): `SelectPerspective` and `CancelSession` return "not implemented" and `NextView` never produces a view. Real behavior: perspective selection with FULL projection, host cancellation.
+- [ ] Admin operations (`play/runtime/internal/controller`, in scope, see E): `SelectPerspective`, `StartSession` and `CancelSession` return "not implemented", and `NextView` and `NextLobbyUpdate` never produce anything. Real behavior: perspective selection with FULL projection, Start (G), host cancellation, lobby updates.
+- [ ] Player admission (`unwiredPlayerAdmission` in `unwired.go`, in scope, see F): `AttachPlayer` always fails, so every player connection is closed with 1011 right after the upgrade. Real behavior: `liveconnection.Manager.AttachPlayer`, lobby admission serialized by the controller, returning a `runtime.PlayerConnection`; then delete the stand-in.
+- [ ] Join code resolution (`unwiredJoinCodes` in `unwired.go`, in scope, see A3): `ResolveJoinCode` always fails, so joining by join code answers `500`. Real behavior: `play/session` finds the Session of an active, unexpired join code (`not_found` otherwise); then delete the stand-in.
 - [ ] Controller lifetime (`play/runtime/internal/controller`, in scope, see H): controllers are created but never destroyed or released, so they accumulate for the process lifetime. Real behavior: destroyed on terminal states with owner release.
 - [ ] Forwarding to a remote owner (`api/play/owner_routing.go`, in scope, see A1): a Session owned by another instance is answered `503`; unreachable while single-instance. Real behavior: proxy the connection to the owner (gateway), decided with the multi-instance topology.
 - [ ] Metrics emission (`monitoring/metrics`, `record`): measurements are only written to the request log; nothing is sent to a metrics backend (see Y).

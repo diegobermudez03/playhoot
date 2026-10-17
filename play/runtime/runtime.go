@@ -49,6 +49,14 @@ const (
 	RejectSessionUnavailable RejectReason = "session_unavailable"
 	RejectNotCreator         RejectReason = "not_creator"
 
+	// RejectSessionStarted means the Session left its lobby; only its
+	// participants may come back, by rejoining.
+	RejectSessionStarted RejectReason = "session_started"
+
+	// RejectLobbyFull means the lobby holds as many players as the game
+	// allows.
+	RejectLobbyFull RejectReason = "lobby_full"
+
 	// RejectOwnerChanged means the connection was routed to a former owner;
 	// the client should reconnect.
 	RejectOwnerChanged RejectReason = "owner_changed"
@@ -63,6 +71,9 @@ const (
 
 	// EndSessionEnded means the Session reached a terminal state.
 	EndSessionEnded EndReason = "session_ended"
+
+	// EndLeft means the player left the Session, permanently.
+	EndLeft EndReason = "left"
 
 	// EndOwnerChanged means this instance no longer serves the Session under
 	// the connection's ownership; the client should reconnect.
@@ -90,8 +101,14 @@ type AdminConnection struct {
 	// receives; a FULL view of them follows through NextView.
 	SelectPerspective func(ctx context.Context, participantID string) (SelectPerspectiveResult, error)
 
+	// StartSession starts the game with the players in the lobby.
+	StartSession func(ctx context.Context) (StartSessionResult, error)
+
 	// CancelSession ends the Session as cancelled by its creator.
 	CancelSession func(ctx context.Context) (CancelSessionResult, error)
+
+	// NextLobbyUpdate blocks until the lobby changes; see LobbyUpdate.
+	NextLobbyUpdate func(ctx context.Context) (LobbyUpdate, bool)
 
 	// NextView blocks until the next view of the selected participant. Every
 	// view produced before the connection ended is returned before false.
@@ -124,6 +141,10 @@ type SelectPerspectiveOutcome string
 const (
 	PerspectiveSelected           SelectPerspectiveOutcome = "selected"
 	PerspectiveUnknownParticipant SelectPerspectiveOutcome = "unknown_participant"
+
+	// PerspectiveCreatorPlaying means the creator also plays, so watching
+	// another participant is denied.
+	PerspectiveCreatorPlaying SelectPerspectiveOutcome = "creator_is_playing"
 )
 
 // SelectPerspectiveResult is the outcome of selecting a perspective.
@@ -142,4 +163,150 @@ const (
 // CancelSessionResult is the outcome of cancelling a Session.
 type CancelSessionResult struct {
 	Outcome CancelSessionOutcome
+}
+
+// StartSessionOutcome is the decision a StartSession call reached.
+type StartSessionOutcome string
+
+const (
+	SessionStarted StartSessionOutcome = "started"
+
+	// StartNotInLobby means the Session already started, ended, or its lobby
+	// expired.
+	StartNotInLobby StartSessionOutcome = "not_in_lobby"
+
+	// StartInvalidPlayerCount means the lobby holds fewer or more players
+	// than the game allows.
+	StartInvalidPlayerCount StartSessionOutcome = "invalid_player_count"
+
+	// StartGameUnavailable means the Session's game version can no longer be
+	// played.
+	StartGameUnavailable StartSessionOutcome = "game_unavailable"
+)
+
+// StartSessionResult is the outcome of starting a Session.
+type StartSessionResult struct {
+	Outcome StartSessionOutcome
+}
+
+// LobbyUpdate is the lobby's members after a change. Closed means the lobby
+// closed because the Session started: no update follows it.
+type LobbyUpdate struct {
+	Members []LobbyMember
+	Closed  bool
+}
+
+// LobbyMember is a player waiting in the lobby.
+type LobbyMember struct {
+	UserUUID string
+}
+
+// AttachPlayerResult is the outcome of attaching a player connection.
+// Rejection is set only when rejected, Connection only when accepted.
+type AttachPlayerResult struct {
+	Outcome    AttachOutcome
+	Rejection  RejectReason
+	Connection PlayerConnection
+}
+
+// PlayerConnection is everything a caller can do with an admitted player
+// connection. The caller must run NextLobbyUpdate, NextView and Ended until
+// they report the end, and call Disconnect once when the client is gone.
+type PlayerConnection struct {
+	// Leave removes the player from the Session for good; the connection
+	// then ends as EndLeft.
+	Leave func(ctx context.Context) (LeaveResult, error)
+
+	// Sample delivers the player's current input state. It is not answered;
+	// how far SAMPLEs were consumed arrives with the views.
+	Sample func(ctx context.Context, sample Sample) error
+
+	// Command runs a game command and returns its correlated result.
+	Command func(ctx context.Context, command Command) (CommandResult, error)
+
+	// Resync asks for the player's current state again; a FULL view follows
+	// through NextView.
+	Resync func(ctx context.Context) error
+
+	// NextLobbyUpdate blocks until the lobby changes; see LobbyUpdate.
+	NextLobbyUpdate func(ctx context.Context) (LobbyUpdate, bool)
+
+	// NextView blocks until the player's next view. Every view produced
+	// before the connection ended is returned before false.
+	NextView func(ctx context.Context) (OwnView, bool)
+
+	// Ended blocks until the connection ends and reports why; false means
+	// ctx was done first.
+	Ended func(ctx context.Context) (ConnectionEnd, bool)
+
+	// Disconnect tells the Runtime the client is gone. Calling it again has
+	// no effect.
+	Disconnect func()
+}
+
+// OwnView is a player's view of the game together with the highest SAMPLE
+// sequence the game consumed, which the client reconciles its prediction with.
+type OwnView struct {
+	PlayerView
+	ConsumedThroughSampleSequence int64
+}
+
+// Sample is a player's full input state. Sequence increases per player;
+// a stale or repeated one is ignored.
+type Sample struct {
+	Sequence int64
+
+	// Inputs is a JSON object of the inputs the game declares; omitted ones
+	// take their defaults.
+	Inputs []byte
+}
+
+// Command is a request to the game. Token makes it idempotent within the
+// player's Session.
+type Command struct {
+	Token string
+	Name  string
+
+	// Payload is JSON whose shape the game declares for Name; it may be nil.
+	Payload []byte
+}
+
+// CommandOutcome is how the Runtime handled a Command.
+type CommandOutcome string
+
+const (
+	// CommandExecuted means the game ran the command; Response holds its
+	// answer, which may be a rejection by the game's own rules.
+	CommandExecuted CommandOutcome = "executed"
+
+	// CommandAlreadyProcessed means the token was already executed; its
+	// original response is not kept.
+	CommandAlreadyProcessed CommandOutcome = "already_processed"
+
+	// CommandInvalid means the command is not declared by the game or its
+	// payload does not match the declaration.
+	CommandInvalid CommandOutcome = "invalid"
+
+	// CommandNotRunning means the Session is not running a game.
+	CommandNotRunning CommandOutcome = "session_not_running"
+)
+
+// CommandResult is the outcome of a Command. Response is set only when
+// executed, as JSON whose shape only the game defines.
+type CommandResult struct {
+	Token    string
+	Outcome  CommandOutcome
+	Response []byte
+}
+
+// LeaveOutcome is the decision a Leave call reached.
+type LeaveOutcome string
+
+const (
+	PlayerLeft LeaveOutcome = "left"
+)
+
+// LeaveResult is the outcome of leaving a Session.
+type LeaveResult struct {
+	Outcome LeaveOutcome
 }

@@ -18,6 +18,8 @@ import (
 //go:generate mockgen -package=play -destination=session_creator_mock_test.go . sessionCreator
 //go:generate mockgen -package=play -destination=owner_locator_mock_test.go . ownerLocator
 //go:generate mockgen -package=play -destination=admin_attacher_mock_test.go . adminAttacher
+//go:generate mockgen -package=play -destination=player_attacher_mock_test.go . playerAttacher
+//go:generate mockgen -package=play -destination=join_code_resolver_mock_test.go . joinCodeResolver
 
 // sessionCreator creates Sessions idempotently per key. A decline is reported
 // through the result's Outcome; a reused key returns
@@ -42,6 +44,17 @@ type adminAttacher interface {
 	AttachAdmin(ctx context.Context, sessionUUID string, userUUID string, ownerEpoch int64) (runtime.AttachAdminResult, error)
 }
 
+// playerAttacher admits player connections into a Session's lobby. Its
+// Connection is served only when accepted; an error means no connection exists.
+type playerAttacher interface {
+	AttachPlayer(ctx context.Context, sessionUUID string, userUUID string, ownerEpoch int64) (runtime.AttachPlayerResult, error)
+}
+
+// joinCodeResolver finds the Session a join code names.
+type joinCodeResolver interface {
+	ResolveJoinCode(ctx context.Context, joinCode string) (sessionpkg.JoinCodeResolution, error)
+}
+
 // liveRunner serves admitted live connections in the background until they
 // end or the server shuts down; it refuses new ones once shutdown started.
 type liveRunner interface {
@@ -54,18 +67,22 @@ type Handler struct {
 	creator                 sessionCreator
 	owners                  ownerLocator
 	admins                  adminAttacher
+	players                 playerAttacher
+	joinCodes               joinCodeResolver
 	live                    liveRunner
 	webSocketOriginPatterns []string
 }
 
 // NewHandler constructs a Handler. webSocketOriginPatterns are the extra
 // origin hosts browser pages may open live connections from.
-func NewHandler(authorizer authorizer, creator sessionCreator, owners ownerLocator, admins adminAttacher, live liveRunner, webSocketOriginPatterns []string) *Handler {
+func NewHandler(authorizer authorizer, creator sessionCreator, owners ownerLocator, admins adminAttacher, players playerAttacher, joinCodes joinCodeResolver, live liveRunner, webSocketOriginPatterns []string) *Handler {
 	return &Handler{
 		authorizer:              authorizer,
 		creator:                 creator,
 		owners:                  owners,
 		admins:                  admins,
+		players:                 players,
+		joinCodes:               joinCodes,
 		live:                    live,
 		webSocketOriginPatterns: webSocketOriginPatterns,
 	}
@@ -85,7 +102,8 @@ func (h *Handler) RESTRoutes() []routing.Route {
 }
 
 // WebSocketRoutes returns this group's live endpoints. Authorization runs
-// before owner routing so an unauthorized caller never makes a Session owned.
+// before join code and owner routing, so an unauthorized caller never learns
+// a Session nor makes one owned.
 func (h *Handler) WebSocketRoutes() []routing.Route {
 	return []routing.Route{
 		{
@@ -93,6 +111,26 @@ func (h *Handler) WebSocketRoutes() []routing.Route {
 			Handler: h.handleAdminJoin,
 			Middlewares: []routing.Middleware{
 				auth.RequireWebSocket(h.authorizer, identity.OperationJoinSessionAsAdmin),
+				requireOwner(h.owners, "sessionUUID"),
+			},
+		},
+		// Pending: a caller without a token gets a guest identity from Identity,
+		// named with the display name it sends, and keeps the guest credentials
+		// it is returned. Until then players need a token, as admins do.
+		{
+			Pattern: "GET /v1/sessions/{sessionUUID}/player",
+			Handler: h.handlePlayerJoin,
+			Middlewares: []routing.Middleware{
+				auth.RequireWebSocket(h.authorizer, identity.OperationJoinSessionAsPlayer),
+				requireOwner(h.owners, "sessionUUID"),
+			},
+		},
+		{
+			Pattern: "GET /v1/join/{joinCode}",
+			Handler: h.handlePlayerJoin,
+			Middlewares: []routing.Middleware{
+				auth.RequireWebSocket(h.authorizer, identity.OperationJoinSessionAsPlayer),
+				resolveJoinCode(h.joinCodes, "joinCode", "sessionUUID"),
 				requireOwner(h.owners, "sessionUUID"),
 			},
 		},

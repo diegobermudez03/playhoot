@@ -29,14 +29,18 @@ func (c *Controller) AttachAdmin(userUUID string) runtime.AdminConnection {
 		SelectPerspective: func(context.Context, string) (runtime.SelectPerspectiveResult, error) {
 			return runtime.SelectPerspectiveResult{}, ErrNotImplemented
 		},
+		StartSession: func(context.Context) (runtime.StartSessionResult, error) {
+			return runtime.StartSessionResult{}, ErrNotImplemented
+		},
 		CancelSession: func(context.Context) (runtime.CancelSessionResult, error) {
 			return runtime.CancelSessionResult{}, ErrNotImplemented
 		},
+		NextLobbyUpdate: func(ctx context.Context) (runtime.LobbyUpdate, bool) {
+			connection.waitWithoutResult(ctx)
+			return runtime.LobbyUpdate{}, false
+		},
 		NextView: func(ctx context.Context) (runtime.PlayerView, bool) {
-			select {
-			case <-connection.ended:
-			case <-ctx.Done():
-			}
+			connection.waitWithoutResult(ctx)
 			return runtime.PlayerView{}, false
 		},
 		Ended: connection.wait,
@@ -72,5 +76,14 @@ func (a *adminConnection) wait(ctx context.Context) (runtime.ConnectionEnd, bool
 		return runtime.ConnectionEnd{Reason: a.reason}, true
 	case <-ctx.Done():
 		return runtime.ConnectionEnd{}, false
+	}
+}
+
+// waitWithoutResult blocks until the connection ends or ctx is done; it backs
+// the streams that never produce anything yet.
+func (a *adminConnection) waitWithoutResult(ctx context.Context) {
+	select {
+	case <-a.ended:
+	case <-ctx.Done():
 	}
 }
