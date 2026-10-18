@@ -22,7 +22,12 @@ func (c *Controller) AdmitPlayer(ctx context.Context, userUUID string) (runtime.
 	player := newConnection(uuid.NewString(), userUUID)
 
 	c.mu.Lock()
-	if c.phase != phaseLobby {
+	switch c.phase {
+	case phaseLobby:
+	case phaseEnded:
+		c.mu.Unlock()
+		return runtime.PlayerConnection{}, runtime.RejectSessionUnavailable, false
+	default:
 		c.mu.Unlock()
 		return runtime.PlayerConnection{}, runtime.RejectSessionStarted, false
 	}
@@ -49,7 +54,7 @@ func (c *Controller) AdmitPlayer(ctx context.Context, userUUID string) (runtime.
 			c.mu.Lock()
 			if c.phase != phaseLobby {
 				c.mu.Unlock()
-				// Placeholder: leaving a running game (playerLeft, LEFT) is not built.
+				// Placeholder: leaving once the lobby is frozen (playerLeft, LEFT) is not built.
 				return runtime.LeaveResult{}, ErrNotImplemented
 			}
 			c.leaveLobbyLocked(player)
@@ -64,7 +69,7 @@ func (c *Controller) AdmitPlayer(ctx context.Context, userUUID string) (runtime.
 		Command: func(_ context.Context, command runtime.Command) (runtime.CommandResult, error) {
 			c.mu.Lock()
 			defer c.mu.Unlock()
-			if c.phase != phaseLobby {
+			if c.phase == phaseRunning {
 				// Placeholder: running a command in a game is not built.
 				return runtime.CommandResult{}, ErrNotImplemented
 			}
@@ -75,14 +80,22 @@ func (c *Controller) AdmitPlayer(ctx context.Context, userUUID string) (runtime.
 			return nil
 		},
 		NextLobbyUpdate: player.nextLobbyUpdate,
+		Started: func(ctx context.Context) (runtime.PlayerStart, bool) {
+			start, ok := c.sessionStart(ctx, player)
+			if !ok {
+				return runtime.PlayerStart{}, false
+			}
+			// Set before the game started and never again.
+			return runtime.PlayerStart{SessionStart: start, ParticipantID: player.participantID}, true
+		},
 		NextView: func(ctx context.Context) (runtime.OwnView, bool) {
-			player.waitWithoutResult(ctx)
-			return runtime.OwnView{}, false
+			return player.views.next(ctx, player.ended)
 		},
 		Ended: player.wait,
 		Disconnect: func() {
 			c.mu.Lock()
-			// In a running game the participant stays; only the lobby forgets.
+			// Once frozen the participant stays; only the lobby forgets. A
+			// cancelled Start attempt takes them out of the lobby then.
 			// Placeholder: a running game's transport grace is not built.
 			if c.phase == phaseLobby {
 				c.leaveLobbyLocked(player)

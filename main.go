@@ -91,7 +91,7 @@ func run() error {
 	}
 
 	playLifecycle := playlifecycle.New(checkplayability.New(), sessionlifecycle.New(db))
-	liveConnections := liveconnection.New(checkadminjoin.New(db), checkplayerjoin.New(db), loadruntimemanifest.New(db))
+	liveConnections := liveconnection.New(checkadminjoin.New(db), checkplayerjoin.New(db), loadruntimemanifest.New(db), unwiredSessionStart{}, unwiredSandbox{})
 	server := api.NewServer(
 		authorize.New(),
 		createguest.New(),

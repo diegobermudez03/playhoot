@@ -19,10 +19,11 @@ import (
 // Wire messages every kind of live connection sends: every frame is a JSON
 // object whose "type" names it.
 const (
-	liveRejected    = "rejected"
-	liveLobbyUpdate = "lobby_update"
-	liveLobbyClosed = "lobby_closed"
-	livePlayerView  = "player_view"
+	liveRejected       = "rejected"
+	liveLobbyUpdate    = "lobby_update"
+	liveLobbyClosed    = "lobby_closed"
+	liveSessionStarted = "session_started"
+	livePlayerView     = "player_view"
 )
 
 type rejectedMessage struct {
@@ -41,6 +42,20 @@ type lobbyMemberMessage struct {
 
 type lobbyClosedMessage struct {
 	Type string `json:"type"`
+}
+
+type participantMessage struct {
+	ParticipantID string `json:"participant_id"`
+	UserUUID      string `json:"user_uuid"`
+}
+
+// participantsJSON is who plays a started Session, on the wire.
+func participantsJSON(start runtime.SessionStart) []participantMessage {
+	participants := make([]participantMessage, 0, len(start.Participants))
+	for _, participant := range start.Participants {
+		participants = append(participants, participantMessage{ParticipantID: participant.ParticipantID, UserUUID: participant.UserUUID})
+	}
+	return participants
 }
 
 type outcomeMessage struct {
@@ -140,39 +155,74 @@ func (s *liveSession) serveRequests(handlers map[string]live.Handler) []live.Loo
 	return append(loops, live.Dispatch(s.conn, lanes))
 }
 
-// sendStream returns a loop that sends, as message, every item next produces
-// until next reports none or message marks one as the last.
-func sendStream[T any](s *liveSession, next func(ctx context.Context) (T, bool), message func(item T) (wire any, last bool)) live.Loop {
+// sessionStream is what a connection receives from the Runtime, in the order
+// it must be sent: lobby updates, then the start, then the views.
+type sessionStream[S, V any] struct {
+	nextLobbyUpdate func(ctx context.Context) (runtime.LobbyUpdate, bool)
+	started         func(ctx context.Context) (S, bool)
+	startMessage    func(start S) any
+	nextView        func(ctx context.Context) (V, bool)
+	viewMessage     func(view V) any
+}
+
+// sendSession returns a loop that sends stream in order: no lobby update
+// follows the start and no view precedes it. A closed lobby ends it.
+func sendSession[S, V any](s *liveSession, stream sessionStream[S, V]) live.Loop {
 	// Counted when the loop is built, so closeOnRuntimeEnd can never miss it.
 	s.streams.Add(1)
 	return func(ctx context.Context) (live.End, bool) {
 		defer s.streams.Done()
-		for {
-			item, ok := next(ctx)
-			if !ok {
-				return live.End{}, false
-			}
-			wire, last := message(item)
-			if end, ended := live.WriteMessage(ctx, s.conn, wire); ended || ctx.Err() != nil || last {
-				return end, ended
-			}
+		closed := false
+		end, ended, more := sendAll(ctx, s, stream.nextLobbyUpdate, func(update runtime.LobbyUpdate) (any, bool) {
+			closed = update.Closed
+			return lobbyMessage(update), update.Closed
+		})
+		if ended || !more || closed {
+			return end, ended
+		}
+		start, ok := stream.started(ctx)
+		if !ok {
+			return live.End{}, false
+		}
+		if end, ended := live.WriteMessage(ctx, s.conn, stream.startMessage(start)); ended || ctx.Err() != nil {
+			return end, ended
+		}
+		end, ended, _ = sendAll(ctx, s, stream.nextView, func(view V) (any, bool) {
+			return stream.viewMessage(view), false
+		})
+		return end, ended
+	}
+}
+
+// sendAll sends, as message, every item next produces until next reports none
+// or message marks one as the last. more is false when ctx or a write stopped
+// it.
+func sendAll[T any](ctx context.Context, s *liveSession, next func(ctx context.Context) (T, bool), message func(item T) (wire any, last bool)) (end live.End, ended bool, more bool) {
+	for {
+		item, ok := next(ctx)
+		if !ok {
+			return live.End{}, false, ctx.Err() == nil
+		}
+		wire, last := message(item)
+		if end, ended := live.WriteMessage(ctx, s.conn, wire); ended || ctx.Err() != nil {
+			return end, ended, false
+		}
+		if last {
+			return live.End{}, false, true
 		}
 	}
 }
 
-// sendLobbyUpdates sends every lobby update, ending with lobby_closed once the
-// lobby closes.
-func (s *liveSession) sendLobbyUpdates(next func(ctx context.Context) (runtime.LobbyUpdate, bool)) live.Loop {
-	return sendStream(s, next, func(update runtime.LobbyUpdate) (any, bool) {
-		if update.Closed {
-			return lobbyClosedMessage{Type: liveLobbyClosed}, true
-		}
-		members := make([]lobbyMemberMessage, 0, len(update.Members))
-		for _, member := range update.Members {
-			members = append(members, lobbyMemberMessage{UserUUID: member.UserUUID})
-		}
-		return lobbyUpdateMessage{Type: liveLobbyUpdate, Members: members}, false
-	})
+// lobbyMessage is a lobby update on the wire.
+func lobbyMessage(update runtime.LobbyUpdate) any {
+	if update.Closed {
+		return lobbyClosedMessage{Type: liveLobbyClosed}
+	}
+	members := make([]lobbyMemberMessage, 0, len(update.Members))
+	for _, member := range update.Members {
+		members = append(members, lobbyMemberMessage{UserUUID: member.UserUUID})
+	}
+	return lobbyUpdateMessage{Type: liveLobbyUpdate, Members: members}
 }
 
 // closeOnRuntimeEnd closes the connection once the Runtime ends it, after every
@@ -198,7 +248,7 @@ func (s *liveSession) closeOnRuntimeEnd(ended func(ctx context.Context) (runtime
 
 		status := websocket.StatusInternalError
 		switch end.Reason {
-		case runtime.EndSessionEnded, runtime.EndDisconnected, runtime.EndLeft, runtime.EndReplaced:
+		case runtime.EndSessionEnded, runtime.EndSessionAborted, runtime.EndDisconnected, runtime.EndLeft, runtime.EndReplaced:
 			status = websocket.StatusNormalClosure
 		case runtime.EndOwnerChanged:
 			// Tells the client to reconnect, which routes it to the current owner.

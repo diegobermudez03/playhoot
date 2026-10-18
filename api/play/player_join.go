@@ -44,6 +44,12 @@ type playerCommandResultMessage struct {
 	Response json.RawMessage `json:"response,omitempty"`
 }
 
+type playerSessionStartedMessage struct {
+	Type          string               `json:"type"`
+	ParticipantID string               `json:"participant_id"`
+	Participants  []participantMessage `json:"participants"`
+}
+
 type playerOwnViewMessage struct {
 	Type                          string          `json:"type"`
 	ParticipantID                 string          `json:"participant_id"`
@@ -75,7 +81,7 @@ func (h *Handler) handlePlayerJoin(w http.ResponseWriter, r *http.Request) {
 
 	player := attached.Connection
 	if player.Leave == nil || player.Sample == nil || player.Command == nil || player.Resync == nil ||
-		player.NextLobbyUpdate == nil || player.NextView == nil || player.Ended == nil || player.Disconnect == nil {
+		player.NextLobbyUpdate == nil || player.Started == nil || player.NextView == nil || player.Ended == nil || player.Disconnect == nil {
 		logging.LogError(ctx, errIncompletePlayerConnection)
 		wsx.Abort(conn)
 		return
@@ -88,8 +94,13 @@ func (h *Handler) handlePlayerJoin(w http.ResponseWriter, r *http.Request) {
 		playerLeave:   session.leave,
 	})
 	h.live.Serve(ctx, conn, player.Disconnect, append(loops,
-		session.sendLobbyUpdates(player.NextLobbyUpdate),
-		sendStream(session.liveSession, player.NextView, session.viewMessage),
+		sendSession(session.liveSession, sessionStream[runtime.PlayerStart, runtime.OwnView]{
+			nextLobbyUpdate: player.NextLobbyUpdate,
+			started:         player.Started,
+			startMessage:    playerStartedMessage,
+			nextView:        player.NextView,
+			viewMessage:     ownViewMessage,
+		}),
 		session.closeOnRuntimeEnd(player.Ended),
 	)...)
 }
@@ -150,16 +161,26 @@ func (s *playerSession) leave(ctx context.Context, _ []byte) (live.End, bool) {
 	return live.WriteMessage(ctx, s.conn, outcomeMessage{Type: playerLeaveResult, Outcome: string(result.Outcome)})
 }
 
-// viewMessage is the player's own view, with how far their SAMPLEs were
+// playerStartedMessage tells the player who plays and which participant
+// they are.
+func playerStartedMessage(start runtime.PlayerStart) any {
+	return playerSessionStartedMessage{
+		Type:          liveSessionStarted,
+		ParticipantID: start.ParticipantID,
+		Participants:  participantsJSON(start.SessionStart),
+	}
+}
+
+// ownViewMessage is the player's own view, with how far their SAMPLEs were
 // consumed.
-func (s *playerSession) viewMessage(view runtime.OwnView) (any, bool) {
+func ownViewMessage(view runtime.OwnView) any {
 	return playerOwnViewMessage{
 		Type:                          livePlayerView,
 		ParticipantID:                 view.ParticipantID,
 		Full:                          view.Full,
 		State:                         gameJSON(view.State),
 		ConsumedThroughSampleSequence: view.ConsumedThroughSampleSequence,
-	}, false
+	}
 }
 
 // isJSONObject reports whether raw, as decoded from a field, is an object.

@@ -22,8 +22,8 @@ import (
 // fakeAdmin is a Runtime admin connection whose views and end the test
 // controls, recording what the handler asked of it.
 type fakeAdmin struct {
+	*fakeLobby[runtime.SessionStart]
 	views     chan runtime.PlayerView
-	lobby     chan runtime.LobbyUpdate
 	selectErr error
 	// finalView, when set, is produced by CancelSession right before the
 	// Session ends.
@@ -40,9 +40,9 @@ type fakeAdmin struct {
 
 func newFakeAdmin(views ...runtime.PlayerView) *fakeAdmin {
 	admin := &fakeAdmin{
-		views: make(chan runtime.PlayerView, len(views)+1),
-		lobby: make(chan runtime.LobbyUpdate, 4),
-		ended: make(chan struct{}),
+		fakeLobby: newFakeLobby[runtime.SessionStart](),
+		views:     make(chan runtime.PlayerView, len(views)+1),
+		ended:     make(chan struct{}),
 	}
 	for _, view := range views {
 		admin.views <- view
@@ -50,11 +50,77 @@ func newFakeAdmin(views ...runtime.PlayerView) *fakeAdmin {
 	return admin
 }
 
+// startedFakeAdmin returns a fake admin of a Session that started with roster.
+func startedFakeAdmin(views ...runtime.PlayerView) *fakeAdmin {
+	admin := newFakeAdmin(views...)
+	admin.start(roster)
+	return admin
+}
+
 func (f *fakeAdmin) end(reason runtime.EndReason) {
 	f.endOnce.Do(func() {
 		f.reason = reason
 		close(f.ended)
+		f.closeLobby()
 	})
+}
+
+// roster is the Session start the fakes report.
+var roster = runtime.SessionStart{Participants: []runtime.Participant{
+	{ParticipantID: "P1", UserUUID: "u1"},
+	{ParticipantID: "P2", UserUUID: "u2"},
+}}
+
+// rosterJSON is roster on the wire.
+const rosterJSON = `[{"participant_id":"P1","user_uuid":"u1"},{"participant_id":"P2","user_uuid":"u2"}]`
+
+// fakeLobby is the lobby side of a fake Runtime connection: its lobby stream
+// ends once the Session starts or the connection ends.
+type fakeLobby[S any] struct {
+	lobby    chan runtime.LobbyUpdate
+	started  chan S
+	overOnce sync.Once
+	over     chan struct{}
+}
+
+func newFakeLobby[S any]() *fakeLobby[S] {
+	return &fakeLobby[S]{
+		lobby:   make(chan runtime.LobbyUpdate, 4),
+		started: make(chan S, 1),
+		over:    make(chan struct{}),
+	}
+}
+
+// start starts the Session, which ends the lobby.
+func (l *fakeLobby[S]) start(start S) {
+	l.started <- start
+	l.closeLobby()
+}
+
+func (l *fakeLobby[S]) closeLobby() {
+	l.overOnce.Do(func() { close(l.over) })
+}
+
+func (l *fakeLobby[S]) nextLobbyUpdate(ctx context.Context) (runtime.LobbyUpdate, bool) {
+	return nextOf(ctx, l.lobby, l.over)
+}
+
+// waitStarted is the Runtime's Started: false once ended without a start.
+func (l *fakeLobby[S]) waitStarted(ctx context.Context, ended chan struct{}) (S, bool) {
+	var none S
+	select {
+	case start := <-l.started:
+		return start, true
+	case <-ended:
+		select {
+		case start := <-l.started:
+			return start, true
+		default:
+			return none, false
+		}
+	case <-ctx.Done():
+		return none, false
+	}
 }
 
 // endedBy returns a fake admin the Runtime has already ended with reason.
@@ -85,8 +151,9 @@ func (f *fakeAdmin) connection() runtime.AdminConnection {
 			f.end(runtime.EndSessionEnded)
 			return runtime.CancelSessionResult{Outcome: runtime.SessionCancelled}, nil
 		},
-		NextLobbyUpdate: func(ctx context.Context) (runtime.LobbyUpdate, bool) {
-			return nextOf(ctx, f.lobby, f.ended)
+		NextLobbyUpdate: f.nextLobbyUpdate,
+		Started: func(ctx context.Context) (runtime.SessionStart, bool) {
+			return f.waitStarted(ctx, f.ended)
 		},
 		NextView: func(ctx context.Context) (runtime.PlayerView, bool) {
 			return nextOf(ctx, f.views, f.ended)
@@ -182,13 +249,33 @@ func TestHandleAdminJoin(t *testing.T) {
 			}
 		},
 		"views_are_delivered_with_the_game_state_as_is": func(t *testing.T, deps dependencies) test {
-			admin := newFakeAdmin(runtime.PlayerView{ParticipantID: "P1", Full: true, State: []byte(`{"score":3}`)})
+			admin := startedFakeAdmin(runtime.PlayerView{ParticipantID: "P1", Full: true, State: []byte(`{"score":3}`)})
 			accept(deps, admin)
 			return test{
-				protocols:           []string{"playhoot.v1"},
-				admin:               admin,
-				clientCloses:        true,
-				expectedReceived:    []string{`{"type":"player_view","participant_id":"P1","full":true,"state":{"score":3}}`},
+				protocols:    []string{"playhoot.v1"},
+				admin:        admin,
+				clientCloses: true,
+				expectedReceived: []string{
+					`{"type":"session_started","participants":` + rosterJSON + `}`,
+					`{"type":"player_view","participant_id":"P1","full":true,"state":{"score":3}}`,
+				},
+				expectedDisconnects: 1,
+			}
+		},
+		"start_follows_the_lobby_and_precedes_the_views": func(t *testing.T, deps dependencies) test {
+			admin := newFakeAdmin(runtime.PlayerView{ParticipantID: "P1", Full: true, State: []byte(`{"round":1}`)})
+			admin.lobby <- runtime.LobbyUpdate{Members: []runtime.LobbyMember{{UserUUID: "u1"}, {UserUUID: "u2"}}}
+			admin.start(roster)
+			accept(deps, admin)
+			return test{
+				protocols:    []string{"playhoot.v1"},
+				admin:        admin,
+				clientCloses: true,
+				expectedReceived: []string{
+					`{"type":"lobby_update","members":[{"user_uuid":"u1"},{"user_uuid":"u2"}]}`,
+					`{"type":"session_started","participants":` + rosterJSON + `}`,
+					`{"type":"player_view","participant_id":"P1","full":true,"state":{"round":1}}`,
+				},
 				expectedDisconnects: 1,
 			}
 		},
@@ -236,7 +323,7 @@ func TestHandleAdminJoin(t *testing.T) {
 			}
 		},
 		"cancelling_delivers_the_answer_and_the_final_view_before_closing": func(t *testing.T, deps dependencies) test {
-			admin := newFakeAdmin()
+			admin := startedFakeAdmin()
 			admin.finalView = &runtime.PlayerView{ParticipantID: "P1", Full: true, State: []byte(`{"over":true}`)}
 			accept(deps, admin)
 			return test{
@@ -244,6 +331,7 @@ func TestHandleAdminJoin(t *testing.T) {
 				admin:       admin,
 				clientSends: []string{`{"type":"cancel_session"}`},
 				expectedReceivedAnyOrder: []string{
+					`{"type":"session_started","participants":` + rosterJSON + `}`,
 					`{"type":"cancel_session_result","outcome":"cancelled"}`,
 					`{"type":"player_view","participant_id":"P1","full":true,"state":{"over":true}}`,
 				},

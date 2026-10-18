@@ -118,7 +118,7 @@ func TestAttachAdmin(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			deps := dependencies{sessions: NewMockadminJoinChecker(ctrl), manifests: NewMockmanifestLoader(ctrl)}
 			tc := setup(t, deps)
-			manager := New(deps.sessions, nil, deps.manifests)
+			manager := New(deps.sessions, nil, deps.manifests, nil, nil)
 			if tc.before != nil {
 				tc.before(manager)
 			}

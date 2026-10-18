@@ -206,7 +206,7 @@ func TestAdmitPlayer(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			tc := setup(t)
 			controller := newTestController(t, tc.maxPlayers)
-			admin := controller.AttachAdmin("creator")
+			admin := controller.AttachAdmin("creator", nil)
 			if tc.before != nil {
 				tc.before(t, controller)
 			}

@@ -57,9 +57,12 @@ func (m *Manager) AttachAdmin(ctx context.Context, sessionUUID string, userUUID 
 		return rejectAdmin(ctx, runtime.RejectOwnerChanged), nil
 	}
 	adminAttaches.Inc(ctx, attachOutcomeLabel.Value("accepted"))
+	start := func(ctx context.Context) (runtime.StartSessionResult, error) {
+		return m.startSession(ctx, sessionController, sessionUUID, userUUID)
+	}
 	return runtime.AttachAdminResult{
 		Outcome:    runtime.AttachAccepted,
-		Connection: sessionController.AttachAdmin(userUUID),
+		Connection: sessionController.AttachAdmin(userUUID, start),
 	}, nil
 }
 

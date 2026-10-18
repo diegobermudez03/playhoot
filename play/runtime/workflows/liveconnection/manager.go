@@ -5,6 +5,8 @@ package liveconnection
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/binary"
 
 	"github.com/diegobermudez03/playhoot/play/runtime/internal/controller"
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
@@ -23,18 +25,33 @@ type Manager struct {
 	adminJoins  adminJoinChecker
 	playerJoins playerJoinChecker
 	manifests   manifestLoader
+	starts      sessionStarter
+	sandbox     gameSandbox
 	controllers *controller.Registry
+	// seeds returns the seed of a starting game's randomness.
+	seeds func() uint64
 }
 
 // New constructs a Manager. adminJoins and playerJoins decide who may join a
-// Session; manifests describe the game a Session plays.
-func New(adminJoins adminJoinChecker, playerJoins playerJoinChecker, manifests manifestLoader) *Manager {
+// Session; manifests describe the game a Session plays; starts records a
+// Session's start and sandbox runs its game.
+func New(adminJoins adminJoinChecker, playerJoins playerJoinChecker, manifests manifestLoader, starts sessionStarter, sandbox gameSandbox) *Manager {
 	return &Manager{
 		adminJoins:  adminJoins,
 		playerJoins: playerJoins,
 		manifests:   manifests,
+		starts:      starts,
+		sandbox:     sandbox,
 		controllers: controller.NewRegistry(),
+		seeds:       randomSeed,
 	}
+}
+
+func randomSeed() uint64 {
+	var seed [8]byte
+	// crypto/rand.Read never fails.
+	_, _ = rand.Read(seed[:])
+	return binary.LittleEndian.Uint64(seed[:])
 }
 
 // controllerFor finds or creates sessionUUID's controller under ownerEpoch,

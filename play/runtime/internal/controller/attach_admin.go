@@ -16,26 +16,38 @@ func (c *Controller) AdminCount() int {
 }
 
 // AttachAdmin registers userUUID's admin connection and returns its
-// operations. Several admin connections of the same creator may be attached
-// at once. The first lobby update is the lobby as it is now.
-func (c *Controller) AttachAdmin(userUUID string) runtime.AdminConnection {
+// operations, starting the Session through start. Several admin connections
+// of the same creator may be attached at once. Before the game runs, the
+// first lobby update is the lobby as it is now.
+func (c *Controller) AttachAdmin(userUUID string, start func(ctx context.Context) (runtime.StartSessionResult, error)) runtime.AdminConnection {
 	admin := newConnection(uuid.NewString(), userUUID)
 	c.mu.Lock()
-	c.admins[admin.id] = admin
-	admin.lobbyUpdates.publish(c.lobbyLocked())
+	switch c.phase {
+	case phaseLobby, phaseStarting:
+		admin.lobbyUpdates.publish(c.lobbyLocked())
+	case phaseEnded:
+		admin.end(runtime.EndSessionEnded)
+	default:
+		admin.lobbyUpdates.finish()
+		close(admin.started)
+	}
+	if c.phase != phaseEnded {
+		c.admins[admin.id] = admin
+	}
 	c.mu.Unlock()
 
 	return runtime.AdminConnection{
 		SelectPerspective: func(context.Context, string) (runtime.SelectPerspectiveResult, error) {
 			return runtime.SelectPerspectiveResult{}, ErrNotImplemented
 		},
-		StartSession: func(context.Context) (runtime.StartSessionResult, error) {
-			return runtime.StartSessionResult{}, ErrNotImplemented
-		},
+		StartSession: start,
 		CancelSession: func(context.Context) (runtime.CancelSessionResult, error) {
 			return runtime.CancelSessionResult{}, ErrNotImplemented
 		},
 		NextLobbyUpdate: admin.nextLobbyUpdate,
+		Started: func(ctx context.Context) (runtime.SessionStart, bool) {
+			return c.sessionStart(ctx, admin)
+		},
 		NextView: func(ctx context.Context) (runtime.PlayerView, bool) {
 			admin.waitWithoutResult(ctx)
 			return runtime.PlayerView{}, false

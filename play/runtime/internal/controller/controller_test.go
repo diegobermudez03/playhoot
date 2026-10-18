@@ -79,7 +79,7 @@ func TestControllerFor(t *testing.T) {
 			var existingPlayer runtime.PlayerConnection
 			if tc.existingEpoch != 0 {
 				existing, _, _ = registry.ControllerFor(ctx, "session-1", tc.existingEpoch, loadManifest(manifest))
-				existingAdmin = existing.AttachAdmin("creator")
+				existingAdmin = existing.AttachAdmin("creator", nil)
 				existingPlayer, _, _ = existing.AdmitPlayer(ctx, "player")
 			}
 

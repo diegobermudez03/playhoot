@@ -29,9 +29,17 @@ const (
 	// freely and every change reaches all connections as a lobby update.
 	phaseLobby phase = "lobby"
 
+	// phaseStarting is an attempt to start the game: the lobby is frozen,
+	// so nobody joins and nobody who disconnects leaves it until the attempt
+	// ends.
+	phaseStarting phase = "starting"
+
 	// phaseRunning is a started game: its participants are fixed and the
 	// lobby is closed. Start moves a Controller here.
 	phaseRunning phase = "running"
+
+	// phaseEnded is a Session that reached a terminal state.
+	phaseEnded phase = "ended"
 )
 
 // ManifestLoader reads the manifest of the Session a new Controller is for.
@@ -57,6 +65,12 @@ type Controller struct {
 	// users in the lobby in the order they joined.
 	players map[string]*connection
 	lobby   []string
+
+	// participants are the lobby frozen by the current Start attempt, kept
+	// once the game runs.
+	participants []runtime.Participant
+	// game is the confirmed state of the running game.
+	game Game
 }
 
 // NewRegistry constructs an empty Registry.
@@ -169,8 +183,13 @@ func (c *Controller) leaveLobbyLocked(player *connection) {
 type connection struct {
 	id       string
 	userUUID string
+	// participantID is set when the game starts, for a player's connection.
+	participantID string
 
 	lobbyUpdates lobbyFeed
+	views        viewFeed
+	// started is closed when the game starts while the connection is open.
+	started chan struct{}
 
 	once   sync.Once
 	ended  chan struct{}
@@ -178,7 +197,7 @@ type connection struct {
 }
 
 func newConnection(id string, userUUID string) *connection {
-	return &connection{id: id, userUUID: userUUID, lobbyUpdates: newLobbyFeed(), ended: make(chan struct{})}
+	return &connection{id: id, userUUID: userUUID, lobbyUpdates: newLobbyFeed(), views: newViewFeed(), started: make(chan struct{}), ended: make(chan struct{})}
 }
 
 func (c *connection) end(reason runtime.EndReason) {
@@ -186,6 +205,15 @@ func (c *connection) end(reason runtime.EndReason) {
 		c.reason = reason
 		close(c.ended)
 	})
+}
+
+func (c *connection) isEnded() bool {
+	select {
+	case <-c.ended:
+		return true
+	default:
+		return false
+	}
 }
 
 func (c *connection) wait(ctx context.Context) (runtime.ConnectionEnd, bool) {
@@ -214,10 +242,12 @@ func (c *connection) nextLobbyUpdate(ctx context.Context) (runtime.LobbyUpdate, 
 
 // lobbyFeed holds the latest lobby update a connection has not taken yet.
 // Each update is the whole lobby, so a newer one replaces one not yet taken.
+// Once finished it reports no more updates after the pending one.
 type lobbyFeed struct {
-	mu      sync.Mutex
-	pending *runtime.LobbyUpdate
-	signal  chan struct{}
+	mu       sync.Mutex
+	pending  *runtime.LobbyUpdate
+	finished bool
+	signal   chan struct{}
 }
 
 func newLobbyFeed() lobbyFeed {
@@ -226,7 +256,78 @@ func newLobbyFeed() lobbyFeed {
 
 func (f *lobbyFeed) publish(update runtime.LobbyUpdate) {
 	f.mu.Lock()
+	if f.finished {
+		f.mu.Unlock()
+		return
+	}
 	f.pending = &update
+	f.mu.Unlock()
+	f.wake()
+}
+
+// finish ends the feed: the lobby is over for this connection.
+func (f *lobbyFeed) finish() {
+	f.mu.Lock()
+	f.finished = true
+	f.mu.Unlock()
+	f.wake()
+}
+
+func (f *lobbyFeed) wake() {
+	select {
+	case f.signal <- struct{}{}:
+	default:
+	}
+}
+
+// take returns the pending update; more is false once the feed finished
+// with nothing pending.
+func (f *lobbyFeed) take() (update runtime.LobbyUpdate, ok bool, more bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.pending == nil {
+		return runtime.LobbyUpdate{}, false, !f.finished
+	}
+	update = *f.pending
+	f.pending = nil
+	return update, true, true
+}
+
+func (f *lobbyFeed) next(ctx context.Context, ended <-chan struct{}) (runtime.LobbyUpdate, bool) {
+	for {
+		update, ok, more := f.take()
+		if ok {
+			return update, true
+		}
+		if !more {
+			return runtime.LobbyUpdate{}, false
+		}
+		select {
+		case <-f.signal:
+		case <-ended:
+			update, ok, _ := f.take()
+			return update, ok
+		case <-ctx.Done():
+			return runtime.LobbyUpdate{}, false
+		}
+	}
+}
+
+// viewFeed holds a connection's views in the order they were produced, until
+// taken.
+type viewFeed struct {
+	mu      sync.Mutex
+	pending []runtime.OwnView
+	signal  chan struct{}
+}
+
+func newViewFeed() viewFeed {
+	return viewFeed{signal: make(chan struct{}, 1)}
+}
+
+func (f *viewFeed) publish(view runtime.OwnView) {
+	f.mu.Lock()
+	f.pending = append(f.pending, view)
 	f.mu.Unlock()
 	select {
 	case f.signal <- struct{}{}:
@@ -234,28 +335,30 @@ func (f *lobbyFeed) publish(update runtime.LobbyUpdate) {
 	}
 }
 
-func (f *lobbyFeed) take() (runtime.LobbyUpdate, bool) {
+func (f *viewFeed) take() (runtime.OwnView, bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.pending == nil {
-		return runtime.LobbyUpdate{}, false
+	if len(f.pending) == 0 {
+		return runtime.OwnView{}, false
 	}
-	update := *f.pending
-	f.pending = nil
-	return update, true
+	view := f.pending[0]
+	f.pending = f.pending[1:]
+	return view, true
 }
 
-func (f *lobbyFeed) next(ctx context.Context, ended <-chan struct{}) (runtime.LobbyUpdate, bool) {
+// next returns the oldest view not yet taken; every view published before the
+// end is still returned before false.
+func (f *viewFeed) next(ctx context.Context, ended <-chan struct{}) (runtime.OwnView, bool) {
 	for {
-		if update, ok := f.take(); ok {
-			return update, true
+		if view, ok := f.take(); ok {
+			return view, true
 		}
 		select {
 		case <-f.signal:
 		case <-ended:
 			return f.take()
 		case <-ctx.Done():
-			return runtime.LobbyUpdate{}, false
+			return runtime.OwnView{}, false
 		}
 	}
 }

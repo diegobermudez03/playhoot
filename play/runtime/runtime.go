@@ -72,6 +72,10 @@ const (
 	// EndSessionEnded means the Session reached a terminal state.
 	EndSessionEnded EndReason = "session_ended"
 
+	// EndSessionAborted means the Session could not go on because of a
+	// failure, such as its game failing to start.
+	EndSessionAborted EndReason = "session_aborted"
+
 	// EndLeft means the player left the Session, or its lobby.
 	EndLeft EndReason = "left"
 
@@ -98,8 +102,9 @@ type AttachAdminResult struct {
 }
 
 // AdminConnection is everything a caller can do with an admitted admin
-// connection. The caller must run NextView and Ended until they report the
-// end, and call Disconnect once when the client is gone.
+// connection. The caller must run NextLobbyUpdate, Started, NextView and
+// Ended until they report the end, and call Disconnect once when the client
+// is gone.
 type AdminConnection struct {
 	// SelectPerspective switches the participant whose view this connection
 	// receives; a FULL view of them follows through NextView.
@@ -111,8 +116,13 @@ type AdminConnection struct {
 	// CancelSession ends the Session as cancelled by its creator.
 	CancelSession func(ctx context.Context) (CancelSessionResult, error)
 
-	// NextLobbyUpdate blocks until the lobby changes; see LobbyUpdate.
+	// NextLobbyUpdate blocks until the lobby changes; see LobbyUpdate. False
+	// means no update follows: the Session started or the connection ended.
 	NextLobbyUpdate func(ctx context.Context) (LobbyUpdate, bool)
+
+	// Started blocks until the Session starts; false means the connection
+	// ended, or ctx was done, first.
+	Started func(ctx context.Context) (SessionStart, bool)
 
 	// NextView blocks until the next view of the selected participant. Every
 	// view produced before the connection ended is returned before false.
@@ -186,6 +196,10 @@ const (
 	// StartGameUnavailable means the Session's game version can no longer be
 	// played.
 	StartGameUnavailable StartSessionOutcome = "game_unavailable"
+
+	// StartFailed means the game's script failed to start, so the Session was
+	// aborted and its connections end as EndSessionAborted.
+	StartFailed StartSessionOutcome = "start_failed"
 )
 
 // StartSessionResult is the outcome of starting a Session.
@@ -194,7 +208,8 @@ type StartSessionResult struct {
 }
 
 // LobbyUpdate is the lobby's members after a change. Closed means the lobby
-// closed because the Session started: no update follows it.
+// closed without the Session starting: no update follows it and the
+// connection ends.
 type LobbyUpdate struct {
 	Members []LobbyMember
 	Closed  bool
@@ -203,6 +218,26 @@ type LobbyUpdate struct {
 // LobbyMember is a player waiting in the lobby.
 type LobbyMember struct {
 	UserUUID string
+}
+
+// SessionStart is who plays a started Session, in ParticipantID order.
+type SessionStart struct {
+	Participants []Participant
+}
+
+// Participant is a player of a started Session. The game knows them only by
+// ParticipantID, which never changes for the Session.
+type Participant struct {
+	ParticipantID string
+	UserUUID      string
+}
+
+// PlayerStart is a Session's start as one of its players sees it.
+type PlayerStart struct {
+	SessionStart
+
+	// ParticipantID is the player's own.
+	ParticipantID string
 }
 
 // AttachPlayerResult is the outcome of attaching a player connection.
@@ -214,8 +249,9 @@ type AttachPlayerResult struct {
 }
 
 // PlayerConnection is everything a caller can do with an admitted player
-// connection. The caller must run NextLobbyUpdate, NextView and Ended until
-// they report the end, and call Disconnect once when the client is gone.
+// connection. The caller must run NextLobbyUpdate, Started, NextView and
+// Ended until they report the end, and call Disconnect once when the client
+// is gone.
 type PlayerConnection struct {
 	// Leave removes the player from the Session for good; the connection
 	// then ends as EndLeft.
@@ -232,8 +268,13 @@ type PlayerConnection struct {
 	// through NextView.
 	Resync func(ctx context.Context) error
 
-	// NextLobbyUpdate blocks until the lobby changes; see LobbyUpdate.
+	// NextLobbyUpdate blocks until the lobby changes; see LobbyUpdate. False
+	// means no update follows: the Session started or the connection ended.
 	NextLobbyUpdate func(ctx context.Context) (LobbyUpdate, bool)
+
+	// Started blocks until the Session starts; false means the connection
+	// ended, or ctx was done, first.
+	Started func(ctx context.Context) (PlayerStart, bool)
 
 	// NextView blocks until the player's next view. Every view produced
 	// before the connection ended is returned before false.

@@ -109,3 +109,65 @@ type RuntimeManifest struct {
 // ErrSessionNotFound is returned when an operation names a Session that does
 // not exist.
 var ErrSessionNotFound = errors.New("session not found")
+
+// StartEligibilityOutcome is whether a Session may start.
+type StartEligibilityOutcome string
+
+const (
+	// StartEligible means the Session is in LOBBY before its expiry, the
+	// user created it, the player count fits its game version and that
+	// version can still be played.
+	StartEligible StartEligibilityOutcome = "eligible"
+
+	StartSessionNotFound StartEligibilityOutcome = "session_not_found"
+
+	// StartNotInLobby means the Session already started, ended, or its lobby
+	// expired.
+	StartNotInLobby StartEligibilityOutcome = "not_in_lobby"
+
+	StartNotCreator StartEligibilityOutcome = "not_creator"
+
+	// StartInvalidPlayerCount means the game version does not allow that
+	// many players.
+	StartInvalidPlayerCount StartEligibilityOutcome = "invalid_player_count"
+
+	// StartGameUnavailable means the pinned game version can no longer be
+	// played.
+	StartGameUnavailable StartEligibilityOutcome = "game_unavailable"
+)
+
+// StartEligibility is whether a Session may start and, when eligible, the
+// game it starts. GameVersionUUID and Script are set only when eligible.
+type StartEligibility struct {
+	Outcome         StartEligibilityOutcome
+	GameVersionUUID string
+
+	// Script is the pinned game version's verified JavaScript source.
+	Script []byte
+}
+
+// StartParticipant maps a player to the ParticipantID the game knows them by.
+type StartParticipant struct {
+	UserUUID      string
+	ParticipantID string
+}
+
+// StartCommit is what a Session records when it becomes RUNNING.
+type StartCommit struct {
+	Participants []StartParticipant
+
+	// CheckpointRef locates the initial recovery checkpoint, already stored.
+	CheckpointRef string
+}
+
+// CommitStartOutcome is the decision a CommitStart call reached.
+type CommitStartOutcome string
+
+const (
+	// CommitStartCommitted means the Session is RUNNING with the roster.
+	CommitStartCommitted CommitStartOutcome = "committed"
+
+	// CommitStartNotInLobby means the Session left its lobby meanwhile, so
+	// nothing was recorded and the stored checkpoint is an orphan.
+	CommitStartNotInLobby CommitStartOutcome = "not_in_lobby"
+)

@@ -26,6 +26,11 @@ type adminSelectPerspectiveRequest struct {
 	ParticipantID string `json:"participant_id"`
 }
 
+type adminSessionStartedMessage struct {
+	Type         string               `json:"type"`
+	Participants []participantMessage `json:"participants"`
+}
+
 type adminPlayerViewMessage struct {
 	Type          string          `json:"type"`
 	ParticipantID string          `json:"participant_id"`
@@ -57,7 +62,7 @@ func (h *Handler) handleAdminJoin(w http.ResponseWriter, r *http.Request) {
 
 	admin := attached.Connection
 	if admin.SelectPerspective == nil || admin.StartSession == nil || admin.CancelSession == nil ||
-		admin.NextLobbyUpdate == nil || admin.NextView == nil || admin.Ended == nil || admin.Disconnect == nil {
+		admin.NextLobbyUpdate == nil || admin.Started == nil || admin.NextView == nil || admin.Ended == nil || admin.Disconnect == nil {
 		logging.LogError(ctx, errIncompleteAdminConnection)
 		wsx.Abort(conn)
 		return
@@ -69,8 +74,13 @@ func (h *Handler) handleAdminJoin(w http.ResponseWriter, r *http.Request) {
 		adminCancelSession:     session.cancelSession,
 	})
 	h.live.Serve(ctx, conn, admin.Disconnect, append(loops,
-		session.sendLobbyUpdates(admin.NextLobbyUpdate),
-		sendStream(session.liveSession, admin.NextView, session.viewMessage),
+		sendSession(session.liveSession, sessionStream[runtime.SessionStart, runtime.PlayerView]{
+			nextLobbyUpdate: admin.NextLobbyUpdate,
+			started:         admin.Started,
+			startMessage:    adminStartedMessage,
+			nextView:        admin.NextView,
+			viewMessage:     adminViewMessage,
+		}),
 		session.closeOnRuntimeEnd(admin.Ended),
 	)...)
 }
@@ -109,13 +119,18 @@ func (s *adminSession) cancelSession(ctx context.Context, _ []byte) (live.End, b
 	return live.WriteMessage(ctx, s.conn, outcomeMessage{Type: adminCancelSessionResult, Outcome: string(result.Outcome)})
 }
 
-// viewMessage is a view of the selected participant, without the SAMPLE
+// adminStartedMessage tells the admin who plays.
+func adminStartedMessage(start runtime.SessionStart) any {
+	return adminSessionStartedMessage{Type: liveSessionStarted, Participants: participantsJSON(start)}
+}
+
+// adminViewMessage is a view of the selected participant, without the SAMPLE
 // acknowledgement only their own connection receives.
-func (s *adminSession) viewMessage(view runtime.PlayerView) (any, bool) {
+func adminViewMessage(view runtime.PlayerView) any {
 	return adminPlayerViewMessage{
 		Type:          livePlayerView,
 		ParticipantID: view.ParticipantID,
 		Full:          view.Full,
 		State:         gameJSON(view.State),
-	}, false
+	}
 }

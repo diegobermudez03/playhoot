@@ -21,8 +21,8 @@ import (
 // fakePlayer is a Runtime player connection whose streams and end the test
 // controls, recording what the handler asked of it.
 type fakePlayer struct {
+	*fakeLobby[runtime.PlayerStart]
 	views      chan runtime.OwnView
-	lobby      chan runtime.LobbyUpdate
 	commandErr error
 	// commandAwaitsSamples makes Command wait until this many SAMPLEs arrived.
 	commandAwaitsSamples int
@@ -42,17 +42,29 @@ type fakePlayer struct {
 
 func newFakePlayer() *fakePlayer {
 	return &fakePlayer{
-		views:   make(chan runtime.OwnView, 4),
-		lobby:   make(chan runtime.LobbyUpdate, 4),
-		sampled: make(chan struct{}, 8),
-		ended:   make(chan struct{}),
+		fakeLobby: newFakeLobby[runtime.PlayerStart](),
+		views:     make(chan runtime.OwnView, 4),
+		sampled:   make(chan struct{}, 8),
+		ended:     make(chan struct{}),
 	}
 }
+
+// startedFakePlayer returns a fake player, P2, of a Session that started with
+// roster.
+func startedFakePlayer() *fakePlayer {
+	player := newFakePlayer()
+	player.start(runtime.PlayerStart{SessionStart: roster, ParticipantID: "P2"})
+	return player
+}
+
+// playerStartedJSON is the start startedFakePlayer reports, on the wire.
+const playerStartedJSON = `{"type":"session_started","participant_id":"P2","participants":` + rosterJSON + `}`
 
 func (f *fakePlayer) end(reason runtime.EndReason) {
 	f.endOnce.Do(func() {
 		f.reason = reason
 		close(f.ended)
+		f.closeLobby()
 	})
 }
 
@@ -92,8 +104,9 @@ func (f *fakePlayer) connection() runtime.PlayerConnection {
 			f.views <- f.resyncView
 			return nil
 		},
-		NextLobbyUpdate: func(ctx context.Context) (runtime.LobbyUpdate, bool) {
-			return nextOf(ctx, f.lobby, f.ended)
+		NextLobbyUpdate: f.nextLobbyUpdate,
+		Started: func(ctx context.Context) (runtime.PlayerStart, bool) {
+			return f.waitStarted(ctx, f.ended)
 		},
 		NextView: func(ctx context.Context) (runtime.OwnView, bool) {
 			return nextOf(ctx, f.views, f.ended)
@@ -180,31 +193,76 @@ func TestHandlePlayerJoin(t *testing.T) {
 			}
 		},
 		"views_carry_the_sample_acknowledgement": func(t *testing.T, deps dependencies) test {
-			player := newFakePlayer()
+			player := startedFakePlayer()
 			player.views <- runtime.OwnView{
 				PlayerView:                    runtime.PlayerView{ParticipantID: "P1", Full: true, State: []byte(`{"x":3}`)},
 				ConsumedThroughSampleSequence: 22,
 			}
 			accept(deps, player)
 			return test{
-				player:              player,
-				clientCloses:        true,
-				expectedReceived:    []string{`{"type":"player_view","participant_id":"P1","full":true,"state":{"x":3},"consumed_through_sample_sequence":22}`},
+				player:       player,
+				clientCloses: true,
+				expectedReceived: []string{
+					playerStartedJSON,
+					`{"type":"player_view","participant_id":"P1","full":true,"state":{"x":3},"consumed_through_sample_sequence":22}`,
+				},
 				expectedDisconnects: 1,
 			}
 		},
 		"resync_is_followed_by_a_full_view": func(t *testing.T, deps dependencies) test {
-			player := newFakePlayer()
+			player := startedFakePlayer()
 			player.resyncView = runtime.OwnView{
 				PlayerView:                    runtime.PlayerView{ParticipantID: "P2", Full: true, State: []byte(`{"y":1}`)},
 				ConsumedThroughSampleSequence: 5,
 			}
 			accept(deps, player)
 			return test{
+				player:       player,
+				clientSends:  []string{`{"type":"resync"}`},
+				clientCloses: true,
+				expectedReceived: []string{
+					playerStartedJSON,
+					`{"type":"player_view","participant_id":"P2","full":true,"state":{"y":1},"consumed_through_sample_sequence":5}`,
+				},
+				expectedDisconnects: 1,
+			}
+		},
+		"start_follows_the_lobby_and_precedes_the_views": func(t *testing.T, deps dependencies) test {
+			player := newFakePlayer()
+			player.lobby <- runtime.LobbyUpdate{Members: []runtime.LobbyMember{{UserUUID: "u1"}, {UserUUID: "u2"}}}
+			player.views <- runtime.OwnView{PlayerView: runtime.PlayerView{ParticipantID: "P2", Full: true, State: []byte(`{"round":1}`)}}
+			player.start(runtime.PlayerStart{SessionStart: roster, ParticipantID: "P2"})
+			accept(deps, player)
+			return test{
+				player:       player,
+				clientCloses: true,
+				expectedReceived: []string{
+					`{"type":"lobby_update","members":[{"user_uuid":"u1"},{"user_uuid":"u2"}]}`,
+					playerStartedJSON,
+					`{"type":"player_view","participant_id":"P2","full":true,"state":{"round":1},"consumed_through_sample_sequence":0}`,
+				},
+				expectedDisconnects: 1,
+			}
+		},
+		"lobby_closed_without_starting_ends_the_stream": func(t *testing.T, deps dependencies) test {
+			player := newFakePlayer()
+			player.lobby <- runtime.LobbyUpdate{Closed: true}
+			player.end(runtime.EndSessionEnded)
+			accept(deps, player)
+			return test{
 				player:              player,
-				clientSends:         []string{`{"type":"resync"}`},
-				clientCloses:        true,
-				expectedReceived:    []string{`{"type":"player_view","participant_id":"P2","full":true,"state":{"y":1},"consumed_through_sample_sequence":5}`},
+				expectedReceived:    []string{`{"type":"lobby_closed"}`},
+				expectedCloseStatus: websocket.StatusNormalClosure,
+				expectedDisconnects: 1,
+			}
+		},
+		"session_aborted_closes_normally": func(t *testing.T, deps dependencies) test {
+			player := newFakePlayer()
+			player.end(runtime.EndSessionAborted)
+			accept(deps, player)
+			return test{
+				player:              player,
+				expectedCloseStatus: websocket.StatusNormalClosure,
 				expectedDisconnects: 1,
 			}
 		},
