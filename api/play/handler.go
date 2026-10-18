@@ -107,7 +107,7 @@ func (h *Handler) RESTRoutes() []routing.Route {
 func (h *Handler) WebSocketRoutes() []routing.Route {
 	return []routing.Route{
 		{
-			Pattern: "GET /v1/sessions/{sessionUUID}/admin",
+			Pattern: "GET /v1/play/join/sessions/{sessionUUID}/admin",
 			Handler: h.handleAdminJoin,
 			Middlewares: []routing.Middleware{
 				auth.RequireWebSocket(h.authorizer, identity.OperationJoinSessionAsAdmin),
@@ -115,7 +115,7 @@ func (h *Handler) WebSocketRoutes() []routing.Route {
 			},
 		},
 		{
-			Pattern: "GET /v1/sessions/{sessionUUID}/player",
+			Pattern: "GET /v1/play/join/sessions/{sessionUUID}/player",
 			Handler: h.handlePlayerJoin,
 			Middlewares: []routing.Middleware{
 				auth.RequireWebSocket(h.authorizer, identity.OperationJoinSessionAsPlayer),
@@ -123,7 +123,7 @@ func (h *Handler) WebSocketRoutes() []routing.Route {
 			},
 		},
 		{
-			Pattern: "GET /v1/join/{joinCode}",
+			Pattern: "GET /v1/play/join/{joinCode}",
 			Handler: h.handlePlayerJoin,
 			Middlewares: []routing.Middleware{
 				auth.RequireWebSocket(h.authorizer, identity.OperationJoinSessionAsPlayer),
