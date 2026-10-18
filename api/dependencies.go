@@ -8,6 +8,11 @@ import (
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
 
+// guestCreator is Identity's guest creation.
+type guestCreator interface {
+	CreateGuest(ctx context.Context, displayName string, idempotencyKey string) (identity.CreateGuestResult, error)
+}
+
 // authorizer is Identity's coarse authorization.
 type authorizer interface {
 	Authorize(ctx context.Context, token string, operation identity.Operation) (string, identity.AccessDecision, error)

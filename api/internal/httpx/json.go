@@ -9,8 +9,10 @@ import (
 )
 
 // ErrorResponse is the wire shape every HTTP handler in api uses to report
-// a failure.
+// a failure. Code, when set, is a stable identifier clients may branch on;
+// Message is for people and may change.
 type ErrorResponse struct {
+	Code    string `json:"code,omitempty"`
 	Message string `json:"message"`
 }
 
@@ -24,4 +26,10 @@ func WriteJSON(w http.ResponseWriter, status int, body any) {
 // WriteError writes message as an ErrorResponse with the given HTTP status.
 func WriteError(w http.ResponseWriter, status int, message string) {
 	WriteJSON(w, status, ErrorResponse{Message: message})
+}
+
+// WriteCodedError writes an ErrorResponse carrying code, for failures clients
+// must tell apart.
+func WriteCodedError(w http.ResponseWriter, status int, code string, message string) {
+	WriteJSON(w, status, ErrorResponse{Code: code, Message: message})
 }

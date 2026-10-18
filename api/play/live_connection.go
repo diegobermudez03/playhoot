@@ -198,7 +198,7 @@ func (s *liveSession) closeOnRuntimeEnd(ended func(ctx context.Context) (runtime
 
 		status := websocket.StatusInternalError
 		switch end.Reason {
-		case runtime.EndSessionEnded, runtime.EndDisconnected, runtime.EndLeft:
+		case runtime.EndSessionEnded, runtime.EndDisconnected, runtime.EndLeft, runtime.EndReplaced:
 			status = websocket.StatusNormalClosure
 		case runtime.EndOwnerChanged:
 			// Tells the client to reconnect, which routes it to the current owner.

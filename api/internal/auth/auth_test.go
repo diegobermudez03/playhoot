@@ -64,7 +64,7 @@ func TestRequire(t *testing.T) {
 			return test{
 				ctx:                context.Background(),
 				expectedCode:       http.StatusUnauthorized,
-				expectedBody:       `{"message":"missing bearer token"}`,
+				expectedBody:       `{"code":"token_required","message":"this endpoint requires a bearer token"}`,
 				expectedAuthHeader: "Bearer",
 			}
 		},
@@ -73,7 +73,7 @@ func TestRequire(t *testing.T) {
 				ctx:                context.Background(),
 				authorization:      "Basic dXNlcjpwYXNz",
 				expectedCode:       http.StatusUnauthorized,
-				expectedBody:       `{"message":"missing bearer token"}`,
+				expectedBody:       `{"code":"token_required","message":"this endpoint requires a bearer token"}`,
 				expectedAuthHeader: "Bearer",
 			}
 		},
@@ -82,7 +82,7 @@ func TestRequire(t *testing.T) {
 				ctx:                context.Background(),
 				authorization:      "Bearer ",
 				expectedCode:       http.StatusUnauthorized,
-				expectedBody:       `{"message":"missing bearer token"}`,
+				expectedBody:       `{"code":"token_required","message":"this endpoint requires a bearer token"}`,
 				expectedAuthHeader: "Bearer",
 			}
 		},
@@ -95,7 +95,7 @@ func TestRequire(t *testing.T) {
 				ctx:                ctx,
 				authorization:      "Bearer expired",
 				expectedCode:       http.StatusUnauthorized,
-				expectedBody:       `{"message":"invalid or expired token"}`,
+				expectedBody:       `{"code":"token_invalid","message":"invalid or expired token"}`,
 				expectedAuthHeader: "Bearer",
 			}
 		},
@@ -108,7 +108,7 @@ func TestRequire(t *testing.T) {
 				ctx:           ctx,
 				authorization: "Bearer guest-token",
 				expectedCode:  http.StatusForbidden,
-				expectedBody:  `{"message":"operation not allowed"}`,
+				expectedBody:  `{"code":"operation_forbidden","message":"operation not allowed"}`,
 			}
 		},
 		"identity_fails": func(t *testing.T, deps dependencies) test {
@@ -241,7 +241,7 @@ func TestRequireWebSocket(t *testing.T) {
 				ctx:          ctx,
 				protocols:    []string{"playhoot.v1", bearerProtocol("guest-token")},
 				expectedCode: http.StatusForbidden,
-				expectedBody: `{"message":"operation not allowed"}`,
+				expectedBody: `{"code":"operation_forbidden","message":"operation not allowed"}`,
 			}
 		},
 		"malformed_token_subprotocol": func(t *testing.T, deps dependencies) test {
@@ -249,7 +249,7 @@ func TestRequireWebSocket(t *testing.T) {
 				ctx:                context.Background(),
 				protocols:          []string{"playhoot.v1, " + webSocketBearerProtocolPrefix + "not*base64"},
 				expectedCode:       http.StatusUnauthorized,
-				expectedBody:       `{"message":"malformed bearer token"}`,
+				expectedBody:       `{"code":"token_malformed","message":"malformed bearer token"}`,
 				expectedAuthHeader: "Bearer",
 			}
 		},
@@ -258,7 +258,7 @@ func TestRequireWebSocket(t *testing.T) {
 				ctx:                context.Background(),
 				protocols:          []string{"playhoot.v1"},
 				expectedCode:       http.StatusUnauthorized,
-				expectedBody:       `{"message":"missing bearer token"}`,
+				expectedBody:       `{"code":"token_required","message":"this endpoint requires a bearer token"}`,
 				expectedAuthHeader: "Bearer",
 			}
 		},

@@ -68,6 +68,16 @@ func UserUUID(ctx context.Context) (string, bool) {
 // cannot set headers on a WebSocket handshake. The same scheme as Kubernetes.
 const webSocketBearerProtocolPrefix = "base64url.bearer.authorization.playhoot."
 
+// Error codes of authorization failures. A client without a token gets
+// codeTokenRequired and must obtain one first (as a guest, if it has no
+// account).
+const (
+	codeTokenRequired      = "token_required"
+	codeTokenMalformed     = "token_malformed"
+	codeTokenInvalid       = "token_invalid"
+	codeOperationForbidden = "operation_forbidden"
+)
+
 var (
 	errMissingToken   = errors.New("missing bearer token")
 	errMalformedToken = errors.New("malformed bearer token")
@@ -98,12 +108,12 @@ func requireToken(authorizer authorizer, operation identity.Operation, tokenFrom
 			token, err := tokenFrom(r)
 			if errors.Is(err, errMalformedToken) {
 				authorizationTotal.Inc(ctx, decisionMalformedToken)
-				writeUnauthenticated(w, "malformed bearer token")
+				writeUnauthenticated(w, codeTokenMalformed, "malformed bearer token")
 				return
 			}
 			if err != nil {
 				authorizationTotal.Inc(ctx, decisionMissingToken)
-				writeUnauthenticated(w, "missing bearer token")
+				writeUnauthenticated(w, codeTokenRequired, "this endpoint requires a bearer token")
 				return
 			}
 
@@ -134,9 +144,9 @@ func requireToken(authorizer authorizer, operation identity.Operation, tokenFrom
 				logging.LogFields(ctx, logging.Field("user_uuid", userUUID))
 				next(w, r.WithContext(WithUserUUID(ctx, userUUID)))
 			case decisionUnauthenticated:
-				writeUnauthenticated(w, "invalid or expired token")
+				writeUnauthenticated(w, codeTokenInvalid, "invalid or expired token")
 			case decisionForbidden:
-				httpx.WriteError(w, http.StatusForbidden, "operation not allowed")
+				httpx.WriteCodedError(w, http.StatusForbidden, codeOperationForbidden, "operation not allowed")
 			default:
 				httpx.WriteError(w, http.StatusInternalServerError, "authorization failed")
 			}
@@ -184,7 +194,7 @@ func bearerToken(r *http.Request) (string, bool) {
 	return token, true
 }
 
-func writeUnauthenticated(w http.ResponseWriter, message string) {
+func writeUnauthenticated(w http.ResponseWriter, code string, message string) {
 	w.Header().Set("WWW-Authenticate", "Bearer")
-	httpx.WriteError(w, http.StatusUnauthorized, message)
+	httpx.WriteCodedError(w, http.StatusUnauthorized, code, message)
 }

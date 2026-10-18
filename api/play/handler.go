@@ -114,9 +114,6 @@ func (h *Handler) WebSocketRoutes() []routing.Route {
 				requireOwner(h.owners, "sessionUUID"),
 			},
 		},
-		// Pending: a caller without a token gets a guest identity from Identity,
-		// named with the display name it sends, and keeps the guest credentials
-		// it is returned. Until then players need a token, as admins do.
 		{
 			Pattern: "GET /v1/sessions/{sessionUUID}/player",
 			Handler: h.handlePlayerJoin,

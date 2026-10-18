@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	apiidentity "github.com/diegobermudez03/playhoot/api/identity"
 	"github.com/diegobermudez03/playhoot/api/internal/live"
 	"github.com/diegobermudez03/playhoot/api/internal/routing"
 	apiplay "github.com/diegobermudez03/playhoot/api/play"
@@ -30,10 +31,11 @@ type Server struct {
 // NewServer constructs a Server exposing every route group's endpoints.
 // webSocketOriginPatterns are the extra origin hosts (path.Match patterns)
 // browser pages may open live connections from.
-func NewServer(authorizer authorizer, sessionCreator sessionCreator, owners ownerLocator, admins adminAttacher, players playerAttacher, joinCodes joinCodeResolver, webSocketOriginPatterns []string) *Server {
+func NewServer(authorizer authorizer, guests guestCreator, sessionCreator sessionCreator, owners ownerLocator, admins adminAttacher, players playerAttacher, joinCodes joinCodeResolver, webSocketOriginPatterns []string) *Server {
 	mux := http.NewServeMux()
 	liveConnections := live.New()
 	groups := []routeGroup{
+		apiidentity.NewHandler(guests),
 		apiplay.NewHandler(authorizer, sessionCreator, owners, admins, players, joinCodes, liveConnections, webSocketOriginPatterns),
 	}
 	var restRoutes, wsRoutes []routing.Route
