@@ -86,6 +86,21 @@ func (mr *MocksessionStarterMockRecorder) CommitStart(ctx, sessionUUID, userUUID
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CommitStart", reflect.TypeOf((*MocksessionStarter)(nil).CommitStart), ctx, sessionUUID, userUUID, commit)
 }
 
+// LoadRunningSession mocks base method.
+func (m *MocksessionStarter) LoadRunningSession(ctx context.Context, sessionUUID string) (session.RunningSession, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LoadRunningSession", ctx, sessionUUID)
+	ret0, _ := ret[0].(session.RunningSession)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// LoadRunningSession indicates an expected call of LoadRunningSession.
+func (mr *MocksessionStarterMockRecorder) LoadRunningSession(ctx, sessionUUID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LoadRunningSession", reflect.TypeOf((*MocksessionStarter)(nil).LoadRunningSession), ctx, sessionUUID)
+}
+
 // MockfrontendSigner is a mock of frontendSigner interface.
 type MockfrontendSigner struct {
 	ctrl     *gomock.Controller
@@ -191,6 +206,21 @@ func (m *MockgameSandbox) Project(ctx context.Context, contextID, participantID 
 func (mr *MockgameSandboxMockRecorder) Project(ctx, contextID, participantID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Project", reflect.TypeOf((*MockgameSandbox)(nil).Project), ctx, contextID, participantID)
+}
+
+// Restore mocks base method.
+func (m *MockgameSandbox) Restore(ctx context.Context, contextID string, snapshot sandbox.Snapshot) (sandbox.RestoreResult, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Restore", ctx, contextID, snapshot)
+	ret0, _ := ret[0].(sandbox.RestoreResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Restore indicates an expected call of Restore.
+func (mr *MockgameSandboxMockRecorder) Restore(ctx, contextID, snapshot any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Restore", reflect.TypeOf((*MockgameSandbox)(nil).Restore), ctx, contextID, snapshot)
 }
 
 // Start mocks base method.

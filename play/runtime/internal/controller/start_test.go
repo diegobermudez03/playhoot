@@ -10,11 +10,11 @@ import (
 	"github.com/diegobermudez03/playhoot/play/runtime"
 )
 
-// newStartController returns a fresh Controller whose game allows between
-// minPlayers and maxPlayers, with userUUIDs admitted in order.
-func newStartController(t *testing.T, minPlayers int, maxPlayers int, userUUIDs ...string) (*Controller, map[string]runtime.PlayerConnection) {
+// newStartController returns a fresh Controller whose game allows up to
+// maxPlayers, with userUUIDs admitted in order.
+func newStartController(t *testing.T, maxPlayers int, userUUIDs ...string) (*Controller, map[string]runtime.PlayerConnection) {
 	t.Helper()
-	controller, ok, err := NewRegistry().ControllerFor(context.Background(), "session-1", 1, loadManifest(Manifest{MinPlayers: minPlayers, MaxPlayers: maxPlayers}))
+	controller, ok, err := NewRegistry().ControllerFor(context.Background(), "session-1", 1, loadManifest(Manifest{MaxPlayers: maxPlayers}))
 	require.NoError(t, err)
 	require.True(t, ok)
 	players := make(map[string]runtime.PlayerConnection, len(userUUIDs))
@@ -36,8 +36,7 @@ func startedWith[S any](t *testing.T, started func(context.Context) (S, bool)) (
 
 func TestBeginStart(t *testing.T) {
 	type test struct {
-		minPlayers int
-		players    []string
+		players []string
 		// before runs against the Controller before the call under test.
 		before func(t *testing.T, controller *Controller)
 
@@ -50,7 +49,6 @@ func TestBeginStart(t *testing.T) {
 	tests := map[string]func(t *testing.T) test{
 		"lobby_is_frozen_with_participants_in_join_order": func(t *testing.T) test {
 			return test{
-				minPlayers: 2,
 				players:    []string{"user-b", "user-a"},
 				expectedParticipants: []runtime.Participant{
 					{ParticipantID: "P1", UserUUID: "user-b"},
@@ -60,17 +58,8 @@ func TestBeginStart(t *testing.T) {
 				expectedPhase: phaseStarting,
 			}
 		},
-		"fewer_players_than_the_minimum": func(t *testing.T) test {
-			return test{
-				minPlayers:      2,
-				players:         []string{"user-a"},
-				expectedOutcome: runtime.StartInvalidPlayerCount,
-				expectedPhase:   phaseLobby,
-			}
-		},
 		"attempt_already_in_progress": func(t *testing.T) test {
 			return test{
-				minPlayers: 1,
 				players:    []string{"user-a"},
 				before: func(t *testing.T, controller *Controller) {
 					_, _, ok := controller.BeginStart()
@@ -82,12 +71,11 @@ func TestBeginStart(t *testing.T) {
 		},
 		"running_game": func(t *testing.T) test {
 			return test{
-				minPlayers: 1,
 				players:    []string{"user-a"},
 				before: func(t *testing.T, controller *Controller) {
 					_, _, ok := controller.BeginStart()
 					require.True(t, ok)
-					controller.CompleteStart(Game{}, runtime.GameFrontend{}, nil)
+					controller.CompleteStart([]runtime.Participant{{ParticipantID: "P1", UserUUID: "user-a"}}, Game{}, runtime.GameFrontend{}, nil)
 				},
 				expectedOutcome: runtime.StartAlreadyStarted,
 				expectedPhase:   phaseRunning,
@@ -95,7 +83,6 @@ func TestBeginStart(t *testing.T) {
 		},
 		"aborted_session": func(t *testing.T) test {
 			return test{
-				minPlayers: 1,
 				players:    []string{"user-a"},
 				before: func(t *testing.T, controller *Controller) {
 					_, _, ok := controller.BeginStart()
@@ -111,7 +98,7 @@ func TestBeginStart(t *testing.T) {
 	for name, setup := range tests {
 		t.Run(name, func(t *testing.T) {
 			tc := setup(t)
-			controller, _ := newStartController(t, tc.minPlayers, 8, tc.players...)
+			controller, _ := newStartController(t, 8, tc.players...)
 			if tc.before != nil {
 				tc.before(t, controller)
 			}
@@ -167,7 +154,7 @@ func TestCancelStart(t *testing.T) {
 	for name, setup := range tests {
 		t.Run(name, func(t *testing.T) {
 			tc := setup(t)
-			controller, players := newStartController(t, 1, 8, "user-a", "user-b")
+			controller, players := newStartController(t, 8, "user-a", "user-b")
 			admin := controller.AttachAdmin("creator", nil)
 			_, _, ok := controller.BeginStart()
 			require.True(t, ok)
@@ -223,15 +210,15 @@ func TestCompleteStart(t *testing.T) {
 	for name, setup := range tests {
 		t.Run(name, func(t *testing.T) {
 			tc := setup(t)
-			controller, players := newStartController(t, 1, 8, "user-a", "user-b")
+			controller, players := newStartController(t, 8, "user-a", "user-b")
 			admin := controller.AttachAdmin("creator", nil)
-			_, _, ok := controller.BeginStart()
+			participants, _, ok := controller.BeginStart()
 			require.True(t, ok)
 			if tc.during != nil {
 				tc.during(t, players)
 			}
 
-			controller.CompleteStart(game, frontend, views)
+			controller.CompleteStart(participants, game, frontend, views)
 
 			require.Equal(t, phaseRunning, controller.phase)
 			require.Equal(t, game, controller.game)
@@ -267,8 +254,25 @@ func TestCompleteStart(t *testing.T) {
 	}
 }
 
+func TestCompleteStartWithTheCommittedRoster(t *testing.T) {
+	controller, players := newStartController(t, 8, "user-a", "user-b", "user-c")
+	_, _, ok := controller.BeginStart()
+	require.True(t, ok)
+	// The durable Session committed an earlier start, without user-c.
+	committed := []runtime.Participant{{ParticipantID: "P1", UserUUID: "user-b"}, {ParticipantID: "P2", UserUUID: "user-a"}}
+
+	controller.CompleteStart(committed, Game{ContextID: "context-1"}, runtime.GameFrontend{}, map[string][]byte{"P1": []byte(`{}`), "P2": []byte(`{}`)})
+
+	start, started := startedWith(t, players["user-b"].Started)
+	require.True(t, started)
+	require.Equal(t, runtime.PlayerStart{SessionStart: runtime.SessionStart{Participants: committed}, ParticipantID: "P1"}, start, "the committed numbering wins over the lobby's")
+	require.Equal(t, runtime.EndSessionEnded, endedWith(t, players["user-c"].Ended), "a lobby player outside the committed roster is out")
+	_, started = startedWith(t, players["user-c"].Started)
+	require.False(t, started)
+}
+
 func TestAbortStart(t *testing.T) {
-	controller, players := newStartController(t, 1, 8, "user-a")
+	controller, players := newStartController(t, 8, "user-a")
 	admin := controller.AttachAdmin("creator", nil)
 	_, _, ok := controller.BeginStart()
 	require.True(t, ok)

@@ -190,3 +190,20 @@ const (
 	// nothing was recorded.
 	CommitStartNotInLobby CommitStartOutcome = "not_in_lobby"
 )
+
+// RunningSession is what the live Runtime needs to run a started Session
+// again: its game, its roster in ParticipantID order, and its latest
+// recovery checkpoint.
+type RunningSession struct {
+	GameVersionUUID string
+
+	// Script is the pinned game version's verified JavaScript source.
+	Script []byte
+
+	Participants []StartParticipant
+	Checkpoint   Checkpoint
+}
+
+// ErrSessionNotRunning is returned when an operation needs a RUNNING Session
+// and the Session is in another status.
+var ErrSessionNotRunning = errors.New("session is not running")

@@ -2,6 +2,7 @@ package liveconnection
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -22,6 +23,7 @@ type sessionStarter interface {
 	CheckStartEligibility(ctx context.Context, sessionUUID string, userUUID string, playerCount int) (sessionpkg.StartEligibility, error)
 	CommitStart(ctx context.Context, sessionUUID string, userUUID string, commit sessionpkg.StartCommit) (sessionpkg.CommitStartOutcome, error)
 	AbortStart(ctx context.Context, sessionUUID string) error
+	LoadRunningSession(ctx context.Context, sessionUUID string) (sessionpkg.RunningSession, error)
 }
 
 // frontendSigner grants clients access to a game version's frontend package.
@@ -34,6 +36,7 @@ type frontendSigner interface {
 type gameSandbox interface {
 	CreateContext(ctx context.Context, spec sandbox.ContextSpec) (string, error)
 	Start(ctx context.Context, contextID string, input sandbox.StartInput) (sandbox.StartResult, error)
+	Restore(ctx context.Context, contextID string, snapshot sandbox.Snapshot) (sandbox.RestoreResult, error)
 	Project(ctx context.Context, contextID string, participantID string) (sandbox.ProjectResult, error)
 	DiscardContext(ctx context.Context, contextID string) error
 }
@@ -66,6 +69,10 @@ var (
 		"How long starting a Session's game took, by outcome.",
 		metrics.LatencyBuckets(),
 		startOutcomeLabel,
+	)
+	startedSessionsAdopted = metrics.NewCounter(
+		"play_runtime_started_sessions_adopted_total",
+		"Start requests that found the Session already RUNNING in the database while its controller was not, and caught the controller up.",
 	)
 	startScriptFailures = metrics.NewCounter(
 		"play_runtime_start_script_failures_total",
@@ -113,7 +120,7 @@ func (m *Manager) startFrozenLobby(ctx context.Context, sessionController *contr
 	switch eligibility.Outcome {
 	case sessionpkg.StartEligible:
 	case sessionpkg.StartAlreadyStarted:
-		return runtime.StartAlreadyStarted, nil
+		return m.adoptRunningSession(ctx, sessionController, sessionUUID)
 	case sessionpkg.StartSessionNotFound, sessionpkg.StartNotInLobby:
 		return runtime.StartNotInLobby, nil
 	case sessionpkg.StartInvalidPlayerCount:
@@ -153,8 +160,72 @@ func (m *Manager) startFrozenLobby(ctx context.Context, sessionController *contr
 		return outcome, err
 	}
 	frontend := runtime.GameFrontend{URL: access.URL, SHA256: access.SHA256, ExpiresAt: access.ExpiresAt}
-	sessionController.CompleteStart(game, frontend, views)
+	sessionController.CompleteStart(participants, game, frontend, views)
 	return runtime.SessionStarted, nil
+}
+
+// adoptRunningSession catches the controller up with a start the database
+// already committed (its commit answer was lost, or this instance restarted):
+// the game runs from the committed roster and latest checkpoint, in a restored
+// context, since the database is the truth.
+func (m *Manager) adoptRunningSession(ctx context.Context, sessionController *controller.Controller, sessionUUID string) (runtime.StartSessionOutcome, error) {
+	running, err := m.starts.LoadRunningSession(ctx, sessionUUID)
+	if errors.Is(err, sessionpkg.ErrSessionNotRunning) {
+		// It ended meanwhile.
+		return runtime.StartNotInLobby, nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("loading running session: %w", err)
+	}
+	saved, err := checkpoint.Decode(running.Checkpoint.Content)
+	if err != nil {
+		return "", err
+	}
+	access, err := m.frontends.FrontendAccess(ctx, running.GameVersionUUID)
+	if err != nil {
+		return "", fmt.Errorf("signing frontend access: %w", err)
+	}
+
+	participants := make([]runtime.Participant, len(running.Participants))
+	participantIDs := make([]string, len(running.Participants))
+	for i, participant := range running.Participants {
+		participants[i] = runtime.Participant{ParticipantID: participant.ParticipantID, UserUUID: participant.UserUUID}
+		participantIDs[i] = participant.ParticipantID
+	}
+	contextID, err := m.sandbox.CreateContext(ctx, sandbox.ContextSpec{GameVersionUUID: running.GameVersionUUID, Script: running.Script})
+	if err != nil {
+		return "", fmt.Errorf("creating sandbox context: %w", err)
+	}
+	game, views, err := m.restoreInContext(ctx, contextID, saved, participantIDs)
+	if err != nil {
+		m.discardContext(ctx, contextID)
+		return "", err
+	}
+	frontend := runtime.GameFrontend{URL: access.URL, SHA256: access.SHA256, ExpiresAt: access.ExpiresAt}
+	sessionController.CompleteStart(participants, game, frontend, views)
+	startedSessionsAdopted.Inc(ctx)
+	return runtime.StartAlreadyStarted, nil
+}
+
+// restoreInContext sets contextID at the checkpoint and projects every
+// participant's view. The committed game already ran this script, so any
+// script failure here is an error, not a start failure.
+func (m *Manager) restoreInContext(ctx context.Context, contextID string, saved checkpoint.Checkpoint, participantIDs []string) (controller.Game, map[string][]byte, error) {
+	restored, err := m.sandbox.Restore(ctx, contextID, sandbox.Snapshot{State: saved.State, PRNGState: saved.PRNGState, ContextRevision: saved.ContextRevision})
+	if err != nil {
+		return controller.Game{}, nil, fmt.Errorf("restoring game: %w", err)
+	}
+	if restored.Outcome != sandbox.ScriptSucceeded {
+		return controller.Game{}, nil, fmt.Errorf("restoring game: script failed: %s", restored.ScriptError)
+	}
+	views, scriptErr, err := m.projectAll(ctx, contextID, participantIDs)
+	if err != nil {
+		return controller.Game{}, nil, err
+	}
+	if scriptErr != "" {
+		return controller.Game{}, nil, fmt.Errorf("projecting restored game: script failed: %s", scriptErr)
+	}
+	return controller.Game{ContextID: contextID, ContextRevision: saved.ContextRevision, State: saved.State, PRNGState: saved.PRNGState}, views, nil
 }
 
 // commitStart makes the Session RUNNING with its roster and initial
@@ -243,20 +314,9 @@ func (m *Manager) startInContext(ctx context.Context, contextID string, input sa
 
 	// Projected before committing, so a projection the script fails also
 	// fails the Start instead of a RUNNING Session.
-	views = make(map[string][]byte, len(input.Participants))
-	for _, participantID := range input.Participants {
-		projection, err := m.sandbox.Project(ctx, contextID, participantID)
-		if err != nil {
-			return controller.Game{}, nil, "", fmt.Errorf("projecting for %s: %w", participantID, err)
-		}
-		switch projection.Outcome {
-		case sandbox.ScriptSucceeded:
-			views[participantID] = projection.View
-		case sandbox.ScriptFailed:
-			return controller.Game{}, nil, projection.ScriptError, nil
-		default:
-			return controller.Game{}, nil, "", fmt.Errorf("unknown project outcome %q", projection.Outcome)
-		}
+	views, scriptErr, err = m.projectAll(ctx, contextID, input.Participants)
+	if err != nil || scriptErr != "" {
+		return controller.Game{}, nil, scriptErr, err
 	}
 	return controller.Game{
 		ContextID:       contextID,
@@ -272,4 +332,25 @@ func (m *Manager) discardContext(ctx context.Context, contextID string) {
 	if err := m.sandbox.DiscardContext(ctx, contextID); err != nil {
 		logging.LogError(ctx, fmt.Errorf("discarding sandbox context: %w", err))
 	}
+}
+
+// projectAll returns every participant's view, keyed by ParticipantID;
+// scriptErr is set when the script failed.
+func (m *Manager) projectAll(ctx context.Context, contextID string, participantIDs []string) (views map[string][]byte, scriptErr string, err error) {
+	views = make(map[string][]byte, len(participantIDs))
+	for _, participantID := range participantIDs {
+		projection, err := m.sandbox.Project(ctx, contextID, participantID)
+		if err != nil {
+			return nil, "", fmt.Errorf("projecting for %s: %w", participantID, err)
+		}
+		switch projection.Outcome {
+		case sandbox.ScriptSucceeded:
+			views[participantID] = projection.View
+		case sandbox.ScriptFailed:
+			return nil, projection.ScriptError, nil
+		default:
+			return nil, "", fmt.Errorf("unknown project outcome %q", projection.Outcome)
+		}
+	}
+	return views, "", nil
 }

@@ -23,7 +23,8 @@ type Game struct {
 
 // BeginStart freezes the lobby for one Start attempt and returns its
 // participants, numbered P1..Pn in the order they joined. ok is false, with
-// the outcome, when the Session cannot start now.
+// the outcome, when the Session cannot start now. Whether the game allows that
+// many players is the durable Session's decision.
 func (c *Controller) BeginStart() (participants []runtime.Participant, outcome runtime.StartSessionOutcome, ok bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -35,9 +36,6 @@ func (c *Controller) BeginStart() (participants []runtime.Participant, outcome r
 		return nil, runtime.StartAlreadyStarted, false
 	default:
 		return nil, runtime.StartNotInLobby, false
-	}
-	if len(c.lobby) < c.manifest.MinPlayers || len(c.lobby) > c.manifest.MaxPlayers {
-		return nil, runtime.StartInvalidPlayerCount, false
 	}
 	c.phase = phaseStarting
 	c.participants = make([]runtime.Participant, len(c.lobby))
@@ -70,19 +68,32 @@ func (c *Controller) CancelStart() {
 	}
 }
 
-// CompleteStart runs the started game: the lobby ends, every connection is
-// told who plays and gets frontend, and each connected player gets their
-// first FULL view from views, keyed by ParticipantID.
-func (c *Controller) CompleteStart(game Game, frontend runtime.GameFrontend, views map[string][]byte) {
+// CompleteStart runs the started game with participants, the roster the
+// durable Session committed: the lobby ends, every connection is told who
+// plays and gets frontend, and each connected participant gets their first
+// FULL view from views, keyed by ParticipantID. A lobby player left out of
+// participants is no longer part of the Session: their connection ends.
+func (c *Controller) CompleteStart(participants []runtime.Participant, game Game, frontend runtime.GameFrontend, views map[string][]byte) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.phase != phaseStarting {
 		return
 	}
 	c.phase = phaseRunning
+	c.participants = slices.Clone(participants)
 	c.game = game
 	c.frontend = frontend
 	c.lobby = nil
+	inRoster := make(map[string]bool, len(participants))
+	for _, participant := range participants {
+		inRoster[participant.UserUUID] = true
+	}
+	for userUUID, player := range c.players {
+		if !inRoster[userUUID] {
+			player.end(runtime.EndSessionEnded)
+			delete(c.players, userUUID)
+		}
+	}
 	for _, admin := range c.admins {
 		admin.lobbyUpdates.finish()
 		close(admin.started)

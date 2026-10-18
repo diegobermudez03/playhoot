@@ -49,3 +49,22 @@ func Encode(checkpoint Checkpoint) ([]byte, error) {
 	}
 	return encoded, nil
 }
+
+// Decode reads a checkpoint Encode wrote; one of another schema version is an
+// error.
+func Decode(encoded []byte) (Checkpoint, error) {
+	var doc document
+	if err := json.Unmarshal(encoded, &doc); err != nil {
+		return Checkpoint{}, fmt.Errorf("decoding checkpoint: %w", err)
+	}
+	if doc.SchemaVersion != SchemaVersion {
+		return Checkpoint{}, fmt.Errorf("checkpoint schema_version %d is not %d", doc.SchemaVersion, SchemaVersion)
+	}
+	return Checkpoint{
+		GameVersionUUID: doc.GameVersionUUID,
+		ContextRevision: doc.ContextRevision,
+		State:           doc.State,
+		PRNGState:       doc.PRNGState,
+		Participants:    doc.Participants,
+	}, nil
+}

@@ -24,7 +24,7 @@ func loadManifest(manifest Manifest) ManifestLoader {
 // newTestController returns a fresh Controller whose game allows maxPlayers.
 func newTestController(t *testing.T, maxPlayers int) *Controller {
 	t.Helper()
-	controller, ok, err := NewRegistry().ControllerFor(context.Background(), "session-1", 1, loadManifest(Manifest{MinPlayers: 1, MaxPlayers: maxPlayers}))
+	controller, ok, err := NewRegistry().ControllerFor(context.Background(), "session-1", 1, loadManifest(Manifest{MaxPlayers: maxPlayers}))
 	require.NoError(t, err)
 	require.True(t, ok)
 	return controller
@@ -49,7 +49,7 @@ func TestControllerFor(t *testing.T) {
 		expectedLoads     int
 	}
 
-	manifest := Manifest{MinPlayers: 2, MaxPlayers: 6}
+	manifest := Manifest{MaxPlayers: 6}
 
 	tests := map[string]func(t *testing.T) test{
 		"no_controller_creates_one_with_the_manifest": func(t *testing.T) test {

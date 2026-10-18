@@ -15,6 +15,18 @@ type StartInput struct {
 	RandomSeed   uint64
 }
 
+// Snapshot is a running game's confirmed state, as the Runtime keeps it, to
+// restore a context at without running start() again.
+type Snapshot struct {
+	// State is the authoritative game state, as JSON.
+	State []byte
+
+	// PRNGState is the opaque state of the script's randomness.
+	PRNGState []byte
+
+	ContextRevision int64
+}
+
 // ScriptOutcome is whether authored code completed an execution.
 type ScriptOutcome string
 
@@ -49,5 +61,12 @@ type StartResult struct {
 type ProjectResult struct {
 	Outcome     ScriptOutcome
 	View        []byte
+	ScriptError string
+}
+
+// RestoreResult is the outcome of restoring a context at a Snapshot.
+// ScriptError is set only when the script failed to load.
+type RestoreResult struct {
+	Outcome     ScriptOutcome
 	ScriptError string
 }

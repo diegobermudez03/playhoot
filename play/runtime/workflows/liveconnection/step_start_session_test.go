@@ -23,8 +23,6 @@ func TestStartSession(t *testing.T) {
 		sandbox   *MockgameSandbox
 	}
 	type test struct {
-		minPlayers int
-
 		expectedOutcome runtime.StartSessionOutcome
 		expectedErr     bool
 		// expectedStarted is whether the players' connections see the start.
@@ -86,6 +84,13 @@ func TestStartSession(t *testing.T) {
 			deps.sandbox.EXPECT().Start(ctx, contextID, input).Return(initial, nil),
 		}, projects(deps, contextID)...)
 	}
+	running := sessionpkg.RunningSession{
+		GameVersionUUID: gameVersionUUID,
+		Script:          script,
+		Participants:    roster,
+		Checkpoint:      sessionpkg.Checkpoint{ContextRevision: 1, Content: encoded},
+	}
+	snapshot := sandbox.Snapshot{State: []byte(`{"round":1}`), PRNGState: []byte{9}, ContextRevision: 1}
 	commit := sessionpkg.StartCommit{Participants: roster, Checkpoint: sessionpkg.Checkpoint{ContextRevision: 1, Content: encoded}}
 	commits := func(deps dependencies) []any {
 		return []any{
@@ -97,19 +102,19 @@ func TestStartSession(t *testing.T) {
 		"game_starts": func(t *testing.T, deps dependencies) test {
 			calls := append([]any{eligible(deps)}, gameStarts(deps, "context-1")...)
 			gomock.InOrder(append(calls, commits(deps)...)...)
-			return test{minPlayers: 1, expectedOutcome: runtime.SessionStarted, expectedStarted: true}
+			return test{expectedOutcome: runtime.SessionStarted, expectedStarted: true}
 		},
 		"script_failing_once_is_retried_in_a_fresh_context": func(t *testing.T, deps dependencies) test {
 			calls := append([]any{eligible(deps)}, scriptFails(deps, "context-1")...)
 			calls = append(calls, gameStarts(deps, "context-2")...)
 			gomock.InOrder(append(calls, commits(deps)...)...)
-			return test{minPlayers: 1, expectedOutcome: runtime.SessionStarted, expectedStarted: true}
+			return test{expectedOutcome: runtime.SessionStarted, expectedStarted: true}
 		},
 		"script_failing_twice_aborts_the_session": func(t *testing.T, deps dependencies) test {
 			calls := append([]any{eligible(deps)}, scriptFails(deps, "context-1")...)
 			calls = append(calls, scriptFails(deps, "context-2")...)
 			gomock.InOrder(append(calls, deps.starts.EXPECT().AbortStart(ctx, sessionUUID).Return(nil))...)
-			return test{minPlayers: 1, expectedOutcome: runtime.StartFailed, expectedEnd: runtime.EndSessionAborted}
+			return test{expectedOutcome: runtime.StartFailed, expectedEnd: runtime.EndSessionAborted}
 		},
 		"projection_failing_in_the_script_fails_the_start": func(t *testing.T, deps dependencies) test {
 			projectionFails := func(contextID string) []any {
@@ -123,40 +128,61 @@ func TestStartSession(t *testing.T) {
 			calls := append([]any{eligible(deps)}, projectionFails("context-1")...)
 			calls = append(calls, projectionFails("context-2")...)
 			gomock.InOrder(append(calls, deps.starts.EXPECT().AbortStart(ctx, sessionUUID).Return(nil))...)
-			return test{minPlayers: 1, expectedOutcome: runtime.StartFailed, expectedEnd: runtime.EndSessionAborted}
+			return test{expectedOutcome: runtime.StartFailed, expectedEnd: runtime.EndSessionAborted}
 		},
 		"aborting_fails": func(t *testing.T, deps dependencies) test {
 			calls := append([]any{eligible(deps)}, scriptFails(deps, "context-1")...)
 			calls = append(calls, scriptFails(deps, "context-2")...)
 			gomock.InOrder(append(calls, deps.starts.EXPECT().AbortStart(ctx, sessionUUID).Return(errors.New("database down")))...)
-			return test{minPlayers: 1, expectedErr: true, expectedLobby: true}
-		},
-		"fewer_players_than_the_game_needs": func(t *testing.T, deps dependencies) test {
-			return test{minPlayers: 3, expectedOutcome: runtime.StartInvalidPlayerCount, expectedLobby: true}
+			return test{expectedErr: true, expectedLobby: true}
 		},
 		"session_left_its_lobby": func(t *testing.T, deps dependencies) test {
 			deps.starts.EXPECT().CheckStartEligibility(ctx, sessionUUID, creatorUUID, 2).Return(sessionpkg.StartEligibility{Outcome: sessionpkg.StartNotInLobby}, nil)
-			return test{minPlayers: 1, expectedOutcome: runtime.StartNotInLobby, expectedLobby: true}
+			return test{expectedOutcome: runtime.StartNotInLobby, expectedLobby: true}
 		},
-		"session_already_running": func(t *testing.T, deps dependencies) test {
-			deps.starts.EXPECT().CheckStartEligibility(ctx, sessionUUID, creatorUUID, 2).Return(sessionpkg.StartEligibility{Outcome: sessionpkg.StartAlreadyStarted}, nil)
-			return test{minPlayers: 1, expectedOutcome: runtime.StartAlreadyStarted, expectedLobby: true}
+		"session_already_running_in_the_database_is_adopted": func(t *testing.T, deps dependencies) test {
+			gomock.InOrder(append([]any{
+				deps.starts.EXPECT().CheckStartEligibility(ctx, sessionUUID, creatorUUID, 2).Return(sessionpkg.StartEligibility{Outcome: sessionpkg.StartAlreadyStarted}, nil),
+				deps.starts.EXPECT().LoadRunningSession(ctx, sessionUUID).Return(running, nil),
+				deps.frontends.EXPECT().FrontendAccess(ctx, gameVersionUUID).Return(access, nil),
+				deps.sandbox.EXPECT().CreateContext(ctx, spec).Return("context-1", nil),
+				deps.sandbox.EXPECT().Restore(ctx, "context-1", snapshot).Return(sandbox.RestoreResult{Outcome: sandbox.ScriptSucceeded}, nil),
+			}, projects(deps, "context-1")...)...)
+			return test{expectedOutcome: runtime.StartAlreadyStarted, expectedStarted: true}
+		},
+		"running_session_that_ended_meanwhile": func(t *testing.T, deps dependencies) test {
+			gomock.InOrder(
+				deps.starts.EXPECT().CheckStartEligibility(ctx, sessionUUID, creatorUUID, 2).Return(sessionpkg.StartEligibility{Outcome: sessionpkg.StartAlreadyStarted}, nil),
+				deps.starts.EXPECT().LoadRunningSession(ctx, sessionUUID).Return(sessionpkg.RunningSession{}, sessionpkg.ErrSessionNotRunning),
+			)
+			return test{expectedOutcome: runtime.StartNotInLobby, expectedLobby: true}
+		},
+		"restoring_the_running_game_fails": func(t *testing.T, deps dependencies) test {
+			gomock.InOrder(
+				deps.starts.EXPECT().CheckStartEligibility(ctx, sessionUUID, creatorUUID, 2).Return(sessionpkg.StartEligibility{Outcome: sessionpkg.StartAlreadyStarted}, nil),
+				deps.starts.EXPECT().LoadRunningSession(ctx, sessionUUID).Return(running, nil),
+				deps.frontends.EXPECT().FrontendAccess(ctx, gameVersionUUID).Return(access, nil),
+				deps.sandbox.EXPECT().CreateContext(ctx, spec).Return("context-1", nil),
+				deps.sandbox.EXPECT().Restore(ctx, "context-1", snapshot).Return(sandbox.RestoreResult{}, errors.New("connection reset")),
+				deps.sandbox.EXPECT().DiscardContext(ctx, "context-1").Return(nil),
+			)
+			return test{expectedErr: true, expectedLobby: true}
 		},
 		"game_version_no_longer_playable": func(t *testing.T, deps dependencies) test {
 			deps.starts.EXPECT().CheckStartEligibility(ctx, sessionUUID, creatorUUID, 2).Return(sessionpkg.StartEligibility{Outcome: sessionpkg.StartGameUnavailable}, nil)
-			return test{minPlayers: 1, expectedOutcome: runtime.StartGameUnavailable, expectedLobby: true}
+			return test{expectedOutcome: runtime.StartGameUnavailable, expectedLobby: true}
 		},
 		"player_count_the_session_rejects": func(t *testing.T, deps dependencies) test {
 			deps.starts.EXPECT().CheckStartEligibility(ctx, sessionUUID, creatorUUID, 2).Return(sessionpkg.StartEligibility{Outcome: sessionpkg.StartInvalidPlayerCount}, nil)
-			return test{minPlayers: 1, expectedOutcome: runtime.StartInvalidPlayerCount, expectedLobby: true}
+			return test{expectedOutcome: runtime.StartInvalidPlayerCount, expectedLobby: true}
 		},
 		"caller_who_is_not_the_creator_is_unexpected": func(t *testing.T, deps dependencies) test {
 			deps.starts.EXPECT().CheckStartEligibility(ctx, sessionUUID, creatorUUID, 2).Return(sessionpkg.StartEligibility{Outcome: sessionpkg.StartNotCreator}, nil)
-			return test{minPlayers: 1, expectedErr: true, expectedLobby: true}
+			return test{expectedErr: true, expectedLobby: true}
 		},
 		"eligibility_check_fails": func(t *testing.T, deps dependencies) test {
 			deps.starts.EXPECT().CheckStartEligibility(ctx, sessionUUID, creatorUUID, 2).Return(sessionpkg.StartEligibility{}, errors.New("database down"))
-			return test{minPlayers: 1, expectedErr: true, expectedLobby: true}
+			return test{expectedErr: true, expectedLobby: true}
 		},
 		"signing_the_frontend_fails": func(t *testing.T, deps dependencies) test {
 			gomock.InOrder(
@@ -164,14 +190,14 @@ func TestStartSession(t *testing.T) {
 					Return(sessionpkg.StartEligibility{Outcome: sessionpkg.StartEligible, GameVersionUUID: gameVersionUUID, Script: script}, nil),
 				deps.frontends.EXPECT().FrontendAccess(ctx, gameVersionUUID).Return(sessionpkg.FrontendAccess{}, errors.New("signing key unavailable")),
 			)
-			return test{minPlayers: 1, expectedErr: true, expectedLobby: true}
+			return test{expectedErr: true, expectedLobby: true}
 		},
 		"sandbox_unavailable": func(t *testing.T, deps dependencies) test {
 			gomock.InOrder(
 				eligible(deps),
 				deps.sandbox.EXPECT().CreateContext(ctx, spec).Return("", errors.New("connection refused")),
 			)
-			return test{minPlayers: 1, expectedErr: true, expectedLobby: true}
+			return test{expectedErr: true, expectedLobby: true}
 		},
 		"start_call_fails_and_its_context_is_discarded": func(t *testing.T, deps dependencies) test {
 			gomock.InOrder(
@@ -180,7 +206,7 @@ func TestStartSession(t *testing.T) {
 				deps.sandbox.EXPECT().Start(ctx, "context-1", input).Return(sandbox.StartResult{}, errors.New("connection reset")),
 				deps.sandbox.EXPECT().DiscardContext(ctx, "context-1").Return(errors.New("connection refused")),
 			)
-			return test{minPlayers: 1, expectedErr: true, expectedLobby: true}
+			return test{expectedErr: true, expectedLobby: true}
 		},
 		"session_left_its_lobby_before_the_commit": func(t *testing.T, deps dependencies) test {
 			calls := append([]any{eligible(deps)}, gameStarts(deps, "context-1")...)
@@ -188,7 +214,7 @@ func TestStartSession(t *testing.T) {
 				deps.starts.EXPECT().CommitStart(ctx, sessionUUID, creatorUUID, commit).Return(sessionpkg.CommitStartNotInLobby, nil),
 				deps.sandbox.EXPECT().DiscardContext(ctx, "context-1").Return(nil),
 			)...)
-			return test{minPlayers: 1, expectedOutcome: runtime.StartNotInLobby, expectedLobby: true}
+			return test{expectedOutcome: runtime.StartNotInLobby, expectedLobby: true}
 		},
 		"commit_fails": func(t *testing.T, deps dependencies) test {
 			calls := append([]any{eligible(deps)}, gameStarts(deps, "context-1")...)
@@ -196,7 +222,7 @@ func TestStartSession(t *testing.T) {
 				deps.starts.EXPECT().CommitStart(ctx, sessionUUID, creatorUUID, commit).Return(sessionpkg.CommitStartOutcome(""), errors.New("database down")),
 				deps.sandbox.EXPECT().DiscardContext(ctx, "context-1").Return(nil),
 			)...)
-			return test{minPlayers: 1, expectedErr: true, expectedLobby: true}
+			return test{expectedErr: true, expectedLobby: true}
 		},
 	}
 
@@ -208,7 +234,7 @@ func TestStartSession(t *testing.T) {
 			manager := New(nil, nil, nil, deps.starts, deps.frontends, deps.sandbox)
 			manager.seeds = func() uint64 { return seed }
 			sessionController, ok, err := controller.NewRegistry().ControllerFor(ctx, sessionUUID, 1, func(context.Context) (controller.Manifest, error) {
-				return controller.Manifest{MinPlayers: tc.minPlayers, MaxPlayers: 4}, nil
+				return controller.Manifest{MaxPlayers: 4}, nil
 			})
 			require.NoError(t, err)
 			require.True(t, ok)

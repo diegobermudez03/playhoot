@@ -16,7 +16,6 @@ var ErrNotImplemented = errors.New("live operation not implemented yet")
 
 // Manifest is what a Controller knows about its Session's game version.
 type Manifest struct {
-	MinPlayers int
 	MaxPlayers int
 }
 

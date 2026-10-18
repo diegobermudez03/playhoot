@@ -51,3 +51,44 @@ func TestEncode(t *testing.T) {
 		})
 	}
 }
+
+func TestDecode(t *testing.T) {
+	type test struct {
+		encoded string
+
+		expected    Checkpoint
+		expectedErr bool
+	}
+
+	tests := map[string]func(t *testing.T) test{
+		"what_encode_wrote": func(t *testing.T) test {
+			checkpoint := Checkpoint{GameVersionUUID: "c1d2e3f4-0000-4000-8000-000000000001", ContextRevision: 4, State: []byte(`{"round":2}`), PRNGState: []byte{1, 2, 3, 4}, Participants: []string{"P1", "P2"}}
+			encoded, err := Encode(checkpoint)
+			require.NoError(t, err)
+			return test{encoded: string(encoded), expected: checkpoint}
+		},
+		"another_schema_version": func(t *testing.T) test {
+			return test{encoded: `{"schema_version":2,"state":{}}`, expectedErr: true}
+		},
+		"not_json": func(t *testing.T) test {
+			return test{encoded: `nope`, expectedErr: true}
+		},
+	}
+
+	for name, setup := range tests {
+		t.Run(name, func(t *testing.T) {
+			tc := setup(t)
+
+			checkpoint, err := Decode([]byte(tc.encoded))
+
+			if tc.expectedErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.JSONEq(t, string(tc.expected.State), string(checkpoint.State))
+			checkpoint.State = tc.expected.State
+			require.Equal(t, tc.expected, checkpoint)
+		})
+	}
+}

@@ -64,6 +64,6 @@ func (m *Manager) controllerFor(ctx context.Context, sessionUUID string, ownerEp
 		if err != nil {
 			return controller.Manifest{}, err
 		}
-		return controller.Manifest{MinPlayers: manifest.MinPlayers, MaxPlayers: manifest.MaxPlayers}, nil
+		return controller.Manifest{MaxPlayers: manifest.MaxPlayers}, nil
 	})
 }

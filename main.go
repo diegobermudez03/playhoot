@@ -20,6 +20,7 @@ import (
 	"github.com/diegobermudez03/playhoot/identity/usecases/authorize"
 	"github.com/diegobermudez03/playhoot/identity/usecases/createguest"
 	"github.com/diegobermudez03/playhoot/orchestrator/playlifecycle"
+	"github.com/diegobermudez03/playhoot/play/runtime/sandbox"
 	"github.com/diegobermudez03/playhoot/play/runtime/usecases/ownership"
 	"github.com/diegobermudez03/playhoot/play/runtime/workflows/liveconnection"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/checkadminjoin"
@@ -62,6 +63,11 @@ type envVariables struct {
 const shutdownTimeout = 8 * time.Second
 
 func main() {
+	// A sandbox context worker is a re-exec of this binary: it must serve its
+	// context and exit before anything else (environment, database) runs.
+	if sandbox.RunAsWorkerIfRequested() {
+		return
+	}
 	if err := run(); err != nil {
 		log.Fatal(err)
 	}
@@ -114,9 +120,16 @@ func run() error {
 		}
 	}
 
+	sandboxHost := sandbox.NewHost()
+	defer func() {
+		if err := sandboxHost.Close(); err != nil {
+			log.Printf("stopping sandbox contexts: %v", err)
+		}
+	}()
+
 	sessionLifecycle := sessionlifecycle.New(db, store)
 	playLifecycle := playlifecycle.New(checkplayability.New(), sessionLifecycle)
-	liveConnections := liveconnection.New(checkadminjoin.New(db), checkplayerjoin.New(db), loadruntimemanifest.New(db), sessionLifecycle, frontendaccess.New(db, store), unwiredSandbox{})
+	liveConnections := liveconnection.New(checkadminjoin.New(db), checkplayerjoin.New(db), loadruntimemanifest.New(db), sessionLifecycle, frontendaccess.New(db, store), sandboxHost)
 	server := api.NewServer(
 		authorize.New(),
 		createguest.New(),
