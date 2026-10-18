@@ -167,6 +167,40 @@ func TestStartIsDeterministic(t *testing.T) {
 	require.NotEqual(t, encodeRandomState(randomStateFromSeed(7)), first.PRNGState, "drawing randomness must advance the exported PRNG state")
 }
 
+func TestResultsComeBackIntact(t *testing.T) {
+	// Upstream qjs freed the serialized result before reading it, and this
+	// start() came back as garbage.
+	const script = `function start(participants, context) {
+		const ships = {};
+		participants.forEach(function (participant, index) {
+			const angle = (2 * Math.PI * index) / participants.length;
+			ships[participant] = {
+				x: 500 + Math.cos(angle) * 300,
+				y: 500 + Math.sin(angle) * 300,
+				vx: 0,
+				vy: 0,
+				thrust: [0, 0],
+				boost: false,
+				score: 0,
+			};
+		});
+		return { state: { simulatedThrough: context.sessionTime, ships: ships, star: { x: 1, y: 2 }, collected: 0 } };
+	}`
+	host := newTestHost(t)
+	ctx := context.Background()
+	contextID, err := host.CreateContext(ctx, ContextSpec{GameVersionUUID: "version-1", Script: []byte(script)})
+	require.NoError(t, err)
+
+	result, err := host.Start(ctx, contextID, StartInput{Participants: []string{"P1", "P2"}, RandomSeed: 42})
+
+	require.NoError(t, err)
+	require.Equal(t, ScriptSucceeded, result.Outcome, result.ScriptError)
+	require.JSONEq(t, `{"simulatedThrough":0,"ships":{
+		"P1":{"x":800,"y":500,"vx":0,"vy":0,"thrust":[0,0],"boost":false,"score":0},
+		"P2":{"x":200,"y":500.00000000000006,"vx":0,"vy":0,"thrust":[0,0],"boost":false,"score":0}},
+		"star":{"x":1,"y":2},"collected":0}`, string(result.State))
+}
+
 func TestProject(t *testing.T) {
 	type test struct {
 		script      string

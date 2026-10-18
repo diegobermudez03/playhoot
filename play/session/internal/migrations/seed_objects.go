@@ -30,7 +30,13 @@ function samples(state, transitions, context) {
 }
 
 function project(state, participant, context) {
-	return { round: state.round, me: state.positions[participant] };
+	const others = {};
+	for (const id of Object.keys(state.positions)) {
+		if (id !== participant) {
+			others[id] = state.positions[id];
+		}
+	}
+	return { round: state.round, me: state.positions[participant], others };
 }
 `
 
@@ -59,6 +65,7 @@ func SeedObjects(ctx context.Context, store objectstore.Store) error {
 		contentType string
 	}{
 		{prefix: backendScriptPrefix, content: seedBackendScript, contentType: "text/javascript"},
+		{prefix: backendScriptPrefix, content: seedSpaceDriftScript, contentType: "text/javascript"},
 		{prefix: frontendPackagePrefix, content: seedFrontendPackage, contentType: "text/html"},
 	}
 	for _, object := range objects {

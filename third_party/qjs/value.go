@@ -594,7 +594,14 @@ func (v *Value) String() string {
 	result := v.Call("QJS_ToCString", v.Ctx(), v.Raw())
 	defer result.handle.Free()
 
-	return result.handle.String()
+	str := result.handle.String()
+	// Playhoot patch: release the C string, which upstream leaked.
+	if packed := result.handle.Raw(); packed != 0 {
+		addr, _ := v.context.runtime.mem.UnpackPtr(packed)
+		v.context.runtime.call("JS_FreeCString", v.Ctx(), uint64(addr))
+	}
+
+	return str
 }
 
 // JSONStringify returns the JSON string representation of the value.
@@ -606,10 +613,18 @@ func (v *Value) JSONStringify() (_ string, err error) {
 		}
 	}()
 
-	result := v.Call("QJS_JSONStringify", v.Ctx(), v.Raw())
-	defer result.handle.Free()
+	// Playhoot patch: upstream's QJS_JSONStringify returns a string it has
+	// already freed, so a large result reads clobbered memory. JSON.stringify's
+	// result is read as a string value instead.
+	json := v.context.Global().GetPropertyStr("JSON")
+	defer json.Free()
+	encoded, err := json.InvokeJS("stringify", v)
+	if err != nil {
+		return "", err
+	}
+	defer encoded.Free()
 
-	return result.handle.String(), nil
+	return encoded.String(), nil
 }
 
 // DateTime returns the date value of the value.

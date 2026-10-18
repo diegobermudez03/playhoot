@@ -146,7 +146,7 @@ Left for future steps, on purpose:
 - [ ] Admin selects a player perspective; receives exactly projection(P), FULL, with a new baseline per selection
 - [ ] No omniscient admin projection
 - [x] Admin reconnect = just another admin WebSocket (no game-level admin rejoin)
-- [ ] Admin connections do not receive participant SAMPLE acknowledgements
+- [x] Admin connections do not receive participant SAMPLE acknowledgements (2026-10-18: acknowledgements only travel in player views; admin views, when built, must keep it that way)
 
 ---
 
@@ -210,6 +210,8 @@ Progress note (2026-10-17): a first, minimal controller exists (`play/runtime/in
 ---
 
 ## I. SAMPLE protocol (§7, §13)
+
+Progress note (2026-10-18): SAMPLE ingress, batching, replication and acknowledgements are complete for a running game and were tested by hand by the human with the Space Drift seed game (`33333333-3333-4333-8333-333333333333`, built for this), besides unit tests and end-to-end runs. Building it uncovered a use-after-free in upstream qjs's result serialization and a leaked C string per call, both fixed in `third_party/qjs` (see its `PLAYHOOT_PATCH.md`; regression test `TestResultsComeBackIntact`). Open items below depend on device switch and recovery; ingress limits are tracked in W.
 
 - [x] SAMPLE is a full logical input snapshot; defaults applied from manifest (type-inferred zero or explicit default) (2026-10-18: normalized against the manifest's inputs, defaults applied, in one canonical encoding; inputs tests)
 - [x] Per-participant monotonic client sequence; gaps allowed; Runtime never waits for a missing sequence (2026-10-18: controller tests)
@@ -305,7 +307,7 @@ Progress note (2026-10-17): a first, minimal controller exists (`play/runtime/in
 ### O1. Transport loss and reattach (§14)
 - [ ] Transport detach reported immediately by /api
 - [ ] Participant stays CONNECTED for the platform-time grace (~3 s)
-- [ ] Logical SAMPLE state reset to defaults immediately on detach
+- [x] Logical SAMPLE state reset to defaults immediately on detach (2026-10-18: a running game's `Disconnect` queues a transition back to the default inputs at once; liveconnection sample tests. Transport grace itself is not built)
 - [ ] No playerDisconnected() during grace
 - [ ] Reattach within grace: FULL projection + fresh baseline; FE sends full SAMPLE snapshot; no playerDisconnected/playerRejoined calls
 

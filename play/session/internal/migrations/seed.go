@@ -10,6 +10,7 @@ import (
 func SeedTables(db *gorm.DB) error {
 	seeds := []*gormigrate.Migration{
 		seed20261015000000PlayGames(),
+		seed20261018000000SpaceDrift(),
 	}
 
 	migrator := gormigrate.New(db, &gormigrate.Options{
