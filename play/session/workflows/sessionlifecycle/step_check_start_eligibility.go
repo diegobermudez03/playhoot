@@ -47,8 +47,15 @@ func (m *Manager) CheckStartEligibility(ctx context.Context, sessionUUID string,
 	if !sameUUID(candidate.CreatedByUserUUID, userUUID) {
 		return sessionpkg.StartEligibility{Outcome: sessionpkg.StartNotCreator}, nil
 	}
-	// An overdue lobby has expired even if nothing recorded it yet.
-	if sessionstatus.Status(candidate.Status) != sessionstatus.Lobby || !m.now().Before(candidate.LobbyExpiresAt) {
+	switch sessionstatus.Status(candidate.Status) {
+	case sessionstatus.Lobby:
+		// An overdue lobby has expired even if nothing recorded it yet.
+		if !m.now().Before(candidate.LobbyExpiresAt) {
+			return sessionpkg.StartEligibility{Outcome: sessionpkg.StartNotInLobby}, nil
+		}
+	case sessionstatus.Running:
+		return sessionpkg.StartEligibility{Outcome: sessionpkg.StartAlreadyStarted}, nil
+	default:
 		return sessionpkg.StartEligibility{Outcome: sessionpkg.StartNotInLobby}, nil
 	}
 

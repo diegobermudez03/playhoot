@@ -43,6 +43,20 @@ func (m *MockcommitStartRepo) EXPECT() *MockcommitStartRepoMockRecorder {
 	return m.recorder
 }
 
+// ChangeSessionStatus mocks base method.
+func (m *MockcommitStartRepo) ChangeSessionStatus(ctx context.Context, tx *gorm.DB, sessionID uint, fromStatus, toStatus string, endCause, changedBy *string, changedAt time.Time) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ChangeSessionStatus", ctx, tx, sessionID, fromStatus, toStatus, endCause, changedBy, changedAt)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ChangeSessionStatus indicates an expected call of ChangeSessionStatus.
+func (mr *MockcommitStartRepoMockRecorder) ChangeSessionStatus(ctx, tx, sessionID, fromStatus, toStatus, endCause, changedBy, changedAt any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ChangeSessionStatus", reflect.TypeOf((*MockcommitStartRepo)(nil).ChangeSessionStatus), ctx, tx, sessionID, fromStatus, toStatus, endCause, changedBy, changedAt)
+}
+
 // CreateParticipants mocks base method.
 func (m *MockcommitStartRepo) CreateParticipants(ctx context.Context, tx *gorm.DB, sessionID uint, participants []repo.Participant) error {
 	m.ctrl.T.Helper()
@@ -98,18 +112,4 @@ func (m *MockcommitStartRepo) SaveCheckpoint(ctx context.Context, tx *gorm.DB, s
 func (mr *MockcommitStartRepoMockRecorder) SaveCheckpoint(ctx, tx, sessionID, contextRevision, content, savedAt any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveCheckpoint", reflect.TypeOf((*MockcommitStartRepo)(nil).SaveCheckpoint), ctx, tx, sessionID, contextRevision, content, savedAt)
-}
-
-// UpdateSessionStatus mocks base method.
-func (m *MockcommitStartRepo) UpdateSessionStatus(ctx context.Context, tx *gorm.DB, sessionID uint, status string, endCause *string, updatedAt time.Time) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateSessionStatus", ctx, tx, sessionID, status, endCause, updatedAt)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// UpdateSessionStatus indicates an expected call of UpdateSessionStatus.
-func (mr *MockcommitStartRepoMockRecorder) UpdateSessionStatus(ctx, tx, sessionID, status, endCause, updatedAt any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateSessionStatus", reflect.TypeOf((*MockcommitStartRepo)(nil).UpdateSessionStatus), ctx, tx, sessionID, status, endCause, updatedAt)
 }

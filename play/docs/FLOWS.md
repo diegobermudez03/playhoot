@@ -103,7 +103,8 @@ Called by the live Runtime while it starts a Session's game (`play/runtime/workf
 | --- | --- |
 | No Session with that UUID (or not a UUID) | `session_not_found` |
 | Created by another user | `not_creator` |
-| Not LOBBY, or LOBBY past `lobby_expires_at` | `not_in_lobby`; the expiry is not recorded here |
+| RUNNING | `already_started` |
+| FINISHED, CANCELLED, EXPIRED, ABORTED, or LOBBY past `lobby_expires_at` | `not_in_lobby`; the expiry is not recorded here |
 | `playerCount` outside the manifest's `players.min..max` | `invalid_player_count` |
 | Otherwise | `eligible`, with the version's UUID and script |
 
@@ -136,7 +137,8 @@ sequenceDiagram
     else
         Manager->>DB: INSERT play_session_participants (one row per participant)
         Manager->>DB: UPSERT play_session_checkpoints (latest only)
-        Manager->>DB: UPDATE play_sessions SET status = RUNNING
+        Manager->>DB: UPDATE play_sessions SET status = RUNNING WHERE status = LOBBY
+        Manager->>DB: INSERT play_session_status_changes (LOBBY -> RUNNING, by the creator)
         Manager->>DB: UPDATE play_session_join_codes SET released_at
         Manager-->>Runtime: committed
     end
@@ -146,4 +148,8 @@ Because the checkpoint is written in the same transaction, a RUNNING Session alw
 
 ### Abort Start
 
-`sessionlifecycle.Manager.AbortStart(sessionUUID)`, in one transaction: locks the Session; if it is still LOBBY, sets it ABORTED with `end_cause = GAME_START_FAILURE` and releases its join code; a Session in any other state is left as it is (not an error). An unknown Session is `ErrSessionNotFound`.
+`sessionlifecycle.Manager.AbortStart(sessionUUID)`, in one transaction: locks the Session; if it is still LOBBY, sets it ABORTED with `end_cause = GAME_START_FAILURE` (recorded in `play_session_status_changes` as a platform change) and releases its join code; a Session in any other state is left as it is (not an error). An unknown Session is `ErrSessionNotFound`.
+
+## Session Status History
+
+Every change of `play_sessions.status` appends a row to `play_session_status_changes` in the same transaction: the creation (`CREATED -> LOBBY`, by the creator), the start (`LOBBY -> RUNNING`, by the creator) and an aborted start (`LOBBY -> ABORTED`, `GAME_START_FAILURE`, by the platform). Status changes only happen through `sessionlifecycle`'s repository, which writes both, and a change is only applied when the Session is still in the status it moves from.

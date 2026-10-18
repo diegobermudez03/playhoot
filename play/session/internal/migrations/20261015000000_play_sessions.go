@@ -78,6 +78,21 @@ func migration20261015000000PlaySessions() *gormigrate.Migration {
 				`CREATE INDEX play_session_join_codes_session_id_idx ON play_session_join_codes (session_id)`,
 				`CREATE UNIQUE INDEX play_session_join_codes_active_code_idx ON play_session_join_codes (code) WHERE released_at IS NULL`,
 
+				// Every status a Session went through, appended in the same
+				// transaction that changes play_sessions.status. from_status is
+				// NULL for its creation; changed_by_user_uuid is NULL when the
+				// platform made the change.
+				`CREATE TABLE play_session_status_changes (
+					id BIGSERIAL PRIMARY KEY,
+					session_id BIGINT NOT NULL,
+					from_status TEXT NULL,
+					to_status TEXT NOT NULL,
+					end_cause TEXT NULL,
+					changed_by_user_uuid UUID NULL,
+					changed_at TIMESTAMPTZ NOT NULL
+				)`,
+				`CREATE INDEX play_session_status_changes_session_id_idx ON play_session_status_changes (session_id)`,
+
 				// Who plays a started Session: written once, when it becomes
 				// RUNNING. The game knows each player only by participant_id.
 				`CREATE TABLE play_session_participants (
@@ -125,7 +140,7 @@ func migration20261015000000PlaySessions() *gormigrate.Migration {
 			return nil
 		},
 		Rollback: func(tx *gorm.DB) error {
-			return tx.Exec(`DROP TABLE play_session_checkpoints, play_session_participants, play_create_session_requests, play_session_join_codes, play_sessions, play_game_versions, play_games`).Error
+			return tx.Exec(`DROP TABLE play_session_status_changes, play_session_checkpoints, play_session_participants, play_create_session_requests, play_session_join_codes, play_sessions, play_game_versions, play_games`).Error
 		},
 	}
 }

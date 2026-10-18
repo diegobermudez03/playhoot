@@ -76,7 +76,7 @@ func TestBeginStart(t *testing.T) {
 					_, _, ok := controller.BeginStart()
 					require.True(t, ok)
 				},
-				expectedOutcome: runtime.StartNotInLobby,
+				expectedOutcome: runtime.StartInProgress,
 				expectedPhase:   phaseStarting,
 			}
 		},
@@ -89,8 +89,21 @@ func TestBeginStart(t *testing.T) {
 					require.True(t, ok)
 					controller.CompleteStart(Game{}, runtime.GameFrontend{}, nil)
 				},
-				expectedOutcome: runtime.StartNotInLobby,
+				expectedOutcome: runtime.StartAlreadyStarted,
 				expectedPhase:   phaseRunning,
+			}
+		},
+		"aborted_session": func(t *testing.T) test {
+			return test{
+				minPlayers: 1,
+				players:    []string{"user-a"},
+				before: func(t *testing.T, controller *Controller) {
+					_, _, ok := controller.BeginStart()
+					require.True(t, ok)
+					controller.AbortStart()
+				},
+				expectedOutcome: runtime.StartNotInLobby,
+				expectedPhase:   phaseEnded,
 			}
 		},
 	}
@@ -110,9 +123,13 @@ func TestBeginStart(t *testing.T) {
 			require.Equal(t, tc.expectedParticipants, participants)
 			require.Equal(t, tc.expectedPhase, controller.phase)
 			_, rejection, admitted := controller.AdmitPlayer(context.Background(), "late-user")
-			if tc.expectedPhase == phaseLobby {
+			switch tc.expectedPhase {
+			case phaseLobby:
 				require.True(t, admitted)
-			} else {
+			case phaseEnded:
+				require.False(t, admitted)
+				require.Equal(t, runtime.RejectSessionUnavailable, rejection)
+			default:
 				require.False(t, admitted)
 				require.Equal(t, runtime.RejectSessionStarted, rejection, "nobody joins once the lobby is frozen")
 			}

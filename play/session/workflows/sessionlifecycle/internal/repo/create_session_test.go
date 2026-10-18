@@ -270,7 +270,8 @@ func TestCreateSession(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			tc := setup(t, db)
 
-			created, err := repo.CreateSession(context.Background(), db, tc.gameVersionID, tc.createdByUserUUID, tc.status, tc.lobbyExpiresAt)
+			createdAt := time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)
+			created, err := repo.CreateSession(context.Background(), db, tc.gameVersionID, tc.createdByUserUUID, tc.status, tc.lobbyExpiresAt, createdAt)
 
 			require.NoError(t, err)
 			require.NotZero(t, created.ID)
@@ -294,6 +295,8 @@ func TestCreateSession(t *testing.T) {
 				Status:            stored.Status,
 				LobbyExpiresAt:    stored.LobbyExpiresAt.UTC(),
 			})
+			require.Equal(t, []testStatusChange{{ToStatus: tc.status, ChangedByUserUUID: &tc.createdByUserUUID, ChangedAt: createdAt}},
+				statusChangesOf(t, db, created.ID), "the history starts with the creation, by its creator")
 		})
 	}
 }

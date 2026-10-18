@@ -264,28 +264,66 @@ func TestSaveCheckpoint(t *testing.T) {
 	}
 }
 
-func TestUpdateSessionStatus(t *testing.T) {
-	type test struct {
-		sessionID uint
-		status    string
-		endCause  *string
+type testStatusChange struct {
+	FromStatus        *string
+	ToStatus          string
+	EndCause          *string
+	ChangedByUserUUID *string
+	ChangedAt         time.Time
+}
 
-		expectErr      bool
-		expectedStatus testSessionStatus
+func statusChangesOf(t *testing.T, db *gorm.DB, sessionID uint) []testStatusChange {
+	t.Helper()
+	var changes []testStatusChange
+	require.NoError(t, db.Raw(`
+		SELECT from_status, to_status, end_cause, changed_by_user_uuid, changed_at
+		FROM play_session_status_changes WHERE session_id = ? ORDER BY id
+	`, sessionID).Scan(&changes).Error)
+	for i := range changes {
+		changes[i].ChangedAt = changes[i].ChangedAt.UTC()
+	}
+	return changes
+}
+
+func TestChangeSessionStatus(t *testing.T) {
+	type test struct {
+		sessionID  uint
+		fromStatus string
+		toStatus   string
+		endCause   *string
+		changedBy  *string
+
+		expectErr       bool
+		expectedStatus  testSessionStatus
+		expectedChanges []testStatusChange
 	}
 
-	cause := "GAME_START_FAILURE"
+	changedAt := time.Date(2026, 10, 17, 12, 0, 0, 0, time.UTC)
+	lobby, cause, creator := "LOBBY", "GAME_START_FAILURE", uuid.NewString()
 	tests := map[string]func(t *testing.T, db *gorm.DB) test{
-		"status_without_end_cause": func(t *testing.T, db *gorm.DB) test {
+		"change_by_a_user_is_recorded_with_them": func(t *testing.T, db *gorm.DB) test {
 			created := seedSession(t, db, time.Now().Add(time.Hour))
-			return test{sessionID: created.ID, status: "RUNNING", expectedStatus: testSessionStatus{Status: "RUNNING"}}
+			return test{
+				sessionID: created.ID, fromStatus: "LOBBY", toStatus: "RUNNING", changedBy: &creator,
+				expectedStatus:  testSessionStatus{Status: "RUNNING"},
+				expectedChanges: []testStatusChange{{FromStatus: &lobby, ToStatus: "RUNNING", ChangedByUserUUID: &creator, ChangedAt: changedAt}},
+			}
 		},
-		"terminal_status_with_its_end_cause": func(t *testing.T, db *gorm.DB) test {
+		"platform_change_with_its_end_cause": func(t *testing.T, db *gorm.DB) test {
 			created := seedSession(t, db, time.Now().Add(time.Hour))
-			return test{sessionID: created.ID, status: "ABORTED", endCause: &cause, expectedStatus: testSessionStatus{Status: "ABORTED", EndCause: &cause}}
+			return test{
+				sessionID: created.ID, fromStatus: "LOBBY", toStatus: "ABORTED", endCause: &cause,
+				expectedStatus:  testSessionStatus{Status: "ABORTED", EndCause: &cause},
+				expectedChanges: []testStatusChange{{FromStatus: &lobby, ToStatus: "ABORTED", EndCause: &cause, ChangedAt: changedAt}},
+			}
 		},
-		"unknown_session": func(t *testing.T, db *gorm.DB) test {
-			return test{sessionID: 0, status: "RUNNING", expectErr: true}
+		"session_in_another_status_is_not_changed": func(t *testing.T, db *gorm.DB) test {
+			created := seedSession(t, db, time.Now().Add(time.Hour))
+			return test{
+				sessionID: created.ID, fromStatus: "RUNNING", toStatus: "FINISHED",
+				expectErr:      true,
+				expectedStatus: testSessionStatus{Status: "LOBBY"},
+			}
 		},
 	}
 
@@ -295,14 +333,15 @@ func TestUpdateSessionStatus(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			tc := setup(t, db)
 
-			err := repo.UpdateSessionStatus(context.Background(), db, tc.sessionID, tc.status, tc.endCause, time.Now())
+			err := repo.ChangeSessionStatus(context.Background(), db, tc.sessionID, tc.fromStatus, tc.toStatus, tc.endCause, tc.changedBy, changedAt)
 
 			if tc.expectErr {
 				require.Error(t, err)
-				return
+			} else {
+				require.NoError(t, err)
 			}
-			require.NoError(t, err)
 			require.Equal(t, tc.expectedStatus, statusOf(t, db, tc.sessionID))
+			require.Equal(t, tc.expectedChanges, statusChangesOf(t, db, tc.sessionID))
 		})
 	}
 }

@@ -28,7 +28,7 @@ type createSessionRepo interface {
 	ClaimCreateSessionRequest(ctx context.Context, tx *gorm.DB, userUUID string, idempotencyKey string, gameUUID string) (uint, *internalrepo.CreateSessionRequest, error)
 	CompleteCreateSessionRequest(ctx context.Context, tx *gorm.DB, requestID uint, outcome string, sessionID *uint) error
 	FindCurrentGameVersion(ctx context.Context, tx *gorm.DB, gameUUID string) (*internalrepo.GameVersion, error)
-	CreateSession(ctx context.Context, tx *gorm.DB, gameVersionID uint, createdByUserUUID string, status string, lobbyExpiresAt time.Time) (internalrepo.CreatedSession, error)
+	CreateSession(ctx context.Context, tx *gorm.DB, gameVersionID uint, createdByUserUUID string, status string, lobbyExpiresAt time.Time, createdAt time.Time) (internalrepo.CreatedSession, error)
 	CreateJoinCode(ctx context.Context, tx *gorm.DB, sessionID uint, code string, expiresAt time.Time) (bool, error)
 	ReleaseExpiredJoinCode(ctx context.Context, tx *gorm.DB, code string, releasedAt time.Time) (bool, error)
 	FindSessionWithJoinCode(ctx context.Context, tx *gorm.DB, sessionID uint) (*internalrepo.SessionWithJoinCode, error)
@@ -146,7 +146,7 @@ func (m *Manager) createSessionInTx(ctx context.Context, tx *gorm.DB, userUUID s
 	now := m.now().UTC().Truncate(time.Microsecond)
 	lobbyExpiresAt := now.Add(m.lobbyTTL)
 
-	created, err := m.createSessionRepo.CreateSession(ctx, tx, version.ID, userUUID, string(sessionstatus.Lobby), lobbyExpiresAt)
+	created, err := m.createSessionRepo.CreateSession(ctx, tx, version.ID, userUUID, string(sessionstatus.Lobby), lobbyExpiresAt, now)
 	if err != nil {
 		return createSessionAttempt{}, err
 	}

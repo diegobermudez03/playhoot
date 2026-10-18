@@ -21,7 +21,7 @@ import (
 // abortStartRepo is AbortStart's own narrow persistence contract.
 type abortStartRepo interface {
 	LockSession(ctx context.Context, tx *gorm.DB, sessionUUID string) (*internalrepo.LockedSession, error)
-	UpdateSessionStatus(ctx context.Context, tx *gorm.DB, sessionID uint, status string, endCause *string, updatedAt time.Time) error
+	ChangeSessionStatus(ctx context.Context, tx *gorm.DB, sessionID uint, fromStatus string, toStatus string, endCause *string, changedBy *string, changedAt time.Time) error
 	ReleaseJoinCodes(ctx context.Context, tx *gorm.DB, sessionID uint, releasedAt time.Time) error
 }
 
@@ -65,7 +65,8 @@ func (m *Manager) abortStartInTx(ctx context.Context, tx *gorm.DB, sessionUUID s
 	}
 	now := m.now().UTC().Truncate(time.Microsecond)
 	cause := string(endcause.GameStartFailure)
-	if err := m.abortStartRepo.UpdateSessionStatus(ctx, tx, session.ID, string(sessionstatus.Aborted), &cause, now); err != nil {
+	// The platform aborts, not a user.
+	if err := m.abortStartRepo.ChangeSessionStatus(ctx, tx, session.ID, string(sessionstatus.Lobby), string(sessionstatus.Aborted), &cause, nil, now); err != nil {
 		return false, err
 	}
 	if err := m.abortStartRepo.ReleaseJoinCodes(ctx, tx, session.ID, now); err != nil {

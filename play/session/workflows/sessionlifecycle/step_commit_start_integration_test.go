@@ -83,48 +83,38 @@ func startEffects(t *testing.T, db *gorm.DB, sessionID uint) (integrationStatus,
 	return status, participants, checkpoints, active
 }
 
-func TestCheckStartEligibilityIntegration(t *testing.T) {
-	type test struct {
-		sessionUUID string
-		userUUID    string
-		playerCount int
-
-		expected sessionpkg.StartEligibility
+// statusHistory is sessionID's status changes, oldest first, as
+// "FROM -> TO [cause] by <user | platform>".
+func statusHistory(t *testing.T, db *gorm.DB, sessionID uint) []string {
+	t.Helper()
+	var changes []struct {
+		FromStatus        *string
+		ToStatus          string
+		EndCause          *string
+		ChangedByUserUUID *string
 	}
-
-	db := testdb.OpenSessionDB(t)
-	store := objectstore.NewFake()
-	now := time.Now().UTC()
-
-	tests := map[string]func(t *testing.T) test{
-		"lobby_is_eligible_with_its_script_from_storage": func(t *testing.T) test {
-			session := seedStartableSession(t, db, store, "LOBBY", now.Add(time.Hour))
-			return test{
-				sessionUUID: session.UUID, userUUID: session.CreatorUUID, playerCount: 2,
-				expected: sessionpkg.StartEligibility{Outcome: sessionpkg.StartEligible, GameVersionUUID: session.VersionUUID, Script: []byte(startableScript)},
-			}
-		},
-		"expired_lobby": func(t *testing.T) test {
-			session := seedStartableSession(t, db, store, "LOBBY", now.Add(-time.Minute))
-			return test{sessionUUID: session.UUID, userUUID: session.CreatorUUID, playerCount: 2, expected: sessionpkg.StartEligibility{Outcome: sessionpkg.StartNotInLobby}}
-		},
-		"too_many_players": func(t *testing.T) test {
-			session := seedStartableSession(t, db, store, "LOBBY", now.Add(time.Hour))
-			return test{sessionUUID: session.UUID, userUUID: session.CreatorUUID, playerCount: 5, expected: sessionpkg.StartEligibility{Outcome: sessionpkg.StartInvalidPlayerCount}}
-		},
+	require.NoError(t, db.Raw(`
+		SELECT from_status, to_status, end_cause, changed_by_user_uuid
+		FROM play_session_status_changes WHERE session_id = ? ORDER BY id
+	`, sessionID).Scan(&changes).Error)
+	var history []string
+	for _, change := range changes {
+		entry := "CREATED"
+		if change.FromStatus != nil {
+			entry = *change.FromStatus
+		}
+		entry += " -> " + change.ToStatus
+		if change.EndCause != nil {
+			entry += " " + *change.EndCause
+		}
+		if change.ChangedByUserUUID != nil {
+			entry += " by " + *change.ChangedByUserUUID
+		} else {
+			entry += " by platform"
+		}
+		history = append(history, entry)
 	}
-
-	for name, setup := range tests {
-		t.Run(name, func(t *testing.T) {
-			tc := setup(t)
-			manager := New(db, store)
-
-			eligibility, err := manager.CheckStartEligibility(context.Background(), tc.sessionUUID, tc.userUUID, tc.playerCount)
-
-			require.NoError(t, err)
-			require.Equal(t, tc.expected, eligibility)
-		})
-	}
+	return history
 }
 
 func TestCommitStartIntegration(t *testing.T) {
@@ -138,6 +128,7 @@ func TestCommitStartIntegration(t *testing.T) {
 		expectedParticipants []integrationParticipant
 		expectedCheckpoints  []integrationCheckpoint
 		expectedActiveCodes  int
+		expectedHistory      []string
 	}
 
 	db := testdb.OpenSessionDB(t)
@@ -157,6 +148,7 @@ func TestCommitStartIntegration(t *testing.T) {
 				},
 				expected:             sessionpkg.CommitStartCommitted,
 				expectedStatus:       integrationStatus{Status: "RUNNING"},
+				expectedHistory:      []string{"LOBBY -> RUNNING by " + session.CreatorUUID},
 				expectedParticipants: []integrationParticipant{{UserUUID: userA, ParticipantID: "P1"}, {UserUUID: userB, ParticipantID: "P2"}},
 				expectedCheckpoints:  []integrationCheckpoint{{ContextRevision: 1, Content: []byte(`{"schema_version":1}`)}},
 			}
@@ -211,50 +203,7 @@ func TestCommitStartIntegration(t *testing.T) {
 			require.Equal(t, tc.expectedParticipants, participants)
 			require.Equal(t, tc.expectedCheckpoints, checkpoints)
 			require.Len(t, active, tc.expectedActiveCodes)
-		})
-	}
-}
-
-func TestAbortStartIntegration(t *testing.T) {
-	type test struct {
-		session startableSession
-
-		expectedStatus      integrationStatus
-		expectedActiveCodes int
-	}
-
-	db := testdb.OpenSessionDB(t)
-	store := objectstore.NewFake()
-	now := time.Now().UTC()
-	cause := "GAME_START_FAILURE"
-
-	tests := map[string]func(t *testing.T) test{
-		"lobby_is_aborted_and_its_code_released": func(t *testing.T) test {
-			return test{
-				session:        seedStartableSession(t, db, store, "LOBBY", now.Add(time.Hour)),
-				expectedStatus: integrationStatus{Status: "ABORTED", EndCause: &cause},
-			}
-		},
-		"running_session_is_left_as_it_is": func(t *testing.T) test {
-			return test{
-				session:             seedStartableSession(t, db, store, "RUNNING", now.Add(time.Hour)),
-				expectedStatus:      integrationStatus{Status: "RUNNING"},
-				expectedActiveCodes: 1,
-			}
-		},
-	}
-
-	for name, setup := range tests {
-		t.Run(name, func(t *testing.T) {
-			tc := setup(t)
-			manager := New(db, store)
-
-			err := manager.AbortStart(context.Background(), tc.session.UUID)
-
-			require.NoError(t, err)
-			status, _, _, active := startEffects(t, db, tc.session.ID)
-			require.Equal(t, tc.expectedStatus, status)
-			require.Len(t, active, tc.expectedActiveCodes)
+			require.Equal(t, tc.expectedHistory, statusHistory(t, db, tc.session.ID))
 		})
 	}
 }

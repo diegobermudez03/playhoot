@@ -121,8 +121,10 @@ const (
 
 	StartSessionNotFound StartEligibilityOutcome = "session_not_found"
 
-	// StartNotInLobby means the Session already started, ended, or its lobby
-	// expired.
+	// StartAlreadyStarted means the Session is RUNNING.
+	StartAlreadyStarted StartEligibilityOutcome = "already_started"
+
+	// StartNotInLobby means the Session ended or its lobby expired.
 	StartNotInLobby StartEligibilityOutcome = "not_in_lobby"
 
 	StartNotCreator StartEligibilityOutcome = "not_creator"

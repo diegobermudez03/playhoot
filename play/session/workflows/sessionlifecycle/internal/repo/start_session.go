@@ -107,21 +107,23 @@ func (r *Repo) SaveCheckpoint(ctx context.Context, tx *gorm.DB, sessionID uint, 
 	return nil
 }
 
-// UpdateSessionStatus moves sessionID to status, recording endCause when it is
-// not nil.
-func (r *Repo) UpdateSessionStatus(ctx context.Context, tx *gorm.DB, sessionID uint, status string, endCause *string, updatedAt time.Time) error {
+// ChangeSessionStatus moves sessionID from fromStatus to toStatus, recording
+// endCause when it is not nil, and appends the change to its history.
+// changedBy is nil when the platform makes the change. It fails when the
+// Session is not in fromStatus.
+func (r *Repo) ChangeSessionStatus(ctx context.Context, tx *gorm.DB, sessionID uint, fromStatus string, toStatus string, endCause *string, changedBy *string, changedAt time.Time) error {
 	result := tx.WithContext(ctx).Exec(`
 		UPDATE play_sessions
 		SET status = ?, end_cause = ?, updated_at = ?
-		WHERE id = ?
-	`, status, endCause, updatedAt, sessionID)
+		WHERE id = ? AND status = ?
+	`, toStatus, endCause, changedAt, sessionID, fromStatus)
 	if result.Error != nil {
-		return fmt.Errorf("updating session status: %w", result.Error)
+		return fmt.Errorf("changing session status: %w", result.Error)
 	}
 	if result.RowsAffected != 1 {
-		return fmt.Errorf("session %d not found", sessionID)
+		return fmt.Errorf("session %d not found in status %s", sessionID, fromStatus)
 	}
-	return nil
+	return recordStatusChange(ctx, tx, sessionID, &fromStatus, toStatus, endCause, changedBy, changedAt)
 }
 
 // ReleaseJoinCodes releases every active join code of sessionID.

@@ -43,6 +43,20 @@ func (m *MockabortStartRepo) EXPECT() *MockabortStartRepoMockRecorder {
 	return m.recorder
 }
 
+// ChangeSessionStatus mocks base method.
+func (m *MockabortStartRepo) ChangeSessionStatus(ctx context.Context, tx *gorm.DB, sessionID uint, fromStatus, toStatus string, endCause, changedBy *string, changedAt time.Time) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ChangeSessionStatus", ctx, tx, sessionID, fromStatus, toStatus, endCause, changedBy, changedAt)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ChangeSessionStatus indicates an expected call of ChangeSessionStatus.
+func (mr *MockabortStartRepoMockRecorder) ChangeSessionStatus(ctx, tx, sessionID, fromStatus, toStatus, endCause, changedBy, changedAt any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ChangeSessionStatus", reflect.TypeOf((*MockabortStartRepo)(nil).ChangeSessionStatus), ctx, tx, sessionID, fromStatus, toStatus, endCause, changedBy, changedAt)
+}
+
 // LockSession mocks base method.
 func (m *MockabortStartRepo) LockSession(ctx context.Context, tx *gorm.DB, sessionUUID string) (*repo.LockedSession, error) {
 	m.ctrl.T.Helper()
@@ -70,18 +84,4 @@ func (m *MockabortStartRepo) ReleaseJoinCodes(ctx context.Context, tx *gorm.DB, 
 func (mr *MockabortStartRepoMockRecorder) ReleaseJoinCodes(ctx, tx, sessionID, releasedAt any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReleaseJoinCodes", reflect.TypeOf((*MockabortStartRepo)(nil).ReleaseJoinCodes), ctx, tx, sessionID, releasedAt)
-}
-
-// UpdateSessionStatus mocks base method.
-func (m *MockabortStartRepo) UpdateSessionStatus(ctx context.Context, tx *gorm.DB, sessionID uint, status string, endCause *string, updatedAt time.Time) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateSessionStatus", ctx, tx, sessionID, status, endCause, updatedAt)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// UpdateSessionStatus indicates an expected call of UpdateSessionStatus.
-func (mr *MockabortStartRepoMockRecorder) UpdateSessionStatus(ctx, tx, sessionID, status, endCause, updatedAt any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateSessionStatus", reflect.TypeOf((*MockabortStartRepo)(nil).UpdateSessionStatus), ctx, tx, sessionID, status, endCause, updatedAt)
 }

@@ -189,6 +189,7 @@ func TestCreateSessionIntegration(t *testing.T) {
 			require.Equal(t, []integrationJoinCode{{SessionID: sessions[0].ID, Code: code, ExpiresAt: lobbyExpiresAt}}, joinCodesOf(t, db, sessions[0].ID))
 			sessionID := sessions[0].ID
 			require.Equal(t, []integrationRequest{{IdempotencyKey: "key-1", GameUUID: gameUUID, Outcome: outcome(sessionpkg.CreateSessionCreated), SessionID: &sessionID}}, requests)
+			require.Equal(t, []string{"CREATED -> LOBBY by " + userUUID}, statusHistory(t, db, sessionID))
 		}
 	}
 

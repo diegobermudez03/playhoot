@@ -59,7 +59,7 @@ func TestCreateSessionInTx(t *testing.T) {
 			gomock.InOrder(
 				deps.repo.EXPECT().ClaimCreateSessionRequest(ctx, tx, userUUID, key, gameUUID).Return(requestID, nil, nil),
 				deps.repo.EXPECT().FindCurrentGameVersion(ctx, tx, gameUUID).Return(executable, nil),
-				deps.repo.EXPECT().CreateSession(ctx, tx, versionID, userUUID, "LOBBY", lobbyExpiresAt).Return(createdSession, nil),
+				deps.repo.EXPECT().CreateSession(ctx, tx, versionID, userUUID, "LOBBY", lobbyExpiresAt, nowInDB).Return(createdSession, nil),
 				deps.repo.EXPECT().CreateJoinCode(ctx, tx, sessionID, "ABC234", lobbyExpiresAt).Return(true, nil),
 				deps.repo.EXPECT().CompleteCreateSessionRequest(ctx, tx, requestID, "created", sessionIDRef()).Return(nil),
 			)
@@ -69,7 +69,7 @@ func TestCreateSessionInTx(t *testing.T) {
 			gomock.InOrder(
 				deps.repo.EXPECT().ClaimCreateSessionRequest(ctx, tx, userUUID, key, gameUUID).Return(requestID, nil, nil),
 				deps.repo.EXPECT().FindCurrentGameVersion(ctx, tx, gameUUID).Return(executable, nil),
-				deps.repo.EXPECT().CreateSession(ctx, tx, versionID, userUUID, "LOBBY", lobbyExpiresAt).Return(createdSession, nil),
+				deps.repo.EXPECT().CreateSession(ctx, tx, versionID, userUUID, "LOBBY", lobbyExpiresAt, nowInDB).Return(createdSession, nil),
 				deps.repo.EXPECT().CreateJoinCode(ctx, tx, sessionID, "TAKEN1", lobbyExpiresAt).Return(false, nil),
 				deps.repo.EXPECT().ReleaseExpiredJoinCode(ctx, tx, "TAKEN1", nowInDB).Return(false, nil),
 				deps.repo.EXPECT().CreateJoinCode(ctx, tx, sessionID, "FREE22", lobbyExpiresAt).Return(true, nil),
@@ -81,7 +81,7 @@ func TestCreateSessionInTx(t *testing.T) {
 			gomock.InOrder(
 				deps.repo.EXPECT().ClaimCreateSessionRequest(ctx, tx, userUUID, key, gameUUID).Return(requestID, nil, nil),
 				deps.repo.EXPECT().FindCurrentGameVersion(ctx, tx, gameUUID).Return(executable, nil),
-				deps.repo.EXPECT().CreateSession(ctx, tx, versionID, userUUID, "LOBBY", lobbyExpiresAt).Return(createdSession, nil),
+				deps.repo.EXPECT().CreateSession(ctx, tx, versionID, userUUID, "LOBBY", lobbyExpiresAt, nowInDB).Return(createdSession, nil),
 				deps.repo.EXPECT().CreateJoinCode(ctx, tx, sessionID, "OLD333", lobbyExpiresAt).Return(false, nil),
 				deps.repo.EXPECT().ReleaseExpiredJoinCode(ctx, tx, "OLD333", nowInDB).Return(true, nil),
 				deps.repo.EXPECT().CreateJoinCode(ctx, tx, sessionID, "OLD333", lobbyExpiresAt).Return(true, nil),
@@ -93,7 +93,7 @@ func TestCreateSessionInTx(t *testing.T) {
 			gomock.InOrder(
 				deps.repo.EXPECT().ClaimCreateSessionRequest(ctx, tx, userUUID, key, gameUUID).Return(requestID, nil, nil),
 				deps.repo.EXPECT().FindCurrentGameVersion(ctx, tx, gameUUID).Return(executable, nil),
-				deps.repo.EXPECT().CreateSession(ctx, tx, versionID, userUUID, "LOBBY", lobbyExpiresAt).Return(createdSession, nil),
+				deps.repo.EXPECT().CreateSession(ctx, tx, versionID, userUUID, "LOBBY", lobbyExpiresAt, nowInDB).Return(createdSession, nil),
 				deps.repo.EXPECT().CreateJoinCode(ctx, tx, sessionID, "RACE44", lobbyExpiresAt).Return(false, nil),
 				deps.repo.EXPECT().ReleaseExpiredJoinCode(ctx, tx, "RACE44", nowInDB).Return(true, nil),
 				deps.repo.EXPECT().CreateJoinCode(ctx, tx, sessionID, "RACE44", lobbyExpiresAt).Return(false, nil),
@@ -105,7 +105,7 @@ func TestCreateSessionInTx(t *testing.T) {
 		"no_free_join_code_after_max_attempts": func(t *testing.T, deps dependencies) test {
 			deps.repo.EXPECT().ClaimCreateSessionRequest(ctx, tx, userUUID, key, gameUUID).Return(requestID, nil, nil)
 			deps.repo.EXPECT().FindCurrentGameVersion(ctx, tx, gameUUID).Return(executable, nil)
-			deps.repo.EXPECT().CreateSession(ctx, tx, versionID, userUUID, "LOBBY", lobbyExpiresAt).Return(createdSession, nil)
+			deps.repo.EXPECT().CreateSession(ctx, tx, versionID, userUUID, "LOBBY", lobbyExpiresAt, nowInDB).Return(createdSession, nil)
 			deps.repo.EXPECT().CreateJoinCode(ctx, tx, sessionID, "BUSY66", lobbyExpiresAt).Return(false, nil).Times(maxJoinCodeAttempts)
 			deps.repo.EXPECT().ReleaseExpiredJoinCode(ctx, tx, "BUSY66", nowInDB).Return(false, nil).Times(maxJoinCodeAttempts)
 			codes := make([]string, maxJoinCodeAttempts)
@@ -200,7 +200,7 @@ func TestCreateSessionInTx(t *testing.T) {
 			gomock.InOrder(
 				deps.repo.EXPECT().ClaimCreateSessionRequest(ctx, tx, userUUID, key, gameUUID).Return(requestID, nil, nil),
 				deps.repo.EXPECT().FindCurrentGameVersion(ctx, tx, gameUUID).Return(executable, nil),
-				deps.repo.EXPECT().CreateSession(ctx, tx, versionID, userUUID, "LOBBY", lobbyExpiresAt).Return(internalrepo.CreatedSession{}, errors.New("db down")),
+				deps.repo.EXPECT().CreateSession(ctx, tx, versionID, userUUID, "LOBBY", lobbyExpiresAt, nowInDB).Return(internalrepo.CreatedSession{}, errors.New("db down")),
 			)
 			return test{expectErr: true}
 		},
@@ -208,7 +208,7 @@ func TestCreateSessionInTx(t *testing.T) {
 			gomock.InOrder(
 				deps.repo.EXPECT().ClaimCreateSessionRequest(ctx, tx, userUUID, key, gameUUID).Return(requestID, nil, nil),
 				deps.repo.EXPECT().FindCurrentGameVersion(ctx, tx, gameUUID).Return(executable, nil),
-				deps.repo.EXPECT().CreateSession(ctx, tx, versionID, userUUID, "LOBBY", lobbyExpiresAt).Return(createdSession, nil),
+				deps.repo.EXPECT().CreateSession(ctx, tx, versionID, userUUID, "LOBBY", lobbyExpiresAt, nowInDB).Return(createdSession, nil),
 				deps.repo.EXPECT().CreateJoinCode(ctx, tx, sessionID, "ABC234", lobbyExpiresAt).Return(false, errors.New("db down")),
 			)
 			return test{joinCodes: []string{"ABC234"}, expectErr: true}
@@ -217,7 +217,7 @@ func TestCreateSessionInTx(t *testing.T) {
 			gomock.InOrder(
 				deps.repo.EXPECT().ClaimCreateSessionRequest(ctx, tx, userUUID, key, gameUUID).Return(requestID, nil, nil),
 				deps.repo.EXPECT().FindCurrentGameVersion(ctx, tx, gameUUID).Return(executable, nil),
-				deps.repo.EXPECT().CreateSession(ctx, tx, versionID, userUUID, "LOBBY", lobbyExpiresAt).Return(createdSession, nil),
+				deps.repo.EXPECT().CreateSession(ctx, tx, versionID, userUUID, "LOBBY", lobbyExpiresAt, nowInDB).Return(createdSession, nil),
 				deps.repo.EXPECT().CreateJoinCode(ctx, tx, sessionID, "ABC234", lobbyExpiresAt).Return(true, nil),
 				deps.repo.EXPECT().CompleteCreateSessionRequest(ctx, tx, requestID, "created", sessionIDRef()).Return(errors.New("db down")),
 			)

@@ -47,6 +47,15 @@ erDiagram
         TIMESTAMPTZ released_at "nullable; set when no longer active"
         TIMESTAMPTZ created_at
     }
+    play_session_status_changes {
+        BIGSERIAL id PK
+        BIGINT session_id "play_sessions.id"
+        TEXT from_status "nullable; NULL for the creation"
+        TEXT to_status
+        TEXT end_cause "nullable"
+        UUID changed_by_user_uuid "nullable; NULL when the platform changed it"
+        TIMESTAMPTZ changed_at
+    }
     play_session_participants {
         BIGSERIAL id PK
         BIGINT session_id "play_sessions.id; unique with participant_id and with user_uuid"
@@ -76,6 +85,7 @@ erDiagram
     play_games }o--o| play_game_versions : "play_games.current_version_id = play_game_versions.id"
     play_game_versions ||--o{ play_sessions : "play_sessions.game_version_id = play_game_versions.id"
     play_sessions ||--o{ play_session_join_codes : "play_session_join_codes.session_id = play_sessions.id"
+    play_sessions ||--o{ play_session_status_changes : "play_session_status_changes.session_id = play_sessions.id"
     play_sessions ||--o{ play_session_participants : "play_session_participants.session_id = play_sessions.id"
     play_sessions ||--o| play_session_checkpoints : "play_session_checkpoints.session_id = play_sessions.id"
     play_sessions |o--o{ play_create_session_requests : "play_create_session_requests.session_id = play_sessions.id"
@@ -91,3 +101,4 @@ Notes:
 - `play_session_participants` and the first `play_session_checkpoints` row are written in the same transaction that makes a Session RUNNING, so a RUNNING Session always has its roster and a recoverable checkpoint. A checkpoint row is only replaced by one of a higher `context_revision`; there is no history (replay is a separate mechanism).
 - `end_cause` is set with a terminal status; the only value written today is `GAME_START_FAILURE` (with ABORTED).
 - Starting or aborting a Session releases its join codes.
+- `play_session_status_changes` is the append-only history of every status a Session went through. A row is written in the same transaction as each change of `play_sessions.status`, including the creation (`from_status` NULL), and only through `sessionlifecycle`'s repository (`CreateSession`, `ChangeSessionStatus`), so no status change can skip it. `changed_by_user_uuid` is the user who caused the change (the creator creating or starting it) or NULL for the platform (for example an aborted start).

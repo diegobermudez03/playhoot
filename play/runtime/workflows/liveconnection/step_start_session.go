@@ -47,6 +47,8 @@ const startOutcomeError = "error"
 var (
 	startOutcomeLabel = metrics.NewLabel("outcome",
 		string(runtime.SessionStarted),
+		string(runtime.StartAlreadyStarted),
+		string(runtime.StartInProgress),
 		string(runtime.StartNotInLobby),
 		string(runtime.StartInvalidPlayerCount),
 		string(runtime.StartGameUnavailable),
@@ -110,6 +112,8 @@ func (m *Manager) startFrozenLobby(ctx context.Context, sessionController *contr
 	}
 	switch eligibility.Outcome {
 	case sessionpkg.StartEligible:
+	case sessionpkg.StartAlreadyStarted:
+		return runtime.StartAlreadyStarted, nil
 	case sessionpkg.StartSessionNotFound, sessionpkg.StartNotInLobby:
 		return runtime.StartNotInLobby, nil
 	case sessionpkg.StartInvalidPlayerCount:

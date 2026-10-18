@@ -24,7 +24,7 @@ type commitStartRepo interface {
 	LockSession(ctx context.Context, tx *gorm.DB, sessionUUID string) (*internalrepo.LockedSession, error)
 	CreateParticipants(ctx context.Context, tx *gorm.DB, sessionID uint, participants []internalrepo.Participant) error
 	SaveCheckpoint(ctx context.Context, tx *gorm.DB, sessionID uint, contextRevision int64, content []byte, savedAt time.Time) error
-	UpdateSessionStatus(ctx context.Context, tx *gorm.DB, sessionID uint, status string, endCause *string, updatedAt time.Time) error
+	ChangeSessionStatus(ctx context.Context, tx *gorm.DB, sessionID uint, fromStatus string, toStatus string, endCause *string, changedBy *string, changedAt time.Time) error
 	ReleaseJoinCodes(ctx context.Context, tx *gorm.DB, sessionID uint, releasedAt time.Time) error
 }
 
@@ -92,7 +92,8 @@ func (m *Manager) commitStartInTx(ctx context.Context, tx *gorm.DB, sessionUUID 
 	if err := m.commitStartRepo.SaveCheckpoint(ctx, tx, session.ID, checkpoint.ContextRevision, checkpoint.Content, now); err != nil {
 		return "", err
 	}
-	if err := m.commitStartRepo.UpdateSessionStatus(ctx, tx, session.ID, string(sessionstatus.Running), nil, now); err != nil {
+	startedBy := session.CreatedByUserUUID
+	if err := m.commitStartRepo.ChangeSessionStatus(ctx, tx, session.ID, string(sessionstatus.Lobby), string(sessionstatus.Running), nil, &startedBy, now); err != nil {
 		return "", err
 	}
 	if err := m.commitStartRepo.ReleaseJoinCodes(ctx, tx, session.ID, now); err != nil {

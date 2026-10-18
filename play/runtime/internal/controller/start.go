@@ -27,7 +27,13 @@ type Game struct {
 func (c *Controller) BeginStart() (participants []runtime.Participant, outcome runtime.StartSessionOutcome, ok bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.phase != phaseLobby {
+	switch c.phase {
+	case phaseLobby:
+	case phaseStarting:
+		return nil, runtime.StartInProgress, false
+	case phaseRunning:
+		return nil, runtime.StartAlreadyStarted, false
+	default:
 		return nil, runtime.StartNotInLobby, false
 	}
 	if len(c.lobby) < c.manifest.MinPlayers || len(c.lobby) > c.manifest.MaxPlayers {

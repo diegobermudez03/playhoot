@@ -188,8 +188,14 @@ type StartSessionOutcome string
 const (
 	SessionStarted StartSessionOutcome = "started"
 
-	// StartNotInLobby means the Session already started, ended, or its lobby
-	// expired.
+	// StartAlreadyStarted means the Session is already running.
+	StartAlreadyStarted StartSessionOutcome = "already_started"
+
+	// StartInProgress means another Start attempt is running; its outcome
+	// reaches every connection.
+	StartInProgress StartSessionOutcome = "start_in_progress"
+
+	// StartNotInLobby means the Session ended or its lobby expired.
 	StartNotInLobby StartSessionOutcome = "not_in_lobby"
 
 	// StartInvalidPlayerCount means the lobby holds fewer or more players

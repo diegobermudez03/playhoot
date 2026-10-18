@@ -138,6 +138,10 @@ func TestStartSession(t *testing.T) {
 			deps.starts.EXPECT().CheckStartEligibility(ctx, sessionUUID, creatorUUID, 2).Return(sessionpkg.StartEligibility{Outcome: sessionpkg.StartNotInLobby}, nil)
 			return test{minPlayers: 1, expectedOutcome: runtime.StartNotInLobby, expectedLobby: true}
 		},
+		"session_already_running": func(t *testing.T, deps dependencies) test {
+			deps.starts.EXPECT().CheckStartEligibility(ctx, sessionUUID, creatorUUID, 2).Return(sessionpkg.StartEligibility{Outcome: sessionpkg.StartAlreadyStarted}, nil)
+			return test{minPlayers: 1, expectedOutcome: runtime.StartAlreadyStarted, expectedLobby: true}
+		},
 		"game_version_no_longer_playable": func(t *testing.T, deps dependencies) test {
 			deps.starts.EXPECT().CheckStartEligibility(ctx, sessionUUID, creatorUUID, 2).Return(sessionpkg.StartEligibility{Outcome: sessionpkg.StartGameUnavailable}, nil)
 			return test{minPlayers: 1, expectedOutcome: runtime.StartGameUnavailable, expectedLobby: true}

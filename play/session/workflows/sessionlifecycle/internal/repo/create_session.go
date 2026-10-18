@@ -121,17 +121,22 @@ func (r *Repo) FindCurrentGameVersion(ctx context.Context, tx *gorm.DB, gameUUID
 }
 
 // CreateSession inserts a Session pinned to gameVersionID, with a freshly
-// generated UUID.
-func (r *Repo) CreateSession(ctx context.Context, tx *gorm.DB, gameVersionID uint, createdByUserUUID string, status string, lobbyExpiresAt time.Time) (CreatedSession, error) {
+// generated UUID, and starts its status history.
+func (r *Repo) CreateSession(ctx context.Context, tx *gorm.DB, gameVersionID uint, createdByUserUUID string, status string, lobbyExpiresAt time.Time, createdAt time.Time) (CreatedSession, error) {
 	created := session{
 		UUID:              uuid.NewString(),
 		GameVersionID:     gameVersionID,
 		CreatedByUserUUID: createdByUserUUID,
 		Status:            status,
 		LobbyExpiresAt:    lobbyExpiresAt,
+		CreatedAt:         createdAt,
+		UpdatedAt:         createdAt,
 	}
 	if err := tx.WithContext(ctx).Create(&created).Error; err != nil {
 		return CreatedSession{}, fmt.Errorf("inserting session: %s", err)
+	}
+	if err := recordStatusChange(ctx, tx, created.ID, nil, status, nil, &createdByUserUUID, createdAt); err != nil {
+		return CreatedSession{}, err
 	}
 	return CreatedSession{ID: created.ID, UUID: created.UUID}, nil
 }
