@@ -55,6 +55,7 @@ play/                         # a folder, not a Go package: each subpackage expo
     migration/                # exposes Migrate(db) and Seed(db) (test data) to the application's migrations.go
     usecases/
       checkadminjoin/         # EligibleToJoinAsAdmin + internal/repo
+      checklivesession/       # IsSessionLive (asked by the Runtime's ownership before claiming) + internal/repo
     workflows/
       sessionlifecycle/       # Manager + one file per step (step_create_session.go) + internal/repo
     internal/

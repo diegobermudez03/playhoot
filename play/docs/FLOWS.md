@@ -48,6 +48,10 @@ Implemented behavior:
 - No Runtime controller and no participant are created; the creator is not a player.
 - Counts `play_session_create_total{outcome=created|game_unavailable|replayed}` once the transaction committed.
 
+## Live Session Check
+
+`checklivesession.Service.IsSessionLive(sessionUUID)`, called by the Runtime's ownership (`LocateOrClaimOwner`) before every live upgrade, so that only a live Session is ever claimed and gets a controller. It only reads `play_sessions`: the Session is live when it is RUNNING, or in LOBBY before `lobby_expires_at`. An unknown Session (or not a UUID), an ended one, or an overdue lobby is not live (the expiry is not recorded here); the API answers 404.
+
 ## Admin Join Eligibility
 
 `checkadminjoin.Service.EligibleToJoinAsAdmin(sessionUUID, userUUID)`, called by the live Runtime before it attaches an admin connection (see `docs/architecture/CROSS_DOMAIN_FLOWS.md`, Admin Join). It only reads `play_sessions`.

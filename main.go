@@ -26,6 +26,7 @@ import (
 	sessionmigration "github.com/diegobermudez03/playhoot/play/session/migration"
 	"github.com/diegobermudez03/playhoot/play/session/storage"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/checkadminjoin"
+	"github.com/diegobermudez03/playhoot/play/session/usecases/checklivesession"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/checkplayerjoin"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/frontendaccess"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/loadruntimemanifest"
@@ -140,7 +141,7 @@ func run() error {
 		authorize.New(),
 		createguest.New(),
 		playLifecycle,
-		ownership.New(),
+		ownership.New(checklivesession.New(db)),
 		liveConnections,
 		liveConnections,
 		resolvejoincode.New(db),
