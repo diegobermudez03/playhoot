@@ -16,6 +16,14 @@ The detailed model (what it owns, its entities, persistence, protocol, recovery)
 
 An active Session has exactly one owning Runtime instance. Ownership (locate-or-claim, epoch, release, and later lease and heartbeat) is the Runtime's; getting a request to the owner is the API edge's (`play/docs/decisions/SESSION-ADR-0029-live-session-ownership-and-owner-routing.md`, which also lists what must exist before more than one instance may own Sessions).
 
+## Live Session Controller
+
+Each Session this instance owns has one controller (`play/docs/decisions/SESSION-ADR-0030-the-session-controller-owns-its-live-execution.md`). It owns the Session's in-memory state, its Sandbox execution context and every live operation: lobby admission, SAMPLE ingress, Start (including adopting a Session the database already has RUNNING), the running game's ticks, retries, restores and aborts. It calls the durable Session, the Sandbox and the replay recorder itself, and is the only component that talks to the Sandbox for its Session. Its state is locked only by itself.
+
+From its creation until it ends, it has one main goroutine. Everything that touches the Sandbox or makes a durable write runs on it, so that goroutine is the Session's single mutation lane. Quick operations (admission, a SAMPLE, a disconnect) run on the caller's goroutine under a short lock. A SAMPLE arriving while a batch executes goes to the next batch.
+
+The Runtime's entry point (the `liveconnection` ControllerResolver) only finds or creates a Session's controller when a connection arrives, without asking the durable Session anything, and stops every controller on shutdown. The controller decides the admission itself. After that, a connection's operations are bound directly to its controller.
+
 ## Does Not Own
 
 - Transport/network connections (API owns the transport edge).
@@ -33,14 +41,15 @@ The previous implementation was removed. Current layout:
 play/                         # a folder, not a Go package: each subpackage exposes its own types at its root
   docs/                       # DATA_MODEL.md, FLOWS.md, decisions/
   runtime/
-    runtime.go                # live Runtime public contract (OwnerPlacement, AttachAdminResult, AdminConnection operations and types)
-    sandbox/                  # QuickJS-on-WebAssembly script execution in an isolated worker process; not wired to anything yet
+    runtime.go                # live Runtime public contract (owner placement, attach results, admin and player connection operations and types)
+    replay/                   # what a running game offers to its replay history
+    sandbox/                  # QuickJS-on-WebAssembly execution contexts, one isolated worker process each; scriptcheck/ validates scripts for publication
     usecases/
       ownership/              # LocateOrClaimOwner (placeholder: single instance, no registry)
     workflows/
-      liveconnection/         # Manager + one file per operation (step_attach_admin.go: eligibility check, then attach to the Session's controller)
+      liveconnection/         # the live Session: the ControllerResolver finds or creates each Session's controller; the controller runs everything else, one file per operation
     internal/
-      controller/             # per-instance controller registry and the Session controller (today: ADMIN connections only)
+      business/               # pure logic shared by the controller's operations (checkpoint encoding, view patches)
   session/
     session.go                # durable Session public contract (CreateSession types, ErrIdempotencyConflict, AdminJoinEligibility)
     migration/                # exposes Migrate(db) and Seed(db) (test data) to the application's migrations.go
@@ -56,6 +65,6 @@ play/                         # a folder, not a Go package: each subpackage expo
       testdb/                 # disposable test database for this domain (packages call testdb.Run from TestMain)
 ```
 
-`sandbox` and `objectstore` are kept as reusable code without a current caller. Tables are prefixed `play_` and have no foreign keys (references are indexed and kept correct by the application).
+`sandbox/scriptcheck` has no caller yet. Tables are prefixed `play_` and have no foreign keys (references are indexed and kept correct by the application).
 
 Package placement and layering rules are in `docs/engineering/standards/domain-logic-placement.md`.

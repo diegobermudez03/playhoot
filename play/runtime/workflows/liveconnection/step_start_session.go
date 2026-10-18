@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/diegobermudez03/playhoot/logging"
@@ -11,12 +12,11 @@ import (
 	"github.com/diegobermudez03/playhoot/monitoring/metrics"
 	"github.com/diegobermudez03/playhoot/play/runtime"
 	"github.com/diegobermudez03/playhoot/play/runtime/internal/business/checkpoint"
-	"github.com/diegobermudez03/playhoot/play/runtime/internal/controller"
 	"github.com/diegobermudez03/playhoot/play/runtime/sandbox"
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
 
-//go:generate mockgen -package=liveconnection -destination=step_start_session_mock_test.go . sessionStarter,frontendSigner,gameSandbox
+//go:generate mockgen -package=liveconnection -destination=step_start_session_mock_test.go . sessionStarter,frontendSigner
 
 // sessionStarter is the durable Session's side of starting a game.
 type sessionStarter interface {
@@ -29,16 +29,6 @@ type sessionStarter interface {
 // frontendSigner grants clients access to a game version's frontend package.
 type frontendSigner interface {
 	FrontendAccess(ctx context.Context, gameVersionUUID string) (sessionpkg.FrontendAccess, error)
-}
-
-// gameSandbox runs a game's scripts in execution contexts, one per running
-// Session. An error is an infrastructure failure, never the script's.
-type gameSandbox interface {
-	CreateContext(ctx context.Context, spec sandbox.ContextSpec) (string, error)
-	Start(ctx context.Context, contextID string, input sandbox.StartInput) (sandbox.StartResult, error)
-	Restore(ctx context.Context, contextID string, snapshot sandbox.Snapshot) (sandbox.RestoreResult, error)
-	Project(ctx context.Context, contextID string, participantID string) (sandbox.ProjectResult, error)
-	DiscardContext(ctx context.Context, contextID string) error
 }
 
 // maxStartRuns is how many times a game's start runs before a script failure
@@ -81,11 +71,30 @@ var (
 	)
 )
 
-// startSession starts sessionUUID's game with its lobby, as userUUID asked.
-// An error means the Session stays in its lobby.
-func (m *Manager) startSession(ctx context.Context, sessionController *controller.Controller, sessionUUID string, userUUID string) (runtime.StartSessionResult, error) {
+// requestStart starts the game on the main goroutine, as userUUID asked, and
+// waits for the outcome.
+func (c *sessionController) requestStart(ctx context.Context, userUUID string) (runtime.StartSessionResult, error) {
+	var result runtime.StartSessionResult
+	var err error
+	if c.do(ctx, func() { result, err = c.startSession(ctx, userUUID) }) {
+		return result, err
+	}
+	if ctx.Err() != nil {
+		return runtime.StartSessionResult{}, ctx.Err()
+	}
+	select {
+	case <-c.ended:
+		return runtime.StartSessionResult{Outcome: runtime.StartNotInLobby}, nil
+	default:
+		return runtime.StartSessionResult{}, errStopped
+	}
+}
+
+// startSession starts the game with the lobby, as userUUID asked. An error
+// means the Session stays in its lobby.
+func (c *sessionController) startSession(ctx context.Context, userUUID string) (runtime.StartSessionResult, error) {
 	began := time.Now()
-	outcome, err := m.runStart(ctx, sessionController, sessionUUID, userUUID)
+	outcome, err := c.runStart(ctx, userUUID)
 	label := string(outcome)
 	if err != nil {
 		label = startOutcomeError
@@ -99,29 +108,29 @@ func (m *Manager) startSession(ctx context.Context, sessionController *controlle
 	return runtime.StartSessionResult{Outcome: outcome}, nil
 }
 
-func (m *Manager) runStart(ctx context.Context, sessionController *controller.Controller, sessionUUID string, userUUID string) (runtime.StartSessionOutcome, error) {
-	participants, outcome, ok := sessionController.BeginStart()
+func (c *sessionController) runStart(ctx context.Context, userUUID string) (runtime.StartSessionOutcome, error) {
+	participants, outcome, ok := c.beginStart()
 	if !ok {
 		return outcome, nil
 	}
-	outcome, err := m.startFrozenLobby(ctx, sessionController, sessionUUID, userUUID, participants)
+	outcome, err := c.startFrozenLobby(ctx, userUUID, participants)
 	if err != nil || (outcome != runtime.SessionStarted && outcome != runtime.StartFailed) {
-		sessionController.CancelStart()
+		c.cancelStart()
 	}
 	return outcome, err
 }
 
 // startFrozenLobby starts the game with participants. It completes or aborts
 // the Start attempt; any other outcome leaves cancelling it to the caller.
-func (m *Manager) startFrozenLobby(ctx context.Context, sessionController *controller.Controller, sessionUUID string, userUUID string, participants []runtime.Participant) (runtime.StartSessionOutcome, error) {
-	eligibility, err := m.starts.CheckStartEligibility(ctx, sessionUUID, userUUID, len(participants))
+func (c *sessionController) startFrozenLobby(ctx context.Context, userUUID string, participants []runtime.Participant) (runtime.StartSessionOutcome, error) {
+	eligibility, err := c.deps.starts.CheckStartEligibility(ctx, c.sessionUUID, userUUID, len(participants))
 	if err != nil {
 		return "", fmt.Errorf("checking start eligibility: %w", err)
 	}
 	switch eligibility.Outcome {
 	case sessionpkg.StartEligible:
 	case sessionpkg.StartAlreadyStarted:
-		return m.adoptRunningSession(ctx, sessionController, sessionUUID)
+		return c.adoptRunningSession(ctx)
 	case sessionpkg.StartSessionNotFound, sessionpkg.StartNotInLobby:
 		return runtime.StartNotInLobby, nil
 	case sessionpkg.StartInvalidPlayerCount:
@@ -133,7 +142,7 @@ func (m *Manager) startFrozenLobby(ctx context.Context, sessionController *contr
 		return "", fmt.Errorf("unexpected start eligibility %q", eligibility.Outcome)
 	}
 	// Signed before running the game, so failing to sign wastes no context.
-	access, err := m.frontends.FrontendAccess(ctx, eligibility.GameVersionUUID)
+	access, err := c.deps.frontends.FrontendAccess(ctx, eligibility.GameVersionUUID)
 	if err != nil {
 		return "", fmt.Errorf("signing frontend access: %w", err)
 	}
@@ -143,7 +152,7 @@ func (m *Manager) startFrozenLobby(ctx context.Context, sessionController *contr
 		participantIDs[i] = participant.ParticipantID
 	}
 	spec := sandbox.ContextSpec{GameVersionUUID: eligibility.GameVersionUUID, Script: eligibility.Script}
-	game, views, started, err := m.startGame(ctx, spec, sandbox.StartInput{Participants: participantIDs, RandomSeed: m.seeds()})
+	game, views, started, err := c.startGame(ctx, spec, sandbox.StartInput{Participants: participantIDs, RandomSeed: c.deps.seeds()})
 	if errors.Is(err, sandbox.ErrNoCapacity) {
 		return runtime.StartSandboxUnavailable, nil
 	}
@@ -151,21 +160,19 @@ func (m *Manager) startFrozenLobby(ctx context.Context, sessionController *contr
 		return "", err
 	}
 	if !started {
-		if err := m.starts.AbortStart(ctx, sessionUUID); err != nil {
+		if err := c.deps.starts.AbortStart(ctx, c.sessionUUID); err != nil {
 			return "", fmt.Errorf("aborting session: %w", err)
 		}
-		sessionController.AbortStart()
+		c.abortStart()
 		return runtime.StartFailed, nil
 	}
 
-	outcome, err := m.commitStart(ctx, sessionUUID, userUUID, eligibility.GameVersionUUID, participants, game)
+	outcome, err := c.commitStart(ctx, userUUID, participants, game)
 	if err != nil || outcome != runtime.SessionStarted {
-		m.discardContext(ctx, game.ContextID)
+		c.discardContext(ctx)
 		return outcome, err
 	}
-	frontend := runtime.GameFrontend{URL: access.URL, SHA256: access.SHA256, ExpiresAt: access.ExpiresAt}
-	sessionController.CompleteStart(participants, game, frontend, views)
-	m.games.Run(sessionUUID, sessionController, m.tickInterval)
+	c.completeStart(participants, game, frontendOf(access), views)
 	return runtime.SessionStarted, nil
 }
 
@@ -173,8 +180,8 @@ func (m *Manager) startFrozenLobby(ctx context.Context, sessionController *contr
 // already committed (its commit answer was lost, or this instance restarted):
 // the game runs from the committed roster and latest checkpoint, in a restored
 // context, since the database is the truth.
-func (m *Manager) adoptRunningSession(ctx context.Context, sessionController *controller.Controller, sessionUUID string) (runtime.StartSessionOutcome, error) {
-	running, err := m.starts.LoadRunningSession(ctx, sessionUUID)
+func (c *sessionController) adoptRunningSession(ctx context.Context) (runtime.StartSessionOutcome, error) {
+	running, err := c.deps.starts.LoadRunningSession(ctx, c.sessionUUID)
 	if errors.Is(err, sessionpkg.ErrSessionNotRunning) {
 		// It ended meanwhile.
 		return runtime.StartNotInLobby, nil
@@ -186,7 +193,7 @@ func (m *Manager) adoptRunningSession(ctx context.Context, sessionController *co
 	if err != nil {
 		return "", err
 	}
-	access, err := m.frontends.FrontendAccess(ctx, running.GameVersionUUID)
+	access, err := c.deps.frontends.FrontendAccess(ctx, running.GameVersionUUID)
 	if err != nil {
 		return "", fmt.Errorf("signing frontend access: %w", err)
 	}
@@ -197,64 +204,41 @@ func (m *Manager) adoptRunningSession(ctx context.Context, sessionController *co
 		participants[i] = runtime.Participant{ParticipantID: participant.ParticipantID, UserUUID: participant.UserUUID}
 		participantIDs[i] = participant.ParticipantID
 	}
-	spec := sandbox.ContextSpec{GameVersionUUID: running.GameVersionUUID, Script: running.Script}
-	contextID, err := m.sandbox.CreateContext(ctx, spec)
-	if errors.Is(err, sandbox.ErrNoCapacity) {
-		return runtime.StartSandboxUnavailable, nil
-	}
-	if err != nil {
-		return "", fmt.Errorf("creating sandbox context: %w", err)
-	}
-	game, views, err := m.restoreInContext(ctx, contextID, spec, saved, participantIDs)
-	if err != nil {
-		m.discardContext(ctx, contextID)
-		return "", err
-	}
-	frontend := runtime.GameFrontend{URL: access.URL, SHA256: access.SHA256, ExpiresAt: access.ExpiresAt}
-	sessionController.CompleteStart(participants, game, frontend, views)
-	m.games.Run(sessionUUID, sessionController, m.tickInterval)
-	startedSessionsAdopted.Inc(ctx)
-	return runtime.StartAlreadyStarted, nil
-}
-
-// restoreInContext sets contextID at the checkpoint and projects every
-// participant's view. The committed game already ran this script, so any
-// script failure here is an error, not a start failure.
-func (m *Manager) restoreInContext(ctx context.Context, contextID string, spec sandbox.ContextSpec, saved checkpoint.Checkpoint, participantIDs []string) (controller.Game, map[string][]byte, error) {
-	restored, err := m.sandbox.Restore(ctx, contextID, sandbox.Snapshot{
-		State:           saved.State,
-		PRNGState:       saved.PRNGState,
-		ContextRevision: saved.ContextRevision,
-		SessionTimeMs:   saved.ExecutedThroughSessionTimeMs,
-	})
-	if err != nil {
-		return controller.Game{}, nil, fmt.Errorf("restoring game: %w", err)
-	}
-	if restored.Outcome != sandbox.ScriptSucceeded {
-		return controller.Game{}, nil, fmt.Errorf("restoring game: script failed: %s", restored.ScriptError)
-	}
-	views, scriptErr, err := m.projectAll(ctx, contextID, participantIDs)
-	if err != nil {
-		return controller.Game{}, nil, err
-	}
-	if scriptErr != "" {
-		return controller.Game{}, nil, fmt.Errorf("projecting restored game: script failed: %s", scriptErr)
-	}
-	return controller.Game{
-		ContextID:       contextID,
-		GameVersionUUID: spec.GameVersionUUID,
-		Script:          spec.Script,
+	game := Game{
+		GameVersionUUID: running.GameVersionUUID,
+		Script:          running.Script,
 		ContextRevision: saved.ContextRevision,
 		State:           saved.State,
 		PRNGState:       saved.PRNGState,
 
 		ExecutedThroughSessionTimeMs: saved.ExecutedThroughSessionTimeMs,
-	}, views, nil
+	}
+	// The committed game already ran this script, so any script failure here
+	// is an error, not a start failure.
+	err = c.restoreContext(ctx, game)
+	if errors.Is(err, sandbox.ErrNoCapacity) {
+		return runtime.StartSandboxUnavailable, nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("restoring the running game: %w", err)
+	}
+	views, err := c.projectAll(ctx, participantIDs)
+	if err != nil {
+		c.discardContext(ctx)
+		return "", fmt.Errorf("projecting the restored game: %w", err)
+	}
+	c.completeStart(participants, game, frontendOf(access), views)
+	startedSessionsAdopted.Inc(ctx)
+	return runtime.StartAlreadyStarted, nil
+}
+
+func frontendOf(access sessionpkg.FrontendAccess) runtime.GameFrontend {
+	return runtime.GameFrontend{URL: access.URL, SHA256: access.SHA256, ExpiresAt: access.ExpiresAt}
 }
 
 // commitStart makes the Session RUNNING with its roster and initial
 // checkpoint, together, so a RUNNING Session is always recoverable.
-func (m *Manager) commitStart(ctx context.Context, sessionUUID string, userUUID string, gameVersionUUID string, participants []runtime.Participant, game controller.Game) (runtime.StartSessionOutcome, error) {
+func (c *sessionController) commitStart(ctx context.Context, userUUID string, participants []runtime.Participant, game Game) (runtime.StartSessionOutcome, error) {
 	participantIDs := make([]string, len(participants))
 	roster := make([]sessionpkg.StartParticipant, len(participants))
 	for i, participant := range participants {
@@ -262,7 +246,7 @@ func (m *Manager) commitStart(ctx context.Context, sessionUUID string, userUUID 
 		roster[i] = sessionpkg.StartParticipant{UserUUID: participant.UserUUID, ParticipantID: participant.ParticipantID}
 	}
 	encoded, err := checkpoint.Encode(checkpoint.Checkpoint{
-		GameVersionUUID: gameVersionUUID,
+		GameVersionUUID: game.GameVersionUUID,
 		ContextRevision: game.ContextRevision,
 		State:           game.State,
 		PRNGState:       game.PRNGState,
@@ -271,7 +255,7 @@ func (m *Manager) commitStart(ctx context.Context, sessionUUID string, userUUID 
 	if err != nil {
 		return "", err
 	}
-	committed, err := m.starts.CommitStart(ctx, sessionUUID, userUUID, sessionpkg.StartCommit{
+	committed, err := c.deps.starts.CommitStart(ctx, c.sessionUUID, userUUID, sessionpkg.StartCommit{
 		Participants: roster,
 		Checkpoint:   sessionpkg.Checkpoint{ContextRevision: game.ContextRevision, Content: encoded},
 	})
@@ -289,94 +273,175 @@ func (m *Manager) commitStart(ctx context.Context, sessionUUID string, userUUID 
 }
 
 // startGame runs the game's start and first projections, once more in a
-// fresh context if the script fails. started is false when it failed twice.
-func (m *Manager) startGame(ctx context.Context, spec sandbox.ContextSpec, input sandbox.StartInput) (game controller.Game, views map[string][]byte, started bool, err error) {
+// fresh context if the script fails. started is false when it failed twice,
+// and the game keeps its context only when it started.
+func (c *sessionController) startGame(ctx context.Context, spec sandbox.ContextSpec, input sandbox.StartInput) (game Game, views map[string][]byte, started bool, err error) {
 	for run := 1; run <= maxStartRuns; run++ {
-		game, views, scriptErr, err := m.runGameStart(ctx, spec, input)
+		game, views, err := c.runGameStart(ctx, spec, input)
+		var scriptFailure errScript
+		if errors.As(err, &scriptFailure) {
+			startScriptFailures.Inc(ctx)
+			logging.LogFields(ctx, logging.Field("start_script_error", scriptFailure.detail))
+			continue
+		}
 		if err != nil {
-			return controller.Game{}, nil, false, err
+			return Game{}, nil, false, err
 		}
-		if scriptErr == "" {
-			if run > 1 {
-				monitoring.Alert(ctx, "game start succeeded only after its script failed")
-			}
-			return game, views, true, nil
+		if run > 1 {
+			monitoring.Alert(ctx, "game start succeeded only after its script failed")
 		}
-		startScriptFailures.Inc(ctx)
-		logging.LogFields(ctx, logging.Field("start_script_error", scriptErr))
+		return game, views, true, nil
 	}
-	return controller.Game{}, nil, false, nil
+	return Game{}, nil, false, nil
 }
 
 // runGameStart runs start and every participant's projection in a new
-// context, discarded unless it succeeds; scriptErr is set when the script
-// failed.
-func (m *Manager) runGameStart(ctx context.Context, spec sandbox.ContextSpec, input sandbox.StartInput) (game controller.Game, views map[string][]byte, scriptErr string, err error) {
-	contextID, err := m.sandbox.CreateContext(ctx, spec)
+// context, discarded unless it succeeds.
+func (c *sessionController) runGameStart(ctx context.Context, spec sandbox.ContextSpec, input sandbox.StartInput) (Game, map[string][]byte, error) {
+	if err := c.createContext(ctx, spec); err != nil {
+		return Game{}, nil, err
+	}
+	game, views, err := c.startInContext(ctx, spec, input)
 	if err != nil {
-		return controller.Game{}, nil, "", fmt.Errorf("creating sandbox context: %w", err)
+		c.discardContext(ctx)
 	}
-	game, views, scriptErr, err = m.startInContext(ctx, contextID, spec, input)
-	if err != nil || scriptErr != "" {
-		m.discardContext(ctx, contextID)
-	}
-	return game, views, scriptErr, err
+	return game, views, err
 }
 
-func (m *Manager) startInContext(ctx context.Context, contextID string, spec sandbox.ContextSpec, input sandbox.StartInput) (game controller.Game, views map[string][]byte, scriptErr string, err error) {
-	result, err := m.sandbox.Start(ctx, contextID, input)
+func (c *sessionController) startInContext(ctx context.Context, spec sandbox.ContextSpec, input sandbox.StartInput) (Game, map[string][]byte, error) {
+	result, err := c.deps.sandbox.Start(ctx, c.contextID, input)
 	if err != nil {
-		return controller.Game{}, nil, "", fmt.Errorf("starting game: %w", err)
+		return Game{}, nil, fmt.Errorf("starting game: %w", err)
 	}
 	switch result.Outcome {
 	case sandbox.ScriptSucceeded:
 	case sandbox.ScriptFailed:
-		return controller.Game{}, nil, result.ScriptError, nil
+		return Game{}, nil, errScript{detail: result.ScriptError}
 	default:
-		return controller.Game{}, nil, "", fmt.Errorf("unknown start outcome %q", result.Outcome)
+		return Game{}, nil, fmt.Errorf("unknown start outcome %q", result.Outcome)
 	}
 
 	// Projected before committing, so a projection the script fails also
 	// fails the Start instead of a RUNNING Session.
-	views, scriptErr, err = m.projectAll(ctx, contextID, input.Participants)
-	if err != nil || scriptErr != "" {
-		return controller.Game{}, nil, scriptErr, err
+	views, err := c.projectAll(ctx, input.Participants)
+	if err != nil {
+		return Game{}, nil, err
 	}
-	return controller.Game{
-		ContextID:       contextID,
+	return Game{
 		GameVersionUUID: spec.GameVersionUUID,
 		Script:          spec.Script,
 		ContextRevision: result.ContextRevision,
 		State:           result.State,
 		PRNGState:       result.PRNGState,
-	}, views, "", nil
+	}, views, nil
 }
 
-// discardContext releases a context no game will use. Failing only leaks it
-// in the sandbox, so it is logged, not returned.
-func (m *Manager) discardContext(ctx context.Context, contextID string) {
-	if err := m.sandbox.DiscardContext(ctx, contextID); err != nil {
-		logging.LogError(ctx, fmt.Errorf("discarding sandbox context: %w", err))
+// beginStart freezes the lobby for one Start attempt and returns its
+// participants, numbered P1..Pn in the order they joined. ok is false, with
+// the outcome, when the Session cannot start now. Whether the game allows that
+// many players is the durable Session's decision.
+func (c *sessionController) beginStart() (participants []runtime.Participant, outcome runtime.StartSessionOutcome, ok bool) {
+	s := c.lock()
+	defer c.unlock()
+	switch s.phase {
+	case phaseLobby:
+	case phaseStarting:
+		return nil, runtime.StartInProgress, false
+	case phaseRunning:
+		return nil, runtime.StartAlreadyStarted, false
+	default:
+		return nil, runtime.StartNotInLobby, false
+	}
+	s.phase = phaseStarting
+	s.participants = make([]runtime.Participant, len(s.lobby))
+	for i, userUUID := range s.lobby {
+		s.participants[i] = runtime.Participant{ParticipantID: fmt.Sprintf("P%d", i+1), UserUUID: userUUID}
+	}
+	return slices.Clone(s.participants), "", true
+}
+
+// cancelStart returns the Session to its lobby after a Start attempt that
+// did not start it. Players who disconnected during the attempt leave it now.
+func (c *sessionController) cancelStart() {
+	s := c.lock()
+	defer c.unlock()
+	if s.phase != phaseStarting {
+		return
+	}
+	s.phase = phaseLobby
+	s.participants = nil
+	before := len(s.lobby)
+	s.lobby = slices.DeleteFunc(s.lobby, func(userUUID string) bool {
+		if s.players[userUUID].isEnded() {
+			delete(s.players, userUUID)
+			return true
+		}
+		return false
+	})
+	if len(s.lobby) != before {
+		s.broadcastLobby()
 	}
 }
 
-// projectAll returns every participant's view, keyed by ParticipantID;
-// scriptErr is set when the script failed.
-func (m *Manager) projectAll(ctx context.Context, contextID string, participantIDs []string) (views map[string][]byte, scriptErr string, err error) {
-	views = make(map[string][]byte, len(participantIDs))
-	for _, participantID := range participantIDs {
-		projection, err := m.sandbox.Project(ctx, contextID, participantID)
-		if err != nil {
-			return nil, "", fmt.Errorf("projecting for %s: %w", participantID, err)
-		}
-		switch projection.Outcome {
-		case sandbox.ScriptSucceeded:
-			views[participantID] = projection.View
-		case sandbox.ScriptFailed:
-			return nil, projection.ScriptError, nil
-		default:
-			return nil, "", fmt.Errorf("unknown project outcome %q", projection.Outcome)
+// completeStart runs the started game with participants, the roster the
+// durable Session committed: the lobby ends, every connection is told who
+// plays and gets frontend, and each connected participant gets their first
+// FULL view from views, keyed by ParticipantID. A lobby player left out of
+// participants is no longer part of the Session: their connection ends.
+func (c *sessionController) completeStart(participants []runtime.Participant, game Game, frontend runtime.GameFrontend, views map[string][]byte) {
+	s := c.lock()
+	defer c.unlock()
+	if s.phase != phaseStarting {
+		return
+	}
+	s.phase = phaseRunning
+	s.participants = slices.Clone(participants)
+	s.game = game
+	s.start = runtime.SessionStart{Participants: slices.Clone(participants), Frontend: frontend}
+	s.lobby = nil
+	s.runningSince = s.now()
+	s.baseSessionTimeMs = game.ExecutedThroughSessionTimeMs
+	defaults := s.manifest.Inputs.Defaults()
+	for _, participant := range participants {
+		s.inputs[participant.ParticipantID] = &participantInputs{current: defaults}
+	}
+	inRoster := make(map[string]bool, len(participants))
+	for _, participant := range participants {
+		inRoster[participant.UserUUID] = true
+	}
+	for userUUID, player := range s.players {
+		if !inRoster[userUUID] {
+			player.end(runtime.EndSessionEnded)
+			delete(s.players, userUUID)
 		}
 	}
-	return views, "", nil
+	for _, admin := range s.admins {
+		admin.markStarted(s.start)
+	}
+	for _, participant := range s.participants {
+		player, found := s.players[participant.UserUUID]
+		if !found || player.isEnded() {
+			continue
+		}
+		player.participantID = participant.ParticipantID
+		player.lastView = views[participant.ParticipantID]
+		player.views.publish(runtime.OwnView{PlayerView: runtime.PlayerView{
+			ParticipantID: participant.ParticipantID,
+			Full:          true,
+			State:         views[participant.ParticipantID],
+		}})
+		// Last, so everything above is visible to whoever sees the start.
+		player.markStarted(s.start)
+	}
+}
+
+// abortStart ends the Session after its game failed to start: every
+// connection ends as aborted.
+func (c *sessionController) abortStart() {
+	s := c.lock()
+	defer c.unlock()
+	if s.phase != phaseStarting {
+		return
+	}
+	c.end(s, runtime.EndSessionAborted)
 }

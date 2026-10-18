@@ -19,7 +19,7 @@ func TestAttachPlayer(t *testing.T) {
 	}
 	type test struct {
 		// before runs against the Manager before the attach under test.
-		before     func(manager *Manager)
+		before     func(resolver *ControllerResolver)
 		ownerEpoch int64
 
 		expectedOutcome      runtime.AttachOutcome
@@ -52,8 +52,8 @@ func TestAttachPlayer(t *testing.T) {
 			deps.players.EXPECT().EligibleToJoinAsPlayer(ctx, sessionUUID).Return(sessionpkg.PlayerJoinEligible, nil).Times(2)
 			loadsManifest(deps, 1)
 			return test{
-				before: func(manager *Manager) {
-					result, err := manager.AttachPlayer(ctx, sessionUUID, otherUUID, 1)
+				before: func(resolver *ControllerResolver) {
+					result, err := resolver.AttachPlayer(ctx, sessionUUID, otherUUID, 1)
 					require.NoError(t, err)
 					require.Equal(t, runtime.AttachAccepted, result.Outcome)
 				},
@@ -64,11 +64,11 @@ func TestAttachPlayer(t *testing.T) {
 			}
 		},
 		"request_under_an_older_epoch_rejects_as_owner_changed": func(t *testing.T, deps dependencies) test {
-			deps.players.EXPECT().EligibleToJoinAsPlayer(ctx, sessionUUID).Return(sessionpkg.PlayerJoinEligible, nil).Times(2)
+			deps.players.EXPECT().EligibleToJoinAsPlayer(ctx, sessionUUID).Return(sessionpkg.PlayerJoinEligible, nil)
 			loadsManifest(deps, 8)
 			return test{
-				before: func(manager *Manager) {
-					_, err := manager.AttachPlayer(ctx, sessionUUID, otherUUID, 2)
+				before: func(resolver *ControllerResolver) {
+					_, err := resolver.AttachPlayer(ctx, sessionUUID, otherUUID, 2)
 					require.NoError(t, err)
 				},
 				ownerEpoch:        1,
@@ -120,12 +120,15 @@ func TestAttachPlayer(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			deps := dependencies{players: NewMockplayerJoinChecker(ctrl), manifests: NewMockmanifestLoader(ctrl)}
 			tc := setup(t, deps)
-			manager := New(nil, deps.players, deps.manifests, nil, nil, nil, nil)
+			resolver := New(nil, deps.players, deps.manifests, nil, nil, nil, nil, nil)
+			t.Cleanup(resolver.Close)
 			if tc.before != nil {
-				tc.before(manager)
+				tc.before(resolver)
 			}
 
-			result, err := manager.AttachPlayer(ctx, sessionUUID, playerUUID, tc.ownerEpoch)
+			result, err := resolver.AttachPlayer(ctx, sessionUUID, playerUUID, tc.ownerEpoch)
+
+			require.Contains(t, resolver.controllers, sessionUUID, "the controller exists whatever the answer")
 
 			if tc.expectedErr {
 				require.Error(t, err)
@@ -138,10 +141,190 @@ func TestAttachPlayer(t *testing.T) {
 				require.NotNil(t, result.Connection.Disconnect)
 			}
 			if tc.expectedPlayersAfter > 0 {
-				controller, _, err := manager.controllerFor(ctx, sessionUUID, 1)
-				require.NoError(t, err)
+				controller, _ := resolver.controllerFor(ctx, sessionUUID, 1)
 				require.Equal(t, tc.expectedPlayersAfter, controller.PlayerCount())
 			}
+		})
+	}
+}
+
+func TestAdmitPlayer(t *testing.T) {
+	type test struct {
+		maxPlayers int
+		// before runs against the Controller before the admission under test.
+		before func(t *testing.T, controller *sessionController)
+		// after runs against the admitted connection, when there is one.
+		after func(t *testing.T, controller *sessionController, player runtime.PlayerConnection)
+
+		expectedOK          bool
+		expectedRejection   runtime.RejectReason
+		expectedLobby       []string
+		expectedPlayerLobby []string
+		expectedEnd         runtime.EndReason
+	}
+
+	ctx := context.Background()
+	admit := func(t *testing.T, controller *sessionController, userUUID string) runtime.PlayerConnection {
+		t.Helper()
+		player, _, ok := controller.joinLobby(ctx, userUUID)
+		require.True(t, ok)
+		return player
+	}
+	// startGame moves the Controller to a running game, as Start will.
+	startGame := func(controller *sessionController) {
+		controller.lock().phase = phaseRunning
+		controller.unlock()
+	}
+
+	tests := map[string]func(t *testing.T) test{
+		"first_player_joins_the_lobby": func(t *testing.T) test {
+			return test{
+				maxPlayers:          8,
+				expectedOK:          true,
+				expectedLobby:       []string{"user-a"},
+				expectedPlayerLobby: []string{"user-a"},
+			}
+		},
+		"players_are_listed_in_the_order_they_joined": func(t *testing.T) test {
+			return test{
+				maxPlayers:          8,
+				before:              func(t *testing.T, controller *sessionController) { admit(t, controller, "user-b") },
+				expectedOK:          true,
+				expectedLobby:       []string{"user-b", "user-a"},
+				expectedPlayerLobby: []string{"user-b", "user-a"},
+			}
+		},
+		"full_lobby_rejects": func(t *testing.T) test {
+			return test{
+				maxPlayers:        1,
+				before:            func(t *testing.T, controller *sessionController) { admit(t, controller, "user-b") },
+				expectedRejection: runtime.RejectLobbyFull,
+				expectedLobby:     []string{"user-b"},
+			}
+		},
+		"running_game_rejects_new_players": func(t *testing.T) test {
+			return test{
+				maxPlayers:        8,
+				before:            func(t *testing.T, controller *sessionController) { startGame(controller) },
+				expectedRejection: runtime.RejectSessionStarted,
+				expectedLobby:     []string{},
+			}
+		},
+		"disconnecting_from_a_running_game_keeps_the_participant_and_sends_no_lobby_update": func(t *testing.T) test {
+			return test{
+				maxPlayers: 8,
+				after: func(t *testing.T, controller *sessionController, player runtime.PlayerConnection) {
+					startGame(controller)
+					player.Disconnect()
+				},
+				expectedOK:          true,
+				expectedLobby:       []string{"user-a"},
+				expectedPlayerLobby: []string{"user-a"},
+				expectedEnd:         runtime.EndDisconnected,
+			}
+		},
+		"leaving_or_commanding_in_a_running_game_is_not_built_yet": func(t *testing.T) test {
+			return test{
+				maxPlayers: 8,
+				after: func(t *testing.T, controller *sessionController, player runtime.PlayerConnection) {
+					startGame(controller)
+					_, err := player.Leave(ctx)
+					require.ErrorIs(t, err, ErrNotImplemented)
+					_, err = player.Command(ctx, runtime.Command{Token: "t1", Name: "play_card"})
+					require.ErrorIs(t, err, ErrNotImplemented)
+				},
+				expectedOK:          true,
+				expectedLobby:       []string{"user-a"},
+				expectedPlayerLobby: []string{"user-a"},
+			}
+		},
+		"same_user_replaces_their_older_connection_even_when_full": func(t *testing.T) test {
+			var older runtime.PlayerConnection
+			return test{
+				maxPlayers: 1,
+				before:     func(t *testing.T, controller *sessionController) { older = admit(t, controller, "user-a") },
+				after: func(t *testing.T, controller *sessionController, _ runtime.PlayerConnection) {
+					require.Equal(t, runtime.EndReplaced, endedWith(t, older.Ended))
+					// The replaced connection going away keeps the user in.
+					older.Disconnect()
+				},
+				expectedOK:          true,
+				expectedLobby:       []string{"user-a"},
+				expectedPlayerLobby: []string{"user-a"},
+			}
+		},
+		"leaving_takes_the_player_out_and_they_may_come_back": func(t *testing.T) test {
+			return test{
+				maxPlayers: 8,
+				before:     func(t *testing.T, controller *sessionController) { admit(t, controller, "user-b") },
+				after: func(t *testing.T, controller *sessionController, player runtime.PlayerConnection) {
+					result, err := player.Leave(ctx)
+					require.NoError(t, err)
+					require.Equal(t, runtime.LeaveResult{Outcome: runtime.PlayerLeft}, result)
+					require.Equal(t, []string{"user-b"}, controller.lobbySnapshot())
+					admit(t, controller, "user-a")
+					// The ended connection no longer speaks for the user.
+					_, _ = player.Leave(ctx)
+				},
+				expectedOK:          true,
+				expectedLobby:       []string{"user-b", "user-a"},
+				expectedPlayerLobby: []string{"user-b", "user-a"},
+				expectedEnd:         runtime.EndLeft,
+			}
+		},
+		"disconnecting_takes_the_player_out": func(t *testing.T) test {
+			return test{
+				maxPlayers: 8,
+				after: func(t *testing.T, controller *sessionController, player runtime.PlayerConnection) {
+					player.Disconnect()
+					player.Disconnect()
+				},
+				expectedOK:          true,
+				expectedLobby:       []string{},
+				expectedPlayerLobby: []string{"user-a"},
+				expectedEnd:         runtime.EndDisconnected,
+			}
+		},
+		"commands_are_answered_as_not_running": func(t *testing.T) test {
+			return test{
+				maxPlayers: 8,
+				after: func(t *testing.T, controller *sessionController, player runtime.PlayerConnection) {
+					result, err := player.Command(ctx, runtime.Command{Token: "t1", Name: "play_card"})
+					require.NoError(t, err)
+					require.Equal(t, runtime.CommandResult{Token: "t1", Outcome: runtime.CommandNotRunning}, result)
+					require.NoError(t, player.Sample(ctx, runtime.Sample{Sequence: 1, Inputs: []byte(`{}`)}))
+					require.NoError(t, player.Resync(ctx))
+				},
+				expectedOK:          true,
+				expectedLobby:       []string{"user-a"},
+				expectedPlayerLobby: []string{"user-a"},
+			}
+		},
+	}
+
+	for name, setup := range tests {
+		t.Run(name, func(t *testing.T) {
+			tc := setup(t)
+			controller := newTestController(t, tc.maxPlayers)
+			admin := controller.registerAdmin("creator")
+			if tc.before != nil {
+				tc.before(t, controller)
+			}
+
+			player, rejection, ok := controller.joinLobby(ctx, "user-a")
+
+			require.Equal(t, tc.expectedOK, ok)
+			require.Equal(t, tc.expectedRejection, rejection)
+			if ok && tc.after != nil {
+				tc.after(t, controller, player)
+			}
+			require.Equal(t, tc.expectedLobby, controller.lobbySnapshot())
+			require.Equal(t, tc.expectedLobby, latestLobby(t, admin.NextLobbyUpdate), "admins see every change")
+			if !ok {
+				return
+			}
+			require.Equal(t, tc.expectedPlayerLobby, latestLobby(t, player.NextLobbyUpdate))
+			require.Equal(t, tc.expectedEnd, endedWith(t, player.Ended))
 		})
 	}
 }

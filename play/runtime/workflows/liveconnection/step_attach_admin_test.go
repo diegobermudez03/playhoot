@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -19,7 +20,7 @@ func TestAttachAdmin(t *testing.T) {
 	}
 	type test struct {
 		// before runs against the Manager before the attach under test.
-		before     func(manager *Manager)
+		before     func(resolver *ControllerResolver)
 		ownerEpoch int64
 
 		expectedOutcome     runtime.AttachOutcome
@@ -52,8 +53,8 @@ func TestAttachAdmin(t *testing.T) {
 			// Only the controller's creation loads it.
 			loadsManifest(deps)
 			return test{
-				before: func(manager *Manager) {
-					_, err := manager.AttachAdmin(ctx, sessionUUID, creatorUUID, 1)
+				before: func(resolver *ControllerResolver) {
+					_, err := resolver.AttachAdmin(ctx, sessionUUID, creatorUUID, 1)
 					require.NoError(t, err)
 				},
 				ownerEpoch:          1,
@@ -62,11 +63,11 @@ func TestAttachAdmin(t *testing.T) {
 			}
 		},
 		"request_under_an_older_epoch_rejects_as_owner_changed": func(t *testing.T, deps dependencies) test {
-			deps.sessions.EXPECT().EligibleToJoinAsAdmin(ctx, sessionUUID, creatorUUID).Return(sessionpkg.AdminJoinEligible, nil).Times(2)
+			deps.sessions.EXPECT().EligibleToJoinAsAdmin(ctx, sessionUUID, creatorUUID).Return(sessionpkg.AdminJoinEligible, nil)
 			loadsManifest(deps)
 			return test{
-				before: func(manager *Manager) {
-					_, err := manager.AttachAdmin(ctx, sessionUUID, creatorUUID, 2)
+				before: func(resolver *ControllerResolver) {
+					_, err := resolver.AttachAdmin(ctx, sessionUUID, creatorUUID, 2)
 					require.NoError(t, err)
 				},
 				ownerEpoch:        1,
@@ -118,12 +119,15 @@ func TestAttachAdmin(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			deps := dependencies{sessions: NewMockadminJoinChecker(ctrl), manifests: NewMockmanifestLoader(ctrl)}
 			tc := setup(t, deps)
-			manager := New(deps.sessions, nil, deps.manifests, nil, nil, nil, nil)
+			resolver := New(deps.sessions, nil, deps.manifests, nil, nil, nil, nil, nil)
+			t.Cleanup(resolver.Close)
 			if tc.before != nil {
-				tc.before(manager)
+				tc.before(resolver)
 			}
 
-			result, err := manager.AttachAdmin(ctx, sessionUUID, creatorUUID, tc.ownerEpoch)
+			result, err := resolver.AttachAdmin(ctx, sessionUUID, creatorUUID, tc.ownerEpoch)
+
+			require.Contains(t, resolver.controllers, sessionUUID, "the controller exists whatever the answer")
 
 			if tc.expectedErr {
 				require.Error(t, err)
@@ -136,10 +140,58 @@ func TestAttachAdmin(t *testing.T) {
 				require.NotNil(t, result.Connection.Disconnect)
 			}
 			if tc.expectedAdminsAfter > 0 {
-				controller, _, err := manager.controllerFor(ctx, sessionUUID, 1)
-				require.NoError(t, err)
+				controller, _ := resolver.controllerFor(ctx, sessionUUID, 1)
 				require.Equal(t, tc.expectedAdminsAfter, controller.AdminCount())
 			}
 		})
 	}
+}
+
+func TestAdminConnection(t *testing.T) {
+	starts := NewMocksessionStarter(gomock.NewController(t))
+	deps := testDependencies()
+	deps.starts = starts
+	root, stop := context.WithCancel(context.Background())
+	defer stop()
+	controller := withManifest(newSessionController(root, "session-1", 1, deps), Manifest{MaxPlayers: 8})
+	go controller.run()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	_, _, ok := controller.joinLobby(ctx, "player-1")
+	require.True(t, ok)
+
+	first := controller.registerAdmin("creator")
+	second := controller.registerAdmin("creator")
+	require.Equal(t, 2, controller.AdminCount())
+
+	update, more := first.NextLobbyUpdate(ctx)
+	require.True(t, more)
+	require.Equal(t, runtime.LobbyUpdate{Members: []runtime.LobbyMember{{UserUUID: "player-1"}}}, update, "the first update is the lobby as it is")
+
+	_, err := first.SelectPerspective(ctx, "P1")
+	require.ErrorIs(t, err, ErrNotImplemented)
+	starts.EXPECT().CheckStartEligibility(ctx, "session-1", "creator", 1).Return(sessionpkg.StartEligibility{Outcome: sessionpkg.StartInvalidPlayerCount}, nil)
+	started, err := first.StartSession(ctx)
+	require.NoError(t, err)
+	require.Equal(t, runtime.StartSessionResult{Outcome: runtime.StartInvalidPlayerCount}, started, "starting runs the controller's Start")
+	_, err = first.CancelSession(ctx)
+	require.ErrorIs(t, err, ErrNotImplemented)
+
+	first.Disconnect()
+	first.Disconnect()
+	require.Equal(t, 1, controller.AdminCount())
+	end, ended := first.Ended(ctx)
+	require.True(t, ended)
+	require.Equal(t, runtime.ConnectionEnd{Reason: runtime.EndDisconnected}, end)
+	_, more = first.NextView(ctx)
+	require.False(t, more)
+	_, more = first.NextLobbyUpdate(ctx)
+	require.False(t, more)
+	_, more = first.Started(ctx)
+	require.False(t, more, "an ended connection never sees a start")
+
+	waiting, cancelWait := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancelWait()
+	_, ended = second.Ended(waiting)
+	require.False(t, ended, "the other admin connection must stay attached")
 }

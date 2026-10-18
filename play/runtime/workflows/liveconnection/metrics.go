@@ -1,4 +1,4 @@
-package controller
+package liveconnection
 
 import "github.com/diegobermudez03/playhoot/monitoring/metrics"
 
@@ -6,6 +6,10 @@ var (
 	controllersCreated = metrics.NewCounter(
 		"play_runtime_controllers_created_total",
 		"Session controllers this instance created.",
+	)
+	lanesActive = metrics.NewGauge(
+		"play_runtime_game_lanes_active",
+		"Running games whose lane this instance runs.",
 	)
 	controllersRetired = metrics.NewCounter(
 		"play_runtime_controllers_retired_total",

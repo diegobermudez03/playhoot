@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/google/uuid"
+
 	"github.com/diegobermudez03/playhoot/monitoring/metrics"
 	"github.com/diegobermudez03/playhoot/play/runtime"
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
@@ -32,11 +34,21 @@ var (
 	)
 )
 
-// AttachPlayer admits userUUID's player connection into sessionUUID's lobby,
-// routed here under ownerEpoch, creating the Session's controller if it has
-// none. An error means admission could not be decided.
-func (m *Manager) AttachPlayer(ctx context.Context, sessionUUID string, userUUID string, ownerEpoch int64) (runtime.AttachPlayerResult, error) {
-	eligibility, err := m.playerJoins.EligibleToJoinAsPlayer(ctx, sessionUUID)
+// AttachPlayer hands userUUID's player connection to sessionUUID's
+// controller under ownerEpoch, creating the controller if it has none. An
+// error means admission could not be decided.
+func (r *ControllerResolver) AttachPlayer(ctx context.Context, sessionUUID string, userUUID string, ownerEpoch int64) (runtime.AttachPlayerResult, error) {
+	sessionController, ok := r.controllerFor(ctx, sessionUUID, ownerEpoch)
+	if !ok {
+		return rejectPlayer(ctx, runtime.RejectOwnerChanged), nil
+	}
+	return sessionController.attachPlayer(ctx, userUUID)
+}
+
+// attachPlayer admits userUUID's player connection into the lobby if the
+// durable Session accepts players.
+func (c *sessionController) attachPlayer(ctx context.Context, userUUID string) (runtime.AttachPlayerResult, error) {
+	eligibility, err := c.deps.playerJoins.EligibleToJoinAsPlayer(ctx, c.sessionUUID)
 	if err != nil {
 		return runtime.AttachPlayerResult{}, fmt.Errorf("checking player eligibility: %w", err)
 	}
@@ -49,15 +61,10 @@ func (m *Manager) AttachPlayer(ctx context.Context, sessionUUID string, userUUID
 	default:
 		return runtime.AttachPlayerResult{}, fmt.Errorf("unknown player eligibility %q", eligibility)
 	}
-
-	sessionController, ok, err := m.controllerFor(ctx, sessionUUID, ownerEpoch)
-	if err != nil {
-		return runtime.AttachPlayerResult{}, fmt.Errorf("finding session controller: %w", err)
+	if err := c.loadManifest(ctx); err != nil {
+		return runtime.AttachPlayerResult{}, err
 	}
-	if !ok {
-		return rejectPlayer(ctx, runtime.RejectOwnerChanged), nil
-	}
-	connection, rejection, admitted := sessionController.AdmitPlayer(ctx, userUUID)
+	connection, rejection, admitted := c.joinLobby(ctx, userUUID)
 	if !admitted {
 		return rejectPlayer(ctx, rejection), nil
 	}
@@ -68,4 +75,100 @@ func (m *Manager) AttachPlayer(ctx context.Context, sessionUUID string, userUUID
 func rejectPlayer(ctx context.Context, reason runtime.RejectReason) runtime.AttachPlayerResult {
 	playerAttaches.Inc(ctx, playerAttachOutcomeLabel.Value(string(reason)))
 	return runtime.AttachPlayerResult{Outcome: runtime.AttachRejected, Rejection: reason}
+}
+
+// joinLobby admits userUUID's player connection into the lobby, serialized
+// with every other admission. A user already in it keeps their place: their
+// older connection ends as replaced. Rejection is set only when not admitted.
+func (c *sessionController) joinLobby(ctx context.Context, userUUID string) (runtime.PlayerConnection, runtime.RejectReason, bool) {
+	player := newConnection(uuid.NewString(), userUUID)
+
+	s := c.lock()
+	switch s.phase {
+	case phaseLobby:
+	case phaseEnded:
+		c.unlock()
+		return runtime.PlayerConnection{}, runtime.RejectSessionUnavailable, false
+	default:
+		c.unlock()
+		return runtime.PlayerConnection{}, runtime.RejectSessionStarted, false
+	}
+	if older, found := s.players[userUUID]; found {
+		older.end(runtime.EndReplaced)
+		playersReplaced.Inc(ctx)
+		s.players[userUUID] = player
+		// send message to the new player connection with current lobby state
+		player.lobbyUpdates.publish(s.lobbyUpdate())
+	} else {
+		if len(s.lobby) >= s.manifest.MaxPlayers {
+			c.unlock()
+			return runtime.PlayerConnection{}, runtime.RejectLobbyFull, false
+		}
+		s.players[userUUID] = player
+		s.lobby = append(s.lobby, userUUID)
+		// send message to all players with the new lobby state
+		s.broadcastLobby()
+	}
+	c.unlock()
+
+	return runtime.PlayerConnection{
+		Leave: func(context.Context) (runtime.LeaveResult, error) {
+			s := c.lock()
+			if s.phase != phaseLobby {
+				c.unlock()
+				// Placeholder: leaving once the lobby is frozen (playerLeft, LEFT) is not built.
+				return runtime.LeaveResult{}, ErrNotImplemented
+			}
+			s.leaveLobby(player)
+			c.unlock()
+			player.end(runtime.EndLeft)
+			return runtime.LeaveResult{Outcome: runtime.PlayerLeft}, nil
+		},
+		Sample: func(ctx context.Context, sample runtime.Sample) error {
+			return c.acceptSample(ctx, player, sample)
+		},
+		Command: func(_ context.Context, command runtime.Command) (runtime.CommandResult, error) {
+			s := c.lock()
+			defer c.unlock()
+			if s.phase == phaseRunning {
+				// Placeholder: running a command in a game is not built.
+				return runtime.CommandResult{}, ErrNotImplemented
+			}
+			return runtime.CommandResult{Token: command.Token, Outcome: runtime.CommandNotRunning}, nil
+		},
+		// Placeholder: does nothing, since there is no view before the game runs.
+		Resync: func(context.Context) error {
+			return nil
+		},
+		NextLobbyUpdate: player.nextLobbyUpdate,
+		Started: func(ctx context.Context) (runtime.PlayerStart, bool) {
+			start, ok := player.sessionStart(ctx)
+			if !ok {
+				return runtime.PlayerStart{}, false
+			}
+			// Set before the game started and never again.
+			return runtime.PlayerStart{SessionStart: start, ParticipantID: player.participantID}, true
+		},
+		NextView: func(ctx context.Context) (runtime.OwnView, bool) {
+			return player.views.next(ctx, player.ended)
+		},
+		Ended: player.wait,
+		Disconnect: func() {
+			s := c.lock()
+			// Once frozen the participant stays; only the lobby forgets. A
+			// cancelled Start attempt takes them out of the lobby then. In a
+			// running game their inputs return to the defaults at once.
+			// Placeholder: a running game's transport grace is not built.
+			switch s.phase {
+			case phaseLobby:
+				s.leaveLobby(player)
+			case phaseRunning:
+				if s.players[player.userUUID] == player {
+					s.resetInputs(player.participantID)
+				}
+			}
+			c.unlock()
+			player.end(runtime.EndDisconnected)
+		},
+	}, "", true
 }

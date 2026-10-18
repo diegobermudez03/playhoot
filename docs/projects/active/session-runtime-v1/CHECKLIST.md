@@ -59,9 +59,9 @@ Progress note (2026-10-17): the boundary, decided with the human, is a set of op
 - [ ] A logical game pause does not freeze game time
 
 ### A6. One authoritative timeline (§1)
-- [x] Single logical mutation lane per Session (2026-10-18: `play/runtime/workflows/gameloop` runs one lane per running game, the only code that mutates its state; started when the game starts or is adopted, ended with the controller or on shutdown; tests)
+- [x] Single logical mutation lane per Session (2026-10-18: `play/runtime/workflows/gameloop` runs one lane per running game, the only code that mutates its state; started when the game starts or is adopted, ended with the controller or on shutdown; tests. Since 2026-10-18 (SESSION-ADR-0030): the lane is the controller's own main goroutine, alive from its creation, which runs Start, adoption, ticks and aborts; `gameloop` no longer exists)
 - [x] Every accepted operation gets server-owned sessionTime + serverOrder; client never supplies authoritative timestamps (2026-10-18: the controller stamps each accepted transition with the effective Session time and an order counter; controller tests)
-- [ ] Timeline carries: SAMPLE transitions, COMMAND, timer firing, update(), playerDisconnected, playerRejoined, playerLeft (2026-10-18: SAMPLE transitions and the default-inputs transition of a disconnect so far; the lane already takes a flush request (`RequestFlush`) for commands and timers)
+- [ ] Timeline carries: SAMPLE transitions, COMMAND, timer firing, update(), playerDisconnected, playerRejoined, playerLeft (2026-10-18: SAMPLE transitions and the default-inputs transition of a disconnect so far; the controller's main goroutine already takes a flush request (`requestFlush`) for commands and timers)
 - [ ] executedThroughSessionTime advances on any materialized operation (not only Samples) (2026-10-18: advances with every committed boundary; only SAMPLE batches exist so far)
 - [x] Sandbox receives elapsed effective time since the previous materialized operation (2026-10-18: `samples(state, transitions, context)` receives `context.sessionTime` and `context.elapsed`, and each transition its own `sessionTime`; sandbox tests)
 - [x] Batching never changes semantic ordering (§7) (2026-10-18: one `samples()` call per boundary with every participant's transitions in arrival order, never grouped by player (decided by the human); commands will split the batch at their position; controller tests and the end-to-end run)
@@ -197,6 +197,8 @@ Progress note (2026-10-17): the Runtime side is implemented and tested; the dura
 
 ## H. SessionController (§6)
 
+Update (2026-10-18, decided by the human, SESSION-ADR-0030): the controller is the live Session. It moved to `play/runtime/workflows/liveconnection` as an unexported type, absorbing the Start orchestration and the game loop: it calls the durable Session, the Sandbox and replay itself, owns its Sandbox context (discarded when the Session ends here or the controller is retired), locks its own state, and has one main goroutine from creation that runs every operation touching the Sandbox or the database. The `liveconnection` ControllerResolver (formerly `Manager`) only finds or creates controllers, without asking the durable Session anything (a controller may exist for a rejected connection), and stops them on shutdown; the controller checks admission eligibility and reads its manifest on its first admission. A refactor without changing behavior: same tests ported, and the same end-to-end run.
+
 Progress note (2026-10-17): a first, minimal controller exists (`play/runtime/internal/controller`): a per-instance registry finds or creates one controller per Session (refusing one under another ownership epoch), and the controller only holds its attached ADMIN connections. Admission is serialized with a mutex, not yet a single mutation lane. Controllers are never destroyed yet.
 
 - [ ] Exactly one active controller per active Session on the owner pod
@@ -218,7 +220,7 @@ Progress note (2026-10-17): a first, minimal controller exists (`play/runtime/in
 - [x] Refreshes still advance max accepted sequence and are acknowledged once materialized (2026-10-18: an acknowledgement-only view `{}` when nothing executed; controller tests and the end-to-end run)
 - [x] Acknowledgement (consumedThroughSampleSequence) can advance without a projection change; not sent to ADMIN connections (2026-10-18: admin connections receive no views yet, so never an acknowledgement)
 - [x] SAMPLE transitions from all players merged into the global timeline (2026-10-18: controller tests)
-- [x] Adjacent Samples batched into one samples(...) call only when no other operation belongs between them (2026-10-18: only SAMPLEs exist yet; gameloop tests)
+- [x] Adjacent Samples batched into one samples(...) call only when no other operation belongs between them (2026-10-18: only SAMPLEs exist yet; boundary tests in `liveconnection`)
 - [ ] Device switch: new transport starts above the highest accepted in-memory sequence
 - [ ] After crash: checkpoint sequence is the baseline; higher client values with gaps accepted
 - [x] Unknown/undeclared input, bad shape, and oversize SAMPLE rejected pre-JS (2026-10-18: undeclared input, wrong type or out-of-range value closes the connection as malformed (1007); a SAMPLE is bounded by the schema (at most 32 inputs, strings up to 256 bytes); API and inputs tests)
@@ -244,12 +246,12 @@ Progress note (2026-10-17): a first, minimal controller exists (`play/runtime/in
 ## K. Periodic processing and update() (§9)
 
 - [x] Normal live processing cadence (~100 ms, platform tuning value) (2026-10-18: `gameloop` ticks every 100 ms)
-- [x] Boundary: drain pending timeline -> confirm state -> project -> compare with cache -> send changes/acks (2026-10-18: take the timeline, `samples()`, check the revision, `project()` each participant, commit the mirror, send each connection the patch against the view it last received with its acknowledgement, offer the capture to replay; gameloop tests and the end-to-end run)
+- [x] Boundary: drain pending timeline -> confirm state -> project -> compare with cache -> send changes/acks (2026-10-18: take the timeline, `samples()`, check the revision, `project()` each participant, commit the mirror, send each connection the patch against the view it last received with its acknowledgement, offer the capture to replay; boundary tests in `liveconnection` and the end-to-end run)
 - [ ] Commands and timers can trigger earlier boundaries (2026-10-18: the lane runs a boundary on `RequestFlush` (tested); no command or timer uses it yet)
-- [x] If update() is not declared, Runtime does not execute JS merely because time passes (2026-10-18: a boundary with no transition executes nothing; gameloop tests)
+- [x] If update() is not declared, Runtime does not execute JS merely because time passes (2026-10-18: a boundary with no transition executes nothing; boundary tests in `liveconnection`)
 - [ ] If declared, update() called frequently but with no exact-interval guarantee; receives current Session time + elapsed game time
 - [ ] No unbounded backlog of missed updates
-- [x] Consistent budget violations abort the Session as a script/runtime failure (2026-10-18: a batch over its budget is a script failure, retried once, then the Session is aborted (SCRIPT_FAILURE); gameloop tests)
+- [x] Consistent budget violations abort the Session as a script/runtime failure (2026-10-18: a batch over its budget is a script failure, retried once, then the Session is aborted (SCRIPT_FAILURE); boundary tests in `liveconnection`)
 - [ ] update() and timers do not count as human activity (see U)
 
 ---
@@ -272,13 +274,13 @@ Progress note (2026-10-17): a first, minimal controller exists (`play/runtime/in
 - [x] project(globalState, participant, context) is pure and deterministic (no wall clock, no random, not even the controlled PRNG) (state deep-frozen, `Math.random` throws, globals frozen after load; `TestProjectCannotChangeTheContext`)
 - [x] Controlled deterministic PRNG; state is part of Runtime state and checkpoints; no uncontrolled Math.random as source of truth (done for start: seeded mulberry32, state exported and checkpointed; restoring it into a recreated context comes with recovery) (2026-10-18: a restored context continues with the same randomness, revision and time (`TestRestoredContextContinuesTheSameGame`))
 - [x] No access to DB, files, secrets, network, processes, or uncontrolled wall clock (corrected 2026-10-18: the earlier tick was wrong, a script could write into the mounted scratch directory and import `qjs:os`; now the patched qjs in `third_party/qjs` mounts nothing and gives fake clocks and randomness, the host helpers are removed, and the worker's empty environment is only defense in depth; `TestPatchedRuntimeHasNoHostCapabilities`, `TestStart/no_host_helper_is_reachable`)
-- [x] A batch of ordered operations is atomic: no partial output escapes (state, events, timers, responses, terminal signal commit as one) (2026-10-18: nothing commits or reaches a client unless samples() and every projection succeed; events and timers will join the same commit; gameloop tests)
+- [x] A batch of ordered operations is atomic: no partial output escapes (state, events, timers, responses, terminal signal commit as one) (2026-10-18: nothing commits or reaches a client unless samples() and every projection succeed; events and timers will join the same commit; boundary tests in `liveconnection`)
 - [ ] Terminal FINISHED mid-batch: later operations ignored
-- [x] Context revision advances on every successful batch, separate from projection revision and SAMPLE sequence (2026-10-18: the worker and the mirror advance it per batch; a result that does not follow the mirror's revision is out of sync and retried in a restored context; sandbox, controller and gameloop tests)
-- [x] Executor/infrastructure failure: discard context, recreate from the last confirmed Runtime mirror, retry batch (2026-10-18: retried once in the boundary; if it still fails the transitions are put back for the next boundary, and after 50 boundaries in a row the Session is aborted (UNRECOVERABLE_INFRA_FAILURE); gameloop tests)
-- [x] Script failure arrives as a valid protocol response with SCRIPT_ERROR body; retry once from the same confirmed pre-batch state (2026-10-18: gameloop tests)
+- [x] Context revision advances on every successful batch, separate from projection revision and SAMPLE sequence (2026-10-18: the worker and the mirror advance it per batch; a result that does not follow the mirror's revision is out of sync and retried in a restored context; sandbox, controller and boundary tests in `liveconnection`)
+- [x] Executor/infrastructure failure: discard context, recreate from the last confirmed Runtime mirror, retry batch (2026-10-18: retried once in the boundary; if it still fails the transitions are put back for the next boundary, and after 50 boundaries in a row the Session is aborted (UNRECOVERABLE_INFRA_FAILURE); boundary tests in `liveconnection`)
+- [x] Script failure arrives as a valid protocol response with SCRIPT_ERROR body; retry once from the same confirmed pre-batch state (2026-10-18: boundary tests in `liveconnection`)
 - [x] Retry success: continue and raise monitoring/alert (flaky execution); retry failure: Session ABORTED / SCRIPT_FAILURE (2026-10-18: alert on success after a script failure; second failure aborts durably (`sessionlifecycle.AbortRunningSession`, RUNNING -> ABORTED, history by the platform) and ends every connection `session_aborted`; gameloop and session tests)
-- [x] Sandbox-only death: recreate from the Runtime mirror without rolling back to checkpoint (2026-10-18: the infrastructure-failure path restores from the mirror, not the checkpoint; gameloop tests)
+- [x] Sandbox-only death: recreate from the Runtime mirror without rolling back to checkpoint (2026-10-18: the infrastructure-failure path restores from the mirror, not the checkpoint; boundary tests in `liveconnection`)
 - [ ] Runtime death: old sidecar context treated as orphaned; new owner recovers from durable state only
 - [ ] Idle contexts evictable and recreatable; update() games keep the context hot
 - [ ] Resource limits: CPU/execution budget, memory, deadline, state/output size, protection against non-cooperative code (see W)
@@ -524,19 +526,19 @@ Everything here is wired into the running system, so a request flows through it,
 - [ ] No flow creates `play_games` / `play_game_versions` (in scope, see B): nothing registers Games or marks a version EXECUTABLE yet, so every Session creation answers `game_unavailable` until those rows exist (outside production, test-data migrations seed one playable and one unavailable Game; see `play/CURRENT_STATE.md`). Real behavior: the operation that validates a version's scripts, freezes it, and sets it EXECUTABLE as the Game's current version.
 - [ ] Live Session ownership (`play/runtime/usecases/ownership`, in scope, see A1): `LocateOrClaimOwner` answers `owned_here` with epoch 1 for any Session UUID, without looking the Session up or keeping a registry. Real behavior: claim only Sessions in LOBBY/RUNNING, in-process registry with release; shared registry + lease/heartbeat before multi-instance (SESSION-ADR-0029).
 - [x] Admin join eligibility (`play/session/usecases/checkadminjoin`, in scope, see E): replaced by the real check on 2026-10-17 (the Session exists, the user created it, and it is RUNNING or in a LOBBY whose expiry has not passed).
-- [ ] Admin operations (`play/runtime/internal/controller`, in scope, see E): `SelectPerspective` and `CancelSession` return "not implemented", and `NextView` never produces a view (lobby updates are real since 2026-10-17; `StartSession` is orchestrated since 2026-10-17, see G). Real behavior: perspective selection with FULL projection, host cancellation.
+- [ ] Admin operations (`play/runtime/workflows/liveconnection`, in scope, see E): `SelectPerspective` and `CancelSession` return "not implemented", and `NextView` never produces a view (lobby updates are real since 2026-10-17; `StartSession` is orchestrated since 2026-10-17, see G). Real behavior: perspective selection with FULL projection, host cancellation.
 - [x] Durable side of Start (`unwiredSessionStart` in `unwired.go`, in scope, see G): replaced on 2026-10-17 by `sessionlifecycle` (`CheckStartEligibility`, `CommitStart`, `AbortStart`) and `frontendaccess.FrontendAccess`; the stand-in was deleted. It used to: always fail so every `start_session` with a valid lobby fails the call and the API closes the admin connection with 1011. Real behavior: a `play/session` use case validating Start, signing a short-lived URL to the pinned version's frontend package in object storage (needs the frontend artifact locator on the game version and its identity in the manifest, see B), storing the checkpoint durably, committing roster + checkpoint reference + RUNNING in one transaction, and marking ABORTED / GAME_START_FAILURE.
 - [ ] Object storage for deployed environments (`play/session/storage.Open`, in scope, see B and G): locally the `gcs` service of `docker-compose` (fake-gcs-server) is configured since 2026-10-18 by environment variables (signing under an emulator uses a throwaway key, since the emulator has no credentials and checks no signature; `TestGCSSignedURLServesTheObject`); without `GCS_PROJECT_ID` / `GCS_BUCKET` every storage call still fails. Real behavior: each deployed environment's bucket and a Cloud Run identity allowed to sign through IAM.
 - [x] Sandbox execution contexts (`unwiredSandbox` in `unwired.go`, in scope, see G and M): replaced on 2026-10-17 by `sandbox.Host`; `unwired.go` was deleted.
 - [ ] Sandbox contexts of running games (`play/runtime/sandbox`, in scope, see H and M): never discarded, since controllers are never destroyed; they live until the process exits. Real behavior: discarded when the Session ends or its controller is retired.
 - [x] Player admission (`unwiredPlayerAdmission` in `unwired.go`, in scope, see F): replaced on 2026-10-17 by `liveconnection.Manager.AttachPlayer`; `unwired.go` was deleted.
-- [ ] Player operations of a running game (`play/runtime/internal/controller`, in scope, see I, J, M): the controller has a phase (lobby, running; Start will move it to running) and lobby behavior only applies in the lobby: there `Sample` is dropped, `Resync` does nothing, `NextView` never produces a view and `Command` answers `session_not_running`. In a running game, `Leave` and `Command` answer "not implemented" (`Leave` also during a Start attempt), `Disconnect` only ends the connection (no transport grace yet), and new players are rejected as `session_started`; lobby updates are never sent once running.
+- [ ] Player operations of a running game (`play/runtime/workflows/liveconnection`, in scope, see I, J, M): the controller has a phase (lobby, running; Start will move it to running) and lobby behavior only applies in the lobby: there `Sample` is dropped, `Resync` does nothing, `NextView` never produces a view and `Command` answers `session_not_running`. In a running game, `Leave` and `Command` answer "not implemented" (`Leave` also during a Start attempt), `Disconnect` only ends the connection (no transport grace yet), and new players are rejected as `session_started`; lobby updates are never sent once running.
 - [x] Join code resolution (`unwiredJoinCodes` in `unwired.go`, in scope, see A3): replaced on 2026-10-17 by `play/session/usecases/resolvejoincode` (the Session of an active, unexpired join code; `not_found` otherwise); the stand-in was deleted.
-- [ ] Controller lifetime (`play/runtime/internal/controller`, in scope, see H): controllers are created but never destroyed or released, so they accumulate for the process lifetime. Real behavior: destroyed on terminal states with owner release.
+- [ ] Controller lifetime (`play/runtime/workflows/liveconnection`, in scope, see H): controllers are created but never destroyed or released, so they accumulate for the process lifetime. Real behavior: destroyed on terminal states with owner release.
 - [ ] Forwarding to a remote owner (`api/play/owner_routing.go`, in scope, see A1): a Session owned by another instance is answered `503`; unreachable while single-instance. Real behavior: proxy the connection to the owner (gateway), decided with the multi-instance topology.
 - [ ] Replay recorder (`unwiredReplay` in `unwired.go`, in scope, see R): every capture a running game offers is dropped. Real behavior: the Replay Recorder building chunks (FULL_STATE, STATE_DELTA, events, command responses) and persisting them asynchronously, bounded and best effort.
-- [ ] Running games never stop by themselves (`play/runtime/workflows/gameloop`, in scope, see S and U): a lane runs until its controller ends or the process stops, even with every player gone, so its Sandbox worker stays alive too. Real behavior: inactivity, maximum lifetime and finishing end the Session, its lane, controller and context.
-- [ ] View delivery has no backpressure (`play/runtime/internal/controller`, in scope, see W): a slow connection's queued views grow without bound. Real behavior: coalesce into one FULL view when a connection falls behind.
+- [ ] Running games never stop by themselves (`play/runtime/workflows/liveconnection`, in scope, see S and U): a controller keeps ticking until its Session is aborted, it is retired or the process stops, even with every player gone, so its Sandbox worker stays alive too. Real behavior: inactivity, maximum lifetime and finishing end the Session, its lane, controller and context.
+- [ ] View delivery has no backpressure (`play/runtime/workflows/liveconnection`, in scope, see W): a slow connection's queued views grow without bound. Real behavior: coalesce into one FULL view when a connection falls behind.
 - [ ] Metrics emission (`monitoring/metrics`, `record`): measurements are only written to the request log; nothing is sent to a metrics backend (see Y).
 
 ## Invariants verification (§30)
@@ -544,7 +546,7 @@ Everything here is wired into the running system, so a request flows through it,
 Each needs at least one test or other concrete evidence before ticking.
 
 - [ ] 1. One Session, one live owner
-- [x] 2. One authoritative timeline; per-player buffers are never authority (2026-10-18: controller and gameloop tests)
+- [x] 2. One authoritative timeline; per-player buffers are never authority (2026-10-18: controller and boundary tests in `liveconnection`)
 - [ ] 3. RUNNING implies recoverable initial state
 - [ ] 4. Lobby membership is ephemeral; durable participants only at Start
 - [ ] 5. ParticipantID is the script's identity; userUUID stays platform-side
@@ -558,8 +560,8 @@ Each needs at least one test or other concrete evidence before ticking.
 - [x] 13. Game time is not wall time (2026-10-18: scripts see only effective Session time)
 - [ ] 14. update() is frequent, not exact
 - [ ] 15. Timers belong to Runtime, checkpointed, game-time based
-- [x] 16. Sandbox has no external side effects; ambiguous calls discarded and retried from the mirror (2026-10-18: gameloop tests)
-- [x] 17. Failed execution has no partial output (2026-10-18: gameloop tests)
+- [x] 16. Sandbox has no external side effects; ambiguous calls discarded and retried from the mirror (2026-10-18: boundary tests in `liveconnection`)
+- [x] 17. Failed execution has no partial output (2026-10-18: boundary tests in `liveconnection`)
 - [ ] 18. project() is pure and deterministic
 - [ ] 19. Projection privacy is backend-only
 - [ ] 20. Projection revision belongs to the viewer stream

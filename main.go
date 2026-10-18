@@ -22,7 +22,6 @@ import (
 	"github.com/diegobermudez03/playhoot/orchestrator/playlifecycle"
 	"github.com/diegobermudez03/playhoot/play/runtime/sandbox"
 	"github.com/diegobermudez03/playhoot/play/runtime/usecases/ownership"
-	"github.com/diegobermudez03/playhoot/play/runtime/workflows/gameloop"
 	"github.com/diegobermudez03/playhoot/play/runtime/workflows/liveconnection"
 	sessionmigration "github.com/diegobermudez03/playhoot/play/session/migration"
 	"github.com/diegobermudez03/playhoot/play/session/storage"
@@ -133,11 +132,10 @@ func run() error {
 
 	sessionLifecycle := sessionlifecycle.New(db, store)
 	playLifecycle := playlifecycle.New(checkplayability.New(), sessionLifecycle)
-	// Closed before the sandbox, deferred later: lanes stop first, so
+	liveConnections := liveconnection.New(checkadminjoin.New(db), checkplayerjoin.New(db), loadruntimemanifest.New(db), sessionLifecycle, sessionLifecycle, frontendaccess.New(db, store), sandboxHost, unwiredReplay{})
+	// Closed before the sandbox, deferred later: controllers stop first, so
 	// shutting down never fails a running game.
-	games := gameloop.New(sandboxHost, sessionLifecycle, unwiredReplay{})
-	defer games.Close()
-	liveConnections := liveconnection.New(checkadminjoin.New(db), checkplayerjoin.New(db), loadruntimemanifest.New(db), sessionLifecycle, frontendaccess.New(db, store), sandboxHost, games)
+	defer liveConnections.Close()
 	server := api.NewServer(
 		authorize.New(),
 		createguest.New(),

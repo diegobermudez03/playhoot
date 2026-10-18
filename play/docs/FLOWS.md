@@ -89,11 +89,11 @@ The lobby's capacity is not checked here: the live controller checks it against 
 
 ## Runtime Manifest Load
 
-`loadruntimemanifest.Service.LoadRuntimeManifest(sessionUUID)`, called by the live Runtime when it creates a Session's controller, which keeps the manifest for the Session's lifetime (it cannot change: the version is pinned and immutable). It reads `play_sessions` joined with `play_game_versions`. An unknown Session is `ErrSessionNotFound`; a pinned version that is missing or holds an invalid manifest raises an alert and is an error.
+`loadruntimemanifest.Service.LoadRuntimeManifest(sessionUUID)`, called by a Session's live controller on its first admitted connection, which keeps the manifest for the Session's lifetime (it cannot change: the version is pinned and immutable). It reads `play_sessions` joined with `play_game_versions`. An unknown Session is `ErrSessionNotFound`; a pinned version that is missing or holds an invalid manifest raises an alert and is an error.
 
 ## Start Session (durable side)
 
-Called by the live Runtime while it starts a Session's game (`play/runtime/workflows/liveconnection`, `startSession`): first the eligibility check, then the frontend access, then, once the game's `start()` and first projections succeeded, either the commit or, after a second script failure, the abort.
+Called by the live Runtime while it starts a Session's game (the Session's controller in `play/runtime/workflows/liveconnection`, `startSession`, on its main goroutine): first the eligibility check, then the frontend access, then, once the game's `start()` and first projections succeeded, either the commit or, after a second script failure, the abort.
 
 ### Start Eligibility
 
@@ -120,7 +120,7 @@ A pinned version that is not EXECUTABLE, has an invalid manifest or no backend s
 
 ```mermaid
 sequenceDiagram
-    participant Runtime as liveconnection.Manager
+    participant Runtime as Session controller (liveconnection)
     participant Manager as sessionlifecycle.Manager
     participant DB as play_* tables
 
