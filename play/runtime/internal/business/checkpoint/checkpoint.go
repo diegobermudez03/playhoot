@@ -15,6 +15,10 @@ type Checkpoint struct {
 	GameVersionUUID string
 	ContextRevision int64
 
+	// ExecutedThroughSessionTimeMs is the effective Session time State was
+	// materialized through, where a recovered game's clock resumes.
+	ExecutedThroughSessionTimeMs int64
+
 	// State is the authoritative game state, as JSON.
 	State []byte
 
@@ -29,6 +33,7 @@ type document struct {
 	SchemaVersion   int             `json:"schema_version"`
 	GameVersionUUID string          `json:"game_version_uuid"`
 	ContextRevision int64           `json:"context_revision"`
+	ExecutedThrough int64           `json:"executed_through_session_time_ms"`
 	State           json.RawMessage `json:"state"`
 	PRNGState       []byte          `json:"prng_state"`
 	Participants    []string        `json:"participants"`
@@ -40,6 +45,7 @@ func Encode(checkpoint Checkpoint) ([]byte, error) {
 		SchemaVersion:   SchemaVersion,
 		GameVersionUUID: checkpoint.GameVersionUUID,
 		ContextRevision: checkpoint.ContextRevision,
+		ExecutedThrough: checkpoint.ExecutedThroughSessionTimeMs,
 		State:           checkpoint.State,
 		PRNGState:       checkpoint.PRNGState,
 		Participants:    checkpoint.Participants,
@@ -61,10 +67,11 @@ func Decode(encoded []byte) (Checkpoint, error) {
 		return Checkpoint{}, fmt.Errorf("checkpoint schema_version %d is not %d", doc.SchemaVersion, SchemaVersion)
 	}
 	return Checkpoint{
-		GameVersionUUID: doc.GameVersionUUID,
-		ContextRevision: doc.ContextRevision,
-		State:           doc.State,
-		PRNGState:       doc.PRNGState,
-		Participants:    doc.Participants,
+		GameVersionUUID:              doc.GameVersionUUID,
+		ContextRevision:              doc.ContextRevision,
+		ExecutedThroughSessionTimeMs: doc.ExecutedThrough,
+		State:                        doc.State,
+		PRNGState:                    doc.PRNGState,
+		Participants:                 doc.Participants,
 	}, nil
 }

@@ -6,6 +6,7 @@ import "github.com/diegobermudez03/playhoot/monitoring/metrics"
 var operationLabel = metrics.NewLabel("operation",
 	string(workerOperationLoad),
 	string(workerOperationStart),
+	string(workerOperationSamples),
 	string(workerOperationRestore),
 	string(workerOperationProject),
 )

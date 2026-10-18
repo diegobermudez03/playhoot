@@ -1,9 +1,12 @@
 package manifest
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/diegobermudez03/playhoot/play/internal/business/inputs"
 )
 
 func TestParse(t *testing.T) {
@@ -23,6 +26,18 @@ func TestParse(t *testing.T) {
 		},
 		"unknown_fields_are_ignored": func(t *testing.T) test {
 			return test{raw: `{"schema_version":1,"players":{"min":2,"max":4},"commands":[]}`, expectedManifest: Manifest{MinPlayers: 2, MaxPlayers: 4}}
+		},
+		"inputs_with_their_defaults": func(t *testing.T) test {
+			return test{
+				raw: `{"schema_version":1,"players":{"min":1,"max":4},"inputs":{"move":{"type":"vector2"},"mode":{"type":"enum","values":["walk","run"],"default":"run"}}}`,
+				expectedManifest: Manifest{MinPlayers: 1, MaxPlayers: 4, Inputs: []inputs.Declaration{
+					{Name: "mode", Type: inputs.Enum, Values: []string{"walk", "run"}, Default: json.RawMessage(`"run"`)},
+					{Name: "move", Type: inputs.Vector2, Default: json.RawMessage(`[0,0]`)},
+				}},
+			}
+		},
+		"invalid_input": func(t *testing.T) test {
+			return test{raw: `{"schema_version":1,"players":{"min":1,"max":4},"inputs":{"mode":{"type":"enum","values":["walk"]}}}`, expectedErr: true}
 		},
 		"other_schema_version": func(t *testing.T) test {
 			return test{raw: `{"schema_version":2,"players":{"min":2,"max":8}}`, expectedErr: true}

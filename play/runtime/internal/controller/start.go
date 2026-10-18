@@ -19,6 +19,10 @@ type Game struct {
 
 	ContextRevision int64
 
+	// ExecutedThroughSessionTimeMs is the effective Session time the state
+	// was materialized through.
+	ExecutedThroughSessionTimeMs int64
+
 	// State is the authoritative game state, as JSON.
 	State []byte
 
@@ -89,6 +93,12 @@ func (c *Controller) CompleteStart(participants []runtime.Participant, game Game
 	c.game = game
 	c.frontend = frontend
 	c.lobby = nil
+	c.runningSince = c.now()
+	c.baseSessionTimeMs = game.ExecutedThroughSessionTimeMs
+	defaults := c.manifest.Inputs.Defaults()
+	for _, participant := range participants {
+		c.inputs[participant.ParticipantID] = &participantInputs{current: defaults}
+	}
 	inRoster := make(map[string]bool, len(participants))
 	for _, participant := range participants {
 		inRoster[participant.UserUUID] = true
@@ -109,6 +119,7 @@ func (c *Controller) CompleteStart(participants []runtime.Participant, game Game
 			continue
 		}
 		player.participantID = participant.ParticipantID
+		player.lastView = views[participant.ParticipantID]
 		player.lobbyUpdates.finish()
 		player.views.publish(runtime.OwnView{PlayerView: runtime.PlayerView{
 			ParticipantID: participant.ParticipantID,
@@ -130,6 +141,7 @@ func (c *Controller) AbortStart() {
 	}
 	c.phase = phaseEnded
 	c.lobby = nil
+	c.stopLocked()
 	for id, admin := range c.admins {
 		admin.end(runtime.EndSessionAborted)
 		delete(c.admins, id)

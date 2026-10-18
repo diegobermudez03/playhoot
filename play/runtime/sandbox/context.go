@@ -25,6 +25,39 @@ type Snapshot struct {
 	PRNGState []byte
 
 	ContextRevision int64
+
+	// SessionTimeMs is the effective Session time the state was reached at.
+	SessionTimeMs int64
+}
+
+// Transition is one participant's new input state, at the effective Session
+// time the Runtime accepted it.
+type Transition struct {
+	ParticipantID string
+
+	// Inputs is the full input snapshot, as a JSON object.
+	Inputs []byte
+
+	SessionTimeMs int64
+}
+
+// SamplesInput is what a game's samples() receives: input transitions of
+// every participant in the order the Runtime accepted them, and the Session
+// time the batch brings the game to.
+type SamplesInput struct {
+	Transitions   []Transition
+	SessionTimeMs int64
+}
+
+// ExecutionResult is the outcome of a mutating execution. State, PRNGState
+// and ContextRevision are set only when it succeeded, ScriptError only when
+// not.
+type ExecutionResult struct {
+	Outcome         ScriptOutcome
+	State           []byte
+	PRNGState       []byte
+	ContextRevision int64
+	ScriptError     string
 }
 
 // ScriptOutcome is whether authored code completed an execution.

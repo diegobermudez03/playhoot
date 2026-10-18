@@ -71,6 +71,8 @@ type worker struct {
 	state    string
 	started  bool
 	revision int64
+	// sessionTimeMs is the effective Session time state was reached at.
+	sessionTimeMs int64
 	// broken is set when a failure may have left the runtime unusable.
 	broken bool
 }
@@ -106,6 +108,8 @@ func (w *worker) handle(line []byte) (resp workerResponse) {
 		return w.load(req)
 	case workerOperationStart:
 		return w.start(req)
+	case workerOperationSamples:
+		return w.samples(req)
 	case workerOperationProject:
 		return w.project(req)
 	case workerOperationRestore:
@@ -171,31 +175,77 @@ func (w *worker) start(req workerRequest) workerResponse {
 	if err != nil {
 		return fatal("encoding participants: " + err.Error())
 	}
-	result, failure := w.invoke("start", string(participantsJSON), executionContextJSON())
+	result, failure := w.invoke("start", string(participantsJSON), executionContextJSON(0, 0))
 	if failure != nil {
 		w.broken = true
 		return *failure
 	}
-	var shape struct {
-		State json.RawMessage `json:"state"`
-	}
-	if err := json.Unmarshal([]byte(result), &shape); err != nil || len(shape.State) == 0 || string(shape.State) == "null" {
+	state, failure := stateOf("start", result)
+	if failure != nil {
 		w.broken = true
-		return scriptFailure("start() must return an object with a state")
-	}
-	if len(shape.State) > defaultMaxOutputBytes {
-		w.broken = true
-		return scriptFailure(fmt.Sprintf("start() returned a state of %d bytes, exceeding the %d-byte limit", len(shape.State), defaultMaxOutputBytes))
+		return *failure
 	}
 
 	randomState, err := w.randomState()
 	if err != nil {
 		return fatal(err.Error())
 	}
-	w.state = string(shape.State)
+	w.state = string(state)
 	w.started = true
 	w.revision++
-	return workerResponse{State: shape.State, PRNGState: encodeRandomState(randomState), ContextRevision: w.revision}
+	return workerResponse{State: state, PRNGState: encodeRandomState(randomState), ContextRevision: w.revision}
+}
+
+// samples runs the game's samples(state, transitions, context), which must
+// return {state}, bringing the game to the batch's Session time.
+func (w *worker) samples(req workerRequest) workerResponse {
+	if !w.started {
+		return fatal("game not started")
+	}
+	if req.SessionTimeMs < w.sessionTimeMs {
+		return fatal("session time cannot go back")
+	}
+	if err := w.setTime(req.SessionTimeMs); err != nil {
+		return fatal(err.Error())
+	}
+	transitionsJSON, err := json.Marshal(req.Transitions)
+	if err != nil {
+		return fatal("encoding transitions: " + err.Error())
+	}
+	result, failure := w.invoke("samples", w.state, string(transitionsJSON), executionContextJSON(req.SessionTimeMs, req.SessionTimeMs-w.sessionTimeMs))
+	if failure != nil {
+		w.broken = true
+		return *failure
+	}
+	state, failure := stateOf("samples", result)
+	if failure != nil {
+		w.broken = true
+		return *failure
+	}
+	randomState, err := w.randomState()
+	if err != nil {
+		return fatal(err.Error())
+	}
+	w.state = string(state)
+	w.sessionTimeMs = req.SessionTimeMs
+	w.revision++
+	return workerResponse{State: state, PRNGState: encodeRandomState(randomState), ContextRevision: w.revision}
+}
+
+// stateOf reads the state a mutating entrypoint returned as {state}.
+func stateOf(entrypoint string, result string) (json.RawMessage, *workerResponse) {
+	var shape struct {
+		State json.RawMessage `json:"state"`
+	}
+	if err := json.Unmarshal([]byte(result), &shape); err != nil || len(shape.State) == 0 || string(shape.State) == "null" {
+		failure := scriptFailure(entrypoint + "() must return an object with a state")
+		return nil, &failure
+	}
+	if len(shape.State) > defaultMaxOutputBytes {
+		failure := scriptFailure(fmt.Sprintf("%s() returned a state of %d bytes, exceeding the %d-byte limit", entrypoint, len(shape.State), defaultMaxOutputBytes))
+		return nil, &failure
+	}
+	return shape.State, nil
 }
 
 // restore sets the context at a running game's confirmed state, PRNG state
@@ -217,9 +267,13 @@ func (w *worker) restore(req workerRequest) workerResponse {
 	if err := w.setRandomState(randomState); err != nil {
 		return fatal(err.Error())
 	}
+	if err := w.setTime(req.SessionTimeMs); err != nil {
+		return fatal(err.Error())
+	}
 	w.state = string(req.State)
 	w.started = true
 	w.revision = req.ContextRevision
+	w.sessionTimeMs = req.SessionTimeMs
 	return workerResponse{ContextRevision: w.revision}
 }
 
@@ -236,7 +290,7 @@ func (w *worker) project(req workerRequest) workerResponse {
 	if err := w.allowRandom(false); err != nil {
 		return fatal(err.Error())
 	}
-	view, failure := w.invoke("project", w.state, string(participantJSON), executionContextJSON())
+	view, failure := w.invoke("project", w.state, string(participantJSON), executionContextJSON(w.sessionTimeMs, 0))
 	if err := w.allowRandom(true); err != nil {
 		return fatal(err.Error())
 	}
@@ -330,10 +384,11 @@ func (w *worker) setRandomState(state uint32) error {
 	return nil
 }
 
-// executionContextJSON is the context argument every entrypoint receives;
-// effective Session time starts at zero when the game starts.
-func executionContextJSON() string {
-	return `{"sessionTime":0}`
+// executionContextJSON is the context argument every entrypoint receives:
+// the effective Session time, which starts at zero when the game starts, in
+// milliseconds, and how much of it passed since the previous execution.
+func executionContextJSON(sessionTimeMs int64, elapsedMs int64) string {
+	return fmt.Sprintf(`{"sessionTime":%d,"elapsed":%d}`, sessionTimeMs, elapsedMs)
 }
 
 func scriptFailure(reason string) workerResponse {

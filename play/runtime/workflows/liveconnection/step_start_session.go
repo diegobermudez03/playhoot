@@ -165,6 +165,7 @@ func (m *Manager) startFrozenLobby(ctx context.Context, sessionController *contr
 	}
 	frontend := runtime.GameFrontend{URL: access.URL, SHA256: access.SHA256, ExpiresAt: access.ExpiresAt}
 	sessionController.CompleteStart(participants, game, frontend, views)
+	m.games.Run(sessionUUID, sessionController, m.tickInterval)
 	return runtime.SessionStarted, nil
 }
 
@@ -211,6 +212,7 @@ func (m *Manager) adoptRunningSession(ctx context.Context, sessionController *co
 	}
 	frontend := runtime.GameFrontend{URL: access.URL, SHA256: access.SHA256, ExpiresAt: access.ExpiresAt}
 	sessionController.CompleteStart(participants, game, frontend, views)
+	m.games.Run(sessionUUID, sessionController, m.tickInterval)
 	startedSessionsAdopted.Inc(ctx)
 	return runtime.StartAlreadyStarted, nil
 }
@@ -219,7 +221,12 @@ func (m *Manager) adoptRunningSession(ctx context.Context, sessionController *co
 // participant's view. The committed game already ran this script, so any
 // script failure here is an error, not a start failure.
 func (m *Manager) restoreInContext(ctx context.Context, contextID string, spec sandbox.ContextSpec, saved checkpoint.Checkpoint, participantIDs []string) (controller.Game, map[string][]byte, error) {
-	restored, err := m.sandbox.Restore(ctx, contextID, sandbox.Snapshot{State: saved.State, PRNGState: saved.PRNGState, ContextRevision: saved.ContextRevision})
+	restored, err := m.sandbox.Restore(ctx, contextID, sandbox.Snapshot{
+		State:           saved.State,
+		PRNGState:       saved.PRNGState,
+		ContextRevision: saved.ContextRevision,
+		SessionTimeMs:   saved.ExecutedThroughSessionTimeMs,
+	})
 	if err != nil {
 		return controller.Game{}, nil, fmt.Errorf("restoring game: %w", err)
 	}
@@ -240,6 +247,8 @@ func (m *Manager) restoreInContext(ctx context.Context, contextID string, spec s
 		ContextRevision: saved.ContextRevision,
 		State:           saved.State,
 		PRNGState:       saved.PRNGState,
+
+		ExecutedThroughSessionTimeMs: saved.ExecutedThroughSessionTimeMs,
 	}, views, nil
 }
 

@@ -104,6 +104,23 @@ type RuntimeManifest struct {
 	// with; 1 <= MinPlayers <= MaxPlayers.
 	MinPlayers int
 	MaxPlayers int
+
+	// Inputs are the logical inputs SAMPLEs carry, in name order; none means
+	// the game takes no SAMPLE.
+	Inputs []RuntimeInput
+}
+
+// RuntimeInput is one declared SAMPLE input. Type is boolean, number,
+// vector2, string or enum; Default is the value an omitted input takes, as
+// JSON, already filled in when the manifest relies on the natural zero.
+type RuntimeInput struct {
+	Name     string
+	Type     string
+	Nullable bool
+	Min      *float64
+	Max      *float64
+	Values   []string
+	Default  []byte
 }
 
 // ErrSessionNotFound is returned when an operation names a Session that does
@@ -207,3 +224,16 @@ type RunningSession struct {
 // ErrSessionNotRunning is returned when an operation needs a RUNNING Session
 // and the Session is in another status.
 var ErrSessionNotRunning = errors.New("session is not running")
+
+// AbortCause is why the platform aborts a running Session.
+type AbortCause string
+
+const (
+	// AbortScriptFailure means the game's script failed twice on the same
+	// execution.
+	AbortScriptFailure AbortCause = "SCRIPT_FAILURE"
+
+	// AbortUnrecoverableInfraFailure means the game could not be executed
+	// for too long.
+	AbortUnrecoverableInfraFailure AbortCause = "UNRECOVERABLE_INFRA_FAILURE"
+)

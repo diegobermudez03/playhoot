@@ -118,6 +118,10 @@ func (s *playerSession) sample(ctx context.Context, data []byte) (live.End, bool
 		return live.CloseMalformed(s.conn), true
 	}
 	if err := s.player.Sample(ctx, runtime.Sample{Sequence: request.Sequence, Inputs: request.Inputs}); err != nil {
+		if errors.Is(err, runtime.ErrInvalidSample) {
+			// The game does not declare these inputs: a protocol error.
+			return live.CloseMalformed(s.conn), true
+		}
 		return live.CloseServerFailure(s.conn, err), true
 	}
 	// A SAMPLE is never answered; its acknowledgement comes with the views.

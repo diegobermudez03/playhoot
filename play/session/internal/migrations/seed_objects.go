@@ -17,11 +17,20 @@ const (
 // seedBackendScript is the playable seed version's backend script. It is test
 // content, not a real game.
 const seedBackendScript = `function start(participants, context) {
-	return { state: { round: 1, scores: Object.fromEntries(participants.map((p) => [p, 0])) } };
+	return { state: { round: 1, positions: Object.fromEntries(participants.map((p) => [p, [0, 0]])) } };
+}
+
+function samples(state, transitions, context) {
+	const positions = { ...state.positions };
+	for (const transition of transitions) {
+		const [x, y] = positions[transition.participant];
+		positions[transition.participant] = [x + transition.inputs.move[0], y + transition.inputs.move[1]];
+	}
+	return { state: { round: state.round, positions } };
 }
 
 function project(state, participant, context) {
-	return { round: state.round, myScore: state.scores[participant] };
+	return { round: state.round, me: state.positions[participant] };
 }
 `
 

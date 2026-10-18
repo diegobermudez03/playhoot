@@ -32,6 +32,7 @@ const (
 	// game's script; it is always the first request.
 	workerOperationLoad    workerOperation = "load"
 	workerOperationStart   workerOperation = "start"
+	workerOperationSamples workerOperation = "samples"
 	workerOperationProject workerOperation = "project"
 
 	// workerOperationRestore sets a loaded context at a running game's
@@ -53,11 +54,25 @@ type workerRequest struct {
 	// Participant is set only for workerOperationProject.
 	Participant string `json:"participant,omitempty"`
 
+	// Transitions are set only for workerOperationSamples.
+	Transitions []workerTransition `json:"transitions,omitempty"`
+
+	// SessionTimeMs is the Session time a samples batch or a restore brings
+	// the context to.
+	SessionTimeMs int64 `json:"sessionTimeMs,omitempty"`
+
 	// State, PRNGState and ContextRevision are set only for
 	// workerOperationRestore.
 	State           json.RawMessage `json:"state,omitempty"`
 	PRNGState       []byte          `json:"prngState,omitempty"`
 	ContextRevision int64           `json:"contextRevision,omitempty"`
+}
+
+// workerTransition is one input transition, as samples() receives it.
+type workerTransition struct {
+	Participant string          `json:"participant"`
+	Inputs      json.RawMessage `json:"inputs"`
+	SessionTime int64           `json:"sessionTime"`
 }
 
 // workerResponse is the line a context worker answers each request with. At

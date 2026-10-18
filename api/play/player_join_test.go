@@ -3,6 +3,7 @@ package play
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -24,6 +25,8 @@ type fakePlayer struct {
 	*fakeLobby[runtime.PlayerStart]
 	views      chan runtime.OwnView
 	commandErr error
+	// sampleErr is what Sample answers, after recording the SAMPLE.
+	sampleErr error
 	// commandAwaitsSamples makes Command wait until this many SAMPLEs arrived.
 	commandAwaitsSamples int
 	sampled              chan struct{}
@@ -79,7 +82,7 @@ func (f *fakePlayer) connection() runtime.PlayerConnection {
 			defer f.mu.Unlock()
 			f.samples = append(f.samples, sample)
 			f.sampled <- struct{}{}
-			return nil
+			return f.sampleErr
 		},
 		Command: func(ctx context.Context, command runtime.Command) (runtime.CommandResult, error) {
 			for range f.commandAwaitsSamples {
@@ -295,6 +298,18 @@ func TestHandlePlayerJoin(t *testing.T) {
 			return test{
 				player:              player,
 				expectedCloseStatus: websocket.StatusServiceRestart,
+				expectedDisconnects: 1,
+			}
+		},
+		"sample_of_inputs_the_game_does_not_declare_is_malformed": func(t *testing.T, deps dependencies) test {
+			player := newFakePlayer()
+			player.sampleErr = fmt.Errorf("%w: jump is not a declared input", runtime.ErrInvalidSample)
+			accept(deps, player)
+			return test{
+				player:              player,
+				clientSends:         []string{`{"type":"sample","sequence":1,"inputs":{"jump":true}}`},
+				expectedCloseStatus: websocket.StatusInvalidFramePayloadData,
+				expectedSamples:     []runtime.Sample{{Sequence: 1, Inputs: []byte(`{"jump":true}`)}},
 				expectedDisconnects: 1,
 			}
 		},

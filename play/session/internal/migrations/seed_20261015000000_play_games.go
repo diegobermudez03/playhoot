@@ -20,7 +20,7 @@ const (
 
 	// seedManifest lets one to eight players join, so a single person can
 	// test a lobby by hand.
-	seedManifest = `{"schema_version":1,"players":{"min":1,"max":8}}`
+	seedManifest = `{"schema_version":1,"players":{"min":1,"max":8},"inputs":{"move":{"type":"vector2"}}}`
 )
 
 // seed20261015000000PlayGames fills play_games and play_game_versions.

@@ -21,6 +21,7 @@ func TestStartSession(t *testing.T) {
 		starts    *MocksessionStarter
 		frontends *MockfrontendSigner
 		sandbox   *MockgameSandbox
+		games     *MockgameRunner
 	}
 	type test struct {
 		expectedOutcome runtime.StartSessionOutcome
@@ -236,15 +237,19 @@ func TestStartSession(t *testing.T) {
 	for name, setup := range tests {
 		t.Run(name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
-			deps := dependencies{starts: NewMocksessionStarter(ctrl), frontends: NewMockfrontendSigner(ctrl), sandbox: NewMockgameSandbox(ctrl)}
+			deps := dependencies{starts: NewMocksessionStarter(ctrl), frontends: NewMockfrontendSigner(ctrl), sandbox: NewMockgameSandbox(ctrl), games: NewMockgameRunner(ctrl)}
 			tc := setup(t, deps)
-			manager := New(nil, nil, nil, deps.starts, deps.frontends, deps.sandbox)
+			manager := New(nil, nil, nil, deps.starts, deps.frontends, deps.sandbox, deps.games)
 			manager.seeds = func() uint64 { return seed }
 			sessionController, ok, err := controller.NewRegistry().ControllerFor(ctx, sessionUUID, 1, func(context.Context) (controller.Manifest, error) {
 				return controller.Manifest{MaxPlayers: 4}, nil
 			})
 			require.NoError(t, err)
 			require.True(t, ok)
+			if tc.expectedStarted {
+				// Its lane starts exactly when the game does, started or adopted.
+				deps.games.EXPECT().Run(sessionUUID, sessionController, defaultTickInterval)
+			}
 			first, _, admitted := sessionController.AdmitPlayer(ctx, playerA)
 			require.True(t, admitted)
 			second, _, admitted := sessionController.AdmitPlayer(ctx, playerB)

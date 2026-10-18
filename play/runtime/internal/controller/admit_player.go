@@ -62,9 +62,8 @@ func (c *Controller) AdmitPlayer(ctx context.Context, userUUID string) (runtime.
 			player.end(runtime.EndLeft)
 			return runtime.LeaveResult{Outcome: runtime.PlayerLeft}, nil
 		},
-		// Placeholder: dropped, since no game runs yet to consume it.
-		Sample: func(context.Context, runtime.Sample) error {
-			return nil
+		Sample: func(ctx context.Context, sample runtime.Sample) error {
+			return c.acceptSample(ctx, player, sample)
 		},
 		Command: func(_ context.Context, command runtime.Command) (runtime.CommandResult, error) {
 			c.mu.Lock()
@@ -95,10 +94,16 @@ func (c *Controller) AdmitPlayer(ctx context.Context, userUUID string) (runtime.
 		Disconnect: func() {
 			c.mu.Lock()
 			// Once frozen the participant stays; only the lobby forgets. A
-			// cancelled Start attempt takes them out of the lobby then.
+			// cancelled Start attempt takes them out of the lobby then. In a
+			// running game their inputs return to the defaults at once.
 			// Placeholder: a running game's transport grace is not built.
-			if c.phase == phaseLobby {
+			switch c.phase {
+			case phaseLobby:
 				c.leaveLobbyLocked(player)
+			case phaseRunning:
+				if c.players[player.userUUID] == player {
+					c.resetInputsLocked(player.participantID)
+				}
 			}
 			c.mu.Unlock()
 			player.end(runtime.EndDisconnected)

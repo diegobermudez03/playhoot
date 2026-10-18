@@ -7,7 +7,9 @@ import (
 	"errors"
 	"slices"
 	"sync"
+	"time"
 
+	"github.com/diegobermudez03/playhoot/play/internal/business/inputs"
 	"github.com/diegobermudez03/playhoot/play/runtime"
 )
 
@@ -17,6 +19,9 @@ var ErrNotImplemented = errors.New("live operation not implemented yet")
 // Manifest is what a Controller knows about its Session's game version.
 type Manifest struct {
 	MaxPlayers int
+
+	// Inputs are what the game's SAMPLEs carry; empty means it takes none.
+	Inputs inputs.Schema
 }
 
 // phase is where a Controller's Session is in its live lifecycle; it decides
@@ -49,6 +54,8 @@ type ManifestLoader func(ctx context.Context) (Manifest, error)
 type Registry struct {
 	mu          sync.Mutex
 	controllers map[string]*Controller
+	// now is the clock its Controllers measure Session time with.
+	now nowFunc
 }
 
 // Controller is the live state of one Session on its owner instance.
@@ -72,11 +79,32 @@ type Controller struct {
 	game Game
 	// frontend is what every connection renders the running game with.
 	frontend runtime.GameFrontend
+
+	// now, runningSince and baseSessionTimeMs give the effective Session
+	// time: it continues from the confirmed state's time when the game began
+	// running here.
+	now               nowFunc
+	runningSince      time.Time
+	baseSessionTimeMs int64
+	// inputs is each participant's SAMPLE ingress, by ParticipantID.
+	inputs map[string]*participantInputs
+	// timeline holds the operations accepted and not yet executed, in order.
+	timeline  []Transition
+	nextOrder uint64
+	flush     chan struct{}
+	done      chan struct{}
+	stopOnce  sync.Once
 }
 
 // NewRegistry constructs an empty Registry.
 func NewRegistry() *Registry {
-	return &Registry{controllers: make(map[string]*Controller)}
+	return NewRegistryWithClock(time.Now)
+}
+
+// NewRegistryWithClock constructs an empty Registry whose Controllers measure
+// Session time with now.
+func NewRegistryWithClock(now func() time.Time) *Registry {
+	return &Registry{controllers: make(map[string]*Controller), now: now}
 }
 
 // ControllerFor returns sessionUUID's Controller under epoch, creating it with
@@ -113,6 +141,10 @@ func (r *Registry) ControllerFor(ctx context.Context, sessionUUID string, epoch 
 		phase:       phaseLobby,
 		admins:      make(map[string]*connection),
 		players:     make(map[string]*connection),
+		now:         r.now,
+		inputs:      make(map[string]*participantInputs),
+		flush:       make(chan struct{}, 1),
+		done:        make(chan struct{}),
 	}
 	r.controllers[sessionUUID] = controller
 	controllersCreated.Inc(ctx)
@@ -138,6 +170,9 @@ func (r *Registry) lookupLocked(sessionUUID string, epoch int64) (controller *Co
 func (c *Controller) retire() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.phase = phaseEnded
+	c.timeline = nil
+	defer c.stopLocked()
 	for id, admin := range c.admins {
 		admin.end(runtime.EndOwnerChanged)
 		delete(c.admins, id)
@@ -189,6 +224,10 @@ type connection struct {
 
 	lobbyUpdates lobbyFeed
 	views        viewFeed
+	// lastView and lastAck are the view and acknowledgement this connection
+	// last received, which the next one is a patch against.
+	lastView []byte
+	lastAck  int64
 	// started is closed when the game starts while the connection is open.
 	started chan struct{}
 

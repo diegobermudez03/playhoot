@@ -55,5 +55,12 @@ func (s *Service) LoadRuntimeManifest(ctx context.Context, sessionUUID string) (
 		monitoring.Alert(ctx, "play session is pinned to a game version without a valid runtime manifest")
 		return sessionpkg.RuntimeManifest{}, fmt.Errorf("%w: %w", errBrokenManifest, err)
 	}
-	return sessionpkg.RuntimeManifest{MinPlayers: parsed.MinPlayers, MaxPlayers: parsed.MaxPlayers}, nil
+	var declared []sessionpkg.RuntimeInput
+	for _, input := range parsed.Inputs {
+		declared = append(declared, sessionpkg.RuntimeInput{
+			Name: input.Name, Type: string(input.Type), Nullable: input.Nullable,
+			Min: input.Min, Max: input.Max, Values: input.Values, Default: input.Default,
+		})
+	}
+	return sessionpkg.RuntimeManifest{MinPlayers: parsed.MinPlayers, MaxPlayers: parsed.MaxPlayers, Inputs: declared}, nil
 }

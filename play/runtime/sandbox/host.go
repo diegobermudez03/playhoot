@@ -147,6 +147,28 @@ func (h *Host) Start(ctx context.Context, contextID string, input StartInput) (S
 	return StartResult{Outcome: ScriptSucceeded, State: resp.State, PRNGState: resp.PRNGState, ContextRevision: resp.ContextRevision}, nil
 }
 
+// Samples runs the game's samples() in contextID with input's transitions.
+func (h *Host) Samples(ctx context.Context, contextID string, input SamplesInput) (ExecutionResult, error) {
+	process, err := h.context(contextID)
+	if err != nil {
+		return ExecutionResult{}, err
+	}
+	transitions := make([]workerTransition, len(input.Transitions))
+	for i, transition := range input.Transitions {
+		transitions[i] = workerTransition{Participant: transition.ParticipantID, Inputs: transition.Inputs, SessionTime: transition.SessionTimeMs}
+	}
+	resp, err := h.call(ctx, process, workerRequest{Operation: workerOperationSamples, Transitions: transitions, SessionTimeMs: input.SessionTimeMs})
+	switch {
+	case errors.Is(err, errBudgetExceeded):
+		return ExecutionResult{Outcome: ScriptFailed, ScriptError: "samples(): " + err.Error()}, nil
+	case err != nil:
+		return ExecutionResult{}, err
+	case resp.ScriptError != nil:
+		return ExecutionResult{Outcome: ScriptFailed, ScriptError: *resp.ScriptError}, nil
+	}
+	return ExecutionResult{Outcome: ScriptSucceeded, State: resp.State, PRNGState: resp.PRNGState, ContextRevision: resp.ContextRevision}, nil
+}
+
 // Restore sets contextID at snapshot, the confirmed state of a game already
 // running, instead of starting it.
 func (h *Host) Restore(ctx context.Context, contextID string, snapshot Snapshot) (RestoreResult, error) {
@@ -162,6 +184,7 @@ func (h *Host) Restore(ctx context.Context, contextID string, snapshot Snapshot)
 		State:           snapshot.State,
 		PRNGState:       snapshot.PRNGState,
 		ContextRevision: snapshot.ContextRevision,
+		SessionTimeMs:   snapshot.SessionTimeMs,
 	})
 	if err != nil {
 		return RestoreResult{}, err
@@ -274,7 +297,7 @@ func (h *Host) call(ctx context.Context, process *contextProcess, req workerRequ
 	if err == nil {
 		process.memoryBytes.Store(resp.MemoryBytes)
 		workerMemory.Observe(ctx, float64(resp.MemoryBytes))
-		if outcome == callSucceeded && (req.Operation == workerOperationStart || req.Operation == workerOperationProject) {
+		if outcome == callSucceeded && (req.Operation == workerOperationStart || req.Operation == workerOperationSamples || req.Operation == workerOperationProject) {
 			outputSize.Observe(ctx, float64(len(resp.State)+len(resp.View)), operation)
 		}
 		h.recordContexts(ctx)

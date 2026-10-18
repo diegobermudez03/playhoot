@@ -5,6 +5,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"time"
 )
 
@@ -378,3 +379,7 @@ const (
 type LeaveResult struct {
 	Outcome LeaveOutcome
 }
+
+// ErrInvalidSample is returned by Sample for inputs the game does not
+// declare, or values they cannot hold; the SAMPLE never reaches the game.
+var ErrInvalidSample = errors.New("invalid sample")
