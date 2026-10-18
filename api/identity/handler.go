@@ -10,7 +10,7 @@ import (
 	identitypkg "github.com/diegobermudez03/playhoot/identity"
 )
 
-//go:generate mockgen -package=identity -destination=guest_creator_mock_test.go . guestCreator
+//go:generate mockgen -package=identity -destination=handler_mock_test.go . guestCreator
 
 // guestCreator creates guest Users idempotently per key. A decline is
 // reported through the result's Outcome; a reused key with another request

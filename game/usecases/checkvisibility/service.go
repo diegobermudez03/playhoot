@@ -15,7 +15,7 @@ import (
 	"gorm.io/gorm"
 )
 
-//go:generate mockgen -package=checkvisibility -destination=repo_mock_test.go . repoAPI
+//go:generate mockgen -package=checkvisibility -destination=service_mock_test.go . repoAPI
 
 // repoAPI is Service's own narrow persistence contract.
 type repoAPI interface {

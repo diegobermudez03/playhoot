@@ -71,7 +71,7 @@ Implemented behavior:
 | Unreleased row past `expires_at` | `not_found`; the code is not released here |
 | Only released rows, or no row | `not_found` |
 
-The Session's state is not checked: a code expires with its lobby, and a Session that already started is rejected by the Runtime's admission (`session_started`).
+The Session's state is not checked: a code expires with its lobby, and is released when the Session starts or its start is aborted, so a started Session's code resolves to `not_found`.
 
 ## Player Join Eligibility
 
@@ -90,3 +90,60 @@ The lobby's capacity is not checked here: the live controller checks it against 
 ## Runtime Manifest Load
 
 `loadruntimemanifest.Service.LoadRuntimeManifest(sessionUUID)`, called by the live Runtime when it creates a Session's controller, which keeps the manifest for the Session's lifetime (it cannot change: the version is pinned and immutable). It reads `play_sessions` joined with `play_game_versions`. An unknown Session is `ErrSessionNotFound`; a pinned version that is missing or holds an invalid manifest raises an alert and is an error.
+
+## Start Session (durable side)
+
+Called by the live Runtime while it starts a Session's game (`play/runtime/workflows/liveconnection`, `startSession`): first the eligibility check, then the frontend access, then, once the game's `start()` and first projections succeeded, either the commit or, after a second script failure, the abort.
+
+### Start Eligibility
+
+`sessionlifecycle.Manager.CheckStartEligibility(sessionUUID, userUUID, playerCount)`. It reads `play_sessions` joined with `play_game_versions`, then loads the version's backend script from object storage, verified against its recorded hash and size (and cached by hash).
+
+| Session | Answer |
+| --- | --- |
+| No Session with that UUID (or not a UUID) | `session_not_found` |
+| Created by another user | `not_creator` |
+| Not LOBBY, or LOBBY past `lobby_expires_at` | `not_in_lobby`; the expiry is not recorded here |
+| `playerCount` outside the manifest's `players.min..max` | `invalid_player_count` |
+| Otherwise | `eligible`, with the version's UUID and script |
+
+A pinned version that is not EXECUTABLE, has an invalid manifest or no backend script locator raises an alert and is an error (broken data). A script that cannot be loaded (missing, hash mismatch, storage unavailable) is an error. `game_unavailable` is declared but never answered: no business rule makes a pinned version unplayable yet.
+
+### Frontend Access
+
+`frontendaccess.Service.FrontendAccess(gameVersionUUID)` reads the version's frontend package locator from `play_game_versions` and signs a read URL to it in object storage, valid for 15 minutes, returned with the package's SHA-256. An unknown or non-EXECUTABLE version is an error; an EXECUTABLE one without a frontend package raises an alert and is an error.
+
+### Commit Start
+
+`sessionlifecycle.Manager.CommitStart(sessionUUID, userUUID, commit)`, in one transaction:
+
+```mermaid
+sequenceDiagram
+    participant Runtime as liveconnection.Manager
+    participant Manager as sessionlifecycle.Manager
+    participant DB as play_* tables
+
+    Runtime->>Manager: CommitStart(session, user, roster + checkpoint)
+    Manager->>Manager: validate roster (users and ParticipantIDs unique) and checkpoint
+    Note over Manager,DB: one transaction
+    Manager->>DB: SELECT play_sessions ... FOR UPDATE
+    alt no Session
+        Manager-->>Runtime: ErrSessionNotFound
+    else not the creator
+        Manager-->>Runtime: error
+    else not LOBBY, or lobby expired
+        Manager-->>Runtime: not_in_lobby (nothing written)
+    else
+        Manager->>DB: INSERT play_session_participants (one row per participant)
+        Manager->>DB: UPSERT play_session_checkpoints (latest only)
+        Manager->>DB: UPDATE play_sessions SET status = RUNNING
+        Manager->>DB: UPDATE play_session_join_codes SET released_at
+        Manager-->>Runtime: committed
+    end
+```
+
+Because the checkpoint is written in the same transaction, a RUNNING Session always has a recoverable initial state and no orphan checkpoint can exist. Any failure rolls everything back.
+
+### Abort Start
+
+`sessionlifecycle.Manager.AbortStart(sessionUUID)`, in one transaction: locks the Session; if it is still LOBBY, sets it ABORTED with `end_cause = GAME_START_FAILURE` and releases its join code; a Session in any other state is left as it is (not an error). An unknown Session is `ErrSessionNotFound`.

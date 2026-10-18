@@ -21,7 +21,7 @@ import (
 	"github.com/diegobermudez03/playhoot/utils"
 )
 
-//go:generate mockgen -package=sessionlifecycle -destination=create_session_mock_test.go . createSessionRepo
+//go:generate mockgen -package=sessionlifecycle -destination=step_create_session_mock_test.go . createSessionRepo
 
 // createSessionRepo is CreateSession's own narrow persistence contract.
 type createSessionRepo interface {

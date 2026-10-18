@@ -29,13 +29,21 @@ func migration20261015000000PlaySessions() *gormigrate.Migration {
 				// The versions of a Game. Only an EXECUTABLE version is immutable
 				// and its scripts ready to run, so safe to play; newer versions may
 				// exist as DRAFT. The manifest is versioned JSON holding the
-				// structural facts the live Runtime needs about the game.
+				// structural facts the live Runtime needs about the game. Its
+				// backend script and frontend package live in object storage;
+				// these are their locators, which an EXECUTABLE version must have.
 				`CREATE TABLE play_game_versions (
 					id BIGSERIAL PRIMARY KEY,
 					uuid UUID NOT NULL UNIQUE,
 					game_id BIGINT NOT NULL,
 					status TEXT NOT NULL CHECK (status IN ('DRAFT', 'EXECUTABLE')),
 					manifest JSONB NOT NULL,
+					script_object_key TEXT NULL,
+					script_sha256 TEXT NULL,
+					script_size BIGINT NULL,
+					frontend_object_key TEXT NULL,
+					frontend_sha256 TEXT NULL,
+					frontend_size BIGINT NULL,
 					executable_at TIMESTAMPTZ NULL,
 					created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 				)`,
@@ -70,6 +78,30 @@ func migration20261015000000PlaySessions() *gormigrate.Migration {
 				`CREATE INDEX play_session_join_codes_session_id_idx ON play_session_join_codes (session_id)`,
 				`CREATE UNIQUE INDEX play_session_join_codes_active_code_idx ON play_session_join_codes (code) WHERE released_at IS NULL`,
 
+				// Who plays a started Session: written once, when it becomes
+				// RUNNING. The game knows each player only by participant_id.
+				`CREATE TABLE play_session_participants (
+					id BIGSERIAL PRIMARY KEY,
+					session_id BIGINT NOT NULL,
+					user_uuid UUID NOT NULL,
+					participant_id TEXT NOT NULL,
+					created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+					UNIQUE (session_id, participant_id),
+					UNIQUE (session_id, user_uuid)
+				)`,
+
+				// The latest recovery checkpoint of each started Session, written
+				// with the start and replaced by newer ones. content is opaque
+				// here: the live Runtime encodes and reads it.
+				`CREATE TABLE play_session_checkpoints (
+					id BIGSERIAL PRIMARY KEY,
+					session_id BIGINT NOT NULL UNIQUE,
+					context_revision BIGINT NOT NULL,
+					content BYTEA NOT NULL,
+					created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+					updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+				)`,
+
 				// Idempotency for Session creation. A request is claimed and
 				// completed in the same transaction that creates the Session, so
 				// once committed its outcome is always set.
@@ -93,7 +125,7 @@ func migration20261015000000PlaySessions() *gormigrate.Migration {
 			return nil
 		},
 		Rollback: func(tx *gorm.DB) error {
-			return tx.Exec(`DROP TABLE play_create_session_requests, play_session_join_codes, play_sessions, play_game_versions, play_games`).Error
+			return tx.Exec(`DROP TABLE play_session_checkpoints, play_session_participants, play_create_session_requests, play_session_join_codes, play_sessions, play_game_versions, play_games`).Error
 		},
 	}
 }

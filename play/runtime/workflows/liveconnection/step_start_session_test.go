@@ -18,8 +18,9 @@ import (
 
 func TestStartSession(t *testing.T) {
 	type dependencies struct {
-		starts  *MocksessionStarter
-		sandbox *MockgameSandbox
+		starts    *MocksessionStarter
+		frontends *MockfrontendSigner
+		sandbox   *MockgameSandbox
 	}
 	type test struct {
 		minPlayers int
@@ -62,7 +63,7 @@ func TestStartSession(t *testing.T) {
 	access := sessionpkg.FrontendAccess{URL: "https://storage.example/frontend?sig=abc", SHA256: "9f86d081", ExpiresAt: expiresAt}
 	// eligible also signs the frontend, which follows every eligible check.
 	eligible := func(deps dependencies) *gomock.Call {
-		return deps.starts.EXPECT().FrontendAccess(ctx, gameVersionUUID).Return(access, nil).
+		return deps.frontends.EXPECT().FrontendAccess(ctx, gameVersionUUID).Return(access, nil).
 			After(deps.starts.EXPECT().CheckStartEligibility(ctx, sessionUUID, creatorUUID, 2).
 				Return(sessionpkg.StartEligibility{Outcome: sessionpkg.StartEligible, GameVersionUUID: gameVersionUUID, Script: script}, nil))
 	}
@@ -85,11 +86,10 @@ func TestStartSession(t *testing.T) {
 			deps.sandbox.EXPECT().Start(ctx, contextID, input).Return(initial, nil),
 		}, projects(deps, contextID)...)
 	}
+	commit := sessionpkg.StartCommit{Participants: roster, Checkpoint: sessionpkg.Checkpoint{ContextRevision: 1, Content: encoded}}
 	commits := func(deps dependencies) []any {
 		return []any{
-			deps.starts.EXPECT().StoreCheckpoint(ctx, sessionUUID, encoded).Return("checkpoints/ref-1", nil),
-			deps.starts.EXPECT().CommitStart(ctx, sessionUUID, creatorUUID, sessionpkg.StartCommit{Participants: roster, CheckpointRef: "checkpoints/ref-1"}).
-				Return(sessionpkg.CommitStartCommitted, nil),
+			deps.starts.EXPECT().CommitStart(ctx, sessionUUID, creatorUUID, commit).Return(sessionpkg.CommitStartCommitted, nil),
 		}
 	}
 
@@ -158,7 +158,7 @@ func TestStartSession(t *testing.T) {
 			gomock.InOrder(
 				deps.starts.EXPECT().CheckStartEligibility(ctx, sessionUUID, creatorUUID, 2).
 					Return(sessionpkg.StartEligibility{Outcome: sessionpkg.StartEligible, GameVersionUUID: gameVersionUUID, Script: script}, nil),
-				deps.starts.EXPECT().FrontendAccess(ctx, gameVersionUUID).Return(sessionpkg.FrontendAccess{}, errors.New("signing key unavailable")),
+				deps.frontends.EXPECT().FrontendAccess(ctx, gameVersionUUID).Return(sessionpkg.FrontendAccess{}, errors.New("signing key unavailable")),
 			)
 			return test{minPlayers: 1, expectedErr: true, expectedLobby: true}
 		},
@@ -178,20 +178,10 @@ func TestStartSession(t *testing.T) {
 			)
 			return test{minPlayers: 1, expectedErr: true, expectedLobby: true}
 		},
-		"storing_the_checkpoint_fails": func(t *testing.T, deps dependencies) test {
-			calls := append([]any{eligible(deps)}, gameStarts(deps, "context-1")...)
-			gomock.InOrder(append(calls,
-				deps.starts.EXPECT().StoreCheckpoint(ctx, sessionUUID, encoded).Return("", errors.New("bucket unavailable")),
-				deps.sandbox.EXPECT().DiscardContext(ctx, "context-1").Return(nil),
-			)...)
-			return test{minPlayers: 1, expectedErr: true, expectedLobby: true}
-		},
 		"session_left_its_lobby_before_the_commit": func(t *testing.T, deps dependencies) test {
 			calls := append([]any{eligible(deps)}, gameStarts(deps, "context-1")...)
 			gomock.InOrder(append(calls,
-				deps.starts.EXPECT().StoreCheckpoint(ctx, sessionUUID, encoded).Return("checkpoints/ref-1", nil),
-				deps.starts.EXPECT().CommitStart(ctx, sessionUUID, creatorUUID, sessionpkg.StartCommit{Participants: roster, CheckpointRef: "checkpoints/ref-1"}).
-					Return(sessionpkg.CommitStartNotInLobby, nil),
+				deps.starts.EXPECT().CommitStart(ctx, sessionUUID, creatorUUID, commit).Return(sessionpkg.CommitStartNotInLobby, nil),
 				deps.sandbox.EXPECT().DiscardContext(ctx, "context-1").Return(nil),
 			)...)
 			return test{minPlayers: 1, expectedOutcome: runtime.StartNotInLobby, expectedLobby: true}
@@ -199,9 +189,7 @@ func TestStartSession(t *testing.T) {
 		"commit_fails": func(t *testing.T, deps dependencies) test {
 			calls := append([]any{eligible(deps)}, gameStarts(deps, "context-1")...)
 			gomock.InOrder(append(calls,
-				deps.starts.EXPECT().StoreCheckpoint(ctx, sessionUUID, encoded).Return("checkpoints/ref-1", nil),
-				deps.starts.EXPECT().CommitStart(ctx, sessionUUID, creatorUUID, sessionpkg.StartCommit{Participants: roster, CheckpointRef: "checkpoints/ref-1"}).
-					Return(sessionpkg.CommitStartOutcome(""), errors.New("database down")),
+				deps.starts.EXPECT().CommitStart(ctx, sessionUUID, creatorUUID, commit).Return(sessionpkg.CommitStartOutcome(""), errors.New("database down")),
 				deps.sandbox.EXPECT().DiscardContext(ctx, "context-1").Return(nil),
 			)...)
 			return test{minPlayers: 1, expectedErr: true, expectedLobby: true}
@@ -211,9 +199,9 @@ func TestStartSession(t *testing.T) {
 	for name, setup := range tests {
 		t.Run(name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
-			deps := dependencies{starts: NewMocksessionStarter(ctrl), sandbox: NewMockgameSandbox(ctrl)}
+			deps := dependencies{starts: NewMocksessionStarter(ctrl), frontends: NewMockfrontendSigner(ctrl), sandbox: NewMockgameSandbox(ctrl)}
 			tc := setup(t, deps)
-			manager := New(nil, nil, nil, deps.starts, deps.sandbox)
+			manager := New(nil, nil, nil, deps.starts, deps.frontends, deps.sandbox)
 			manager.seeds = func() uint64 { return seed }
 			sessionController, ok, err := controller.NewRegistry().ControllerFor(ctx, sessionUUID, 1, func(context.Context) (controller.Manifest, error) {
 				return controller.Manifest{MinPlayers: tc.minPlayers, MaxPlayers: 4}, nil

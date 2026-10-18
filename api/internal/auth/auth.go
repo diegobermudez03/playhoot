@@ -18,7 +18,7 @@ import (
 	"github.com/diegobermudez03/playhoot/monitoring/metrics"
 )
 
-//go:generate mockgen -package=auth -destination=authorizer_mock_test.go . authorizer
+//go:generate mockgen -package=auth -destination=auth_mock_test.go . authorizer
 
 // authorizer resolves a token to the caller's UserUUID and decides whether
 // they may perform operation. A refusal is a decision, not an error.

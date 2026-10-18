@@ -12,7 +12,7 @@ import (
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
 
-//go:generate mockgen -package=liveconnection -destination=manifest_loader_mock_test.go . manifestLoader
+//go:generate mockgen -package=liveconnection -destination=manager_mock_test.go . manifestLoader
 
 // manifestLoader reads the manifest of the game version a Session is pinned
 // to, which a new controller keeps for the Session's lifetime.
@@ -26,6 +26,7 @@ type Manager struct {
 	playerJoins playerJoinChecker
 	manifests   manifestLoader
 	starts      sessionStarter
+	frontends   frontendSigner
 	sandbox     gameSandbox
 	controllers *controller.Registry
 	// seeds returns the seed of a starting game's randomness.
@@ -34,13 +35,14 @@ type Manager struct {
 
 // New constructs a Manager. adminJoins and playerJoins decide who may join a
 // Session; manifests describe the game a Session plays; starts records a
-// Session's start and sandbox runs its game.
-func New(adminJoins adminJoinChecker, playerJoins playerJoinChecker, manifests manifestLoader, starts sessionStarter, sandbox gameSandbox) *Manager {
+// Session's start, frontends grant its game's frontend and sandbox runs it.
+func New(adminJoins adminJoinChecker, playerJoins playerJoinChecker, manifests manifestLoader, starts sessionStarter, frontends frontendSigner, sandbox gameSandbox) *Manager {
 	return &Manager{
 		adminJoins:  adminJoins,
 		playerJoins: playerJoins,
 		manifests:   manifests,
 		starts:      starts,
+		frontends:   frontends,
 		sandbox:     sandbox,
 		controllers: controller.NewRegistry(),
 		seeds:       randomSeed,

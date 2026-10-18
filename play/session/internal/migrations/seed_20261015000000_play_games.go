@@ -8,7 +8,8 @@ import (
 // Known test-data identifiers, so a person testing by hand can call the API
 // with them.
 const (
-	// seedPlayableGameUUID is a Game whose current version is EXECUTABLE:
+	// seedPlayableGameUUID is a Game whose current version is EXECUTABLE,
+	// with the seed backend script and frontend package (SeedObjects):
 	// creating a Session from it succeeds. It also has a newer DRAFT
 	// version, which must not affect Session creation.
 	seedPlayableGameUUID = "11111111-1111-4111-8111-111111111111"
@@ -34,9 +35,16 @@ func seed20261015000000PlayGames() *gormigrate.Migration {
 			}{
 				{sql: `INSERT INTO play_games (game_uuid) VALUES (?), (?)`, args: []any{seedPlayableGameUUID, seedUnavailableGameUUID}},
 				{
-					sql: `INSERT INTO play_game_versions (uuid, game_id, status, manifest, executable_at)
-						SELECT ?, id, 'EXECUTABLE', ?, CURRENT_TIMESTAMP FROM play_games WHERE game_uuid = ?`,
-					args: []any{"11111111-1111-4111-8111-0000000000a1", seedManifest, seedPlayableGameUUID},
+					sql: `INSERT INTO play_game_versions (uuid, game_id, status, manifest,
+							script_object_key, script_sha256, script_size,
+							frontend_object_key, frontend_sha256, frontend_size, executable_at)
+						SELECT ?, id, 'EXECUTABLE', ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP FROM play_games WHERE game_uuid = ?`,
+					args: []any{
+						"11111111-1111-4111-8111-0000000000a1", seedManifest,
+						seedBackendScriptLocator.ObjectKey, seedBackendScriptLocator.SHA256, seedBackendScriptLocator.Size,
+						seedFrontendPackageLocator.ObjectKey, seedFrontendPackageLocator.SHA256, seedFrontendPackageLocator.Size,
+						seedPlayableGameUUID,
+					},
 				},
 				{
 					sql: `INSERT INTO play_game_versions (uuid, game_id, status, manifest)

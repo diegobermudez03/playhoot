@@ -14,7 +14,7 @@ import (
 	internalrepo "github.com/diegobermudez03/playhoot/play/session/usecases/checkadminjoin/internal/repo"
 )
 
-//go:generate mockgen -package=checkadminjoin -destination=session_finder_mock_test.go . sessionFinder
+//go:generate mockgen -package=checkadminjoin -destination=service_mock_test.go . sessionFinder
 
 // sessionFinder reads the Session facts the decision needs.
 type sessionFinder interface {

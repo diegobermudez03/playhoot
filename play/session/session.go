@@ -164,18 +164,27 @@ type StartParticipant struct {
 type StartCommit struct {
 	Participants []StartParticipant
 
-	// CheckpointRef locates the initial recovery checkpoint, already stored.
-	CheckpointRef string
+	// Checkpoint is the initial recovery checkpoint, stored in the same
+	// transaction, so a RUNNING Session is always recoverable.
+	Checkpoint Checkpoint
+}
+
+// Checkpoint is a recovery checkpoint as the live Runtime encoded it; Content
+// is opaque to this domain.
+type Checkpoint struct {
+	ContextRevision int64
+	Content         []byte
 }
 
 // CommitStartOutcome is the decision a CommitStart call reached.
 type CommitStartOutcome string
 
 const (
-	// CommitStartCommitted means the Session is RUNNING with the roster.
+	// CommitStartCommitted means the Session is RUNNING with the roster and
+	// checkpoint, and its join code no longer works.
 	CommitStartCommitted CommitStartOutcome = "committed"
 
 	// CommitStartNotInLobby means the Session left its lobby meanwhile, so
-	// nothing was recorded and the stored checkpoint is an orphan.
+	// nothing was recorded.
 	CommitStartNotInLobby CommitStartOutcome = "not_in_lobby"
 )

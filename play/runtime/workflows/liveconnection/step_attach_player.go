@@ -9,7 +9,7 @@ import (
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
 
-//go:generate mockgen -package=liveconnection -destination=player_join_checker_mock_test.go . playerJoinChecker
+//go:generate mockgen -package=liveconnection -destination=step_attach_player_mock_test.go . playerJoinChecker
 
 // playerJoinChecker is the durable Session's side of admitting a player.
 type playerJoinChecker interface {

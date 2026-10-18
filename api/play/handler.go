@@ -15,11 +15,7 @@ import (
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
 
-//go:generate mockgen -package=play -destination=session_creator_mock_test.go . sessionCreator
-//go:generate mockgen -package=play -destination=owner_locator_mock_test.go . ownerLocator
-//go:generate mockgen -package=play -destination=admin_attacher_mock_test.go . adminAttacher
-//go:generate mockgen -package=play -destination=player_attacher_mock_test.go . playerAttacher
-//go:generate mockgen -package=play -destination=join_code_resolver_mock_test.go . joinCodeResolver
+//go:generate mockgen -package=play -destination=handler_mock_test.go . sessionCreator,ownerLocator,adminAttacher,playerAttacher,joinCodeResolver
 
 // sessionCreator creates Sessions idempotently per key. A decline is reported
 // through the result's Outcome; a reused key returns

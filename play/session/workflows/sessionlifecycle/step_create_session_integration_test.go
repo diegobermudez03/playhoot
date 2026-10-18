@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm"
 
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
+	"github.com/diegobermudez03/playhoot/play/session/internal/objectstore"
 	"github.com/diegobermudez03/playhoot/play/session/internal/testdb"
 )
 
@@ -350,7 +351,7 @@ func TestCreateSessionIntegration(t *testing.T) {
 
 	for name, setup := range tests {
 		t.Run(name, func(t *testing.T) {
-			manager := New(db)
+			manager := New(db, objectstore.NewFake())
 			manager.now = func() time.Time { return now }
 			tc := setup(t, db, manager)
 			if tc.joinCodes != nil {
@@ -388,7 +389,7 @@ func TestCreateSessionIntegrationConcurrentRetries(t *testing.T) {
 	const calls = 10
 
 	db := testdb.OpenSessionDB(t)
-	manager := New(db)
+	manager := New(db, objectstore.NewFake())
 	userUUID := uuid.NewString()
 	gameUUID, _ := seedIntegrationGame(t, db, "EXECUTABLE")
 

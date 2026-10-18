@@ -15,16 +15,18 @@ import (
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
 
-//go:generate mockgen -package=liveconnection -destination=session_starter_mock_test.go . sessionStarter
-//go:generate mockgen -package=liveconnection -destination=game_sandbox_mock_test.go . gameSandbox
+//go:generate mockgen -package=liveconnection -destination=step_start_session_mock_test.go . sessionStarter,frontendSigner,gameSandbox
 
 // sessionStarter is the durable Session's side of starting a game.
 type sessionStarter interface {
 	CheckStartEligibility(ctx context.Context, sessionUUID string, userUUID string, playerCount int) (sessionpkg.StartEligibility, error)
-	FrontendAccess(ctx context.Context, gameVersionUUID string) (sessionpkg.FrontendAccess, error)
-	StoreCheckpoint(ctx context.Context, sessionUUID string, checkpoint []byte) (string, error)
 	CommitStart(ctx context.Context, sessionUUID string, userUUID string, commit sessionpkg.StartCommit) (sessionpkg.CommitStartOutcome, error)
 	AbortStart(ctx context.Context, sessionUUID string) error
+}
+
+// frontendSigner grants clients access to a game version's frontend package.
+type frontendSigner interface {
+	FrontendAccess(ctx context.Context, gameVersionUUID string) (sessionpkg.FrontendAccess, error)
 }
 
 // gameSandbox runs a game's scripts in execution contexts, one per running
@@ -66,10 +68,6 @@ var (
 	startScriptFailures = metrics.NewCounter(
 		"play_runtime_start_script_failures_total",
 		"Runs of a game's start or first projections that failed in the script.",
-	)
-	orphanCheckpoints = metrics.NewCounter(
-		"play_runtime_orphan_checkpoints_total",
-		"Initial checkpoints stored for a Start the Session did not commit.",
 	)
 )
 
@@ -123,7 +121,7 @@ func (m *Manager) startFrozenLobby(ctx context.Context, sessionController *contr
 		return "", fmt.Errorf("unexpected start eligibility %q", eligibility.Outcome)
 	}
 	// Signed before running the game, so failing to sign wastes no context.
-	access, err := m.starts.FrontendAccess(ctx, eligibility.GameVersionUUID)
+	access, err := m.frontends.FrontendAccess(ctx, eligibility.GameVersionUUID)
 	if err != nil {
 		return "", fmt.Errorf("signing frontend access: %w", err)
 	}
@@ -155,8 +153,8 @@ func (m *Manager) startFrozenLobby(ctx context.Context, sessionController *contr
 	return runtime.SessionStarted, nil
 }
 
-// commitStart stores the initial checkpoint, then makes the Session RUNNING
-// with its roster, so a RUNNING Session is always recoverable.
+// commitStart makes the Session RUNNING with its roster and initial
+// checkpoint, together, so a RUNNING Session is always recoverable.
 func (m *Manager) commitStart(ctx context.Context, sessionUUID string, userUUID string, gameVersionUUID string, participants []runtime.Participant, game controller.Game) (runtime.StartSessionOutcome, error) {
 	participantIDs := make([]string, len(participants))
 	roster := make([]sessionpkg.StartParticipant, len(participants))
@@ -174,11 +172,10 @@ func (m *Manager) commitStart(ctx context.Context, sessionUUID string, userUUID 
 	if err != nil {
 		return "", err
 	}
-	checkpointRef, err := m.starts.StoreCheckpoint(ctx, sessionUUID, encoded)
-	if err != nil {
-		return "", fmt.Errorf("storing initial checkpoint: %w", err)
-	}
-	committed, err := m.starts.CommitStart(ctx, sessionUUID, userUUID, sessionpkg.StartCommit{Participants: roster, CheckpointRef: checkpointRef})
+	committed, err := m.starts.CommitStart(ctx, sessionUUID, userUUID, sessionpkg.StartCommit{
+		Participants: roster,
+		Checkpoint:   sessionpkg.Checkpoint{ContextRevision: game.ContextRevision, Content: encoded},
+	})
 	if err != nil {
 		return "", fmt.Errorf("committing start: %w", err)
 	}
@@ -186,7 +183,6 @@ func (m *Manager) commitStart(ctx context.Context, sessionUUID string, userUUID 
 	case sessionpkg.CommitStartCommitted:
 		return runtime.SessionStarted, nil
 	case sessionpkg.CommitStartNotInLobby:
-		orphanCheckpoints.Inc(ctx)
 		return runtime.StartNotInLobby, nil
 	default:
 		return "", fmt.Errorf("unknown commit start outcome %q", committed)

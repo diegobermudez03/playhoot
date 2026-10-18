@@ -26,6 +26,9 @@ import (
 	"github.com/diegobermudez03/playhoot/play/session/usecases/checkplayerjoin"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/loadruntimemanifest"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/resolvejoincode"
+	sessionmigration "github.com/diegobermudez03/playhoot/play/session/migration"
+	"github.com/diegobermudez03/playhoot/play/session/storage"
+	"github.com/diegobermudez03/playhoot/play/session/usecases/frontendaccess"
 	"github.com/diegobermudez03/playhoot/play/session/workflows/sessionlifecycle"
 	"github.com/joho/godotenv"
 	"gorm.io/driver/postgres"
@@ -45,6 +48,12 @@ type envVariables struct {
 	// WebSocketAllowedOrigins are extra origin hosts browser pages may open
 	// live connections from. Optional.
 	WebSocketAllowedOrigins []string
+
+	// GCSProjectID and GCSBucket name the object storage of game version
+	// content. Optional: without them every storage call fails. An emulator
+	// is selected with STORAGE_EMULATOR_HOST.
+	GCSProjectID string
+	GCSBucket    string
 }
 
 // shutdownTimeout bounds how long in-flight requests get to finish once the
@@ -84,14 +93,30 @@ func run() error {
 	if err := PostgresMigrate(db); err != nil {
 		return fmt.Errorf("running PostgreSQL migrations: %w", err)
 	}
+	store, closeStore, err := storage.Open(context.Background(), envVars.GCSProjectID, envVars.GCSBucket)
+	if err != nil {
+		return fmt.Errorf("opening object storage: %w", err)
+	}
+	defer func() {
+		if err := closeStore(); err != nil {
+			log.Printf("closing object storage: %v", err)
+		}
+	}()
+
 	if !strings.EqualFold(envVars.Environment, "production") {
 		if err := PostgresSeed(db); err != nil {
 			return fmt.Errorf("seeding PostgreSQL test data: %w", err)
 		}
+		if envVars.GCSBucket != "" {
+			if err := sessionmigration.SeedObjects(context.Background(), store); err != nil {
+				return fmt.Errorf("seeding object storage test data: %w", err)
+			}
+		}
 	}
 
-	playLifecycle := playlifecycle.New(checkplayability.New(), sessionlifecycle.New(db))
-	liveConnections := liveconnection.New(checkadminjoin.New(db), checkplayerjoin.New(db), loadruntimemanifest.New(db), unwiredSessionStart{}, unwiredSandbox{})
+	sessionLifecycle := sessionlifecycle.New(db, store)
+	playLifecycle := playlifecycle.New(checkplayability.New(), sessionLifecycle)
+	liveConnections := liveconnection.New(checkadminjoin.New(db), checkplayerjoin.New(db), loadruntimemanifest.New(db), sessionLifecycle, frontendaccess.New(db, store), unwiredSandbox{})
 	server := api.NewServer(
 		authorize.New(),
 		createguest.New(),
@@ -167,6 +192,9 @@ func readEnvVariables() (*envVariables, error) {
 		HTTPPort:         strings.TrimSpace(os.Getenv("HTTP_PORT")),
 
 		WebSocketAllowedOrigins: splitList(os.Getenv("WEBSOCKET_ALLOWED_ORIGINS")),
+
+		GCSProjectID: strings.TrimSpace(os.Getenv("GCS_PROJECT_ID")),
+		GCSBucket:    strings.TrimSpace(os.Getenv("GCS_BUCKET")),
 	}
 
 	required := []struct {

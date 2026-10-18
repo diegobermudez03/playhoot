@@ -9,7 +9,7 @@ import (
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
 
-//go:generate mockgen -package=liveconnection -destination=admin_join_checker_mock_test.go . adminJoinChecker
+//go:generate mockgen -package=liveconnection -destination=step_attach_admin_mock_test.go . adminJoinChecker
 
 // adminJoinChecker is the durable Session's side of admitting an admin.
 type adminJoinChecker interface {

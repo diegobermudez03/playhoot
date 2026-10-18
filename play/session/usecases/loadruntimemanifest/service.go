@@ -16,7 +16,7 @@ import (
 	internalrepo "github.com/diegobermudez03/playhoot/play/session/usecases/loadruntimemanifest/internal/repo"
 )
 
-//go:generate mockgen -package=loadruntimemanifest -destination=manifest_finder_mock_test.go . manifestFinder
+//go:generate mockgen -package=loadruntimemanifest -destination=service_mock_test.go . manifestFinder
 
 // manifestFinder reads a Session's raw manifest.
 type manifestFinder interface {

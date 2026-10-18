@@ -12,7 +12,7 @@ import (
 	internalrepo "github.com/diegobermudez03/playhoot/play/session/usecases/resolvejoincode/internal/repo"
 )
 
-//go:generate mockgen -package=resolvejoincode -destination=join_code_finder_mock_test.go . joinCodeFinder
+//go:generate mockgen -package=resolvejoincode -destination=service_mock_test.go . joinCodeFinder
 
 // joinCodeFinder reads active join codes.
 type joinCodeFinder interface {
