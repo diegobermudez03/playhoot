@@ -12,23 +12,26 @@ import (
 const (
 	// seedSpaceDriftGameUUID is a playable Game whose EXECUTABLE version runs
 	// seedSpaceDriftScript: ships flying in a shared arena, built to exercise
-	// SAMPLE transmission and replication to players.
+	// SAMPLE and COMMAND transmission and replication to players.
 	seedSpaceDriftGameUUID    = "33333333-3333-4333-8333-333333333333"
 	seedSpaceDriftVersionUUID = "33333333-3333-4333-8333-0000000000c1"
 
 	// seedSpaceDriftManifest lets one to eight players fly with a move stick
-	// and a boost button.
-	seedSpaceDriftManifest = `{"schema_version":1,"players":{"min":1,"max":8},"inputs":{"move":{"type":"vector2"},"boost":{"type":"boolean"}}}`
+	// and a boost button, and teleport to a point of the arena.
+	seedSpaceDriftManifest = `{"schema_version":1,"players":{"min":1,"max":8},` +
+		`"inputs":{"move":{"type":"vector2"},"boost":{"type":"boolean"}},` +
+		`"commands":{"teleport":{"payload":{"x":{"type":"number","min":20,"max":980,"default":500},"y":{"type":"number","min":20,"max":980,"default":500}}}}}`
 )
 
 // seedSpaceDriftScript is Space Drift's backend script, test content rather
 // than a real game; its opening comment explains the rules.
 const seedSpaceDriftScript = `// Space Drift: each ship accelerates along its move stick (twice as hard while
 // boosting), slows down by drag and bounces off the arena walls; flying through
-// the star scores a point and moves the star somewhere random. Without
+// the star scores a point and moves the star somewhere random. The teleport
+// command moves a ship to a point and stops it, at most once every three
+// seconds: earlier, the game answers COOLDOWN and nothing changes. Without
 // update(), the world only advances when a batch runs, so the state records how
-// far it was simulated and every batch integrates up to each transition's
-// time, then up to the batch's.
+// far it was simulated and every operation integrates up to its time.
 const ARENA_SIZE = 1000;
 const THRUST = 400;
 const BOOST_FACTOR = 2;
@@ -39,6 +42,7 @@ const SHIP_RADIUS = 20;
 const STAR_RADIUS = 15;
 const STEP_MS = 20;
 const MAX_STEPS = 500;
+const TELEPORT_COOLDOWN_MS = 3000;
 
 function start(participants, context) {
 	const ships = {};
@@ -52,6 +56,7 @@ function start(participants, context) {
 			thrust: [0, 0],
 			boost: false,
 			score: 0,
+			teleportReadyAt: 0,
 		};
 	});
 	return { state: { simulatedThrough: context.sessionTime, ships: ships, star: spawnStar(), collected: 0 } };
@@ -69,6 +74,21 @@ function samples(state, transitions, context) {
 	return { state: world };
 }
 
+function command(state, cmd, context) {
+	const world = copyWorld(state);
+	simulate(world, cmd.sessionTime);
+	const ship = world.ships[cmd.participant];
+	if (cmd.sessionTime < ship.teleportReadyAt) {
+		return { state: world, response: { ok: false, reason: "COOLDOWN", retryInMs: ship.teleportReadyAt - cmd.sessionTime } };
+	}
+	ship.x = cmd.payload.x;
+	ship.y = cmd.payload.y;
+	ship.vx = 0;
+	ship.vy = 0;
+	ship.teleportReadyAt = cmd.sessionTime + TELEPORT_COOLDOWN_MS;
+	return { state: world, response: { ok: true, x: ship.x, y: ship.y } };
+}
+
 function project(state, participant, context) {
 	const me = state.ships[participant];
 	const others = {};
@@ -81,7 +101,10 @@ function project(state, participant, context) {
 	return {
 		arena: ARENA_SIZE,
 		simulatedThrough: state.simulatedThrough,
-		me: { x: round(me.x), y: round(me.y), vx: round(me.vx), vy: round(me.vy), boost: me.boost, score: me.score },
+		me: {
+			x: round(me.x), y: round(me.y), vx: round(me.vx), vy: round(me.vy), boost: me.boost, score: me.score,
+			teleportReadyAt: me.teleportReadyAt,
+		},
 		others: others,
 		star: { x: round(state.star.x), y: round(state.star.y) },
 		collected: state.collected,
@@ -155,6 +178,7 @@ function copyWorld(state) {
 		ships[id] = {
 			x: ship.x, y: ship.y, vx: ship.vx, vy: ship.vy,
 			thrust: [ship.thrust[0], ship.thrust[1]], boost: ship.boost, score: ship.score,
+			teleportReadyAt: ship.teleportReadyAt,
 		};
 	}
 	return { simulatedThrough: state.simulatedThrough, ships: ships, star: { x: state.star.x, y: state.star.y }, collected: state.collected };

@@ -14,4 +14,20 @@ type Capture struct {
 
 	// Participants are the Session's ParticipantIDs, in order.
 	Participants []string
+
+	// CommandResponses are the COMMAND responses the boundary produced, in
+	// timeline order.
+	CommandResponses []CommandResponse
+}
+
+// CommandResponse is what a COMMAND answered. Only ParticipantID, who sent
+// it, may ever see it: a replay must not show it from another perspective.
+type CommandResponse struct {
+	ParticipantID string
+	SessionTimeMs int64
+	// Order places it among the timeline operations of the same time.
+	Order uint64
+
+	// Response is the game's answer, as JSON.
+	Response []byte
 }

@@ -147,26 +147,37 @@ func (h *Host) Start(ctx context.Context, contextID string, input StartInput) (S
 	return StartResult{Outcome: ScriptSucceeded, State: resp.State, PRNGState: resp.PRNGState, ContextRevision: resp.ContextRevision}, nil
 }
 
-// Samples runs the game's samples() in contextID with input's transitions.
-func (h *Host) Samples(ctx context.Context, contextID string, input SamplesInput) (ExecutionResult, error) {
+// Execute runs batch's operations in contextID, in order, as one atomic
+// step.
+func (h *Host) Execute(ctx context.Context, contextID string, batch Batch) (ExecutionResult, error) {
 	process, err := h.context(contextID)
 	if err != nil {
 		return ExecutionResult{}, err
 	}
-	transitions := make([]workerTransition, len(input.Transitions))
-	for i, transition := range input.Transitions {
-		transitions[i] = workerTransition{Participant: transition.ParticipantID, Inputs: transition.Inputs, SessionTime: transition.SessionTimeMs}
+	steps := make([]workerStep, len(batch.Operations))
+	for i, operation := range batch.Operations {
+		steps[i] = workerStep{SessionTime: operation.SessionTimeMs}
+		for _, transition := range operation.Transitions {
+			steps[i].Transitions = append(steps[i].Transitions, workerTransition{Participant: transition.ParticipantID, Inputs: transition.Inputs, SessionTime: transition.SessionTimeMs})
+		}
+		if command := operation.Command; command != nil {
+			steps[i].Command = &workerCommand{Participant: command.ParticipantID, Name: command.Name, Payload: command.Payload, SessionTime: operation.SessionTimeMs}
+		}
 	}
-	resp, err := h.call(ctx, process, workerRequest{Operation: workerOperationSamples, Transitions: transitions, SessionTimeMs: input.SessionTimeMs})
+	resp, err := h.call(ctx, process, workerRequest{Operation: workerOperationExecute, Steps: steps})
 	switch {
 	case errors.Is(err, errBudgetExceeded):
-		return ExecutionResult{Outcome: ScriptFailed, ScriptError: "samples(): " + err.Error()}, nil
+		return ExecutionResult{Outcome: ScriptFailed, ScriptError: "execution: " + err.Error()}, nil
 	case err != nil:
 		return ExecutionResult{}, err
 	case resp.ScriptError != nil:
 		return ExecutionResult{Outcome: ScriptFailed, ScriptError: *resp.ScriptError}, nil
 	}
-	return ExecutionResult{Outcome: ScriptSucceeded, State: resp.State, PRNGState: resp.PRNGState, ContextRevision: resp.ContextRevision}, nil
+	result := ExecutionResult{Outcome: ScriptSucceeded, State: resp.State, PRNGState: resp.PRNGState, ContextRevision: resp.ContextRevision}
+	for _, response := range resp.CommandResponses {
+		result.CommandResponses = append(result.CommandResponses, response)
+	}
+	return result, nil
 }
 
 // Restore sets contextID at snapshot, the confirmed state of a game already
@@ -297,7 +308,7 @@ func (h *Host) call(ctx context.Context, process *contextProcess, req workerRequ
 	if err == nil {
 		process.memoryBytes.Store(resp.MemoryBytes)
 		workerMemory.Observe(ctx, float64(resp.MemoryBytes))
-		if outcome == callSucceeded && (req.Operation == workerOperationStart || req.Operation == workerOperationSamples || req.Operation == workerOperationProject) {
+		if outcome == callSucceeded && (req.Operation == workerOperationStart || req.Operation == workerOperationExecute || req.Operation == workerOperationProject) {
 			outputSize.Observe(ctx, float64(len(resp.State)+len(resp.View)), operation)
 		}
 		h.recordContexts(ctx)

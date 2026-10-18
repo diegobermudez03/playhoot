@@ -127,14 +127,8 @@ func (c *sessionController) joinLobby(ctx context.Context, userUUID string) (run
 		Sample: func(ctx context.Context, sample runtime.Sample) error {
 			return c.acceptSample(ctx, player, sample)
 		},
-		Command: func(_ context.Context, command runtime.Command) (runtime.CommandResult, error) {
-			s := c.lock()
-			defer c.unlock()
-			if s.phase == phaseRunning {
-				// Placeholder: running a command in a game is not built.
-				return runtime.CommandResult{}, ErrNotImplemented
-			}
-			return runtime.CommandResult{Token: command.Token, Outcome: runtime.CommandNotRunning}, nil
+		Command: func(ctx context.Context, command runtime.Command) (runtime.CommandResult, error) {
+			return c.acceptCommand(ctx, player, command)
 		},
 		// Placeholder: does nothing, since there is no view before the game runs.
 		Resync: func(context.Context) error {

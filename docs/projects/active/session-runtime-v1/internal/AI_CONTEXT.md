@@ -1,12 +1,12 @@
 Process: Project execution (session-runtime-v1), human-directed implementation
 Topic: Real-time Session Runtime per plans/session_runtime architecture plan
-Current stage: Create Session completed and verified (2026-10-15); waiting for the human's next instruction
+Current stage: COMMAND protocol completed and verified (2026-10-18); waiting for the human's next instruction
 Current execution surface: CODEBASE AGENT
 Related durable artifacts: docs/projects/active/session-runtime-v1/PROJECT.md, docs/projects/active/session-runtime-v1/CHECKLIST.md, plans/session_runtime/Playhoot_Session_Runtime_Architecture_Plan_with_TOC.docx, play/docs/decisions/SESSION-ADR-0028-real-time-session-runtime-supersedes-discrete-turn-architecture.md
 Blocked by: nothing
 Next action: wait for the human's next instruction
-Last durable checkpoint: Create Session completed end to end, docs synced (FLOWS, CROSS_DOMAIN_FLOWS, SYSTEM_MAP, DATA_MODEL, CURRENT_STATE, play README), checklist D ticked (2026-10-15)
-Last updated: 2026-10-15
+Last durable checkpoint: COMMAND protocol completed end to end, CHECKLIST J and CURRENT_STATE updated (2026-10-18); the progress notes below stop at 2026-10-15, CHECKLIST.md and PROJECT.md hold everything since
+Last updated: 2026-10-18
 
 ## Working agreement (human decisions)
 
@@ -33,3 +33,4 @@ Last updated: 2026-10-15
 - The plan lives only as a .docx. To read it: copy it to the scratchpad, unzip, and extract `word/document.xml` text. Promotion to durable owners is pending a human decision (see PROJECT.md).
 - Domain directory is `play/` in the checkout although docs say `session/`.
 - Existing helpers: `play/runtime/sandbox` (QuickJS/WASM worker), `play/session/internal/objectstore`, empty migrations registry. `monitoring/` has only `alerts.go` (no metrics yet). Logging standard: `docs/engineering/standards/logging.md`.
+- Found 2026-10-18, not acted on: the Space Drift seed script fails `scriptcheck.Validate` (18 violations, mutations of its copied world in start/samples, and now command); the validator is conservative and nothing calls it yet, but a real publishing flow would reject this seed as written.

@@ -16,7 +16,7 @@ type gameSandbox interface {
 	CreateContext(ctx context.Context, spec sandbox.ContextSpec) (string, error)
 	Start(ctx context.Context, contextID string, input sandbox.StartInput) (sandbox.StartResult, error)
 	Restore(ctx context.Context, contextID string, snapshot sandbox.Snapshot) (sandbox.RestoreResult, error)
-	Samples(ctx context.Context, contextID string, input sandbox.SamplesInput) (sandbox.ExecutionResult, error)
+	Execute(ctx context.Context, contextID string, batch sandbox.Batch) (sandbox.ExecutionResult, error)
 	Project(ctx context.Context, contextID string, participantID string) (sandbox.ProjectResult, error)
 	DiscardContext(ctx context.Context, contextID string) error
 }

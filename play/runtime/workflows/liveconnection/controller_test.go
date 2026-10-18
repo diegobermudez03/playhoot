@@ -213,7 +213,7 @@ func TestRun(t *testing.T) {
 		participants, _, ok := controller.beginStart()
 		require.True(t, ok)
 		controller.contextID = "context-1"
-		controller.completeStart(participants, Game{ContextRevision: 1, State: []byte(`{}`)}, runtime.GameFrontend{}, map[string][]byte{"P1": []byte(`{}`)})
+		controller.completeStart(participants, Game{ContextRevision: 1, State: []byte(`{}`)}, runtime.GameFrontend{}, map[string][]byte{"P1": []byte(`{}`)}, nil)
 		_, ok = player.NextView(context.Background())
 		require.True(t, ok, "the first FULL view")
 		go controller.run()

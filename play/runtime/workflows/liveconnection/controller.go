@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/diegobermudez03/playhoot/logging"
+	"github.com/diegobermudez03/playhoot/play/internal/business/commands"
 	"github.com/diegobermudez03/playhoot/play/internal/business/inputs"
 	"github.com/diegobermudez03/playhoot/play/runtime"
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
@@ -35,6 +36,9 @@ type Manifest struct {
 
 	// Inputs are what the game's SAMPLEs carry; empty means it takes none.
 	Inputs inputs.Schema
+
+	// Commands are the COMMANDs the game accepts and their payloads.
+	Commands commands.Catalog
 }
 
 // Game is the confirmed state of a running game: everything needed to
@@ -146,11 +150,12 @@ func newSessionController(root context.Context, sessionUUID string, epoch int64,
 		deps:        deps,
 		root:        root,
 		state: liveState{
-			now:     deps.now,
-			phase:   phaseLobby,
-			admins:  make(map[string]*connection),
-			players: make(map[string]*connection),
-			inputs:  make(map[string]*participantInputs),
+			now:      deps.now,
+			phase:    phaseLobby,
+			admins:   make(map[string]*connection),
+			players:  make(map[string]*connection),
+			inputs:   make(map[string]*participantInputs),
+			commands: make(map[string]*participantCommands),
 		},
 		operations: make(chan func()),
 		flush:      make(chan struct{}, 1),
@@ -171,22 +176,35 @@ func (c *sessionController) loadManifest(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("loading runtime manifest: %w", err)
 	}
-	declarations := make([]inputs.Declaration, len(loaded.Inputs))
-	for i, input := range loaded.Inputs {
+	declarations := inputDeclarations(loaded.Inputs)
+	schema, err := inputs.NewSchema(declarations)
+	if err != nil {
+		return fmt.Errorf("reading the manifest's inputs: %w", err)
+	}
+	declaredCommands := make([]commands.Declaration, len(loaded.Commands))
+	for i, command := range loaded.Commands {
+		declaredCommands[i] = commands.Declaration{Name: command.Name, Payload: inputDeclarations(command.Payload)}
+	}
+	catalog, err := commands.NewCatalog(declaredCommands)
+	if err != nil {
+		return fmt.Errorf("reading the manifest's commands: %w", err)
+	}
+	s := c.lock()
+	s.manifest = Manifest{MaxPlayers: loaded.MaxPlayers, Inputs: schema, Commands: catalog}
+	c.unlock()
+	c.manifestLoaded = true
+	return nil
+}
+
+func inputDeclarations(declared []sessionpkg.RuntimeInput) []inputs.Declaration {
+	declarations := make([]inputs.Declaration, len(declared))
+	for i, input := range declared {
 		declarations[i] = inputs.Declaration{
 			Name: input.Name, Type: inputs.Type(input.Type), Nullable: input.Nullable,
 			Min: input.Min, Max: input.Max, Values: input.Values, Default: input.Default,
 		}
 	}
-	schema, err := inputs.NewSchema(declarations)
-	if err != nil {
-		return fmt.Errorf("reading the manifest's inputs: %w", err)
-	}
-	s := c.lock()
-	s.manifest = Manifest{MaxPlayers: loaded.MaxPlayers, Inputs: schema}
-	c.unlock()
-	c.manifestLoaded = true
-	return nil
+	return declarations
 }
 
 // lock takes the controller's state until unlock.
@@ -285,6 +303,9 @@ func (c *sessionController) end(s *liveState, reason runtime.EndReason) {
 	s.phase = phaseEnded
 	s.lobby = nil
 	s.timeline = nil
+	for _, tokens := range s.commands {
+		tokens.abandonPending()
+	}
 	for id, admin := range s.admins {
 		admin.end(reason)
 		delete(s.admins, id)
@@ -346,9 +367,34 @@ type liveState struct {
 	baseSessionTimeMs int64
 	// inputs is each participant's SAMPLE ingress, by ParticipantID.
 	inputs map[string]*participantInputs
-	// timeline holds the transitions accepted and not yet executed, in order.
-	timeline  []Transition
+	// commands is each participant's COMMAND tokens, by ParticipantID.
+	commands map[string]*participantCommands
+	// timeline holds the operations accepted and not yet executed, in order.
+	timeline  []Operation
 	nextOrder uint64
+}
+
+// Operation is one entry of the Session's single timeline, at the effective
+// Session time it was accepted; Order breaks ties between operations accepted
+// at the same time. It is a participant's new input state, or their COMMAND
+// when Command is set.
+type Operation struct {
+	ParticipantID string
+	SessionTimeMs int64
+	Order         uint64
+
+	// Inputs is the full input snapshot of an input transition.
+	Inputs inputs.Snapshot
+
+	Command *pendingCommand
+}
+
+// enqueue appends operation to the timeline at the current Session time.
+func (s *liveState) enqueue(operation Operation) {
+	s.nextOrder++
+	operation.SessionTimeMs = s.sessionTime()
+	operation.Order = s.nextOrder
+	s.timeline = append(s.timeline, operation)
 }
 
 // lobbyUpdate is the lobby as its connections see it.

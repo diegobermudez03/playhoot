@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/diegobermudez03/playhoot/play/internal/business/commands"
 	"github.com/diegobermudez03/playhoot/play/internal/business/inputs"
 )
 
@@ -25,7 +26,7 @@ func TestParse(t *testing.T) {
 			return test{raw: `{"schema_version":1,"players":{"min":1,"max":1}}`, expectedManifest: Manifest{MinPlayers: 1, MaxPlayers: 1}}
 		},
 		"unknown_fields_are_ignored": func(t *testing.T) test {
-			return test{raw: `{"schema_version":1,"players":{"min":2,"max":4},"commands":[]}`, expectedManifest: Manifest{MinPlayers: 2, MaxPlayers: 4}}
+			return test{raw: `{"schema_version":1,"players":{"min":2,"max":4},"entrypoints":[]}`, expectedManifest: Manifest{MinPlayers: 2, MaxPlayers: 4}}
 		},
 		"inputs_with_their_defaults": func(t *testing.T) test {
 			return test{
@@ -35,6 +36,21 @@ func TestParse(t *testing.T) {
 					{Name: "move", Type: inputs.Vector2, Default: json.RawMessage(`[0,0]`)},
 				}},
 			}
+		},
+		"commands_with_their_payload_defaults": func(t *testing.T) test {
+			return test{
+				raw: `{"schema_version":1,"players":{"min":1,"max":4},"commands":{"pass":{},"play_card":{"payload":{"card":{"type":"string"}}}}}`,
+				expectedManifest: Manifest{MinPlayers: 1, MaxPlayers: 4, Commands: []commands.Declaration{
+					{Name: "pass"},
+					{Name: "play_card", Payload: []inputs.Declaration{{Name: "card", Type: inputs.String, Default: json.RawMessage(`""`)}}},
+				}},
+			}
+		},
+		"invalid_command_payload": func(t *testing.T) test {
+			return test{raw: `{"schema_version":1,"players":{"min":1,"max":4},"commands":{"pick":{"payload":{"mode":{"type":"enum","values":["a"]}}}}}`, expectedErr: true}
+		},
+		"invalid_command_name": func(t *testing.T) test {
+			return test{raw: `{"schema_version":1,"players":{"min":1,"max":4},"commands":{"play card":{}}}`, expectedErr: true}
 		},
 		"invalid_input": func(t *testing.T) test {
 			return test{raw: `{"schema_version":1,"players":{"min":1,"max":4},"inputs":{"mode":{"type":"enum","values":["walk"]}}}`, expectedErr: true}

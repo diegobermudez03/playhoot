@@ -32,6 +32,14 @@ func TestLoadRuntimeManifest(t *testing.T) {
 				Return([]byte(`{"schema_version":1,"players":{"min":2,"max":6}}`), true, nil)
 			return test{sessionUUID: sessionUUID, expectedManifest: sessionpkg.RuntimeManifest{MinPlayers: 2, MaxPlayers: 6}}
 		},
+		"commands_with_their_payloads": func(t *testing.T, deps dependencies) test {
+			deps.manifests.EXPECT().FindSessionManifest(ctx, sessionUUID).
+				Return([]byte(`{"schema_version":1,"players":{"min":1,"max":2},"commands":{"pass":{},"play_card":{"payload":{"card":{"type":"string"}}}}}`), true, nil)
+			return test{sessionUUID: sessionUUID, expectedManifest: sessionpkg.RuntimeManifest{MinPlayers: 1, MaxPlayers: 2, Commands: []sessionpkg.RuntimeCommand{
+				{Name: "pass"},
+				{Name: "play_card", Payload: []sessionpkg.RuntimeInput{{Name: "card", Type: "string", Default: []byte(`""`)}}},
+			}}}
+		},
 		"invalid_manifest_is_broken_data": func(t *testing.T, deps dependencies) test {
 			deps.manifests.EXPECT().FindSessionManifest(ctx, sessionUUID).
 				Return([]byte(`{"schema_version":1,"players":{"min":3,"max":2}}`), true, nil)

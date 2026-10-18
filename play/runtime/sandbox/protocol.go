@@ -32,7 +32,7 @@ const (
 	// game's script; it is always the first request.
 	workerOperationLoad    workerOperation = "load"
 	workerOperationStart   workerOperation = "start"
-	workerOperationSamples workerOperation = "samples"
+	workerOperationExecute workerOperation = "execute"
 	workerOperationProject workerOperation = "project"
 
 	// workerOperationRestore sets a loaded context at a running game's
@@ -54,11 +54,11 @@ type workerRequest struct {
 	// Participant is set only for workerOperationProject.
 	Participant string `json:"participant,omitempty"`
 
-	// Transitions are set only for workerOperationSamples.
-	Transitions []workerTransition `json:"transitions,omitempty"`
+	// Steps are set only for workerOperationExecute.
+	Steps []workerStep `json:"steps,omitempty"`
 
-	// SessionTimeMs is the Session time a samples batch or a restore brings
-	// the context to.
+	// SessionTimeMs is set only for workerOperationRestore: the Session time
+	// the restored state was reached at.
 	SessionTimeMs int64 `json:"sessionTimeMs,omitempty"`
 
 	// State, PRNGState and ContextRevision are set only for
@@ -66,6 +66,22 @@ type workerRequest struct {
 	State           json.RawMessage `json:"state,omitempty"`
 	PRNGState       []byte          `json:"prngState,omitempty"`
 	ContextRevision int64           `json:"contextRevision,omitempty"`
+}
+
+// workerStep is one operation of an execution batch: transitions for
+// samples(), or one command for command(), at SessionTime.
+type workerStep struct {
+	SessionTime int64              `json:"sessionTime"`
+	Transitions []workerTransition `json:"transitions,omitempty"`
+	Command     *workerCommand     `json:"command,omitempty"`
+}
+
+// workerCommand is one COMMAND, as command() receives it.
+type workerCommand struct {
+	Participant string          `json:"participant"`
+	Name        string          `json:"name"`
+	Payload     json.RawMessage `json:"payload"`
+	SessionTime int64           `json:"sessionTime"`
 }
 
 // workerTransition is one input transition, as samples() receives it.
@@ -86,6 +102,9 @@ type workerResponse struct {
 	PRNGState       []byte          `json:"prngState,omitempty"`
 	ContextRevision int64           `json:"contextRevision,omitempty"`
 	View            json.RawMessage `json:"view,omitempty"`
+
+	// CommandResponses answer an execute request's command steps, in order.
+	CommandResponses []json.RawMessage `json:"commandResponses,omitempty"`
 
 	// MemoryBytes is all the memory the worker process holds after the call.
 	MemoryBytes uint64 `json:"memoryBytes,omitempty"`

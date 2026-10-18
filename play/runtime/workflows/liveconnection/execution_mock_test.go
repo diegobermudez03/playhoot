@@ -70,6 +70,21 @@ func (mr *MockgameSandboxMockRecorder) DiscardContext(ctx, contextID any) *gomoc
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DiscardContext", reflect.TypeOf((*MockgameSandbox)(nil).DiscardContext), ctx, contextID)
 }
 
+// Execute mocks base method.
+func (m *MockgameSandbox) Execute(ctx context.Context, contextID string, batch sandbox.Batch) (sandbox.ExecutionResult, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Execute", ctx, contextID, batch)
+	ret0, _ := ret[0].(sandbox.ExecutionResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Execute indicates an expected call of Execute.
+func (mr *MockgameSandboxMockRecorder) Execute(ctx, contextID, batch any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Execute", reflect.TypeOf((*MockgameSandbox)(nil).Execute), ctx, contextID, batch)
+}
+
 // Project mocks base method.
 func (m *MockgameSandbox) Project(ctx context.Context, contextID, participantID string) (sandbox.ProjectResult, error) {
 	m.ctrl.T.Helper()
@@ -98,21 +113,6 @@ func (m *MockgameSandbox) Restore(ctx context.Context, contextID string, snapsho
 func (mr *MockgameSandboxMockRecorder) Restore(ctx, contextID, snapshot any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Restore", reflect.TypeOf((*MockgameSandbox)(nil).Restore), ctx, contextID, snapshot)
-}
-
-// Samples mocks base method.
-func (m *MockgameSandbox) Samples(ctx context.Context, contextID string, input sandbox.SamplesInput) (sandbox.ExecutionResult, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Samples", ctx, contextID, input)
-	ret0, _ := ret[0].(sandbox.ExecutionResult)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// Samples indicates an expected call of Samples.
-func (mr *MockgameSandboxMockRecorder) Samples(ctx, contextID, input any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Samples", reflect.TypeOf((*MockgameSandbox)(nil).Samples), ctx, contextID, input)
 }
 
 // Start mocks base method.

@@ -172,7 +172,7 @@ func (c *sessionController) startFrozenLobby(ctx context.Context, userUUID strin
 		c.discardContext(ctx)
 		return outcome, err
 	}
-	c.completeStart(participants, game, frontendOf(access), views)
+	c.completeStart(participants, game, frontendOf(access), views, nil)
 	return runtime.SessionStarted, nil
 }
 
@@ -227,7 +227,7 @@ func (c *sessionController) adoptRunningSession(ctx context.Context) (runtime.St
 		c.discardContext(ctx)
 		return "", fmt.Errorf("projecting the restored game: %w", err)
 	}
-	c.completeStart(participants, game, frontendOf(access), views)
+	c.completeStart(participants, game, frontendOf(access), views, saved.ProcessedCommandTokens)
 	startedSessionsAdopted.Inc(ctx)
 	return runtime.StartAlreadyStarted, nil
 }
@@ -383,12 +383,11 @@ func (c *sessionController) cancelStart() {
 	}
 }
 
-// completeStart runs the started game with participants, the roster the
-// durable Session committed: the lobby ends, every connection is told who
-// plays and gets frontend, and each connected participant gets their first
-// FULL view from views, keyed by ParticipantID. A lobby player left out of
-// participants is no longer part of the Session: their connection ends.
-func (c *sessionController) completeStart(participants []runtime.Participant, game Game, frontend runtime.GameFrontend, views map[string][]byte) {
+// completeStart runs the started game with the committed roster: the lobby
+// ends, every connection learns who plays, each participant gets a FULL first
+// view, and keeps the COMMAND tokens processed by them; a lobby player left
+// out of participants is ended.
+func (c *sessionController) completeStart(participants []runtime.Participant, game Game, frontend runtime.GameFrontend, views map[string][]byte, processed map[string][]string) {
 	s := c.lock()
 	defer c.unlock()
 	if s.phase != phaseStarting {
@@ -404,6 +403,7 @@ func (c *sessionController) completeStart(participants []runtime.Participant, ga
 	defaults := s.manifest.Inputs.Defaults()
 	for _, participant := range participants {
 		s.inputs[participant.ParticipantID] = &participantInputs{current: defaults}
+		s.commands[participant.ParticipantID] = newParticipantCommands(processed[participant.ParticipantID])
 	}
 	inRoster := make(map[string]bool, len(participants))
 	for _, participant := range participants {

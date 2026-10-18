@@ -108,8 +108,8 @@ func (w *worker) handle(line []byte) (resp workerResponse) {
 		return w.load(req)
 	case workerOperationStart:
 		return w.start(req)
-	case workerOperationSamples:
-		return w.samples(req)
+	case workerOperationExecute:
+		return w.execute(req)
 	case workerOperationProject:
 		return w.project(req)
 	case workerOperationRestore:
@@ -180,7 +180,7 @@ func (w *worker) start(req workerRequest) workerResponse {
 		w.broken = true
 		return *failure
 	}
-	state, failure := stateOf("start", result)
+	state, _, failure := resultOf("start", result)
 	if failure != nil {
 		w.broken = true
 		return *failure
@@ -196,56 +196,89 @@ func (w *worker) start(req workerRequest) workerResponse {
 	return workerResponse{State: state, PRNGState: encodeRandomState(randomState), ContextRevision: w.revision}
 }
 
-// samples runs the game's samples(state, transitions, context), which must
-// return {state}, bringing the game to the batch's Session time.
-func (w *worker) samples(req workerRequest) workerResponse {
+// execute runs a batch's steps in order on the confirmed state, each at its
+// Session time: samples(state, transitions, context) and
+// command(state, command, context), which return {state} and
+// {state, response}. Nothing of the batch is kept unless every step succeeds.
+func (w *worker) execute(req workerRequest) workerResponse {
 	if !w.started {
 		return fatal("game not started")
 	}
-	if req.SessionTimeMs < w.sessionTimeMs {
-		return fatal("session time cannot go back")
+	if len(req.Steps) == 0 {
+		return fatal("empty batch")
 	}
-	if err := w.setTime(req.SessionTimeMs); err != nil {
-		return fatal(err.Error())
-	}
-	transitionsJSON, err := json.Marshal(req.Transitions)
-	if err != nil {
-		return fatal("encoding transitions: " + err.Error())
-	}
-	result, failure := w.invoke("samples", w.state, string(transitionsJSON), executionContextJSON(req.SessionTimeMs, req.SessionTimeMs-w.sessionTimeMs))
-	if failure != nil {
-		w.broken = true
-		return *failure
-	}
-	state, failure := stateOf("samples", result)
-	if failure != nil {
-		w.broken = true
-		return *failure
+	state := json.RawMessage(w.state)
+	at := w.sessionTimeMs
+	var responses []json.RawMessage
+	for _, step := range req.Steps {
+		if step.SessionTime < at {
+			return fatal("session time cannot go back")
+		}
+		if (len(step.Transitions) > 0) == (step.Command != nil) {
+			return fatal("a step runs either input transitions or one command")
+		}
+		if err := w.setTime(step.SessionTime); err != nil {
+			return fatal(err.Error())
+		}
+		executionContext := executionContextJSON(step.SessionTime, step.SessionTime-at)
+		entrypoint, argument := "samples", any(step.Transitions)
+		if step.Command != nil {
+			entrypoint, argument = "command", step.Command
+		}
+		argumentJSON, err := json.Marshal(argument)
+		if err != nil {
+			return fatal("encoding " + entrypoint + " argument: " + err.Error())
+		}
+		result, failure := w.invoke(entrypoint, string(state), string(argumentJSON), executionContext)
+		if failure != nil {
+			w.broken = true
+			return *failure
+		}
+		next, response, failure := resultOf(entrypoint, result)
+		if failure != nil {
+			w.broken = true
+			return *failure
+		}
+		state = next
+		if step.Command != nil {
+			responses = append(responses, response)
+		}
+		at = step.SessionTime
 	}
 	randomState, err := w.randomState()
 	if err != nil {
 		return fatal(err.Error())
 	}
 	w.state = string(state)
-	w.sessionTimeMs = req.SessionTimeMs
+	w.sessionTimeMs = at
 	w.revision++
-	return workerResponse{State: state, PRNGState: encodeRandomState(randomState), ContextRevision: w.revision}
+	return workerResponse{State: state, PRNGState: encodeRandomState(randomState), ContextRevision: w.revision, CommandResponses: responses}
 }
 
-// stateOf reads the state a mutating entrypoint returned as {state}.
-func stateOf(entrypoint string, result string) (json.RawMessage, *workerResponse) {
+// resultOf reads what a mutating entrypoint returned as {state, response};
+// a missing response is null.
+func resultOf(entrypoint string, result string) (state json.RawMessage, response json.RawMessage, failure *workerResponse) {
 	var shape struct {
-		State json.RawMessage `json:"state"`
+		State    json.RawMessage `json:"state"`
+		Response json.RawMessage `json:"response"`
+	}
+	fail := func(reason string) (json.RawMessage, json.RawMessage, *workerResponse) {
+		failure := scriptFailure(reason)
+		return nil, nil, &failure
 	}
 	if err := json.Unmarshal([]byte(result), &shape); err != nil || len(shape.State) == 0 || string(shape.State) == "null" {
-		failure := scriptFailure(entrypoint + "() must return an object with a state")
-		return nil, &failure
+		return fail(entrypoint + "() must return an object with a state")
 	}
 	if len(shape.State) > defaultMaxOutputBytes {
-		failure := scriptFailure(fmt.Sprintf("%s() returned a state of %d bytes, exceeding the %d-byte limit", entrypoint, len(shape.State), defaultMaxOutputBytes))
-		return nil, &failure
+		return fail(fmt.Sprintf("%s() returned a state of %d bytes, exceeding the %d-byte limit", entrypoint, len(shape.State), defaultMaxOutputBytes))
 	}
-	return shape.State, nil
+	if len(shape.Response) > defaultMaxOutputBytes {
+		return fail(fmt.Sprintf("%s() returned a response of %d bytes, exceeding the %d-byte limit", entrypoint, len(shape.Response), defaultMaxOutputBytes))
+	}
+	if len(shape.Response) == 0 {
+		shape.Response = json.RawMessage(`null`)
+	}
+	return shape.State, shape.Response, nil
 }
 
 // restore sets the context at a running game's confirmed state, PRNG state

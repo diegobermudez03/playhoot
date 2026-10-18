@@ -360,7 +360,7 @@ func testBeginStart(t *testing.T) {
 				before: func(t *testing.T, controller *sessionController) {
 					_, _, ok := controller.beginStart()
 					require.True(t, ok)
-					controller.completeStart([]runtime.Participant{{ParticipantID: "P1", UserUUID: "user-a"}}, Game{}, runtime.GameFrontend{}, nil)
+					controller.completeStart([]runtime.Participant{{ParticipantID: "P1", UserUUID: "user-a"}}, Game{}, runtime.GameFrontend{}, nil, nil)
 				},
 				expectedOutcome: runtime.StartAlreadyStarted,
 				expectedPhase:   phaseRunning,
@@ -503,7 +503,7 @@ func testCompleteStart(t *testing.T) {
 				tc.during(t, players)
 			}
 
-			controller.completeStart(participants, game, frontend, views)
+			controller.completeStart(participants, game, frontend, views, nil)
 
 			require.Equal(t, phaseRunning, controller.currentPhase())
 			require.Equal(t, game, controller.state.game)
@@ -546,7 +546,7 @@ func testCompleteStartWithTheCommittedRoster(t *testing.T) {
 	// The durable Session committed an earlier start, without user-c.
 	committed := []runtime.Participant{{ParticipantID: "P1", UserUUID: "user-b"}, {ParticipantID: "P2", UserUUID: "user-a"}}
 
-	controller.completeStart(committed, Game{}, runtime.GameFrontend{}, map[string][]byte{"P1": []byte(`{}`), "P2": []byte(`{}`)})
+	controller.completeStart(committed, Game{}, runtime.GameFrontend{}, map[string][]byte{"P1": []byte(`{}`), "P2": []byte(`{}`)}, nil)
 
 	start, started := startedWith(t, players["user-b"].Started)
 	require.True(t, started)

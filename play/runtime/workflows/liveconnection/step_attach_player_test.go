@@ -223,14 +223,12 @@ func TestAdmitPlayer(t *testing.T) {
 				expectedEnd:         runtime.EndDisconnected,
 			}
 		},
-		"leaving_or_commanding_in_a_running_game_is_not_built_yet": func(t *testing.T) test {
+		"leaving_a_running_game_is_not_built_yet": func(t *testing.T) test {
 			return test{
 				maxPlayers: 8,
 				after: func(t *testing.T, controller *sessionController, player runtime.PlayerConnection) {
 					startGame(controller)
 					_, err := player.Leave(ctx)
-					require.ErrorIs(t, err, ErrNotImplemented)
-					_, err = player.Command(ctx, runtime.Command{Token: "t1", Name: "play_card"})
 					require.ErrorIs(t, err, ErrNotImplemented)
 				},
 				expectedOK:          true,

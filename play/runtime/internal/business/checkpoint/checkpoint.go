@@ -27,6 +27,10 @@ type Checkpoint struct {
 
 	// Participants are the Session's ParticipantIDs, in order.
 	Participants []string
+
+	// ProcessedCommandTokens are the COMMAND tokens each participant had
+	// executed, by ParticipantID, kept for the Session's lifetime.
+	ProcessedCommandTokens map[string][]string
 }
 
 type document struct {
@@ -37,6 +41,8 @@ type document struct {
 	State           json.RawMessage `json:"state"`
 	PRNGState       []byte          `json:"prng_state"`
 	Participants    []string        `json:"participants"`
+
+	ProcessedCommandTokens map[string][]string `json:"processed_command_tokens,omitempty"`
 }
 
 // Encode returns checkpoint as stored, under SchemaVersion.
@@ -49,6 +55,8 @@ func Encode(checkpoint Checkpoint) ([]byte, error) {
 		State:           checkpoint.State,
 		PRNGState:       checkpoint.PRNGState,
 		Participants:    checkpoint.Participants,
+
+		ProcessedCommandTokens: checkpoint.ProcessedCommandTokens,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("encoding checkpoint: %w", err)
@@ -73,5 +81,6 @@ func Decode(encoded []byte) (Checkpoint, error) {
 		State:                        doc.State,
 		PRNGState:                    doc.PRNGState,
 		Participants:                 doc.Participants,
+		ProcessedCommandTokens:       doc.ProcessedCommandTokens,
 	}, nil
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	"github.com/diegobermudez03/playhoot/play/internal/business/commands"
 	"github.com/diegobermudez03/playhoot/play/internal/business/inputs"
 	"github.com/diegobermudez03/playhoot/play/runtime"
 	"github.com/diegobermudez03/playhoot/play/runtime/replay"
@@ -25,14 +26,17 @@ const (
 var boundaryScript = []byte(`function start() {}`)
 
 // runningGame is a controller running a one-player game at revision 1 in
-// context-1, whose clock the test moves, and that player's connection.
+// context-1, whose clock the test moves, and that player's connection. The
+// game takes the input `move` and the command `pass`.
 func runningGame(t *testing.T, deps *controllerDependencies) (*sessionController, runtime.PlayerConnection, *time.Time) {
 	t.Helper()
 	now := time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC)
 	schema, err := inputs.NewSchema([]inputs.Declaration{{Name: "move", Type: inputs.Vector2}})
 	require.NoError(t, err)
+	catalog, err := commands.NewCatalog([]commands.Declaration{{Name: "pass"}})
+	require.NoError(t, err)
 	deps.now = func() time.Time { return now }
-	controller := withManifest(newSessionController(context.Background(), boundarySessionUUID, 1, deps), Manifest{MaxPlayers: 4, Inputs: schema})
+	controller := withManifest(newSessionController(context.Background(), boundarySessionUUID, 1, deps), Manifest{MaxPlayers: 4, Inputs: schema, Commands: catalog})
 	player, _, admitted := controller.joinLobby(context.Background(), "user-a")
 	require.True(t, admitted)
 	participants, _, ok := controller.beginStart()
@@ -41,7 +45,7 @@ func runningGame(t *testing.T, deps *controllerDependencies) (*sessionController
 	controller.completeStart(participants, Game{
 		GameVersionUUID: boundaryGameVersion, Script: boundaryScript,
 		ContextRevision: 1, State: []byte(`{"x":0}`), PRNGState: []byte{1, 0, 0, 0},
-	}, runtime.GameFrontend{}, map[string][]byte{"P1": []byte(`{"x":0}`)})
+	}, runtime.GameFrontend{}, map[string][]byte{"P1": []byte(`{"x":0}`)}, nil)
 	_, ok = player.NextView(context.Background())
 	require.True(t, ok, "the first FULL view")
 	return controller, player, &now
@@ -76,7 +80,7 @@ func TestRunBoundary(t *testing.T) {
 	}
 
 	anyCtx := gomock.Any()
-	input := sandbox.SamplesInput{SessionTimeMs: 100, Transitions: []sandbox.Transition{{ParticipantID: "P1", Inputs: []byte(`{"move":[1,0]}`), SessionTimeMs: 40}}}
+	input := sandbox.Batch{Operations: []sandbox.Operation{{SessionTimeMs: 100, Transitions: []sandbox.Transition{{ParticipantID: "P1", Inputs: []byte(`{"move":[1,0]}`), SessionTimeMs: 40}}}}}
 	snapshot := sandbox.Snapshot{State: []byte(`{"x":0}`), PRNGState: []byte{1, 0, 0, 0}, ContextRevision: 1, SessionTimeMs: 0}
 	spec := sandbox.ContextSpec{GameVersionUUID: boundaryGameVersion, Script: boundaryScript}
 	executed := sandbox.ExecutionResult{Outcome: sandbox.ScriptSucceeded, State: []byte(`{"x":1}`), PRNGState: []byte{2, 0, 0, 0}, ContextRevision: 2}
@@ -96,7 +100,7 @@ func TestRunBoundary(t *testing.T) {
 	// as contextID, succeeding.
 	retriedIn := func(deps dependencies, contextID string) []any {
 		return append(restores(deps, contextID),
-			deps.sandbox.EXPECT().Samples(anyCtx, contextID, input).Return(executed, nil),
+			deps.sandbox.EXPECT().Execute(anyCtx, contextID, input).Return(executed, nil),
 			projects(deps, contextID),
 			deps.replay.EXPECT().Offer(anyCtx, capture),
 		)
@@ -105,7 +109,7 @@ func TestRunBoundary(t *testing.T) {
 	tests := map[string]func(t *testing.T, deps dependencies) test{
 		"accepted_input_is_executed_projected_and_offered_to_replay": func(t *testing.T, deps dependencies) test {
 			gomock.InOrder(
-				deps.sandbox.EXPECT().Samples(anyCtx, "context-1", input).Return(executed, nil),
+				deps.sandbox.EXPECT().Execute(anyCtx, "context-1", input).Return(executed, nil),
 				projects(deps, "context-1"),
 				deps.replay.EXPECT().Offer(anyCtx, capture),
 			)
@@ -120,19 +124,19 @@ func TestRunBoundary(t *testing.T) {
 		},
 		"script_failing_once_is_retried_in_a_context_restored_from_the_mirror": func(t *testing.T, deps dependencies) test {
 			gomock.InOrder(append([]any{
-				deps.sandbox.EXPECT().Samples(anyCtx, "context-1", input).Return(failed, nil),
+				deps.sandbox.EXPECT().Execute(anyCtx, "context-1", input).Return(failed, nil),
 				deps.sandbox.EXPECT().DiscardContext(anyCtx, "context-1").Return(nil),
 			}, retriedIn(deps, "context-2")...)...)
 			return test{expectedView: movedView, expectedContextID: "context-2"}
 		},
 		"script_failing_twice_aborts_the_session": func(t *testing.T, deps dependencies) test {
 			calls := []any{
-				deps.sandbox.EXPECT().Samples(anyCtx, "context-1", input).Return(failed, nil),
+				deps.sandbox.EXPECT().Execute(anyCtx, "context-1", input).Return(failed, nil),
 				deps.sandbox.EXPECT().DiscardContext(anyCtx, "context-1").Return(nil),
 			}
 			calls = append(calls, restores(deps, "context-2")...)
 			calls = append(calls,
-				deps.sandbox.EXPECT().Samples(anyCtx, "context-2", input).Return(failed, nil),
+				deps.sandbox.EXPECT().Execute(anyCtx, "context-2", input).Return(failed, nil),
 				deps.sandbox.EXPECT().DiscardContext(anyCtx, "context-2").Return(nil),
 				deps.aborts.EXPECT().AbortRunningSession(anyCtx, boundarySessionUUID, sessionpkg.AbortScriptFailure).Return(nil),
 			)
@@ -141,7 +145,7 @@ func TestRunBoundary(t *testing.T) {
 		},
 		"projection_failing_in_the_script_is_a_script_failure": func(t *testing.T, deps dependencies) test {
 			gomock.InOrder(append([]any{
-				deps.sandbox.EXPECT().Samples(anyCtx, "context-1", input).Return(executed, nil),
+				deps.sandbox.EXPECT().Execute(anyCtx, "context-1", input).Return(executed, nil),
 				deps.sandbox.EXPECT().Project(anyCtx, "context-1", "P1").Return(sandbox.ProjectResult{Outcome: sandbox.ScriptFailed, ScriptError: "hidden"}, nil),
 				deps.sandbox.EXPECT().DiscardContext(anyCtx, "context-1").Return(nil),
 			}, retriedIn(deps, "context-2")...)...)
@@ -149,7 +153,7 @@ func TestRunBoundary(t *testing.T) {
 		},
 		"infrastructure_failure_is_retried_in_a_restored_context": func(t *testing.T, deps dependencies) test {
 			gomock.InOrder(append([]any{
-				deps.sandbox.EXPECT().Samples(anyCtx, "context-1", input).Return(sandbox.ExecutionResult{}, errors.New("worker died")),
+				deps.sandbox.EXPECT().Execute(anyCtx, "context-1", input).Return(sandbox.ExecutionResult{}, errors.New("worker died")),
 				deps.sandbox.EXPECT().DiscardContext(anyCtx, "context-1").Return(nil),
 			}, retriedIn(deps, "context-2")...)...)
 			return test{expectedView: movedView, expectedContextID: "context-2"}
@@ -158,14 +162,14 @@ func TestRunBoundary(t *testing.T) {
 			skipped := executed
 			skipped.ContextRevision = 5
 			gomock.InOrder(append([]any{
-				deps.sandbox.EXPECT().Samples(anyCtx, "context-1", input).Return(skipped, nil),
+				deps.sandbox.EXPECT().Execute(anyCtx, "context-1", input).Return(skipped, nil),
 				deps.sandbox.EXPECT().DiscardContext(anyCtx, "context-1").Return(nil),
 			}, retriedIn(deps, "context-2")...)...)
 			return test{expectedView: movedView, expectedContextID: "context-2"}
 		},
 		"sandbox_unavailable_puts_the_input_back_for_the_next_boundary": func(t *testing.T, deps dependencies) test {
 			gomock.InOrder(
-				deps.sandbox.EXPECT().Samples(anyCtx, "context-1", input).Return(sandbox.ExecutionResult{}, errors.New("worker died")),
+				deps.sandbox.EXPECT().Execute(anyCtx, "context-1", input).Return(sandbox.ExecutionResult{}, errors.New("worker died")),
 				deps.sandbox.EXPECT().DiscardContext(anyCtx, "context-1").Return(nil),
 				deps.sandbox.EXPECT().CreateContext(anyCtx, spec).Return("", sandbox.ErrNoCapacity),
 			)
@@ -173,7 +177,7 @@ func TestRunBoundary(t *testing.T) {
 		},
 		"too_many_failed_boundaries_abort_the_session": func(t *testing.T, deps dependencies) test {
 			gomock.InOrder(
-				deps.sandbox.EXPECT().Samples(anyCtx, "context-1", input).Return(sandbox.ExecutionResult{}, errors.New("worker died")),
+				deps.sandbox.EXPECT().Execute(anyCtx, "context-1", input).Return(sandbox.ExecutionResult{}, errors.New("worker died")),
 				deps.sandbox.EXPECT().DiscardContext(anyCtx, "context-1").Return(nil),
 				deps.sandbox.EXPECT().CreateContext(anyCtx, spec).Return("", sandbox.ErrNoCapacity),
 				deps.aborts.EXPECT().AbortRunningSession(anyCtx, boundarySessionUUID, sessionpkg.AbortUnrecoverableInfraFailure).Return(nil),
@@ -217,7 +221,152 @@ func TestRunBoundary(t *testing.T) {
 				return
 			}
 			pending, _ := controller.takeBoundary()
-			require.Equal(t, tc.expectedRequeued, len(pending.transitions) == 1)
+			require.Equal(t, tc.expectedRequeued, len(pending.operations) == 1)
+		})
+	}
+}
+
+func TestRunBoundaryWithCommands(t *testing.T) {
+	type dependencies struct {
+		sandbox *MockgameSandbox
+		aborts  *MocksessionAborter
+		replay  *MockreplayRecorder
+	}
+	type test struct {
+		// sampleAfter sends a second SAMPLE after the command.
+		sampleAfter bool
+
+		expectedResult runtime.CommandResult
+		expectedView   *runtime.OwnView
+		expectedEnd    runtime.EndReason
+		// expectedExecutedThrough is the mirror's time after the boundary.
+		expectedExecutedThrough int64
+	}
+
+	anyCtx := gomock.Any()
+	spec := sandbox.ContextSpec{GameVersionUUID: boundaryGameVersion, Script: boundaryScript}
+	snapshot := sandbox.Snapshot{State: []byte(`{"x":0}`), PRNGState: []byte{1, 0, 0, 0}, ContextRevision: 1, SessionTimeMs: 0}
+	pass := &sandbox.Command{ParticipantID: "P1", Name: "pass", Payload: []byte(`{}`)}
+	firstMove := sandbox.Transition{ParticipantID: "P1", Inputs: []byte(`{"move":[1,0]}`), SessionTimeMs: 40}
+	split := sandbox.Batch{Operations: []sandbox.Operation{
+		{SessionTimeMs: 50, Transitions: []sandbox.Transition{firstMove}},
+		{SessionTimeMs: 50, Command: pass},
+		{SessionTimeMs: 100, Transitions: []sandbox.Transition{{ParticipantID: "P1", Inputs: []byte(`{"move":[0,0]}`), SessionTimeMs: 70}}},
+	}}
+	endingWithCommand := sandbox.Batch{Operations: []sandbox.Operation{
+		{SessionTimeMs: 50, Transitions: []sandbox.Transition{firstMove}},
+		{SessionTimeMs: 50, Command: pass},
+	}}
+	executed := sandbox.ExecutionResult{Outcome: sandbox.ScriptSucceeded, State: []byte(`{"x":1}`), PRNGState: []byte{2, 0, 0, 0}, ContextRevision: 2, CommandResponses: [][]byte{[]byte(`{"ok":true}`)}}
+	answered := runtime.CommandResult{Token: "t1", Outcome: runtime.CommandExecuted, Response: []byte(`{"ok":true}`)}
+	projects := func(deps dependencies, contextID string) *gomock.Call {
+		return deps.sandbox.EXPECT().Project(anyCtx, contextID, "P1").Return(sandbox.ProjectResult{Outcome: sandbox.ScriptSucceeded, View: []byte(`{"x":1}`)}, nil)
+	}
+	capture := func(sessionTimeMs int64) replay.Capture {
+		return replay.Capture{
+			SessionUUID: boundarySessionUUID, GameVersionUUID: boundaryGameVersion, SessionTimeMs: sessionTimeMs, ContextRevision: 2,
+			State: []byte(`{"x":1}`), Participants: []string{"P1"},
+			CommandResponses: []replay.CommandResponse{{ParticipantID: "P1", SessionTimeMs: 50, Order: 2, Response: []byte(`{"ok":true}`)}},
+		}
+	}
+
+	tests := map[string]func(t *testing.T, deps dependencies) test{
+		"command_splits_the_transitions_around_it_in_one_batch": func(t *testing.T, deps dependencies) test {
+			gomock.InOrder(
+				deps.sandbox.EXPECT().Execute(anyCtx, "context-1", split).Return(executed, nil),
+				projects(deps, "context-1"),
+				deps.replay.EXPECT().Offer(anyCtx, capture(100)),
+			)
+			return test{
+				sampleAfter:             true,
+				expectedResult:          answered,
+				expectedView:            &runtime.OwnView{PlayerView: runtime.PlayerView{ParticipantID: "P1", State: []byte(`{"x":1}`)}, ConsumedThroughSampleSequence: 2},
+				expectedExecutedThrough: 100,
+			}
+		},
+		"boundary_ending_with_a_command_ends_at_its_time": func(t *testing.T, deps dependencies) test {
+			gomock.InOrder(
+				deps.sandbox.EXPECT().Execute(anyCtx, "context-1", endingWithCommand).Return(executed, nil),
+				projects(deps, "context-1"),
+				deps.replay.EXPECT().Offer(anyCtx, capture(50)),
+			)
+			return test{
+				expectedResult:          answered,
+				expectedView:            &runtime.OwnView{PlayerView: runtime.PlayerView{ParticipantID: "P1", State: []byte(`{"x":1}`)}, ConsumedThroughSampleSequence: 1},
+				expectedExecutedThrough: 50,
+			}
+		},
+		"execution_missing_a_command_response_is_retried": func(t *testing.T, deps dependencies) test {
+			unanswered := executed
+			unanswered.CommandResponses = nil
+			gomock.InOrder(
+				deps.sandbox.EXPECT().Execute(anyCtx, "context-1", endingWithCommand).Return(unanswered, nil),
+				deps.sandbox.EXPECT().DiscardContext(anyCtx, "context-1").Return(nil),
+				deps.sandbox.EXPECT().CreateContext(anyCtx, spec).Return("context-2", nil),
+				deps.sandbox.EXPECT().Restore(anyCtx, "context-2", snapshot).Return(sandbox.RestoreResult{Outcome: sandbox.ScriptSucceeded}, nil),
+				deps.sandbox.EXPECT().Execute(anyCtx, "context-2", endingWithCommand).Return(executed, nil),
+				projects(deps, "context-2"),
+				deps.replay.EXPECT().Offer(anyCtx, capture(50)),
+			)
+			return test{
+				expectedResult:          answered,
+				expectedView:            &runtime.OwnView{PlayerView: runtime.PlayerView{ParticipantID: "P1", State: []byte(`{"x":1}`)}, ConsumedThroughSampleSequence: 1},
+				expectedExecutedThrough: 50,
+			}
+		},
+		"command_failing_twice_in_the_script_aborts_the_session": func(t *testing.T, deps dependencies) test {
+			failed := sandbox.ExecutionResult{Outcome: sandbox.ScriptFailed, ScriptError: "command() threw"}
+			gomock.InOrder(
+				deps.sandbox.EXPECT().Execute(anyCtx, "context-1", endingWithCommand).Return(failed, nil),
+				deps.sandbox.EXPECT().DiscardContext(anyCtx, "context-1").Return(nil),
+				deps.sandbox.EXPECT().CreateContext(anyCtx, spec).Return("context-2", nil),
+				deps.sandbox.EXPECT().Restore(anyCtx, "context-2", snapshot).Return(sandbox.RestoreResult{Outcome: sandbox.ScriptSucceeded}, nil),
+				deps.sandbox.EXPECT().Execute(anyCtx, "context-2", endingWithCommand).Return(failed, nil),
+				deps.sandbox.EXPECT().DiscardContext(anyCtx, "context-2").Return(nil),
+				deps.aborts.EXPECT().AbortRunningSession(anyCtx, boundarySessionUUID, sessionpkg.AbortScriptFailure).Return(nil),
+			)
+			return test{
+				expectedResult: runtime.CommandResult{Token: "t1", Outcome: runtime.CommandNotRunning},
+				expectedEnd:    runtime.EndSessionAborted,
+			}
+		},
+	}
+
+	for name, setup := range tests {
+		t.Run(name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			deps := dependencies{sandbox: NewMockgameSandbox(ctrl), aborts: NewMocksessionAborter(ctrl), replay: NewMockreplayRecorder(ctrl)}
+			tc := setup(t, deps)
+			controllerDeps := testDependencies()
+			controllerDeps.sandbox, controllerDeps.aborts, controllerDeps.replay = deps.sandbox, deps.aborts, deps.replay
+			controller, player, now := runningGame(t, controllerDeps)
+			ctx := context.Background()
+			*now = now.Add(40 * time.Millisecond)
+			require.NoError(t, player.Sample(ctx, runtime.Sample{Sequence: 1, Inputs: []byte(`{"move":[1,0]}`)}))
+			*now = now.Add(10 * time.Millisecond)
+			answers := sendCommand(player, runtime.Command{Token: "t1", Name: "pass"})
+			waitForTimeline(t, controller, 2)
+			*now = now.Add(20 * time.Millisecond)
+			if tc.sampleAfter {
+				require.NoError(t, player.Sample(ctx, runtime.Sample{Sequence: 2, Inputs: []byte(`{"move":[0,0]}`)}))
+			}
+			*now = now.Add(30 * time.Millisecond)
+
+			controller.runBoundary()
+
+			require.Equal(t, tc.expectedResult, receive(t, answers))
+			if tc.expectedEnd != "" {
+				require.Equal(t, tc.expectedEnd, endedWith(t, player.Ended))
+				return
+			}
+			view, ok := nextView(t, player)
+			require.True(t, ok)
+			require.Equal(t, *tc.expectedView, view)
+			committed, _ := controller.takeBoundary()
+			require.Equal(t, tc.expectedExecutedThrough, committed.game.ExecutedThroughSessionTimeMs)
+			retried, err := player.Command(ctx, runtime.Command{Token: "t1", Name: "pass"})
+			require.NoError(t, err)
+			require.Equal(t, runtime.CommandAlreadyProcessed, retried.Outcome, "the token is processed once committed")
 		})
 	}
 }
@@ -238,7 +387,7 @@ func TestTakeBoundary(t *testing.T) {
 	require.Equal(t, Game{ContextRevision: 1, State: []byte(`{}`)}, boundary.game)
 	next, ok := controller.takeBoundary()
 	require.True(t, ok)
-	require.Empty(t, next.transitions, "a boundary takes what was pending")
+	require.Empty(t, next.operations, "a boundary takes what was pending")
 }
 
 func TestRequeueKeepsTheTimelineOrder(t *testing.T) {
@@ -251,7 +400,7 @@ func TestRequeueKeepsTheTimelineOrder(t *testing.T) {
 	controller.requeue(failed)
 
 	retried, _ := controller.takeBoundary()
-	require.Equal(t, []uint64{1, 2}, []uint64{retried.transitions[0].Order, retried.transitions[1].Order})
+	require.Equal(t, []uint64{1, 2}, []uint64{retried.operations[0].Order, retried.operations[1].Order})
 }
 
 func TestCommitBoundary(t *testing.T) {
@@ -303,7 +452,7 @@ func TestCommitBoundary(t *testing.T) {
 			}
 			boundary, _ := controller.takeBoundary()
 
-			err := controller.commitBoundary(ctx, boundary, Game{ContextRevision: tc.revision, State: []byte(`{"n":1}`)}, map[string][]byte{"P1": []byte(tc.view)})
+			err := controller.commitBoundary(ctx, boundary, execution{game: Game{ContextRevision: tc.revision, State: []byte(`{"n":1}`)}, views: map[string][]byte{"P1": []byte(tc.view)}})
 
 			if tc.expectedErrorIs != nil {
 				require.ErrorIs(t, err, tc.expectedErrorIs)
@@ -322,7 +471,7 @@ func TestAcknowledgeOnly(t *testing.T) {
 	ctx := context.Background()
 	require.NoError(t, players["user-a"].Sample(ctx, sample(9, `{}`)))
 	boundary, _ := controller.takeBoundary()
-	require.Empty(t, boundary.transitions, "a refresh of the defaults executes nothing")
+	require.Empty(t, boundary.operations, "a refresh of the defaults executes nothing")
 
 	controller.acknowledgeOnly(ctx, boundary)
 

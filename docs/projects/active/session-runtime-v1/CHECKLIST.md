@@ -61,16 +61,16 @@ Progress note (2026-10-17): the boundary, decided with the human, is a set of op
 ### A6. One authoritative timeline (§1)
 - [x] Single logical mutation lane per Session (2026-10-18: `play/runtime/workflows/gameloop` runs one lane per running game, the only code that mutates its state; started when the game starts or is adopted, ended with the controller or on shutdown; tests. Since 2026-10-18 (SESSION-ADR-0030): the lane is the controller's own main goroutine, alive from its creation, which runs Start, adoption, ticks and aborts; `gameloop` no longer exists)
 - [x] Every accepted operation gets server-owned sessionTime + serverOrder; client never supplies authoritative timestamps (2026-10-18: the controller stamps each accepted transition with the effective Session time and an order counter; controller tests)
-- [ ] Timeline carries: SAMPLE transitions, COMMAND, timer firing, update(), playerDisconnected, playerRejoined, playerLeft (2026-10-18: SAMPLE transitions and the default-inputs transition of a disconnect so far; the controller's main goroutine already takes a flush request (`requestFlush`) for commands and timers)
-- [ ] executedThroughSessionTime advances on any materialized operation (not only Samples) (2026-10-18: advances with every committed boundary; only SAMPLE batches exist so far)
+- [ ] Timeline carries: SAMPLE transitions, COMMAND, timer firing, update(), playerDisconnected, playerRejoined, playerLeft (2026-10-18: SAMPLE transitions, the default-inputs transition of a disconnect, and COMMANDs (which request a flush) so far)
+- [ ] executedThroughSessionTime advances on any materialized operation (not only Samples) (2026-10-18: advances with every committed boundary, SAMPLEs and COMMANDs; a batch ending with a command ends at its time; timers and the rest pending)
 - [x] Sandbox receives elapsed effective time since the previous materialized operation (2026-10-18: `samples(state, transitions, context)` receives `context.sessionTime` and `context.elapsed`, and each transition its own `sessionTime`; sandbox tests)
-- [x] Batching never changes semantic ordering (§7) (2026-10-18: one `samples()` call per boundary with every participant's transitions in arrival order, never grouped by player (decided by the human); commands will split the batch at their position; controller tests and the end-to-end run)
+- [x] Batching never changes semantic ordering (§7) (2026-10-18: one `samples()` call per run of adjacent transitions with every participant's transitions in arrival order, never grouped by player (decided by the human); a command splits the batch at its position (`samples(..)`, `command(..)`, `samples(..)` in one atomic batch, decided by the human 2026-10-18); controller, boundary and sandbox tests and the end-to-end runs)
 
 ### A7. Message model and role gating (§26, §27)
 - [ ] Platform messages vs game messages are distinct categories
 - [x] Connection role (PLAYER/ADMIN) is authoritative for what it may send (each endpoint only accepts its own message catalog; any other type closes with 1008 before reaching the Runtime; tested for both, 2026-10-17)
 - [x] ADMIN can never send SAMPLE/COMMAND (the admin catalog has no such message; any other type closes the connection with 1008 before reaching the Runtime)
-- [ ] Contract validation happens before JavaScript is called (2026-10-18: done for SAMPLEs (undeclared input or invalid value closes the connection as malformed, 1007, before the timeline); commands pending)
+- [x] Contract validation happens before JavaScript is called (2026-10-18: SAMPLEs (undeclared input or invalid value closes the connection as malformed, 1007, before the timeline) and COMMANDs (undeclared name or invalid payload answered `invalid`, never on the timeline); controller tests and the end-to-end run)
 
 ---
 
@@ -82,8 +82,8 @@ Progress note (2026-10-17): the boundary, decided with the human, is a set of op
 - [ ] Published version artifacts are immutable and never physically deleted (backend JS, frontend package, manifest, assets)
 - [ ] Artifacts addressed by locator + hash + size + metadata; content never silently changes
 - [ ] Runtime manifest exists, versioned and built iteratively (decided by the human 2026-10-17: a `manifest JSONB NOT NULL` column on `play_game_versions`, `{"schema_version":1,...}`, read and validated by `play/session/internal/business/manifest`, loaded by `play/session/usecases/loadruntimemanifest` when a Session's controller is created and kept by it). Declared so far: player limits (`players.min`, `players.max`, 1 <= min <= max). Nothing writes manifests yet besides test data (see Placeholders: no flow creates game versions)
-- [ ] Runtime manifest declares: SAMPLE input defs/types, defaults (when not inferable), COMMAND names + payload schemas, optional entrypoints present (update, playerRejoined), required input capabilities, frontend/backend artifact identity (2026-10-18: SAMPLE inputs declared and validated (`inputs` with boolean, number, vector2, string, enum; natural zeros implicit, explicit default required for enums or out-of-range zeros; `play/internal/business/inputs`, shared by `play/session` and `play/runtime`); the rest pending)
-- [ ] Manifest drives: pre-JS rejection of malformed/undeclared input, discovery filtering by capability, update()/rejoin support detection (2026-10-18: done for SAMPLE inputs)
+- [ ] Runtime manifest declares: SAMPLE input defs/types, defaults (when not inferable), COMMAND names + payload schemas, optional entrypoints present (update, playerRejoined), required input capabilities, frontend/backend artifact identity (2026-10-18: COMMAND names and payloads declared and validated (`commands`: name to `payload` fields declared with the SAMPLE input types and rules, decided by the human; `play/internal/business/commands`); SAMPLE inputs declared and validated (`inputs` with boolean, number, vector2, string, enum; natural zeros implicit, explicit default required for enums or out-of-range zeros; `play/internal/business/inputs`, shared by `play/session` and `play/runtime`); the rest pending)
+- [ ] Manifest drives: pre-JS rejection of malformed/undeclared input, discovery filtering by capability, update()/rejoin support detection (2026-10-18: done for SAMPLE inputs and COMMANDs)
 - [ ] Logical deletion/supersession of a game affects only new Sessions, not old Sessions/replays (§30.28)
 
 ---
@@ -202,7 +202,7 @@ Update (2026-10-18, decided by the human, SESSION-ADR-0030): the controller is t
 Progress note (2026-10-17): a first, minimal controller exists (`play/runtime/internal/controller`): a per-instance registry finds or creates one controller per Session (refusing one under another ownership epoch), and the controller only holds its attached ADMIN connections. Admission is serialized with a mutex, not yet a single mutation lane. Controllers are never destroyed yet.
 
 - [ ] Exactly one active controller per active Session on the owner pod
-- [ ] Owns live state: connections, userUUID<->ParticipantID map, participant status, per-participant logical SAMPLE state, SAMPLE ingress/dedup buffers, COMMAND pending/processed tokens, timeline ordering, effective Session time, executedThroughSessionTime, pending timers, Sandbox context ID, confirmed state mirror, PRNG state, contextRevision, projection cache, per-viewer replication state, checkpoint orchestration, replay capture orchestration (2026-10-18: per-participant SAMPLE ingress (max accepted, consumed, current inputs), the timeline, effective Session time, the confirmed mirror and per-connection last view and acknowledgement are held; COMMAND tokens, timers and participant status pending)
+- [ ] Owns live state: connections, userUUID<->ParticipantID map, participant status, per-participant logical SAMPLE state, SAMPLE ingress/dedup buffers, COMMAND pending/processed tokens, timeline ordering, effective Session time, executedThroughSessionTime, pending timers, Sandbox context ID, confirmed state mirror, PRNG state, contextRevision, projection cache, per-viewer replication state, checkpoint orchestration, replay capture orchestration (2026-10-18: per-participant SAMPLE ingress (max accepted, consumed, current inputs), the timeline, effective Session time, the confirmed mirror and per-connection last view and acknowledgement are held; COMMAND pending and processed tokens (2026-10-18); timers and participant status pending)
 - [ ] Three state levels distinct and consistent: Sandbox context / Runtime confirmed mirror / durable checkpoint
 - [x] Controller created only when a Session first needs live behavior (created on the first admitted live connection)
 - [ ] Controller destroyed on terminal states (with owner release and Sandbox context destruction)
@@ -231,17 +231,19 @@ Progress note (2026-10-18): SAMPLE ingress, batching, replication and acknowledg
 
 ## J. COMMAND protocol (§8)
 
-- [ ] COMMAND(token, name, payload), token scoped to Session + ParticipantID; separate namespace from SAMPLE sequence
-- [ ] Pre-JS validation: declared name, payload schema, size limits, message valid for this connection role
-- [ ] Token pending -> not enqueued twice
-- [ ] Token processed (including logical game rejection) -> later retry returns ALREADY_PROCESSED-equivalent
-- [ ] Original response is not persisted for idempotency
-- [ ] Processed tokens retained for the Session lifetime and included in checkpoints; pending tokens memory-only
-- [ ] Command can trigger an early execution boundary, processing older pending operations first
-- [ ] command(...) executed via Sandbox; full successful result committed; correlated response sent
-- [ ] Immediate projection flush when observable state changed
-- [ ] Response offered to Replay (best effort) with its target participant
-- [ ] Logical rejection (NOT_YOUR_TURN, etc.) is a normal result; Session continues
+Completed 2026-10-18: implemented end to end and verified by unit tests (`play/internal/business/commands`, manifest, `liveconnection` controller and boundary tests), sandbox tests with real workers, and an end-to-end run against a fresh database with Space Drift's `teleport` command (executed, rejected by the game as `COOLDOWN`, `already_processed`, `invalid` by name and by payload). Decided by the human 2026-10-18: one atomic sandbox batch per boundary (`sandbox.Host.Execute`, replacing `Samples`); script contract `command(state, cmd, context)` with cmd `{participant, name, payload, sessionTime}` returning `{ state, response }` (no platform-level rejection field: a rejection is just the response); manifest `commands` with payload fields declared like SAMPLE inputs (omitted fields take their defaults); a duplicate token while pending waits for the original and is answered `already_processed`. Choices made in implementation, to review: an invalid command is answered `invalid` without closing the connection (the API contract already declared that outcome); a command runs at its own Session time, a run of transitions before it at the command's time, and a batch ending with a command ends at the command's time; a pending command whose Session ends is answered `session_not_running`; a caller that gives up waiting leaves its command in the timeline (a retry of the token tells how it went); the response and the view it caused travel on separate streams, so the client may see either first.
+
+- [x] COMMAND(token, name, payload), token scoped to Session + ParticipantID; separate namespace from SAMPLE sequence (controller tests)
+- [x] Pre-JS validation: declared name, payload schema, size limits, message valid for this connection role (name and payload against the manifest, answered `invalid`; tokens up to 128 bytes and payload size by the API's message limit; ADMIN has no command message)
+- [x] Token pending -> not enqueued twice (controller tests)
+- [x] Token processed (including logical game rejection) -> later retry returns ALREADY_PROCESSED-equivalent (controller and boundary tests, end-to-end run)
+- [x] Original response is not persisted for idempotency (only the original request gets it; a duplicate, even one waiting while pending, gets `already_processed`)
+- [ ] Processed tokens retained for the Session lifetime and included in checkpoints; pending tokens memory-only (retained in memory and restored from the checkpoint on adoption; the checkpoint document has the field, but only the initial checkpoint, with no tokens, is written until periodic checkpoints exist, see P)
+- [x] Command can trigger an early execution boundary, processing older pending operations first (it requests a flush; the batch runs everything before it in timeline order; controller and boundary tests)
+- [x] command(...) executed via Sandbox; full successful result committed; correlated response sent (boundary and sandbox tests, end-to-end run)
+- [x] Immediate projection flush when observable state changed (the requested boundary sends views like any other)
+- [ ] Response offered to Replay (best effort) with its target participant (offered in `replay.Capture.CommandResponses` with participant, time and order; the recorder is still the placeholder that drops it, see R)
+- [x] Logical rejection (NOT_YOUR_TURN, etc.) is a normal result; Session continues (sandbox tests, end-to-end run)
 
 ---
 
@@ -249,7 +251,7 @@ Progress note (2026-10-18): SAMPLE ingress, batching, replication and acknowledg
 
 - [x] Normal live processing cadence (~100 ms, platform tuning value) (2026-10-18: `gameloop` ticks every 100 ms)
 - [x] Boundary: drain pending timeline -> confirm state -> project -> compare with cache -> send changes/acks (2026-10-18: take the timeline, `samples()`, check the revision, `project()` each participant, commit the mirror, send each connection the patch against the view it last received with its acknowledgement, offer the capture to replay; boundary tests in `liveconnection` and the end-to-end run)
-- [ ] Commands and timers can trigger earlier boundaries (2026-10-18: the lane runs a boundary on `RequestFlush` (tested); no command or timer uses it yet)
+- [ ] Commands and timers can trigger earlier boundaries (2026-10-18: commands do (controller tests); timers pending)
 - [x] If update() is not declared, Runtime does not execute JS merely because time passes (2026-10-18: a boundary with no transition executes nothing; boundary tests in `liveconnection`)
 - [ ] If declared, update() called frequently but with no exact-interval guarantee; receives current Session time + elapsed game time
 - [ ] No unbounded backlog of missed updates
@@ -271,8 +273,8 @@ Progress note (2026-10-18): SAMPLE ingress, batching, replication and acknowledg
 
 ## M. Sandbox execution (§11, §1 entrypoints, §1 determinism)
 
-- [ ] Entrypoints: start, samples, command, update (optional), timer, playerDisconnected, playerRejoined (optional), playerLeft, project (2026-10-18: start, samples, project)
-- [ ] Mutating entrypoints return full new global state + events + timer changes + terminal FINISHED signal + COMMAND response
+- [ ] Entrypoints: start, samples, command, update (optional), timer, playerDisconnected, playerRejoined (optional), playerLeft, project (2026-10-18: start, samples, command, project)
+- [ ] Mutating entrypoints return full new global state + events + timer changes + terminal FINISHED signal + COMMAND response (2026-10-18: state, and the response for `command()`)
 - [x] project(globalState, participant, context) is pure and deterministic (no wall clock, no random, not even the controlled PRNG) (state deep-frozen, `Math.random` throws, globals frozen after load; `TestProjectCannotChangeTheContext`)
 - [x] Controlled deterministic PRNG; state is part of Runtime state and checkpoints; no uncontrolled Math.random as source of truth (done for start: seeded mulberry32, state exported and checkpointed; restoring it into a recreated context comes with recovery) (2026-10-18: a restored context continues with the same randomness, revision and time (`TestRestoredContextContinuesTheSameGame`))
 - [x] No access to DB, files, secrets, network, processes, or uncontrolled wall clock (corrected 2026-10-18: the earlier tick was wrong, a script could write into the mounted scratch directory and import `qjs:os`; now the patched qjs in `third_party/qjs` mounts nothing and gives fake clocks and randomness, the host helpers are removed, and the worker's empty environment is only defense in depth; `TestPatchedRuntimeHasNoHostCapabilities`, `TestStart/no_host_helper_is_reachable`)
@@ -297,7 +299,7 @@ Progress note (2026-10-18): SAMPLE ingress, batching, replication and acknowledg
 - [ ] FULL projection + fresh baseline on: new transport attach, admin selects a player, reconnect, recovery
 - [ ] Resync is a platform operation (FE or Runtime requests); sends FULL projection + current consumed SAMPLE ack (PLAYER) + fresh baseline
 - [ ] After pod recovery the cache is rebuilt via project()
-- [ ] Immediate flush on Command completion, important events, Start, Finish
+- [ ] Immediate flush on Command completion, important events, Start, Finish (2026-10-18: Command and Start done)
 - [x] Raw global state never reaches the browser (§30.19) (2026-10-18: connections only receive projections; the global state only goes to the mirror, the checkpoint and the replay capture)
 
 ---
@@ -412,8 +414,8 @@ Progress note (2026-10-18): SAMPLE ingress, batching, replication and acknowledg
 
 ## V. Errors (§27)
 
-- [ ] Protocol/contract errors rejected pre-JS (malformed message, undeclared command, bad payload, bad SAMPLE shape, over-limit, wrong role)
-- [ ] Logical game results returned as normal data; Session continues
+- [ ] Protocol/contract errors rejected pre-JS (malformed message, undeclared command, bad payload, bad SAMPLE shape, over-limit, wrong role) (2026-10-18: all of them except rate limits, see W)
+- [x] Logical game results returned as normal data; Session continues (2026-10-18: COMMAND responses)
 - [ ] Script/runtime failure handled per M (retry once, then abort)
 - [ ] Infrastructure failure handled per M (recreate + retry)
 - [ ] No partial state/events/timers/responses ever escape a failed batch
@@ -474,11 +476,11 @@ Execution timeline:
 - [ ] Processing boundary duration, batch size, queue depth (pending timeline operations)
 - [ ] Boundary lag vs target cadence (~100 ms); update() call interval and skipped/dropped updates
 - [ ] SAMPLE: accepted vs deduped vs stale; pending-transition buffer depth
-- [ ] COMMAND: rate, latency (receive -> response), ALREADY_PROCESSED count, logical rejections vs structural rejections
+- [ ] COMMAND: rate, latency (receive -> response), ALREADY_PROCESSED count, logical rejections vs structural rejections (2026-10-18: `play_runtime_commands_total{outcome}` and `play_runtime_command_duration_seconds{outcome}` with executed, already_processed, invalid, session_not_running; logical rejections are not distinguishable, since the human chose no platform rejection field; emission pending)
 - [ ] Timers: scheduled, fired, firing lateness
 
 Sandbox:
-- [ ] Execution latency per entrypoint (start, samples, command, update, timer, project, ...) (declared and recorded 2026-10-18 for the existing operations: `play_runtime_sandbox_execution_duration_seconds{operation,outcome}` for load, start, restore and project; the rest comes with their entrypoints)
+- [ ] Execution latency per entrypoint (start, samples, command, update, timer, project, ...) (declared and recorded 2026-10-18 for the existing operations: `play_runtime_sandbox_execution_duration_seconds{operation,outcome}` for load, start, restore, execute (one batch of samples and commands) and project; per-entrypoint time inside a batch is not measured)
 - [ ] Script errors, infra errors, retry counts and retry outcomes (flaky-script alert), resource-limit violations (outcomes `script_failed`/`budget_exceeded`/`error` in the execution histogram, `play_runtime_start_script_failures_total`, the flaky-start alert, and `play_runtime_sandbox_workers_stopped_total{reason}`; retries of running-game batches come with them)
 - [ ] Context creates/recreates/evictions; state size and output size (creations `play_runtime_sandbox_context_creation_duration_seconds`, stops by reason, output size `play_runtime_sandbox_output_bytes{operation}`; recreations and evictions come with recovery)
 - [x] Sandbox capacity and resources (2026-10-18, asked by the human): `play_runtime_sandbox_contexts_active`/`_contexts_limit`, `play_runtime_sandbox_capacity_rejections_total` (each `ErrNoCapacity`), `play_runtime_sandbox_executions_in_flight`/`_executions_limit`, `play_runtime_sandbox_execution_slot_wait_seconds`, `play_runtime_sandbox_execution_slot_abandoned_total`, per-worker memory `play_runtime_sandbox_worker_memory_bytes` (reported by each worker after every call) and the instance total `play_runtime_sandbox_workers_memory_total_bytes`; Start's `sandbox_unavailable` outcome is in `play_runtime_session_start_total`. Recorded in the sandbox package; emission pending like every metric (`TestHostMetrics`)
@@ -534,11 +536,11 @@ Everything here is wired into the running system, so a request flows through it,
 - [x] Sandbox execution contexts (`unwiredSandbox` in `unwired.go`, in scope, see G and M): replaced on 2026-10-17 by `sandbox.Host`; `unwired.go` was deleted.
 - [ ] Sandbox contexts of running games (`play/runtime/sandbox`, in scope, see H and M): never discarded, since controllers are never destroyed; they live until the process exits. Real behavior: discarded when the Session ends or its controller is retired.
 - [x] Player admission (`unwiredPlayerAdmission` in `unwired.go`, in scope, see F): replaced on 2026-10-17 by `liveconnection.Manager.AttachPlayer`; `unwired.go` was deleted.
-- [ ] Player operations of a running game (`play/runtime/workflows/liveconnection`, in scope, see I, J, M): the controller has a phase (lobby, running; Start will move it to running) and lobby behavior only applies in the lobby: there `Sample` is dropped, `Resync` does nothing, `NextView` never produces a view and `Command` answers `session_not_running`. In a running game, `Leave` and `Command` answer "not implemented" (`Leave` also during a Start attempt), `Disconnect` only ends the connection (no transport grace yet), and new players are rejected as `session_started`; lobby updates are never sent once running.
+- [ ] Player operations of a running game (`play/runtime/workflows/liveconnection`, in scope, see I, J, M): the controller has a phase (lobby, running; Start will move it to running) and lobby behavior only applies in the lobby: there `Sample` is dropped, `Resync` does nothing, `NextView` never produces a view and `Command` answers `session_not_running`. In a running game, `Leave` answers "not implemented" (also during a Start attempt; `Command` is real since 2026-10-18, see J), `Disconnect` only ends the connection (no transport grace yet), and new players are rejected as `session_started`; lobby updates are never sent once running.
 - [x] Join code resolution (`unwiredJoinCodes` in `unwired.go`, in scope, see A3): replaced on 2026-10-17 by `play/session/usecases/resolvejoincode` (the Session of an active, unexpired join code; `not_found` otherwise); the stand-in was deleted.
 - [ ] Controller lifetime (`play/runtime/workflows/liveconnection`, in scope, see H): controllers are created but never destroyed or released, so they accumulate for the process lifetime. Real behavior: destroyed on terminal states with owner release.
 - [ ] Forwarding to a remote owner (`api/play/owner_routing.go`, in scope, see A1): a Session owned by another instance is answered `503`; unreachable while single-instance. Real behavior: proxy the connection to the owner (gateway), decided with the multi-instance topology.
-- [ ] Replay recorder (`unwiredReplay` in `unwired.go`, in scope, see R): every capture a running game offers is dropped. Real behavior: the Replay Recorder building chunks (FULL_STATE, STATE_DELTA, events, command responses) and persisting them asynchronously, bounded and best effort.
+- [ ] Replay recorder (`unwiredReplay` in `unwired.go`, in scope, see R): every capture a running game offers is dropped. Real behavior: the Replay Recorder building chunks (FULL_STATE, STATE_DELTA, events, command responses, which captures already carry) and persisting them asynchronously, bounded and best effort.
 - [ ] Running games never stop by themselves (`play/runtime/workflows/liveconnection`, in scope, see S and U): a controller keeps ticking until its Session is aborted, it is retired or the process stops, even with every player gone, so its Sandbox worker stays alive too. Real behavior: inactivity, maximum lifetime and finishing end the Session, its lane, controller and context.
 - [ ] View delivery has no backpressure (`play/runtime/workflows/liveconnection`, in scope, see W): a slow connection's queued views grow without bound. Real behavior: coalesce into one FULL view when a connection falls behind.
 - [ ] Metrics emission (`monitoring/metrics`, `record`): measurements are only written to the request log; nothing is sent to a metrics backend (see Y).
@@ -556,9 +558,9 @@ Each needs at least one test or other concrete evidence before ticking.
 - [ ] 7. Transport recovery is not game rejoin
 - [x] 8. Disconnect resets inputs immediately (2026-10-18: a disconnect enqueues the default inputs at once; controller tests)
 - [ ] 9. Explicit leave is permanent
-- [ ] 10. SAMPLE sequence vs COMMAND token identity rules
+- [x] 10. SAMPLE sequence vs COMMAND token identity rules (2026-10-18: separate state per participant, tokens per participant; controller tests)
 - [x] 11. Distinct SAMPLE transitions preserved; refreshes deduped (2026-10-18: controller tests)
-- [ ] 12. COMMAND logical rejection still consumes its token
+- [x] 12. COMMAND logical rejection still consumes its token (2026-10-18: controller test with a rejection response, end-to-end run with `COOLDOWN`)
 - [x] 13. Game time is not wall time (2026-10-18: scripts see only effective Session time)
 - [ ] 14. update() is frequent, not exact
 - [ ] 15. Timers belong to Runtime, checkpointed, game-time based

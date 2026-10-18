@@ -41,23 +41,46 @@ type Transition struct {
 	SessionTimeMs int64
 }
 
-// SamplesInput is what a game's samples() receives: input transitions of
-// every participant in the order the Runtime accepted them, and the Session
-// time the batch brings the game to.
-type SamplesInput struct {
-	Transitions   []Transition
-	SessionTimeMs int64
+// Command is a participant's COMMAND, as command() receives it.
+type Command struct {
+	ParticipantID string
+	Name          string
+
+	// Payload is the full payload, already validated against the game's
+	// declaration, as a JSON object.
+	Payload []byte
 }
 
-// ExecutionResult is the outcome of a mutating execution. State, PRNGState
-// and ContextRevision are set only when it succeeded, ScriptError only when
-// not.
+// Operation is one step of a Batch, run at SessionTimeMs: a run of input
+// transitions for samples(), or one COMMAND for command(). Exactly one of
+// Transitions and Command is set.
+type Operation struct {
+	SessionTimeMs int64
+	Transitions   []Transition
+	Command       *Command
+}
+
+// Batch is operations executed in order as one atomic step: either all of
+// them succeed and the context advances one revision, at the last
+// operation's time, or nothing of the batch counts.
+type Batch struct {
+	Operations []Operation
+}
+
+// ExecutionResult is the outcome of a mutating execution. State, PRNGState,
+// ContextRevision and CommandResponses are set only when it succeeded,
+// ScriptError only when not.
 type ExecutionResult struct {
 	Outcome         ScriptOutcome
 	State           []byte
 	PRNGState       []byte
 	ContextRevision int64
-	ScriptError     string
+
+	// CommandResponses are what each command operation answered, in batch
+	// order, as JSON.
+	CommandResponses [][]byte
+
+	ScriptError string
 }
 
 // ScriptOutcome is whether authored code completed an execution.

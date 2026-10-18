@@ -108,6 +108,16 @@ type RuntimeManifest struct {
 	// Inputs are the logical inputs SAMPLEs carry, in name order; none means
 	// the game takes no SAMPLE.
 	Inputs []RuntimeInput
+
+	// Commands are the COMMANDs the game accepts, in name order.
+	Commands []RuntimeCommand
+}
+
+// RuntimeCommand is one declared COMMAND; its payload fields are declared
+// like SAMPLE inputs, in name order.
+type RuntimeCommand struct {
+	Name    string
+	Payload []RuntimeInput
 }
 
 // RuntimeInput is one declared SAMPLE input. Type is boolean, number,

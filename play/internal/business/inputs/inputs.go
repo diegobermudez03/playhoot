@@ -47,10 +47,16 @@ var ErrInvalidValue = errors.New("invalid input value")
 
 var namePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,63}$`)
 
+// ValidName reports whether name may name a declared input or command: a
+// letter, then up to 63 letters, digits or underscores.
+func ValidName(name string) bool {
+	return namePattern.MatchString(name)
+}
+
 // Validate checks declaration's rules and returns it with its effective
 // default filled in.
 func Validate(declaration Declaration) (Declaration, error) {
-	if !namePattern.MatchString(declaration.Name) {
+	if !ValidName(declaration.Name) {
 		return Declaration{}, errors.New("names start with a letter and hold up to 64 letters, digits or underscores")
 	}
 	switch declaration.Type {

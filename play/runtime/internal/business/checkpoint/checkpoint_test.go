@@ -28,6 +28,18 @@ func TestEncode(t *testing.T) {
 					`"executed_through_session_time_ms":0,"state":{"round":1},"prng_state":"AQID","participants":["P1","P2"]}`,
 			}
 		},
+		"processed_command_tokens_are_stored_per_participant": func(t *testing.T) test {
+			return test{
+				checkpoint: Checkpoint{
+					ContextRevision:        7,
+					State:                  []byte(`{}`),
+					Participants:           []string{"P1"},
+					ProcessedCommandTokens: map[string][]string{"P1": {"t1", "t2"}},
+				},
+				expected: `{"schema_version":1,"game_version_uuid":"","context_revision":7,"executed_through_session_time_ms":0,` +
+					`"state":{},"prng_state":null,"participants":["P1"],"processed_command_tokens":{"P1":["t1","t2"]}}`,
+			}
+		},
 		"state_that_is_not_json_fails": func(t *testing.T) test {
 			return test{
 				checkpoint:  Checkpoint{State: []byte(`not json`)},
@@ -62,7 +74,7 @@ func TestDecode(t *testing.T) {
 
 	tests := map[string]func(t *testing.T) test{
 		"what_encode_wrote": func(t *testing.T) test {
-			checkpoint := Checkpoint{GameVersionUUID: "c1d2e3f4-0000-4000-8000-000000000001", ContextRevision: 4, ExecutedThroughSessionTimeMs: 1500, State: []byte(`{"round":2}`), PRNGState: []byte{1, 2, 3, 4}, Participants: []string{"P1", "P2"}}
+			checkpoint := Checkpoint{GameVersionUUID: "c1d2e3f4-0000-4000-8000-000000000001", ContextRevision: 4, ExecutedThroughSessionTimeMs: 1500, State: []byte(`{"round":2}`), PRNGState: []byte{1, 2, 3, 4}, Participants: []string{"P1", "P2"}, ProcessedCommandTokens: map[string][]string{"P2": {"t1"}}}
 			encoded, err := Encode(checkpoint)
 			require.NoError(t, err)
 			return test{encoded: string(encoded), expected: checkpoint}

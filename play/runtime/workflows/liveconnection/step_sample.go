@@ -17,16 +17,6 @@ type participantInputs struct {
 	current         inputs.Snapshot
 }
 
-// Transition is one participant's new input state on the Session's single
-// timeline, at the effective Session time it was accepted. Order breaks ties
-// between operations accepted at the same time.
-type Transition struct {
-	ParticipantID string
-	Inputs        inputs.Snapshot
-	SessionTimeMs int64
-	Order         uint64
-}
-
 // acceptSample takes a player's SAMPLE into the timeline, without waiting for
 // a boundary in flight: it joins the next one. A stale or repeated sequence
 // is ignored, a refresh of the current state only moves the acknowledgement,
@@ -79,11 +69,5 @@ func (s *liveState) resetInputs(participantID string) {
 
 func (s *liveState) enqueueTransition(participantID string, snapshot inputs.Snapshot) {
 	s.inputs[participantID].current = snapshot
-	s.nextOrder++
-	s.timeline = append(s.timeline, Transition{
-		ParticipantID: participantID,
-		Inputs:        snapshot,
-		SessionTimeMs: s.sessionTime(),
-		Order:         s.nextOrder,
-	})
+	s.enqueue(Operation{ParticipantID: participantID, Inputs: snapshot})
 }

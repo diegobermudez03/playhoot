@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/diegobermudez03/playhoot/play/internal/business/commands"
 	"github.com/diegobermudez03/playhoot/play/internal/business/inputs"
 	"github.com/diegobermudez03/playhoot/play/runtime"
 )
@@ -18,15 +19,29 @@ func (c *testClock) Now() time.Time                { return c.now }
 func (c *testClock) Advance(elapsed time.Duration) { c.now = c.now.Add(elapsed) }
 
 // runningController returns a controller whose game runs with userUUIDs as
-// P1..Pn, every input `move` (a vector2), and the given first views.
+// P1..Pn, every input `move` (a vector2), the commands `pass` and `move_to`
+// (payload `x`, a number from 0 to 10), and the given first views.
 func runningController(t *testing.T, views map[string][]byte, userUUIDs ...string) (*sessionController, map[string]runtime.PlayerConnection, *testClock) {
+	t.Helper()
+	return runningControllerWithTokens(t, views, nil, userUUIDs...)
+}
+
+// runningControllerWithTokens is runningController with the COMMAND tokens
+// each participant already executed.
+func runningControllerWithTokens(t *testing.T, views map[string][]byte, processed map[string][]string, userUUIDs ...string) (*sessionController, map[string]runtime.PlayerConnection, *testClock) {
 	t.Helper()
 	clock := &testClock{now: time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC)}
 	schema, err := inputs.NewSchema([]inputs.Declaration{{Name: "move", Type: inputs.Vector2}})
 	require.NoError(t, err)
+	zero, ten := 0.0, 10.0
+	catalog, err := commands.NewCatalog([]commands.Declaration{
+		{Name: "pass"},
+		{Name: "move_to", Payload: []inputs.Declaration{{Name: "x", Type: inputs.Number, Min: &zero, Max: &ten}}},
+	})
+	require.NoError(t, err)
 	deps := testDependencies()
 	deps.now = clock.Now
-	controller := withManifest(newSessionController(context.Background(), "session-1", 1, deps), Manifest{MaxPlayers: 8, Inputs: schema})
+	controller := withManifest(newSessionController(context.Background(), "session-1", 1, deps), Manifest{MaxPlayers: 8, Inputs: schema, Commands: catalog})
 	players := make(map[string]runtime.PlayerConnection, len(userUUIDs))
 	for _, userUUID := range userUUIDs {
 		player, _, admitted := controller.joinLobby(context.Background(), userUUID)
@@ -35,7 +50,7 @@ func runningController(t *testing.T, views map[string][]byte, userUUIDs ...strin
 	}
 	participants, _, ok := controller.beginStart()
 	require.True(t, ok)
-	controller.completeStart(participants, Game{ContextRevision: 1, State: []byte(`{}`)}, runtime.GameFrontend{}, views)
+	controller.completeStart(participants, Game{ContextRevision: 1, State: []byte(`{}`)}, runtime.GameFrontend{}, views, processed)
 	for _, player := range players {
 		_, ok := player.NextView(context.Background())
 		require.True(t, ok, "the first FULL view")
@@ -53,7 +68,7 @@ func TestAcceptSample(t *testing.T) {
 		send func(t *testing.T, players map[string]runtime.PlayerConnection, clock *testClock) error
 
 		expectedErrorIs     error
-		expectedTransitions []Transition
+		expectedTransitions []Operation
 	}
 
 	ctx := context.Background()
@@ -64,7 +79,7 @@ func TestAcceptSample(t *testing.T) {
 					clock.Advance(40 * time.Millisecond)
 					return players["user-a"].Sample(ctx, sample(1, `{"move":[1,0]}`))
 				},
-				expectedTransitions: []Transition{{ParticipantID: "P1", Inputs: `{"move":[1,0]}`, SessionTimeMs: 40, Order: 1}},
+				expectedTransitions: []Operation{{ParticipantID: "P1", Inputs: `{"move":[1,0]}`, SessionTimeMs: 40, Order: 1}},
 			}
 		},
 		"every_distinct_transition_is_kept_in_arrival_order_across_players": func(t *testing.T) test {
@@ -77,7 +92,7 @@ func TestAcceptSample(t *testing.T) {
 					require.NoError(t, players["user-a"].Sample(ctx, sample(2, `{"move":[0,0]}`)))
 					return players["user-a"].Sample(ctx, sample(3, `{"move":[1,0]}`))
 				},
-				expectedTransitions: []Transition{
+				expectedTransitions: []Operation{
 					{ParticipantID: "P1", Inputs: `{"move":[1,0]}`, SessionTimeMs: 0, Order: 1},
 					{ParticipantID: "P2", Inputs: `{"move":[0,1]}`, SessionTimeMs: 10, Order: 2},
 					{ParticipantID: "P1", Inputs: `{"move":[0,0]}`, SessionTimeMs: 20, Order: 3},
@@ -91,7 +106,7 @@ func TestAcceptSample(t *testing.T) {
 					require.NoError(t, players["user-a"].Sample(ctx, sample(1, `{"move":[1,0]}`)))
 					return players["user-a"].Sample(ctx, sample(2, `{"move":[1.0,0]}`))
 				},
-				expectedTransitions: []Transition{{ParticipantID: "P1", Inputs: `{"move":[1,0]}`, SessionTimeMs: 0, Order: 1}},
+				expectedTransitions: []Operation{{ParticipantID: "P1", Inputs: `{"move":[1,0]}`, SessionTimeMs: 0, Order: 1}},
 			}
 		},
 		"stale_sequence_is_ignored": func(t *testing.T) test {
@@ -100,7 +115,7 @@ func TestAcceptSample(t *testing.T) {
 					require.NoError(t, players["user-a"].Sample(ctx, sample(5, `{"move":[1,0]}`)))
 					return players["user-a"].Sample(ctx, sample(4, `{"move":[0,1]}`))
 				},
-				expectedTransitions: []Transition{{ParticipantID: "P1", Inputs: `{"move":[1,0]}`, SessionTimeMs: 0, Order: 1}},
+				expectedTransitions: []Operation{{ParticipantID: "P1", Inputs: `{"move":[1,0]}`, SessionTimeMs: 0, Order: 1}},
 			}
 		},
 		"defaults_sent_first_are_a_refresh": func(t *testing.T) test {
@@ -126,7 +141,7 @@ func TestAcceptSample(t *testing.T) {
 					players["user-a"].Disconnect()
 					return nil
 				},
-				expectedTransitions: []Transition{
+				expectedTransitions: []Operation{
 					{ParticipantID: "P1", Inputs: `{"move":[1,0]}`, SessionTimeMs: 0, Order: 1},
 					{ParticipantID: "P1", Inputs: `{"move":[0,0]}`, SessionTimeMs: 30, Order: 2},
 				},
@@ -148,7 +163,7 @@ func TestAcceptSample(t *testing.T) {
 			}
 			boundary, ok := controller.takeBoundary()
 			require.True(t, ok)
-			require.Equal(t, tc.expectedTransitions, boundary.transitions)
+			require.Equal(t, tc.expectedTransitions, boundary.operations)
 		})
 	}
 }

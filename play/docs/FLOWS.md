@@ -93,7 +93,7 @@ The lobby's capacity is not checked here: the live controller checks it against 
 
 ## Runtime Manifest Load
 
-`loadruntimemanifest.Service.LoadRuntimeManifest(sessionUUID)`, called by a Session's live controller on its first admitted connection, which keeps the manifest for the Session's lifetime (it cannot change: the version is pinned and immutable). It reads `play_sessions` joined with `play_game_versions`. An unknown Session is `ErrSessionNotFound`; a pinned version that is missing or holds an invalid manifest raises an alert and is an error.
+`loadruntimemanifest.Service.LoadRuntimeManifest(sessionUUID)`, called by a Session's live controller on its first admitted connection, which keeps the manifest for the Session's lifetime (it cannot change: the version is pinned and immutable). It reads `play_sessions` joined with `play_game_versions`. The manifest declares the player limits, the SAMPLE inputs and the COMMANDs, each command with payload fields declared like inputs (`play/internal/business/commands`). An unknown Session is `ErrSessionNotFound`; a pinned version that is missing or holds an invalid manifest raises an alert and is an error.
 
 ## Start Session (durable side)
 
