@@ -40,6 +40,11 @@ func TestLoadRuntimeManifest(t *testing.T) {
 				{Name: "play_card", Payload: []sessionpkg.RuntimeInput{{Name: "card", Type: "string", Default: []byte(`""`)}}},
 			}}}
 		},
+		"game_with_update": func(t *testing.T, deps dependencies) test {
+			deps.manifests.EXPECT().FindSessionManifest(ctx, sessionUUID).
+				Return([]byte(`{"schema_version":1,"players":{"min":1,"max":2},"entrypoints":["update"]}`), true, nil)
+			return test{sessionUUID: sessionUUID, expectedManifest: sessionpkg.RuntimeManifest{MinPlayers: 1, MaxPlayers: 2, Update: true}}
+		},
 		"invalid_manifest_is_broken_data": func(t *testing.T, deps dependencies) test {
 			deps.manifests.EXPECT().FindSessionManifest(ctx, sessionUUID).
 				Return([]byte(`{"schema_version":1,"players":{"min":3,"max":2}}`), true, nil)

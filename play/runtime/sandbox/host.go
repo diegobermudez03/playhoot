@@ -156,7 +156,7 @@ func (h *Host) Execute(ctx context.Context, contextID string, batch Batch) (Exec
 	}
 	steps := make([]workerStep, len(batch.Operations))
 	for i, operation := range batch.Operations {
-		steps[i] = workerStep{SessionTime: operation.SessionTimeMs}
+		steps[i] = workerStep{SessionTime: operation.SessionTimeMs, Update: operation.Update}
 		for _, transition := range operation.Transitions {
 			steps[i].Transitions = append(steps[i].Transitions, workerTransition{Participant: transition.ParticipantID, Inputs: transition.Inputs, SessionTime: transition.SessionTimeMs})
 		}

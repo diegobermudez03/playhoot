@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// batchGame logs every transition, samples() call and command it receives,
-// with times and elapsed time, and draws a random number per samples() call,
+// batchGame logs every transition, samples() call, command and update() it
+// receives, with times and elapsed time, and draws a random number per samples() call,
 // so tests can see order, time and randomness. A command named "nope" is
 // rejected by the game's rules; "silent" answers nothing.
 const batchGame = `
@@ -28,6 +28,9 @@ function command(state, cmd, context) {
 		return { state: { log, rolls: state.rolls } };
 	}
 	return { state: { log, rolls: state.rolls }, response: { ok: true, now: Date.now() } };
+}
+function update(state, context) {
+	return { state: { log: state.log.concat(["update@" + context.sessionTime + "+" + context.elapsed]), rolls: state.rolls } };
 }
 function project(state, participant, context) { return { log: state.log }; }
 `
@@ -74,6 +77,33 @@ func TestExecute(t *testing.T) {
 				expectedLog:       []string{"P1@20:{}", "samples@30+30", `P2@30:move{"x":1}+0`, "P1@60:{}", "samples@100+70"},
 				expectedResponses: []string{`{"ok":true,"now":30}`},
 				expectedOutcome:   ScriptSucceeded,
+			}
+		},
+		"update_runs_after_the_operations_before_it": func(t *testing.T) test {
+			return test{
+				script: batchGame,
+				batch: Batch{Operations: []Operation{
+					{SessionTimeMs: 70, Transitions: []Transition{transitionAt("P1", 40), transitionAt("P2", 70)}},
+					{SessionTimeMs: 100, Update: true},
+				}},
+				expectedLog:     []string{"P1@40:{}", "P2@70:{}", "samples@70+70", "update@100+30"},
+				expectedOutcome: ScriptSucceeded,
+			}
+		},
+		"update_alone": func(t *testing.T) test {
+			return test{
+				script:          batchGame,
+				batch:           Batch{Operations: []Operation{{SessionTimeMs: 100, Update: true}}},
+				expectedLog:     []string{"update@100+100"},
+				expectedOutcome: ScriptSucceeded,
+			}
+		},
+		"script_without_update": func(t *testing.T) test {
+			return test{
+				script:                `function start() { return { state: {} }; } function project() { return {}; }`,
+				batch:                 Batch{Operations: []Operation{{SessionTimeMs: 100, Update: true}}},
+				expectedOutcome:       ScriptFailed,
+				expectedErrorContains: "does not define a global update function",
 			}
 		},
 		"logical_rejection_is_a_normal_response": func(t *testing.T) test {
@@ -166,6 +196,7 @@ func TestExecuteRejectsMalformedBatches(t *testing.T) {
 		"time_going_back":        {Operations: []Operation{commandAt(200, "P1", "move", `{}`), commandAt(100, "P1", "move", `{}`)}},
 		"step_with_both_kinds":   {Operations: []Operation{{SessionTimeMs: 10, Transitions: []Transition{transitionAt("P1", 10)}, Command: &Command{ParticipantID: "P1", Name: "move", Payload: []byte(`{}`)}}}},
 		"step_with_neither_kind": {Operations: []Operation{{SessionTimeMs: 10}}},
+		"update_with_a_command":  {Operations: []Operation{{SessionTimeMs: 10, Update: true, Command: &Command{ParticipantID: "P1", Name: "move", Payload: []byte(`{}`)}}}},
 	}
 
 	for name, batch := range tests {

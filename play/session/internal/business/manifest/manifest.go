@@ -21,7 +21,14 @@ type Manifest struct {
 	MaxPlayers int
 	Inputs     []inputs.Declaration
 	Commands   []commands.Declaration
+
+	// Update means the game implements update(), called periodically.
+	Update bool
 }
+
+// entrypointUpdate is the optional update() entrypoint, as entrypoints
+// declares it.
+const entrypointUpdate = "update"
 
 // ErrInvalid is returned for a manifest that cannot be decoded or breaks a
 // rule; errors wrap it with the reason.
@@ -33,8 +40,9 @@ type document struct {
 		Min int `json:"min"`
 		Max int `json:"max"`
 	} `json:"players"`
-	Inputs   map[string]inputDocument   `json:"inputs"`
-	Commands map[string]commandDocument `json:"commands"`
+	Inputs      map[string]inputDocument   `json:"inputs"`
+	Commands    map[string]commandDocument `json:"commands"`
+	Entrypoints []string                   `json:"entrypoints"`
 }
 
 type commandDocument struct {
@@ -79,11 +87,22 @@ func Parse(raw []byte) (Manifest, error) {
 	if err != nil {
 		return Manifest{}, fmt.Errorf("%w: %v", ErrInvalid, err)
 	}
+	update := false
+	for _, entrypoint := range doc.Entrypoints {
+		if entrypoint != entrypointUpdate {
+			return Manifest{}, fmt.Errorf("%w: unknown optional entrypoint %q", ErrInvalid, entrypoint)
+		}
+		if update {
+			return Manifest{}, fmt.Errorf("%w: entrypoint %q is declared twice", ErrInvalid, entrypoint)
+		}
+		update = true
+	}
 	return Manifest{
 		MinPlayers: doc.Players.Min,
 		MaxPlayers: doc.Players.Max,
 		Inputs:     schema.Declarations(),
 		Commands:   catalog.Declarations(),
+		Update:     update,
 	}, nil
 }
 

@@ -74,6 +74,11 @@ var (
 		"Executions retried in a fresh context restored from the mirror, by what failed.",
 		retryKindLabel,
 	)
+	updateInterval = metrics.NewHistogram(
+		"play_runtime_update_interval_seconds",
+		"Wall time between consecutive committed update() calls of a game; well above the cadence means skipped ticks.",
+		metrics.LatencyBuckets(),
+	)
 )
 
 // errNotRunning means the game ended here before a boundary could commit.
@@ -95,6 +100,8 @@ type boundary struct {
 	// acks is how far each participant's SAMPLEs are consumed once the
 	// batch commits.
 	acks map[string]int64
+	// update means the batch ends with update(), at sessionTimeMs.
+	update bool
 }
 
 // execution is what a boundary's batch produced: the new mirror, every
@@ -127,7 +134,7 @@ func (c *sessionController) runBoundary() {
 		}
 	}()
 
-	if len(work.operations) == 0 {
+	if len(work.operations) == 0 && !work.update {
 		outcome = boundaryAckOnly
 		c.acknowledgeOnly(ctx, work)
 		return
@@ -149,6 +156,12 @@ func (c *sessionController) runBoundary() {
 			break
 		}
 		c.infraFailures = 0
+		if work.update {
+			if !c.lastUpdate.IsZero() {
+				updateInterval.ObserveDuration(ctx, began.Sub(c.lastUpdate))
+			}
+			c.lastUpdate = began
+		}
 		c.deps.replay.Offer(ctx, replay.Capture{
 			SessionUUID:      c.sessionUUID,
 			GameVersionUUID:  executed.game.GameVersionUUID,
@@ -241,9 +254,10 @@ func (c *sessionController) attempt(ctx context.Context, work boundary) (executi
 }
 
 // batchOf turns work's operations into one sandbox batch, in timeline order:
-// adjacent transitions share a samples() call and each command runs alone. A
-// command runs at its own time, transitions until the next operation's, or
-// the boundary's when last; never before the confirmed state's time.
+// adjacent transitions share a samples() call, each command runs alone, and
+// update() ends it. Each runs at its own time (transitions at their last
+// one's, update at the boundary's), but transitions ending a batch run until
+// the boundary's; never before the confirmed state's time.
 func batchOf(work boundary) sandbox.Batch {
 	var batch sandbox.Batch
 	for _, operation := range work.operations {
@@ -261,13 +275,16 @@ func batchOf(work boundary) sandbox.Batch {
 		}
 		batch.Operations = append(batch.Operations, sandbox.Operation{Transitions: []sandbox.Transition{transition}})
 	}
+	if work.update {
+		batch.Operations = append(batch.Operations, sandbox.Operation{SessionTimeMs: work.sessionTimeMs, Update: true})
+	}
 	at := work.game.ExecutedThroughSessionTimeMs
 	for i := range batch.Operations {
 		operation := &batch.Operations[i]
 		switch {
-		case operation.Command != nil:
+		case operation.Command != nil, operation.Update:
 		case i+1 < len(batch.Operations):
-			operation.SessionTimeMs = batch.Operations[i+1].SessionTimeMs
+			operation.SessionTimeMs = operation.Transitions[len(operation.Transitions)-1].SessionTimeMs
 		default:
 			operation.SessionTimeMs = work.sessionTimeMs
 		}
@@ -323,7 +340,8 @@ func (c *sessionController) abort(ctx context.Context, cause sessionpkg.AbortCau
 
 // takeBoundary moves every pending operation into a boundary, so operations
 // accepted from now on go to the next one; false means the game does not run
-// here. A boundary ending with a command ends at that command's time.
+// here. A game with update() calls it every boundary; without it, a boundary
+// ending with a command ends at that command's time.
 func (c *sessionController) takeBoundary() (boundary, bool) {
 	s := c.lock()
 	defer c.unlock()
@@ -335,11 +353,12 @@ func (c *sessionController) takeBoundary() (boundary, bool) {
 		sessionTimeMs: max(s.sessionTime(), s.game.ExecutedThroughSessionTimeMs),
 		game:          s.game,
 		acks:          make(map[string]int64, len(s.inputs)),
+		update:        s.manifest.Update,
 	}
 	if n := len(s.timeline); n > 0 {
 		last := s.timeline[n-1]
 		work.sessionTimeMs = max(work.sessionTimeMs, last.SessionTimeMs)
-		if last.Command != nil {
+		if last.Command != nil && !work.update {
 			work.sessionTimeMs = max(last.SessionTimeMs, s.game.ExecutedThroughSessionTimeMs)
 		}
 	}

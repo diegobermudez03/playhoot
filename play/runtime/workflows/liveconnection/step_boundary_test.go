@@ -249,12 +249,12 @@ func TestRunBoundaryWithCommands(t *testing.T) {
 	pass := &sandbox.Command{ParticipantID: "P1", Name: "pass", Payload: []byte(`{}`)}
 	firstMove := sandbox.Transition{ParticipantID: "P1", Inputs: []byte(`{"move":[1,0]}`), SessionTimeMs: 40}
 	split := sandbox.Batch{Operations: []sandbox.Operation{
-		{SessionTimeMs: 50, Transitions: []sandbox.Transition{firstMove}},
+		{SessionTimeMs: 40, Transitions: []sandbox.Transition{firstMove}},
 		{SessionTimeMs: 50, Command: pass},
 		{SessionTimeMs: 100, Transitions: []sandbox.Transition{{ParticipantID: "P1", Inputs: []byte(`{"move":[0,0]}`), SessionTimeMs: 70}}},
 	}}
 	endingWithCommand := sandbox.Batch{Operations: []sandbox.Operation{
-		{SessionTimeMs: 50, Transitions: []sandbox.Transition{firstMove}},
+		{SessionTimeMs: 40, Transitions: []sandbox.Transition{firstMove}},
 		{SessionTimeMs: 50, Command: pass},
 	}}
 	executed := sandbox.ExecutionResult{Outcome: sandbox.ScriptSucceeded, State: []byte(`{"x":1}`), PRNGState: []byte{2, 0, 0, 0}, ContextRevision: 2, CommandResponses: [][]byte{[]byte(`{"ok":true}`)}}
@@ -367,6 +367,190 @@ func TestRunBoundaryWithCommands(t *testing.T) {
 			retried, err := player.Command(ctx, runtime.Command{Token: "t1", Name: "pass"})
 			require.NoError(t, err)
 			require.Equal(t, runtime.CommandAlreadyProcessed, retried.Outcome, "the token is processed once committed")
+		})
+	}
+}
+
+func TestRunBoundaryWithUpdate(t *testing.T) {
+	type dependencies struct {
+		sandbox *MockgameSandbox
+		aborts  *MocksessionAborter
+		replay  *MockreplayRecorder
+	}
+	type test struct {
+		// sample sends a SAMPLE at 40 ms before the boundary at 100 ms.
+		sample bool
+
+		expectedView          *runtime.OwnView
+		expectedEnd           runtime.EndReason
+		expectedInfraFailures int
+		// expectedExecutedThrough is the mirror's time after the boundary.
+		expectedExecutedThrough int64
+	}
+
+	anyCtx := gomock.Any()
+	spec := sandbox.ContextSpec{GameVersionUUID: boundaryGameVersion, Script: boundaryScript}
+	snapshot := sandbox.Snapshot{State: []byte(`{"x":0}`), PRNGState: []byte{1, 0, 0, 0}, ContextRevision: 1, SessionTimeMs: 0}
+	updateOnly := sandbox.Batch{Operations: []sandbox.Operation{{SessionTimeMs: 100, Update: true}}}
+	afterSample := sandbox.Batch{Operations: []sandbox.Operation{
+		{SessionTimeMs: 40, Transitions: []sandbox.Transition{{ParticipantID: "P1", Inputs: []byte(`{"move":[1,0]}`), SessionTimeMs: 40}}},
+		{SessionTimeMs: 100, Update: true},
+	}}
+	executed := sandbox.ExecutionResult{Outcome: sandbox.ScriptSucceeded, State: []byte(`{"x":1}`), PRNGState: []byte{2, 0, 0, 0}, ContextRevision: 2}
+	failed := sandbox.ExecutionResult{Outcome: sandbox.ScriptFailed, ScriptError: "update() threw"}
+	projects := func(deps dependencies) *gomock.Call {
+		return deps.sandbox.EXPECT().Project(anyCtx, "context-1", "P1").Return(sandbox.ProjectResult{Outcome: sandbox.ScriptSucceeded, View: []byte(`{"x":1}`)}, nil)
+	}
+	capture := replay.Capture{SessionUUID: boundarySessionUUID, GameVersionUUID: boundaryGameVersion, SessionTimeMs: 100, ContextRevision: 2, State: []byte(`{"x":1}`), Participants: []string{"P1"}}
+	moved := func(acked int64) *runtime.OwnView {
+		return &runtime.OwnView{PlayerView: runtime.PlayerView{ParticipantID: "P1", State: []byte(`{"x":1}`)}, ConsumedThroughSampleSequence: acked}
+	}
+
+	tests := map[string]func(t *testing.T, deps dependencies) test{
+		"update_runs_although_nothing_was_sent": func(t *testing.T, deps dependencies) test {
+			gomock.InOrder(
+				deps.sandbox.EXPECT().Execute(anyCtx, "context-1", updateOnly).Return(executed, nil),
+				projects(deps),
+				deps.replay.EXPECT().Offer(anyCtx, capture),
+			)
+			return test{expectedView: moved(0), expectedExecutedThrough: 100}
+		},
+		"update_follows_the_transitions_at_their_own_time": func(t *testing.T, deps dependencies) test {
+			gomock.InOrder(
+				deps.sandbox.EXPECT().Execute(anyCtx, "context-1", afterSample).Return(executed, nil),
+				projects(deps),
+				deps.replay.EXPECT().Offer(anyCtx, capture),
+			)
+			return test{sample: true, expectedView: moved(1), expectedExecutedThrough: 100}
+		},
+		"failed_update_is_not_queued_for_later": func(t *testing.T, deps dependencies) test {
+			gomock.InOrder(
+				deps.sandbox.EXPECT().Execute(anyCtx, "context-1", updateOnly).Return(sandbox.ExecutionResult{}, errors.New("worker died")),
+				deps.sandbox.EXPECT().DiscardContext(anyCtx, "context-1").Return(nil),
+				deps.sandbox.EXPECT().CreateContext(anyCtx, spec).Return("", sandbox.ErrNoCapacity),
+			)
+			return test{expectedInfraFailures: 1}
+		},
+		"update_failing_twice_in_the_script_aborts_the_session": func(t *testing.T, deps dependencies) test {
+			gomock.InOrder(
+				deps.sandbox.EXPECT().Execute(anyCtx, "context-1", updateOnly).Return(failed, nil),
+				deps.sandbox.EXPECT().DiscardContext(anyCtx, "context-1").Return(nil),
+				deps.sandbox.EXPECT().CreateContext(anyCtx, spec).Return("context-2", nil),
+				deps.sandbox.EXPECT().Restore(anyCtx, "context-2", snapshot).Return(sandbox.RestoreResult{Outcome: sandbox.ScriptSucceeded}, nil),
+				deps.sandbox.EXPECT().Execute(anyCtx, "context-2", updateOnly).Return(failed, nil),
+				deps.sandbox.EXPECT().DiscardContext(anyCtx, "context-2").Return(nil),
+				deps.aborts.EXPECT().AbortRunningSession(anyCtx, boundarySessionUUID, sessionpkg.AbortScriptFailure).Return(nil),
+			)
+			return test{expectedEnd: runtime.EndSessionAborted}
+		},
+	}
+
+	for name, setup := range tests {
+		t.Run(name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			deps := dependencies{sandbox: NewMockgameSandbox(ctrl), aborts: NewMocksessionAborter(ctrl), replay: NewMockreplayRecorder(ctrl)}
+			tc := setup(t, deps)
+			controllerDeps := testDependencies()
+			controllerDeps.sandbox, controllerDeps.aborts, controllerDeps.replay = deps.sandbox, deps.aborts, deps.replay
+			controller, player, now := runningGame(t, controllerDeps)
+			controller.lock().manifest.Update = true
+			controller.unlock()
+			*now = now.Add(40 * time.Millisecond)
+			if tc.sample {
+				require.NoError(t, player.Sample(context.Background(), runtime.Sample{Sequence: 1, Inputs: []byte(`{"move":[1,0]}`)}))
+			}
+			*now = now.Add(60 * time.Millisecond)
+
+			controller.runBoundary()
+
+			require.Equal(t, tc.expectedInfraFailures, controller.infraFailures)
+			if tc.expectedEnd != "" {
+				require.Equal(t, tc.expectedEnd, endedWith(t, player.Ended))
+				return
+			}
+			view, gotView := nextView(t, player)
+			if tc.expectedView == nil {
+				require.False(t, gotView)
+			} else {
+				require.True(t, gotView)
+				require.Equal(t, *tc.expectedView, view)
+			}
+			next, _ := controller.takeBoundary()
+			require.Empty(t, next.operations, "update is never queued")
+			require.True(t, next.update)
+			require.Equal(t, tc.expectedExecutedThrough, next.game.ExecutedThroughSessionTimeMs)
+		})
+	}
+}
+
+func TestBatchOf(t *testing.T) {
+	type test struct {
+		work boundary
+
+		expected sandbox.Batch
+	}
+
+	transition := func(at int64) Operation {
+		return Operation{ParticipantID: "P1", Inputs: `{}`, SessionTimeMs: at}
+	}
+	sandboxTransition := func(at int64) sandbox.Transition {
+		return sandbox.Transition{ParticipantID: "P1", Inputs: []byte(`{}`), SessionTimeMs: at}
+	}
+	pass := &pendingCommand{token: "t1", name: "pass", payload: []byte(`{}`)}
+	sandboxPass := &sandbox.Command{ParticipantID: "P1", Name: "pass", Payload: []byte(`{}`)}
+
+	tests := map[string]func(t *testing.T) test{
+		"transitions_ending_a_batch_run_until_the_boundary": func(t *testing.T) test {
+			return test{
+				work:     boundary{operations: []Operation{transition(40), transition(70)}, sessionTimeMs: 100},
+				expected: sandbox.Batch{Operations: []sandbox.Operation{{SessionTimeMs: 100, Transitions: []sandbox.Transition{sandboxTransition(40), sandboxTransition(70)}}}},
+			}
+		},
+		"transitions_before_update_run_until_their_last_one": func(t *testing.T) test {
+			return test{
+				work: boundary{operations: []Operation{transition(40), transition(70)}, sessionTimeMs: 100, update: true},
+				expected: sandbox.Batch{Operations: []sandbox.Operation{
+					{SessionTimeMs: 70, Transitions: []sandbox.Transition{sandboxTransition(40), sandboxTransition(70)}},
+					{SessionTimeMs: 100, Update: true},
+				}},
+			}
+		},
+		"command_splits_the_transitions_each_at_its_time": func(t *testing.T) test {
+			command := Operation{ParticipantID: "P1", SessionTimeMs: 50, Command: pass}
+			return test{
+				work: boundary{operations: []Operation{transition(40), command, transition(70)}, sessionTimeMs: 100, update: true},
+				expected: sandbox.Batch{Operations: []sandbox.Operation{
+					{SessionTimeMs: 40, Transitions: []sandbox.Transition{sandboxTransition(40)}},
+					{SessionTimeMs: 50, Command: sandboxPass},
+					{SessionTimeMs: 70, Transitions: []sandbox.Transition{sandboxTransition(70)}},
+					{SessionTimeMs: 100, Update: true},
+				}},
+			}
+		},
+		"update_alone": func(t *testing.T) test {
+			return test{
+				work:     boundary{sessionTimeMs: 100, update: true},
+				expected: sandbox.Batch{Operations: []sandbox.Operation{{SessionTimeMs: 100, Update: true}}},
+			}
+		},
+		"nothing_runs_before_the_confirmed_state": func(t *testing.T) test {
+			return test{
+				work: boundary{operations: []Operation{transition(40)}, sessionTimeMs: 100, update: true, game: Game{ExecutedThroughSessionTimeMs: 60}},
+				expected: sandbox.Batch{Operations: []sandbox.Operation{
+					{SessionTimeMs: 60, Transitions: []sandbox.Transition{sandboxTransition(40)}},
+					{SessionTimeMs: 100, Update: true},
+				}},
+			}
+		},
+	}
+
+	for name, setup := range tests {
+		t.Run(name, func(t *testing.T) {
+			tc := setup(t)
+
+			batch := batchOf(tc.work)
+
+			require.Equal(t, tc.expected, batch)
 		})
 	}
 }

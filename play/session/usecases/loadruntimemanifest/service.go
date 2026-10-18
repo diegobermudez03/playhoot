@@ -65,6 +65,7 @@ func (s *Service) LoadRuntimeManifest(ctx context.Context, sessionUUID string) (
 		MaxPlayers: parsed.MaxPlayers,
 		Inputs:     runtimeInputs(parsed.Inputs),
 		Commands:   declaredCommands,
+		Update:     parsed.Update,
 	}, nil
 }
 

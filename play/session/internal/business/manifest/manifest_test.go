@@ -26,7 +26,7 @@ func TestParse(t *testing.T) {
 			return test{raw: `{"schema_version":1,"players":{"min":1,"max":1}}`, expectedManifest: Manifest{MinPlayers: 1, MaxPlayers: 1}}
 		},
 		"unknown_fields_are_ignored": func(t *testing.T) test {
-			return test{raw: `{"schema_version":1,"players":{"min":2,"max":4},"entrypoints":[]}`, expectedManifest: Manifest{MinPlayers: 2, MaxPlayers: 4}}
+			return test{raw: `{"schema_version":1,"players":{"min":2,"max":4},"replay":{}}`, expectedManifest: Manifest{MinPlayers: 2, MaxPlayers: 4}}
 		},
 		"inputs_with_their_defaults": func(t *testing.T) test {
 			return test{
@@ -45,6 +45,15 @@ func TestParse(t *testing.T) {
 					{Name: "play_card", Payload: []inputs.Declaration{{Name: "card", Type: inputs.String, Default: json.RawMessage(`""`)}}},
 				}},
 			}
+		},
+		"update_entrypoint": func(t *testing.T) test {
+			return test{raw: `{"schema_version":1,"players":{"min":1,"max":4},"entrypoints":["update"]}`, expectedManifest: Manifest{MinPlayers: 1, MaxPlayers: 4, Update: true}}
+		},
+		"unknown_entrypoint": func(t *testing.T) test {
+			return test{raw: `{"schema_version":1,"players":{"min":1,"max":4},"entrypoints":["tick"]}`, expectedErr: true}
+		},
+		"entrypoint_declared_twice": func(t *testing.T) test {
+			return test{raw: `{"schema_version":1,"players":{"min":1,"max":4},"entrypoints":["update","update"]}`, expectedErr: true}
 		},
 		"invalid_command_payload": func(t *testing.T) test {
 			return test{raw: `{"schema_version":1,"players":{"min":1,"max":4},"commands":{"pick":{"payload":{"mode":{"type":"enum","values":["a"]}}}}}`, expectedErr: true}

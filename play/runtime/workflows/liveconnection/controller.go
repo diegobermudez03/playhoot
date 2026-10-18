@@ -39,6 +39,9 @@ type Manifest struct {
 
 	// Commands are the COMMANDs the game accepts and their payloads.
 	Commands commands.Catalog
+
+	// Update means the game implements update(), run every boundary.
+	Update bool
 }
 
 // Game is the confirmed state of a running game: everything needed to
@@ -126,11 +129,12 @@ type sessionController struct {
 	manifestMu     sync.Mutex
 	manifestLoaded bool
 
-	// contextID is the sandbox context running the game, and infraFailures
-	// how many boundaries in a row failed to execute. Only the main
-	// goroutine uses them.
+	// contextID is the sandbox context running the game, infraFailures how
+	// many boundaries in a row failed to execute, and lastUpdate when update()
+	// last committed. Only the main goroutine uses them.
 	contextID     string
 	infraFailures int
+	lastUpdate    time.Time
 
 	// operations are run by the main goroutine, in order.
 	operations chan func()
@@ -190,7 +194,7 @@ func (c *sessionController) loadManifest(ctx context.Context) error {
 		return fmt.Errorf("reading the manifest's commands: %w", err)
 	}
 	s := c.lock()
-	s.manifest = Manifest{MaxPlayers: loaded.MaxPlayers, Inputs: schema, Commands: catalog}
+	s.manifest = Manifest{MaxPlayers: loaded.MaxPlayers, Inputs: schema, Commands: catalog, Update: loaded.Update}
 	c.unlock()
 	c.manifestLoaded = true
 	return nil

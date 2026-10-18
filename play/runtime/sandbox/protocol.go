@@ -68,12 +68,13 @@ type workerRequest struct {
 	ContextRevision int64           `json:"contextRevision,omitempty"`
 }
 
-// workerStep is one operation of an execution batch: transitions for
-// samples(), or one command for command(), at SessionTime.
+// workerStep is one operation of an execution batch at SessionTime:
+// transitions for samples(), one command for command(), or update().
 type workerStep struct {
 	SessionTime int64              `json:"sessionTime"`
 	Transitions []workerTransition `json:"transitions,omitempty"`
 	Command     *workerCommand     `json:"command,omitempty"`
+	Update      bool               `json:"update,omitempty"`
 }
 
 // workerCommand is one COMMAND, as command() receives it.

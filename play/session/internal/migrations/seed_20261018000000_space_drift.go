@@ -12,13 +12,14 @@ import (
 const (
 	// seedSpaceDriftGameUUID is a playable Game whose EXECUTABLE version runs
 	// seedSpaceDriftScript: ships flying in a shared arena, built to exercise
-	// SAMPLE and COMMAND transmission and replication to players.
+	// SAMPLE, COMMAND and update() execution and replication to players.
 	seedSpaceDriftGameUUID    = "33333333-3333-4333-8333-333333333333"
 	seedSpaceDriftVersionUUID = "33333333-3333-4333-8333-0000000000c1"
 
 	// seedSpaceDriftManifest lets one to eight players fly with a move stick
-	// and a boost button, and teleport to a point of the arena.
-	seedSpaceDriftManifest = `{"schema_version":1,"players":{"min":1,"max":8},` +
+	// and a boost button, and teleport to a point of the arena; update() keeps
+	// the world moving between inputs.
+	seedSpaceDriftManifest = `{"schema_version":1,"players":{"min":1,"max":8},"entrypoints":["update"],` +
 		`"inputs":{"move":{"type":"vector2"},"boost":{"type":"boolean"}},` +
 		`"commands":{"teleport":{"payload":{"x":{"type":"number","min":20,"max":980,"default":500},"y":{"type":"number","min":20,"max":980,"default":500}}}}}`
 )
@@ -29,8 +30,8 @@ const seedSpaceDriftScript = `// Space Drift: each ship accelerates along its mo
 // boosting), slows down by drag and bounces off the arena walls; flying through
 // the star scores a point and moves the star somewhere random. The teleport
 // command moves a ship to a point and stops it, at most once every three
-// seconds: earlier, the game answers COOLDOWN and nothing changes. Without
-// update(), the world only advances when a batch runs, so the state records how
+// seconds: earlier, the game answers COOLDOWN and nothing changes. update()
+// keeps the world moving while nobody sends anything; the state records how
 // far it was simulated and every operation integrates up to its time.
 const ARENA_SIZE = 1000;
 const THRUST = 400;
@@ -70,6 +71,12 @@ function samples(state, transitions, context) {
 		ship.thrust = clampStick(transition.inputs.move);
 		ship.boost = transition.inputs.boost;
 	}
+	simulate(world, context.sessionTime);
+	return { state: world };
+}
+
+function update(state, context) {
+	const world = copyWorld(state);
 	simulate(world, context.sessionTime);
 	return { state: world };
 }

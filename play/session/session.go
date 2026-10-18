@@ -111,6 +111,10 @@ type RuntimeManifest struct {
 
 	// Commands are the COMMANDs the game accepts, in name order.
 	Commands []RuntimeCommand
+
+	// Update means the game implements update(), which the Runtime calls
+	// periodically while the game runs.
+	Update bool
 }
 
 // RuntimeCommand is one declared COMMAND; its payload fields are declared

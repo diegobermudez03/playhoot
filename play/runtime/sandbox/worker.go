@@ -197,9 +197,9 @@ func (w *worker) start(req workerRequest) workerResponse {
 }
 
 // execute runs a batch's steps in order on the confirmed state, each at its
-// Session time: samples(state, transitions, context) and
-// command(state, command, context), which return {state} and
-// {state, response}. Nothing of the batch is kept unless every step succeeds.
+// Session time: samples(state, transitions, context), update(state, context)
+// and command(state, command, context), the last returning {state, response}
+// and the others {state}. Nothing of the batch is kept unless all succeed.
 func (w *worker) execute(req workerRequest) workerResponse {
 	if !w.started {
 		return fatal("game not started")
@@ -214,22 +214,33 @@ func (w *worker) execute(req workerRequest) workerResponse {
 		if step.SessionTime < at {
 			return fatal("session time cannot go back")
 		}
-		if (len(step.Transitions) > 0) == (step.Command != nil) {
-			return fatal("a step runs either input transitions or one command")
+		kinds := 0
+		for _, set := range []bool{len(step.Transitions) > 0, step.Command != nil, step.Update} {
+			if set {
+				kinds++
+			}
+		}
+		if kinds != 1 {
+			return fatal("a step runs exactly one of input transitions, a command or update")
 		}
 		if err := w.setTime(step.SessionTime); err != nil {
 			return fatal(err.Error())
 		}
 		executionContext := executionContextJSON(step.SessionTime, step.SessionTime-at)
-		entrypoint, argument := "samples", any(step.Transitions)
-		if step.Command != nil {
-			entrypoint, argument = "command", step.Command
+		entrypoint, arguments := "update", []string{string(state), executionContext}
+		if !step.Update {
+			entrypoint = "samples"
+			var argument any = step.Transitions
+			if step.Command != nil {
+				entrypoint, argument = "command", step.Command
+			}
+			argumentJSON, err := json.Marshal(argument)
+			if err != nil {
+				return fatal("encoding " + entrypoint + " argument: " + err.Error())
+			}
+			arguments = []string{string(state), string(argumentJSON), executionContext}
 		}
-		argumentJSON, err := json.Marshal(argument)
-		if err != nil {
-			return fatal("encoding " + entrypoint + " argument: " + err.Error())
-		}
-		result, failure := w.invoke(entrypoint, string(state), string(argumentJSON), executionContext)
+		result, failure := w.invoke(entrypoint, arguments...)
 		if failure != nil {
 			w.broken = true
 			return *failure
