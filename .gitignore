@@ -1,2 +1,5 @@
 .env
 game/v1/program/DEFINITION.md
+
+# Objects of the local GCS emulator (docker-compose service gcs).
+local/gcs-data/

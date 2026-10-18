@@ -15,6 +15,18 @@ services:
       timeout: 5s
       retries: 10
 
+  # Local Google Cloud Storage emulator. Every directory under ./local/gcs is
+  # a bucket created at startup; objects are stored as files under
+  # ./local/gcs-data (ignored by git), browsable and kept across restarts.
+  gcs:
+    image: fsouza/fake-gcs-server:1.52.2
+    command: ["-scheme", "http", "-port", "4443", "-public-host", "localhost:4443", "-external-url", "http://localhost:4443", "-backend", "filesystem", "-filesystem-root", "/storage", "-data", "/data"]
+    ports:
+      - "4443:4443"
+    volumes:
+      - ./local/gcs:/data
+      - ./local/gcs-data:/storage
+
   adminer:
     image: adminer:latest
     environment:

@@ -3,8 +3,11 @@ package objectstore_test
 import (
 	"context"
 	"errors"
+	"io"
+	"net/http"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/diegobermudez03/playhoot/play/session/internal/objectstore"
 	"github.com/diegobermudez03/playhoot/play/session/internal/objectstore/storetest"
@@ -29,6 +32,33 @@ func TestGCSSatisfiesStoreContract(t *testing.T) {
 		t.Cleanup(func() { _ = store.Close() })
 		return store
 	})
+}
+
+// TestGCSSignedURLServesTheObject fetches what a signed URL points to, which
+// the shared contract cannot do against the fake. Like the contract, it runs
+// against an emulator (STORAGE_EMULATOR_HOST) or a real bucket.
+func TestGCSSignedURLServesTheObject(t *testing.T) {
+	projectID, bucket := os.Getenv("GCS_TEST_PROJECT_ID"), os.Getenv("GCS_TEST_BUCKET")
+	if projectID == "" || bucket == "" {
+		t.Skip("GCS_TEST_PROJECT_ID and GCS_TEST_BUCKET not set; the GCS adapter is not exercised")
+	}
+	ctx := context.Background()
+	store, err := objectstore.NewGCS(ctx, projectID, bucket)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = store.Close() })
+	locator, err := objectstore.PutContent(ctx, store, "frontend-packages", []byte("<!doctype html><p>game</p>"), "text/html")
+	require.NoError(t, err)
+
+	signed, err := store.PresignGet(ctx, locator.ObjectKey, time.Minute)
+	require.NoError(t, err)
+	response, err := http.Get(signed.URL)
+	require.NoError(t, err)
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	require.NoError(t, err)
+
+	require.Equal(t, http.StatusOK, response.StatusCode, "%s: %s", signed.URL, body)
+	require.Equal(t, "<!doctype html><p>game</p>", string(body))
 }
 
 func TestLocatorForIsContentAddressed(t *testing.T) {

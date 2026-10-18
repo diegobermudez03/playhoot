@@ -2,9 +2,15 @@ package objectstore
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"strings"
 	"time"
 
 	"cloud.google.com/go/storage"
@@ -14,12 +20,25 @@ import (
 // scripts are small; anything larger is not a script this port serves.
 const maxObjectBytes = 16 << 20
 
+// emulatorAccessID is the identity URLs are signed as under an emulator.
+const emulatorAccessID = "emulator@playhoot-local.iam.gserviceaccount.com"
+
 // GCS is a Store backed by one private Google Cloud Storage bucket. It signs
 // URLs through the IAM Credentials API as its own identity, so that identity
 // needs permission to sign for itself.
 type GCS struct {
 	client *storage.Client
 	bucket string
+	// emulator is how URLs are signed under STORAGE_EMULATOR_HOST; nil
+	// against real Cloud Storage.
+	emulator *emulatorSigning
+}
+
+// emulatorSigning signs with a throwaway key: an emulator, which has no
+// credentials to sign with, does not check signatures.
+type emulatorSigning struct {
+	privateKey []byte
+	insecure   bool
 }
 
 // NewGCS constructs a GCS store for bucket using Application Default
@@ -33,7 +52,29 @@ func NewGCS(ctx context.Context, projectID, bucket string) (*GCS, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating gcs client: %w", err)
 	}
-	return &GCS{client: client, bucket: bucket}, nil
+	store := &GCS{client: client, bucket: bucket}
+	if host := os.Getenv("STORAGE_EMULATOR_HOST"); host != "" {
+		if store.emulator, err = newEmulatorSigning(host); err != nil {
+			_ = client.Close()
+			return nil, err
+		}
+	}
+	return store, nil
+}
+
+func newEmulatorSigning(host string) (*emulatorSigning, error) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, fmt.Errorf("generating emulator signing key: %w", err)
+	}
+	encoded, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		return nil, fmt.Errorf("encoding emulator signing key: %w", err)
+	}
+	return &emulatorSigning{
+		privateKey: pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: encoded}),
+		insecure:   strings.HasPrefix(host, "http://"),
+	}, nil
 }
 
 // Close releases the underlying client.
@@ -77,11 +118,17 @@ func (g *GCS) Put(ctx context.Context, key string, content []byte, contentType s
 // a signed URL for a missing object simply returns 404 when fetched.
 func (g *GCS) PresignGet(ctx context.Context, key string, ttl time.Duration) (SignedURL, error) {
 	expiresAt := time.Now().UTC().Add(ttl)
-	url, err := g.client.Bucket(g.bucket).SignedURL(key, &storage.SignedURLOptions{
+	options := &storage.SignedURLOptions{
 		Method:  "GET",
 		Scheme:  storage.SigningSchemeV4,
 		Expires: expiresAt,
-	})
+	}
+	if g.emulator != nil {
+		options.GoogleAccessID = emulatorAccessID
+		options.PrivateKey = g.emulator.privateKey
+		options.Insecure = g.emulator.insecure
+	}
+	url, err := g.client.Bucket(g.bucket).SignedURL(key, options)
 	if err != nil {
 		return SignedURL{}, fmt.Errorf("signing gcs url: %w", err)
 	}
