@@ -192,6 +192,13 @@ func TestStartSession(t *testing.T) {
 			)
 			return test{expectedErr: true, expectedLobby: true}
 		},
+		"sandbox_without_capacity": func(t *testing.T, deps dependencies) test {
+			gomock.InOrder(
+				eligible(deps),
+				deps.sandbox.EXPECT().CreateContext(ctx, spec).Return("", sandbox.ErrNoCapacity),
+			)
+			return test{expectedOutcome: runtime.StartSandboxUnavailable, expectedLobby: true}
+		},
 		"sandbox_unavailable": func(t *testing.T, deps dependencies) test {
 			gomock.InOrder(
 				eligible(deps),

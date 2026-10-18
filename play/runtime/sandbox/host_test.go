@@ -2,12 +2,14 @@ package sandbox
 
 import (
 	"context"
+	"io"
 	"os"
-	"path/filepath"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/fastschema/qjs"
 	"github.com/stretchr/testify/require"
 )
 
@@ -31,7 +33,7 @@ func TestMain(m *testing.M) {
 // newTestHost returns a Host whose contexts are all stopped when the test ends.
 func newTestHost(t *testing.T) *Host {
 	t.Helper()
-	host := NewHost()
+	host := NewHost(HostLimits{})
 	t.Cleanup(func() { _ = host.Close() })
 	return host
 }
@@ -95,27 +97,24 @@ func TestStart(t *testing.T) {
 		"runaway_loop_exceeds_the_execution_budget": func(t *testing.T) test {
 			return test{script: `function start() { while (true) {} }`, budget: 300 * time.Millisecond, expected: StartResult{Outcome: ScriptFailed}, expectedErrorContains: "execution budget exceeded"}
 		},
-		"no_host_capability_is_reachable": func(t *testing.T) test {
+		"no_host_helper_is_reachable": func(t *testing.T) test {
 			return test{
 				script: `function start() {
-					let readHostFile = false;
-					try { const f = std.open("../go.mod", "r"); if (f !== null) { readHostFile = true; f.close(); } } catch (e) {}
-					const env = (typeof std !== "undefined" && typeof std.getenv === "function") ? std.getenv("PLAYHOOT_TEST_SECRET") : undefined;
-					return { state: {
-						ambientGlobals: typeof require !== "undefined" || typeof process !== "undefined" || typeof fetch !== "undefined",
-						readHostFile: readHostFile,
-						performance: typeof performance !== "undefined",
-						os: typeof os !== "undefined",
-						env: env === undefined ? null : env
-					} };
+					const helpers = ["std", "os", "bjson", "print", "console", "scriptArgs", "navigator", "performance",
+						"setTimeout", "setInterval", "queueMicrotask", "require", "process", "fetch"];
+					return { state: { reachable: helpers.filter((name) => typeof globalThis[name] !== "undefined") } };
 				}`,
-				expected: StartResult{
-					Outcome:         ScriptSucceeded,
-					State:           []byte(`{"ambientGlobals":false,"readHostFile":false,"performance":false,"os":false,"env":null}`),
-					PRNGState:       seedState,
-					ContextRevision: 1,
-				},
+				expected: StartResult{Outcome: ScriptSucceeded, State: []byte(`{"reachable":[]}`), PRNGState: seedState, ContextRevision: 1},
 			}
+		},
+		"input_is_read_only": func(t *testing.T) test {
+			return test{script: `function start(participants) { participants.push("P9"); return { state: {} }; }`, expected: StartResult{Outcome: ScriptFailed}, expectedErrorContains: "start() threw"}
+		},
+		"global_state_cannot_be_kept": func(t *testing.T) test {
+			return test{script: `var starts = 0; function start() { starts++; return { state: { starts: starts } }; }`, expected: StartResult{Outcome: ScriptFailed}, expectedErrorContains: "start() threw"}
+		},
+		"builtins_cannot_carry_state": func(t *testing.T) test {
+			return test{script: `function start() { Math.cache = 1; return { state: {} }; }`, expected: StartResult{Outcome: ScriptFailed}, expectedErrorContains: "start() threw"}
 		},
 	}
 
@@ -214,21 +213,107 @@ func TestProject(t *testing.T) {
 	}
 }
 
-func TestProjectIsPure(t *testing.T) {
-	host := newTestHost(t)
-	contextID := startedContext(t, host, `
-		function start() { return { state: { round: 1 } }; }
-		function project(state, participant) { state.round = 99; return { round: state.round, roll: Math.random() }; }
-	`)
+func TestProjectCannotChangeTheContext(t *testing.T) {
+	type test struct {
+		project string
+
+		expectedErrorContains string
+	}
+
+	tests := map[string]func(t *testing.T) test{
+		"mutating_the_state": func(t *testing.T) test {
+			return test{project: `function project(state) { state.round = 99; return {}; }`, expectedErrorContains: "project() threw"}
+		},
+		"drawing_randomness": func(t *testing.T) test {
+			return test{project: `function project() { return { roll: Math.random() }; }`, expectedErrorContains: "Math.random is not available"}
+		},
+		"writing_a_global": func(t *testing.T) test {
+			return test{project: `function project() { globalThis.seen = true; return {}; }`, expectedErrorContains: "project() threw"}
+		},
+	}
+
+	for name, setup := range tests {
+		t.Run(name, func(t *testing.T) {
+			tc := setup(t)
+			host := newTestHost(t)
+			contextID := startedContext(t, host, `function start() { return { state: { round: 1, rolls: [Math.random()] } }; }`+tc.project)
+
+			result, err := host.Project(context.Background(), contextID, "P1")
+
+			require.NoError(t, err)
+			require.Equal(t, ScriptFailed, result.Outcome)
+			require.Contains(t, result.ScriptError, tc.expectedErrorContains)
+		})
+	}
+}
+
+func TestPatchedRuntimeHasNoHostCapabilities(t *testing.T) {
+	// Without the determinism prelude and through the qjs:std and qjs:os
+	// modules themselves: the guarantee is the runtime's, not the cleanup's.
+	run := func() string {
+		rt, err := qjs.New(qjs.Option{MemoryLimit: defaultMemoryLimitBytes, MaxStackSize: defaultMaxStackSizeBytes, Stdout: io.Discard, Stderr: io.Discard})
+		require.NoError(t, err)
+		defer rt.Close()
+		_, err = rt.Context().Eval("probe.js", qjs.Code(`
+			import * as std from "qjs:std";
+			import * as os from "qjs:os";
+			let wrote = false;
+			try { const f = std.open("/probe.txt", "w"); wrote = f !== null; } catch (e) {}
+			let listed = false;
+			try { const [entries, err] = os.readdir("/"); listed = err === 0 && entries.length > 0; } catch (e) {}
+			globalThis.result = JSON.stringify({ wrote: wrote, listed: listed, env: std.getenv("PATH") ?? null, now: Date.now() });
+		`), qjs.TypeModule())
+		require.NoError(t, err)
+		result := rt.Context().Global().GetPropertyStr("result")
+		defer result.Free()
+		return result.String()
+	}
+
+	first, second := run(), run()
+
+	require.Contains(t, first, `"wrote":false,"listed":false,"env":null`, "no directory is mounted and the environment is empty, whatever this process's is")
+	require.Equal(t, first, second, "the clock is not the host's: two runs see the same time")
+	require.NotEmpty(t, os.Getenv("PATH"), "the probe only proves something if the host has an environment")
+}
+
+func TestHostLimits(t *testing.T) {
 	ctx := context.Background()
+	const script = `function start() { return { state: {} }; } function project() { return {}; }`
 
-	first, err := host.Project(ctx, contextID, "P1")
-	require.NoError(t, err)
-	second, err := host.Project(ctx, contextID, "P1")
-	require.NoError(t, err)
+	t.Run("contexts_beyond_the_limit_are_refused", func(t *testing.T) {
+		host := NewHost(HostLimits{MaxContexts: 1})
+		t.Cleanup(func() { _ = host.Close() })
+		first, err := host.CreateContext(ctx, ContextSpec{Script: []byte(script)})
+		require.NoError(t, err)
 
-	require.Equal(t, ScriptSucceeded, first.Outcome, first.ScriptError)
-	require.Equal(t, first, second, "a projection must neither change the state nor consume the game's randomness")
+		_, err = host.CreateContext(ctx, ContextSpec{Script: []byte(script)})
+		require.ErrorIs(t, err, ErrNoCapacity)
+
+		require.NoError(t, host.DiscardContext(ctx, first))
+		_, err = host.CreateContext(ctx, ContextSpec{Script: []byte(script)})
+		require.NoError(t, err, "a discarded context frees its capacity")
+	})
+	t.Run("executions_beyond_the_limit_wait", func(t *testing.T) {
+		host := NewHost(HostLimits{MaxConcurrentExecutions: 1})
+		t.Cleanup(func() { _ = host.Close() })
+		slow, err := host.CreateContext(ctx, ContextSpec{Script: []byte(`function start() { let n = 0; while (n < 3e7) { n++; } return { state: {} }; }`)})
+		require.NoError(t, err)
+		fast, err := host.CreateContext(ctx, ContextSpec{Script: []byte(script)})
+		require.NoError(t, err)
+
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, _ = host.Start(ctx, slow, StartInput{Participants: []string{"P1"}})
+		}()
+		time.Sleep(50 * time.Millisecond)
+		waiting, cancel := context.WithTimeout(ctx, 20*time.Millisecond)
+		defer cancel()
+		_, err = host.Start(waiting, fast, StartInput{Participants: []string{"P1"}})
+		require.Error(t, err, "with the only slot taken, a call waits for it")
+		wg.Wait()
+	})
 }
 
 func TestHostInfrastructureFailures(t *testing.T) {
@@ -261,9 +346,6 @@ func TestHostInfrastructureFailures(t *testing.T) {
 }
 
 func TestDiscardContext(t *testing.T) {
-	pattern := filepath.Join(os.TempDir(), "playhoot-jsexecutor-*")
-	before, err := filepath.Glob(pattern)
-	require.NoError(t, err)
 	host := newTestHost(t)
 	contextID := startedContext(t, host, `function start() { return { state: {} }; } function project() { return {}; }`)
 	runaway, err := host.CreateContext(context.Background(), ContextSpec{Script: []byte(`function start() { while (true) {} }`)})
@@ -278,9 +360,6 @@ func TestDiscardContext(t *testing.T) {
 
 	_, err = host.Project(context.Background(), contextID, "P1")
 	require.ErrorIs(t, err, ErrUnknownContext)
-	after, err := filepath.Glob(pattern)
-	require.NoError(t, err)
-	require.Len(t, after, len(before), "a discarded or killed context must not leave its scratch directory behind")
 }
 
 func TestConcurrentContextsDoNotInterfere(t *testing.T) {
@@ -315,7 +394,7 @@ func TestConcurrentContextsDoNotInterfere(t *testing.T) {
 func TestRestore(t *testing.T) {
 	const script = `
 		function start(participants) { return { state: { round: 3, rolls: [Math.random()] } }; }
-		function project(state, participant) { return { round: state.round, roll: Math.random() }; }
+		function project(state, participant) { return { round: state.round, roll: state.rolls[0], me: participant }; }
 	`
 	ctx := context.Background()
 
@@ -337,7 +416,8 @@ func TestRestore(t *testing.T) {
 		require.NoError(t, err)
 		got, err := host.Project(ctx, restored, "P1")
 		require.NoError(t, err)
-		require.Equal(t, want, got, "the same state and PRNG state must project the same view")
+		require.Equal(t, ScriptSucceeded, want.Outcome, want.ScriptError)
+		require.Equal(t, want, got, "the same state must project the same view")
 	})
 	t.Run("script_that_does_not_load", func(t *testing.T) {
 		host := newTestHost(t)

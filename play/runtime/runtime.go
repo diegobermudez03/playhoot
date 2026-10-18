@@ -209,6 +209,10 @@ const (
 	// StartFailed means the game's script failed to start, so the Session was
 	// aborted and its connections end as EndSessionAborted.
 	StartFailed StartSessionOutcome = "start_failed"
+
+	// StartSandboxUnavailable means this instance cannot run another game
+	// now; the Session stays in its lobby and starting again may succeed.
+	StartSandboxUnavailable StartSessionOutcome = "sandbox_unavailable"
 )
 
 // StartSessionResult is the outcome of starting a Session.

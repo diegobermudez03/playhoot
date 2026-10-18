@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime/debug"
+	runtimemetrics "runtime/metrics"
 
 	"github.com/fastschema/qjs"
 )
@@ -24,6 +26,9 @@ func RunAsWorkerIfRequested() bool {
 // runWorker answers each request line on in with one response line on out,
 // until in ends.
 func runWorker(in io.Reader, out io.Writer) {
+	// Soft cap of this worker's whole Go heap, the JavaScript runtime's
+	// memory included, so its footprint stays near the per-context budget.
+	debug.SetMemoryLimit(workerGoMemoryLimitBytes)
 	w := &worker{}
 	defer w.close()
 	reader := bufio.NewReader(in)
@@ -32,7 +37,9 @@ func runWorker(in io.Reader, out io.Writer) {
 		if len(line) == 0 && err != nil {
 			return
 		}
-		encoded, marshalErr := json.Marshal(w.handle(line))
+		resp := w.handle(line)
+		resp.MemoryBytes = memoryBytes()
+		encoded, marshalErr := json.Marshal(resp)
 		if marshalErr != nil {
 			encoded = []byte(fmt.Sprintf(`{"fatal":%q}`, "encoding worker response: "+marshalErr.Error()))
 		}
@@ -40,6 +47,17 @@ func runWorker(in io.Reader, out io.Writer) {
 			return
 		}
 	}
+}
+
+// memoryBytes is all the memory this process's Go runtime holds, the
+// JavaScript runtime's included.
+func memoryBytes() uint64 {
+	sample := []runtimemetrics.Sample{{Name: "/memory/classes/total:bytes"}}
+	runtimemetrics.Read(sample)
+	if sample[0].Value.Kind() != runtimemetrics.KindUint64 {
+		return 0
+	}
+	return sample[0].Value.Uint64()
 }
 
 // worker is one game's execution context: its JavaScript runtime with the
@@ -101,11 +119,10 @@ func (w *worker) load(req workerRequest) workerResponse {
 	if w.runtime != nil {
 		return fatal("context already loaded")
 	}
-	if req.ScratchDir == "" {
-		return fatal("no sandbox scratch directory supplied")
-	}
+	// The patched runtime mounts no directory and gives no real clock: the
+	// script has no host capability even through the qjs:std or qjs:os
+	// modules.
 	runtime, err := qjs.New(qjs.Option{
-		CWD:          req.ScratchDir,
 		MemoryLimit:  defaultMemoryLimitBytes,
 		MaxStackSize: defaultMaxStackSizeBytes,
 		Stdout:       io.Discard,
@@ -120,9 +137,16 @@ func (w *worker) load(req workerRequest) workerResponse {
 		return fatal("installing determinism prelude: " + err.Error())
 	}
 	w.control = control
-	if _, err := runtime.Context().Eval("script.js", qjs.Code(req.Script)); err != nil {
+	if _, err := runtime.Context().Eval("script.js", qjs.Code(req.Script), qjs.FlagStrict()); err != nil {
 		w.broken = true
 		return scriptFailure("loading script: " + err.Error())
+	}
+	// Once loaded, nothing global can change: all game state lives in what
+	// executions return, which the Runtime mirrors.
+	if result, err := w.control.InvokeJS("lockdown"); err != nil {
+		return fatal("locking the context down: " + err.Error())
+	} else {
+		result.Free()
 	}
 	return workerResponse{}
 }
@@ -199,22 +223,21 @@ func (w *worker) restore(req workerRequest) workerResponse {
 	return workerResponse{ContextRevision: w.revision}
 }
 
-// project runs the game's project(state, participant, context) on a copy of
-// the state. It is pure: any randomness it draws is rolled back.
+// project runs the game's project(state, participant, context) on the frozen
+// state. It has no randomness: Math.random throws while it runs.
 func (w *worker) project(req workerRequest) workerResponse {
 	if !w.started {
 		return fatal("game not started")
-	}
-	before, err := w.randomState()
-	if err != nil {
-		return fatal(err.Error())
 	}
 	participantJSON, err := json.Marshal(req.Participant)
 	if err != nil {
 		return fatal("encoding participant: " + err.Error())
 	}
+	if err := w.allowRandom(false); err != nil {
+		return fatal(err.Error())
+	}
 	view, failure := w.invoke("project", w.state, string(participantJSON), executionContextJSON())
-	if err := w.setRandomState(before); err != nil {
+	if err := w.allowRandom(true); err != nil {
 		return fatal(err.Error())
 	}
 	if failure != nil {
@@ -226,8 +249,9 @@ func (w *worker) project(req workerRequest) workerResponse {
 	return workerResponse{View: json.RawMessage(view)}
 }
 
-// invoke calls the script's global function name with JSON arguments and
-// returns its result as JSON, or the response the failure answers with.
+// invoke calls the script's global function name with JSON arguments, each
+// deep-frozen so authored code cannot change them, and returns its result as
+// JSON, or the response the failure answers with.
 func (w *worker) invoke(name string, argumentsJSON ...string) (string, *workerResponse) {
 	ctx := w.runtime.Context()
 	global := ctx.Global()
@@ -239,6 +263,12 @@ func (w *worker) invoke(name string, argumentsJSON ...string) (string, *workerRe
 	for i, argument := range argumentsJSON {
 		arguments[i] = ctx.ParseJSON(argument)
 		defer arguments[i].Free()
+		frozen, err := w.control.InvokeJS("freezeValue", arguments[i])
+		if err != nil {
+			failure := fatal("freezing an argument: " + err.Error())
+			return "", &failure
+		}
+		frozen.Free()
 	}
 	result, err := global.InvokeJS(name, arguments...)
 	if err != nil {
@@ -264,6 +294,17 @@ func (w *worker) setTime(ms int64) error {
 	result, err := w.control.InvokeJS("setTime", value)
 	if err != nil {
 		return fmt.Errorf("setting logical time: %w", err)
+	}
+	result.Free()
+	return nil
+}
+
+func (w *worker) allowRandom(allowed bool) error {
+	value := w.runtime.Context().NewBool(allowed)
+	defer value.Free()
+	result, err := w.control.InvokeJS("allowRandom", value)
+	if err != nil {
+		return fmt.Errorf("switching randomness: %w", err)
 	}
 	result.Free()
 	return nil

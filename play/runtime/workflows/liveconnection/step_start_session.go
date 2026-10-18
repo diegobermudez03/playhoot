@@ -56,6 +56,7 @@ var (
 		string(runtime.StartInvalidPlayerCount),
 		string(runtime.StartGameUnavailable),
 		string(runtime.StartFailed),
+		string(runtime.StartSandboxUnavailable),
 		startOutcomeError,
 	)
 
@@ -143,6 +144,9 @@ func (m *Manager) startFrozenLobby(ctx context.Context, sessionController *contr
 	}
 	spec := sandbox.ContextSpec{GameVersionUUID: eligibility.GameVersionUUID, Script: eligibility.Script}
 	game, views, started, err := m.startGame(ctx, spec, sandbox.StartInput{Participants: participantIDs, RandomSeed: m.seeds()})
+	if errors.Is(err, sandbox.ErrNoCapacity) {
+		return runtime.StartSandboxUnavailable, nil
+	}
 	if err != nil {
 		return "", err
 	}
@@ -192,11 +196,15 @@ func (m *Manager) adoptRunningSession(ctx context.Context, sessionController *co
 		participants[i] = runtime.Participant{ParticipantID: participant.ParticipantID, UserUUID: participant.UserUUID}
 		participantIDs[i] = participant.ParticipantID
 	}
-	contextID, err := m.sandbox.CreateContext(ctx, sandbox.ContextSpec{GameVersionUUID: running.GameVersionUUID, Script: running.Script})
+	spec := sandbox.ContextSpec{GameVersionUUID: running.GameVersionUUID, Script: running.Script}
+	contextID, err := m.sandbox.CreateContext(ctx, spec)
+	if errors.Is(err, sandbox.ErrNoCapacity) {
+		return runtime.StartSandboxUnavailable, nil
+	}
 	if err != nil {
 		return "", fmt.Errorf("creating sandbox context: %w", err)
 	}
-	game, views, err := m.restoreInContext(ctx, contextID, saved, participantIDs)
+	game, views, err := m.restoreInContext(ctx, contextID, spec, saved, participantIDs)
 	if err != nil {
 		m.discardContext(ctx, contextID)
 		return "", err
@@ -210,7 +218,7 @@ func (m *Manager) adoptRunningSession(ctx context.Context, sessionController *co
 // restoreInContext sets contextID at the checkpoint and projects every
 // participant's view. The committed game already ran this script, so any
 // script failure here is an error, not a start failure.
-func (m *Manager) restoreInContext(ctx context.Context, contextID string, saved checkpoint.Checkpoint, participantIDs []string) (controller.Game, map[string][]byte, error) {
+func (m *Manager) restoreInContext(ctx context.Context, contextID string, spec sandbox.ContextSpec, saved checkpoint.Checkpoint, participantIDs []string) (controller.Game, map[string][]byte, error) {
 	restored, err := m.sandbox.Restore(ctx, contextID, sandbox.Snapshot{State: saved.State, PRNGState: saved.PRNGState, ContextRevision: saved.ContextRevision})
 	if err != nil {
 		return controller.Game{}, nil, fmt.Errorf("restoring game: %w", err)
@@ -225,7 +233,14 @@ func (m *Manager) restoreInContext(ctx context.Context, contextID string, saved 
 	if scriptErr != "" {
 		return controller.Game{}, nil, fmt.Errorf("projecting restored game: script failed: %s", scriptErr)
 	}
-	return controller.Game{ContextID: contextID, ContextRevision: saved.ContextRevision, State: saved.State, PRNGState: saved.PRNGState}, views, nil
+	return controller.Game{
+		ContextID:       contextID,
+		GameVersionUUID: spec.GameVersionUUID,
+		Script:          spec.Script,
+		ContextRevision: saved.ContextRevision,
+		State:           saved.State,
+		PRNGState:       saved.PRNGState,
+	}, views, nil
 }
 
 // commitStart makes the Session RUNNING with its roster and initial
@@ -292,14 +307,14 @@ func (m *Manager) runGameStart(ctx context.Context, spec sandbox.ContextSpec, in
 	if err != nil {
 		return controller.Game{}, nil, "", fmt.Errorf("creating sandbox context: %w", err)
 	}
-	game, views, scriptErr, err = m.startInContext(ctx, contextID, input)
+	game, views, scriptErr, err = m.startInContext(ctx, contextID, spec, input)
 	if err != nil || scriptErr != "" {
 		m.discardContext(ctx, contextID)
 	}
 	return game, views, scriptErr, err
 }
 
-func (m *Manager) startInContext(ctx context.Context, contextID string, input sandbox.StartInput) (game controller.Game, views map[string][]byte, scriptErr string, err error) {
+func (m *Manager) startInContext(ctx context.Context, contextID string, spec sandbox.ContextSpec, input sandbox.StartInput) (game controller.Game, views map[string][]byte, scriptErr string, err error) {
 	result, err := m.sandbox.Start(ctx, contextID, input)
 	if err != nil {
 		return controller.Game{}, nil, "", fmt.Errorf("starting game: %w", err)
@@ -320,6 +335,8 @@ func (m *Manager) startInContext(ctx context.Context, contextID string, input sa
 	}
 	return controller.Game{
 		ContextID:       contextID,
+		GameVersionUUID: spec.GameVersionUUID,
+		Script:          spec.Script,
 		ContextRevision: result.ContextRevision,
 		State:           result.State,
 		PRNGState:       result.PRNGState,

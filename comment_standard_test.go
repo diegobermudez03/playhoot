@@ -28,7 +28,8 @@ func TestNoInternalDocCitationsInComments(t *testing.T) {
 			return err
 		}
 		if info.IsDir() {
-			if info.Name() == ".git" {
+			// Vendored third-party code follows its own conventions.
+			if info.Name() == ".git" || info.Name() == "third_party" {
 				return filepath.SkipDir
 			}
 			return nil
@@ -120,7 +121,7 @@ func TestExportedDocCommentsStayAtPublicContract(t *testing.T) {
 			return err
 		}
 		if info.IsDir() {
-			if info.Name() == ".git" || info.Name() == "internal" {
+			if info.Name() == ".git" || info.Name() == "internal" || info.Name() == "third_party" {
 				return filepath.SkipDir
 			}
 			return nil
@@ -243,7 +244,8 @@ func TestDocCommentLength(t *testing.T) {
 			return err
 		}
 		if info.IsDir() {
-			if info.Name() == ".git" {
+			// Vendored third-party code follows its own conventions.
+			if info.Name() == ".git" || info.Name() == "third_party" {
 				return filepath.SkipDir
 			}
 			return nil

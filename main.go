@@ -23,13 +23,13 @@ import (
 	"github.com/diegobermudez03/playhoot/play/runtime/sandbox"
 	"github.com/diegobermudez03/playhoot/play/runtime/usecases/ownership"
 	"github.com/diegobermudez03/playhoot/play/runtime/workflows/liveconnection"
-	"github.com/diegobermudez03/playhoot/play/session/usecases/checkadminjoin"
-	"github.com/diegobermudez03/playhoot/play/session/usecases/checkplayerjoin"
-	"github.com/diegobermudez03/playhoot/play/session/usecases/loadruntimemanifest"
-	"github.com/diegobermudez03/playhoot/play/session/usecases/resolvejoincode"
 	sessionmigration "github.com/diegobermudez03/playhoot/play/session/migration"
 	"github.com/diegobermudez03/playhoot/play/session/storage"
+	"github.com/diegobermudez03/playhoot/play/session/usecases/checkadminjoin"
+	"github.com/diegobermudez03/playhoot/play/session/usecases/checkplayerjoin"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/frontendaccess"
+	"github.com/diegobermudez03/playhoot/play/session/usecases/loadruntimemanifest"
+	"github.com/diegobermudez03/playhoot/play/session/usecases/resolvejoincode"
 	"github.com/diegobermudez03/playhoot/play/session/workflows/sessionlifecycle"
 	"github.com/joho/godotenv"
 	"gorm.io/driver/postgres"
@@ -55,6 +55,9 @@ type envVariables struct {
 	// is selected with STORAGE_EMULATOR_HOST.
 	GCSProjectID string
 	GCSBucket    string
+
+	// Sandbox limits for this instance; optional, zero takes the defaults.
+	SandboxLimits sandbox.HostLimits
 }
 
 // shutdownTimeout bounds how long in-flight requests get to finish once the
@@ -120,7 +123,7 @@ func run() error {
 		}
 	}
 
-	sandboxHost := sandbox.NewHost()
+	sandboxHost := sandbox.NewHost(envVars.SandboxLimits)
 	defer func() {
 		if err := sandboxHost.Close(); err != nil {
 			log.Printf("stopping sandbox contexts: %v", err)
@@ -239,7 +242,27 @@ func readEnvVariables() (*envVariables, error) {
 		return nil, fmt.Errorf("HTTP_PORT must be a valid TCP port")
 	}
 
+	if envVars.SandboxLimits.MaxContexts, err = optionalPositiveInt("SANDBOX_MAX_CONTEXTS"); err != nil {
+		return nil, err
+	}
+	if envVars.SandboxLimits.MaxConcurrentExecutions, err = optionalPositiveInt("SANDBOX_MAX_CONCURRENT_EXECUTIONS"); err != nil {
+		return nil, err
+	}
+
 	return envVars, nil
+}
+
+// optionalPositiveInt reads name as a positive integer, or 0 when unset.
+func optionalPositiveInt(name string) (int, error) {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return 0, nil
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 1 {
+		return 0, fmt.Errorf("%s must be a positive integer", name)
+	}
+	return value, nil
 }
 
 // splitList parses a comma-separated list, dropping empty entries.

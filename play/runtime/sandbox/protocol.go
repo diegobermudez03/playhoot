@@ -18,6 +18,10 @@ const (
 	defaultMaxStackSizeBytes = 1 * 1024 * 1024
 	defaultExecutionBudget   = 5 * time.Second
 	defaultMaxOutputBytes    = 256 * 1024
+
+	// workerGoMemoryLimitBytes softly caps a worker's whole Go heap, which
+	// includes its JavaScript runtime's memory.
+	workerGoMemoryLimitBytes = 160 * 1024 * 1024
 )
 
 // workerOperation is what a workerRequest asks the context worker to do.
@@ -39,10 +43,8 @@ const (
 type workerRequest struct {
 	Operation workerOperation `json:"operation"`
 
-	// Script and ScratchDir are set only for workerOperationLoad. The host
-	// owns the scratch directory, so a killed worker never leaves it behind.
-	Script     string `json:"script,omitempty"`
-	ScratchDir string `json:"scratchDir,omitempty"`
+	// Script is set only for workerOperationLoad.
+	Script string `json:"script,omitempty"`
 
 	// Participants and RandomSeed are set only for workerOperationStart.
 	Participants []string `json:"participants,omitempty"`
@@ -69,4 +71,7 @@ type workerResponse struct {
 	PRNGState       []byte          `json:"prngState,omitempty"`
 	ContextRevision int64           `json:"contextRevision,omitempty"`
 	View            json.RawMessage `json:"view,omitempty"`
+
+	// MemoryBytes is all the memory the worker process holds after the call.
+	MemoryBytes uint64 `json:"memoryBytes,omitempty"`
 }

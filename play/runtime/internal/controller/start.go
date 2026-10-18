@@ -9,9 +9,14 @@ import (
 )
 
 // Game is the confirmed state of a running game: the Runtime's mirror of its
-// execution context.
+// execution context, holding everything needed to restore a new one.
 type Game struct {
 	ContextID       string
+	GameVersionUUID string
+
+	// Script is the game version's JavaScript source.
+	Script []byte
+
 	ContextRevision int64
 
 	// State is the authoritative game state, as JSON.
