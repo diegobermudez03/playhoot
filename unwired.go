@@ -19,6 +19,10 @@ func (unwiredSessionStart) CheckStartEligibility(context.Context, string, string
 	return sessionpkg.StartEligibility{}, errNotWired
 }
 
+func (unwiredSessionStart) FrontendAccess(context.Context, string) (sessionpkg.FrontendAccess, error) {
+	return sessionpkg.FrontendAccess{}, errNotWired
+}
+
 func (unwiredSessionStart) StoreCheckpoint(context.Context, string, []byte) (string, error) {
 	return "", errNotWired
 }

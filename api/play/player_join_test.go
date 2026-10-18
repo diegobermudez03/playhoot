@@ -58,7 +58,7 @@ func startedFakePlayer() *fakePlayer {
 }
 
 // playerStartedJSON is the start startedFakePlayer reports, on the wire.
-const playerStartedJSON = `{"type":"session_started","participant_id":"P2","participants":` + rosterJSON + `}`
+const playerStartedJSON = `{"type":"session_started","participant_id":"P2",` + rosterJSON + `}`
 
 func (f *fakePlayer) end(reason runtime.EndReason) {
 	f.endOnce.Do(func() {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/coder/websocket"
 
@@ -47,6 +48,17 @@ type lobbyClosedMessage struct {
 type participantMessage struct {
 	ParticipantID string `json:"participant_id"`
 	UserUUID      string `json:"user_uuid"`
+}
+
+type frontendMessage struct {
+	URL       string    `json:"url"`
+	SHA256    string    `json:"sha256"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+// frontendJSON is a started Session's game frontend, on the wire.
+func frontendJSON(start runtime.SessionStart) frontendMessage {
+	return frontendMessage{URL: start.Frontend.URL, SHA256: start.Frontend.SHA256, ExpiresAt: start.Frontend.ExpiresAt}
 }
 
 // participantsJSON is who plays a started Session, on the wire.

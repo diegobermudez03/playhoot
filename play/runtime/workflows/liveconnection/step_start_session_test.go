@@ -58,9 +58,13 @@ func TestStartSession(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	expiresAt := time.Date(2026, 10, 17, 21, 0, 0, 0, time.UTC)
+	access := sessionpkg.FrontendAccess{URL: "https://storage.example/frontend?sig=abc", SHA256: "9f86d081", ExpiresAt: expiresAt}
+	// eligible also signs the frontend, which follows every eligible check.
 	eligible := func(deps dependencies) *gomock.Call {
-		return deps.starts.EXPECT().CheckStartEligibility(ctx, sessionUUID, creatorUUID, 2).
-			Return(sessionpkg.StartEligibility{Outcome: sessionpkg.StartEligible, GameVersionUUID: gameVersionUUID, Script: script}, nil)
+		return deps.starts.EXPECT().FrontendAccess(ctx, gameVersionUUID).Return(access, nil).
+			After(deps.starts.EXPECT().CheckStartEligibility(ctx, sessionUUID, creatorUUID, 2).
+				Return(sessionpkg.StartEligibility{Outcome: sessionpkg.StartEligible, GameVersionUUID: gameVersionUUID, Script: script}, nil))
 	}
 	projects := func(deps dependencies, contextID string) []any {
 		return []any{
@@ -150,6 +154,14 @@ func TestStartSession(t *testing.T) {
 			deps.starts.EXPECT().CheckStartEligibility(ctx, sessionUUID, creatorUUID, 2).Return(sessionpkg.StartEligibility{}, errors.New("database down"))
 			return test{minPlayers: 1, expectedErr: true, expectedLobby: true}
 		},
+		"signing_the_frontend_fails": func(t *testing.T, deps dependencies) test {
+			gomock.InOrder(
+				deps.starts.EXPECT().CheckStartEligibility(ctx, sessionUUID, creatorUUID, 2).
+					Return(sessionpkg.StartEligibility{Outcome: sessionpkg.StartEligible, GameVersionUUID: gameVersionUUID, Script: script}, nil),
+				deps.starts.EXPECT().FrontendAccess(ctx, gameVersionUUID).Return(sessionpkg.FrontendAccess{}, errors.New("signing key unavailable")),
+			)
+			return test{minPlayers: 1, expectedErr: true, expectedLobby: true}
+		},
 		"sandbox_unavailable": func(t *testing.T, deps dependencies) test {
 			gomock.InOrder(
 				eligible(deps),
@@ -227,10 +239,13 @@ func TestStartSession(t *testing.T) {
 			require.Equal(t, tc.expectedStarted, started)
 			if tc.expectedStarted {
 				require.Equal(t, runtime.PlayerStart{
-					SessionStart: runtime.SessionStart{Participants: []runtime.Participant{
-						{ParticipantID: "P1", UserUUID: playerA},
-						{ParticipantID: "P2", UserUUID: playerB},
-					}},
+					SessionStart: runtime.SessionStart{
+						Participants: []runtime.Participant{
+							{ParticipantID: "P1", UserUUID: playerA},
+							{ParticipantID: "P2", UserUUID: playerB},
+						},
+						Frontend: runtime.GameFrontend{URL: access.URL, SHA256: access.SHA256, ExpiresAt: expiresAt},
+					},
 					ParticipantID: "P2",
 				}, start)
 				view, ok := second.NextView(waiting)

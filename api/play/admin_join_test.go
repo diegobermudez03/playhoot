@@ -66,13 +66,21 @@ func (f *fakeAdmin) end(reason runtime.EndReason) {
 }
 
 // roster is the Session start the fakes report.
-var roster = runtime.SessionStart{Participants: []runtime.Participant{
-	{ParticipantID: "P1", UserUUID: "u1"},
-	{ParticipantID: "P2", UserUUID: "u2"},
-}}
+var roster = runtime.SessionStart{
+	Participants: []runtime.Participant{
+		{ParticipantID: "P1", UserUUID: "u1"},
+		{ParticipantID: "P2", UserUUID: "u2"},
+	},
+	Frontend: runtime.GameFrontend{
+		URL:       "https://storage.example/frontend?sig=abc",
+		SHA256:    "9f86d081",
+		ExpiresAt: time.Date(2026, 10, 17, 21, 0, 0, 0, time.UTC),
+	},
+}
 
-// rosterJSON is roster on the wire.
-const rosterJSON = `[{"participant_id":"P1","user_uuid":"u1"},{"participant_id":"P2","user_uuid":"u2"}]`
+// rosterJSON is roster's fields on the wire, inside a session_started.
+const rosterJSON = `"participants":[{"participant_id":"P1","user_uuid":"u1"},{"participant_id":"P2","user_uuid":"u2"}],` +
+	`"frontend":{"url":"https://storage.example/frontend?sig=abc","sha256":"9f86d081","expires_at":"2026-10-17T21:00:00Z"}`
 
 // fakeLobby is the lobby side of a fake Runtime connection: its lobby stream
 // ends once the Session starts or the connection ends.
@@ -256,7 +264,7 @@ func TestHandleAdminJoin(t *testing.T) {
 				admin:        admin,
 				clientCloses: true,
 				expectedReceived: []string{
-					`{"type":"session_started","participants":` + rosterJSON + `}`,
+					`{"type":"session_started",` + rosterJSON + `}`,
 					`{"type":"player_view","participant_id":"P1","full":true,"state":{"score":3}}`,
 				},
 				expectedDisconnects: 1,
@@ -273,7 +281,7 @@ func TestHandleAdminJoin(t *testing.T) {
 				clientCloses: true,
 				expectedReceived: []string{
 					`{"type":"lobby_update","members":[{"user_uuid":"u1"},{"user_uuid":"u2"}]}`,
-					`{"type":"session_started","participants":` + rosterJSON + `}`,
+					`{"type":"session_started",` + rosterJSON + `}`,
 					`{"type":"player_view","participant_id":"P1","full":true,"state":{"round":1}}`,
 				},
 				expectedDisconnects: 1,
@@ -331,7 +339,7 @@ func TestHandleAdminJoin(t *testing.T) {
 				admin:       admin,
 				clientSends: []string{`{"type":"cancel_session"}`},
 				expectedReceivedAnyOrder: []string{
-					`{"type":"session_started","participants":` + rosterJSON + `}`,
+					`{"type":"session_started",` + rosterJSON + `}`,
 					`{"type":"cancel_session_result","outcome":"cancelled"}`,
 					`{"type":"player_view","participant_id":"P1","full":true,"state":{"over":true}}`,
 				},

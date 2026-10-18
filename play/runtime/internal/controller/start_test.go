@@ -87,7 +87,7 @@ func TestBeginStart(t *testing.T) {
 				before: func(t *testing.T, controller *Controller) {
 					_, _, ok := controller.BeginStart()
 					require.True(t, ok)
-					controller.CompleteStart(Game{}, nil)
+					controller.CompleteStart(Game{}, runtime.GameFrontend{}, nil)
 				},
 				expectedOutcome: runtime.StartNotInLobby,
 				expectedPhase:   phaseRunning,
@@ -181,10 +181,14 @@ func TestCompleteStart(t *testing.T) {
 
 	game := Game{ContextID: "context-1", ContextRevision: 1, State: []byte(`{"round":1}`), PRNGState: []byte{7}}
 	views := map[string][]byte{"P1": []byte(`{"me":"a"}`), "P2": []byte(`{"me":"b"}`)}
-	roster := runtime.SessionStart{Participants: []runtime.Participant{
-		{ParticipantID: "P1", UserUUID: "user-a"},
-		{ParticipantID: "P2", UserUUID: "user-b"},
-	}}
+	frontend := runtime.GameFrontend{URL: "https://storage.example/frontend?sig=abc", SHA256: "9f86d081", ExpiresAt: time.Date(2026, 10, 17, 21, 0, 0, 0, time.UTC)}
+	roster := runtime.SessionStart{
+		Participants: []runtime.Participant{
+			{ParticipantID: "P1", UserUUID: "user-a"},
+			{ParticipantID: "P2", UserUUID: "user-b"},
+		},
+		Frontend: frontend,
+	}
 
 	tests := map[string]func(t *testing.T) test{
 		"every_connection_is_told_who_plays_and_players_get_their_first_view": func(t *testing.T) test {
@@ -210,7 +214,7 @@ func TestCompleteStart(t *testing.T) {
 				tc.during(t, players)
 			}
 
-			controller.CompleteStart(game, views)
+			controller.CompleteStart(game, frontend, views)
 
 			require.Equal(t, phaseRunning, controller.phase)
 			require.Equal(t, game, controller.game)

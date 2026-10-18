@@ -146,6 +146,14 @@ type StartEligibility struct {
 	Script []byte
 }
 
+// FrontendAccess is signed, expiring access to a game version's frontend
+// package. SHA256 is the package's content hash.
+type FrontendAccess struct {
+	URL       string
+	SHA256    string
+	ExpiresAt time.Time
+}
+
 // StartParticipant maps a player to the ParticipantID the game knows them by.
 type StartParticipant struct {
 	UserUUID      string

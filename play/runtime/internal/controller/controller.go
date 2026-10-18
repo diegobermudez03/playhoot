@@ -71,6 +71,8 @@ type Controller struct {
 	participants []runtime.Participant
 	// game is the confirmed state of the running game.
 	game Game
+	// frontend is what every connection renders the running game with.
+	frontend runtime.GameFrontend
 }
 
 // NewRegistry constructs an empty Registry.

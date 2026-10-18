@@ -48,6 +48,7 @@ type playerSessionStartedMessage struct {
 	Type          string               `json:"type"`
 	ParticipantID string               `json:"participant_id"`
 	Participants  []participantMessage `json:"participants"`
+	Frontend      frontendMessage      `json:"frontend"`
 }
 
 type playerOwnViewMessage struct {
@@ -161,13 +162,14 @@ func (s *playerSession) leave(ctx context.Context, _ []byte) (live.End, bool) {
 	return live.WriteMessage(ctx, s.conn, outcomeMessage{Type: playerLeaveResult, Outcome: string(result.Outcome)})
 }
 
-// playerStartedMessage tells the player who plays and which participant
-// they are.
+// playerStartedMessage tells the player who plays, which participant they
+// are, and the frontend to play with.
 func playerStartedMessage(start runtime.PlayerStart) any {
 	return playerSessionStartedMessage{
 		Type:          liveSessionStarted,
 		ParticipantID: start.ParticipantID,
 		Participants:  participantsJSON(start.SessionStart),
+		Frontend:      frontendJSON(start.SessionStart),
 	}
 }
 

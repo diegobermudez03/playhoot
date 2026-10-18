@@ -29,6 +29,7 @@ type adminSelectPerspectiveRequest struct {
 type adminSessionStartedMessage struct {
 	Type         string               `json:"type"`
 	Participants []participantMessage `json:"participants"`
+	Frontend     frontendMessage      `json:"frontend"`
 }
 
 type adminPlayerViewMessage struct {
@@ -119,9 +120,10 @@ func (s *adminSession) cancelSession(ctx context.Context, _ []byte) (live.End, b
 	return live.WriteMessage(ctx, s.conn, outcomeMessage{Type: adminCancelSessionResult, Outcome: string(result.Outcome)})
 }
 
-// adminStartedMessage tells the admin who plays.
+// adminStartedMessage tells the admin who plays and the frontend to render
+// them with.
 func adminStartedMessage(start runtime.SessionStart) any {
-	return adminSessionStartedMessage{Type: liveSessionStarted, Participants: participantsJSON(start)}
+	return adminSessionStartedMessage{Type: liveSessionStarted, Participants: participantsJSON(start), Frontend: frontendJSON(start)}
 }
 
 // adminViewMessage is a view of the selected participant, without the SAMPLE

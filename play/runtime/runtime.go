@@ -3,7 +3,10 @@
 // operations and messages as they are needed.
 package runtime
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // OwnerOutcome is where the live owner of a Session was found.
 type OwnerOutcome string
@@ -220,9 +223,19 @@ type LobbyMember struct {
 	UserUUID string
 }
 
-// SessionStart is who plays a started Session, in ParticipantID order.
+// SessionStart is a started Session: who plays, in ParticipantID order, and
+// the game frontend that renders their views.
 type SessionStart struct {
 	Participants []Participant
+	Frontend     GameFrontend
+}
+
+// GameFrontend is signed, expiring access to the frontend package of the
+// Session's game version; SHA256 lets the client verify what it downloads.
+type GameFrontend struct {
+	URL       string
+	SHA256    string
+	ExpiresAt time.Time
 }
 
 // Participant is a player of a started Session. The game knows them only by

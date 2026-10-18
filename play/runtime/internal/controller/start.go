@@ -65,9 +65,9 @@ func (c *Controller) CancelStart() {
 }
 
 // CompleteStart runs the started game: the lobby ends, every connection is
-// told who plays, and each connected player gets their first FULL view from
-// views, keyed by ParticipantID.
-func (c *Controller) CompleteStart(game Game, views map[string][]byte) {
+// told who plays and gets frontend, and each connected player gets their
+// first FULL view from views, keyed by ParticipantID.
+func (c *Controller) CompleteStart(game Game, frontend runtime.GameFrontend, views map[string][]byte) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.phase != phaseStarting {
@@ -75,6 +75,7 @@ func (c *Controller) CompleteStart(game Game, views map[string][]byte) {
 	}
 	c.phase = phaseRunning
 	c.game = game
+	c.frontend = frontend
 	c.lobby = nil
 	for _, admin := range c.admins {
 		admin.lobbyUpdates.finish()
@@ -132,5 +133,5 @@ func (c *Controller) sessionStart(ctx context.Context, conn *connection) (runtim
 		return runtime.SessionStart{}, false
 	}
 	// Written before started was closed and never again.
-	return runtime.SessionStart{Participants: slices.Clone(c.participants)}, true
+	return runtime.SessionStart{Participants: slices.Clone(c.participants), Frontend: c.frontend}, true
 }

@@ -85,6 +85,21 @@ func (mr *MocksessionStarterMockRecorder) CommitStart(ctx, sessionUUID, userUUID
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CommitStart", reflect.TypeOf((*MocksessionStarter)(nil).CommitStart), ctx, sessionUUID, userUUID, commit)
 }
 
+// FrontendAccess mocks base method.
+func (m *MocksessionStarter) FrontendAccess(ctx context.Context, gameVersionUUID string) (session.FrontendAccess, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "FrontendAccess", ctx, gameVersionUUID)
+	ret0, _ := ret[0].(session.FrontendAccess)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// FrontendAccess indicates an expected call of FrontendAccess.
+func (mr *MocksessionStarterMockRecorder) FrontendAccess(ctx, gameVersionUUID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FrontendAccess", reflect.TypeOf((*MocksessionStarter)(nil).FrontendAccess), ctx, gameVersionUUID)
+}
+
 // StoreCheckpoint mocks base method.
 func (m *MocksessionStarter) StoreCheckpoint(ctx context.Context, sessionUUID string, checkpoint []byte) (string, error) {
 	m.ctrl.T.Helper()

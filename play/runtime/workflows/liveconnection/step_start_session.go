@@ -21,6 +21,7 @@ import (
 // sessionStarter is the durable Session's side of starting a game.
 type sessionStarter interface {
 	CheckStartEligibility(ctx context.Context, sessionUUID string, userUUID string, playerCount int) (sessionpkg.StartEligibility, error)
+	FrontendAccess(ctx context.Context, gameVersionUUID string) (sessionpkg.FrontendAccess, error)
 	StoreCheckpoint(ctx context.Context, sessionUUID string, checkpoint []byte) (string, error)
 	CommitStart(ctx context.Context, sessionUUID string, userUUID string, commit sessionpkg.StartCommit) (sessionpkg.CommitStartOutcome, error)
 	AbortStart(ctx context.Context, sessionUUID string) error
@@ -121,6 +122,11 @@ func (m *Manager) startFrozenLobby(ctx context.Context, sessionController *contr
 		// not_creator included: admin connections are only the creator's.
 		return "", fmt.Errorf("unexpected start eligibility %q", eligibility.Outcome)
 	}
+	// Signed before running the game, so failing to sign wastes no context.
+	access, err := m.starts.FrontendAccess(ctx, eligibility.GameVersionUUID)
+	if err != nil {
+		return "", fmt.Errorf("signing frontend access: %w", err)
+	}
 
 	participantIDs := make([]string, len(participants))
 	for i, participant := range participants {
@@ -144,7 +150,8 @@ func (m *Manager) startFrozenLobby(ctx context.Context, sessionController *contr
 		m.discardContext(ctx, game.ContextID)
 		return outcome, err
 	}
-	sessionController.CompleteStart(game, views)
+	frontend := runtime.GameFrontend{URL: access.URL, SHA256: access.SHA256, ExpiresAt: access.ExpiresAt}
+	sessionController.CompleteStart(game, frontend, views)
 	return runtime.SessionStarted, nil
 }
 
