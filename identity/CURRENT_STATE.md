@@ -13,9 +13,7 @@ Status: CURRENT IMPLEMENTATION
 - `identity/usecases/authorize` (`Authorize`) is called by the API's authorization middleware on every protected route, but it does not validate tokens: it only recognizes hardcoded test tokens (`test-user-1`, `test-user-2` -> fixed UserUUIDs, allowed; `test-guest` -> forbidden from the account-only operations, creating a Session and joining one as admin, and allowed to join one as a player; anything else unauthenticated). Real behavior (validate the JWT, resolve the stable UserUUID, decide per operation; creating a Session and joining one as admin require an account, not a guest) is not implemented and is outside the current Session Runtime project.
 - `identity/identity.go` declares the `Operation` and `AccessDecision` values that capability uses.
 
-## Pending (needed by the Session Runtime, not wired)
-
-- Guest creation for player join: a caller with no token must get a guest identity, named with the display name it sends, and the guest credentials to keep. Today the API refuses such a caller (`401`); see the player routes in `api/play/handler.go`.
+- `identity/usecases/createguest` (`CreateGuest`) is called by `POST /v1/guests`, but returns the same hardcoded test guest (token `test-guest`) for every call and stores nothing. Real behavior: create a guest User with the display name given, idempotently per key (a reused key with another name is `identity.ErrIdempotencyConflict`), validate the name (`invalid_display_name`), and issue a real credential that `Authorize` accepts.
 
 ## Known Drift
 

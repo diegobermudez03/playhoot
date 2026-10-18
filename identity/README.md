@@ -12,6 +12,7 @@ Identity maintains a stable Playhoot identity for a person so other domains may 
 - Public `UserUUID` for each `User`.
 - Guest-to-registered continuity of the same `UserUUID` in the normal conversion path.
 - Resolution of public `UserUUID` to the current internal representation once implemented.
+- Creating guest Users and their bearer credentials, including the display name a guest is created with (decided by the human on 2026-10-17: a client without an account creates a guest, naming it, before joining a Session as a player).
 
 ## Does Not Own
 
@@ -20,7 +21,7 @@ Identity maintains a stable Playhoot identity for a person so other domains may 
 - Game/session behavior.
 - Authentication/account/provider details beyond what is later accepted as necessary.
 - Authorization policy beyond what is later accepted as necessary.
-- Mutable global display/profile ownership; whether this belongs to Identity or a future Profile responsibility remains unresolved.
+- Mutable global display/profile ownership beyond a guest's creation name; whether the rest belongs to Identity or a future Profile responsibility remains unresolved.
 - Public discovery/search experience.
 
 ## Internal Structure

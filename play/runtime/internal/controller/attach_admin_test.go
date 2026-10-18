@@ -11,13 +11,19 @@ import (
 )
 
 func TestAttachAdmin(t *testing.T) {
-	controller, _ := NewRegistry().ControllerFor(context.Background(), "session-1", 1)
+	controller := newTestController(t, 8)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
+	_, _, ok := controller.AdmitPlayer(ctx, "player-1")
+	require.True(t, ok)
 
 	first := controller.AttachAdmin("creator")
 	second := controller.AttachAdmin("creator")
 	require.Equal(t, 2, controller.AdminCount())
+
+	update, more := first.NextLobbyUpdate(ctx)
+	require.True(t, more)
+	require.Equal(t, runtime.LobbyUpdate{Members: []runtime.LobbyMember{{UserUUID: "player-1"}}}, update, "the first update is the lobby as it is")
 
 	_, err := first.SelectPerspective(ctx, "P1")
 	require.ErrorIs(t, err, ErrNotImplemented)
@@ -32,7 +38,7 @@ func TestAttachAdmin(t *testing.T) {
 	end, ended := first.Ended(ctx)
 	require.True(t, ended)
 	require.Equal(t, runtime.ConnectionEnd{Reason: runtime.EndDisconnected}, end)
-	_, more := first.NextView(ctx)
+	_, more = first.NextView(ctx)
 	require.False(t, more)
 	_, more = first.NextLobbyUpdate(ctx)
 	require.False(t, more)

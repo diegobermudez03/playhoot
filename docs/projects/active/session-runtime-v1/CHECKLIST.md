@@ -48,7 +48,7 @@ Progress note (2026-10-17): the boundary, decided with the human, is a set of op
 ### A4. Identity integration (§1, §2, §4)
 - [ ] Account token -> account userUUID
 - [ ] Guest token -> existing guest userUUID
-- [ ] No identity -> guest created, returned userUUID + guest credentials for the FE to keep (pending, out of scope for the API step of player join: a player without a token is refused `401` today; the comment on the player routes in `api/play/handler.go` marks it. Open: how the credentials reach the FE, since a browser cannot read headers of a WebSocket handshake: a first live message, or a REST call before connecting. The guest display name is part of this input)
+- [ ] No identity -> guest created, returned userUUID + guest credentials for the FE to keep (decided by the human 2026-10-17: authorization always needs an existing token; a client without one gets `401` with code `token_required` and calls `POST /v1/guests {display_name, idempotency_key}` first, then joins with the guest token. Identity stores the guest's display name. API side done and tested (`api/identity`); Identity's `CreateGuest` is a placeholder, see Placeholders)
 - [ ] CREATE_SESSION capability check (real account required, guest-only rejected)
 - [x] Other domains receive only userUUID (no account/guest awareness)
 - [x] Identity does not decide object-level permissions (creator check lives in Session)
@@ -80,6 +80,7 @@ Progress note (2026-10-17): the boundary, decided with the human, is a set of op
 - [x] Only versions in the executable state can create Sessions (the plan says PUBLISHED; this domain names its own state EXECUTABLE: immutable, scripts ready to run)
 - [ ] Published version artifacts are immutable and never physically deleted (backend JS, frontend package, manifest, assets)
 - [ ] Artifacts addressed by locator + hash + size + metadata; content never silently changes
+- [ ] Runtime manifest exists, versioned and built iteratively (decided by the human 2026-10-17: a `manifest JSONB NOT NULL` column on `play_game_versions`, `{"schema_version":1,...}`, read and validated by `play/session/internal/business/manifest`, loaded by `play/session/usecases/loadruntimemanifest` when a Session's controller is created and kept by it). Declared so far: player limits (`players.min`, `players.max`, 1 <= min <= max). Nothing writes manifests yet besides test data (see Placeholders: no flow creates game versions)
 - [ ] Runtime manifest declares: SAMPLE input defs/types, defaults (when not inferable), COMMAND names + payload schemas, optional entrypoints present (update, playerRejoined), required input capabilities, frontend/backend artifact identity
 - [ ] Manifest drives: pre-JS rejection of malformed/undeclared input, discovery filtering by capability, update()/rejoin support detection
 - [ ] Logical deletion/supersession of a game affects only new Sessions, not old Sessions/replays (§30.28)
@@ -139,7 +140,7 @@ Left for future steps, on purpose:
 - [x] Rejected: rejection sent, socket closed
 - [x] Multiple simultaneous ADMIN connections for the same creator
 - [ ] Admin operations implemented: `SelectPerspective`, `StartSession` and `CancelSession` (today they answer "not implemented"), and `NextLobbyUpdate` (never produces an update today)
-- [ ] Admin receives lobby updates until the lobby closes (`lobby_update`, then `lobby_closed` when the Session starts; API side done and tested 2026-10-17)
+- [ ] Admin receives lobby updates until the lobby closes (`lobby_update` done end to end 2026-10-17: the first is the lobby as it is, then every change; `lobby_closed` waits for Start)
 - [ ] Creator who also plays may not watch another participant: `SelectPerspective` answers `creator_is_playing` while the creator has a PLAYER connection (decided by the human 2026-10-17; the outcome is declared, the controller check is not implemented)
 - [ ] Admin selects a player perspective; receives exactly projection(P), FULL, with a new baseline per selection
 - [ ] No omniscient admin projection
@@ -150,18 +151,18 @@ Left for future steps, on purpose:
 
 ## F. Player lobby join (§4)
 
-Progress note (2026-10-17): the API layer is implemented and tested. `GET /v1/sessions/{sessionUUID}/player` and `GET /v1/join/{joinCode}` authorize `JOIN_SESSION_AS_PLAYER` (Identity's placeholder allows guests), resolve the join code, route to the owner, upgrade, and serve the `runtime.PlayerConnection` the Runtime returns (`api/play/player_join.go`). The contract, decided with the human, declares every player operation now so the controller work knows what it must implement: `Leave`, `Sample`, `Command`, `Resync`, `NextLobbyUpdate`, `NextView` (own view with `ConsumedThroughSampleSequence`), `Ended`, `Disconnect` (`play/runtime/runtime.go`). Admins and players are always separate connections, even for a creator who plays. Join codes resolve for real (`play/session/usecases/resolvejoincode`, 2026-10-17). Not implemented: the Runtime's `AttachPlayer` (a stand-in in `unwired.go` that fails, see Placeholders), and guest creation (see A4).
+Progress note (2026-10-17): the API layer is implemented and tested. `GET /v1/sessions/{sessionUUID}/player` and `GET /v1/join/{joinCode}` authorize `JOIN_SESSION_AS_PLAYER` (Identity's placeholder allows guests), resolve the join code, route to the owner, upgrade, and serve the `runtime.PlayerConnection` the Runtime returns (`api/play/player_join.go`). The contract, decided with the human, declares every player operation now so the controller work knows what it must implement: `Leave`, `Sample`, `Command`, `Resync`, `NextLobbyUpdate`, `NextView` (own view with `ConsumedThroughSampleSequence`), `Ended`, `Disconnect` (`play/runtime/runtime.go`). Admins and players are always separate connections, even for a creator who plays. Join codes resolve for real (`play/session/usecases/resolvejoincode`, 2026-10-17). Runtime admission implemented 2026-10-17 (`liveconnection.Manager.AttachPlayer`): `play/session/usecases/checkplayerjoin` decides whether the Session accepts players, then the controller (created with the Session's manifest) admits into the lobby under its lock, checks the manifest's maximum, replaces the same user's older connection, and sends every lobby change to admins and players. Decided by the human: leaving or disconnecting in the lobby takes the player out at once (no grace), and they may join again; a replaced connection closes 1000 `replaced`. Verified by unit, repository and WebSocket tests and an end-to-end run against a fresh database. Not implemented: guest creation (see A4), device/control capabilities (the manifest does not declare them yet), and the operations of a running game.
 
-- [ ] Join by join code or Session UUID; guest display name when a new guest is created
+- [ ] Join by join code or Session UUID; guest display name when a new guest is created (join by code or UUID done and tested; guest pending, see A4)
 - [ ] Identity resolution (see A4)
-- [ ] Owner resolve/claim
-- [ ] Logical admission serialized through the SessionController (two users racing for the last slot cannot both be accepted)
-- [ ] Checks: Session still LOBBY, player count / GameVersion constraints, device/control capabilities vs manifest
-- [ ] Same user's older PLAYER transport replaced if needed
-- [ ] Accepted: ephemeral lobby member (not durable)
-- [ ] Rejected: JOIN_REJECTED sent, socket closed
+- [x] Owner resolve/claim (the routing step; ownership itself is a placeholder, see A1)
+- [x] Logical admission serialized through the SessionController (two users racing for the last slot cannot both be accepted): admission and the capacity check run under the controller's lock (a mutex until the single mutation lane exists, see H)
+- [ ] Checks: Session still LOBBY, player count / GameVersion constraints, device/control capabilities vs manifest (LOBBY before its expiry and the manifest's maximum done; capabilities pending until the manifest declares them)
+- [x] Same user's older PLAYER transport replaced if needed (the older connection ends `replaced`, closed 1000; the user keeps their place and nobody is told they left)
+- [x] Accepted: ephemeral lobby member (not durable; lobby changes reach every admin and player as `lobby_update`)
+- [x] Rejected: JOIN_REJECTED sent, socket closed (sent as `{"type":"rejected","reason":...}`, closed 1008: `session_unavailable`, `session_started`, `lobby_full`, `owner_changed`)
 - [ ] Lobby pod loss: Session stays LOBBY, players can rejoin the lobby; no lobby checkpoint
-- [ ] No late join of new participants once RUNNING (§30.6)
+- [ ] No late join of new participants once RUNNING (§30.6) (a RUNNING Session rejects new players as `session_started`; to tick together with invariant 6 once Start exists)
 
 ---
 
@@ -409,6 +410,7 @@ Progress note (2026-10-17): a first, minimal controller exists (`play/runtime/in
 - [ ] SAMPLE: per-participant ingress rate, max distinct transitions per window, bounded pending buffer, payload size, identical-refresh dedup
 - [ ] COMMAND: per-participant token bucket, max pending, bounded queue, payload size
 - [ ] WebSocket: messages/s, bytes/s, max message size, outbound backpressure protection
+- [ ] Guest creation rate limiting at the API edge (pending task, 2026-10-17): `POST /v1/guests` needs no token, so anyone can create Users with it; it must be limited per client (for example per IP) before production
 - [ ] Per-message-type rate limiting at the API edge (pending task, requested by the human 2026-10-17). Every live connection reads with one loop that hands each message to its type's own lane (`api/internal/live/lanes.go`: one goroutine per type, so SAMPLEs only wait for SAMPLEs, COMMANDs for COMMANDs, resyncs for resyncs). Handing off never blocks, so a lane's queue is unbounded: until this limit exists, a client sending faster than its lane is handled grows that queue without bound. The limit must be enforced per type before enqueueing, and bound each lane's queue.
 - [ ] Sandbox: CPU/execution budget, memory, deadline, state/output size, non-cooperative code protection
 - [ ] Session: max lifetime, inactivity timeout, owner/recovery deadlines, bounded Replay and checkpoint queues
@@ -503,14 +505,16 @@ Alerts and dashboards:
 
 Everything here is wired into the running system, so a request flows through it, but it returns hardcoded or failing answers. It must never be mistaken for implemented behavior. Items marked "out of scope" are not part of this project (which focuses on `play/`) and stay open after it ends; the owning domain's `CURRENT_STATE.md` also records them. Tick an item only when the real behavior replaces the placeholder.
 
+- [ ] Guest creation (`identity/usecases/createguest`, out of scope, see A4): `CreateGuest` returns the hardcoded test guest (token `test-guest`) for every call and stores nothing. Real behavior: create the guest User with its display name, idempotent per key, and issue a real credential.
 - [ ] Identity authorization (`identity/usecases/authorize`, out of scope): recognizes only hardcoded test tokens (`test-user-1`, `test-user-2`, `test-guest`), each mapped to a fixed UserUUID; any other token is unauthenticated, and the guest is forbidden from `CREATE_SESSION` and `JOIN_SESSION_AS_ADMIN` (allowed `JOIN_SESSION_AS_PLAYER`, like every other operation). Must never be deployed as-is. Real behavior: validate the JWT, resolve the stable UserUUID, decide per operation; `CREATE_SESSION` and `JOIN_SESSION_AS_ADMIN` must require an account and forbid guests.
 - [ ] Game playability check (`game/usecases/checkplayability`, out of scope): answers `true` for any Game and user. Real behavior: the Game exists, has a published version, and is visible to the user.
 - [x] Session creation stand-in (`unwiredSessionCreation` in `unwired.go`, in scope): always failed. Replaced by `sessionlifecycle.Manager.CreateSession` on 2026-10-15; `unwired.go` was deleted.
 - [ ] No flow creates `play_games` / `play_game_versions` (in scope, see B): nothing registers Games or marks a version EXECUTABLE yet, so every Session creation answers `game_unavailable` until those rows exist (outside production, test-data migrations seed one playable and one unavailable Game; see `play/CURRENT_STATE.md`). Real behavior: the operation that validates a version's scripts, freezes it, and sets it EXECUTABLE as the Game's current version.
 - [ ] Live Session ownership (`play/runtime/usecases/ownership`, in scope, see A1): `LocateOrClaimOwner` answers `owned_here` with epoch 1 for any Session UUID, without looking the Session up or keeping a registry. Real behavior: claim only Sessions in LOBBY/RUNNING, in-process registry with release; shared registry + lease/heartbeat before multi-instance (SESSION-ADR-0029).
 - [x] Admin join eligibility (`play/session/usecases/checkadminjoin`, in scope, see E): replaced by the real check on 2026-10-17 (the Session exists, the user created it, and it is RUNNING or in a LOBBY whose expiry has not passed).
-- [ ] Admin operations (`play/runtime/internal/controller`, in scope, see E): `SelectPerspective`, `StartSession` and `CancelSession` return "not implemented", and `NextView` and `NextLobbyUpdate` never produce anything. Real behavior: perspective selection with FULL projection, Start (G), host cancellation, lobby updates.
-- [ ] Player admission (`unwiredPlayerAdmission` in `unwired.go`, in scope, see F): `AttachPlayer` always fails, so every player connection is closed with 1011 right after the upgrade. Real behavior: `liveconnection.Manager.AttachPlayer`, lobby admission serialized by the controller, returning a `runtime.PlayerConnection`; then delete the stand-in.
+- [ ] Admin operations (`play/runtime/internal/controller`, in scope, see E): `SelectPerspective`, `StartSession` and `CancelSession` return "not implemented", and `NextView` never produces a view (lobby updates are real since 2026-10-17). Real behavior: perspective selection with FULL projection, Start (G), host cancellation.
+- [x] Player admission (`unwiredPlayerAdmission` in `unwired.go`, in scope, see F): replaced on 2026-10-17 by `liveconnection.Manager.AttachPlayer`; `unwired.go` was deleted.
+- [ ] Player operations of a running game (`play/runtime/internal/controller`, in scope, see I, J, M): the controller has a phase (lobby, running; Start will move it to running) and lobby behavior only applies in the lobby: there `Sample` is dropped, `Resync` does nothing, `NextView` never produces a view and `Command` answers `session_not_running`. In a running game, `Leave` and `Command` answer "not implemented", `Disconnect` only ends the connection (no transport grace yet), and new players are rejected as `session_started`; lobby updates are never sent once running.
 - [x] Join code resolution (`unwiredJoinCodes` in `unwired.go`, in scope, see A3): replaced on 2026-10-17 by `play/session/usecases/resolvejoincode` (the Session of an active, unexpired join code; `not_found` otherwise); the stand-in was deleted.
 - [ ] Controller lifetime (`play/runtime/internal/controller`, in scope, see H): controllers are created but never destroyed or released, so they accumulate for the process lifetime. Real behavior: destroyed on terminal states with owner release.
 - [ ] Forwarding to a remote owner (`api/play/owner_routing.go`, in scope, see A1): a Session owned by another instance is answered `503`; unreachable while single-instance. Real behavior: proxy the connection to the owner (gateway), decided with the multi-instance topology.

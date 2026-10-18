@@ -72,8 +72,12 @@ const (
 	// EndSessionEnded means the Session reached a terminal state.
 	EndSessionEnded EndReason = "session_ended"
 
-	// EndLeft means the player left the Session, permanently.
+	// EndLeft means the player left the Session, or its lobby.
 	EndLeft EndReason = "left"
+
+	// EndReplaced means the same user opened a newer player connection,
+	// which took this one's place; the client should not reconnect.
+	EndReplaced EndReason = "replaced"
 
 	// EndOwnerChanged means this instance no longer serves the Session under
 	// the connection's ownership; the client should reconnect.

@@ -49,7 +49,10 @@ func (m *Manager) AttachAdmin(ctx context.Context, sessionUUID string, userUUID 
 		return runtime.AttachAdminResult{}, fmt.Errorf("unknown admin eligibility %q", eligibility)
 	}
 
-	sessionController, ok := m.controllers.ControllerFor(ctx, sessionUUID, ownerEpoch)
+	sessionController, ok, err := m.controllerFor(ctx, sessionUUID, ownerEpoch)
+	if err != nil {
+		return runtime.AttachAdminResult{}, fmt.Errorf("finding session controller: %w", err)
+	}
 	if !ok {
 		return rejectAdmin(ctx, runtime.RejectOwnerChanged), nil
 	}

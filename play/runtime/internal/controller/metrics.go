@@ -12,3 +12,8 @@ var (
 		"Session controllers replaced because their ownership epoch was stale.",
 	)
 )
+
+var playersReplaced = metrics.NewCounter(
+	"play_runtime_player_connections_replaced_total",
+	"Player connections ended because the same user opened a newer one.",
+)

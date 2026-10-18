@@ -72,3 +72,21 @@ Implemented behavior:
 | Only released rows, or no row | `not_found` |
 
 The Session's state is not checked: a code expires with its lobby, and a Session that already started is rejected by the Runtime's admission (`session_started`).
+
+## Player Join Eligibility
+
+`checkplayerjoin.Service.EligibleToJoinAsPlayer(sessionUUID)`, called by the live Runtime before it admits a player into the lobby. It only reads `play_sessions`; any user may join, the creator included.
+
+| Session | Answer |
+| --- | --- |
+| No Session with that UUID (or not a UUID) | `session_not_found` |
+| LOBBY with `lobby_expires_at` still in the future | `eligible` |
+| LOBBY past `lobby_expires_at` | `session_not_joinable`; the expiry is not recorded here |
+| RUNNING | `session_started` |
+| FINISHED, CANCELLED, EXPIRED, ABORTED | `session_not_joinable` |
+
+The lobby's capacity is not checked here: the live controller checks it against the manifest's maximum while admitting.
+
+## Runtime Manifest Load
+
+`loadruntimemanifest.Service.LoadRuntimeManifest(sessionUUID)`, called by the live Runtime when it creates a Session's controller, which keeps the manifest for the Session's lifetime (it cannot change: the version is pinned and immutable). It reads `play_sessions` joined with `play_game_versions`. An unknown Session is `ErrSessionNotFound`; a pinned version that is missing or holds an invalid manifest raises an alert and is an error.

@@ -2,6 +2,8 @@
 // library and grows as Identity's capabilities are accepted.
 package identity
 
+import "errors"
+
 // Operation names a coarse operation Identity decides whether a caller may
 // perform at all. Object-level permissions (for example, whether a caller
 // created a specific Session) are not decided by Identity.
@@ -38,3 +40,31 @@ const (
 	// the Operation.
 	AccessForbidden AccessDecision = "forbidden"
 )
+
+// CreateGuestOutcome is the decision a CreateGuest call reached.
+type CreateGuestOutcome string
+
+const (
+	// GuestCreated means a guest User exists for the request. A retry with
+	// the same idempotency key reports this same outcome and User.
+	GuestCreated CreateGuestOutcome = "created"
+
+	// GuestInvalidDisplayName means the display name breaks Identity's rules.
+	GuestInvalidDisplayName CreateGuestOutcome = "invalid_display_name"
+)
+
+// CreateGuestResult is what a CreateGuest call decided. UserUUID and Token are
+// set only when Outcome is GuestCreated.
+type CreateGuestResult struct {
+	Outcome CreateGuestOutcome
+
+	UserUUID string
+
+	// Token is the guest's bearer credential, which the client keeps and
+	// sends like any other token.
+	Token string
+}
+
+// ErrIdempotencyConflict is returned when an idempotency key is reused for a
+// request that differs from the one it was first used with.
+var ErrIdempotencyConflict = errors.New("idempotency key reused with a conflicting request")

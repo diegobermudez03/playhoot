@@ -28,10 +28,11 @@ type integrationGame struct {
 func (integrationGame) TableName() string { return "play_games" }
 
 type integrationGameVersion struct {
-	ID     uint
-	UUID   string
-	GameID uint
-	Status string
+	ID       uint
+	UUID     string
+	GameID   uint
+	Status   string
+	Manifest string
 }
 
 func (integrationGameVersion) TableName() string { return "play_game_versions" }
@@ -73,7 +74,7 @@ func seedIntegrationGame(t *testing.T, db *gorm.DB, status string) (string, uint
 	if status == "" {
 		return game.GameUUID, 0
 	}
-	version := integrationGameVersion{UUID: uuid.NewString(), GameID: game.ID, Status: status}
+	version := integrationGameVersion{UUID: uuid.NewString(), GameID: game.ID, Status: status, Manifest: `{"schema_version":1,"players":{"min":1,"max":8}}`}
 	require.NoError(t, db.Create(&version).Error)
 	require.NoError(t, db.Exec(`UPDATE play_games SET current_version_id = ? WHERE id = ?`, version.ID, game.ID).Error)
 	return game.GameUUID, version.ID
@@ -289,7 +290,7 @@ func TestCreateSessionIntegration(t *testing.T) {
 			require.NoError(t, err)
 			var gameID uint
 			require.NoError(t, db.Raw(`SELECT id FROM play_games WHERE game_uuid = ?`, gameUUID).Scan(&gameID).Error)
-			version := integrationGameVersion{UUID: uuid.NewString(), GameID: gameID, Status: "EXECUTABLE"}
+			version := integrationGameVersion{UUID: uuid.NewString(), GameID: gameID, Status: "EXECUTABLE", Manifest: `{"schema_version":1,"players":{"min":1,"max":8}}`}
 			require.NoError(t, db.Create(&version).Error)
 			require.NoError(t, db.Exec(`UPDATE play_games SET current_version_id = ? WHERE id = ?`, version.ID, gameID).Error)
 			return test{

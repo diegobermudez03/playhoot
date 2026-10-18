@@ -18,6 +18,7 @@ erDiagram
         UUID uuid "unique"
         BIGINT game_id "play_games.id"
         TEXT status "DRAFT | EXECUTABLE"
+        JSONB manifest "versioned runtime manifest"
         TIMESTAMPTZ executable_at "nullable; when it became executable"
         TIMESTAMPTZ created_at
     }
@@ -61,4 +62,5 @@ Notes:
 
 - A Game's `current_version_id` must point to an `EXECUTABLE` version (immutable, scripts ready to run; whether the Game is published is Game Management's concern, not this domain's); this is checked by the application, and a violation is treated as broken data.
 - `play_create_session_requests` rows are claimed and completed in the same transaction that creates the Session, so a committed row always has an `outcome`.
+- `play_game_versions.manifest` is the version's runtime manifest: the structural facts the live Runtime needs, as `{"schema_version":1,"players":{"min":N,"max":M}}` (1 <= min <= max). It grows by adding fields; a pinned (EXECUTABLE) version must hold a valid one, and an invalid one is treated as broken data.
 - A join code is active while `released_at` is NULL. An expired code is released lazily when a new Session needs that same code.

@@ -105,6 +105,13 @@ domain's `CURRENT_STATE.md`, not narrated in the comment.
 // Placeholder: reports every Session as owned here, without looking it up.
 ```
 
+A missing or pending implementation is commented at the code that must
+change to provide it, never at its callers. A caller whose own side is
+complete says nothing about what its dependencies still lack: implementing a
+dependency later must only touch that dependency's code and its domain's
+documentation, never the comments of the code that calls it. When completing
+a behavior needs changes on both sides, each side carries its own comment.
+
 ## By Symbol Kind
 
 **Types/structs** describe what the type represents, not who currently

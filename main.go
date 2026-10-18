@@ -18,10 +18,13 @@ import (
 	"github.com/diegobermudez03/playhoot/api"
 	"github.com/diegobermudez03/playhoot/game/usecases/checkplayability"
 	"github.com/diegobermudez03/playhoot/identity/usecases/authorize"
+	"github.com/diegobermudez03/playhoot/identity/usecases/createguest"
 	"github.com/diegobermudez03/playhoot/orchestrator/playlifecycle"
 	"github.com/diegobermudez03/playhoot/play/runtime/usecases/ownership"
 	"github.com/diegobermudez03/playhoot/play/runtime/workflows/liveconnection"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/checkadminjoin"
+	"github.com/diegobermudez03/playhoot/play/session/usecases/checkplayerjoin"
+	"github.com/diegobermudez03/playhoot/play/session/usecases/loadruntimemanifest"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/resolvejoincode"
 	"github.com/diegobermudez03/playhoot/play/session/workflows/sessionlifecycle"
 	"github.com/joho/godotenv"
@@ -88,12 +91,14 @@ func run() error {
 	}
 
 	playLifecycle := playlifecycle.New(checkplayability.New(), sessionlifecycle.New(db))
+	liveConnections := liveconnection.New(checkadminjoin.New(db), checkplayerjoin.New(db), loadruntimemanifest.New(db))
 	server := api.NewServer(
 		authorize.New(),
+		createguest.New(),
 		playLifecycle,
 		ownership.New(),
-		liveconnection.New(checkadminjoin.New(db)),
-		unwiredPlayerAdmission{},
+		liveConnections,
+		liveConnections,
 		resolvejoincode.New(db),
 		envVars.WebSocketAllowedOrigins,
 	)

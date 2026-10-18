@@ -26,6 +26,7 @@ type testGameVersion struct {
 	UUID         string
 	GameID       uint
 	Status       string
+	Manifest     string
 	ExecutableAt *time.Time
 }
 
@@ -61,7 +62,7 @@ func seedGame(t *testing.T, db *gorm.DB, status string) (testGame, *testGameVers
 	if status == "" {
 		return game, nil
 	}
-	version := testGameVersion{UUID: uuid.NewString(), GameID: game.ID, Status: status}
+	version := testGameVersion{UUID: uuid.NewString(), GameID: game.ID, Status: status, Manifest: `{"schema_version":1,"players":{"min":1,"max":8}}`}
 	require.NoError(t, db.Create(&version).Error)
 	require.NoError(t, db.Exec(`UPDATE play_games SET current_version_id = ? WHERE id = ?`, version.ID, game.ID).Error)
 	game.CurrentVersionID = &version.ID
@@ -217,7 +218,7 @@ func TestFindCurrentGameVersion(t *testing.T) {
 		},
 		"newer_draft_does_not_replace_the_current_version": func(t *testing.T, db *gorm.DB) test {
 			game, version := seedGame(t, db, "EXECUTABLE")
-			require.NoError(t, db.Create(&testGameVersion{UUID: uuid.NewString(), GameID: game.ID, Status: "DRAFT"}).Error)
+			require.NoError(t, db.Create(&testGameVersion{UUID: uuid.NewString(), GameID: game.ID, Status: "DRAFT", Manifest: `{"schema_version":1,"players":{"min":1,"max":8}}`}).Error)
 			return test{gameUUID: game.GameUUID, expectedVersion: &GameVersion{ID: version.ID, Status: "EXECUTABLE"}}
 		},
 		"game_without_current_version": func(t *testing.T, db *gorm.DB) test {

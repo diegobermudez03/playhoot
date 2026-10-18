@@ -77,3 +77,35 @@ type JoinCodeResolution struct {
 	Outcome     JoinCodeOutcome
 	SessionUUID string
 }
+
+// PlayerJoinEligibility is whether a Session accepts new players.
+type PlayerJoinEligibility string
+
+const (
+	// PlayerJoinEligible means the Session is in LOBBY and its lobby has not
+	// expired.
+	PlayerJoinEligible PlayerJoinEligibility = "eligible"
+
+	PlayerJoinSessionNotFound PlayerJoinEligibility = "session_not_found"
+
+	// PlayerJoinSessionStarted means the Session is RUNNING; only its
+	// participants may come back, by rejoining.
+	PlayerJoinSessionStarted PlayerJoinEligibility = "session_started"
+
+	// PlayerJoinSessionNotJoinable means the Session ended or its lobby
+	// expired.
+	PlayerJoinSessionNotJoinable PlayerJoinEligibility = "session_not_joinable"
+)
+
+// RuntimeManifest is what the live Runtime must know about the game version
+// a Session is pinned to. It never changes for a Session.
+type RuntimeManifest struct {
+	// MinPlayers and MaxPlayers bound how many players a game can start
+	// with; 1 <= MinPlayers <= MaxPlayers.
+	MinPlayers int
+	MaxPlayers int
+}
+
+// ErrSessionNotFound is returned when an operation names a Session that does
+// not exist.
+var ErrSessionNotFound = errors.New("session not found")

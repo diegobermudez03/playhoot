@@ -16,6 +16,10 @@ const (
 	// seedUnavailableGameUUID is a Game that only has a DRAFT version and no
 	// current version: creating a Session from it answers game_unavailable.
 	seedUnavailableGameUUID = "22222222-2222-4222-8222-222222222222"
+
+	// seedManifest lets one to eight players join, so a single person can
+	// test a lobby by hand.
+	seedManifest = `{"schema_version":1,"players":{"min":1,"max":8}}`
 )
 
 // seed20261015000000PlayGames fills play_games and play_game_versions.
@@ -30,14 +34,14 @@ func seed20261015000000PlayGames() *gormigrate.Migration {
 			}{
 				{sql: `INSERT INTO play_games (game_uuid) VALUES (?), (?)`, args: []any{seedPlayableGameUUID, seedUnavailableGameUUID}},
 				{
-					sql: `INSERT INTO play_game_versions (uuid, game_id, status, executable_at)
-						SELECT ?, id, 'EXECUTABLE', CURRENT_TIMESTAMP FROM play_games WHERE game_uuid = ?`,
-					args: []any{"11111111-1111-4111-8111-0000000000a1", seedPlayableGameUUID},
+					sql: `INSERT INTO play_game_versions (uuid, game_id, status, manifest, executable_at)
+						SELECT ?, id, 'EXECUTABLE', ?, CURRENT_TIMESTAMP FROM play_games WHERE game_uuid = ?`,
+					args: []any{"11111111-1111-4111-8111-0000000000a1", seedManifest, seedPlayableGameUUID},
 				},
 				{
-					sql: `INSERT INTO play_game_versions (uuid, game_id, status)
-						SELECT ?, id, 'DRAFT' FROM play_games WHERE game_uuid = ?`,
-					args: []any{"11111111-1111-4111-8111-0000000000a2", seedPlayableGameUUID},
+					sql: `INSERT INTO play_game_versions (uuid, game_id, status, manifest)
+						SELECT ?, id, 'DRAFT', ? FROM play_games WHERE game_uuid = ?`,
+					args: []any{"11111111-1111-4111-8111-0000000000a2", seedManifest, seedPlayableGameUUID},
 				},
 				{
 					sql: `UPDATE play_games SET current_version_id = (SELECT id FROM play_game_versions WHERE uuid = ?)
@@ -45,9 +49,9 @@ func seed20261015000000PlayGames() *gormigrate.Migration {
 					args: []any{"11111111-1111-4111-8111-0000000000a1", seedPlayableGameUUID},
 				},
 				{
-					sql: `INSERT INTO play_game_versions (uuid, game_id, status)
-						SELECT ?, id, 'DRAFT' FROM play_games WHERE game_uuid = ?`,
-					args: []any{"22222222-2222-4222-8222-0000000000b1", seedUnavailableGameUUID},
+					sql: `INSERT INTO play_game_versions (uuid, game_id, status, manifest)
+						SELECT ?, id, 'DRAFT', ? FROM play_games WHERE game_uuid = ?`,
+					args: []any{"22222222-2222-4222-8222-0000000000b1", seedManifest, seedUnavailableGameUUID},
 				},
 			}
 			for _, statement := range statements {

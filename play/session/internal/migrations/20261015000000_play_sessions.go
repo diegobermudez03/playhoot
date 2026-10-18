@@ -28,12 +28,14 @@ func migration20261015000000PlaySessions() *gormigrate.Migration {
 
 				// The versions of a Game. Only an EXECUTABLE version is immutable
 				// and its scripts ready to run, so safe to play; newer versions may
-				// exist as DRAFT.
+				// exist as DRAFT. The manifest is versioned JSON holding the
+				// structural facts the live Runtime needs about the game.
 				`CREATE TABLE play_game_versions (
 					id BIGSERIAL PRIMARY KEY,
 					uuid UUID NOT NULL UNIQUE,
 					game_id BIGINT NOT NULL,
 					status TEXT NOT NULL CHECK (status IN ('DRAFT', 'EXECUTABLE')),
+					manifest JSONB NOT NULL,
 					executable_at TIMESTAMPTZ NULL,
 					created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 				)`,

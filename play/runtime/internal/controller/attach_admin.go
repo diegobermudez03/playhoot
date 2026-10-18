@@ -2,7 +2,6 @@ package controller
 
 import (
 	"context"
-	"sync"
 
 	"github.com/google/uuid"
 
@@ -18,11 +17,12 @@ func (c *Controller) AdminCount() int {
 
 // AttachAdmin registers userUUID's admin connection and returns its
 // operations. Several admin connections of the same creator may be attached
-// at once.
+// at once. The first lobby update is the lobby as it is now.
 func (c *Controller) AttachAdmin(userUUID string) runtime.AdminConnection {
-	connection := &adminConnection{id: uuid.NewString(), userUUID: userUUID, ended: make(chan struct{})}
+	admin := newConnection(uuid.NewString(), userUUID)
 	c.mu.Lock()
-	c.admins[connection.id] = connection
+	c.admins[admin.id] = admin
+	admin.lobbyUpdates.publish(c.lobbyLocked())
 	c.mu.Unlock()
 
 	return runtime.AdminConnection{
@@ -35,55 +35,17 @@ func (c *Controller) AttachAdmin(userUUID string) runtime.AdminConnection {
 		CancelSession: func(context.Context) (runtime.CancelSessionResult, error) {
 			return runtime.CancelSessionResult{}, ErrNotImplemented
 		},
-		NextLobbyUpdate: func(ctx context.Context) (runtime.LobbyUpdate, bool) {
-			connection.waitWithoutResult(ctx)
-			return runtime.LobbyUpdate{}, false
-		},
+		NextLobbyUpdate: admin.nextLobbyUpdate,
 		NextView: func(ctx context.Context) (runtime.PlayerView, bool) {
-			connection.waitWithoutResult(ctx)
+			admin.waitWithoutResult(ctx)
 			return runtime.PlayerView{}, false
 		},
-		Ended: connection.wait,
+		Ended: admin.wait,
 		Disconnect: func() {
 			c.mu.Lock()
-			delete(c.admins, connection.id)
+			delete(c.admins, admin.id)
 			c.mu.Unlock()
-			connection.end(runtime.EndDisconnected)
+			admin.end(runtime.EndDisconnected)
 		},
-	}
-}
-
-// adminConnection is one attached admin connection.
-type adminConnection struct {
-	id       string
-	userUUID string
-
-	once   sync.Once
-	ended  chan struct{}
-	reason runtime.EndReason
-}
-
-func (a *adminConnection) end(reason runtime.EndReason) {
-	a.once.Do(func() {
-		a.reason = reason
-		close(a.ended)
-	})
-}
-
-func (a *adminConnection) wait(ctx context.Context) (runtime.ConnectionEnd, bool) {
-	select {
-	case <-a.ended:
-		return runtime.ConnectionEnd{Reason: a.reason}, true
-	case <-ctx.Done():
-		return runtime.ConnectionEnd{}, false
-	}
-}
-
-// waitWithoutResult blocks until the connection ends or ctx is done; it backs
-// the streams that never produce anything yet.
-func (a *adminConnection) waitWithoutResult(ctx context.Context) {
-	select {
-	case <-a.ended:
-	case <-ctx.Done():
 	}
 }
