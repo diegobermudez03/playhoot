@@ -125,6 +125,10 @@ type AdminConnection struct {
 	// receives; a FULL view of them follows through NextView.
 	SelectPerspective func(ctx context.Context, participantID string) (SelectPerspectiveResult, error)
 
+	// Resync asks for the selected participant's current view again; a FULL
+	// view follows through NextView.
+	Resync func(ctx context.Context) error
+
 	// StartSession starts the game with the players in the lobby.
 	StartSession func(ctx context.Context) (StartSessionResult, error)
 
@@ -142,7 +146,7 @@ type AdminConnection struct {
 
 	// NextView blocks until the next view of the selected participant. Every
 	// view produced before the connection ended is returned before false.
-	NextView func(ctx context.Context) (PlayerView, bool)
+	NextView func(ctx context.Context) (WatchedView, bool)
 
 	// Ended blocks until the connection ends and reports why; false means
 	// ctx was done first.
@@ -171,6 +175,15 @@ type PlayerView struct {
 	State []byte
 }
 
+// WatchedView is a participant's view as an admin watching them receives it:
+// their logical events, but not their acknowledgement nor their errors.
+type WatchedView struct {
+	PlayerView
+
+	// Events are delivered like OwnView's.
+	Events [][]byte
+}
+
 // SelectPerspectiveOutcome is the decision a SelectPerspective call reached.
 type SelectPerspectiveOutcome string
 
@@ -178,9 +191,13 @@ const (
 	PerspectiveSelected           SelectPerspectiveOutcome = "selected"
 	PerspectiveUnknownParticipant SelectPerspectiveOutcome = "unknown_participant"
 
-	// PerspectiveCreatorPlaying means the creator also plays, so watching
-	// another participant is denied.
+	// PerspectiveCreatorPlaying means the creator had a player connection in
+	// this Session, so watching any participant is denied for good.
 	PerspectiveCreatorPlaying SelectPerspectiveOutcome = "creator_is_playing"
+
+	// PerspectiveNotRunning means the Session is not running a game; nothing
+	// is selected.
+	PerspectiveNotRunning SelectPerspectiveOutcome = "session_not_running"
 )
 
 // SelectPerspectiveResult is the outcome of selecting a perspective.

@@ -13,6 +13,8 @@ type connection struct {
 	userUUID string
 	// participantID is set when the game starts, for a player's connection.
 	participantID string
+	// watching is the participant an admin's connection selected to watch.
+	watching string
 
 	lobbyUpdates lobbyFeed
 	views        viewFeed
@@ -90,15 +92,6 @@ func (c *connection) markStarted(start runtime.SessionStart) {
 	c.start = start
 	c.lobbyUpdates.finish()
 	close(c.started)
-}
-
-// waitWithoutResult blocks until the connection ends or ctx is done; it backs
-// the streams that never produce anything yet.
-func (c *connection) waitWithoutResult(ctx context.Context) {
-	select {
-	case <-c.ended:
-	case <-ctx.Done():
-	}
 }
 
 // nextLobbyUpdate returns the latest lobby update not yet returned; one

@@ -23,11 +23,12 @@ import (
 // controls, recording what the handler asked of it.
 type fakeAdmin struct {
 	*fakeLobby[runtime.SessionStart]
-	views     chan runtime.PlayerView
+	views     chan runtime.WatchedView
 	selectErr error
 	// finalView, when set, is produced by CancelSession right before the
-	// Session ends.
-	finalView *runtime.PlayerView
+	// Session ends, and resyncView by Resync.
+	finalView  *runtime.WatchedView
+	resyncView *runtime.WatchedView
 
 	endOnce sync.Once
 	ended   chan struct{}
@@ -35,13 +36,14 @@ type fakeAdmin struct {
 
 	mu          sync.Mutex
 	selected    []string
+	resyncs     int
 	disconnects int
 }
 
-func newFakeAdmin(views ...runtime.PlayerView) *fakeAdmin {
+func newFakeAdmin(views ...runtime.WatchedView) *fakeAdmin {
 	admin := &fakeAdmin{
 		fakeLobby: newFakeLobby[runtime.SessionStart](),
-		views:     make(chan runtime.PlayerView, len(views)+1),
+		views:     make(chan runtime.WatchedView, len(views)+2),
 		ended:     make(chan struct{}),
 	}
 	for _, view := range views {
@@ -51,7 +53,7 @@ func newFakeAdmin(views ...runtime.PlayerView) *fakeAdmin {
 }
 
 // startedFakeAdmin returns a fake admin of a Session that started with roster.
-func startedFakeAdmin(views ...runtime.PlayerView) *fakeAdmin {
+func startedFakeAdmin(views ...runtime.WatchedView) *fakeAdmin {
 	admin := newFakeAdmin(views...)
 	admin.start(roster)
 	return admin
@@ -157,6 +159,15 @@ func (f *fakeAdmin) connection() runtime.AdminConnection {
 			}
 			return runtime.SelectPerspectiveResult{Outcome: runtime.PerspectiveSelected}, nil
 		},
+		Resync: func(context.Context) error {
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			f.resyncs++
+			if f.resyncView != nil {
+				f.views <- *f.resyncView
+			}
+			return nil
+		},
 		StartSession: func(context.Context) (runtime.StartSessionResult, error) {
 			return runtime.StartSessionResult{Outcome: runtime.StartInvalidPlayerCount}, nil
 		},
@@ -171,7 +182,7 @@ func (f *fakeAdmin) connection() runtime.AdminConnection {
 		Started: func(ctx context.Context) (runtime.SessionStart, bool) {
 			return f.waitStarted(ctx, f.ended)
 		},
-		NextView: func(ctx context.Context) (runtime.PlayerView, bool) {
+		NextView: func(ctx context.Context) (runtime.WatchedView, bool) {
 			return nextOf(ctx, f.views, f.ended)
 		},
 		Ended: func(ctx context.Context) (runtime.ConnectionEnd, bool) {
@@ -236,6 +247,7 @@ func TestHandleAdminJoin(t *testing.T) {
 		expectedReceivedAnyOrder []string
 		expectedCloseStatus      websocket.StatusCode
 		expectedSelected         []string
+		expectedResyncs          int
 		expectedDisconnects      int
 	}
 
@@ -265,7 +277,10 @@ func TestHandleAdminJoin(t *testing.T) {
 			}
 		},
 		"views_are_delivered_with_the_game_state_as_is": func(t *testing.T, deps dependencies) test {
-			admin := startedFakeAdmin(runtime.PlayerView{ParticipantID: "P1", Full: true, Revision: 4, State: []byte(`{"score":3}`)})
+			admin := startedFakeAdmin(runtime.WatchedView{
+				PlayerView: runtime.PlayerView{ParticipantID: "P1", Full: true, Revision: 4, State: []byte(`{"score":3}`)},
+				Events:     [][]byte{[]byte(`{"kind":"goal"}`)},
+			})
 			accept(deps, admin)
 			return test{
 				protocols:    []string{"playhoot.v1"},
@@ -273,13 +288,30 @@ func TestHandleAdminJoin(t *testing.T) {
 				clientCloses: true,
 				expectedReceived: []string{
 					`{"type":"session_started",` + rosterJSON + `}`,
-					`{"type":"player_view","participant_id":"P1","full":true,"revision":4,"state":{"score":3}}`,
+					`{"type":"player_view","participant_id":"P1","full":true,"revision":4,"state":{"score":3},"events":[{"kind":"goal"}]}`,
 				},
 				expectedDisconnects: 1,
 			}
 		},
+		"resync_delivers_the_full_view_it_asked_for": func(t *testing.T, deps dependencies) test {
+			admin := startedFakeAdmin()
+			admin.resyncView = &runtime.WatchedView{PlayerView: runtime.PlayerView{ParticipantID: "P2", Full: true, Revision: 7, State: []byte(`{"lap":2}`)}}
+			accept(deps, admin)
+			return test{
+				protocols:    []string{"playhoot.v1"},
+				admin:        admin,
+				clientSends:  []string{`{"type":"resync"}`},
+				clientCloses: true,
+				expectedReceived: []string{
+					`{"type":"session_started",` + rosterJSON + `}`,
+					`{"type":"player_view","participant_id":"P2","full":true,"revision":7,"state":{"lap":2}}`,
+				},
+				expectedResyncs:     1,
+				expectedDisconnects: 1,
+			}
+		},
 		"start_follows_the_lobby_and_precedes_the_views": func(t *testing.T, deps dependencies) test {
-			admin := newFakeAdmin(runtime.PlayerView{ParticipantID: "P1", Full: true, Revision: 1, State: []byte(`{"round":1}`)})
+			admin := newFakeAdmin(runtime.WatchedView{PlayerView: runtime.PlayerView{ParticipantID: "P1", Full: true, Revision: 1, State: []byte(`{"round":1}`)}})
 			admin.lobby <- runtime.LobbyUpdate{Members: []runtime.LobbyMember{{UserUUID: "u1"}, {UserUUID: "u2"}}}
 			admin.start(roster)
 			accept(deps, admin)
@@ -340,7 +372,7 @@ func TestHandleAdminJoin(t *testing.T) {
 		},
 		"cancelling_delivers_the_answer_and_the_final_view_before_closing": func(t *testing.T, deps dependencies) test {
 			admin := startedFakeAdmin()
-			admin.finalView = &runtime.PlayerView{ParticipantID: "P1", Full: true, Revision: 9, State: []byte(`{"over":true}`)}
+			admin.finalView = &runtime.WatchedView{PlayerView: runtime.PlayerView{ParticipantID: "P1", Full: true, Revision: 9, State: []byte(`{"over":true}`)}}
 			accept(deps, admin)
 			return test{
 				protocols:   []string{"playhoot.v1"},
@@ -564,6 +596,7 @@ func TestHandleAdminJoin(t *testing.T) {
 				tc.admin.mu.Lock()
 				defer tc.admin.mu.Unlock()
 				require.Equal(t, tc.expectedSelected, tc.admin.selected)
+				require.Equal(t, tc.expectedResyncs, tc.admin.resyncs)
 				require.Equal(t, tc.expectedDisconnects, tc.admin.disconnects)
 			}
 		})

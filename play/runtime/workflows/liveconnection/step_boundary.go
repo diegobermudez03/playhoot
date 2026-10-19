@@ -585,7 +585,8 @@ func (c *sessionController) requeue(work boundary) {
 // commitBoundary confirms what a boundary's execution produced: the new
 // mirror, every command executed with its response, and each connected
 // player told what changed in their view, how far their SAMPLEs were consumed
-// and the logical errors the game returned to them.
+// and the logical errors the game returned to them; each watching admin too,
+// without the acknowledgement and the errors.
 func (c *sessionController) commitBoundary(ctx context.Context, work boundary, executed execution) error {
 	s := c.lock()
 	defer c.unlock()
@@ -637,7 +638,8 @@ func (c *sessionController) acknowledgeOnly(ctx context.Context, work boundary) 
 }
 
 // acknowledge sends every connected player their view of executed, with how
-// far their SAMPLEs were consumed and their logical errors and events.
+// far their SAMPLEs were consumed and their logical errors and events, and
+// every watching admin the view of who they watch, with its events.
 func (s *liveState) acknowledge(ctx context.Context, work boundary, executed execution) {
 	for participantID, acked := range work.acks {
 		// A connection that took over since numbers its SAMPLEs anew.
@@ -651,6 +653,11 @@ func (s *liveState) acknowledge(ctx context.Context, work boundary, executed exe
 			continue
 		}
 		s.sendView(ctx, player, participant.ParticipantID, executed.views[participant.ParticipantID], executed.transientsFor(participant.ParticipantID))
+	}
+	for _, admin := range s.admins {
+		if admin.watching != "" && !admin.isEnded() {
+			s.sendView(ctx, admin, admin.watching, executed.views[admin.watching], executed.transientsFor(admin.watching))
+		}
 	}
 }
 
@@ -682,22 +689,26 @@ func (e execution) transientsFor(participantID string) transients {
 	return received
 }
 
-// sendView sends player what changed in their view since the last one their
-// connection received, with their acknowledgement and their transients;
-// nothing when none of them is new.
-func (s *liveState) sendView(ctx context.Context, player *connection, participantID string, view []byte, received transients) {
-	acked := s.inputs[participantID].consumedThrough
+// sendView sends viewer what changed in participantID's view since the last
+// one the connection received, with the transients it receives; nothing when
+// none of them is new. Only the participant's own connection gets their
+// acknowledgement and errors.
+func (s *liveState) sendView(ctx context.Context, viewer *connection, participantID string, view []byte, received transients) {
+	acked := s.ackFor(viewer, participantID)
+	if viewer.participantID != participantID {
+		received.errors = nil
+	}
 	patch, full := []byte(`{}`), false
 	if view != nil {
-		diff, wasFull, err := viewpatch.Diff(player.lastView, view)
+		diff, wasFull, err := viewpatch.Diff(viewer.lastView, view)
 		if err != nil {
 			// A view that is not JSON is the game's bug; resend it whole.
 			diff, wasFull = view, true
 		}
 		patch, full = diff, wasFull
-		player.lastView = view
+		viewer.lastView = view
 	}
-	if !full && string(patch) == "{}" && acked == player.lastAck && received.empty() {
+	if !full && string(patch) == "{}" && acked == viewer.lastAck && received.empty() {
 		return
 	}
 	kind := viewPatch
@@ -708,28 +719,37 @@ func (s *liveState) sendView(ctx context.Context, player *connection, participan
 		kind = viewAckOnly
 	}
 	if kind != viewAckOnly {
-		player.revision++
+		viewer.revision++
 	}
 	viewsSent.Inc(ctx, viewKindLabel.Value(kind))
-	player.lastAck = acked
-	player.views.publish(runtime.OwnView{
-		PlayerView:                    runtime.PlayerView{ParticipantID: participantID, Full: full, Revision: player.revision, State: patch},
+	viewer.lastAck = acked
+	viewer.views.publish(runtime.OwnView{
+		PlayerView:                    runtime.PlayerView{ParticipantID: participantID, Full: full, Revision: viewer.revision, State: patch},
 		ConsumedThroughSampleSequence: acked,
 		Errors:                        received.errors,
 		Events:                        received.events,
 	})
 }
 
-// sendFull sends player participantID's current view whole, as a fresh
-// baseline for the patches that follow, with their acknowledgement.
-func (s *liveState) sendFull(ctx context.Context, player *connection, participantID string) {
-	acked := s.inputs[participantID].consumedThrough
-	player.lastView = s.views[participantID]
-	player.lastAck = acked
-	player.revision++
+// sendFull sends viewer participantID's current view whole, as a fresh
+// baseline for the patches that follow, with the acknowledgement it receives.
+func (s *liveState) sendFull(ctx context.Context, viewer *connection, participantID string) {
+	acked := s.ackFor(viewer, participantID)
+	viewer.lastView = s.views[participantID]
+	viewer.lastAck = acked
+	viewer.revision++
 	viewsSent.Inc(ctx, viewKindLabel.Value(viewFull))
-	player.views.publish(runtime.OwnView{
-		PlayerView:                    runtime.PlayerView{ParticipantID: participantID, Full: true, Revision: player.revision, State: player.lastView},
+	viewer.views.publish(runtime.OwnView{
+		PlayerView:                    runtime.PlayerView{ParticipantID: participantID, Full: true, Revision: viewer.revision, State: viewer.lastView},
 		ConsumedThroughSampleSequence: acked,
 	})
+}
+
+// ackFor is how far participantID's SAMPLEs were consumed, as viewer
+// receives it: 0 unless viewer is the participant's own connection.
+func (s *liveState) ackFor(viewer *connection, participantID string) int64 {
+	if viewer.participantID != participantID {
+		return 0
+	}
+	return s.inputs[participantID].consumedThrough
 }

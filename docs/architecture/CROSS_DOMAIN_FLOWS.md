@@ -61,9 +61,9 @@ sequenceDiagram
     else accepted
         Live-->>API: AdminConnection operations
         par client requests
-            Client->>API: select_perspective / cancel_session
-            API->>Live: SelectPerspective / CancelSession
-            API->>Client: result message
+            Client->>API: select_perspective / start_session / cancel_session / resync
+            API->>Live: SelectPerspective / StartSession / CancelSession / Resync
+            API->>Client: result message (resync has none: its FULL view follows)
         and views
             API->>Live: NextView (blocks)
             API->>Client: player_view message

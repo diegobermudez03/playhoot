@@ -17,6 +17,7 @@ const (
 	adminSelectPerspective       = "select_perspective"
 	adminStartSession            = "start_session"
 	adminCancelSession           = "cancel_session"
+	adminResync                  = "resync"
 	adminSelectPerspectiveResult = "select_perspective_result"
 	adminStartSessionResult      = "start_session_result"
 	adminCancelSessionResult     = "cancel_session_result"
@@ -33,11 +34,12 @@ type adminSessionStartedMessage struct {
 }
 
 type adminPlayerViewMessage struct {
-	Type          string          `json:"type"`
-	ParticipantID string          `json:"participant_id"`
-	Full          bool            `json:"full"`
-	Revision      int64           `json:"revision"`
-	State         json.RawMessage `json:"state"`
+	Type          string            `json:"type"`
+	ParticipantID string            `json:"participant_id"`
+	Full          bool              `json:"full"`
+	Revision      int64             `json:"revision"`
+	State         json.RawMessage   `json:"state"`
+	Events        []json.RawMessage `json:"events,omitempty"`
 }
 
 var errIncompleteAdminConnection = errors.New("admin connection is missing operations")
@@ -63,7 +65,7 @@ func (h *Handler) handleAdminJoin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	admin := attached.Connection
-	if admin.SelectPerspective == nil || admin.StartSession == nil || admin.CancelSession == nil ||
+	if admin.SelectPerspective == nil || admin.Resync == nil || admin.StartSession == nil || admin.CancelSession == nil ||
 		admin.NextLobbyUpdate == nil || admin.Started == nil || admin.NextView == nil || admin.Ended == nil || admin.Disconnect == nil {
 		logging.LogError(ctx, errIncompleteAdminConnection)
 		wsx.Abort(conn)
@@ -74,9 +76,10 @@ func (h *Handler) handleAdminJoin(w http.ResponseWriter, r *http.Request) {
 		adminSelectPerspective: session.selectPerspective,
 		adminStartSession:      session.startSession,
 		adminCancelSession:     session.cancelSession,
+		adminResync:            session.resync,
 	})
 	h.live.Serve(ctx, conn, admin.Disconnect, append(loops,
-		sendSession(session.liveSession, sessionStream[runtime.SessionStart, runtime.PlayerView]{
+		sendSession(session.liveSession, sessionStream[runtime.SessionStart, runtime.WatchedView]{
 			nextLobbyUpdate: admin.NextLobbyUpdate,
 			started:         admin.Started,
 			startMessage:    adminStartedMessage,
@@ -105,6 +108,14 @@ func (s *adminSession) selectPerspective(ctx context.Context, data []byte) (live
 	return live.WriteMessage(ctx, s.conn, outcomeMessage{Type: adminSelectPerspectiveResult, Outcome: string(result.Outcome)})
 }
 
+func (s *adminSession) resync(ctx context.Context, _ []byte) (live.End, bool) {
+	if err := s.admin.Resync(ctx); err != nil {
+		return live.CloseServerFailure(s.conn, err), true
+	}
+	// The FULL view it asked for comes as any other view.
+	return live.End{}, false
+}
+
 func (s *adminSession) startSession(ctx context.Context, _ []byte) (live.End, bool) {
 	result, err := s.admin.StartSession(ctx)
 	if err != nil {
@@ -127,14 +138,16 @@ func adminStartedMessage(start runtime.SessionStart) any {
 	return adminSessionStartedMessage{Type: liveSessionStarted, Participants: participantsJSON(start), Frontend: frontendJSON(start)}
 }
 
-// adminViewMessage is a view of the selected participant, without the SAMPLE
-// acknowledgement only their own connection receives.
-func adminViewMessage(view runtime.PlayerView) any {
+// adminViewMessage is a view of the selected participant with their logical
+// events, without the SAMPLE acknowledgement and the errors only their own
+// connection receives.
+func adminViewMessage(view runtime.WatchedView) any {
 	return adminPlayerViewMessage{
 		Type:          livePlayerView,
 		ParticipantID: view.ParticipantID,
 		Full:          view.Full,
 		Revision:      view.Revision,
 		State:         gameJSON(view.State),
+		Events:        gameJSONs(view.Events),
 	}
 }

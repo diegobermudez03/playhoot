@@ -207,6 +207,7 @@ func newSessionController(root context.Context, sessionUUID string, epoch int64,
 			presence:       make(map[string]*participantPresence),
 			rejoins:        make(map[string]*pendingRejoin),
 			views:          make(map[string][]byte),
+			playedBy:       make(map[string]bool),
 		},
 		checkpointWriter: newCheckpointWriter(),
 		operations:       make(chan func()),
@@ -438,6 +439,8 @@ type liveState struct {
 	// users in the lobby in the order they joined.
 	players map[string]*connection
 	lobby   []string
+	// playedBy are the users who ever had a player connection here.
+	playedBy map[string]bool
 
 	// participants are the lobby frozen by the current Start attempt, kept
 	// once the game runs.

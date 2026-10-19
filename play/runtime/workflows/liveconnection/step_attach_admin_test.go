@@ -169,8 +169,10 @@ func TestAdminConnection(t *testing.T) {
 	require.True(t, more)
 	require.Equal(t, runtime.LobbyUpdate{Members: []runtime.LobbyMember{{UserUUID: "player-1"}}}, update, "the first update is the lobby as it is")
 
-	_, err := first.SelectPerspective(ctx, "P1")
-	require.ErrorIs(t, err, ErrNotImplemented)
+	selected, err := first.SelectPerspective(ctx, "P1")
+	require.NoError(t, err)
+	require.Equal(t, runtime.SelectPerspectiveResult{Outcome: runtime.PerspectiveNotRunning}, selected, "selecting runs the controller's selection")
+	require.NoError(t, first.Resync(ctx))
 	starts.EXPECT().CheckStartEligibility(ctx, "session-1", "creator", 1).Return(sessionpkg.StartEligibility{Outcome: sessionpkg.StartInvalidPlayerCount}, nil)
 	started, err := first.StartSession(ctx)
 	require.NoError(t, err)

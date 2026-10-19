@@ -120,6 +120,7 @@ func (c *sessionController) joinLobby(ctx context.Context, userUUID string) (run
 		c.unlock()
 		return runtime.PlayerConnection{}, runtime.RejectSessionStarted, false
 	}
+	s.playedBy[userUUID] = true
 	if older, found := s.players[userUUID]; found {
 		older.end(runtime.EndReplaced)
 		playersReplaced.Inc(ctx)

@@ -103,8 +103,12 @@ func (c *sessionController) registerAdmin(userUUID string) runtime.AdminConnecti
 	c.unlock()
 
 	return runtime.AdminConnection{
-		SelectPerspective: func(context.Context, string) (runtime.SelectPerspectiveResult, error) {
-			return runtime.SelectPerspectiveResult{}, ErrNotImplemented
+		SelectPerspective: func(ctx context.Context, participantID string) (runtime.SelectPerspectiveResult, error) {
+			return c.selectPerspective(ctx, admin, participantID), nil
+		},
+		Resync: func(ctx context.Context) error {
+			c.resyncAdmin(ctx, admin)
+			return nil
 		},
 		StartSession: func(ctx context.Context) (runtime.StartSessionResult, error) {
 			return c.requestStart(ctx, userUUID)
@@ -114,9 +118,9 @@ func (c *sessionController) registerAdmin(userUUID string) runtime.AdminConnecti
 		},
 		NextLobbyUpdate: admin.nextLobbyUpdate,
 		Started:         admin.sessionStart,
-		NextView: func(ctx context.Context) (runtime.PlayerView, bool) {
-			admin.waitWithoutResult(ctx)
-			return runtime.PlayerView{}, false
+		NextView: func(ctx context.Context) (runtime.WatchedView, bool) {
+			view, ok := admin.views.next(ctx, admin.ended)
+			return runtime.WatchedView{PlayerView: view.PlayerView, Events: view.Events}, ok
 		},
 		Ended: admin.wait,
 		Disconnect: func() {
