@@ -1,6 +1,6 @@
 Process: Project execution (session-runtime-v1), human-directed implementation
 Topic: Real-time Session Runtime per plans/session_runtime architecture plan
-Current stage: Session termination (S, U) implemented 2026-10-18; earlier: view revisions and resync (N); earlier: rejoin (O4); earlier: leave as immediate disconnection and abandoned-Session cancellation (SESSION-ADR-0032); earlier: transport recovery (grace, reattach, device switch, playerDisconnected on expiry); earlier: logical errors and events, timers dropped by SESSION-ADR-0031 and tested (2026-10-18); waiting for the human's review
+Current stage: recovery (Q) and periodic checkpoints (P) implemented 2026-10-18; earlier: Session termination (S, U); earlier: view revisions and resync (N); earlier: rejoin (O4); earlier: leave as immediate disconnection and abandoned-Session cancellation (SESSION-ADR-0032); earlier: transport recovery (grace, reattach, device switch, playerDisconnected on expiry); earlier: logical errors and events, timers dropped by SESSION-ADR-0031 and tested (2026-10-18); waiting for the human's review
 Current execution surface: CODEBASE AGENT
 Related durable artifacts: docs/projects/active/session-runtime-v1/PROJECT.md, docs/projects/active/session-runtime-v1/CHECKLIST.md, plans/session_runtime/Playhoot_Session_Runtime_Architecture_Plan_with_TOC.docx, play/docs/decisions/SESSION-ADR-0028-real-time-session-runtime-supersedes-discrete-turn-architecture.md
 Blocked by: nothing

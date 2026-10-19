@@ -45,14 +45,15 @@ func (r *ControllerResolver) AttachAdmin(ctx context.Context, sessionUUID string
 }
 
 // attachAdmin admits userUUID's admin connection if the durable Session
-// accepts them as its admin.
+// accepts them as its admin, recovering a game the database runs and this
+// instance does not.
 func (c *sessionController) attachAdmin(ctx context.Context, userUUID string) (runtime.AttachAdminResult, error) {
 	eligibility, err := c.deps.adminJoins.EligibleToJoinAsAdmin(ctx, c.sessionUUID, userUUID)
 	if err != nil {
 		return runtime.AttachAdminResult{}, fmt.Errorf("checking admin eligibility: %w", err)
 	}
 	switch eligibility {
-	case sessionpkg.AdminJoinEligible:
+	case sessionpkg.AdminJoinEligible, sessionpkg.AdminJoinEligibleRunning:
 	case sessionpkg.AdminJoinNotCreator:
 		return rejectAdmin(ctx, runtime.RejectNotCreator), nil
 	case sessionpkg.AdminJoinSessionNotFound, sessionpkg.AdminJoinSessionNotJoinable:
@@ -62,6 +63,15 @@ func (c *sessionController) attachAdmin(ctx context.Context, userUUID string) (r
 	}
 	if err := c.loadManifest(ctx); err != nil {
 		return runtime.AttachAdminResult{}, err
+	}
+	if eligibility == sessionpkg.AdminJoinEligibleRunning {
+		recovery, err := c.recoverIfNeeded(ctx)
+		if err != nil {
+			return runtime.AttachAdminResult{}, err
+		}
+		if recovery == recoveryEnded {
+			return rejectAdmin(ctx, runtime.RejectSessionUnavailable), nil
+		}
 	}
 	adminAttaches.Inc(ctx, attachOutcomeLabel.Value("accepted"))
 	return runtime.AttachAdminResult{Outcome: runtime.AttachAccepted, Connection: c.registerAdmin(userUUID)}, nil

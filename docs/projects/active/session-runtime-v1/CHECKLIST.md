@@ -238,7 +238,7 @@ Completed 2026-10-18 (the human accepted it as complete): the COMMAND protocol i
 - [x] Token pending -> not enqueued twice (controller tests)
 - [x] Token processed (including logical game rejection) -> later retry returns ALREADY_PROCESSED-equivalent (controller and boundary tests, end-to-end run)
 - [x] Original response is not persisted for idempotency (only the original request gets it; a duplicate, even one waiting while pending, gets `already_processed`)
-- [ ] Processed tokens retained for the Session lifetime and included in checkpoints; pending tokens memory-only (deferred to P: closes when periodic checkpoints are written with each participant's processed tokens; retained in memory and restored from the checkpoint on adoption; the checkpoint document has the field, but only the initial checkpoint, with no tokens, is written until periodic checkpoints exist, see P)
+- [x] Processed tokens retained for the Session lifetime and included in checkpoints; pending tokens memory-only (2026-10-18: periodic checkpoints carry each participant's processed tokens, restored on recovery; `TestOfferCheckpoint`, `TestRecoveredGameResumesWhereItsCheckpointWas`)
 - [x] Command can trigger an early execution boundary, processing older pending operations first (it requests a flush; the batch runs everything before it in timeline order; controller and boundary tests)
 - [x] command(...) executed via Sandbox; full successful result committed; correlated response sent (boundary and sandbox tests, end-to-end run)
 - [x] Immediate projection flush when observable state changed (the requested boundary sends views like any other)
@@ -355,30 +355,35 @@ Implemented 2026-10-18 (decided by the human: `playerRejoined(state, participant
 
 ## P. Recovery checkpoint (§20)
 
-- [ ] Checkpoint contains: global state, executedThroughSessionTime, contextRevision, PRNG state, processed COMMAND tokens per participant (the controller keeps them and the checkpoint document has `processed_command_tokens`, restored on adoption since 2026-10-18; periodic checkpoints must fill it, which also closes the J item), consumedThroughSampleSequence per participant, participant status (CONNECTED/DISCONNECTED/LEFT), other controller state needed for exact recovery
-- [ ] Checkpoint excludes: current SAMPLE values, pending transitions, pending COMMANDs, projection cache, projection revisions, WebSocket state
-- [ ] State and metadata describe the same materialized execution boundary (never state through SAMPLE 100 with consumed sequence 103)
-- [ ] Strong initial checkpoint (see G)
-- [ ] Periodic checkpoints: best effort, asynchronous, taken from an immutable snapshot at a safe boundary, never blocking gameplay on the external write
-- [ ] Checkpoint failure does not stop the Session; later checkpoints can succeed
-- [ ] Storage technology chosen and implemented (decision)
+Implemented 2026-10-18 together with recovery (decided by the human). A running game's controller takes a checkpoint at the first committed boundary at least 5 s (`defaultCheckpointInterval`, tuning) after the previous one, under its lock right after the commit, and hands it to a writer goroutine of its own holding only the latest (a newer one replaces one not yet written); the writer encodes it and calls `sessionlifecycle.SaveCheckpoint`, which locks the Session, stores it only while RUNNING and never over a higher context revision. Metrics `play_runtime_checkpoints_total{outcome}`, `play_runtime_checkpoint_duration_seconds{outcome}`, `play_runtime_checkpoint_bytes`. Verified by unit and Postgres integration tests and a live crash (revision 102 stored after 10 s of play).
+
+- [x] Checkpoint contains: global state, executedThroughSessionTime, contextRevision, PRNG state, processed COMMAND tokens per participant, consumedThroughSampleSequence per participant, participant status (CONNECTED/DISCONNECTED/LEFT), other controller state needed for exact recovery (2026-10-18: all of them except consumed SAMPLE sequences, which no longer exist across connections since each connection numbers its SAMPLEs from 1 (decided by the human, O5); status as the participants the game was told disconnected (`disconnected`); LEFT does not exist, SESSION-ADR-0032)
+- [x] Checkpoint excludes: current SAMPLE values, pending transitions, pending COMMANDs, projection cache, projection revisions, WebSocket state (2026-10-18: `TestOfferCheckpoint`)
+- [x] State and metadata describe the same materialized execution boundary (never state through SAMPLE 100 with consumed sequence 103) (2026-10-18: taken under the lock right after the boundary commits; a disconnection still waiting in the timeline is not marked, since the state does not know it yet; `TestOfferCheckpoint`)
+- [x] Strong initial checkpoint (see G)
+- [x] Periodic checkpoints: best effort, asynchronous, taken from an immutable snapshot at a safe boundary, never blocking gameplay on the external write (2026-10-18: `TestCommittedBoundaryOffersACheckpoint`, `TestWriteCheckpoints`, `TestNewerCheckpointReplacesOneNotWrittenYet`)
+- [x] Checkpoint failure does not stop the Session; later checkpoints can succeed (2026-10-18: logged and counted; `TestWriteCheckpoints`)
+- [x] Storage technology chosen and implemented (decision) (Postgres, latest only per Session, decided by the human 2026-10-17)
 
 ---
 
 ## Q. Recovery after Runtime pod loss (§21)
 
-- [ ] Lazy: no eager recreation of crashed Sessions
-- [ ] First reconnect: owner registry sees no valid owner -> claims new pod -> request routed
-- [ ] New pod creates the controller, loads Session + pinned GameVersion + latest checkpoint
-- [ ] Restores state, PRNG, sequences, participant statuses
-- [ ] All logical inputs default
-- [ ] Fresh Sandbox context from recovered state; projections rebuilt via project()
-- [ ] Requesting connection attached by role; FULL projection + fresh baseline sent
-- [ ] Game time resumes from the checkpoint value (outage not added)
-- [ ] Recovery window (platform time, ~30 s): previously-CONNECTED participants may return without being converted to disconnects
-- [ ] At window end, playerDisconnected() inserted for previously-connected participants who never returned
-- [ ] Participants DISCONNECTED in the checkpoint return only via real playerRejoined flow; LEFT remain unable to rejoin
-- [ ] Rollback to the last checkpoint is handled; clients reconcile on the full projection
+Implemented 2026-10-18 (decided by the human: the client's reconnection through the same join endpoint triggers it, admins too; 30 s recovery window). A player or admin connection reaching a fresh controller of a Session the database has RUNNING (`PlayerJoinSessionStarted`, or the new `AdminJoinEligibleRunning`) makes the controller recover it on its main goroutine, so concurrent reconnections recover it once and the rest wait and attach to the result (`TestConcurrentReconnectionsRecoverOnce`). Recovery freezes the lobby like a Start, checks the maximum lifetime (past it, the Session ends as MAX_LIFETIME instead and the connection is rejected `session_unavailable`), then reuses the adoption path: `LoadRunningSession`, a restored Sandbox context, every projection rebuilt. A failure (sandbox capacity, infrastructure) fails the connection (1011) and returns the controller to its lobby, so the next reconnection tries again. Metrics `play_runtime_session_recoveries_total{outcome}` and `play_runtime_session_recovery_duration_seconds{outcome}`. Verified by unit tests and a live crash: the server was killed with a player and an admin connected at ~9.1 s of game time; on reconnecting, both got `session_started`, the player a FULL view at the 5.0 s checkpoint, and the game went on.
+
+- [x] Lazy: no eager recreation of crashed Sessions (recovered only by a reconnection)
+- [ ] First reconnect: owner registry sees no valid owner -> claims new pod -> request routed (single instance: the placeholder ownership claims every live Session, see A1)
+- [x] New pod creates the controller, loads Session + pinned GameVersion + latest checkpoint
+- [x] Restores state, PRNG, sequences, participant statuses (2026-10-18: state, PRNG, revision, game time, processed tokens, disconnected participants; `TestRecoveredGameResumesWhereItsCheckpointWas`)
+- [x] All logical inputs default
+- [x] Fresh Sandbox context from recovered state; projections rebuilt via project()
+- [x] Requesting connection attached by role; FULL projection + fresh baseline sent (players reattach with `session_started` and a FULL view; admins get `session_started`)
+- [x] Game time resumes from the checkpoint value (outage not added)
+- [x] Recovery window (platform time, ~30 s): previously-CONNECTED participants may return without being converted to disconnects (`defaultRecoveryWindow`, 30 s; `TestRecoveryWindow`)
+- [x] At window end, playerDisconnected() inserted for previously-connected participants who never returned (metric cause `recovery_window_expired`; `TestRecoveryWindow`)
+- [x] Participants DISCONNECTED in the checkpoint return only via real playerRejoined flow; LEFT remain unable to rejoin (LEFT no longer exists, SESSION-ADR-0032)
+- [x] Rollback to the last checkpoint is handled; clients reconcile on the full projection (up to the checkpoint interval, 5 s, is lost; the live crash lost ~4 s)
+- [x] ~~Graceful shutdown writes a last checkpoint, so a deploy rolls back nothing~~ (out of scope, decided by the human 2026-10-18: any end of the process, even a manual one, counts as abrupt; the game resumes from its last periodic checkpoint)
 
 ---
 
@@ -507,8 +512,8 @@ Projection and replication:
 - [ ] Resync requests and reasons
 
 Recovery and ownership:
-- [ ] Checkpoint success/failure, duration, size, age of latest successful checkpoint per active Session (alert on stale)
-- [ ] Recoveries performed, recovery duration, recovery-window expirations
+- [ ] Checkpoint success/failure, duration, size, age of latest successful checkpoint per active Session (alert on stale) (2026-10-18: outcome, duration and size recorded; staleness alert pending; emission pending)
+- [x] Recoveries performed, recovery duration, recovery-window expirations (2026-10-18: `play_runtime_session_recoveries_total{outcome}`, `play_runtime_session_recovery_duration_seconds{outcome}`, `play_runtime_participants_disconnected_total{cause="recovery_window_expired"}`; emission pending like every metric)
 - [ ] Owner claim/release/lease-loss events; any detection of dual ownership (critical alert)
 - [ ] Reconciliation jobs: Sessions expired/aborted per run, job failures
 
@@ -568,7 +573,7 @@ Each needs at least one test or other concrete evidence before ticking.
 
 - [ ] 1. One Session, one live owner
 - [x] 2. One authoritative timeline; per-player buffers are never authority (2026-10-18: controller and boundary tests in `liveconnection`)
-- [ ] 3. RUNNING implies recoverable initial state
+- [x] 3. RUNNING implies recoverable initial state (the initial checkpoint is in the Start transaction, G; recovery tested, Q)
 - [ ] 4. Lobby membership is ephemeral; durable participants only at Start
 - [ ] 5. ParticipantID is the script's identity; userUUID stays platform-side
 - [ ] 6. No late new players after Start
@@ -587,8 +592,8 @@ Each needs at least one test or other concrete evidence before ticking.
 - [ ] 19. Projection privacy is backend-only
 - [x] 20. Projection revision belongs to the viewer stream (2026-10-18: one counter per connection; `TestCommitBoundaryTransientsReachOnlyTheirParticipants`, `TestResync`)
 - [x] 21. Full resync always available (2026-10-18: served from the projection cache at any point of a running game; `TestResync`)
-- [ ] 22. Recovery may roll back
-- [ ] 23. Recovery and Replay are separate
+- [x] 22. Recovery may roll back (2026-10-18: to the last periodic checkpoint; live crash)
+- [x] 23. Recovery and Replay are separate (checkpoints in `play_session_checkpoints`, replay through its own recorder)
 - [ ] 24. Replay never blocks gameplay indefinitely
 - [ ] 25. FINISHED has a durable ending (2026-10-18: FINISHED is durable before clients learn it, but the final replay state waits for R)
 - [x] 26. Finished Sessions are historical, not live (2026-10-18: an ended Session's controller is gone and owner routing answers 404; end-to-end run)

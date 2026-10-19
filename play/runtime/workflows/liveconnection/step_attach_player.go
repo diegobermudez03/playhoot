@@ -49,8 +49,9 @@ func (r *ControllerResolver) AttachPlayer(ctx context.Context, sessionUUID strin
 }
 
 // attachPlayer takes userUUID's player connection back into the running game
-// if they play it, or admits it into the lobby if the durable Session accepts
-// players.
+// if they play it, recovering the game first when the database runs it and
+// this instance does not, or admits it into the lobby if the durable Session
+// accepts players.
 func (c *sessionController) attachPlayer(ctx context.Context, userUUID string) (runtime.AttachPlayerResult, error) {
 	if result, participant, err := c.attachParticipant(ctx, userUUID); participant {
 		return result, err
@@ -62,7 +63,7 @@ func (c *sessionController) attachPlayer(ctx context.Context, userUUID string) (
 	switch eligibility {
 	case sessionpkg.PlayerJoinEligible:
 	case sessionpkg.PlayerJoinSessionStarted:
-		return rejectPlayer(ctx, runtime.RejectSessionStarted), nil
+		return c.attachRecoveredPlayer(ctx, userUUID)
 	case sessionpkg.PlayerJoinSessionNotFound, sessionpkg.PlayerJoinSessionNotJoinable:
 		return rejectPlayer(ctx, runtime.RejectSessionUnavailable), nil
 	default:
@@ -77,6 +78,25 @@ func (c *sessionController) attachPlayer(ctx context.Context, userUUID string) (
 	}
 	playerAttaches.Inc(ctx, playerAttachOutcomeLabel.Value("accepted"))
 	return runtime.AttachPlayerResult{Outcome: runtime.AttachAccepted, Connection: connection}, nil
+}
+
+// attachRecoveredPlayer takes userUUID's connection into the running game,
+// recovered first if it does not run here; only its participants come in.
+func (c *sessionController) attachRecoveredPlayer(ctx context.Context, userUUID string) (runtime.AttachPlayerResult, error) {
+	if err := c.loadManifest(ctx); err != nil {
+		return runtime.AttachPlayerResult{}, err
+	}
+	recovery, err := c.recoverIfNeeded(ctx)
+	if err != nil {
+		return runtime.AttachPlayerResult{}, err
+	}
+	if recovery == recoveryEnded {
+		return rejectPlayer(ctx, runtime.RejectSessionUnavailable), nil
+	}
+	if result, participant, err := c.attachParticipant(ctx, userUUID); participant {
+		return result, err
+	}
+	return rejectPlayer(ctx, runtime.RejectSessionStarted), nil
 }
 
 func rejectPlayer(ctx context.Context, reason runtime.RejectReason) runtime.AttachPlayerResult {

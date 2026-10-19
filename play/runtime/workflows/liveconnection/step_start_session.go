@@ -171,6 +171,13 @@ func (c *sessionController) startFrozenLobby(ctx context.Context, userUUID strin
 	return runtime.SessionStarted, nil
 }
 
+// resumedGame is what a game resumed from a checkpoint keeps: each
+// participant's processed COMMAND tokens and who was disconnected.
+type resumedGame struct {
+	processed    map[string][]string
+	disconnected []string
+}
+
 // adoptRunningSession catches the controller up with a start the database
 // already committed (its commit answer was lost, or this instance restarted):
 // the game runs from the committed roster and latest checkpoint, in a restored
@@ -222,7 +229,7 @@ func (c *sessionController) adoptRunningSession(ctx context.Context) (runtime.St
 		c.discardContext(ctx)
 		return "", fmt.Errorf("projecting the restored game: %w", err)
 	}
-	c.completeStart(participants, game, frontendOf(access), views, saved.ProcessedCommandTokens)
+	c.completeStart(participants, game, frontendOf(access), views, &resumedGame{processed: saved.ProcessedCommandTokens, disconnected: saved.Disconnected})
 	startedSessionsAdopted.Inc(ctx)
 	return runtime.StartAlreadyStarted, nil
 }
@@ -380,9 +387,10 @@ func (c *sessionController) cancelStart() {
 
 // completeStart runs the started game with the committed roster: the lobby
 // ends, every connection learns who plays, each participant gets a FULL first
-// view, and keeps the COMMAND tokens processed by them; a lobby player left
-// out of participants is ended.
-func (c *sessionController) completeStart(participants []runtime.Participant, game Game, frontend runtime.GameFrontend, views map[string][]byte, processed map[string][]string) {
+// view; a lobby player left out of participants is ended. A resumed game
+// (nil for a new one) keeps what its checkpoint knew, and the participants
+// who were playing get the recovery window instead of the transport grace.
+func (c *sessionController) completeStart(participants []runtime.Participant, game Game, frontend runtime.GameFrontend, views map[string][]byte, resumed *resumedGame) {
 	s := c.lock()
 	defer c.unlock()
 	if s.phase != phaseStarting {
@@ -396,12 +404,23 @@ func (c *sessionController) completeStart(participants []runtime.Participant, ga
 	s.runningSince = s.now()
 	s.baseSessionTimeMs = game.ExecutedThroughSessionTimeMs
 	s.lastActivity = s.runningSince
+	s.lastCheckpoint = s.runningSince
+	awaitUntil, cause := s.runningSince.Add(s.transportGrace), disconnectGraceExpired
+	if resumed == nil {
+		resumed = &resumedGame{}
+	} else {
+		awaitUntil, cause = s.runningSince.Add(c.deps.recoveryWindow), disconnectRecoveryEnded
+	}
 	defaults := s.manifest.Inputs.Defaults()
 	for _, participant := range participants {
 		s.inputs[participant.ParticipantID] = &participantInputs{current: defaults}
-		s.commands[participant.ParticipantID] = newParticipantCommands(processed[participant.ParticipantID])
-		// Whoever has no connection now gets the transport grace to come.
-		s.presence[participant.ParticipantID] = &participantPresence{detachedAt: s.runningSince}
+		s.commands[participant.ParticipantID] = newParticipantCommands(resumed.processed[participant.ParticipantID])
+		// Whoever has no connection now has until awaitUntil to come.
+		presence := &participantPresence{disconnected: slices.Contains(resumed.disconnected, participant.ParticipantID)}
+		if !presence.disconnected {
+			presence.await(awaitUntil, cause)
+		}
+		s.presence[participant.ParticipantID] = presence
 		s.views[participant.ParticipantID] = views[participant.ParticipantID]
 	}
 	inRoster := make(map[string]bool, len(participants))
@@ -422,8 +441,14 @@ func (c *sessionController) completeStart(participants []runtime.Participant, ga
 		if !found || player.isEnded() {
 			continue
 		}
+		if s.presence[participant.ParticipantID].disconnected {
+			// Only rejoining brings them back.
+			player.end(runtime.EndDisconnected)
+			delete(s.players, participant.UserUUID)
+			continue
+		}
 		player.participantID = participant.ParticipantID
-		s.presence[participant.ParticipantID].detachedAt = time.Time{}
+		s.presence[participant.ParticipantID].attach()
 		s.inputs[participant.ParticipantID].stream = player.id
 		s.sendFull(c.root, player, participant.ParticipantID)
 		// Last, so everything above is visible to whoever sees the start.

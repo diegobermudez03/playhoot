@@ -31,6 +31,7 @@ type Manager struct {
 	commitStartRepo        commitStartRepo
 	loadRunningSessionRepo loadRunningSessionRepo
 	endSessionRepo         endSessionRepo
+	saveCheckpointRepo     saveCheckpointRepo
 
 	// scripts reads a game version's backend script from object storage.
 	scripts scriptLoader
@@ -55,6 +56,7 @@ func New(db *gorm.DB, store storage.Store) *Manager {
 		commitStartRepo:        repo,
 		loadRunningSessionRepo: repo,
 		endSessionRepo:         repo,
+		saveCheckpointRepo:     repo,
 		scripts:                objectstore.NewLoader(store, objectstore.DefaultLoaderEntries),
 		dbServicer:             repo,
 		now:                    time.Now,

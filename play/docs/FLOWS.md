@@ -170,6 +170,10 @@ A start whose script fails twice ends the Session through End Session with `GAME
 
 In one transaction it locks the Session; in a status the cause applies to, it changes the status with the cause (by `changedBy`, the creator for `HOST_CANCELLED`, otherwise the platform) and releases its join codes, answering `ended` with the new status and cause. Otherwise it changes nothing and answers `not_ended` with the Session's current status and end cause, so a caller learns how a Session that already ended did. An unknown Session is `ErrSessionNotFound`, an unknown cause an error. Metric `play_session_ended_total{cause}`.
 
+### Save Checkpoint
+
+`sessionlifecycle.Manager.SaveCheckpoint(sessionUUID, checkpoint)`, called by a running game's controller every few seconds: in one transaction it locks the Session and, while it is RUNNING, makes the checkpoint its latest unless one of a higher context revision is stored (`saved`); otherwise it stores nothing (`session_not_running`). An unknown Session is `ErrSessionNotFound`.
+
 ### Load Session Limits
 
 `play/session/usecases/loadsessionlimits` (`LoadSessionLimits`) returns `lobby_expires_at` and `expires_at` (set at creation: 30 minutes and 4 hours later). An unknown Session is `ErrSessionNotFound`.

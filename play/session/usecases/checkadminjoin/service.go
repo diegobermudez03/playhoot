@@ -34,7 +34,7 @@ func New(db *gorm.DB) *Service {
 
 // EligibleToJoinAsAdmin reports whether userUUID may join sessionUUID as
 // admin: the Session exists, userUUID created it, and it is in LOBBY (with its
-// lobby not yet expired) or RUNNING.
+// lobby not yet expired) or RUNNING, which it tells apart.
 func (s *Service) EligibleToJoinAsAdmin(ctx context.Context, sessionUUID string, userUUID string) (sessionpkg.AdminJoinEligibility, error) {
 	if _, err := uuid.Parse(sessionUUID); err != nil {
 		return sessionpkg.AdminJoinSessionNotFound, nil
@@ -52,7 +52,7 @@ func (s *Service) EligibleToJoinAsAdmin(ctx context.Context, sessionUUID string,
 
 	switch sessionstatus.Status(session.Status) {
 	case sessionstatus.Running:
-		return sessionpkg.AdminJoinEligible, nil
+		return sessionpkg.AdminJoinEligibleRunning, nil
 	case sessionstatus.Lobby:
 		// An overdue lobby has expired even if nothing recorded it yet.
 		if !s.now().Before(session.LobbyExpiresAt) {

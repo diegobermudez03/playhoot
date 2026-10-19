@@ -243,6 +243,7 @@ func (c *sessionController) runBoundary() {
 			return
 		}
 		c.deps.replay.Offer(ctx, capture)
+		c.offerCheckpoint()
 		c.endIfAbandoned(ctx)
 		return
 	case c.root.Err() != nil:
@@ -555,7 +556,7 @@ func (c *sessionController) takeBoundary() (boundary, bool) {
 	if s.phase != phaseRunning {
 		return boundary{}, false
 	}
-	s.expireGraces(c.root, c.deps.transportGrace)
+	s.expireGraces(c.root)
 	work := boundary{
 		operations:    s.timeline,
 		sessionTimeMs: max(s.sessionTime(), s.game.ExecutedThroughSessionTimeMs),

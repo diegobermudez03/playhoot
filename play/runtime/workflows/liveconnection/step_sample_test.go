@@ -50,7 +50,7 @@ func runningControllerWithTokens(t *testing.T, views map[string][]byte, processe
 	}
 	participants, _, ok := controller.beginStart()
 	require.True(t, ok)
-	controller.completeStart(participants, Game{ContextRevision: 1, State: []byte(`{}`)}, runtime.GameFrontend{}, views, processed)
+	controller.completeStart(participants, Game{ContextRevision: 1, State: []byte(`{}`)}, runtime.GameFrontend{}, views, &resumedGame{processed: processed})
 	for _, player := range players {
 		_, ok := player.NextView(context.Background())
 		require.True(t, ok, "the first FULL view")

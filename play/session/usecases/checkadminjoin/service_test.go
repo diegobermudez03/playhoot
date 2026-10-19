@@ -44,7 +44,7 @@ func TestEligibleToJoinAsAdmin(t *testing.T) {
 		},
 		"creator_of_a_running_session": func(t *testing.T, deps dependencies) test {
 			deps.sessions.EXPECT().FindSession(ctx, sessionUUID).Return(session("RUNNING", now.Add(-time.Hour)), nil)
-			return test{sessionUUID: sessionUUID, userUUID: creatorUUID, expectedEligibility: sessionpkg.AdminJoinEligible}
+			return test{sessionUUID: sessionUUID, userUUID: creatorUUID, expectedEligibility: sessionpkg.AdminJoinEligibleRunning}
 		},
 		"creator_uuid_in_another_case": func(t *testing.T, deps dependencies) test {
 			deps.sessions.EXPECT().FindSession(ctx, sessionUUID).Return(session("LOBBY", now.Add(time.Minute)), nil)

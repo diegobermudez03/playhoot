@@ -107,13 +107,14 @@ type controllerDependencies struct {
 	playerJoins playerJoinChecker
 	manifests   manifestLoader
 
-	starts    sessionStarter
-	ends      sessionEnder
-	limits    limitsLoader
-	frontends frontendSigner
-	sandbox   gameSandbox
-	replay    replayRecorder
-	owners    ownerReleaser
+	starts      sessionStarter
+	ends        sessionEnder
+	checkpoints checkpointStore
+	limits      limitsLoader
+	frontends   frontendSigner
+	sandbox     gameSandbox
+	replay      replayRecorder
+	owners      ownerReleaser
 
 	// now is the clock Session time is measured with.
 	now func() time.Time
@@ -122,14 +123,20 @@ type controllerDependencies struct {
 	// tickInterval is a running game's boundary cadence.
 	tickInterval time.Duration
 	// transportGrace is how long a participant who lost their transport stays
-	// connected before the game is told they disconnected.
+	// connected before the game is told they disconnected, and
+	// recoveryWindow how long after a recovery the participants who were
+	// playing have to come back.
 	transportGrace time.Duration
+	recoveryWindow time.Duration
 	// limitsInterval is how often the Session's deadlines are checked, and
 	// inactivityTimeout how long a running game may go without anyone
 	// playing.
 	limitsInterval    time.Duration
 	inactivityTimeout time.Duration
-	logger            *slog.Logger
+	// checkpointInterval is the least time between two periodic recovery
+	// checkpoints of a running game.
+	checkpointInterval time.Duration
+	logger             *slog.Logger
 }
 
 // sessionController is one live Session on its owner instance. Connections
@@ -166,6 +173,10 @@ type sessionController struct {
 	limitsLoaded bool
 	finishing    *finishedGame
 
+	// checkpointWriter writes the running game's periodic checkpoints on its
+	// own goroutine, which the main goroutine runs and stops.
+	checkpointWriter *checkpointWriter
+
 	// operations are run by the main goroutine, in order.
 	operations chan func()
 	// flush asks the main goroutine for a boundary before the next tick.
@@ -184,20 +195,22 @@ func newSessionController(root context.Context, sessionUUID string, epoch int64,
 		deps:        deps,
 		root:        root,
 		state: liveState{
-			now:      deps.now,
-			phase:    phaseLobby,
-			admins:   make(map[string]*connection),
-			players:  make(map[string]*connection),
-			inputs:   make(map[string]*participantInputs),
-			commands: make(map[string]*participantCommands),
-			presence: make(map[string]*participantPresence),
-			rejoins:  make(map[string]*pendingRejoin),
-			views:    make(map[string][]byte),
+			now:            deps.now,
+			transportGrace: deps.transportGrace,
+			phase:          phaseLobby,
+			admins:         make(map[string]*connection),
+			players:        make(map[string]*connection),
+			inputs:         make(map[string]*participantInputs),
+			commands:       make(map[string]*participantCommands),
+			presence:       make(map[string]*participantPresence),
+			rejoins:        make(map[string]*pendingRejoin),
+			views:          make(map[string][]byte),
 		},
-		operations: make(chan func()),
-		flush:      make(chan struct{}, 1),
-		ended:      make(chan struct{}),
-		exited:     make(chan struct{}),
+		checkpointWriter: newCheckpointWriter(),
+		operations:       make(chan func()),
+		flush:            make(chan struct{}, 1),
+		ended:            make(chan struct{}),
+		exited:           make(chan struct{}),
 	}
 }
 
@@ -261,6 +274,15 @@ func (c *sessionController) unlock() {
 func (c *sessionController) run() {
 	defer close(c.exited)
 	defer c.releaseOwner()
+	stopWriting, writerStopped := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(writerStopped)
+		c.writeCheckpoints(stopWriting)
+	}()
+	defer func() {
+		close(stopWriting)
+		<-writerStopped
+	}()
 	limits := time.NewTicker(c.deps.limitsInterval)
 	defer limits.Stop()
 	var ticker *time.Ticker
@@ -403,6 +425,9 @@ func (c *sessionController) PlayerCount() int {
 type liveState struct {
 	manifest Manifest
 	now      func() time.Time
+	// transportGrace is how long a participant without a transport keeps
+	// playing.
+	transportGrace time.Duration
 
 	phase  phase
 	admins map[string]*connection
@@ -427,6 +452,8 @@ type liveState struct {
 	// lastActivity is when someone last played the running game: a distinct
 	// input transition or a COMMAND.
 	lastActivity time.Time
+	// lastCheckpoint is when the last recovery checkpoint was taken.
+	lastCheckpoint time.Time
 	// inputs is each participant's SAMPLE ingress, by ParticipantID.
 	inputs map[string]*participantInputs
 	// commands is each participant's COMMAND tokens, by ParticipantID.

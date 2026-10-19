@@ -48,9 +48,13 @@ var ErrIdempotencyConflict = errors.New("idempotency key reused with a conflicti
 type AdminJoinEligibility string
 
 const (
-	// AdminJoinEligible means the Session is in LOBBY or RUNNING and the user
-	// created it.
+	// AdminJoinEligible means the Session is in LOBBY, before its expiry, and
+	// the user created it.
 	AdminJoinEligible AdminJoinEligibility = "eligible"
+
+	// AdminJoinEligibleRunning means the Session is RUNNING and the user
+	// created it.
+	AdminJoinEligibleRunning AdminJoinEligibility = "eligible_running"
 
 	AdminJoinSessionNotFound AdminJoinEligibility = "session_not_found"
 
@@ -238,6 +242,19 @@ type RunningSession struct {
 	Participants []StartParticipant
 	Checkpoint   Checkpoint
 }
+
+// SaveCheckpointOutcome is the decision a SaveCheckpoint call reached.
+type SaveCheckpointOutcome string
+
+const (
+	// CheckpointSaved means the checkpoint is the Session's latest, unless
+	// one of a higher context revision was already stored.
+	CheckpointSaved SaveCheckpointOutcome = "saved"
+
+	// CheckpointSessionNotRunning means the Session is no longer RUNNING, so
+	// nothing was stored.
+	CheckpointSessionNotRunning SaveCheckpointOutcome = "session_not_running"
+)
 
 // ErrSessionNotRunning is returned when an operation needs a RUNNING Session
 // and the Session is in another status.

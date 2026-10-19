@@ -115,6 +115,6 @@ func (s *liveState) decideRejoin(participantID string, request *pendingRejoin, a
 	}
 	presence := s.presence[participantID]
 	presence.disconnected = false
-	presence.detachedAt = s.now()
+	presence.await(s.now().Add(s.transportGrace), disconnectGraceExpired)
 	request.resolve(rejoinAccepted)
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -16,6 +17,8 @@ func TestAttachPlayer(t *testing.T) {
 	type dependencies struct {
 		players   *MockplayerJoinChecker
 		manifests *MockmanifestLoader
+		limits    *MocklimitsLoader
+		starts    *MocksessionStarter
 	}
 	type test struct {
 		// before runs against the Manager before the attach under test.
@@ -76,8 +79,14 @@ func TestAttachPlayer(t *testing.T) {
 				expectedRejection: runtime.RejectOwnerChanged,
 			}
 		},
-		"session_started": func(t *testing.T, deps dependencies) test {
-			deps.players.EXPECT().EligibleToJoinAsPlayer(ctx, sessionUUID).Return(sessionpkg.PlayerJoinSessionStarted, nil)
+		"session_that_stopped_running_while_recovering_rejects_as_started": func(t *testing.T, deps dependencies) test {
+			anyCtx := gomock.Any()
+			gomock.InOrder(
+				deps.players.EXPECT().EligibleToJoinAsPlayer(ctx, sessionUUID).Return(sessionpkg.PlayerJoinSessionStarted, nil),
+				deps.manifests.EXPECT().LoadRuntimeManifest(ctx, sessionUUID).Return(sessionpkg.RuntimeManifest{MinPlayers: 1, MaxPlayers: 8}, nil),
+				deps.limits.EXPECT().LoadSessionLimits(anyCtx, sessionUUID).Return(sessionpkg.SessionLimits{ExpiresAt: time.Now().Add(time.Hour)}, nil),
+				deps.starts.EXPECT().LoadRunningSession(anyCtx, sessionUUID).Return(sessionpkg.RunningSession{}, sessionpkg.ErrSessionNotRunning),
+			)
 			return test{
 				ownerEpoch:        1,
 				expectedOutcome:   runtime.AttachRejected,
@@ -118,9 +127,9 @@ func TestAttachPlayer(t *testing.T) {
 	for name, setup := range tests {
 		t.Run(name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
-			deps := dependencies{players: NewMockplayerJoinChecker(ctrl), manifests: NewMockmanifestLoader(ctrl)}
+			deps := dependencies{players: NewMockplayerJoinChecker(ctrl), manifests: NewMockmanifestLoader(ctrl), limits: NewMocklimitsLoader(ctrl), starts: NewMocksessionStarter(ctrl)}
 			tc := setup(t, deps)
-			resolver := New(nil, deps.players, deps.manifests, nil, nil, nil, nil, nil, nil, ownersReleasing(t, sessionUUID, 1, 2))
+			resolver := New(nil, deps.players, deps.manifests, deps.limits, deps.starts, nil, nil, nil, nil, nil, ownersReleasing(t, sessionUUID, 1, 2))
 			t.Cleanup(resolver.Close)
 			if tc.before != nil {
 				tc.before(resolver)

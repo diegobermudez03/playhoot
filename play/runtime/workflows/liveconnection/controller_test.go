@@ -22,13 +22,15 @@ import (
 // fixed seed, and a tick and limits check that never come.
 func testDependencies() *controllerDependencies {
 	return &controllerDependencies{
-		now:               time.Now,
-		seeds:             func() uint64 { return 42 },
-		tickInterval:      time.Hour,
-		transportGrace:    3 * time.Second,
-		limitsInterval:    time.Hour,
-		inactivityTimeout: 10 * time.Minute,
-		logger:            slog.Default(),
+		now:                time.Now,
+		seeds:              func() uint64 { return 42 },
+		tickInterval:       time.Hour,
+		transportGrace:     3 * time.Second,
+		recoveryWindow:     30 * time.Second,
+		checkpointInterval: time.Hour,
+		limitsInterval:     time.Hour,
+		inactivityTimeout:  10 * time.Minute,
+		logger:             slog.Default(),
 	}
 }
 
@@ -150,7 +152,7 @@ func TestControllerFor(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			tc := setup(t)
 			// Nothing to call: finding or creating a controller asks no one.
-			resolver := New(nil, nil, nil, nil, nil, nil, nil, nil, nil, ownersReleasing(t, sessionUUID, 1, 2))
+			resolver := New(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ownersReleasing(t, sessionUUID, 1, 2))
 			t.Cleanup(resolver.Close)
 			var existing *sessionController
 			var existingAdmin runtime.AdminConnection

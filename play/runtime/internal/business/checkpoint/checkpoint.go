@@ -31,6 +31,10 @@ type Checkpoint struct {
 	// ProcessedCommandTokens are the COMMAND tokens each participant had
 	// executed, by ParticipantID, kept for the Session's lifetime.
 	ProcessedCommandTokens map[string][]string
+
+	// Disconnected are the participants the game was told disconnected and
+	// that did not rejoin; only rejoining brings them back.
+	Disconnected []string
 }
 
 type document struct {
@@ -43,6 +47,7 @@ type document struct {
 	Participants    []string        `json:"participants"`
 
 	ProcessedCommandTokens map[string][]string `json:"processed_command_tokens,omitempty"`
+	Disconnected           []string            `json:"disconnected,omitempty"`
 }
 
 // Encode returns checkpoint as stored, under SchemaVersion.
@@ -57,6 +62,7 @@ func Encode(checkpoint Checkpoint) ([]byte, error) {
 		Participants:    checkpoint.Participants,
 
 		ProcessedCommandTokens: checkpoint.ProcessedCommandTokens,
+		Disconnected:           checkpoint.Disconnected,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("encoding checkpoint: %w", err)
@@ -82,5 +88,6 @@ func Decode(encoded []byte) (Checkpoint, error) {
 		PRNGState:                    doc.PRNGState,
 		Participants:                 doc.Participants,
 		ProcessedCommandTokens:       doc.ProcessedCommandTokens,
+		Disconnected:                 doc.Disconnected,
 	}, nil
 }

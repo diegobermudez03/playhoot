@@ -21,6 +21,14 @@ const defaultTickInterval = 100 * time.Millisecond
 // reattach before the game is told they disconnected; platform time.
 const defaultTransportGrace = 3 * time.Second
 
+// defaultRecoveryWindow is how long, after a running Session is recovered,
+// the participants who were playing have to reconnect; platform time.
+const defaultRecoveryWindow = 30 * time.Second
+
+// defaultCheckpointInterval is the least time between two periodic recovery
+// checkpoints of a running game; what a crash can roll back.
+const defaultCheckpointInterval = 5 * time.Second
+
 // defaultLimitsInterval is how often a controller checks its Session's
 // deadlines.
 const defaultLimitsInterval = time.Second
@@ -47,30 +55,33 @@ type ControllerResolver struct {
 }
 
 // New constructs a ControllerResolver whose controllers admit through
-// adminJoins and playerJoins, read manifests and limits, start and end
-// Sessions through starts and ends, grant frontends, run games in sandbox,
-// offer their history to replay and release their ownership through owners.
-func New(adminJoins adminJoinChecker, playerJoins playerJoinChecker, manifests manifestLoader, limits limitsLoader, starts sessionStarter, ends sessionEnder, frontends frontendSigner, sandbox gameSandbox, replay replayRecorder, owners ownerReleaser) *ControllerResolver {
+// adminJoins and playerJoins, read manifests and limits, start, end and
+// checkpoint Sessions, grant frontends, run games in sandbox, offer their
+// history to replay and release their ownership through owners.
+func New(adminJoins adminJoinChecker, playerJoins playerJoinChecker, manifests manifestLoader, limits limitsLoader, starts sessionStarter, ends sessionEnder, checkpoints checkpointStore, frontends frontendSigner, sandbox gameSandbox, replay replayRecorder, owners ownerReleaser) *ControllerResolver {
 	root, cancel := context.WithCancel(context.Background())
 	return &ControllerResolver{
 		deps: &controllerDependencies{
-			adminJoins:        adminJoins,
-			playerJoins:       playerJoins,
-			manifests:         manifests,
-			limits:            limits,
-			starts:            starts,
-			ends:              ends,
-			frontends:         frontends,
-			sandbox:           sandbox,
-			replay:            replay,
-			owners:            owners,
-			now:               time.Now,
-			seeds:             randomSeed,
-			tickInterval:      defaultTickInterval,
-			transportGrace:    defaultTransportGrace,
-			limitsInterval:    defaultLimitsInterval,
-			inactivityTimeout: defaultInactivityTimeout,
-			logger:            slog.Default(),
+			adminJoins:         adminJoins,
+			playerJoins:        playerJoins,
+			manifests:          manifests,
+			limits:             limits,
+			starts:             starts,
+			ends:               ends,
+			checkpoints:        checkpoints,
+			frontends:          frontends,
+			sandbox:            sandbox,
+			replay:             replay,
+			owners:             owners,
+			now:                time.Now,
+			seeds:              randomSeed,
+			tickInterval:       defaultTickInterval,
+			transportGrace:     defaultTransportGrace,
+			recoveryWindow:     defaultRecoveryWindow,
+			checkpointInterval: defaultCheckpointInterval,
+			limitsInterval:     defaultLimitsInterval,
+			inactivityTimeout:  defaultInactivityTimeout,
+			logger:             slog.Default(),
 		},
 		controllers: make(map[string]*sessionController),
 		root:        root,

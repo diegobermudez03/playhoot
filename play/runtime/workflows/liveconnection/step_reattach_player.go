@@ -2,7 +2,6 @@ package liveconnection
 
 import (
 	"context"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -36,7 +35,7 @@ func (c *sessionController) reattachPlayer(ctx context.Context, userUUID string)
 		playersReplaced.Inc(ctx)
 	}
 	s.resetInputs(participantID)
-	presence.detachedAt = time.Time{}
+	presence.attach()
 
 	player := newConnection(uuid.NewString(), userUUID)
 	player.participantID = participantID
