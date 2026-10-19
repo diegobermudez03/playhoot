@@ -136,6 +136,9 @@ type controllerDependencies struct {
 	// checkpointInterval is the least time between two periodic recovery
 	// checkpoints of a running game.
 	checkpointInterval time.Duration
+	// contextIdleTimeout is how long an unused sandbox context of a game
+	// without update() is kept.
+	contextIdleTimeout time.Duration
 	logger             *slog.Logger
 }
 
@@ -167,6 +170,10 @@ type sessionController struct {
 	infraFailures int
 	lastUpdate    time.Time
 	recordingID   string
+	// lastSandboxUse is when the context was last created or executed in,
+	// and evicted whether the last one was evicted for being idle.
+	lastSandboxUse time.Time
+	evicted        bool
 
 	// limits are the Session's deadlines, read by the first check that needs
 	// them, and finishing the game its script finished, until its ending is
@@ -309,6 +316,7 @@ func (c *sessionController) run() {
 			operation()
 		case <-limits.C:
 			c.enforceLimits()
+			c.evictIdleContext()
 		case <-ticks:
 			c.runBoundary()
 		case <-c.flush:

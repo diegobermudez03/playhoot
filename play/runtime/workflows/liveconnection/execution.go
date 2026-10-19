@@ -33,6 +33,7 @@ func (c *sessionController) createContext(ctx context.Context, spec sandbox.Cont
 		return fmt.Errorf("creating sandbox context: %w", err)
 	}
 	c.contextID = contextID
+	c.lastSandboxUse = c.deps.now()
 	return nil
 }
 

@@ -33,6 +33,11 @@ const defaultCheckpointInterval = 5 * time.Second
 // deadlines.
 const defaultLimitsInterval = time.Second
 
+// defaultContextIdleTimeout is how long the sandbox context of a running game
+// without update() stays alive unused before it is evicted; the next
+// execution restores it from the mirror.
+const defaultContextIdleTimeout = 30 * time.Second
+
 // defaultInactivityTimeout is how long a running game may go without a
 // distinct input transition or a COMMAND before it expires; platform time.
 const defaultInactivityTimeout = 10 * time.Minute
@@ -78,6 +83,7 @@ func New(adminJoins adminJoinChecker, playerJoins playerJoinChecker, manifests m
 			tickInterval:       defaultTickInterval,
 			transportGrace:     defaultTransportGrace,
 			recoveryWindow:     defaultRecoveryWindow,
+			contextIdleTimeout: defaultContextIdleTimeout,
 			checkpointInterval: defaultCheckpointInterval,
 			limitsInterval:     defaultLimitsInterval,
 			inactivityTimeout:  defaultInactivityTimeout,

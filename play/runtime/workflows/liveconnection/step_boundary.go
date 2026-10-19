@@ -266,11 +266,13 @@ func (c *sessionController) execute(ctx context.Context, work boundary) (executi
 	var retried string
 	for run := 1; ; run++ {
 		if c.contextID == "" {
+			c.recordRecreation(ctx)
 			if err := c.restoreContext(ctx, work.game); err != nil {
 				return execution{}, err
 			}
 		}
 		executed, err := c.attempt(ctx, work)
+		c.lastSandboxUse = c.deps.now()
 		if err == nil {
 			if retried == retryScript {
 				monitoring.Alert(ctx, "game execution succeeded only after its script failed")

@@ -379,6 +379,54 @@ func TestHostInfrastructureFailures(t *testing.T) {
 	})
 }
 
+// TestWorkerDiesWithItsHost closes a worker's stdin without killing it, as the
+// operating system does when the host process dies: the worker must exit by
+// itself, even while it runs a call no budget will ever stop.
+func TestWorkerDiesWithItsHost(t *testing.T) {
+	type test struct {
+		// runaway leaves the worker running a call that never ends.
+		runaway bool
+	}
+
+	tests := map[string]func(t *testing.T) test{
+		"idle_worker":     func(t *testing.T) test { return test{} },
+		"worker_mid_call": func(t *testing.T) test { return test{runaway: true} },
+	}
+
+	for name, setup := range tests {
+		t.Run(name, func(t *testing.T) {
+			tc := setup(t)
+			host := newTestHost(t)
+			// Only the host enforces the budget, and this host is "dead".
+			host.budget = time.Minute
+			ctx := context.Background()
+			contextID, err := host.CreateContext(ctx, ContextSpec{Script: []byte(`function start() { while (true) {} }`)})
+			require.NoError(t, err)
+			process, err := host.context(contextID)
+			require.NoError(t, err)
+			calling := make(chan error, 1)
+			if tc.runaway {
+				go func() {
+					_, err := host.Start(ctx, contextID, StartInput{Participants: []string{"P1"}})
+					calling <- err
+				}()
+				time.Sleep(200 * time.Millisecond)
+			}
+
+			require.NoError(t, process.stdin.Close())
+
+			select {
+			case <-process.exited:
+			case <-time.After(5 * time.Second):
+				t.Fatal("the worker outlived its host")
+			}
+			if tc.runaway {
+				require.Error(t, <-calling, "the call in flight is lost with the worker")
+			}
+		})
+	}
+}
+
 func TestDiscardContext(t *testing.T) {
 	host := newTestHost(t)
 	contextID := startedContext(t, host, `function start() { return { state: {} }; } function project() { return {}; }`)

@@ -29,6 +29,7 @@ func testDependencies() *controllerDependencies {
 		transportGrace:     3 * time.Second,
 		recoveryWindow:     30 * time.Second,
 		checkpointInterval: time.Hour,
+		contextIdleTimeout: time.Hour,
 		limitsInterval:     time.Hour,
 		inactivityTimeout:  10 * time.Minute,
 		logger:             slog.Default(),

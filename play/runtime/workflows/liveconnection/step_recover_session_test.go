@@ -272,8 +272,10 @@ func TestConcurrentReconnectionsRecoverOnce(t *testing.T) {
 	mocks := newRecoveryMocks(ctrl)
 	players, manifests := NewMockplayerJoinChecker(ctrl), NewMockmanifestLoader(ctrl)
 	anyCtx := gomock.Any()
-	// Every connection checks the durable Session; only one recovers it.
-	players.EXPECT().EligibleToJoinAsPlayer(anyCtx, setup.sessionUUID).Return(sessionpkg.PlayerJoinSessionStarted, nil).Times(2)
+	// Each connection arriving before the recovery ended checks the durable
+	// Session, one arriving after skips it as a participant's; only one
+	// recovers it.
+	players.EXPECT().EligibleToJoinAsPlayer(anyCtx, setup.sessionUUID).Return(sessionpkg.PlayerJoinSessionStarted, nil).MinTimes(1).MaxTimes(2)
 	manifests.EXPECT().LoadRuntimeManifest(anyCtx, setup.sessionUUID).Return(sessionpkg.RuntimeManifest{MinPlayers: 1, MaxPlayers: 4}, nil)
 	gomock.InOrder(mocks.recovers(setup)...)
 	resolver := New(nil, players, manifests, mocks.limits, mocks.starts, mocks.ends, nil, mocks.frontends, mocks.sandbox, mocks.replay, ownersReleasing(t, setup.sessionUUID, 1))

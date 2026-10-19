@@ -13,9 +13,9 @@ import (
 	"github.com/fastschema/qjs"
 )
 
-// RunAsWorkerIfRequested serves one context until its host closes stdin when
-// the process was started in worker mode, and returns true; the caller must
-// then exit. It must be the first thing main does.
+// RunAsWorkerIfRequested serves one context until its host is gone when the
+// process was started in worker mode, and returns true; the caller must then
+// exit. It must be the first thing main does.
 func RunAsWorkerIfRequested() bool {
 	if len(os.Args) < 2 || os.Args[1] != workerModeArg {
 		return false
@@ -24,20 +24,18 @@ func RunAsWorkerIfRequested() bool {
 	return true
 }
 
-// runWorker answers each request line on in with one response line on out,
-// until in ends.
+// runWorker answers each request line on in with one response line on out.
+// When in ends the host is gone, stopping it or dying, so the process exits
+// at once, even in the middle of a call: a worker never outlives its host.
 func runWorker(in io.Reader, out io.Writer) {
 	// Soft cap of this worker's whole Go heap, the JavaScript runtime's
 	// memory included, so its footprint stays near the per-context budget.
 	debug.SetMemoryLimit(workerGoMemoryLimitBytes)
 	w := &worker{}
 	defer w.close()
-	reader := bufio.NewReader(in)
-	for {
-		line, err := reader.ReadBytes('\n')
-		if len(line) == 0 && err != nil {
-			return
-		}
+	requests := make(chan []byte)
+	go readRequests(in, requests)
+	for line := range requests {
 		resp := w.handle(line)
 		resp.MemoryBytes = memoryBytes()
 		encoded, marshalErr := json.Marshal(resp)
@@ -47,6 +45,19 @@ func runWorker(in io.Reader, out io.Writer) {
 		if _, err := out.Write(append(encoded, '\n')); err != nil {
 			return
 		}
+	}
+}
+
+// readRequests passes on each request line of in, and exits the process when
+// in ends. It reads while a call runs, so the end is seen even then.
+func readRequests(in io.Reader, requests chan<- []byte) {
+	reader := bufio.NewReader(in)
+	for {
+		line, err := reader.ReadBytes('\n')
+		if err != nil {
+			os.Exit(0)
+		}
+		requests <- line
 	}
 }
 
