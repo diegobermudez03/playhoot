@@ -35,7 +35,7 @@ func (c *sessionController) endIfAbandoned(ctx context.Context) {
 }
 
 // isAbandoned reports whether the game runs with every participant
-// disconnected and no disconnection still waiting to reach the game.
+// disconnected and no disconnection or rejoin still waiting for the game.
 func (c *sessionController) isAbandoned() bool {
 	s := c.lock()
 	defer c.unlock()
@@ -48,10 +48,9 @@ func (c *sessionController) isAbandoned() bool {
 		}
 	}
 	for _, operation := range s.timeline {
-		if operation.Disconnected {
+		if operation.Disconnected || operation.Rejoin != nil {
 			return false
 		}
 	}
-	// Placeholder: a game with playerRejoined() will keep waiting for its participants.
 	return true
 }

@@ -115,6 +115,10 @@ type RuntimeManifest struct {
 	// Update means the game implements update(), which the Runtime calls
 	// periodically while the game runs.
 	Update bool
+
+	// Rejoin means the game implements playerRejoined(), so a disconnected
+	// participant may ask to come back.
+	Rejoin bool
 }
 
 // RuntimeCommand is one declared COMMAND; its payload fields are declared

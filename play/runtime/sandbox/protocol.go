@@ -70,13 +70,15 @@ type workerRequest struct {
 
 // workerStep is one operation of an execution batch at SessionTime:
 // transitions for samples(), one command for command(), update(), or
-// playerDisconnected() for the participant Disconnected names.
+// playerDisconnected() or playerRejoined() for the participant Disconnected
+// or Rejoined names.
 type workerStep struct {
 	SessionTime  int64              `json:"sessionTime"`
 	Transitions  []workerTransition `json:"transitions,omitempty"`
 	Command      *workerCommand     `json:"command,omitempty"`
 	Update       bool               `json:"update,omitempty"`
 	Disconnected string             `json:"disconnected,omitempty"`
+	Rejoined     string             `json:"rejoined,omitempty"`
 }
 
 // workerCommand is one COMMAND, as command() receives it.
@@ -130,6 +132,9 @@ type workerResponse struct {
 
 	// Events are the logical events an execute request's steps emitted.
 	Events []workerEvent `json:"events,omitempty"`
+
+	// RejoinsAccepted answer an execute request's rejoin steps, in order.
+	RejoinsAccepted []bool `json:"rejoinsAccepted,omitempty"`
 
 	// MemoryBytes is all the memory the worker process holds after the call.
 	MemoryBytes uint64 `json:"memoryBytes,omitempty"`

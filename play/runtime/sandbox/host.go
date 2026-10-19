@@ -156,7 +156,7 @@ func (h *Host) Execute(ctx context.Context, contextID string, batch Batch) (Exec
 	}
 	steps := make([]workerStep, len(batch.Operations))
 	for i, operation := range batch.Operations {
-		steps[i] = workerStep{SessionTime: operation.SessionTimeMs, Update: operation.Update, Disconnected: operation.Disconnected}
+		steps[i] = workerStep{SessionTime: operation.SessionTimeMs, Update: operation.Update, Disconnected: operation.Disconnected, Rejoined: operation.Rejoined}
 		for _, transition := range operation.Transitions {
 			steps[i].Transitions = append(steps[i].Transitions, workerTransition{Participant: transition.ParticipantID, Inputs: transition.Inputs, SessionTime: transition.SessionTimeMs})
 		}
@@ -180,6 +180,7 @@ func (h *Host) Execute(ctx context.Context, contextID string, batch Batch) (Exec
 	for _, gameError := range resp.Errors {
 		result.Errors = append(result.Errors, GameError{Operation: gameError.Step, ParticipantID: gameError.Participant, Error: gameError.Error})
 	}
+	result.RejoinsAccepted = resp.RejoinsAccepted
 	for _, gameEvent := range resp.Events {
 		result.Events = append(result.Events, GameEvent{Operation: gameEvent.Step, Participants: gameEvent.Participants, Event: gameEvent.Event})
 	}

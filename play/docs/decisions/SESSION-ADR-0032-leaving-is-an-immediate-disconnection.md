@@ -20,7 +20,7 @@ That gives game scripts two entrypoints for the same game question: a participan
 1. **One entrypoint.** When a participant stops playing, by leaving or because their transport grace ran out, the game runs `playerDisconnected(state, participant, context)`. It is not told which one happened. There is no `playerLeft()` entrypoint.
 2. **Leaving is an immediate disconnection.** An explicit `leave` in a running game resets the participant's inputs, puts `playerDisconnected(P)` on the timeline at once, without the transport grace, and asks for a boundary right away. The connection ends as `left`.
 3. **No separate LEFT status.** A participant who left is disconnected like any other. Rejoining (§17), once built, applies to both. Whether someone may come back is the game's decision, made in `playerRejoined()`.
-4. **A Session nobody can play ends.** While rejoin does not exist, once every participant is disconnected and the game was told about each of them, the Runtime cancels the Session durably (CANCELLED, end cause `ALL_PLAYERS_LEFT`, by the platform) and ends it live.
+4. **A Session nobody plays ends.** Once every participant is disconnected and the game was told about each of them, the Runtime cancels the Session durably (CANCELLED, end cause `ALL_PLAYERS_LEFT`, by the platform) and ends it live, whether the game supports rejoining or not. A rejoin still waiting for the game's answer keeps it running until decided. (Clarified by the human 2026-10-18, when rejoin was built.)
 
 ## Rationale
 
@@ -40,7 +40,7 @@ Rejected by the human: it would let games react differently, but a game must han
 ## Consequences
 
 - Invariant 9 of the plan ("explicit leave is permanent") no longer holds. A participant who left can come back only through rejoin, and only if the game accepts it.
-- When rejoin is built, a game that implements `playerRejoined()` keeps its Session running while every participant is away (bounded by inactivity and the maximum lifetime), instead of being cancelled.
+- Unlike the plan (§15), a game that implements `playerRejoined()` does not keep its Session running while every participant is away. Rejoining is only possible while someone is still playing.
 - The `ALL_PLAYERS_LEFT` cause covers every participant being disconnected, whether they left or lost their connection.
 
 ## Canonical Knowledge Impact

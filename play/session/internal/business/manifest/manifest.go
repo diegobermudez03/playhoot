@@ -24,11 +24,17 @@ type Manifest struct {
 
 	// Update means the game implements update(), called periodically.
 	Update bool
+
+	// Rejoin means the game implements playerRejoined(), so a disconnected
+	// participant may ask to come back.
+	Rejoin bool
 }
 
-// entrypointUpdate is the optional update() entrypoint, as entrypoints
-// declares it.
-const entrypointUpdate = "update"
+// The optional entrypoints, as entrypoints declares them.
+const (
+	entrypointUpdate         = "update"
+	entrypointPlayerRejoined = "playerRejoined"
+)
 
 // ErrInvalid is returned for a manifest that cannot be decoded or breaks a
 // rule; errors wrap it with the reason.
@@ -87,22 +93,24 @@ func Parse(raw []byte) (Manifest, error) {
 	if err != nil {
 		return Manifest{}, fmt.Errorf("%w: %v", ErrInvalid, err)
 	}
-	update := false
+	declared := map[string]bool{entrypointUpdate: false, entrypointPlayerRejoined: false}
 	for _, entrypoint := range doc.Entrypoints {
-		if entrypoint != entrypointUpdate {
+		seen, known := declared[entrypoint]
+		if !known {
 			return Manifest{}, fmt.Errorf("%w: unknown optional entrypoint %q", ErrInvalid, entrypoint)
 		}
-		if update {
+		if seen {
 			return Manifest{}, fmt.Errorf("%w: entrypoint %q is declared twice", ErrInvalid, entrypoint)
 		}
-		update = true
+		declared[entrypoint] = true
 	}
 	return Manifest{
 		MinPlayers: doc.Players.Min,
 		MaxPlayers: doc.Players.Max,
 		Inputs:     schema.Declarations(),
 		Commands:   catalog.Declarations(),
-		Update:     update,
+		Update:     declared[entrypointUpdate],
+		Rejoin:     declared[entrypointPlayerRejoined],
 	}, nil
 }
 

@@ -60,7 +60,7 @@ func TestReattachPlayer(t *testing.T) {
 				},
 			}
 		},
-		"participant_away_past_the_grace_is_disconnected": func(t *testing.T) test {
+		"participant_away_past_the_grace_of_a_game_without_rejoin_is_disconnected": func(t *testing.T) test {
 			return test{
 				before: func(t *testing.T, controller *sessionController, players map[string]runtime.PlayerConnection, clock *testClock) {
 					players["user-a"].Disconnect()
@@ -90,8 +90,9 @@ func TestReattachPlayer(t *testing.T) {
 				userUUID = "user-a"
 			}
 
-			result, participant := controller.reattachPlayer(ctx, userUUID)
+			result, participant, err := controller.attachParticipant(ctx, userUUID)
 
+			require.NoError(t, err)
 			require.Equal(t, tc.expectedParticipant, participant)
 			if !participant {
 				return
@@ -123,7 +124,7 @@ func TestReattachedConnectionNumbersItsSamplesAnew(t *testing.T) {
 	require.NoError(t, older.Sample(ctx, sample(40, `{"move":[1,0]}`)))
 	inFlight, _ := controller.takeBoundary()
 
-	reattached, participant := controller.reattachPlayer(ctx, "user-a")
+	reattached, participant, _ := controller.reattachPlayer(ctx, "user-a")
 	require.True(t, participant)
 	newer := reattached.Connection
 	_, ok := newer.NextView(ctx)

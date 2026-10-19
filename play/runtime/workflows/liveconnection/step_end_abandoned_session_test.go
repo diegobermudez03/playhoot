@@ -50,6 +50,19 @@ func TestEndIfAbandoned(t *testing.T) {
 				},
 			}
 		},
+		"rejoin_waiting_for_the_game_keeps_it_running": func(t *testing.T, _ *MocksessionCanceller) test {
+			return test{
+				gone: func(t *testing.T, controller *sessionController, players map[string]runtime.PlayerConnection, clock *testClock) {
+					for _, player := range players {
+						_, err := player.Leave(ctx)
+						require.NoError(t, err)
+					}
+					told(controller)
+					controller.lock().enqueue(Operation{ParticipantID: "P1", Rejoin: &pendingRejoin{done: make(chan struct{})}})
+					controller.unlock()
+				},
+			}
+		},
 		"someone_still_playing_keeps_it_running": func(t *testing.T, _ *MocksessionCanceller) test {
 			return test{
 				gone: func(t *testing.T, controller *sessionController, players map[string]runtime.PlayerConnection, clock *testClock) {

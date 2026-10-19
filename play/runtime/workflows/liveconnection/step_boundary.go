@@ -121,14 +121,16 @@ type sampleAck struct {
 }
 
 // execution is what a boundary's batch produced: the new mirror, every
-// participant's view, each command's response and the logical errors and
-// events, in timeline order.
+// participant's view, each command's response and rejoin decision, and the
+// logical errors and events, in timeline order.
 type execution struct {
 	game      Game
 	views     map[string][]byte
 	responses [][]byte
-	errors    []gameError
-	events    []gameEvent
+	// rejoins are the game's decisions on each rejoin, in timeline order.
+	rejoins []bool
+	errors  []gameError
+	events  []gameEvent
 }
 
 // gameEvent is a logical event the game emitted, placed like a gameError and
@@ -291,6 +293,9 @@ func (c *sessionController) attempt(ctx context.Context, work boundary) (executi
 	if commands := countCommands(work.operations); len(result.CommandResponses) != commands {
 		return execution{}, fmt.Errorf("%w: %d responses to %d commands", errOutOfSync, len(result.CommandResponses), commands)
 	}
+	if rejoins := countRejoins(work.operations); len(result.RejoinsAccepted) != rejoins {
+		return execution{}, fmt.Errorf("%w: %d decisions on %d rejoins", errOutOfSync, len(result.RejoinsAccepted), rejoins)
+	}
 	placement := timeline{participantIDs: work.participantIDs, batch: batch, orders: orders}
 	placedErrors, err := placeErrors(placement, result.Errors)
 	if err != nil {
@@ -308,7 +313,7 @@ func (c *sessionController) attempt(ctx context.Context, work boundary) (executi
 	game.ContextRevision = result.ContextRevision
 	game.State = result.State
 	game.PRNGState = result.PRNGState
-	return execution{game: game, views: views, responses: result.CommandResponses, errors: placedErrors, events: placedEvents}, nil
+	return execution{game: game, views: views, responses: result.CommandResponses, rejoins: result.RejoinsAccepted, errors: placedErrors, events: placedEvents}, nil
 }
 
 // timeline places what a batch's calls returned at the time and order of the
@@ -372,8 +377,8 @@ func placeEvents(t timeline, emitted []sandbox.GameEvent) ([]gameEvent, error) {
 
 // batchOf turns work's operations into one sandbox batch, with the order of
 // the last timeline operation each call runs (0 for update). Adjacent
-// transitions share a samples() call, each command or disconnection runs
-// alone, update() ends it; each runs at its own time, never before the
+// transitions share a samples() call, each command, disconnection or rejoin
+// runs alone, update() ends it; each runs at its own time, never before the
 // confirmed state's.
 func batchOf(work boundary) (sandbox.Batch, []uint64) {
 	var batch sandbox.Batch
@@ -381,9 +386,12 @@ func batchOf(work boundary) (sandbox.Batch, []uint64) {
 	for _, operation := range work.operations {
 		if operation.runsAlone() {
 			alone := sandbox.Operation{SessionTimeMs: operation.SessionTimeMs}
-			if command := operation.Command; command != nil {
-				alone.Command = &sandbox.Command{ParticipantID: operation.ParticipantID, Name: command.name, Payload: command.payload}
-			} else {
+			switch {
+			case operation.Command != nil:
+				alone.Command = &sandbox.Command{ParticipantID: operation.ParticipantID, Name: operation.Command.name, Payload: operation.Command.payload}
+			case operation.Rejoin != nil:
+				alone.Rejoined = operation.ParticipantID
+			default:
 				alone.Disconnected = operation.ParticipantID
 			}
 			batch.Operations = append(batch.Operations, alone)
@@ -407,7 +415,7 @@ func batchOf(work boundary) (sandbox.Batch, []uint64) {
 	for i := range batch.Operations {
 		operation := &batch.Operations[i]
 		switch {
-		case operation.Command != nil, operation.Update, operation.Disconnected != "":
+		case operation.Command != nil, operation.Update, operation.Disconnected != "", operation.Rejoined != "":
 		case i+1 < len(batch.Operations):
 			operation.SessionTimeMs = operation.Transitions[len(operation.Transitions)-1].SessionTimeMs
 		default:
@@ -417,6 +425,16 @@ func batchOf(work boundary) (sandbox.Batch, []uint64) {
 		at = operation.SessionTimeMs
 	}
 	return batch, orders
+}
+
+func countRejoins(operations []Operation) int {
+	rejoins := 0
+	for _, operation := range operations {
+		if operation.Rejoin != nil {
+			rejoins++
+		}
+	}
+	return rejoins
 }
 
 func countCommands(operations []Operation) int {
@@ -554,11 +572,15 @@ func (c *sessionController) commitBoundary(ctx context.Context, work boundary, e
 	game.ExecutedThroughSessionTimeMs = work.sessionTimeMs
 	s.game = game
 	maps.Copy(s.views, executed.views)
-	answered := 0
+	answered, decided := 0, 0
 	for _, operation := range work.operations {
-		if operation.Command != nil {
+		switch {
+		case operation.Command != nil:
 			s.commands[operation.ParticipantID].executed(operation.Command, executed.responses[answered])
 			answered++
+		case operation.Rejoin != nil:
+			s.decideRejoin(operation.ParticipantID, operation.Rejoin, executed.rejoins[decided])
+			decided++
 		}
 	}
 	if len(executed.errors) > 0 {

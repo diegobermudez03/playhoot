@@ -24,6 +24,7 @@ var (
 		attachReattached,
 		string(runtime.RejectLobbyFull),
 		string(runtime.RejectParticipantDisconnected),
+		string(runtime.RejectRejoinRejected),
 		string(runtime.RejectSessionStarted),
 		string(runtime.RejectSessionUnavailable),
 		string(runtime.RejectOwnerChanged),
@@ -51,8 +52,8 @@ func (r *ControllerResolver) AttachPlayer(ctx context.Context, sessionUUID strin
 // if they play it, or admits it into the lobby if the durable Session accepts
 // players.
 func (c *sessionController) attachPlayer(ctx context.Context, userUUID string) (runtime.AttachPlayerResult, error) {
-	if result, participant := c.reattachPlayer(ctx, userUUID); participant {
-		return result, nil
+	if result, participant, err := c.attachParticipant(ctx, userUUID); participant {
+		return result, err
 	}
 	eligibility, err := c.deps.playerJoins.EligibleToJoinAsPlayer(ctx, c.sessionUUID)
 	if err != nil {

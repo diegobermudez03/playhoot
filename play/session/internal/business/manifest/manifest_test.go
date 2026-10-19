@@ -49,6 +49,9 @@ func TestParse(t *testing.T) {
 		"update_entrypoint": func(t *testing.T) test {
 			return test{raw: `{"schema_version":1,"players":{"min":1,"max":4},"entrypoints":["update"]}`, expectedManifest: Manifest{MinPlayers: 1, MaxPlayers: 4, Update: true}}
 		},
+		"every_optional_entrypoint": func(t *testing.T) test {
+			return test{raw: `{"schema_version":1,"players":{"min":1,"max":4},"entrypoints":["playerRejoined","update"]}`, expectedManifest: Manifest{MinPlayers: 1, MaxPlayers: 4, Update: true, Rejoin: true}}
+		},
 		"unknown_entrypoint": func(t *testing.T) test {
 			return test{raw: `{"schema_version":1,"players":{"min":1,"max":4},"entrypoints":["tick"]}`, expectedErr: true}
 		},

@@ -199,9 +199,9 @@ func (w *worker) start(req workerRequest) workerResponse {
 }
 
 // execute runs a batch's steps in order on the confirmed state, each at its
-// Session time: samples, update, command (which also returns a response) or
-// playerDisconnected(state, participant, context), each returning {state}
-// plus optional errors and events. Nothing is kept unless all succeed.
+// Session time: samples, update, command (also returning a response),
+// playerDisconnected or playerRejoined (also returning accepted), each
+// returning {state} plus optional errors and events. All succeed or none.
 func (w *worker) execute(req workerRequest) workerResponse {
 	if !w.started {
 		return fatal("game not started")
@@ -214,18 +214,19 @@ func (w *worker) execute(req workerRequest) workerResponse {
 	var responses []json.RawMessage
 	var gameErrors []workerError
 	var gameEvents []workerEvent
+	var rejoins []bool
 	for index, step := range req.Steps {
 		if step.SessionTime < at {
 			return fatal("session time cannot go back")
 		}
 		kinds := 0
-		for _, set := range []bool{len(step.Transitions) > 0, step.Command != nil, step.Update, step.Disconnected != ""} {
+		for _, set := range []bool{len(step.Transitions) > 0, step.Command != nil, step.Update, step.Disconnected != "", step.Rejoined != ""} {
 			if set {
 				kinds++
 			}
 		}
 		if kinds != 1 {
-			return fatal("a step runs exactly one of input transitions, a command, update or a disconnection")
+			return fatal("a step runs exactly one of input transitions, a command, update, a disconnection or a rejoin")
 		}
 		if err := w.setTime(step.SessionTime); err != nil {
 			return fatal(err.Error())
@@ -240,6 +241,8 @@ func (w *worker) execute(req workerRequest) workerResponse {
 				entrypoint, argument = "command", step.Command
 			case step.Disconnected != "":
 				entrypoint, argument = "playerDisconnected", step.Disconnected
+			case step.Rejoined != "":
+				entrypoint, argument = "playerRejoined", step.Rejoined
 			}
 			argumentJSON, err := json.Marshal(argument)
 			if err != nil {
@@ -267,6 +270,14 @@ func (w *worker) execute(req workerRequest) workerResponse {
 			w.broken = true
 			return *failure
 		}
+		if step.Rejoined != "" {
+			accepted, failure := acceptedOf(returned.Accepted)
+			if failure != nil {
+				w.broken = true
+				return *failure
+			}
+			rejoins = append(rejoins, accepted)
+		}
 		state = returned.State
 		if step.Command != nil {
 			responses = append(responses, returned.Response)
@@ -284,7 +295,7 @@ func (w *worker) execute(req workerRequest) workerResponse {
 	w.revision++
 	return workerResponse{
 		State: state, PRNGState: encodeRandomState(randomState), ContextRevision: w.revision,
-		CommandResponses: responses, Errors: gameErrors, Events: gameEvents,
+		CommandResponses: responses, Errors: gameErrors, Events: gameEvents, RejoinsAccepted: rejoins,
 	}
 }
 
@@ -294,6 +305,7 @@ type entrypointResult struct {
 	Response json.RawMessage `json:"response"`
 	Errors   json.RawMessage `json:"errors"`
 	Events   json.RawMessage `json:"events"`
+	Accepted json.RawMessage `json:"accepted"`
 }
 
 // resultOf reads what a mutating entrypoint returned as {state, response,
@@ -323,6 +335,18 @@ func resultOf(entrypoint string, result string) (entrypointResult, *workerRespon
 		shape.Response = json.RawMessage(`null`)
 	}
 	return shape, nil
+}
+
+// acceptedOf reads playerRejoined()'s decision, which must be a boolean.
+func acceptedOf(accepted json.RawMessage) (bool, *workerResponse) {
+	switch string(accepted) {
+	case "true":
+		return true, nil
+	case "false":
+		return false, nil
+	}
+	failure := scriptFailure("playerRejoined() must return accepted as true or false")
+	return false, &failure
 }
 
 // errorsOf reads the errors the step at index returned: missing or null, or

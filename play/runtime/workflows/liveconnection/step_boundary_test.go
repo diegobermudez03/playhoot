@@ -596,6 +596,18 @@ func TestBatchOf(t *testing.T) {
 				expectedOrders: []uint64{40, 55, 70},
 			}
 		},
+		"rejoin_runs_alone_at_its_time": func(t *testing.T) test {
+			back := Operation{ParticipantID: "P2", SessionTimeMs: 55, Order: 55, Rejoin: &pendingRejoin{}}
+			return test{
+				work: boundary{operations: []Operation{transition(40), back}, sessionTimeMs: 100, update: true},
+				expected: sandbox.Batch{Operations: []sandbox.Operation{
+					{SessionTimeMs: 40, Transitions: []sandbox.Transition{sandboxTransition(40)}},
+					{SessionTimeMs: 55, Rejoined: "P2"},
+					{SessionTimeMs: 100, Update: true},
+				}},
+				expectedOrders: []uint64{40, 55, 0},
+			}
+		},
 		"update_alone": func(t *testing.T) test {
 			return test{
 				work:           boundary{sessionTimeMs: 100, update: true},

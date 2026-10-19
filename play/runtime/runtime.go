@@ -61,9 +61,14 @@ const (
 	// allows.
 	RejectLobbyFull RejectReason = "lobby_full"
 
-	// RejectParticipantDisconnected means the player was away longer than the
-	// transport grace, so the game counts them disconnected.
+	// RejectParticipantDisconnected means the player was disconnected, by
+	// leaving or being away past the transport grace, and the game does not
+	// support rejoining.
 	RejectParticipantDisconnected RejectReason = "participant_disconnected"
+
+	// RejectRejoinRejected means the player was disconnected and the game
+	// did not take them back.
+	RejectRejoinRejected RejectReason = "rejoin_rejected"
 
 	// RejectOwnerChanged means the connection was routed to a former owner;
 	// the client should reconnect.

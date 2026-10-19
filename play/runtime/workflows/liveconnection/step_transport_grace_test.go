@@ -73,7 +73,7 @@ func TestParticipantWithoutConnectionAtStartGetsTheGrace(t *testing.T) {
 	gone.Disconnect()
 	controller.completeStart(participants, Game{ContextRevision: 1, State: []byte(`{}`)}, runtime.GameFrontend{}, map[string][]byte{"P1": []byte(`{}`), "P2": []byte(`{}`)}, nil)
 
-	reattached, participant := controller.reattachPlayer(ctx, "user-b")
+	reattached, participant, _ := controller.reattachPlayer(ctx, "user-b")
 	require.True(t, participant)
 	require.Equal(t, runtime.AttachAccepted, reattached.Outcome, "within the grace they may still come")
 	reattached.Connection.Disconnect()

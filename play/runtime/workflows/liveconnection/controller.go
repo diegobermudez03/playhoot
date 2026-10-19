@@ -42,6 +42,10 @@ type Manifest struct {
 
 	// Update means the game implements update(), run every boundary.
 	Update bool
+
+	// Rejoin means the game implements playerRejoined(), so a disconnected
+	// participant may ask to come back.
+	Rejoin bool
 }
 
 // Game is the confirmed state of a running game: everything needed to
@@ -165,6 +169,7 @@ func newSessionController(root context.Context, sessionUUID string, epoch int64,
 			inputs:   make(map[string]*participantInputs),
 			commands: make(map[string]*participantCommands),
 			presence: make(map[string]*participantPresence),
+			rejoins:  make(map[string]*pendingRejoin),
 			views:    make(map[string][]byte),
 		},
 		operations: make(chan func()),
@@ -200,7 +205,7 @@ func (c *sessionController) loadManifest(ctx context.Context) error {
 		return fmt.Errorf("reading the manifest's commands: %w", err)
 	}
 	s := c.lock()
-	s.manifest = Manifest{MaxPlayers: loaded.MaxPlayers, Inputs: schema, Commands: catalog, Update: loaded.Update}
+	s.manifest = Manifest{MaxPlayers: loaded.MaxPlayers, Inputs: schema, Commands: catalog, Update: loaded.Update, Rejoin: loaded.Rejoin}
 	c.unlock()
 	c.manifestLoaded = true
 	return nil
@@ -316,6 +321,10 @@ func (c *sessionController) end(s *liveState, reason runtime.EndReason) {
 	for _, tokens := range s.commands {
 		tokens.abandonPending()
 	}
+	for participantID, request := range s.rejoins {
+		request.resolve(rejoinNotRunning)
+		delete(s.rejoins, participantID)
+	}
 	for id, admin := range s.admins {
 		admin.end(reason)
 		delete(s.admins, id)
@@ -382,6 +391,9 @@ type liveState struct {
 	// presence is whether each participant is still playing, by
 	// ParticipantID.
 	presence map[string]*participantPresence
+	// rejoins are the disconnected participants' requests to come back
+	// waiting for the game, by ParticipantID.
+	rejoins map[string]*pendingRejoin
 	// views is each participant's current projection, by ParticipantID, as
 	// the last committed state gave it.
 	views map[string][]byte
@@ -393,7 +405,8 @@ type liveState struct {
 // Operation is one entry of the Session's single timeline, at the effective
 // Session time it was accepted; Order breaks ties between operations accepted
 // at the same time. It is a participant's new input state, their COMMAND when
-// Command is set, or their disconnection when Disconnected is.
+// Command is set, their disconnection when Disconnected is, or their request
+// to come back when Rejoin is.
 type Operation struct {
 	ParticipantID string
 	SessionTimeMs int64
@@ -404,12 +417,13 @@ type Operation struct {
 
 	Command      *pendingCommand
 	Disconnected bool
+	Rejoin       *pendingRejoin
 }
 
 // runsAlone reports whether the operation is its own call, at its own time,
 // rather than a transition sharing a samples() call.
 func (o Operation) runsAlone() bool {
-	return o.Command != nil || o.Disconnected
+	return o.Command != nil || o.Disconnected || o.Rejoin != nil
 }
 
 // enqueue appends operation to the timeline at the current Session time.

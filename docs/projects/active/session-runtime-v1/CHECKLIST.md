@@ -83,7 +83,7 @@ Progress note (2026-10-17): the boundary, decided with the human, is a set of op
 - [ ] Artifacts addressed by locator + hash + size + metadata; content never silently changes
 - [ ] Runtime manifest exists, versioned and built iteratively (decided by the human 2026-10-17: a `manifest JSONB NOT NULL` column on `play_game_versions`, `{"schema_version":1,...}`, read and validated by `play/session/internal/business/manifest`, loaded by `play/session/usecases/loadruntimemanifest` when a Session's controller is created and kept by it). Declared so far: player limits (`players.min`, `players.max`, 1 <= min <= max). Nothing writes manifests yet besides test data (see Placeholders: no flow creates game versions)
 - [ ] Runtime manifest declares: SAMPLE input defs/types, defaults (when not inferable), COMMAND names + payload schemas, optional entrypoints present (update, playerRejoined), required input capabilities, frontend/backend artifact identity (2026-10-18: COMMAND names and payloads declared and validated (`commands`: name to `payload` fields declared with the SAMPLE input types and rules, decided by the human; `play/internal/business/commands`); SAMPLE inputs declared and validated (`inputs` with boolean, number, vector2, string, enum; natural zeros implicit, explicit default required for enums or out-of-range zeros; `play/internal/business/inputs`, shared by `play/session` and `play/runtime`); the rest pending)
-- [ ] Manifest drives: pre-JS rejection of malformed/undeclared input, discovery filtering by capability, update()/rejoin support detection (2026-10-18: done for SAMPLE inputs, COMMANDs and update() (`entrypoints: ["update"]`, decided by the human; only known optional entrypoints accepted))
+- [ ] Manifest drives: pre-JS rejection of malformed/undeclared input, discovery filtering by capability, update()/rejoin support detection (2026-10-18: done for SAMPLE inputs, COMMANDs, update() and rejoin (`entrypoints: ["update", "playerRejoined"]`, decided by the human; only known optional entrypoints accepted))
 - [ ] Logical deletion/supersession of a game affects only new Sessions, not old Sessions/replays (§30.28)
 
 ---
@@ -277,7 +277,7 @@ Timers were moved out of scope by the human 2026-10-18: no platform timers, time
 
 ## M. Sandbox execution (§11, §1 entrypoints, §1 determinism)
 
-- [ ] Entrypoints: start, samples, command, update (optional), playerDisconnected (also run for leaving, SESSION-ADR-0032), playerRejoined (optional), project (2026-10-18: start, samples, command, update, playerDisconnected, project)
+- [x] Entrypoints: start, samples, command, update (optional), playerDisconnected (also run for leaving, SESSION-ADR-0032), playerRejoined (optional), project (2026-10-18: all of them)
 - [ ] Mutating entrypoints return full new global state + events + terminal FINISHED signal + COMMAND response (2026-10-18: state, the response for `command()`, and logical `errors` and `events` for the three)
 - [x] project(globalState, participant, context) is pure and deterministic (no wall clock, no random, not even the controlled PRNG) (state deep-frozen, `Math.random` throws, globals frozen after load; `TestProjectCannotChangeTheContext`)
 - [x] Controlled deterministic PRNG; state is part of Runtime state and checkpoints; no uncontrolled Math.random as source of truth (done for start: seeded mulberry32, state exported and checkpointed; restoring it into a recreated context comes with recovery) (2026-10-18: a restored context continues with the same randomness, revision and time (`TestRestoredContextContinuesTheSameGame`))
@@ -323,9 +323,9 @@ Transport recovery implemented 2026-10-18 (decided by the human: grace expiry ru
 ### O2. Logical disconnect (§15)
 - [x] Grace expiry inserts playerDisconnected(P) into the timeline (2026-10-18: checked when each boundary is taken, so within the tick cadence; `playerDisconnected(state, participant, context)` runs alone at its place in the batch and returns `{state}` plus optional errors and events; required in every game script; metric `play_runtime_participants_disconnected_total{cause="grace_expired"}`)
 - [x] Participant status becomes DISCONNECTED (2026-10-18: in the controller's memory, as soon as the grace runs out; a later attach is rejected `participant_disconnected` until rejoin exists (O4); persisting it in checkpoints belongs to P)
-- [ ] Game without playerRejoined(): no route back
+- [x] Game without playerRejoined(): no route back (2026-10-18: a disconnected participant of a game that does not declare `playerRejoined` is rejected `participant_disconnected` without asking the game; `TestRejoinOfAGameWithoutIt`)
 - [x] All remaining participants disconnected and no rejoin capability: Session proceeds toward termination per platform rules (2026-10-18: once every participant is disconnected and the game ran `playerDisconnected()` for each, the controller cancels the Session durably (`sessionlifecycle.CancelAbandonedSession`: RUNNING -> CANCELLED, `ALL_PLAYERS_LEFT`, by the platform, with its status history) and ends it live; a failed durable write is tried again at the next boundary; `TestEndIfAbandoned`, `TestLastPlayerLeavingEndsTheSessionAfterTellingTheGame`, unit and integration tests in `sessionlifecycle`. Rejoin does not exist yet, so for now this applies to every game)
-- [ ] With rejoin support, controller stays active, bounded by inactivity and max lifetime
+- [x] ~~With rejoin support, controller stays active, bounded by inactivity and max lifetime~~ (changed by the human 2026-10-18, SESSION-ADR-0032: once every participant is disconnected the Session ends, whether the game supports rejoin or not; a rejoin still waiting for the game keeps it running until decided)
 
 ### O3. Explicit leave (§16)
 
@@ -336,12 +336,15 @@ Changed by the human 2026-10-18 (`play/docs/decisions/SESSION-ADR-0032-leaving-i
 - [x] All gameplay participants gone/left: Session cancelled (ALL_PLAYERS_LEFT) (2026-10-18: see O2)
 
 ### O4. Rejoin (§17)
-- [ ] Owner resolved; userUUID -> existing ParticipantID
-- [ ] Reject: LEFT, never a participant, game without playerRejoined
-- [ ] playerRejoined(P) inserted into the timeline; script decides (state, game time, deadlines)
-- [ ] Rejected -> REJOIN_REJECTED + socket closed
-- [ ] Accepted -> CONNECTED, PLAYER connection attached, inputs at defaults, FULL projection + fresh baseline, FE sends snapshot
-- [ ] Transport dying right after accepted rejoin starts a normal grace flow (rejoin not rolled back)
+
+Implemented 2026-10-18 (decided by the human: `playerRejoined(state, participant, context)` returns `{ state, accepted }`, `accepted` a required boolean, and the state commits either way; games declare it in the manifest as `entrypoints: ["playerRejoined"]`; it applies to participants who left too, SESSION-ADR-0032). Tests: `step_rejoin_player_test.go`, `TestBatchOf`, sandbox `TestExecute`, manifest tests.
+
+- [x] Owner resolved; userUUID -> existing ParticipantID (the same player endpoint; the controller of the running game maps the user to their participant before any durable check)
+- [x] Reject: LEFT, never a participant, game without playerRejoined (2026-10-18: never a participant is `session_started` as before; without `playerRejoined` declared, `participant_disconnected`; LEFT no longer exists, SESSION-ADR-0032)
+- [x] playerRejoined(P) inserted into the timeline; script decides (state, game time, deadlines) (2026-10-18: runs alone at its place in the batch with a boundary requested at once; the attach waits for the decision like a COMMAND; requests of the same participant while one waits share it; a Session ending first answers `session_unavailable`)
+- [x] Rejected -> REJOIN_REJECTED + socket closed (2026-10-18: the attach is rejected `rejoin_rejected`, which the API sends as its usual `rejected` message before closing)
+- [x] Accepted -> CONNECTED, PLAYER connection attached, inputs at defaults, FULL projection + fresh baseline, FE sends snapshot (2026-10-18: through the reattach path: `session_started` and a FULL view of the state the rejoin left, SAMPLEs numbered anew)
+- [x] Transport dying right after accepted rejoin starts a normal grace flow (rejoin not rolled back) (2026-10-18: acceptance starts the transport grace until a connection attaches, so a client gone meanwhile is disconnected again after it)
 
 ### O5. Device switch (§19)
 - [x] At most one active PLAYER transport per participant (2026-10-18: a newer connection replaces the older; `TestReattachPlayer`)

@@ -18,8 +18,8 @@ const (
 
 	// seedSpaceDriftManifest lets one to eight players fly with a move stick
 	// and a boost button, and teleport to a point of the arena; update() keeps
-	// the world moving between inputs.
-	seedSpaceDriftManifest = `{"schema_version":1,"players":{"min":1,"max":8},"entrypoints":["update"],` +
+	// the world moving between inputs, and a disconnected player may rejoin.
+	seedSpaceDriftManifest = `{"schema_version":1,"players":{"min":1,"max":8},"entrypoints":["update","playerRejoined"],` +
 		`"inputs":{"move":{"type":"vector2"},"boost":{"type":"boolean"}},` +
 		`"commands":{"teleport":{"payload":{"x":{"type":"number","min":20,"max":980,"default":500},"y":{"type":"number","min":20,"max":980,"default":500}}}}}`
 )
@@ -33,7 +33,8 @@ const seedSpaceDriftScript = `// Space Drift: each ship accelerates along its mo
 // seconds: earlier, the game answers COOLDOWN and nothing changes. update()
 // keeps the world moving while nobody sends anything; the state records how
 // far it was simulated and every operation integrates up to its time. A
-// disconnected player's ship stops and stays, announced as SHIP_ADRIFT.
+// disconnected player's ship stops and stays, announced as SHIP_ADRIFT; they may
+// always rejoin and take it back, announced as SHIP_RECLAIMED.
 const ARENA_SIZE = 1000;
 const THRUST = 400;
 const BOOST_FACTOR = 2;
@@ -104,6 +105,12 @@ function playerDisconnected(state, participant, context) {
 	ship.vx = 0;
 	ship.vy = 0;
 	return { state: world, events: [{ event: { type: "SHIP_ADRIFT", ship: participant } }] };
+}
+
+function playerRejoined(state, participant, context) {
+	const world = copyWorld(state);
+	simulate(world, context.sessionTime);
+	return { state: world, accepted: true, events: [{ event: { type: "SHIP_RECLAIMED", ship: participant } }] };
 }
 
 function project(state, participant, context) {

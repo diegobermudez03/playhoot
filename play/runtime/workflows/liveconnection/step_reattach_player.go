@@ -13,25 +13,23 @@ import (
 // game, as a metric value.
 const attachReattached = "reattached"
 
-// reattachPlayer takes userUUID's new player connection into the running game
-// they play, when their transport was lost within the grace or they switch
-// devices: the game is not told, the older connection is replaced, their
-// inputs return to the defaults and they get a FULL view. participant is
-// false when this controller runs no game userUUID plays.
-func (c *sessionController) reattachPlayer(ctx context.Context, userUUID string) (result runtime.AttachPlayerResult, participant bool) {
+// reattachPlayer takes userUUID's new connection into the game they play,
+// without telling it: any older connection is replaced, inputs reset, and a
+// FULL view sent. participant is false when they play no game here;
+// disconnected means they must rejoin first, and nothing was attached.
+func (c *sessionController) reattachPlayer(ctx context.Context, userUUID string) (result runtime.AttachPlayerResult, participant bool, disconnected bool) {
 	s := c.lock()
 	defer c.unlock()
 	if s.phase != phaseRunning {
-		return runtime.AttachPlayerResult{}, false
+		return runtime.AttachPlayerResult{}, false, false
 	}
 	participantID, found := s.participantOf(userUUID)
 	if !found {
-		return runtime.AttachPlayerResult{}, false
+		return runtime.AttachPlayerResult{}, false, false
 	}
 	presence := s.presence[participantID]
 	if presence.disconnected {
-		// Placeholder: rejoining a disconnected participant (playerRejoined) is not built.
-		return rejectPlayer(ctx, runtime.RejectParticipantDisconnected), true
+		return runtime.AttachPlayerResult{}, true, true
 	}
 	if older := s.players[userUUID]; older != nil && !older.isEnded() {
 		older.end(runtime.EndReplaced)
@@ -51,7 +49,7 @@ func (c *sessionController) reattachPlayer(ctx context.Context, userUUID string)
 	player.markStarted(s.start)
 
 	playerAttaches.Inc(ctx, playerAttachOutcomeLabel.Value(attachReattached))
-	return runtime.AttachPlayerResult{Outcome: runtime.AttachAccepted, Connection: c.playerConnection(player)}, true
+	return runtime.AttachPlayerResult{Outcome: runtime.AttachAccepted, Connection: c.playerConnection(player)}, true, false
 }
 
 // participantOf returns the ParticipantID userUUID plays the game as.

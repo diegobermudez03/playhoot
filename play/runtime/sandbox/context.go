@@ -53,14 +53,15 @@ type Command struct {
 
 // Operation is one step of a Batch, run at SessionTimeMs: a run of input
 // transitions for samples(), one COMMAND for command(), a call to update(),
-// or playerDisconnected() for the participant Disconnected names. Exactly one
-// of Transitions, Command, Update and Disconnected is set.
+// playerDisconnected() for the participant Disconnected names, or
+// playerRejoined() for the one Rejoined names. Exactly one is set.
 type Operation struct {
 	SessionTimeMs int64
 	Transitions   []Transition
 	Command       *Command
 	Update        bool
 	Disconnected  string
+	Rejoined      string
 }
 
 // Batch is operations executed in order as one atomic step: either all of
@@ -88,6 +89,9 @@ type ExecutionResult struct {
 
 	// Events are the logical events the operations emitted, in batch order.
 	Events []GameEvent
+
+	// RejoinsAccepted are what each rejoin operation decided, in batch order.
+	RejoinsAccepted []bool
 
 	ScriptError string
 }

@@ -45,6 +45,11 @@ func TestLoadRuntimeManifest(t *testing.T) {
 				Return([]byte(`{"schema_version":1,"players":{"min":1,"max":2},"entrypoints":["update"]}`), true, nil)
 			return test{sessionUUID: sessionUUID, expectedManifest: sessionpkg.RuntimeManifest{MinPlayers: 1, MaxPlayers: 2, Update: true}}
 		},
+		"game_with_rejoin": func(t *testing.T, deps dependencies) test {
+			deps.manifests.EXPECT().FindSessionManifest(ctx, sessionUUID).
+				Return([]byte(`{"schema_version":1,"players":{"min":1,"max":2},"entrypoints":["playerRejoined"]}`), true, nil)
+			return test{sessionUUID: sessionUUID, expectedManifest: sessionpkg.RuntimeManifest{MinPlayers: 1, MaxPlayers: 2, Rejoin: true}}
+		},
 		"invalid_manifest_is_broken_data": func(t *testing.T, deps dependencies) test {
 			deps.manifests.EXPECT().FindSessionManifest(ctx, sessionUUID).
 				Return([]byte(`{"schema_version":1,"players":{"min":3,"max":2}}`), true, nil)

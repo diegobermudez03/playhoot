@@ -39,6 +39,9 @@ function command(state, cmd, context) {
 function update(state, context) {
 	return { state: { log: state.log.concat(["update@" + context.sessionTime + "+" + context.elapsed]), rolls: state.rolls } };
 }
+function playerRejoined(state, participant, context) {
+	return { state: { log: state.log.concat(["back:" + participant + "@" + context.sessionTime]), rolls: state.rolls }, accepted: participant !== "P9" };
+}
 function playerDisconnected(state, participant, context) {
 	return { state: { log: state.log.concat(["gone:" + participant + "@" + context.sessionTime + "+" + context.elapsed]), rolls: state.rolls }, events: [{ event: "GONE" }] };
 }
@@ -62,6 +65,7 @@ func TestExecute(t *testing.T) {
 		expectedResponses     []string
 		expectedErrors        []GameError
 		expectedEvents        []GameEvent
+		expectedRejoins       []bool
 		expectedOutcome       ScriptOutcome
 		expectedErrorContains string
 	}
@@ -194,6 +198,34 @@ func TestExecute(t *testing.T) {
 				expectedOutcome: ScriptSucceeded,
 			}
 		},
+		"rejoins_are_decided_by_the_game_in_batch_order": func(t *testing.T) test {
+			return test{
+				script: batchGame,
+				batch: Batch{Operations: []Operation{
+					{SessionTimeMs: 20, Rejoined: "P1"},
+					{SessionTimeMs: 30, Rejoined: "P9"},
+				}},
+				expectedLog:     []string{"back:P1@20", "back:P9@30"},
+				expectedRejoins: []bool{true, false},
+				expectedOutcome: ScriptSucceeded,
+			}
+		},
+		"rejoin_without_a_boolean_decision": func(t *testing.T) test {
+			return test{
+				script:                `function start() { return { state: {} }; } function playerRejoined(state) { return { state, accepted: "yes" }; } function project() { return {}; }`,
+				batch:                 Batch{Operations: []Operation{{SessionTimeMs: 100, Rejoined: "P1"}}},
+				expectedOutcome:       ScriptFailed,
+				expectedErrorContains: "accepted as true or false",
+			}
+		},
+		"rejoin_without_a_decision": func(t *testing.T) test {
+			return test{
+				script:                `function start() { return { state: {} }; } function playerRejoined(state) { return { state }; } function project() { return {}; }`,
+				batch:                 Batch{Operations: []Operation{{SessionTimeMs: 100, Rejoined: "P1"}}},
+				expectedOutcome:       ScriptFailed,
+				expectedErrorContains: "accepted as true or false",
+			}
+		},
 		"script_without_player_disconnected": func(t *testing.T) test {
 			return test{
 				script:                `function start() { return { state: {} }; } function project() { return {}; }`,
@@ -306,6 +338,7 @@ func TestExecute(t *testing.T) {
 			}
 			require.Equal(t, tc.expectedErrors, result.Errors)
 			require.Equal(t, tc.expectedEvents, result.Events)
+			require.Equal(t, tc.expectedRejoins, result.RejoinsAccepted)
 		})
 	}
 }
