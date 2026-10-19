@@ -45,6 +45,7 @@ type session struct {
 	CreatedByUserUUID string
 	Status            string
 	LobbyExpiresAt    time.Time
+	ExpiresAt         time.Time
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 }
@@ -121,14 +122,16 @@ func (r *Repo) FindCurrentGameVersion(ctx context.Context, tx *gorm.DB, gameUUID
 }
 
 // CreateSession inserts a Session pinned to gameVersionID, with a freshly
-// generated UUID, and starts its status history.
-func (r *Repo) CreateSession(ctx context.Context, tx *gorm.DB, gameVersionID uint, createdByUserUUID string, status string, lobbyExpiresAt time.Time, createdAt time.Time) (CreatedSession, error) {
+// generated UUID, whose lobby expires at lobbyExpiresAt and itself at
+// expiresAt, and starts its status history.
+func (r *Repo) CreateSession(ctx context.Context, tx *gorm.DB, gameVersionID uint, createdByUserUUID string, status string, lobbyExpiresAt time.Time, expiresAt time.Time, createdAt time.Time) (CreatedSession, error) {
 	created := session{
 		UUID:              uuid.NewString(),
 		GameVersionID:     gameVersionID,
 		CreatedByUserUUID: createdByUserUUID,
 		Status:            status,
 		LobbyExpiresAt:    lobbyExpiresAt,
+		ExpiresAt:         expiresAt,
 		CreatedAt:         createdAt,
 		UpdatedAt:         createdAt,
 	}

@@ -18,17 +18,14 @@ import (
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
 
-//go:generate mockgen -package=liveconnection -destination=step_boundary_mock_test.go . sessionAborter,replayRecorder
-
-// sessionAborter ends a running Session the platform cannot continue.
-type sessionAborter interface {
-	AbortRunningSession(ctx context.Context, sessionUUID string, cause sessionpkg.AbortCause) error
-}
+//go:generate mockgen -package=liveconnection -destination=step_boundary_mock_test.go . replayRecorder
 
 // replayRecorder takes what a game offers to its replay history. Offer must
-// never block: recording is best effort.
+// never block: recording is best effort. Finish stores a finished game's
+// final capture durably, and fails when it could not.
 type replayRecorder interface {
 	Offer(ctx context.Context, capture replay.Capture)
+	Finish(ctx context.Context, capture replay.Capture) error
 }
 
 // maxInfraFailures is how many boundaries in a row may fail to execute before
@@ -46,9 +43,10 @@ const (
 	boundaryRetried     = "infra_failed"
 	boundaryAborted     = "aborted"
 	boundaryInterrupted = "interrupted"
+	boundaryFinished    = "finished"
 )
 
-var boundaryOutcomeLabel = metrics.NewLabel("outcome", boundaryExecuted, boundaryAckOnly, boundaryRetried, boundaryAborted, boundaryInterrupted)
+var boundaryOutcomeLabel = metrics.NewLabel("outcome", boundaryExecuted, boundaryAckOnly, boundaryRetried, boundaryAborted, boundaryInterrupted, boundaryFinished)
 
 // Execution failures retried within a boundary, as metric label values.
 const (
@@ -131,6 +129,16 @@ type execution struct {
 	rejoins []bool
 	errors  []gameError
 	events  []gameEvent
+	// finished, when set, is where the script finished the game: the batch
+	// stopped there.
+	finished *finishPoint
+}
+
+// finishPoint is where a batch finished the game: how many of the boundary's
+// timeline operations it executed, and the Session time it ended at.
+type finishPoint struct {
+	operations    int
+	sessionTimeMs int64
 }
 
 // gameEvent is a logical event the game emitted, placed like a gameError and
@@ -164,6 +172,10 @@ type gameError struct {
 // script that fails twice, or too many failed boundaries in a row, abort the
 // Session.
 func (c *sessionController) runBoundary() {
+	if c.finishing != nil {
+		c.finishGame()
+		return
+	}
 	work, running := c.takeBoundary()
 	if !running {
 		return
@@ -192,6 +204,11 @@ func (c *sessionController) runBoundary() {
 	var scriptFailure errScript
 	switch {
 	case err == nil:
+		if executed.finished != nil {
+			// What the batch did not reach never happened.
+			work.operations = work.operations[:executed.finished.operations]
+			work.sessionTimeMs = executed.finished.sessionTimeMs
+		}
 		err = c.commitBoundary(ctx, work, executed)
 		if errors.Is(err, errNotRunning) {
 			outcome = boundaryInterrupted
@@ -209,7 +226,7 @@ func (c *sessionController) runBoundary() {
 			}
 			c.lastUpdate = began
 		}
-		c.deps.replay.Offer(ctx, replay.Capture{
+		capture := replay.Capture{
 			SessionUUID:      c.sessionUUID,
 			GameVersionUUID:  executed.game.GameVersionUUID,
 			SessionTimeMs:    work.sessionTimeMs,
@@ -219,7 +236,13 @@ func (c *sessionController) runBoundary() {
 			CommandResponses: commandResponses(work, executed.responses),
 			Errors:           replayErrors(executed.errors),
 			Events:           replayEvents(executed.events),
-		})
+		}
+		if executed.finished != nil {
+			outcome = boundaryFinished
+			c.beginFinishing(ctx, work, executed, capture)
+			return
+		}
+		c.deps.replay.Offer(ctx, capture)
 		c.endIfAbandoned(ctx)
 		return
 	case c.root.Err() != nil:
@@ -229,7 +252,7 @@ func (c *sessionController) runBoundary() {
 		return
 	case errors.As(err, &scriptFailure):
 		outcome = boundaryAborted
-		c.abort(ctx, sessionpkg.AbortScriptFailure, err)
+		c.abort(ctx, sessionpkg.EndScriptFailure, err)
 		return
 	}
 
@@ -238,7 +261,7 @@ func (c *sessionController) runBoundary() {
 	c.infraFailures++
 	if c.infraFailures >= maxInfraFailures {
 		outcome = boundaryAborted
-		c.abort(ctx, sessionpkg.AbortUnrecoverableInfraFailure, err)
+		c.abort(ctx, sessionpkg.EndUnrecoverableInfraFailure, err)
 		return
 	}
 	outcome = boundaryRetried
@@ -290,6 +313,17 @@ func (c *sessionController) attempt(ctx context.Context, work boundary) (executi
 	if result.ContextRevision != work.game.ContextRevision+1 {
 		return execution{}, fmt.Errorf("%w: revision %d after the mirror's %d", errOutOfSync, result.ContextRevision, work.game.ContextRevision)
 	}
+	var finished *finishPoint
+	if result.Finished {
+		point, err := finishedAt(work, batch, orders, result.FinishedOperation)
+		if err != nil {
+			return execution{}, err
+		}
+		finished = &point
+		work.operations = work.operations[:point.operations]
+		batch.Operations = batch.Operations[:result.FinishedOperation+1]
+		orders = orders[:result.FinishedOperation+1]
+	}
 	if commands := countCommands(work.operations); len(result.CommandResponses) != commands {
 		return execution{}, fmt.Errorf("%w: %d responses to %d commands", errOutOfSync, len(result.CommandResponses), commands)
 	}
@@ -313,7 +347,25 @@ func (c *sessionController) attempt(ctx context.Context, work boundary) (executi
 	game.ContextRevision = result.ContextRevision
 	game.State = result.State
 	game.PRNGState = result.PRNGState
-	return execution{game: game, views: views, responses: result.CommandResponses, rejoins: result.RejoinsAccepted, errors: placedErrors, events: placedEvents}, nil
+	return execution{game: game, views: views, responses: result.CommandResponses, rejoins: result.RejoinsAccepted, errors: placedErrors, events: placedEvents, finished: finished}, nil
+}
+
+// finishedAt is where the batch operation at index finished the game: every
+// timeline operation up to the last one it ran was executed. An index the
+// batch does not have means the context drifted.
+func finishedAt(work boundary, batch sandbox.Batch, orders []uint64, index int) (finishPoint, error) {
+	if index < 0 || index >= len(batch.Operations) {
+		return finishPoint{}, fmt.Errorf("%w: finished at operation %d of a batch of %d", errOutOfSync, index, len(batch.Operations))
+	}
+	executed := len(work.operations)
+	// update() runs after every timeline operation; its order is 0.
+	if through := orders[index]; through != 0 {
+		executed = 0
+		for executed < len(work.operations) && work.operations[executed].Order <= through {
+			executed++
+		}
+	}
+	return finishPoint{operations: executed, sessionTimeMs: batch.Operations[index].SessionTimeMs}, nil
 }
 
 // timeline places what a batch's calls returned at the time and order of the
@@ -493,22 +545,6 @@ func replayEvents(placed []gameEvent) []replay.GameEvent {
 	return recorded
 }
 
-// abort ends the Session for cause: durably first, then live. A failed
-// durable abort is alerted, since the game cannot go on either way.
-func (c *sessionController) abort(ctx context.Context, cause sessionpkg.AbortCause, failure error) {
-	logging.LogError(ctx, failure)
-	logging.LogFields(ctx, logging.Field("abort_cause", string(cause)))
-	if err := c.deps.aborts.AbortRunningSession(ctx, c.sessionUUID, cause); err != nil {
-		logging.LogError(ctx, fmt.Errorf("aborting session: %w", err))
-		monitoring.Alert(ctx, "running session could not be aborted durably")
-	}
-	s := c.lock()
-	defer c.unlock()
-	if s.phase == phaseRunning {
-		c.end(s, runtime.EndSessionAborted)
-	}
-}
-
 // takeBoundary moves every pending operation into a boundary, so operations
 // accepted from now on go to the next one; false means the game does not run
 // here. A game with update() calls it every boundary; without it, a boundary
@@ -588,6 +624,11 @@ func (c *sessionController) commitBoundary(ctx context.Context, work boundary, e
 	}
 	if len(executed.events) > 0 {
 		gameEvents.Add(ctx, float64(len(executed.events)))
+	}
+	if executed.finished != nil {
+		// Players see the final state once the ending is durable.
+		s.phase = phaseFinishing
+		return nil
 	}
 	s.acknowledge(ctx, work, executed)
 	return nil

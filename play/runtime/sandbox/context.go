@@ -66,7 +66,8 @@ type Operation struct {
 
 // Batch is operations executed in order as one atomic step: either all of
 // them succeed and the context advances one revision, at the last
-// operation's time, or nothing of the batch counts.
+// operation's time, or nothing of the batch counts. An operation that
+// finishes the game is the last one executed.
 type Batch struct {
 	Operations []Operation
 }
@@ -92,6 +93,12 @@ type ExecutionResult struct {
 
 	// RejoinsAccepted are what each rejoin operation decided, in batch order.
 	RejoinsAccepted []bool
+
+	// Finished means FinishedOperation, the index in the batch of the
+	// operation that returned finished, ended the game: no operation after it
+	// was executed, and the state is the game's final one.
+	Finished          bool
+	FinishedOperation int
 
 	ScriptError string
 }

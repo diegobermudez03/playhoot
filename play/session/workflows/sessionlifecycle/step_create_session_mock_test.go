@@ -89,18 +89,18 @@ func (mr *MockcreateSessionRepoMockRecorder) CreateJoinCode(ctx, tx, sessionID, 
 }
 
 // CreateSession mocks base method.
-func (m *MockcreateSessionRepo) CreateSession(ctx context.Context, tx *gorm.DB, gameVersionID uint, createdByUserUUID, status string, lobbyExpiresAt, createdAt time.Time) (repo.CreatedSession, error) {
+func (m *MockcreateSessionRepo) CreateSession(ctx context.Context, tx *gorm.DB, gameVersionID uint, createdByUserUUID, status string, lobbyExpiresAt, expiresAt, createdAt time.Time) (repo.CreatedSession, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateSession", ctx, tx, gameVersionID, createdByUserUUID, status, lobbyExpiresAt, createdAt)
+	ret := m.ctrl.Call(m, "CreateSession", ctx, tx, gameVersionID, createdByUserUUID, status, lobbyExpiresAt, expiresAt, createdAt)
 	ret0, _ := ret[0].(repo.CreatedSession)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // CreateSession indicates an expected call of CreateSession.
-func (mr *MockcreateSessionRepoMockRecorder) CreateSession(ctx, tx, gameVersionID, createdByUserUUID, status, lobbyExpiresAt, createdAt any) *gomock.Call {
+func (mr *MockcreateSessionRepoMockRecorder) CreateSession(ctx, tx, gameVersionID, createdByUserUUID, status, lobbyExpiresAt, expiresAt, createdAt any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateSession", reflect.TypeOf((*MockcreateSessionRepo)(nil).CreateSession), ctx, tx, gameVersionID, createdByUserUUID, status, lobbyExpiresAt, createdAt)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateSession", reflect.TypeOf((*MockcreateSessionRepo)(nil).CreateSession), ctx, tx, gameVersionID, createdByUserUUID, status, lobbyExpiresAt, expiresAt, createdAt)
 }
 
 // FindCurrentGameVersion mocks base method.

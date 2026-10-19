@@ -15,6 +15,10 @@ var (
 		"play_runtime_controllers_retired_total",
 		"Session controllers replaced because their ownership epoch was stale.",
 	)
+	controllersActive = metrics.NewGauge(
+		"play_runtime_controllers_active",
+		"Session controllers alive on this instance; one ends with its Session or when the instance shuts down.",
+	)
 )
 
 var playersReplaced = metrics.NewCounter(

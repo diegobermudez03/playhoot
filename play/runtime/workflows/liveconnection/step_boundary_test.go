@@ -61,7 +61,7 @@ func nextView(t *testing.T, player runtime.PlayerConnection) (runtime.OwnView, b
 func TestRunBoundary(t *testing.T) {
 	type dependencies struct {
 		sandbox *MockgameSandbox
-		aborts  *MocksessionAborter
+		ends    *MocksessionEnder
 		replay  *MockreplayRecorder
 	}
 	type test struct {
@@ -138,10 +138,10 @@ func TestRunBoundary(t *testing.T) {
 			calls = append(calls,
 				deps.sandbox.EXPECT().Execute(anyCtx, "context-2", input).Return(failed, nil),
 				deps.sandbox.EXPECT().DiscardContext(anyCtx, "context-2").Return(nil),
-				deps.aborts.EXPECT().AbortRunningSession(anyCtx, boundarySessionUUID, sessionpkg.AbortScriptFailure).Return(nil),
+				deps.ends.EXPECT().EndSession(anyCtx, boundarySessionUUID, sessionpkg.SessionEnd{Cause: sessionpkg.EndScriptFailure}).Return(sessionpkg.EndSessionResult{Outcome: sessionpkg.SessionEndedNow, Status: "ABORTED", EndCause: "SCRIPT_FAILURE"}, nil),
 			)
 			gomock.InOrder(calls...)
-			return test{expectedEnd: runtime.EndSessionAborted}
+			return test{expectedEnd: runtime.EndSessionEnded}
 		},
 		"projection_failing_in_the_script_is_a_script_failure": func(t *testing.T, deps dependencies) test {
 			gomock.InOrder(append([]any{
@@ -232,19 +232,19 @@ func TestRunBoundary(t *testing.T) {
 				deps.sandbox.EXPECT().Execute(anyCtx, "context-1", input).Return(sandbox.ExecutionResult{}, errors.New("worker died")),
 				deps.sandbox.EXPECT().DiscardContext(anyCtx, "context-1").Return(nil),
 				deps.sandbox.EXPECT().CreateContext(anyCtx, spec).Return("", sandbox.ErrNoCapacity),
-				deps.aborts.EXPECT().AbortRunningSession(anyCtx, boundarySessionUUID, sessionpkg.AbortUnrecoverableInfraFailure).Return(nil),
+				deps.ends.EXPECT().EndSession(anyCtx, boundarySessionUUID, sessionpkg.SessionEnd{Cause: sessionpkg.EndUnrecoverableInfraFailure}).Return(sessionpkg.EndSessionResult{Outcome: sessionpkg.SessionEndedNow, Status: "ABORTED", EndCause: "UNRECOVERABLE_INFRA_FAILURE"}, nil),
 			)
-			return test{infraFailures: maxInfraFailures - 1, expectedEnd: runtime.EndSessionAborted, expectedInfraFailures: maxInfraFailures}
+			return test{infraFailures: maxInfraFailures - 1, expectedEnd: runtime.EndSessionEnded, expectedInfraFailures: maxInfraFailures}
 		},
 	}
 
 	for name, setup := range tests {
 		t.Run(name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
-			deps := dependencies{sandbox: NewMockgameSandbox(ctrl), aborts: NewMocksessionAborter(ctrl), replay: NewMockreplayRecorder(ctrl)}
+			deps := dependencies{sandbox: NewMockgameSandbox(ctrl), ends: NewMocksessionEnder(ctrl), replay: NewMockreplayRecorder(ctrl)}
 			tc := setup(t, deps)
 			controllerDeps := testDependencies()
-			controllerDeps.sandbox, controllerDeps.aborts, controllerDeps.replay = deps.sandbox, deps.aborts, deps.replay
+			controllerDeps.sandbox, controllerDeps.ends, controllerDeps.replay = deps.sandbox, deps.ends, deps.replay
 			controller, player, now := runningGame(t, controllerDeps)
 			controller.infraFailures = tc.infraFailures
 			if tc.noContext {
@@ -281,7 +281,7 @@ func TestRunBoundary(t *testing.T) {
 func TestRunBoundaryWithCommands(t *testing.T) {
 	type dependencies struct {
 		sandbox *MockgameSandbox
-		aborts  *MocksessionAborter
+		ends    *MocksessionEnder
 		replay  *MockreplayRecorder
 	}
 	type test struct {
@@ -375,11 +375,11 @@ func TestRunBoundaryWithCommands(t *testing.T) {
 				deps.sandbox.EXPECT().Restore(anyCtx, "context-2", snapshot).Return(sandbox.RestoreResult{Outcome: sandbox.ScriptSucceeded}, nil),
 				deps.sandbox.EXPECT().Execute(anyCtx, "context-2", endingWithCommand).Return(failed, nil),
 				deps.sandbox.EXPECT().DiscardContext(anyCtx, "context-2").Return(nil),
-				deps.aborts.EXPECT().AbortRunningSession(anyCtx, boundarySessionUUID, sessionpkg.AbortScriptFailure).Return(nil),
+				deps.ends.EXPECT().EndSession(anyCtx, boundarySessionUUID, sessionpkg.SessionEnd{Cause: sessionpkg.EndScriptFailure}).Return(sessionpkg.EndSessionResult{Outcome: sessionpkg.SessionEndedNow, Status: "ABORTED", EndCause: "SCRIPT_FAILURE"}, nil),
 			)
 			return test{
 				expectedResult: runtime.CommandResult{Token: "t1", Outcome: runtime.CommandNotRunning},
-				expectedEnd:    runtime.EndSessionAborted,
+				expectedEnd:    runtime.EndSessionEnded,
 			}
 		},
 	}
@@ -387,10 +387,10 @@ func TestRunBoundaryWithCommands(t *testing.T) {
 	for name, setup := range tests {
 		t.Run(name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
-			deps := dependencies{sandbox: NewMockgameSandbox(ctrl), aborts: NewMocksessionAborter(ctrl), replay: NewMockreplayRecorder(ctrl)}
+			deps := dependencies{sandbox: NewMockgameSandbox(ctrl), ends: NewMocksessionEnder(ctrl), replay: NewMockreplayRecorder(ctrl)}
 			tc := setup(t, deps)
 			controllerDeps := testDependencies()
-			controllerDeps.sandbox, controllerDeps.aborts, controllerDeps.replay = deps.sandbox, deps.aborts, deps.replay
+			controllerDeps.sandbox, controllerDeps.ends, controllerDeps.replay = deps.sandbox, deps.ends, deps.replay
 			controller, player, now := runningGame(t, controllerDeps)
 			ctx := context.Background()
 			*now = now.Add(40 * time.Millisecond)
@@ -426,7 +426,7 @@ func TestRunBoundaryWithCommands(t *testing.T) {
 func TestRunBoundaryWithUpdate(t *testing.T) {
 	type dependencies struct {
 		sandbox *MockgameSandbox
-		aborts  *MocksessionAborter
+		ends    *MocksessionEnder
 		replay  *MockreplayRecorder
 	}
 	type test struct {
@@ -491,19 +491,19 @@ func TestRunBoundaryWithUpdate(t *testing.T) {
 				deps.sandbox.EXPECT().Restore(anyCtx, "context-2", snapshot).Return(sandbox.RestoreResult{Outcome: sandbox.ScriptSucceeded}, nil),
 				deps.sandbox.EXPECT().Execute(anyCtx, "context-2", updateOnly).Return(failed, nil),
 				deps.sandbox.EXPECT().DiscardContext(anyCtx, "context-2").Return(nil),
-				deps.aborts.EXPECT().AbortRunningSession(anyCtx, boundarySessionUUID, sessionpkg.AbortScriptFailure).Return(nil),
+				deps.ends.EXPECT().EndSession(anyCtx, boundarySessionUUID, sessionpkg.SessionEnd{Cause: sessionpkg.EndScriptFailure}).Return(sessionpkg.EndSessionResult{Outcome: sessionpkg.SessionEndedNow, Status: "ABORTED", EndCause: "SCRIPT_FAILURE"}, nil),
 			)
-			return test{expectedEnd: runtime.EndSessionAborted}
+			return test{expectedEnd: runtime.EndSessionEnded}
 		},
 	}
 
 	for name, setup := range tests {
 		t.Run(name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
-			deps := dependencies{sandbox: NewMockgameSandbox(ctrl), aborts: NewMocksessionAborter(ctrl), replay: NewMockreplayRecorder(ctrl)}
+			deps := dependencies{sandbox: NewMockgameSandbox(ctrl), ends: NewMocksessionEnder(ctrl), replay: NewMockreplayRecorder(ctrl)}
 			tc := setup(t, deps)
 			controllerDeps := testDependencies()
-			controllerDeps.sandbox, controllerDeps.aborts, controllerDeps.replay = deps.sandbox, deps.aborts, deps.replay
+			controllerDeps.sandbox, controllerDeps.ends, controllerDeps.replay = deps.sandbox, deps.ends, deps.replay
 			controller, player, now := runningGame(t, controllerDeps)
 			controller.lock().manifest.Update = true
 			controller.unlock()
@@ -795,13 +795,13 @@ func TestAcknowledgeOnly(t *testing.T) {
 func TestRunningGameEnds(t *testing.T) {
 	t.Run("aborted_game_ends_every_connection", func(t *testing.T) {
 		controller, players, _ := runningController(t, map[string][]byte{"P1": []byte(`{}`)}, "user-a")
-		aborts := NewMocksessionAborter(gomock.NewController(t))
-		controller.deps.aborts = aborts
-		aborts.EXPECT().AbortRunningSession(context.Background(), "session-1", sessionpkg.AbortScriptFailure).Return(nil)
+		ends := NewMocksessionEnder(gomock.NewController(t))
+		controller.deps.ends = ends
+		ends.EXPECT().EndSession(context.Background(), "session-1", sessionpkg.SessionEnd{Cause: sessionpkg.EndScriptFailure}).Return(sessionpkg.EndSessionResult{Outcome: sessionpkg.SessionEndedNow, Status: "ABORTED", EndCause: "SCRIPT_FAILURE"}, nil)
 
-		controller.abort(context.Background(), sessionpkg.AbortScriptFailure, errScript{detail: "boom"})
+		controller.abort(context.Background(), sessionpkg.EndScriptFailure, errScript{detail: "boom"})
 
-		require.Equal(t, runtime.EndSessionAborted, endedWith(t, players["user-a"].Ended))
+		require.Equal(t, runtime.EndSessionEnded, endedWith(t, players["user-a"].Ended))
 		requireClosed(t, controller.ended)
 		_, running := controller.takeBoundary()
 		require.False(t, running)

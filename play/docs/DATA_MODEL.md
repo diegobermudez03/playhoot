@@ -36,6 +36,7 @@ erDiagram
         TEXT status "LOBBY | RUNNING | FINISHED | CANCELLED | EXPIRED | ABORTED"
         TEXT end_cause "nullable"
         TIMESTAMPTZ lobby_expires_at
+        TIMESTAMPTZ expires_at "the most it may live, whatever its activity"
         TIMESTAMPTZ created_at
         TIMESTAMPTZ updated_at
     }
@@ -99,6 +100,7 @@ Notes:
 - A join code is active while `released_at` is NULL. An expired code is released lazily when a new Session needs that same code.
 - An EXECUTABLE version must have both locators (`script_*`, `frontend_*`: object key, SHA-256 as lowercase hex, size in bytes); this is checked by the application, and a missing one is treated as broken data. Keys are content-addressed under `game-versions/backend-scripts/` and `game-versions/frontend-packages/`. The frontend package is one self-contained HTML file (decided by the human 2026-10-17 for v1); a game's assets will be resolved separately by Playhoot.
 - `play_session_participants` and the first `play_session_checkpoints` row are written in the same transaction that makes a Session RUNNING, so a RUNNING Session always has its roster and a recoverable checkpoint. A checkpoint row is only replaced by one of a higher `context_revision`; there is no history (replay is a separate mechanism).
-- `end_cause` is set with a terminal status. Values written today: `GAME_START_FAILURE`, `SCRIPT_FAILURE` and `UNRECOVERABLE_INFRA_FAILURE` (with ABORTED), and `ALL_PLAYERS_LEFT` (with CANCELLED, when no participant of a running Session can play anymore).
-- Starting or aborting a Session releases its join codes.
+- `end_cause` is set with a terminal status: `GAME_FINISHED` (FINISHED); `HOST_CANCELLED`, `ALL_PLAYERS_LEFT`, `PLATFORM_TERMINATED` (CANCELLED); `LOBBY_EXPIRED`, `INACTIVITY_TIMEOUT`, `MAX_LIFETIME` (EXPIRED); `GAME_START_FAILURE`, `SCRIPT_FAILURE`, `UNRECOVERABLE_INFRA_FAILURE` (ABORTED). Which statuses each cause applies from is in `play/docs/FLOWS.md` (End Session).
+- `expires_at` is set at creation (creation + 4 hours, a platform tuning value) and enforced by the live controller; it is durable so it survives recovery, can be queried by a future reconciliation job, and could be shortened by platform limits.
+- Starting or ending a Session releases its join codes.
 - `play_session_status_changes` is the append-only history of every status a Session went through. A row is written in the same transaction as each change of `play_sessions.status`, including the creation (`from_status` NULL), and only through `sessionlifecycle`'s repository (`CreateSession`, `ChangeSessionStatus`), so no status change can skip it. `changed_by_user_uuid` is the user who caused the change (the creator creating or starting it) or NULL for the platform (for example an aborted start).

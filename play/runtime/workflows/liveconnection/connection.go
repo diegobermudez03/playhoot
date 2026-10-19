@@ -29,7 +29,7 @@ type connection struct {
 
 	once   sync.Once
 	ended  chan struct{}
-	reason runtime.EndReason
+	ending runtime.ConnectionEnd
 }
 
 func newConnection(id string, userUUID string) *connection {
@@ -37,8 +37,13 @@ func newConnection(id string, userUUID string) *connection {
 }
 
 func (c *connection) end(reason runtime.EndReason) {
+	c.endWith(runtime.ConnectionEnd{Reason: reason})
+}
+
+// endWith ends the connection as ending; only the first end counts.
+func (c *connection) endWith(ending runtime.ConnectionEnd) {
 	c.once.Do(func() {
-		c.reason = reason
+		c.ending = ending
 		close(c.ended)
 	})
 }
@@ -55,7 +60,7 @@ func (c *connection) isEnded() bool {
 func (c *connection) wait(ctx context.Context) (runtime.ConnectionEnd, bool) {
 	select {
 	case <-c.ended:
-		return runtime.ConnectionEnd{Reason: c.reason}, true
+		return c.ending, true
 	case <-ctx.Done():
 		return runtime.ConnectionEnd{}, false
 	}

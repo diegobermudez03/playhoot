@@ -45,6 +45,7 @@ type integrationSession struct {
 	CreatedByUserUUID string
 	Status            string
 	LobbyExpiresAt    time.Time
+	ExpiresAt         time.Time
 }
 
 func (integrationSession) TableName() string { return "play_sessions" }
@@ -92,6 +93,7 @@ func seedJoinCodeHolder(t *testing.T, db *gorm.DB, code string, expiresAt time.T
 		CreatedByUserUUID: uuid.NewString(),
 		Status:            "LOBBY",
 		LobbyExpiresAt:    expiresAt,
+		ExpiresAt:         expiresAt.Add(defaultMaxLifetime),
 	}
 	require.NoError(t, db.Create(&holder).Error)
 	require.NoError(t, db.Create(&integrationJoinCode{SessionID: holder.ID, Code: code, ExpiresAt: expiresAt}).Error)
@@ -106,11 +108,12 @@ func sessionsCreatedBy(t *testing.T, db *gorm.DB, userUUID string) []integration
 	t.Helper()
 	var sessions []integrationSession
 	require.NoError(t, db.Raw(`
-		SELECT id, uuid, game_version_id, created_by_user_uuid, status, lobby_expires_at
+		SELECT id, uuid, game_version_id, created_by_user_uuid, status, lobby_expires_at, expires_at
 		FROM play_sessions WHERE created_by_user_uuid = ? ORDER BY id
 	`, userUUID).Scan(&sessions).Error)
 	for i := range sessions {
 		sessions[i].LobbyExpiresAt = sessions[i].LobbyExpiresAt.UTC()
+		sessions[i].ExpiresAt = sessions[i].ExpiresAt.UTC()
 	}
 	return sessions
 }
@@ -185,6 +188,7 @@ func TestCreateSessionIntegration(t *testing.T) {
 				CreatedByUserUUID: userUUID,
 				Status:            "LOBBY",
 				LobbyExpiresAt:    lobbyExpiresAt,
+				ExpiresAt:         nowInDB.Add(defaultMaxLifetime),
 			}, sessions[0])
 			require.Equal(t, []integrationJoinCode{{SessionID: sessions[0].ID, Code: code, ExpiresAt: lobbyExpiresAt}}, joinCodesOf(t, db, sessions[0].ID))
 			sessionID := sessions[0].ID

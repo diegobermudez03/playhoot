@@ -123,6 +123,7 @@ func (c *sessionController) runCommand(ctx context.Context, player *connection, 
 		pending = &pendingCommand{token: command.Token, name: command.Name, payload: payload, done: make(chan struct{})}
 		tokens.pending[command.Token] = pending
 		s.enqueue(Operation{ParticipantID: player.participantID, Command: pending})
+		s.recordActivity()
 	}
 	c.unlock()
 	if !duplicate {

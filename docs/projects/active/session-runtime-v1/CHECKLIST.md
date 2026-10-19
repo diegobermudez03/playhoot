@@ -25,7 +25,7 @@ Progress note (2026-10-15): the API side is implemented and tested (`api/play/ow
 - [ ] Owner abstraction exists: Resolve(sessionID), Claim(sessionID), Release(sessionID) (Resolve and Claim exist as one atomic `LocateOrClaimOwner`, today a placeholder; Release does not exist yet)
 - [ ] Exactly one Runtime pod owns an active Session; two pods can never mutate the same Session concurrently (decision: lease/epoch/fencing mechanism)
 - [x] Browser never learns a pod address; routing is resolved before the request reaches Session logic (`OwnerPlacement.Address` never reaches a client; routing runs before the upgrade)
-- [ ] Owner released on Session termination and on controller destruction
+- [ ] Owner released on Session termination and on controller destruction (2026-10-18: an ended controller is dropped from the resolver with its Sandbox context, and its main goroutine calls `ownership.ReleaseOwner(sessionUUID, epoch)` whenever it ends: Session ended, controller retired, or shutdown; a release under a stale epoch must change nothing. `ReleaseOwner` is a placeholder until the registry exists)
 - [ ] Owner loss is detectable (needed by recovery and reconciliation)
 - [ ] Before more than one instance may own Sessions (separate gateway, or more than one instance of the single binary): shared registry, owner-renewed lease + heartbeat, self-fencing, epoch on owner-only durable writes, gateway-to-Runtime trusted identity, addressable-instance deployment. Instructions: `play/docs/decisions/SESSION-ADR-0029-live-session-ownership-and-owner-routing.md`
 
@@ -92,8 +92,8 @@ Progress note (2026-10-17): the boundary, decided with the human, is a set of op
 
 Progress note (2026-10-15): the parts Session creation needs are done and verified; lifecycle transitions, end causes, roster and checkpoints come with later operations.
 
-- [ ] Session persistence: lifecycle states (LOBBY, RUNNING, FINISHED, CANCELLED, EXPIRED, ABORTED) with enforced transitions
-- [ ] endCause recorded on terminal transitions (HOST_CANCELLED, ALL_PLAYERS_LEFT, INACTIVITY_TIMEOUT, MAX_LIFETIME, GAME_START_FAILURE, SCRIPT_FAILURE, RUNTIME_RECOVERY_TIMEOUT, UNRECOVERABLE_INFRA_FAILURE, ...)
+- [x] Session persistence: lifecycle states (LOBBY, RUNNING, FINISHED, CANCELLED, EXPIRED, ABORTED) with enforced transitions (2026-10-18: every terminal transition goes through `sessionlifecycle.EndSession`, whose cause table fixes the status and the statuses it may come from; unit and Postgres integration tests)
+- [ ] endCause recorded on terminal transitions (HOST_CANCELLED, ALL_PLAYERS_LEFT, INACTIVITY_TIMEOUT, MAX_LIFETIME, GAME_START_FAILURE, SCRIPT_FAILURE, RUNTIME_RECOVERY_TIMEOUT, UNRECOVERABLE_INFRA_FAILURE, ...) (2026-10-18: all but RUNTIME_RECOVERY_TIMEOUT, which comes with recovery and reconciliation; also GAME_FINISHED, LOBBY_EXPIRED and PLATFORM_TERMINATED)
 - [x] Pinned GameVersion reference stored
 - [x] creatorUUID stored
 - [x] Join code + expiry stored
@@ -140,8 +140,8 @@ Left for future steps, on purpose:
 - [x] Accepted: ADMIN logical connection registered; no gameplay participant, no extra durable membership row
 - [x] Rejected: rejection sent, socket closed
 - [x] Multiple simultaneous ADMIN connections for the same creator
-- [ ] Admin operations implemented: `SelectPerspective`, `StartSession` and `CancelSession` (`StartSession` is orchestrated by the Runtime since 2026-10-17, see G; `SelectPerspective` and `CancelSession` still answer "not implemented"), and `NextLobbyUpdate` (real since 2026-10-17)
-- [ ] Admin receives lobby updates until the lobby closes (`lobby_update` done end to end 2026-10-17: the first is the lobby as it is, then every change. Decided by the human 2026-10-17: a start ends the lobby with `session_started`, never `lobby_closed`; `lobby_closed` is only for a lobby that closes without starting (host cancels, lobby expires), and the Runtime must then end every player's connection. The API sends it and stops the stream; nothing in the Runtime produces it yet, since cancellation and expiry are not built)
+- [ ] Admin operations implemented: `SelectPerspective`, `StartSession` and `CancelSession` (`StartSession` is orchestrated by the Runtime since 2026-10-17, see G; `CancelSession` is real since 2026-10-18, see S; `SelectPerspective` still answers "not implemented"), and `NextLobbyUpdate` (real since 2026-10-17)
+- [ ] Admin receives lobby updates until the lobby closes (`lobby_update` done end to end 2026-10-17: the first is the lobby as it is, then every change. Decided by the human 2026-10-17: a start ends the lobby with `session_started`, never `lobby_closed`; `lobby_closed` is only for a lobby that closes without starting (host cancels, lobby expires), and the Runtime must then end every player's connection. The API sends it and stops the stream; changed 2026-10-18: the Runtime ends the connection with the Session's terminal status and cause, and the API sends `lobby_closed` with them, `{type, status, end_cause}`, when the client never got the start; `LobbyUpdate.Closed` was removed)
 - [ ] Creator who also plays may not watch another participant: `SelectPerspective` answers `creator_is_playing` while the creator has a PLAYER connection (decided by the human 2026-10-17; the outcome is declared, the controller check is not implemented)
 - [ ] Admin selects a player perspective; receives exactly projection(P), FULL, with a new baseline per selection
 - [ ] No omniscient admin projection
@@ -190,7 +190,7 @@ Progress note (2026-10-17): the Runtime side is implemented and tested; the dura
 - [x] Orphan checkpoint (written, but DB transition failed) is tolerated and cleanable; a RUNNING Session without recoverable initial state is impossible (no orphans can exist: the checkpoint is part of the start transaction; integration test)
 - [x] Runtime commits live mirror; project() for each player; START + FULL initial projection sent (mirror kept in the controller, `session_started` with roster and signed frontend URL, then a FULL `player_view` per connected player from `sandbox.Host.Project`; run end to end on 2026-10-18 against Postgres, the GCS emulator and real sandbox workers: session created, player joined, admin started, player got `session_started` and its FULL view from the seed script, the signed frontend URL served the package with a matching SHA-256, and the database held RUNNING, roster, checkpoint revision 1, released join code and status history)
 - [ ] start() script failure: retry once from the same pre-start state with fresh context (orchestration done and tested with mocks: same roster and seed, new context, flaky-start alert when the retry succeeds)
-- [ ] Second failure: Session ABORTED / GAME_START_FAILURE, never RUNNING, clients informed, transports closed (Runtime side done and tested: `AbortStart` called, admin answered `start_failed`, every connection ended `session_aborted`; the durable `AbortStart` is not implemented)
+- [x] Second failure: Session ABORTED / GAME_START_FAILURE, never RUNNING, clients informed, transports closed (2026-10-18: through `EndSession` (GAME_START_FAILURE, LOBBY -> ABORTED, join codes released); admin answered `start_failed`, every connection told ABORTED / GAME_START_FAILURE; controller and Postgres integration tests)
 - [ ] After Start: recovery, replay, and checkpoint scheduling begin; script sees only ParticipantIDs
 
 ---
@@ -205,7 +205,7 @@ Progress note (2026-10-17): a first, minimal controller exists (`play/runtime/in
 - [ ] Owns live state: connections, userUUID<->ParticipantID map, participant status, per-participant logical SAMPLE state, SAMPLE ingress/dedup buffers, COMMAND pending/processed tokens, timeline ordering, effective Session time, executedThroughSessionTime, Sandbox context ID, confirmed state mirror, PRNG state, contextRevision, projection cache, per-viewer replication state, checkpoint orchestration, replay capture orchestration (2026-10-18: per-participant SAMPLE ingress (max accepted, consumed, current inputs), the timeline, effective Session time, the confirmed mirror and per-connection last view and acknowledgement are held; COMMAND pending and processed tokens (2026-10-18); participant status pending; no timers, SESSION-ADR-0031)
 - [ ] Three state levels distinct and consistent: Sandbox context / Runtime confirmed mirror / durable checkpoint
 - [x] Controller created only when a Session first needs live behavior (created on the first admitted live connection)
-- [ ] Controller destroyed on terminal states (with owner release and Sandbox context destruction)
+- [ ] Controller destroyed on terminal states (with owner release and Sandbox context destruction) (2026-10-18: destroyed, its context discarded and its ownership released through the `ReleaseOwner` placeholder, `play_runtime_controllers_active`)
 
 ---
 
@@ -278,12 +278,12 @@ Timers were moved out of scope by the human 2026-10-18: no platform timers, time
 ## M. Sandbox execution (§11, §1 entrypoints, §1 determinism)
 
 - [x] Entrypoints: start, samples, command, update (optional), playerDisconnected (also run for leaving, SESSION-ADR-0032), playerRejoined (optional), project (2026-10-18: all of them)
-- [ ] Mutating entrypoints return full new global state + events + terminal FINISHED signal + COMMAND response (2026-10-18: state, the response for `command()`, and logical `errors` and `events` for the three)
+- [x] Mutating entrypoints return full new global state + events + terminal FINISHED signal + COMMAND response (2026-10-18: state, the response for `command()`, logical `errors` and `events`, and `finished: true` (decided by the human: the final state is the result), from samples, command, update, playerDisconnected and playerRejoined; start() cannot finish)
 - [x] project(globalState, participant, context) is pure and deterministic (no wall clock, no random, not even the controlled PRNG) (state deep-frozen, `Math.random` throws, globals frozen after load; `TestProjectCannotChangeTheContext`)
 - [x] Controlled deterministic PRNG; state is part of Runtime state and checkpoints; no uncontrolled Math.random as source of truth (done for start: seeded mulberry32, state exported and checkpointed; restoring it into a recreated context comes with recovery) (2026-10-18: a restored context continues with the same randomness, revision and time (`TestRestoredContextContinuesTheSameGame`))
 - [x] No access to DB, files, secrets, network, processes, or uncontrolled wall clock (corrected 2026-10-18: the earlier tick was wrong, a script could write into the mounted scratch directory and import `qjs:os`; now the patched qjs in `third_party/qjs` mounts nothing and gives fake clocks and randomness, the host helpers are removed, and the worker's empty environment is only defense in depth; `TestPatchedRuntimeHasNoHostCapabilities`, `TestStart/no_host_helper_is_reachable`)
 - [x] A batch of ordered operations is atomic: no partial output escapes (state, events, timers, responses, terminal signal commit as one) (2026-10-18: nothing commits or reaches a client unless samples() and every projection succeed; logical errors and events commit with it (2026-10-18), timers will join; boundary tests in `liveconnection`)
-- [ ] Terminal FINISHED mid-batch: later operations ignored
+- [x] Terminal FINISHED mid-batch: later operations ignored (2026-10-18: the worker stops at the finishing step; later commands answer `session_not_running`, later rejoins `session_unavailable`; sandbox `TestExecute`, `TestFinishingBoundary`, `TestFinishedAt`)
 - [x] Context revision advances on every successful batch, separate from projection revision and SAMPLE sequence (2026-10-18: the worker and the mirror advance it per batch; a result that does not follow the mirror's revision is out of sync and retried in a restored context; sandbox, controller and boundary tests in `liveconnection`)
 - [x] Executor/infrastructure failure: discard context, recreate from the last confirmed Runtime mirror, retry batch (2026-10-18: retried once in the boundary; if it still fails the transitions are put back for the next boundary, and after 50 boundaries in a row the Session is aborted (UNRECOVERABLE_INFRA_FAILURE); boundary tests in `liveconnection`)
 - [x] Script failure arrives as a valid protocol response with SCRIPT_ERROR body; retry once from the same confirmed pre-batch state (2026-10-18: boundary tests in `liveconnection`)
@@ -303,7 +303,7 @@ Timers were moved out of scope by the human 2026-10-18: no platform timers, time
 - [ ] FULL projection + fresh baseline on: new transport attach, admin selects a player, reconnect, recovery (2026-10-18: start, reattach, device switch, rejoin and resync send a FULL view from the projection cache and make it the connection's new baseline; admin perspective selection and pod recovery are pending)
 - [x] Resync is a platform operation (FE or Runtime requests); sends FULL projection + current consumed SAMPLE ack (PLAYER) + fresh baseline (2026-10-18: a player's `resync` gets a FULL view from the projection cache with the current acknowledgement and the next revision, never reaching the script; nothing before the game runs or from a replaced connection; metric `play_runtime_resyncs_total`; the Runtime asks for one itself through FULL views on reattach and rejoin)
 - [ ] After pod recovery the cache is rebuilt via project()
-- [ ] Immediate flush on Command completion, important events, Start, Finish (2026-10-18: Command and Start done)
+- [ ] Immediate flush on Command completion, important events, Start, Finish (2026-10-18: Command, Start and Finish done)
 - [x] Raw global state never reaches the browser (§30.19) (2026-10-18: connections only receive projections; the global state only goes to the mirror, the checkpoint and the replay capture)
 
 ---
@@ -399,16 +399,19 @@ Implemented 2026-10-18 (decided by the human: `playerRejoined(state, participant
 
 ## S. Session termination (§23)
 
-- [ ] FINISHED: Sandbox success with FINISHED -> commit -> force durable final Replay state / game result -> durable FINISHED -> final live state/events to connected users -> close transports -> destroy Sandbox context + controller -> release owner
-- [ ] CANCELLED (host), EXPIRED (lobby/inactivity), ABORTED (unrecoverable) complete without calling JavaScript
-- [ ] Clients receive a platform terminal message with cause
-- [ ] FINISHED Sessions are historical only; no live reactivation (§30.26)
+Implemented 2026-10-18 (decided by the human: `finished: true` with the final state as the result; a durable `play_sessions.expires_at` set at creation; a `session_ended` / `lobby_closed` message with `status` and `end_cause` before closing; platform termination ends as CANCELLED / PLATFORM_TERMINATED). One durable path, `sessionlifecycle.EndSession` (it replaced `AbortStart`, `AbortRunningSession` and `CancelAbandonedSession`), and one live path, the controller's `endSession`. Run end to end against a fresh database: host cancel in the lobby and while running.
+
+- [ ] FINISHED: Sandbox success with FINISHED -> commit -> force durable final Replay state / game result -> durable FINISHED -> final live state/events to connected users -> close transports -> destroy Sandbox context + controller -> release owner (2026-10-18: implemented in this order, retried each tick on failure; but `replay.Finish` is the placeholder that stores nothing (R) and `ReleaseOwner` the one that releases nothing (A1))
+- [x] CANCELLED (host), EXPIRED (lobby/inactivity), ABORTED (unrecoverable) complete without calling JavaScript (2026-10-18: also MAX_LIFETIME and PLATFORM_TERMINATED; controller tests)
+- [x] Clients receive a platform terminal message with cause (2026-10-18: `session_ended` or `lobby_closed`, `{type, status, end_cause}`, then close 1000; API tests and the end-to-end run)
+- [x] FINISHED Sessions are historical only; no live reactivation (§30.26) (2026-10-18: owner routing answers 404 for any ended Session, checked by the end-to-end run; the ended controller is gone)
+- [ ] Platform-forced termination wired to its triggers (limits, consumption): `ControllerResolver.TerminateSession` is ready and tested, nothing calls it yet (requested by the human 2026-10-18)
 
 ---
 
 ## T. Reconciliation / lifecycle jobs (§24)
 
-- [ ] Expired LOBBY Sessions marked EXPIRED
+- [ ] Expired LOBBY Sessions marked EXPIRED (2026-10-18: only while their controller lives, which checks every second; a lobby without one needs this job)
 - [ ] RUNNING without a valid live owner: not aborted immediately; after the recovery/owner-loss window, marked ABORTED with the right cause
 - [ ] "Valid owner" defined by the owner registry/lease (see A1)
 - [ ] No transparent suspension of healthy controllers; a running Session stays live while meaningfully active
@@ -417,11 +420,11 @@ Implemented 2026-10-18 (decided by the human: `playerRejoined(state, participant
 
 ## U. Inactivity and lifetime (§25)
 
-- [ ] Maximum Session lifetime enforced
-- [ ] Meaningful-inactivity timeout enforced
-- [ ] Counts as activity: distinct SAMPLE changes after dedup, COMMANDs
-- [ ] Does NOT count: identical refreshes, ping/pong, acks/resync metadata, update() calls
-- [ ] An update() game cannot consume compute indefinitely without human interaction (open: update() exists since 2026-10-18 but the inactivity timeout does not, so today it does, see Placeholders)
+- [x] Maximum Session lifetime enforced (2026-10-18: `play_sessions.expires_at`, creation + 4 h, checked every second by the controller in its lobby and running, EXPIRED / MAX_LIFETIME; a Session without a live controller waits for T)
+- [x] Meaningful-inactivity timeout enforced (2026-10-18: 10 minutes of platform time in a running game, EXPIRED / INACTIVITY_TIMEOUT; a lobby is bounded by its own expiry)
+- [x] Counts as activity: distinct SAMPLE changes after dedup, COMMANDs (2026-10-18: `TestEnforceLimits`)
+- [x] Does NOT count: identical refreshes, ping/pong, acks/resync metadata, update() calls (2026-10-18: `TestEnforceLimits`; inactivity is reset at start, adoption included)
+- [x] An update() game cannot consume compute indefinitely without human interaction (2026-10-18: the inactivity timeout ends it, and its controller and context with it)
 
 ---
 
@@ -443,7 +446,7 @@ Implemented 2026-10-18 (decided by the human: `playerRejoined(state, participant
 - [ ] Guest creation rate limiting at the API edge (pending task, 2026-10-17): `POST /v1/guests` needs no token, so anyone can create Users with it; it must be limited per client (for example per IP) before production
 - [ ] Per-message-type rate limiting at the API edge (pending task, requested by the human 2026-10-17). Every live connection reads with one loop that hands each message to its type's own lane (`api/internal/live/lanes.go`: one goroutine per type, so SAMPLEs only wait for SAMPLEs, COMMANDs for COMMANDs, resyncs for resyncs). Handing off never blocks, so a lane's queue is unbounded: until this limit exists, a client sending faster than its lane is handled grows that queue without bound. The limit must be enforced per type before enqueueing, and bound each lane's queue.
 - [x] Sandbox: CPU/execution budget, memory, deadline, state/output size, non-cooperative code protection (5 s budget per call by killing the worker, 64 MiB memory, 1 MiB stack, 256 KiB state/view, soft 160 MiB Go heap per worker; per instance `SANDBOX_MAX_CONTEXTS` (default 32) and `SANDBOX_MAX_CONCURRENT_EXECUTIONS` (default CPUs), Start answers `sandbox_unavailable` without capacity; tests for each)
-- [ ] Session: max lifetime, inactivity timeout, owner/recovery deadlines, bounded Replay and checkpoint queues
+- [ ] Session: max lifetime, inactivity timeout, owner/recovery deadlines, bounded Replay and checkpoint queues (2026-10-18: max lifetime and inactivity done)
 - [ ] Scripts cannot request higher tick rates or unbounded buffers
 - [ ] All numeric values chosen and configurable (decision)
 
@@ -474,8 +477,8 @@ Foundation (existing: `logging` package, `monitoring` package with alerts only, 
 - [ ] Metric cardinality is controlled (no per-session or per-user labels on high-volume metrics)
 
 Session lifecycle:
-- [ ] Sessions by state and endCause (created, started, finished, cancelled, expired, aborted)
-- [ ] Active controllers and active Sessions per pod
+- [ ] Sessions by state and endCause (created, started, finished, cancelled, expired, aborted) (2026-10-18: endings recorded as `play_session_ended_total{cause}`; emission pending)
+- [ ] Active controllers and active Sessions per pod (2026-10-18: `play_runtime_controllers_active`; emission pending)
 - [ ] Create-session / join / start / rejoin outcomes (accepted vs rejected, by reason) and latency
 - [ ] Start duration end-to-end and start-failure counts (incl. orphan checkpoints) (declared and recorded 2026-10-17: `play_runtime_session_start_total{outcome}`, `play_runtime_session_start_duration_seconds{outcome}`, `play_runtime_start_script_failures_total`, `play_session_start_commit_total{outcome}`, `play_session_start_aborted_total`; orphan checkpoints cannot happen; emission pending)
 
@@ -541,20 +544,21 @@ Everything here is wired into the running system, so a request flows through it,
 - [ ] Game playability check (`game/usecases/checkplayability`, out of scope): answers `true` for any Game and user. Real behavior: the Game exists, has a published version, and is visible to the user.
 - [x] Session creation stand-in (`unwiredSessionCreation` in `unwired.go`, in scope): always failed. Replaced by `sessionlifecycle.Manager.CreateSession` on 2026-10-15; `unwired.go` was deleted.
 - [ ] No flow creates `play_games` / `play_game_versions` (in scope, see B): nothing registers Games or marks a version EXECUTABLE yet, so every Session creation answers `game_unavailable` until those rows exist (outside production, test-data migrations seed one playable and one unavailable Game; see `play/CURRENT_STATE.md`). Real behavior: the operation that validates a version's scripts, freezes it, and sets it EXECUTABLE as the Game's current version.
-- [ ] Live Session ownership (`play/runtime/usecases/ownership`, in scope, see A1): `LocateOrClaimOwner` answers `owned_here` with epoch 1 for every live Session, without keeping a registry (since 2026-10-18 it claims only live Sessions: `checklivesession` answers LOBBY before its expiry or RUNNING, anything else is `session_unavailable`, so no controller is created for it). Real behavior: in-process registry with release; shared registry + lease/heartbeat before multi-instance (SESSION-ADR-0029).
+- [ ] Live Session ownership (`play/runtime/usecases/ownership`, in scope, see A1): `LocateOrClaimOwner` answers `owned_here` with epoch 1 for every live Session, without keeping a registry (since 2026-10-18 it claims only live Sessions: `checklivesession` answers LOBBY before its expiry or RUNNING, anything else is `session_unavailable`, so no controller is created for it). Since 2026-10-18 `ReleaseOwner(sessionUUID, epoch)` exists and every controller calls it when it ends, but it releases nothing. Real behavior: in-process registry with release; shared registry + lease/heartbeat before multi-instance (SESSION-ADR-0029).
 - [x] Admin join eligibility (`play/session/usecases/checkadminjoin`, in scope, see E): replaced by the real check on 2026-10-17 (the Session exists, the user created it, and it is RUNNING or in a LOBBY whose expiry has not passed).
-- [ ] Admin operations (`play/runtime/workflows/liveconnection`, in scope, see E): `SelectPerspective` and `CancelSession` return "not implemented", and `NextView` never produces a view (lobby updates are real since 2026-10-17; `StartSession` is orchestrated since 2026-10-17, see G). Real behavior: perspective selection with FULL projection, host cancellation.
+- [ ] Admin operations (`play/runtime/workflows/liveconnection`, in scope, see E): `SelectPerspective` returns "not implemented", and `NextView` never produces a view (lobby updates are real since 2026-10-17; `StartSession` is orchestrated since 2026-10-17, see G; `CancelSession` is real since 2026-10-18, see S). Real behavior: perspective selection with FULL projection.
 - [x] Durable side of Start (`unwiredSessionStart` in `unwired.go`, in scope, see G): replaced on 2026-10-17 by `sessionlifecycle` (`CheckStartEligibility`, `CommitStart`, `AbortStart`) and `frontendaccess.FrontendAccess`; the stand-in was deleted. It used to: always fail so every `start_session` with a valid lobby fails the call and the API closes the admin connection with 1011. Real behavior: a `play/session` use case validating Start, signing a short-lived URL to the pinned version's frontend package in object storage (needs the frontend artifact locator on the game version and its identity in the manifest, see B), storing the checkpoint durably, committing roster + checkpoint reference + RUNNING in one transaction, and marking ABORTED / GAME_START_FAILURE.
 - [ ] Object storage for deployed environments (`play/session/storage.Open`, in scope, see B and G): locally the `gcs` service of `docker-compose` (fake-gcs-server) is configured since 2026-10-18 by environment variables (signing under an emulator uses a throwaway key, since the emulator has no credentials and checks no signature; `TestGCSSignedURLServesTheObject`); without `GCS_PROJECT_ID` / `GCS_BUCKET` every storage call still fails. Real behavior: each deployed environment's bucket and a Cloud Run identity allowed to sign through IAM.
 - [x] Sandbox execution contexts (`unwiredSandbox` in `unwired.go`, in scope, see G and M): replaced on 2026-10-17 by `sandbox.Host`; `unwired.go` was deleted.
-- [ ] Sandbox contexts of running games (`play/runtime/sandbox`, in scope, see H and M): never discarded, since controllers are never destroyed; they live until the process exits. Real behavior: discarded when the Session ends or its controller is retired.
+- [x] Sandbox contexts of running games (`play/runtime/sandbox`, in scope, see H and M): discarded since 2026-10-18 when the Session ends here, whatever the cause, or its controller is retired.
 - [x] Player admission (`unwiredPlayerAdmission` in `unwired.go`, in scope, see F): replaced on 2026-10-17 by `liveconnection.Manager.AttachPlayer`; `unwired.go` was deleted.
 - [ ] Player operations of a running game (`play/runtime/workflows/liveconnection`, in scope, see I, J, M): the controller has a phase (lobby, running; Start will move it to running) and lobby behavior only applies in the lobby: there `Sample` is dropped, `Resync` does nothing, `NextView` never produces a view and `Command` answers `session_not_running`. During a Start attempt `Leave` answers "not implemented" (in a running game it is real since 2026-10-18, see O3; `Command` too, see J), and in a running game new players are rejected as `session_started`; lobby updates are never sent once running. Since 2026-10-18 `Disconnect` starts the transport grace and participants reattach within it (O1); a participant whose grace ran out is rejected `participant_disconnected`, the placeholder for rejoin (O4).
 - [x] Join code resolution (`unwiredJoinCodes` in `unwired.go`, in scope, see A3): replaced on 2026-10-17 by `play/session/usecases/resolvejoincode` (the Session of an active, unexpired join code; `not_found` otherwise); the stand-in was deleted.
-- [ ] Controller lifetime (`play/runtime/workflows/liveconnection`, in scope, see H): controllers are created but never destroyed or released, so they accumulate for the process lifetime. Real behavior: destroyed on terminal states with owner release.
+- [ ] Controller lifetime (`play/runtime/workflows/liveconnection`, in scope, see H): since 2026-10-18 a controller is destroyed when its Session ends and calls the `ReleaseOwner` placeholder (no registry, A1); a controller created for a rejected connection lives until its lobby deadline ends it.
 - [ ] Forwarding to a remote owner (`api/play/owner_routing.go`, in scope, see A1): a Session owned by another instance is answered `503`; unreachable while single-instance. Real behavior: proxy the connection to the owner (gateway), decided with the multi-instance topology.
-- [ ] Replay recorder (`unwiredReplay` in `unwired.go`, in scope, see R): every capture a running game offers is dropped. Real behavior: the Replay Recorder building chunks (FULL_STATE, STATE_DELTA, events, command responses, which captures already carry) and persisting them asynchronously, bounded and best effort.
-- [ ] Running games never stop by themselves (`play/runtime/workflows/liveconnection`, in scope, see S and U): a controller keeps ticking until its Session is aborted, it is retired or the process stops, even with every player gone, so its Sandbox worker stays alive too; a game with update() keeps executing and projecting every tick meanwhile. Real behavior: inactivity, maximum lifetime and finishing end the Session, its lane, controller and context.
+- [ ] Replay recorder (`unwiredReplay` in `unwired.go`, in scope, see R): every capture a running game offers is dropped, and `Finish` drops a finished game's final capture while reporting success (2026-10-18), so FINISHED is reached without the durable final replay state. Real behavior: the Replay Recorder building chunks (FULL_STATE, STATE_DELTA, events, command responses, which captures already carry) and persisting them asynchronously, bounded and best effort.
+- [x] Running games never stop by themselves (`play/runtime/workflows/liveconnection`, in scope, see S and U): replaced 2026-10-18 by finishing, inactivity and maximum lifetime, which end the Session, its controller and context.
+- [ ] Platform termination (`ControllerResolver.TerminateSession`, in scope, see S): ready and tested, nothing calls it (2026-10-18). Real behavior: called by the limits/consumption policy once it exists; a Session owned by another instance must be reached through its owner (A1).
 - [ ] View delivery has no backpressure (`play/runtime/workflows/liveconnection`, in scope, see W): a slow connection's queued views grow without bound. Real behavior: coalesce into one FULL view when a connection falls behind.
 - [ ] Metrics emission (`monitoring/metrics`, `record`): measurements are only written to the request log; nothing is sent to a metrics backend (see Y).
 
@@ -586,7 +590,7 @@ Each needs at least one test or other concrete evidence before ticking.
 - [ ] 22. Recovery may roll back
 - [ ] 23. Recovery and Replay are separate
 - [ ] 24. Replay never blocks gameplay indefinitely
-- [ ] 25. FINISHED has a durable ending
-- [ ] 26. Finished Sessions are historical, not live
-- [ ] 27. Platform termination does not depend on script cleanup
+- [ ] 25. FINISHED has a durable ending (2026-10-18: FINISHED is durable before clients learn it, but the final replay state waits for R)
+- [x] 26. Finished Sessions are historical, not live (2026-10-18: an ended Session's controller is gone and owner routing answers 404; end-to-end run)
+- [x] 27. Platform termination does not depend on script cleanup (2026-10-18: cancel, expiry, abort and platform termination call no JavaScript; controller tests)
 - [ ] 28. Published GameVersion stays available

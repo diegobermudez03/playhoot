@@ -55,6 +55,8 @@ func (c *sessionController) acceptSample(ctx context.Context, player *connection
 		return nil
 	}
 	s.enqueueTransition(player.participantID, snapshot)
+	// Only a distinct transition is someone playing; a refresh is not.
+	s.recordActivity()
 	samplesReceived.Inc(ctx, sampleResultLabel.Value(sampleTransition))
 	return nil
 }

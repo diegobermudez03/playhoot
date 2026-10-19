@@ -36,6 +36,7 @@ type testSession struct {
 	CreatedByUserUUID string
 	Status            string
 	LobbyExpiresAt    time.Time
+	ExpiresAt         time.Time
 }
 
 func (testSession) TableName() string { return "play_sessions" }
@@ -64,6 +65,7 @@ func seedJoinCode(t *testing.T, db *gorm.DB, code string, expiresAt time.Time, r
 		CreatedByUserUUID: uuid.NewString(),
 		Status:            "LOBBY",
 		LobbyExpiresAt:    expiresAt,
+		ExpiresAt:         expiresAt.Add(4 * time.Hour),
 	}
 	require.NoError(t, db.Create(&session).Error)
 	require.NoError(t, db.Create(&testJoinCode{SessionID: session.ID, Code: code, ExpiresAt: expiresAt, ReleasedAt: releasedAt}).Error)

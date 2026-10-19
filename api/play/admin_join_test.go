@@ -31,7 +31,7 @@ type fakeAdmin struct {
 
 	endOnce sync.Once
 	ended   chan struct{}
-	reason  runtime.EndReason
+	ending  runtime.ConnectionEnd
 
 	mu          sync.Mutex
 	selected    []string
@@ -58,12 +58,20 @@ func startedFakeAdmin(views ...runtime.PlayerView) *fakeAdmin {
 }
 
 func (f *fakeAdmin) end(reason runtime.EndReason) {
+	f.endWith(runtime.ConnectionEnd{Reason: reason})
+}
+
+// endWith ends the connection as the Runtime would when the Session ended.
+func (f *fakeAdmin) endWith(ending runtime.ConnectionEnd) {
 	f.endOnce.Do(func() {
-		f.reason = reason
+		f.ending = ending
 		close(f.ended)
 		f.closeLobby()
 	})
 }
+
+// hostCancelled is how a fake's connection ends when its Session is cancelled.
+var hostCancelled = runtime.ConnectionEnd{Reason: runtime.EndSessionEnded, SessionStatus: "CANCELLED", EndCause: "HOST_CANCELLED"}
 
 // roster is the Session start the fakes report.
 var roster = runtime.SessionStart{
@@ -156,7 +164,7 @@ func (f *fakeAdmin) connection() runtime.AdminConnection {
 			if f.finalView != nil {
 				f.views <- *f.finalView
 			}
-			f.end(runtime.EndSessionEnded)
+			f.endWith(hostCancelled)
 			return runtime.CancelSessionResult{Outcome: runtime.SessionCancelled}, nil
 		},
 		NextLobbyUpdate: f.nextLobbyUpdate,
@@ -169,7 +177,7 @@ func (f *fakeAdmin) connection() runtime.AdminConnection {
 		Ended: func(ctx context.Context) (runtime.ConnectionEnd, bool) {
 			select {
 			case <-f.ended:
-				return runtime.ConnectionEnd{Reason: f.reason}, true
+				return f.ending, true
 			case <-ctx.Done():
 				return runtime.ConnectionEnd{}, false
 			}
@@ -302,17 +310,14 @@ func TestHandleAdminJoin(t *testing.T) {
 		"lobby_updates_are_delivered_until_the_lobby_closes": func(t *testing.T, deps dependencies) test {
 			admin := newFakeAdmin()
 			admin.lobby <- runtime.LobbyUpdate{Members: []runtime.LobbyMember{{UserUUID: "u1"}, {UserUUID: "u2"}}}
-			admin.lobby <- runtime.LobbyUpdate{Closed: true}
-			// Never sent: nothing follows lobby_closed.
-			admin.lobby <- runtime.LobbyUpdate{Members: []runtime.LobbyMember{{UserUUID: "u3"}}}
-			admin.end(runtime.EndSessionEnded)
+			admin.endWith(runtime.ConnectionEnd{Reason: runtime.EndSessionEnded, SessionStatus: "EXPIRED", EndCause: "LOBBY_EXPIRED"})
 			accept(deps, admin)
 			return test{
 				protocols: []string{"playhoot.v1"},
 				admin:     admin,
 				expectedReceived: []string{
 					`{"type":"lobby_update","members":[{"user_uuid":"u1"},{"user_uuid":"u2"}]}`,
-					`{"type":"lobby_closed"}`,
+					`{"type":"lobby_closed","status":"EXPIRED","end_cause":"LOBBY_EXPIRED"}`,
 				},
 				expectedCloseStatus: websocket.StatusNormalClosure,
 				expectedDisconnects: 1,
@@ -322,10 +327,13 @@ func TestHandleAdminJoin(t *testing.T) {
 			admin := newFakeAdmin()
 			accept(deps, admin)
 			return test{
-				protocols:           []string{"playhoot.v1"},
-				admin:               admin,
-				clientSends:         []string{`{"type":"cancel_session"}`},
-				expectedReceived:    []string{`{"type":"cancel_session_result","outcome":"cancelled"}`},
+				protocols:   []string{"playhoot.v1"},
+				admin:       admin,
+				clientSends: []string{`{"type":"cancel_session"}`},
+				expectedReceived: []string{
+					`{"type":"cancel_session_result","outcome":"cancelled"}`,
+					`{"type":"lobby_closed","status":"CANCELLED","end_cause":"HOST_CANCELLED"}`,
+				},
 				expectedCloseStatus: websocket.StatusNormalClosure,
 				expectedDisconnects: 1,
 			}
@@ -342,6 +350,7 @@ func TestHandleAdminJoin(t *testing.T) {
 					`{"type":"session_started",` + rosterJSON + `}`,
 					`{"type":"cancel_session_result","outcome":"cancelled"}`,
 					`{"type":"player_view","participant_id":"P1","full":true,"revision":9,"state":{"over":true}}`,
+					`{"type":"session_ended","status":"CANCELLED","end_cause":"HOST_CANCELLED"}`,
 				},
 				expectedCloseStatus: websocket.StatusNormalClosure,
 				expectedDisconnects: 1,

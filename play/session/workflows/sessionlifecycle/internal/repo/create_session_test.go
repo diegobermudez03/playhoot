@@ -250,6 +250,7 @@ func TestCreateSession(t *testing.T) {
 		createdByUserUUID string
 		status            string
 		lobbyExpiresAt    time.Time
+		expiresAt         time.Time
 	}
 
 	tests := map[string]func(t *testing.T, db *gorm.DB) test{
@@ -260,6 +261,7 @@ func TestCreateSession(t *testing.T) {
 				createdByUserUUID: uuid.NewString(),
 				status:            "LOBBY",
 				lobbyExpiresAt:    time.Date(2026, 10, 15, 12, 30, 0, 0, time.UTC),
+				expiresAt:         time.Date(2026, 10, 15, 16, 0, 0, 0, time.UTC),
 			}
 		},
 	}
@@ -271,7 +273,7 @@ func TestCreateSession(t *testing.T) {
 			tc := setup(t, db)
 
 			createdAt := time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)
-			created, err := repo.CreateSession(context.Background(), db, tc.gameVersionID, tc.createdByUserUUID, tc.status, tc.lobbyExpiresAt, createdAt)
+			created, err := repo.CreateSession(context.Background(), db, tc.gameVersionID, tc.createdByUserUUID, tc.status, tc.lobbyExpiresAt, tc.expiresAt, createdAt)
 
 			require.NoError(t, err)
 			require.NotZero(t, created.ID)
@@ -279,7 +281,7 @@ func TestCreateSession(t *testing.T) {
 			require.NoError(t, err)
 
 			var stored session
-			require.NoError(t, db.Raw(`SELECT id, uuid, game_version_id, created_by_user_uuid, status, lobby_expires_at FROM play_sessions WHERE id = ?`, created.ID).Scan(&stored).Error)
+			require.NoError(t, db.Raw(`SELECT id, uuid, game_version_id, created_by_user_uuid, status, lobby_expires_at, expires_at FROM play_sessions WHERE id = ?`, created.ID).Scan(&stored).Error)
 			require.Equal(t, session{
 				ID:                created.ID,
 				UUID:              created.UUID,
@@ -287,6 +289,7 @@ func TestCreateSession(t *testing.T) {
 				CreatedByUserUUID: tc.createdByUserUUID,
 				Status:            tc.status,
 				LobbyExpiresAt:    tc.lobbyExpiresAt,
+				ExpiresAt:         tc.expiresAt,
 			}, session{
 				ID:                stored.ID,
 				UUID:              stored.UUID,
@@ -294,6 +297,7 @@ func TestCreateSession(t *testing.T) {
 				CreatedByUserUUID: stored.CreatedByUserUUID,
 				Status:            stored.Status,
 				LobbyExpiresAt:    stored.LobbyExpiresAt.UTC(),
+				ExpiresAt:         stored.ExpiresAt.UTC(),
 			})
 			require.Equal(t, []testStatusChange{{ToStatus: tc.status, ChangedByUserUUID: &tc.createdByUserUUID, ChangedAt: createdAt}},
 				statusChangesOf(t, db, created.ID), "the history starts with the creation, by its creator")

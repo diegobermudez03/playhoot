@@ -59,6 +59,7 @@ func migration20261015000000PlaySessions() *gormigrate.Migration {
 					status TEXT NOT NULL CHECK (status IN ('LOBBY', 'RUNNING', 'FINISHED', 'CANCELLED', 'EXPIRED', 'ABORTED')),
 					end_cause TEXT NULL,
 					lobby_expires_at TIMESTAMPTZ NOT NULL,
+					expires_at TIMESTAMPTZ NOT NULL,
 					created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 					updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 				)`,

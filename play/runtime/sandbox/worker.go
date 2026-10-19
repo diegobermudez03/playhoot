@@ -201,7 +201,8 @@ func (w *worker) start(req workerRequest) workerResponse {
 // execute runs a batch's steps in order on the confirmed state, each at its
 // Session time: samples, update, command (also returning a response),
 // playerDisconnected or playerRejoined (also returning accepted), each
-// returning {state} plus optional errors and events. All succeed or none.
+// returning {state} plus optional errors, events and finished. A step that
+// finishes the game is the last one run. All succeed or none.
 func (w *worker) execute(req workerRequest) workerResponse {
 	if !w.started {
 		return fatal("game not started")
@@ -215,6 +216,7 @@ func (w *worker) execute(req workerRequest) workerResponse {
 	var gameErrors []workerError
 	var gameEvents []workerEvent
 	var rejoins []bool
+	var finishedStep *int
 	for index, step := range req.Steps {
 		if step.SessionTime < at {
 			return fatal("session time cannot go back")
@@ -285,6 +287,15 @@ func (w *worker) execute(req workerRequest) workerResponse {
 		gameErrors = append(gameErrors, stepErrors...)
 		gameEvents = append(gameEvents, stepEvents...)
 		at = step.SessionTime
+		finished, failure := finishedOf(entrypoint, returned.Finished)
+		if failure != nil {
+			w.broken = true
+			return *failure
+		}
+		if finished {
+			finishedStep = &index
+			break
+		}
 	}
 	randomState, err := w.randomState()
 	if err != nil {
@@ -296,6 +307,7 @@ func (w *worker) execute(req workerRequest) workerResponse {
 	return workerResponse{
 		State: state, PRNGState: encodeRandomState(randomState), ContextRevision: w.revision,
 		CommandResponses: responses, Errors: gameErrors, Events: gameEvents, RejoinsAccepted: rejoins,
+		FinishedStep: finishedStep,
 	}
 }
 
@@ -306,6 +318,7 @@ type entrypointResult struct {
 	Errors   json.RawMessage `json:"errors"`
 	Events   json.RawMessage `json:"events"`
 	Accepted json.RawMessage `json:"accepted"`
+	Finished json.RawMessage `json:"finished"`
 }
 
 // resultOf reads what a mutating entrypoint returned as {state, response,
@@ -335,6 +348,19 @@ func resultOf(entrypoint string, result string) (entrypointResult, *workerRespon
 		shape.Response = json.RawMessage(`null`)
 	}
 	return shape, nil
+}
+
+// finishedOf reads whether a step finished the game: missing, null, false or
+// true.
+func finishedOf(entrypoint string, finished json.RawMessage) (bool, *workerResponse) {
+	switch string(finished) {
+	case "", "null", "false":
+		return false, nil
+	case "true":
+		return true, nil
+	}
+	failure := scriptFailure(entrypoint + "() must return finished as true or false")
+	return false, &failure
 }
 
 // acceptedOf reads playerRejoined()'s decision, which must be a boolean.

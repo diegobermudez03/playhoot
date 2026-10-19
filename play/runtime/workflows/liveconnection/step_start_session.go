@@ -22,7 +22,6 @@ import (
 type sessionStarter interface {
 	CheckStartEligibility(ctx context.Context, sessionUUID string, userUUID string, playerCount int) (sessionpkg.StartEligibility, error)
 	CommitStart(ctx context.Context, sessionUUID string, userUUID string, commit sessionpkg.StartCommit) (sessionpkg.CommitStartOutcome, error)
-	AbortStart(ctx context.Context, sessionUUID string) error
 	LoadRunningSession(ctx context.Context, sessionUUID string) (sessionpkg.RunningSession, error)
 }
 
@@ -160,11 +159,7 @@ func (c *sessionController) startFrozenLobby(ctx context.Context, userUUID strin
 		return "", err
 	}
 	if !started {
-		if err := c.deps.starts.AbortStart(ctx, c.sessionUUID); err != nil {
-			return "", fmt.Errorf("aborting session: %w", err)
-		}
-		c.abortStart()
-		return runtime.StartFailed, nil
+		return c.abortStart(ctx)
 	}
 
 	outcome, err := c.commitStart(ctx, userUUID, participants, game)
@@ -400,6 +395,7 @@ func (c *sessionController) completeStart(participants []runtime.Participant, ga
 	s.lobby = nil
 	s.runningSince = s.now()
 	s.baseSessionTimeMs = game.ExecutedThroughSessionTimeMs
+	s.lastActivity = s.runningSince
 	defaults := s.manifest.Inputs.Defaults()
 	for _, participant := range participants {
 		s.inputs[participant.ParticipantID] = &participantInputs{current: defaults}
@@ -435,13 +431,16 @@ func (c *sessionController) completeStart(participants []runtime.Participant, ga
 	}
 }
 
-// abortStart ends the Session after its game failed to start: every
-// connection ends as aborted.
-func (c *sessionController) abortStart() {
-	s := c.lock()
-	defer c.unlock()
-	if s.phase != phaseStarting {
-		return
+// abortStart ends the Session after its game failed to start, durably and
+// then live: every connection learns it was aborted. A Session that did not
+// end is an error, so the attempt is cancelled.
+func (c *sessionController) abortStart(ctx context.Context) (runtime.StartSessionOutcome, error) {
+	result, err := c.endSession(ctx, sessionpkg.SessionEnd{Cause: sessionpkg.EndGameStartFailure}, nil)
+	if err != nil {
+		return "", fmt.Errorf("aborting session: %w", err)
 	}
-	c.end(s, runtime.EndSessionAborted)
+	if result.EndCause == "" {
+		return "", fmt.Errorf("aborting session: it is %s and did not end", result.Status)
+	}
+	return runtime.StartFailed, nil
 }

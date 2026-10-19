@@ -30,6 +30,7 @@ import (
 	"github.com/diegobermudez03/playhoot/play/session/usecases/checkplayerjoin"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/frontendaccess"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/loadruntimemanifest"
+	"github.com/diegobermudez03/playhoot/play/session/usecases/loadsessionlimits"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/resolvejoincode"
 	"github.com/diegobermudez03/playhoot/play/session/workflows/sessionlifecycle"
 	"github.com/joho/godotenv"
@@ -133,7 +134,8 @@ func run() error {
 
 	sessionLifecycle := sessionlifecycle.New(db, store)
 	playLifecycle := playlifecycle.New(checkplayability.New(), sessionLifecycle)
-	liveConnections := liveconnection.New(checkadminjoin.New(db), checkplayerjoin.New(db), loadruntimemanifest.New(db), sessionLifecycle, sessionLifecycle, sessionLifecycle, frontendaccess.New(db, store), sandboxHost, unwiredReplay{})
+	owners := ownership.New(checklivesession.New(db))
+	liveConnections := liveconnection.New(checkadminjoin.New(db), checkplayerjoin.New(db), loadruntimemanifest.New(db), loadsessionlimits.New(db), sessionLifecycle, sessionLifecycle, frontendaccess.New(db, store), sandboxHost, unwiredReplay{}, owners)
 	// Closed before the sandbox, deferred later: controllers stop first, so
 	// shutting down never fails a running game.
 	defer liveConnections.Close()
@@ -141,7 +143,7 @@ func run() error {
 		authorize.New(),
 		createguest.New(),
 		playLifecycle,
-		ownership.New(checklivesession.New(db)),
+		owners,
 		liveConnections,
 		liveConnections,
 		resolvejoincode.New(db),

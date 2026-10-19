@@ -120,7 +120,7 @@ func TestAttachPlayer(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			deps := dependencies{players: NewMockplayerJoinChecker(ctrl), manifests: NewMockmanifestLoader(ctrl)}
 			tc := setup(t, deps)
-			resolver := New(nil, deps.players, deps.manifests, nil, nil, nil, nil, nil, nil)
+			resolver := New(nil, deps.players, deps.manifests, nil, nil, nil, nil, nil, nil, ownersReleasing(t, sessionUUID, 1, 2))
 			t.Cleanup(resolver.Close)
 			if tc.before != nil {
 				tc.before(resolver)

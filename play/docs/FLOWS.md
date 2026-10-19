@@ -150,13 +150,33 @@ sequenceDiagram
 
 Because the checkpoint is written in the same transaction, a RUNNING Session always has a recoverable initial state and no orphan checkpoint can exist. Any failure rolls everything back.
 
-### Abort Start
+A start whose script fails twice ends the Session through End Session with `GAME_START_FAILURE` (LOBBY -> ABORTED).
 
-`sessionlifecycle.Manager.AbortStart(sessionUUID)`, in one transaction: locks the Session; if it is still LOBBY, sets it ABORTED with `end_cause = GAME_START_FAILURE` (recorded in `play_session_status_changes` as a platform change) and releases its join code; a Session in any other state is left as it is (not an error). An unknown Session is `ErrSessionNotFound`.
+## End Session
+
+`sessionlifecycle.Manager.EndSession(sessionUUID, {cause, changedBy})` is the only way a live Session reaches a terminal status. Each cause leads to one status from given statuses (`play/session/internal/business/endcause`):
+
+| Cause | Status | From |
+| --- | --- | --- |
+| `GAME_FINISHED` | FINISHED | RUNNING |
+| `HOST_CANCELLED` | CANCELLED | LOBBY, RUNNING |
+| `ALL_PLAYERS_LEFT` | CANCELLED | RUNNING |
+| `PLATFORM_TERMINATED` | CANCELLED | LOBBY, RUNNING |
+| `LOBBY_EXPIRED` | EXPIRED | LOBBY |
+| `INACTIVITY_TIMEOUT` | EXPIRED | RUNNING |
+| `MAX_LIFETIME` | EXPIRED | LOBBY, RUNNING |
+| `GAME_START_FAILURE` | ABORTED | LOBBY |
+| `SCRIPT_FAILURE`, `UNRECOVERABLE_INFRA_FAILURE` | ABORTED | RUNNING |
+
+In one transaction it locks the Session; in a status the cause applies to, it changes the status with the cause (by `changedBy`, the creator for `HOST_CANCELLED`, otherwise the platform) and releases its join codes, answering `ended` with the new status and cause. Otherwise it changes nothing and answers `not_ended` with the Session's current status and end cause, so a caller learns how a Session that already ended did. An unknown Session is `ErrSessionNotFound`, an unknown cause an error. Metric `play_session_ended_total{cause}`.
+
+### Load Session Limits
+
+`play/session/usecases/loadsessionlimits` (`LoadSessionLimits`) returns `lobby_expires_at` and `expires_at` (set at creation: 30 minutes and 4 hours later). An unknown Session is `ErrSessionNotFound`.
 
 ## Session Status History
 
-Every change of `play_sessions.status` appends a row to `play_session_status_changes` in the same transaction: the creation (`CREATED -> LOBBY`, by the creator), the start (`LOBBY -> RUNNING`, by the creator) and an aborted start (`LOBBY -> ABORTED`, `GAME_START_FAILURE`, by the platform). Status changes only happen through `sessionlifecycle`'s repository, which writes both, and a change is only applied when the Session is still in the status it moves from.
+Every change of `play_sessions.status` appends a row to `play_session_status_changes` in the same transaction: the creation (`CREATED -> LOBBY`, by the creator), the start (`LOBBY -> RUNNING`, by the creator) and every end through End Session, with its cause and who caused it. Status changes only happen through `sessionlifecycle`'s repository, which writes both, and a change is only applied when the Session is still in the status it moves from.
 
 ### Load Running Session
 

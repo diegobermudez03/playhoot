@@ -99,8 +99,8 @@ func (c *sessionController) registerAdmin(userUUID string) runtime.AdminConnecti
 		StartSession: func(ctx context.Context) (runtime.StartSessionResult, error) {
 			return c.requestStart(ctx, userUUID)
 		},
-		CancelSession: func(context.Context) (runtime.CancelSessionResult, error) {
-			return runtime.CancelSessionResult{}, ErrNotImplemented
+		CancelSession: func(ctx context.Context) (runtime.CancelSessionResult, error) {
+			return c.requestCancel(ctx, userUUID)
 		},
 		NextLobbyUpdate: admin.nextLobbyUpdate,
 		Started:         admin.sessionStart,

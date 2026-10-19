@@ -41,20 +41,6 @@ func (m *MocksessionStarter) EXPECT() *MocksessionStarterMockRecorder {
 	return m.recorder
 }
 
-// AbortStart mocks base method.
-func (m *MocksessionStarter) AbortStart(ctx context.Context, sessionUUID string) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "AbortStart", ctx, sessionUUID)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// AbortStart indicates an expected call of AbortStart.
-func (mr *MocksessionStarterMockRecorder) AbortStart(ctx, sessionUUID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AbortStart", reflect.TypeOf((*MocksessionStarter)(nil).AbortStart), ctx, sessionUUID)
-}
-
 // CheckStartEligibility mocks base method.
 func (m *MocksessionStarter) CheckStartEligibility(ctx context.Context, sessionUUID, userUUID string, playerCount int) (session.StartEligibility, error) {
 	m.ctrl.T.Helper()

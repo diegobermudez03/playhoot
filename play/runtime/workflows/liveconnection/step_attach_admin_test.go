@@ -119,7 +119,7 @@ func TestAttachAdmin(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			deps := dependencies{sessions: NewMockadminJoinChecker(ctrl), manifests: NewMockmanifestLoader(ctrl)}
 			tc := setup(t, deps)
-			resolver := New(deps.sessions, nil, deps.manifests, nil, nil, nil, nil, nil, nil)
+			resolver := New(deps.sessions, nil, deps.manifests, nil, nil, nil, nil, nil, nil, ownersReleasing(t, sessionUUID, 1, 2))
 			t.Cleanup(resolver.Close)
 			if tc.before != nil {
 				tc.before(resolver)
@@ -148,16 +148,17 @@ func TestAttachAdmin(t *testing.T) {
 }
 
 func TestAdminConnection(t *testing.T) {
-	starts := NewMocksessionStarter(gomock.NewController(t))
+	ctrl := gomock.NewController(t)
+	starts, ends := NewMocksessionStarter(ctrl), NewMocksessionEnder(ctrl)
 	deps := testDependencies()
-	deps.starts = starts
+	deps.starts, deps.ends, deps.owners = starts, ends, ownersReleasing(t, "session-1", 1)
 	root, stop := context.WithCancel(context.Background())
 	defer stop()
 	controller := withManifest(newSessionController(root, "session-1", 1, deps), Manifest{MaxPlayers: 8})
 	go controller.run()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	_, _, ok := controller.joinLobby(ctx, "player-1")
+	player, _, ok := controller.joinLobby(ctx, "player-1")
 	require.True(t, ok)
 
 	first := controller.registerAdmin("creator")
@@ -174,8 +175,6 @@ func TestAdminConnection(t *testing.T) {
 	started, err := first.StartSession(ctx)
 	require.NoError(t, err)
 	require.Equal(t, runtime.StartSessionResult{Outcome: runtime.StartInvalidPlayerCount}, started, "starting runs the controller's Start")
-	_, err = first.CancelSession(ctx)
-	require.ErrorIs(t, err, ErrNotImplemented)
 
 	first.Disconnect()
 	first.Disconnect()
@@ -194,4 +193,12 @@ func TestAdminConnection(t *testing.T) {
 	defer cancelWait()
 	_, ended = second.Ended(waiting)
 	require.False(t, ended, "the other admin connection must stay attached")
+
+	ends.EXPECT().EndSession(ctx, "session-1", sessionpkg.SessionEnd{Cause: sessionpkg.EndHostCancelled, ChangedBy: "creator"}).
+		Return(sessionpkg.EndSessionResult{Outcome: sessionpkg.SessionEndedNow, Status: "CANCELLED", EndCause: "HOST_CANCELLED"}, nil)
+	cancelled, err := second.CancelSession(ctx)
+	require.NoError(t, err)
+	require.Equal(t, runtime.CancelSessionResult{Outcome: runtime.SessionCancelled}, cancelled, "cancelling runs the controller's cancellation")
+	require.Equal(t, sessionEnded("CANCELLED", "HOST_CANCELLED"), connectionEnd(t, second.Ended))
+	require.Equal(t, sessionEnded("CANCELLED", "HOST_CANCELLED"), connectionEnd(t, player.Ended))
 }

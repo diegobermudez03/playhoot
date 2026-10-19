@@ -1,6 +1,8 @@
 // Package replay is the contract between a running game and the recorder of
 // its approximate replay history: what the game offers, never what the
-// recorder stores. Recording is best effort and never slows gameplay down.
+// recorder stores. Recording is best effort and never slows gameplay down,
+// except for a finished game's final capture, which is stored durably before
+// the Session is FINISHED.
 package replay
 
 // Capture is a consistent copy of a running game at one committed boundary.

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -24,6 +25,7 @@ const (
 	liveLobbyUpdate    = "lobby_update"
 	liveLobbyClosed    = "lobby_closed"
 	liveSessionStarted = "session_started"
+	liveSessionEnded   = "session_ended"
 	livePlayerView     = "player_view"
 )
 
@@ -41,8 +43,12 @@ type lobbyMemberMessage struct {
 	UserUUID string `json:"user_uuid"`
 }
 
-type lobbyClosedMessage struct {
-	Type string `json:"type"`
+// sessionEndMessage tells a client how its Session ended: as lobby_closed
+// when it never started for the client, as session_ended otherwise.
+type sessionEndMessage struct {
+	Type     string `json:"type"`
+	Status   string `json:"status"`
+	EndCause string `json:"end_cause"`
 }
 
 type participantMessage struct {
@@ -143,6 +149,8 @@ type liveSession struct {
 	// close, so lanes never wait for each other and an answer is never cut.
 	answering sync.RWMutex
 	streams   sync.WaitGroup
+	// started is set once the client was sent the Session's start.
+	started atomic.Bool
 }
 
 func newLiveSession(conn *websocket.Conn) *liveSession {
@@ -178,27 +186,27 @@ type sessionStream[S, V any] struct {
 }
 
 // sendSession returns a loop that sends stream in order: no lobby update
-// follows the start and no view precedes it. A closed lobby ends it.
+// follows the start and no view precedes it.
 func sendSession[S, V any](s *liveSession, stream sessionStream[S, V]) live.Loop {
 	// Counted when the loop is built, so closeOnRuntimeEnd can never miss it.
 	s.streams.Add(1)
 	return func(ctx context.Context) (live.End, bool) {
 		defer s.streams.Done()
-		closed := false
 		end, ended, more := sendAll(ctx, s, stream.nextLobbyUpdate, func(update runtime.LobbyUpdate) (any, bool) {
-			closed = update.Closed
-			return lobbyMessage(update), update.Closed
+			return lobbyMessage(update), false
 		})
-		if ended || !more || closed {
+		if ended || !more {
 			return end, ended
 		}
 		start, ok := stream.started(ctx)
 		if !ok {
 			return live.End{}, false
 		}
-		if end, ended := live.WriteMessage(ctx, s.conn, stream.startMessage(start)); ended || ctx.Err() != nil {
+		end, ended = live.WriteMessage(ctx, s.conn, stream.startMessage(start))
+		if ended || ctx.Err() != nil {
 			return end, ended
 		}
+		s.started.Store(true)
 		end, ended, _ = sendAll(ctx, s, stream.nextView, func(view V) (any, bool) {
 			return stream.viewMessage(view), false
 		})
@@ -227,9 +235,6 @@ func sendAll[T any](ctx context.Context, s *liveSession, next func(ctx context.C
 
 // lobbyMessage is a lobby update on the wire.
 func lobbyMessage(update runtime.LobbyUpdate) any {
-	if update.Closed {
-		return lobbyClosedMessage{Type: liveLobbyClosed}
-	}
 	members := make([]lobbyMemberMessage, 0, len(update.Members))
 	for _, member := range update.Members {
 		members = append(members, lobbyMemberMessage{UserUUID: member.UserUUID})
@@ -238,7 +243,8 @@ func lobbyMessage(update runtime.LobbyUpdate) any {
 }
 
 // closeOnRuntimeEnd closes the connection once the Runtime ends it, after every
-// stream and any answer in progress were delivered.
+// stream and any answer in progress were delivered, telling the client how
+// the Session ended when it did.
 func (s *liveSession) closeOnRuntimeEnd(ended func(ctx context.Context) (runtime.ConnectionEnd, bool)) live.Loop {
 	return func(ctx context.Context) (live.End, bool) {
 		end, ok := ended(ctx)
@@ -258,9 +264,18 @@ func (s *liveSession) closeOnRuntimeEnd(ended func(ctx context.Context) (runtime
 		s.answering.Lock()
 		defer s.answering.Unlock()
 
+		if end.SessionStatus != "" {
+			message := sessionEndMessage{Type: liveLobbyClosed, Status: end.SessionStatus, EndCause: end.EndCause}
+			if s.started.Load() {
+				message.Type = liveSessionEnded
+			}
+			if end, ended := live.WriteMessage(ctx, s.conn, message); ended {
+				return end, ended
+			}
+		}
 		status := websocket.StatusInternalError
 		switch end.Reason {
-		case runtime.EndSessionEnded, runtime.EndSessionAborted, runtime.EndDisconnected, runtime.EndLeft, runtime.EndReplaced:
+		case runtime.EndSessionEnded, runtime.EndDisconnected, runtime.EndLeft, runtime.EndReplaced:
 			status = websocket.StatusNormalClosure
 		case runtime.EndOwnerChanged:
 			// Tells the client to reconnect, which routes it to the current owner.

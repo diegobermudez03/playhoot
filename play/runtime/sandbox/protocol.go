@@ -136,6 +136,10 @@ type workerResponse struct {
 	// RejoinsAccepted answer an execute request's rejoin steps, in order.
 	RejoinsAccepted []bool `json:"rejoinsAccepted,omitempty"`
 
+	// FinishedStep is the index of the execute request's step that finished
+	// the game; no step after it ran.
+	FinishedStep *int `json:"finishedStep,omitempty"`
+
 	// MemoryBytes is all the memory the worker process holds after the call.
 	MemoryBytes uint64 `json:"memoryBytes,omitempty"`
 }

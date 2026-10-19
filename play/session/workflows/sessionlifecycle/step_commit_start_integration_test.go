@@ -47,6 +47,7 @@ func seedStartableSession(t *testing.T, db *gorm.DB, store objectstore.Store, st
 		CreatedByUserUUID: uuid.NewString(),
 		Status:            status,
 		LobbyExpiresAt:    lobbyExpiresAt,
+		ExpiresAt:         lobbyExpiresAt.Add(defaultMaxLifetime),
 	}
 	require.NoError(t, db.Create(&session).Error)
 	code := integrationCode()

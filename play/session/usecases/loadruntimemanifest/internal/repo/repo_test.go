@@ -36,6 +36,7 @@ type testSession struct {
 	CreatedByUserUUID string
 	Status            string
 	LobbyExpiresAt    time.Time
+	ExpiresAt         time.Time
 }
 
 func (testSession) TableName() string { return "play_sessions" }
@@ -58,6 +59,7 @@ func seedSession(t *testing.T, db *gorm.DB, versionID uint) testSession {
 		CreatedByUserUUID: uuid.NewString(),
 		Status:            "LOBBY",
 		LobbyExpiresAt:    time.Date(2026, 10, 17, 12, 30, 0, 0, time.UTC),
+		ExpiresAt:         time.Date(2026, 10, 17, 12, 30, 0, 0, time.UTC).Add(4 * time.Hour),
 	}
 	require.NoError(t, db.Create(&session).Error)
 	return session

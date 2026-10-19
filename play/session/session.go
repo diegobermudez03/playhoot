@@ -243,15 +243,80 @@ type RunningSession struct {
 // and the Session is in another status.
 var ErrSessionNotRunning = errors.New("session is not running")
 
-// AbortCause is why the platform aborts a running Session.
-type AbortCause string
+// EndCause is why a live Session ends; each leads to one terminal status.
+type EndCause string
 
 const (
-	// AbortScriptFailure means the game's script failed twice on the same
-	// execution.
-	AbortScriptFailure AbortCause = "SCRIPT_FAILURE"
+	// EndGameFinished means the game itself finished (FINISHED).
+	EndGameFinished EndCause = "GAME_FINISHED"
 
-	// AbortUnrecoverableInfraFailure means the game could not be executed
-	// for too long.
-	AbortUnrecoverableInfraFailure AbortCause = "UNRECOVERABLE_INFRA_FAILURE"
+	// EndHostCancelled means the creator cancelled it (CANCELLED).
+	EndHostCancelled EndCause = "HOST_CANCELLED"
+
+	// EndAllPlayersLeft means none of a running Session's participants can
+	// play anymore (CANCELLED).
+	EndAllPlayersLeft EndCause = "ALL_PLAYERS_LEFT"
+
+	// EndPlatformTerminated means the platform ended it by its own decision,
+	// such as a usage limit (CANCELLED).
+	EndPlatformTerminated EndCause = "PLATFORM_TERMINATED"
+
+	// EndLobbyExpired means it did not start before its lobby expired
+	// (EXPIRED).
+	EndLobbyExpired EndCause = "LOBBY_EXPIRED"
+
+	// EndInactivityTimeout means nobody played the running game for too long
+	// (EXPIRED).
+	EndInactivityTimeout EndCause = "INACTIVITY_TIMEOUT"
+
+	// EndMaxLifetime means it reached its maximum lifetime, whatever its
+	// activity (EXPIRED).
+	EndMaxLifetime EndCause = "MAX_LIFETIME"
+
+	// EndGameStartFailure means the game's script failed to start twice, so
+	// the lobby never ran (ABORTED).
+	EndGameStartFailure EndCause = "GAME_START_FAILURE"
+
+	// EndScriptFailure means the game's script failed twice on the same
+	// execution (ABORTED).
+	EndScriptFailure EndCause = "SCRIPT_FAILURE"
+
+	// EndUnrecoverableInfraFailure means the game could not be executed for
+	// too long (ABORTED).
+	EndUnrecoverableInfraFailure EndCause = "UNRECOVERABLE_INFRA_FAILURE"
 )
+
+// SessionEnd is a request to end a live Session for Cause. ChangedBy is the
+// user who asked, empty when the platform decided.
+type SessionEnd struct {
+	Cause     EndCause
+	ChangedBy string
+}
+
+// EndSessionOutcome is the decision an EndSession call reached.
+type EndSessionOutcome string
+
+const (
+	// SessionEndedNow means the Session moved to its terminal status now.
+	SessionEndedNow EndSessionOutcome = "ended"
+
+	// SessionNotEnded means the Session was not in a status the cause applies
+	// to, typically because it had already ended; it was left as it is.
+	SessionNotEnded EndSessionOutcome = "not_ended"
+)
+
+// EndSessionResult is what an EndSession call decided, with the Session's
+// status and end cause after it (EndCause is empty while it has not ended).
+type EndSessionResult struct {
+	Outcome  EndSessionOutcome
+	Status   string
+	EndCause string
+}
+
+// SessionLimits are the platform-time deadlines of a Session: its lobby
+// expires at LobbyExpiresAt if it has not started, and the Session itself at
+// ExpiresAt, whatever its activity.
+type SessionLimits struct {
+	LobbyExpiresAt time.Time
+	ExpiresAt      time.Time
+}

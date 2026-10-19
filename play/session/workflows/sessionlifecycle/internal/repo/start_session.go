@@ -29,6 +29,8 @@ type LockedSession struct {
 	Status            string
 	CreatedByUserUUID string
 	LobbyExpiresAt    time.Time
+	// EndCause is set once the Session ended.
+	EndCause *string
 }
 
 // Participant is one player of a started Session.
@@ -63,7 +65,7 @@ func (r *Repo) FindStartCandidate(ctx context.Context, sessionUUID string) (*Sta
 func (r *Repo) LockSession(ctx context.Context, tx *gorm.DB, sessionUUID string) (*LockedSession, error) {
 	var locked LockedSession
 	result := tx.WithContext(ctx).Raw(`
-		SELECT id, status, created_by_user_uuid, lobby_expires_at
+		SELECT id, status, created_by_user_uuid, lobby_expires_at, end_cause
 		FROM play_sessions
 		WHERE uuid = ?
 		FOR UPDATE

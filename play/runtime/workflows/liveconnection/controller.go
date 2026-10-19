@@ -16,12 +16,17 @@ import (
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
 
-//go:generate mockgen -package=liveconnection -destination=controller_mock_test.go . manifestLoader
+//go:generate mockgen -package=liveconnection -destination=controller_mock_test.go . manifestLoader,ownerReleaser
 
 // manifestLoader reads the manifest of the game version a Session is pinned
 // to, which its controller keeps for the Session's lifetime.
 type manifestLoader interface {
 	LoadRuntimeManifest(ctx context.Context, sessionUUID string) (sessionpkg.RuntimeManifest, error)
+}
+
+// ownerReleaser gives up this instance's ownership of a Session.
+type ownerReleaser interface {
+	ReleaseOwner(ctx context.Context, sessionUUID string, epoch int64) error
 }
 
 // ErrNotImplemented is returned by connection operations not built yet.
@@ -87,6 +92,10 @@ const (
 	// lobby is closed.
 	phaseRunning phase = "running"
 
+	// phaseFinishing is a game its script finished: nothing more is played
+	// while its ending is made durable.
+	phaseFinishing phase = "finishing"
+
 	// phaseEnded is a Session that reached a terminal state, or that another
 	// instance took over.
 	phaseEnded phase = "ended"
@@ -99,11 +108,12 @@ type controllerDependencies struct {
 	manifests   manifestLoader
 
 	starts    sessionStarter
-	aborts    sessionAborter
-	cancels   sessionCanceller
+	ends      sessionEnder
+	limits    limitsLoader
 	frontends frontendSigner
 	sandbox   gameSandbox
 	replay    replayRecorder
+	owners    ownerReleaser
 
 	// now is the clock Session time is measured with.
 	now func() time.Time
@@ -114,7 +124,12 @@ type controllerDependencies struct {
 	// transportGrace is how long a participant who lost their transport stays
 	// connected before the game is told they disconnected.
 	transportGrace time.Duration
-	logger         *slog.Logger
+	// limitsInterval is how often the Session's deadlines are checked, and
+	// inactivityTimeout how long a running game may go without anyone
+	// playing.
+	limitsInterval    time.Duration
+	inactivityTimeout time.Duration
+	logger            *slog.Logger
 }
 
 // sessionController is one live Session on its owner instance. Connections
@@ -143,6 +158,13 @@ type sessionController struct {
 	contextID     string
 	infraFailures int
 	lastUpdate    time.Time
+
+	// limits are the Session's deadlines, read by the first check that needs
+	// them, and finishing the game its script finished, until its ending is
+	// durable. Only the main goroutine uses them.
+	limits       sessionpkg.SessionLimits
+	limitsLoaded bool
+	finishing    *finishedGame
 
 	// operations are run by the main goroutine, in order.
 	operations chan func()
@@ -233,10 +255,14 @@ func (c *sessionController) unlock() {
 }
 
 // run is the controller's main goroutine, from its creation until its
-// Session ends here or the instance shuts down. Once the game runs, it also
-// runs a boundary every tick.
+// Session ends here or the instance shuts down, when it gives up the
+// Session's ownership. It checks the Session's deadlines, and once the game
+// runs it also runs a boundary every tick.
 func (c *sessionController) run() {
 	defer close(c.exited)
+	defer c.releaseOwner()
+	limits := time.NewTicker(c.deps.limitsInterval)
+	defer limits.Stop()
 	var ticker *time.Ticker
 	defer func() {
 		if ticker != nil {
@@ -255,6 +281,8 @@ func (c *sessionController) run() {
 			return
 		case operation := <-c.operations:
 			operation()
+		case <-limits.C:
+			c.enforceLimits()
 		case <-ticks:
 			c.runBoundary()
 		case <-c.flush:
@@ -306,15 +334,27 @@ func (c *sessionController) release() {
 	logging.FinishRequestLog(ctx, c.deps.logger, "session controller released")
 }
 
+// releaseOwner gives up the Session's ownership under the controller's
+// epoch; a retired controller's release changes nothing. A failure is only
+// logged: the ownership lease will run out anyway.
+func (c *sessionController) releaseOwner() {
+	ctx := logging.Start(context.WithoutCancel(c.root))
+	if err := c.deps.owners.ReleaseOwner(ctx, c.sessionUUID, c.epoch); err != nil {
+		logging.LogError(ctx, fmt.Errorf("releasing session ownership: %w", err))
+		logging.LogFields(ctx, logging.Field("session_uuid", c.sessionUUID))
+		logging.FinishRequestLog(ctx, c.deps.logger, "session ownership release failed")
+	}
+}
+
 func (c *sessionController) isRunning() bool {
 	s := c.lock()
 	defer c.unlock()
 	return s.phase == phaseRunning
 }
 
-// end moves the Session to its end with every connection ending for reason.
+// end moves the Session to its end with every connection ending as ending.
 // The caller holds the lock.
-func (c *sessionController) end(s *liveState, reason runtime.EndReason) {
+func (c *sessionController) end(s *liveState, ending runtime.ConnectionEnd) {
 	s.phase = phaseEnded
 	s.lobby = nil
 	s.timeline = nil
@@ -326,11 +366,11 @@ func (c *sessionController) end(s *liveState, reason runtime.EndReason) {
 		delete(s.rejoins, participantID)
 	}
 	for id, admin := range s.admins {
-		admin.end(reason)
+		admin.endWith(ending)
 		delete(s.admins, id)
 	}
 	for userUUID, player := range s.players {
-		player.end(reason)
+		player.endWith(ending)
 		delete(s.players, userUUID)
 	}
 	c.endOnce.Do(func() { close(c.ended) })
@@ -341,7 +381,7 @@ func (c *sessionController) end(s *liveState, reason runtime.EndReason) {
 func (c *sessionController) retire() {
 	s := c.lock()
 	defer c.unlock()
-	c.end(s, runtime.EndOwnerChanged)
+	c.end(s, runtime.ConnectionEnd{Reason: runtime.EndOwnerChanged})
 }
 
 // AdminCount returns how many admin connections are attached.
@@ -384,6 +424,9 @@ type liveState struct {
 	// here.
 	runningSince      time.Time
 	baseSessionTimeMs int64
+	// lastActivity is when someone last played the running game: a distinct
+	// input transition or a COMMAND.
+	lastActivity time.Time
 	// inputs is each participant's SAMPLE ingress, by ParticipantID.
 	inputs map[string]*participantInputs
 	// commands is each participant's COMMAND tokens, by ParticipantID.

@@ -21,6 +21,14 @@ const defaultTickInterval = 100 * time.Millisecond
 // reattach before the game is told they disconnected; platform time.
 const defaultTransportGrace = 3 * time.Second
 
+// defaultLimitsInterval is how often a controller checks its Session's
+// deadlines.
+const defaultLimitsInterval = time.Second
+
+// defaultInactivityTimeout is how long a running game may go without a
+// distinct input transition or a COMMAND before it expires; platform time.
+const defaultInactivityTimeout = 10 * time.Minute
+
 // ControllerResolver finds or creates the controller of each Session this
 // instance owns, hands every new connection to it, and stops them all when
 // the instance shuts down.
@@ -38,29 +46,31 @@ type ControllerResolver struct {
 	running sync.WaitGroup
 }
 
-// New constructs a ControllerResolver whose controllers decide who may join
-// through adminJoins and playerJoins, read their game's manifest through
-// manifests, start games through starts, abort them through aborts, cancel
-// the ones nobody plays anymore through cancels, grant their frontends
-// through frontends, run them in sandbox and offer their history to replay.
-func New(adminJoins adminJoinChecker, playerJoins playerJoinChecker, manifests manifestLoader, starts sessionStarter, aborts sessionAborter, cancels sessionCanceller, frontends frontendSigner, sandbox gameSandbox, replay replayRecorder) *ControllerResolver {
+// New constructs a ControllerResolver whose controllers admit through
+// adminJoins and playerJoins, read manifests and limits, start and end
+// Sessions through starts and ends, grant frontends, run games in sandbox,
+// offer their history to replay and release their ownership through owners.
+func New(adminJoins adminJoinChecker, playerJoins playerJoinChecker, manifests manifestLoader, limits limitsLoader, starts sessionStarter, ends sessionEnder, frontends frontendSigner, sandbox gameSandbox, replay replayRecorder, owners ownerReleaser) *ControllerResolver {
 	root, cancel := context.WithCancel(context.Background())
 	return &ControllerResolver{
 		deps: &controllerDependencies{
-			adminJoins:     adminJoins,
-			playerJoins:    playerJoins,
-			manifests:      manifests,
-			starts:         starts,
-			aborts:         aborts,
-			cancels:        cancels,
-			frontends:      frontends,
-			sandbox:        sandbox,
-			replay:         replay,
-			now:            time.Now,
-			seeds:          randomSeed,
-			tickInterval:   defaultTickInterval,
-			transportGrace: defaultTransportGrace,
-			logger:         slog.Default(),
+			adminJoins:        adminJoins,
+			playerJoins:       playerJoins,
+			manifests:         manifests,
+			limits:            limits,
+			starts:            starts,
+			ends:              ends,
+			frontends:         frontends,
+			sandbox:           sandbox,
+			replay:            replay,
+			owners:            owners,
+			now:               time.Now,
+			seeds:             randomSeed,
+			tickInterval:      defaultTickInterval,
+			transportGrace:    defaultTransportGrace,
+			limitsInterval:    defaultLimitsInterval,
+			inactivityTimeout: defaultInactivityTimeout,
+			logger:            slog.Default(),
 		},
 		controllers: make(map[string]*sessionController),
 		root:        root,
@@ -102,10 +112,23 @@ func (r *ControllerResolver) controllerFor(ctx context.Context, sessionUUID stri
 	controller = newSessionController(r.root, sessionUUID, epoch, r.deps)
 	r.controllers[sessionUUID] = controller
 	controllersCreated.Inc(ctx)
+	controllersActive.Inc(ctx)
 	r.running.Add(1)
 	go func() {
 		defer r.running.Done()
 		controller.run()
+		controllersActive.Dec(controller.root)
+		r.forget(controller)
 	}()
 	return controller, true
+}
+
+// forget drops a controller whose main goroutine returned, unless a newer
+// one already took its place; a later connection creates a new one.
+func (r *ControllerResolver) forget(controller *sessionController) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.controllers[controller.sessionUUID] == controller {
+		delete(r.controllers, controller.sessionUUID)
+	}
 }

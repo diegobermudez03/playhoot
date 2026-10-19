@@ -181,6 +181,9 @@ func (h *Host) Execute(ctx context.Context, contextID string, batch Batch) (Exec
 		result.Errors = append(result.Errors, GameError{Operation: gameError.Step, ParticipantID: gameError.Participant, Error: gameError.Error})
 	}
 	result.RejoinsAccepted = resp.RejoinsAccepted
+	if resp.FinishedStep != nil {
+		result.Finished, result.FinishedOperation = true, *resp.FinishedStep
+	}
 	for _, gameEvent := range resp.Events {
 		result.Events = append(result.Events, GameEvent{Operation: gameEvent.Step, Participants: gameEvent.Participants, Event: gameEvent.Event})
 	}

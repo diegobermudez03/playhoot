@@ -9,11 +9,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// batchGame logs every transition, samples() call, command and update() it
-// receives, with times and elapsed time, and draws a random number per samples() call,
-// so tests can see order, time and randomness. Commands "nope", "silent" and
-// "blame" are rejected, answer nothing, and return an error to P2 and an event
-// to P1; inputs {"cheat":true} return an error and an event for everyone.
+// batchGame logs every call it receives with times and elapsed time, and
+// draws a random number per samples() call. Commands "nope", "silent",
+// "blame", "finish" and "bad_finish" reject, answer nothing, blame P2 and P1,
+// finish the game, and finish it wrongly; {"cheat":true} inputs blame everyone.
 const batchGame = `
 function start(participants) { return { state: { log: [], rolls: [] } }; }
 function samples(state, transitions, context) {
@@ -30,6 +29,12 @@ function command(state, cmd, context) {
 	}
 	if (cmd.name === "silent") {
 		return { state: { log, rolls: state.rolls } };
+	}
+	if (cmd.name === "finish") {
+		return { state: { log, rolls: state.rolls }, response: { ok: true }, events: [{ event: "GAME_OVER" }], finished: true };
+	}
+	if (cmd.name === "bad_finish") {
+		return { state: { log, rolls: state.rolls }, finished: "yes" };
 	}
 	if (cmd.name === "blame") {
 		return { state: { log, rolls: state.rolls }, response: { ok: true }, errors: [{ participant: "P2", error: "BLAMED" }], events: [{ event: "BLAMING", participants: ["P1"] }] };
@@ -61,11 +66,14 @@ func TestExecute(t *testing.T) {
 		script string
 		batch  Batch
 
-		expectedLog           []string
-		expectedResponses     []string
-		expectedErrors        []GameError
-		expectedEvents        []GameEvent
-		expectedRejoins       []bool
+		expectedLog       []string
+		expectedResponses []string
+		expectedErrors    []GameError
+		expectedEvents    []GameEvent
+		expectedRejoins   []bool
+		// expectedFinished is the index of the operation that finished the
+		// game, if any did.
+		expectedFinished      *int
 		expectedOutcome       ScriptOutcome
 		expectedErrorContains string
 	}
@@ -298,6 +306,31 @@ func TestExecute(t *testing.T) {
 				expectedErrorContains: "exceeding",
 			}
 		},
+		"finishing_operation_is_the_last_executed": func(t *testing.T) test {
+			finishedAt := 1
+			return test{
+				script: batchGame,
+				batch: Batch{Operations: []Operation{
+					{SessionTimeMs: 30, Transitions: []Transition{transitionAt("P1", 20)}},
+					commandAt(40, "P2", "finish", `{}`),
+					commandAt(50, "P1", "move", `{}`),
+					{SessionTimeMs: 100, Update: true},
+				}},
+				expectedLog:       []string{"P1@20:{}", "samples@30+30", "P2@40:finish{}+10"},
+				expectedResponses: []string{`{"ok":true}`},
+				expectedEvents:    []GameEvent{{Operation: 1, Event: []byte(`"GAME_OVER"`)}},
+				expectedFinished:  &finishedAt,
+				expectedOutcome:   ScriptSucceeded,
+			}
+		},
+		"finished_that_is_not_a_boolean": func(t *testing.T) test {
+			return test{
+				script:                batchGame,
+				batch:                 Batch{Operations: []Operation{commandAt(40, "P2", "bad_finish", `{}`)}},
+				expectedOutcome:       ScriptFailed,
+				expectedErrorContains: "finished as true or false",
+			}
+		},
 		"script_that_mutates_its_state": func(t *testing.T) test {
 			return test{
 				script:                `function start() { return { state: { log: [] } }; } function samples(state) { state.log.push(1); return { state }; } function project() { return {}; }`,
@@ -339,6 +372,10 @@ func TestExecute(t *testing.T) {
 			require.Equal(t, tc.expectedErrors, result.Errors)
 			require.Equal(t, tc.expectedEvents, result.Events)
 			require.Equal(t, tc.expectedRejoins, result.RejoinsAccepted)
+			require.Equal(t, tc.expectedFinished != nil, result.Finished)
+			if tc.expectedFinished != nil {
+				require.Equal(t, *tc.expectedFinished, result.FinishedOperation)
+			}
 		})
 	}
 }

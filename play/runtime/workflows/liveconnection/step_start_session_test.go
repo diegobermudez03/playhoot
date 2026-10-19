@@ -18,6 +18,7 @@ import (
 func TestStartSession(t *testing.T) {
 	type dependencies struct {
 		starts    *MocksessionStarter
+		ends      *MocksessionEnder
 		frontends *MockfrontendSigner
 		sandbox   *MockgameSandbox
 	}
@@ -27,7 +28,7 @@ func TestStartSession(t *testing.T) {
 		// expectedStarted is whether the players' connections see the start.
 		expectedStarted bool
 		// expectedEnd is how the players' connections ended, if they did.
-		expectedEnd runtime.EndReason
+		expectedEnd runtime.ConnectionEnd
 		// expectedLobby is whether the Session is back in its lobby.
 		expectedLobby bool
 		// expectedContextID is the sandbox context the game keeps.
@@ -93,6 +94,9 @@ func TestStartSession(t *testing.T) {
 	}
 	snapshot := sandbox.Snapshot{State: []byte(`{"round":1}`), PRNGState: []byte{9}, ContextRevision: 1}
 	commit := sessionpkg.StartCommit{Participants: roster, Checkpoint: sessionpkg.Checkpoint{ContextRevision: 1, Content: encoded}}
+	startFailure := sessionpkg.SessionEnd{Cause: sessionpkg.EndGameStartFailure}
+	aborted := sessionpkg.EndSessionResult{Outcome: sessionpkg.SessionEndedNow, Status: "ABORTED", EndCause: "GAME_START_FAILURE"}
+	abortedEnd := runtime.ConnectionEnd{Reason: runtime.EndSessionEnded, SessionStatus: "ABORTED", EndCause: "GAME_START_FAILURE"}
 	commits := func(deps dependencies) []any {
 		return []any{
 			deps.starts.EXPECT().CommitStart(ctx, sessionUUID, creatorUUID, commit).Return(sessionpkg.CommitStartCommitted, nil),
@@ -114,8 +118,8 @@ func TestStartSession(t *testing.T) {
 		"script_failing_twice_aborts_the_session": func(t *testing.T, deps dependencies) test {
 			calls := append([]any{eligible(deps)}, scriptFails(deps, "context-1")...)
 			calls = append(calls, scriptFails(deps, "context-2")...)
-			gomock.InOrder(append(calls, deps.starts.EXPECT().AbortStart(ctx, sessionUUID).Return(nil))...)
-			return test{expectedOutcome: runtime.StartFailed, expectedEnd: runtime.EndSessionAborted}
+			gomock.InOrder(append(calls, deps.ends.EXPECT().EndSession(ctx, sessionUUID, startFailure).Return(aborted, nil))...)
+			return test{expectedOutcome: runtime.StartFailed, expectedEnd: abortedEnd}
 		},
 		"projection_failing_in_the_script_fails_the_start": func(t *testing.T, deps dependencies) test {
 			projectionFails := func(contextID string) []any {
@@ -128,13 +132,20 @@ func TestStartSession(t *testing.T) {
 			}
 			calls := append([]any{eligible(deps)}, projectionFails("context-1")...)
 			calls = append(calls, projectionFails("context-2")...)
-			gomock.InOrder(append(calls, deps.starts.EXPECT().AbortStart(ctx, sessionUUID).Return(nil))...)
-			return test{expectedOutcome: runtime.StartFailed, expectedEnd: runtime.EndSessionAborted}
+			gomock.InOrder(append(calls, deps.ends.EXPECT().EndSession(ctx, sessionUUID, startFailure).Return(aborted, nil))...)
+			return test{expectedOutcome: runtime.StartFailed, expectedEnd: abortedEnd}
 		},
 		"aborting_fails": func(t *testing.T, deps dependencies) test {
 			calls := append([]any{eligible(deps)}, scriptFails(deps, "context-1")...)
 			calls = append(calls, scriptFails(deps, "context-2")...)
-			gomock.InOrder(append(calls, deps.starts.EXPECT().AbortStart(ctx, sessionUUID).Return(errors.New("database down")))...)
+			gomock.InOrder(append(calls, deps.ends.EXPECT().EndSession(ctx, sessionUUID, startFailure).Return(sessionpkg.EndSessionResult{}, errors.New("database down")))...)
+			return test{expectedErr: true, expectedLobby: true}
+		},
+		"session_that_did_not_end_when_aborting": func(t *testing.T, deps dependencies) test {
+			calls := append([]any{eligible(deps)}, scriptFails(deps, "context-1")...)
+			calls = append(calls, scriptFails(deps, "context-2")...)
+			stillRunning := sessionpkg.EndSessionResult{Outcome: sessionpkg.SessionNotEnded, Status: "RUNNING"}
+			gomock.InOrder(append(calls, deps.ends.EXPECT().EndSession(ctx, sessionUUID, startFailure).Return(stillRunning, nil))...)
 			return test{expectedErr: true, expectedLobby: true}
 		},
 		"session_left_its_lobby": func(t *testing.T, deps dependencies) test {
@@ -237,10 +248,10 @@ func TestStartSession(t *testing.T) {
 	for name, setup := range tests {
 		t.Run(name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
-			deps := dependencies{starts: NewMocksessionStarter(ctrl), frontends: NewMockfrontendSigner(ctrl), sandbox: NewMockgameSandbox(ctrl)}
+			deps := dependencies{starts: NewMocksessionStarter(ctrl), ends: NewMocksessionEnder(ctrl), frontends: NewMockfrontendSigner(ctrl), sandbox: NewMockgameSandbox(ctrl)}
 			tc := setup(t, deps)
 			controllerDeps := testDependencies()
-			controllerDeps.starts, controllerDeps.frontends, controllerDeps.sandbox = deps.starts, deps.frontends, deps.sandbox
+			controllerDeps.starts, controllerDeps.ends, controllerDeps.frontends, controllerDeps.sandbox = deps.starts, deps.ends, deps.frontends, deps.sandbox
 			controllerDeps.seeds = func() uint64 { return seed }
 			sessionController := withManifest(newSessionController(ctx, sessionUUID, 1, controllerDeps), Manifest{MaxPlayers: 4})
 			first, _, admitted := sessionController.joinLobby(ctx, playerA)
@@ -276,9 +287,9 @@ func TestStartSession(t *testing.T) {
 				require.Equal(t, runtime.OwnView{PlayerView: runtime.PlayerView{ParticipantID: "P2", Full: true, Revision: 1, State: []byte(`{"me":2}`)}}, view)
 			}
 			end, ended := first.Ended(waiting)
-			if tc.expectedEnd != "" {
+			if tc.expectedEnd != (runtime.ConnectionEnd{}) {
 				require.True(t, ended)
-				require.Equal(t, runtime.ConnectionEnd{Reason: tc.expectedEnd}, end)
+				require.Equal(t, tc.expectedEnd, end)
 			} else {
 				require.False(t, ended)
 			}
@@ -372,7 +383,8 @@ func testBeginStart(t *testing.T) {
 				before: func(t *testing.T, controller *sessionController) {
 					_, _, ok := controller.beginStart()
 					require.True(t, ok)
-					controller.abortStart()
+					controller.end(controller.lock(), sessionEnded("ABORTED", "GAME_START_FAILURE"))
+					controller.unlock()
 				},
 				expectedOutcome: runtime.StartNotInLobby,
 				expectedPhase:   phaseEnded,
@@ -558,15 +570,22 @@ func testCompleteStartWithTheCommittedRoster(t *testing.T) {
 
 func testAbortStart(t *testing.T) {
 	controller, players := newStartController(t, 8, "user-a")
+	ends := NewMocksessionEnder(gomock.NewController(t))
+	controller.deps.ends = ends
+	ends.EXPECT().EndSession(context.Background(), "session-1", sessionpkg.SessionEnd{Cause: sessionpkg.EndGameStartFailure}).
+		Return(sessionpkg.EndSessionResult{Outcome: sessionpkg.SessionEndedNow, Status: "ABORTED", EndCause: "GAME_START_FAILURE"}, nil)
 	admin := controller.registerAdmin("creator")
 	_, _, ok := controller.beginStart()
 	require.True(t, ok)
 
-	controller.abortStart()
+	outcome, err := controller.abortStart(context.Background())
+
+	require.NoError(t, err)
+	require.Equal(t, runtime.StartFailed, outcome)
 
 	require.Equal(t, phaseEnded, controller.currentPhase())
-	require.Equal(t, runtime.EndSessionAborted, endedWith(t, admin.Ended))
-	require.Equal(t, runtime.EndSessionAborted, endedWith(t, players["user-a"].Ended))
+	require.Equal(t, runtime.EndSessionEnded, endedWith(t, admin.Ended))
+	require.Equal(t, runtime.EndSessionEnded, endedWith(t, players["user-a"].Ended))
 	_, started := startedWith(t, players["user-a"].Started)
 	require.False(t, started)
 	_, rejection, admitted := controller.joinLobby(context.Background(), "user-b")

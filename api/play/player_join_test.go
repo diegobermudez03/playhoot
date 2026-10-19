@@ -35,7 +35,7 @@ type fakePlayer struct {
 
 	endOnce sync.Once
 	ended   chan struct{}
-	reason  runtime.EndReason
+	ending  runtime.ConnectionEnd
 
 	mu          sync.Mutex
 	samples     []runtime.Sample
@@ -64,8 +64,13 @@ func startedFakePlayer() *fakePlayer {
 const playerStartedJSON = `{"type":"session_started","participant_id":"P2",` + rosterJSON + `}`
 
 func (f *fakePlayer) end(reason runtime.EndReason) {
+	f.endWith(runtime.ConnectionEnd{Reason: reason})
+}
+
+// endWith ends the connection as the Runtime would when the Session ended.
+func (f *fakePlayer) endWith(ending runtime.ConnectionEnd) {
 	f.endOnce.Do(func() {
-		f.reason = reason
+		f.ending = ending
 		close(f.ended)
 		f.closeLobby()
 	})
@@ -117,7 +122,7 @@ func (f *fakePlayer) connection() runtime.PlayerConnection {
 		Ended: func(ctx context.Context) (runtime.ConnectionEnd, bool) {
 			select {
 			case <-f.ended:
-				return runtime.ConnectionEnd{Reason: f.reason}, true
+				return f.ending, true
 			case <-ctx.Done():
 				return runtime.ConnectionEnd{}, false
 			}
@@ -266,24 +271,44 @@ func TestHandlePlayerJoin(t *testing.T) {
 				expectedDisconnects: 1,
 			}
 		},
-		"lobby_closed_without_starting_ends_the_stream": func(t *testing.T, deps dependencies) test {
+		"lobby_closed_without_starting_tells_how": func(t *testing.T, deps dependencies) test {
 			player := newFakePlayer()
-			player.lobby <- runtime.LobbyUpdate{Closed: true}
-			player.end(runtime.EndSessionEnded)
+			player.lobby <- runtime.LobbyUpdate{Members: []runtime.LobbyMember{{UserUUID: callerUUID}}}
+			player.endWith(hostCancelled)
 			accept(deps, player)
 			return test{
-				player:              player,
-				expectedReceived:    []string{`{"type":"lobby_closed"}`},
+				player: player,
+				expectedReceived: []string{
+					`{"type":"lobby_update","members":[{"user_uuid":"` + callerUUID + `"}]}`,
+					`{"type":"lobby_closed","status":"CANCELLED","end_cause":"HOST_CANCELLED"}`,
+				},
 				expectedCloseStatus: websocket.StatusNormalClosure,
 				expectedDisconnects: 1,
 			}
 		},
-		"session_aborted_closes_normally": func(t *testing.T, deps dependencies) test {
-			player := newFakePlayer()
-			player.end(runtime.EndSessionAborted)
+		"started_session_that_ends_tells_how_and_closes_normally": func(t *testing.T, deps dependencies) test {
+			player := startedFakePlayer()
+			player.views <- runtime.OwnView{PlayerView: runtime.PlayerView{ParticipantID: "P2", Revision: 2, State: []byte(`{"winner":"P2"}`)}}
+			player.endWith(runtime.ConnectionEnd{Reason: runtime.EndSessionEnded, SessionStatus: "FINISHED", EndCause: "GAME_FINISHED"})
+			accept(deps, player)
+			return test{
+				player: player,
+				expectedReceived: []string{
+					playerStartedJSON,
+					`{"type":"player_view","participant_id":"P2","full":false,"revision":2,"state":{"winner":"P2"},"consumed_through_sample_sequence":0}`,
+					`{"type":"session_ended","status":"FINISHED","end_cause":"GAME_FINISHED"}`,
+				},
+				expectedCloseStatus: websocket.StatusNormalClosure,
+				expectedDisconnects: 1,
+			}
+		},
+		"connection_ended_without_the_session_ending_sends_no_terminal_message": func(t *testing.T, deps dependencies) test {
+			player := startedFakePlayer()
+			player.end(runtime.EndReplaced)
 			accept(deps, player)
 			return test{
 				player:              player,
+				expectedReceived:    []string{playerStartedJSON},
 				expectedCloseStatus: websocket.StatusNormalClosure,
 				expectedDisconnects: 1,
 			}

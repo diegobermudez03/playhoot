@@ -82,12 +82,9 @@ const (
 	// EndDisconnected means the connection's Disconnect was called.
 	EndDisconnected EndReason = "disconnected"
 
-	// EndSessionEnded means the Session reached a terminal state.
+	// EndSessionEnded means the Session reached a terminal state; the
+	// ConnectionEnd tells which and why when the Runtime knows it.
 	EndSessionEnded EndReason = "session_ended"
-
-	// EndSessionAborted means the Session could not go on because of a
-	// failure, such as its game failing to start.
-	EndSessionAborted EndReason = "session_aborted"
 
 	// EndLeft means the player left the Session, or its lobby.
 	EndLeft EndReason = "left"
@@ -101,9 +98,14 @@ const (
 	EndOwnerChanged EndReason = "owner_changed"
 )
 
-// ConnectionEnd is how a live connection ended on the Runtime's side.
+// ConnectionEnd is how a live connection ended on the Runtime's side. When
+// the Session ended, SessionStatus and EndCause are the terminal status and
+// cause it reached (FINISHED, CANCELLED, EXPIRED or ABORTED), for the client
+// to present; they are empty otherwise.
 type ConnectionEnd struct {
-	Reason EndReason
+	Reason        EndReason
+	SessionStatus string
+	EndCause      string
 }
 
 // AttachAdminResult is the outcome of attaching an admin connection.
@@ -126,7 +128,8 @@ type AdminConnection struct {
 	// StartSession starts the game with the players in the lobby.
 	StartSession func(ctx context.Context) (StartSessionResult, error)
 
-	// CancelSession ends the Session as cancelled by its creator.
+	// CancelSession ends the Session, in its lobby or running, as cancelled
+	// by its creator; every connection then ends as EndSessionEnded.
 	CancelSession func(ctx context.Context) (CancelSessionResult, error)
 
 	// NextLobbyUpdate blocks until the lobby changes; see LobbyUpdate. False
@@ -198,6 +201,22 @@ type CancelSessionResult struct {
 	Outcome CancelSessionOutcome
 }
 
+// TerminateSessionOutcome is the decision a TerminateSession call reached.
+type TerminateSessionOutcome string
+
+const (
+	// SessionTerminated means the platform ended the Session now.
+	SessionTerminated TerminateSessionOutcome = "terminated"
+
+	// TerminateAlreadyEnded means the Session had already ended.
+	TerminateAlreadyEnded TerminateSessionOutcome = "already_ended"
+)
+
+// TerminateSessionResult is the outcome of the platform ending a Session.
+type TerminateSessionResult struct {
+	Outcome TerminateSessionOutcome
+}
+
 // StartSessionOutcome is the decision a StartSession call reached.
 type StartSessionOutcome string
 
@@ -223,7 +242,7 @@ const (
 	StartGameUnavailable StartSessionOutcome = "game_unavailable"
 
 	// StartFailed means the game's script failed to start, so the Session was
-	// aborted and its connections end as EndSessionAborted.
+	// aborted and its connections end as EndSessionEnded.
 	StartFailed StartSessionOutcome = "start_failed"
 
 	// StartSandboxUnavailable means this instance cannot run another game
@@ -236,12 +255,10 @@ type StartSessionResult struct {
 	Outcome StartSessionOutcome
 }
 
-// LobbyUpdate is the lobby's members after a change. Closed means the lobby
-// closed without the Session starting: no update follows it and the
-// connection ends.
+// LobbyUpdate is the lobby's members after a change. A lobby that closes
+// without starting ends its connections, telling them how the Session ended.
 type LobbyUpdate struct {
 	Members []LobbyMember
-	Closed  bool
 }
 
 // LobbyMember is a player waiting in the lobby.

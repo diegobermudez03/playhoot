@@ -24,6 +24,8 @@ From its creation until it ends, it has one main goroutine. Everything that touc
 
 The Runtime's entry point (the `liveconnection` ControllerResolver) only finds or creates a Session's controller when a connection arrives, without asking the durable Session anything, and stops every controller on shutdown. The controller decides the admission itself. After that, a connection's operations are bound directly to its controller.
 
+A Session ends durably first, then live, always on its controller's main goroutine and without calling JavaScript, except a game its script finished: the game finishing, its creator cancelling, its deadlines (lobby expiry, maximum lifetime, inactivity of a running game) or the platform terminating it. Every connection then ends told the terminal status and cause, and the controller, its Sandbox context and its place in the resolver go away.
+
 ## Does Not Own
 
 - Transport/network connections (API owns the transport edge).
