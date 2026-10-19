@@ -257,7 +257,7 @@ func TestHandleAdminJoin(t *testing.T) {
 			}
 		},
 		"views_are_delivered_with_the_game_state_as_is": func(t *testing.T, deps dependencies) test {
-			admin := startedFakeAdmin(runtime.PlayerView{ParticipantID: "P1", Full: true, State: []byte(`{"score":3}`)})
+			admin := startedFakeAdmin(runtime.PlayerView{ParticipantID: "P1", Full: true, Revision: 4, State: []byte(`{"score":3}`)})
 			accept(deps, admin)
 			return test{
 				protocols:    []string{"playhoot.v1"},
@@ -265,13 +265,13 @@ func TestHandleAdminJoin(t *testing.T) {
 				clientCloses: true,
 				expectedReceived: []string{
 					`{"type":"session_started",` + rosterJSON + `}`,
-					`{"type":"player_view","participant_id":"P1","full":true,"state":{"score":3}}`,
+					`{"type":"player_view","participant_id":"P1","full":true,"revision":4,"state":{"score":3}}`,
 				},
 				expectedDisconnects: 1,
 			}
 		},
 		"start_follows_the_lobby_and_precedes_the_views": func(t *testing.T, deps dependencies) test {
-			admin := newFakeAdmin(runtime.PlayerView{ParticipantID: "P1", Full: true, State: []byte(`{"round":1}`)})
+			admin := newFakeAdmin(runtime.PlayerView{ParticipantID: "P1", Full: true, Revision: 1, State: []byte(`{"round":1}`)})
 			admin.lobby <- runtime.LobbyUpdate{Members: []runtime.LobbyMember{{UserUUID: "u1"}, {UserUUID: "u2"}}}
 			admin.start(roster)
 			accept(deps, admin)
@@ -282,7 +282,7 @@ func TestHandleAdminJoin(t *testing.T) {
 				expectedReceived: []string{
 					`{"type":"lobby_update","members":[{"user_uuid":"u1"},{"user_uuid":"u2"}]}`,
 					`{"type":"session_started",` + rosterJSON + `}`,
-					`{"type":"player_view","participant_id":"P1","full":true,"state":{"round":1}}`,
+					`{"type":"player_view","participant_id":"P1","full":true,"revision":1,"state":{"round":1}}`,
 				},
 				expectedDisconnects: 1,
 			}
@@ -332,7 +332,7 @@ func TestHandleAdminJoin(t *testing.T) {
 		},
 		"cancelling_delivers_the_answer_and_the_final_view_before_closing": func(t *testing.T, deps dependencies) test {
 			admin := startedFakeAdmin()
-			admin.finalView = &runtime.PlayerView{ParticipantID: "P1", Full: true, State: []byte(`{"over":true}`)}
+			admin.finalView = &runtime.PlayerView{ParticipantID: "P1", Full: true, Revision: 9, State: []byte(`{"over":true}`)}
 			accept(deps, admin)
 			return test{
 				protocols:   []string{"playhoot.v1"},
@@ -341,7 +341,7 @@ func TestHandleAdminJoin(t *testing.T) {
 				expectedReceivedAnyOrder: []string{
 					`{"type":"session_started",` + rosterJSON + `}`,
 					`{"type":"cancel_session_result","outcome":"cancelled"}`,
-					`{"type":"player_view","participant_id":"P1","full":true,"state":{"over":true}}`,
+					`{"type":"player_view","participant_id":"P1","full":true,"revision":9,"state":{"over":true}}`,
 				},
 				expectedCloseStatus: websocket.StatusNormalClosure,
 				expectedDisconnects: 1,

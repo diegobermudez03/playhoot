@@ -133,8 +133,8 @@ func (c *sessionController) playerConnection(player *connection) runtime.PlayerC
 		Command: func(ctx context.Context, command runtime.Command) (runtime.CommandResult, error) {
 			return c.acceptCommand(ctx, player, command)
 		},
-		// Placeholder: does nothing, since there is no view before the game runs.
-		Resync: func(context.Context) error {
+		Resync: func(ctx context.Context) error {
+			c.resync(ctx, player)
 			return nil
 		},
 		NextLobbyUpdate: player.nextLobbyUpdate,

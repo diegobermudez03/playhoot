@@ -429,12 +429,7 @@ func (c *sessionController) completeStart(participants []runtime.Participant, ga
 		player.participantID = participant.ParticipantID
 		s.presence[participant.ParticipantID].detachedAt = time.Time{}
 		s.inputs[participant.ParticipantID].stream = player.id
-		player.lastView = views[participant.ParticipantID]
-		player.views.publish(runtime.OwnView{PlayerView: runtime.PlayerView{
-			ParticipantID: participant.ParticipantID,
-			Full:          true,
-			State:         views[participant.ParticipantID],
-		}})
+		s.sendFull(c.root, player, participant.ParticipantID)
 		// Last, so everything above is visible to whoever sees the start.
 		player.markStarted(s.start)
 	}

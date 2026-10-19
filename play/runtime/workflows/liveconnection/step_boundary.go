@@ -675,12 +675,29 @@ func (s *liveState) sendView(ctx context.Context, player *connection, participan
 	case string(patch) == "{}":
 		kind = viewAckOnly
 	}
+	if kind != viewAckOnly {
+		player.revision++
+	}
 	viewsSent.Inc(ctx, viewKindLabel.Value(kind))
 	player.lastAck = acked
 	player.views.publish(runtime.OwnView{
-		PlayerView:                    runtime.PlayerView{ParticipantID: participantID, Full: full, State: patch},
+		PlayerView:                    runtime.PlayerView{ParticipantID: participantID, Full: full, Revision: player.revision, State: patch},
 		ConsumedThroughSampleSequence: acked,
 		Errors:                        received.errors,
 		Events:                        received.events,
+	})
+}
+
+// sendFull sends player participantID's current view whole, as a fresh
+// baseline for the patches that follow, with their acknowledgement.
+func (s *liveState) sendFull(ctx context.Context, player *connection, participantID string) {
+	acked := s.inputs[participantID].consumedThrough
+	player.lastView = s.views[participantID]
+	player.lastAck = acked
+	player.revision++
+	viewsSent.Inc(ctx, viewKindLabel.Value(viewFull))
+	player.views.publish(runtime.OwnView{
+		PlayerView:                    runtime.PlayerView{ParticipantID: participantID, Full: true, Revision: player.revision, State: player.lastView},
+		ConsumedThroughSampleSequence: acked,
 	})
 }

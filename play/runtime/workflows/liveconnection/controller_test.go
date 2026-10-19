@@ -232,7 +232,7 @@ func TestRun(t *testing.T) {
 		defer stop()
 		view, ok := player.NextView(ctx)
 		require.True(t, ok)
-		require.Equal(t, runtime.OwnView{PlayerView: runtime.PlayerView{ParticipantID: "P1", State: []byte(`{}`)}, ConsumedThroughSampleSequence: 1}, view)
+		require.Equal(t, runtime.OwnView{PlayerView: runtime.PlayerView{ParticipantID: "P1", Revision: 1, State: []byte(`{}`)}, ConsumedThroughSampleSequence: 1}, view)
 	})
 	t.Run("operations_run_in_order_on_the_main_goroutine", func(t *testing.T) {
 		controller, _, cancel := started(t, NewMockgameSandbox(gomock.NewController(t)))

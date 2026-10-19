@@ -36,6 +36,7 @@ type adminPlayerViewMessage struct {
 	Type          string          `json:"type"`
 	ParticipantID string          `json:"participant_id"`
 	Full          bool            `json:"full"`
+	Revision      int64           `json:"revision"`
 	State         json.RawMessage `json:"state"`
 }
 
@@ -133,6 +134,7 @@ func adminViewMessage(view runtime.PlayerView) any {
 		Type:          livePlayerView,
 		ParticipantID: view.ParticipantID,
 		Full:          view.Full,
+		Revision:      view.Revision,
 		State:         gameJSON(view.State),
 	}
 }

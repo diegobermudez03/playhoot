@@ -16,10 +16,12 @@ type connection struct {
 
 	lobbyUpdates lobbyFeed
 	views        viewFeed
-	// lastView and lastAck are the view and acknowledgement this connection
-	// last received, which the next one is a patch against.
+	// lastView, lastAck and revision are the view, acknowledgement and view
+	// revision this connection last received; the next view is a patch
+	// against them.
 	lastView []byte
 	lastAck  int64
+	revision int64
 	// started is closed when the game starts while the connection is open,
 	// after start is set.
 	started chan struct{}

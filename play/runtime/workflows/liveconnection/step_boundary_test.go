@@ -85,7 +85,7 @@ func TestRunBoundary(t *testing.T) {
 	spec := sandbox.ContextSpec{GameVersionUUID: boundaryGameVersion, Script: boundaryScript}
 	executed := sandbox.ExecutionResult{Outcome: sandbox.ScriptSucceeded, State: []byte(`{"x":1}`), PRNGState: []byte{2, 0, 0, 0}, ContextRevision: 2}
 	failed := sandbox.ExecutionResult{Outcome: sandbox.ScriptFailed, ScriptError: "boom"}
-	movedView := &runtime.OwnView{PlayerView: runtime.PlayerView{ParticipantID: "P1", State: []byte(`{"x":1}`)}, ConsumedThroughSampleSequence: 1}
+	movedView := &runtime.OwnView{PlayerView: runtime.PlayerView{ParticipantID: "P1", Revision: 2, State: []byte(`{"x":1}`)}, ConsumedThroughSampleSequence: 1}
 	capture := replay.Capture{SessionUUID: boundarySessionUUID, GameVersionUUID: boundaryGameVersion, SessionTimeMs: 100, ContextRevision: 2, State: []byte(`{"x":1}`), Participants: []string{"P1"}}
 	restores := func(deps dependencies, contextID string) []any {
 		return []any{
@@ -332,7 +332,7 @@ func TestRunBoundaryWithCommands(t *testing.T) {
 			return test{
 				sampleAfter:             true,
 				expectedResult:          answered,
-				expectedView:            &runtime.OwnView{PlayerView: runtime.PlayerView{ParticipantID: "P1", State: []byte(`{"x":1}`)}, ConsumedThroughSampleSequence: 2},
+				expectedView:            &runtime.OwnView{PlayerView: runtime.PlayerView{ParticipantID: "P1", Revision: 2, State: []byte(`{"x":1}`)}, ConsumedThroughSampleSequence: 2},
 				expectedExecutedThrough: 100,
 			}
 		},
@@ -344,7 +344,7 @@ func TestRunBoundaryWithCommands(t *testing.T) {
 			)
 			return test{
 				expectedResult:          answered,
-				expectedView:            &runtime.OwnView{PlayerView: runtime.PlayerView{ParticipantID: "P1", State: []byte(`{"x":1}`)}, ConsumedThroughSampleSequence: 1},
+				expectedView:            &runtime.OwnView{PlayerView: runtime.PlayerView{ParticipantID: "P1", Revision: 2, State: []byte(`{"x":1}`)}, ConsumedThroughSampleSequence: 1},
 				expectedExecutedThrough: 50,
 			}
 		},
@@ -362,7 +362,7 @@ func TestRunBoundaryWithCommands(t *testing.T) {
 			)
 			return test{
 				expectedResult:          answered,
-				expectedView:            &runtime.OwnView{PlayerView: runtime.PlayerView{ParticipantID: "P1", State: []byte(`{"x":1}`)}, ConsumedThroughSampleSequence: 1},
+				expectedView:            &runtime.OwnView{PlayerView: runtime.PlayerView{ParticipantID: "P1", Revision: 2, State: []byte(`{"x":1}`)}, ConsumedThroughSampleSequence: 1},
 				expectedExecutedThrough: 50,
 			}
 		},
@@ -455,7 +455,7 @@ func TestRunBoundaryWithUpdate(t *testing.T) {
 	}
 	capture := replay.Capture{SessionUUID: boundarySessionUUID, GameVersionUUID: boundaryGameVersion, SessionTimeMs: 100, ContextRevision: 2, State: []byte(`{"x":1}`), Participants: []string{"P1"}}
 	moved := func(acked int64) *runtime.OwnView {
-		return &runtime.OwnView{PlayerView: runtime.PlayerView{ParticipantID: "P1", State: []byte(`{"x":1}`)}, ConsumedThroughSampleSequence: acked}
+		return &runtime.OwnView{PlayerView: runtime.PlayerView{ParticipantID: "P1", Revision: 2, State: []byte(`{"x":1}`)}, ConsumedThroughSampleSequence: acked}
 	}
 
 	tests := map[string]func(t *testing.T, deps dependencies) test{
@@ -689,13 +689,13 @@ func TestCommitBoundary(t *testing.T) {
 		"changed_fields_are_sent_with_the_acknowledgement": func(t *testing.T) test {
 			return test{
 				sequence: 4, view: `{"round":1,"me":{"x":2,"y":0}}`, revision: 2,
-				expectedViews: []runtime.OwnView{{PlayerView: runtime.PlayerView{ParticipantID: "P1", State: []byte(`{"me":{"x":2}}`)}, ConsumedThroughSampleSequence: 4}},
+				expectedViews: []runtime.OwnView{{PlayerView: runtime.PlayerView{ParticipantID: "P1", Revision: 2, State: []byte(`{"me":{"x":2}}`)}, ConsumedThroughSampleSequence: 4}},
 			}
 		},
 		"unchanged_view_with_a_new_acknowledgement_is_an_empty_patch": func(t *testing.T) test {
 			return test{
 				sequence: 4, view: `{"round":1,"me":{"x":0,"y":0}}`, revision: 2,
-				expectedViews: []runtime.OwnView{{PlayerView: runtime.PlayerView{ParticipantID: "P1", State: []byte(`{}`)}, ConsumedThroughSampleSequence: 4}},
+				expectedViews: []runtime.OwnView{{PlayerView: runtime.PlayerView{ParticipantID: "P1", Revision: 1, State: []byte(`{}`)}, ConsumedThroughSampleSequence: 4}},
 			}
 		},
 		"nothing_new_sends_nothing": func(t *testing.T) test {
@@ -709,7 +709,7 @@ func TestCommitBoundary(t *testing.T) {
 					{participantID: "P1", sessionTimeMs: 20, value: []byte(`{"code":"OUT_OF_FUEL"}`)},
 				},
 				expectedViews: []runtime.OwnView{{
-					PlayerView: runtime.PlayerView{ParticipantID: "P1", State: []byte(`{}`)},
+					PlayerView: runtime.PlayerView{ParticipantID: "P1", Revision: 1, State: []byte(`{}`)},
 					Errors:     [][]byte{[]byte(`"NOT_YOUR_TURN"`), []byte(`{"code":"OUT_OF_FUEL"}`)},
 				}},
 			}
@@ -717,7 +717,7 @@ func TestCommitBoundary(t *testing.T) {
 		"field_that_disappeared_sends_the_view_whole": func(t *testing.T) test {
 			return test{
 				view: `{"round":1}`, revision: 2,
-				expectedViews: []runtime.OwnView{{PlayerView: runtime.PlayerView{ParticipantID: "P1", Full: true, State: []byte(`{"round":1}`)}}},
+				expectedViews: []runtime.OwnView{{PlayerView: runtime.PlayerView{ParticipantID: "P1", Full: true, Revision: 2, State: []byte(`{"round":1}`)}}},
 			}
 		},
 		"execution_that_skips_a_revision_is_out_of_sync": func(t *testing.T) test {
@@ -766,16 +766,16 @@ func TestCommitBoundaryTransientsReachOnlyTheirParticipants(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, []runtime.OwnView{{
-		PlayerView: runtime.PlayerView{ParticipantID: "P1", State: []byte(`{}`)},
+		PlayerView: runtime.PlayerView{ParticipantID: "P1", Revision: 1, State: []byte(`{}`)},
 		Events:     [][]byte{[]byte(`"ROUND_CHANGED"`), []byte(`"CARD_REVEALED"`)},
 	}}, drainViews(t, players["user-a"]))
 	require.Equal(t, []runtime.OwnView{{
-		PlayerView: runtime.PlayerView{ParticipantID: "P2", State: []byte(`{}`)},
+		PlayerView: runtime.PlayerView{ParticipantID: "P2", Revision: 1, State: []byte(`{}`)},
 		Errors:     [][]byte{[]byte(`"NOT_YOUR_TURN"`)},
 		Events:     [][]byte{[]byte(`"ROUND_CHANGED"`), []byte(`"CARD_REVEALED"`)},
 	}}, drainViews(t, players["user-b"]))
 	require.Equal(t, []runtime.OwnView{{
-		PlayerView: runtime.PlayerView{ParticipantID: "P3", State: []byte(`{}`)},
+		PlayerView: runtime.PlayerView{ParticipantID: "P3", Revision: 1, State: []byte(`{}`)},
 		Events:     [][]byte{[]byte(`"ROUND_CHANGED"`)},
 	}}, drainViews(t, players["user-c"]))
 }
@@ -789,7 +789,7 @@ func TestAcknowledgeOnly(t *testing.T) {
 
 	controller.acknowledgeOnly(ctx, boundary)
 
-	require.Equal(t, []runtime.OwnView{{PlayerView: runtime.PlayerView{ParticipantID: "P1", State: []byte(`{}`)}, ConsumedThroughSampleSequence: 9}}, drainViews(t, players["user-a"]))
+	require.Equal(t, []runtime.OwnView{{PlayerView: runtime.PlayerView{ParticipantID: "P1", Revision: 1, State: []byte(`{}`)}, ConsumedThroughSampleSequence: 9}}, drainViews(t, players["user-a"]))
 }
 
 func TestRunningGameEnds(t *testing.T) {

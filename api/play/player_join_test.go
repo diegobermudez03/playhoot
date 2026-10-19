@@ -198,7 +198,7 @@ func TestHandlePlayerJoin(t *testing.T) {
 		"views_carry_the_sample_acknowledgement": func(t *testing.T, deps dependencies) test {
 			player := startedFakePlayer()
 			player.views <- runtime.OwnView{
-				PlayerView:                    runtime.PlayerView{ParticipantID: "P1", Full: true, State: []byte(`{"x":3}`)},
+				PlayerView:                    runtime.PlayerView{ParticipantID: "P1", Full: true, Revision: 7, State: []byte(`{"x":3}`)},
 				ConsumedThroughSampleSequence: 22,
 			}
 			accept(deps, player)
@@ -207,7 +207,7 @@ func TestHandlePlayerJoin(t *testing.T) {
 				clientCloses: true,
 				expectedReceived: []string{
 					playerStartedJSON,
-					`{"type":"player_view","participant_id":"P1","full":true,"state":{"x":3},"consumed_through_sample_sequence":22}`,
+					`{"type":"player_view","participant_id":"P1","full":true,"revision":7,"state":{"x":3},"consumed_through_sample_sequence":22}`,
 				},
 				expectedDisconnects: 1,
 			}
@@ -215,7 +215,7 @@ func TestHandlePlayerJoin(t *testing.T) {
 		"views_carry_the_game_errors_and_events": func(t *testing.T, deps dependencies) test {
 			player := startedFakePlayer()
 			player.views <- runtime.OwnView{
-				PlayerView:                    runtime.PlayerView{ParticipantID: "P1", State: []byte(`{}`)},
+				PlayerView:                    runtime.PlayerView{ParticipantID: "P1", Revision: 2, State: []byte(`{}`)},
 				ConsumedThroughSampleSequence: 3,
 				Errors:                        [][]byte{[]byte(`{"code":"NOT_YOUR_TURN"}`), []byte(`"OUT_OF_FUEL"`)},
 				Events:                        [][]byte{[]byte(`{"type":"EXPLOSION"}`)},
@@ -226,7 +226,7 @@ func TestHandlePlayerJoin(t *testing.T) {
 				clientCloses: true,
 				expectedReceived: []string{
 					playerStartedJSON,
-					`{"type":"player_view","participant_id":"P1","full":false,"state":{},"consumed_through_sample_sequence":3,"errors":[{"code":"NOT_YOUR_TURN"},"OUT_OF_FUEL"],"events":[{"type":"EXPLOSION"}]}`,
+					`{"type":"player_view","participant_id":"P1","full":false,"revision":2,"state":{},"consumed_through_sample_sequence":3,"errors":[{"code":"NOT_YOUR_TURN"},"OUT_OF_FUEL"],"events":[{"type":"EXPLOSION"}]}`,
 				},
 				expectedDisconnects: 1,
 			}
@@ -234,7 +234,7 @@ func TestHandlePlayerJoin(t *testing.T) {
 		"resync_is_followed_by_a_full_view": func(t *testing.T, deps dependencies) test {
 			player := startedFakePlayer()
 			player.resyncView = runtime.OwnView{
-				PlayerView:                    runtime.PlayerView{ParticipantID: "P2", Full: true, State: []byte(`{"y":1}`)},
+				PlayerView:                    runtime.PlayerView{ParticipantID: "P2", Full: true, Revision: 3, State: []byte(`{"y":1}`)},
 				ConsumedThroughSampleSequence: 5,
 			}
 			accept(deps, player)
@@ -244,7 +244,7 @@ func TestHandlePlayerJoin(t *testing.T) {
 				clientCloses: true,
 				expectedReceived: []string{
 					playerStartedJSON,
-					`{"type":"player_view","participant_id":"P2","full":true,"state":{"y":1},"consumed_through_sample_sequence":5}`,
+					`{"type":"player_view","participant_id":"P2","full":true,"revision":3,"state":{"y":1},"consumed_through_sample_sequence":5}`,
 				},
 				expectedDisconnects: 1,
 			}
@@ -252,7 +252,7 @@ func TestHandlePlayerJoin(t *testing.T) {
 		"start_follows_the_lobby_and_precedes_the_views": func(t *testing.T, deps dependencies) test {
 			player := newFakePlayer()
 			player.lobby <- runtime.LobbyUpdate{Members: []runtime.LobbyMember{{UserUUID: "u1"}, {UserUUID: "u2"}}}
-			player.views <- runtime.OwnView{PlayerView: runtime.PlayerView{ParticipantID: "P2", Full: true, State: []byte(`{"round":1}`)}}
+			player.views <- runtime.OwnView{PlayerView: runtime.PlayerView{ParticipantID: "P2", Full: true, Revision: 1, State: []byte(`{"round":1}`)}}
 			player.start(runtime.PlayerStart{SessionStart: roster, ParticipantID: "P2"})
 			accept(deps, player)
 			return test{
@@ -261,7 +261,7 @@ func TestHandlePlayerJoin(t *testing.T) {
 				expectedReceived: []string{
 					`{"type":"lobby_update","members":[{"user_uuid":"u1"},{"user_uuid":"u2"}]}`,
 					playerStartedJSON,
-					`{"type":"player_view","participant_id":"P2","full":true,"state":{"round":1},"consumed_through_sample_sequence":0}`,
+					`{"type":"player_view","participant_id":"P2","full":true,"revision":1,"state":{"round":1},"consumed_through_sample_sequence":0}`,
 				},
 				expectedDisconnects: 1,
 			}

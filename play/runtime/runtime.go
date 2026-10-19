@@ -157,6 +157,12 @@ type PlayerView struct {
 	// Full means State replaces the previous view rather than patching it.
 	Full bool
 
+	// Revision numbers the views of one connection: each FULL view or patch
+	// is the previous one plus one, and a view that changes nothing repeats
+	// it. A patch that does not follow the client's revision means one was
+	// lost: the client asks for a resync.
+	Revision int64
+
 	// State is the projection the game's script returned, as JSON whose shape
 	// only the game defines.
 	State []byte

@@ -109,7 +109,7 @@ func TestReattachPlayer(t *testing.T) {
 			require.Equal(t, "P1", start.ParticipantID)
 			view, ok := connection.NextView(ctx)
 			require.True(t, ok)
-			require.Equal(t, runtime.OwnView{PlayerView: runtime.PlayerView{ParticipantID: "P1", Full: true, State: []byte(`{"x":1}`)}}, view)
+			require.Equal(t, runtime.OwnView{PlayerView: runtime.PlayerView{ParticipantID: "P1", Full: true, Revision: 1, State: []byte(`{"x":1}`)}}, view)
 			clock.Advance(time.Second)
 			next, _ := controller.takeBoundary()
 			require.Equal(t, tc.expectedTimeline, withoutTimes(next.operations), "the game is never told about a reattach")

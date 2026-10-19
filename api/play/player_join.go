@@ -55,6 +55,7 @@ type playerOwnViewMessage struct {
 	Type                          string            `json:"type"`
 	ParticipantID                 string            `json:"participant_id"`
 	Full                          bool              `json:"full"`
+	Revision                      int64             `json:"revision"`
 	State                         json.RawMessage   `json:"state"`
 	ConsumedThroughSampleSequence int64             `json:"consumed_through_sample_sequence"`
 	Errors                        []json.RawMessage `json:"errors,omitempty"`
@@ -186,6 +187,7 @@ func ownViewMessage(view runtime.OwnView) any {
 		Type:                          livePlayerView,
 		ParticipantID:                 view.ParticipantID,
 		Full:                          view.Full,
+		Revision:                      view.Revision,
 		State:                         gameJSON(view.State),
 		ConsumedThroughSampleSequence: view.ConsumedThroughSampleSequence,
 		Errors:                        gameJSONs(view.Errors),

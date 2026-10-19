@@ -273,7 +273,7 @@ func TestStartSession(t *testing.T) {
 				}, start)
 				view, ok := second.NextView(waiting)
 				require.True(t, ok)
-				require.Equal(t, runtime.OwnView{PlayerView: runtime.PlayerView{ParticipantID: "P2", Full: true, State: []byte(`{"me":2}`)}}, view)
+				require.Equal(t, runtime.OwnView{PlayerView: runtime.PlayerView{ParticipantID: "P2", Full: true, Revision: 1, State: []byte(`{"me":2}`)}}, view)
 			}
 			end, ended := first.Ended(waiting)
 			if tc.expectedEnd != "" {
@@ -519,7 +519,7 @@ func testCompleteStart(t *testing.T) {
 			require.Equal(t, runtime.PlayerStart{SessionStart: roster, ParticipantID: "P2"}, start)
 			view, ok := playerB.NextView(context.Background())
 			require.True(t, ok)
-			require.Equal(t, runtime.OwnView{PlayerView: runtime.PlayerView{ParticipantID: "P2", Full: true, State: []byte(`{"me":"b"}`)}}, view)
+			require.Equal(t, runtime.OwnView{PlayerView: runtime.PlayerView{ParticipantID: "P2", Full: true, Revision: 1, State: []byte(`{"me":"b"}`)}}, view)
 
 			_, started = startedWith(t, players["user-a"].Started)
 			require.Equal(t, tc.expectedStartedA, started)

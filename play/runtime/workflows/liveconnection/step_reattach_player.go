@@ -42,9 +42,7 @@ func (c *sessionController) reattachPlayer(ctx context.Context, userUUID string)
 	player.participantID = participantID
 	s.players[userUUID] = player
 	s.inputs[participantID].follow(player.id)
-	player.lastView = s.views[participantID]
-	player.views.publish(runtime.OwnView{PlayerView: runtime.PlayerView{ParticipantID: participantID, Full: true, State: player.lastView}})
-	viewsSent.Inc(ctx, viewKindLabel.Value(viewFull))
+	s.sendFull(ctx, player, participantID)
 	// Last, so everything above is visible to whoever sees the start.
 	player.markStarted(s.start)
 

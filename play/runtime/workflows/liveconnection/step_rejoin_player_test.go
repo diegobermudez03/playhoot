@@ -127,7 +127,7 @@ func TestRejoin(t *testing.T) {
 			require.Equal(t, "P1", start.ParticipantID)
 			view, ok := connection.NextView(ctx)
 			require.True(t, ok)
-			require.Equal(t, runtime.OwnView{PlayerView: runtime.PlayerView{ParticipantID: "P1", Full: true, State: []byte(`{"away":false}`)}}, view, "the view the rejoin left")
+			require.Equal(t, runtime.OwnView{PlayerView: runtime.PlayerView{ParticipantID: "P1", Full: true, Revision: 1, State: []byte(`{"away":false}`)}}, view, "the view the rejoin left")
 			require.True(t, controller.state.presence["P1"].attached())
 		})
 	}

@@ -299,9 +299,9 @@ Timers were moved out of scope by the human 2026-10-18: no platform timers, time
 
 - [x] Runtime keeps the current full projection per ParticipantID (2026-10-18: the controller keeps each participant's last committed view, set at start and every committed boundary; reattach sends it FULL)
 - [x] Script returns full projections; Runtime computes patches/deltas as optimization (decision: patch representation) (2026-10-18, decided by the human: a patch holds only the fields whose value changed, nested objects patched the same way, lists sent whole; a view's shape is fixed, so a field that disappears makes the view be sent FULL; an unchanged view with a new acknowledgement is `{}`; `viewpatch` tests and the end-to-end run)
-- [ ] Revision continuity belongs to each viewer connection, not to the participant projection (2026-10-18: each player connection keeps the view and acknowledgement it last received and gets patches against them; no revision numbers yet, so a client that missed a message cannot detect it until resync exists)
-- [ ] FULL projection + fresh baseline on: new transport attach, admin selects a player, reconnect, recovery
-- [ ] Resync is a platform operation (FE or Runtime requests); sends FULL projection + current consumed SAMPLE ack (PLAYER) + fresh baseline
+- [x] Revision continuity belongs to each viewer connection, not to the participant projection (2026-10-18, numbering decided by the human: every view carries `revision`, a counter of its connection; each FULL view or patch is the previous plus one, and a view that only carries an acknowledgement, errors or events repeats it; a patch whose revision does not follow the client's means one was lost, so the client asks for a resync; `TestCommitBoundary`, `TestResync`, `TestPatchesFollowTheResyncBaseline`)
+- [ ] FULL projection + fresh baseline on: new transport attach, admin selects a player, reconnect, recovery (2026-10-18: start, reattach, device switch, rejoin and resync send a FULL view from the projection cache and make it the connection's new baseline; admin perspective selection and pod recovery are pending)
+- [x] Resync is a platform operation (FE or Runtime requests); sends FULL projection + current consumed SAMPLE ack (PLAYER) + fresh baseline (2026-10-18: a player's `resync` gets a FULL view from the projection cache with the current acknowledgement and the next revision, never reaching the script; nothing before the game runs or from a replaced connection; metric `play_runtime_resyncs_total`; the Runtime asks for one itself through FULL views on reattach and rejoin)
 - [ ] After pod recovery the cache is rebuilt via project()
 - [ ] Immediate flush on Command completion, important events, Start, Finish (2026-10-18: Command and Start done)
 - [x] Raw global state never reaches the browser (§30.19) (2026-10-18: connections only receive projections; the global state only goes to the mirror, the checkpoint and the replay capture)
@@ -581,8 +581,8 @@ Each needs at least one test or other concrete evidence before ticking.
 - [x] 17. Failed execution has no partial output (2026-10-18: boundary tests in `liveconnection`)
 - [ ] 18. project() is pure and deterministic
 - [ ] 19. Projection privacy is backend-only
-- [ ] 20. Projection revision belongs to the viewer stream
-- [ ] 21. Full resync always available
+- [x] 20. Projection revision belongs to the viewer stream (2026-10-18: one counter per connection; `TestCommitBoundaryTransientsReachOnlyTheirParticipants`, `TestResync`)
+- [x] 21. Full resync always available (2026-10-18: served from the projection cache at any point of a running game; `TestResync`)
 - [ ] 22. Recovery may roll back
 - [ ] 23. Recovery and Replay are separate
 - [ ] 24. Replay never blocks gameplay indefinitely
