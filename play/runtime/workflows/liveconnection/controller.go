@@ -96,6 +96,7 @@ type controllerDependencies struct {
 
 	starts    sessionStarter
 	aborts    sessionAborter
+	cancels   sessionCanceller
 	frontends frontendSigner
 	sandbox   gameSandbox
 	replay    replayRecorder

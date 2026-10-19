@@ -181,6 +181,7 @@ func (c *sessionController) runBoundary() {
 	if len(work.operations) == 0 && !work.update {
 		outcome = boundaryAckOnly
 		c.acknowledgeOnly(ctx, work)
+		c.endIfAbandoned(ctx)
 		return
 	}
 	boundaryOperations.Observe(ctx, float64(len(work.operations)))
@@ -217,6 +218,7 @@ func (c *sessionController) runBoundary() {
 			Errors:           replayErrors(executed.errors),
 			Events:           replayEvents(executed.events),
 		})
+		c.endIfAbandoned(ctx)
 		return
 	case c.root.Err() != nil:
 		// Shutting down: the work waits for the next owner.

@@ -123,17 +123,8 @@ func (c *sessionController) joinLobby(ctx context.Context, userUUID string) (run
 // lobby or back into the running game.
 func (c *sessionController) playerConnection(player *connection) runtime.PlayerConnection {
 	return runtime.PlayerConnection{
-		Leave: func(context.Context) (runtime.LeaveResult, error) {
-			s := c.lock()
-			if s.phase != phaseLobby {
-				c.unlock()
-				// Placeholder: leaving once the lobby is frozen (playerLeft, LEFT) is not built.
-				return runtime.LeaveResult{}, ErrNotImplemented
-			}
-			s.leaveLobby(player)
-			c.unlock()
-			player.end(runtime.EndLeft)
-			return runtime.LeaveResult{Outcome: runtime.PlayerLeft}, nil
+		Leave: func(ctx context.Context) (runtime.LeaveResult, error) {
+			return c.leave(ctx, player)
 		},
 		Sample: func(ctx context.Context, sample runtime.Sample) error {
 			return c.acceptSample(ctx, player, sample)

@@ -40,10 +40,10 @@ type ControllerResolver struct {
 
 // New constructs a ControllerResolver whose controllers decide who may join
 // through adminJoins and playerJoins, read their game's manifest through
-// manifests, start games through starts, abort them through aborts, grant
-// their frontends through frontends, run them in sandbox and offer their
-// history to replay.
-func New(adminJoins adminJoinChecker, playerJoins playerJoinChecker, manifests manifestLoader, starts sessionStarter, aborts sessionAborter, frontends frontendSigner, sandbox gameSandbox, replay replayRecorder) *ControllerResolver {
+// manifests, start games through starts, abort them through aborts, cancel
+// the ones nobody plays anymore through cancels, grant their frontends
+// through frontends, run them in sandbox and offer their history to replay.
+func New(adminJoins adminJoinChecker, playerJoins playerJoinChecker, manifests manifestLoader, starts sessionStarter, aborts sessionAborter, cancels sessionCanceller, frontends frontendSigner, sandbox gameSandbox, replay replayRecorder) *ControllerResolver {
 	root, cancel := context.WithCancel(context.Background())
 	return &ControllerResolver{
 		deps: &controllerDependencies{
@@ -52,6 +52,7 @@ func New(adminJoins adminJoinChecker, playerJoins playerJoinChecker, manifests m
 			manifests:      manifests,
 			starts:         starts,
 			aborts:         aborts,
+			cancels:        cancels,
 			frontends:      frontends,
 			sandbox:        sandbox,
 			replay:         replay,

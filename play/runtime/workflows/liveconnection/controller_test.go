@@ -136,7 +136,7 @@ func TestControllerFor(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			tc := setup(t)
 			// Nothing to call: finding or creating a controller asks no one.
-			resolver := New(nil, nil, nil, nil, nil, nil, nil, nil)
+			resolver := New(nil, nil, nil, nil, nil, nil, nil, nil, nil)
 			t.Cleanup(resolver.Close)
 			var existing *sessionController
 			var existingAdmin runtime.AdminConnection

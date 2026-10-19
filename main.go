@@ -133,7 +133,7 @@ func run() error {
 
 	sessionLifecycle := sessionlifecycle.New(db, store)
 	playLifecycle := playlifecycle.New(checkplayability.New(), sessionLifecycle)
-	liveConnections := liveconnection.New(checkadminjoin.New(db), checkplayerjoin.New(db), loadruntimemanifest.New(db), sessionLifecycle, sessionLifecycle, frontendaccess.New(db, store), sandboxHost, unwiredReplay{})
+	liveConnections := liveconnection.New(checkadminjoin.New(db), checkplayerjoin.New(db), loadruntimemanifest.New(db), sessionLifecycle, sessionLifecycle, sessionLifecycle, frontendaccess.New(db, store), sandboxHost, unwiredReplay{})
 	// Closed before the sandbox, deferred later: controllers stop first, so
 	// shutting down never fails a running game.
 	defer liveConnections.Close()

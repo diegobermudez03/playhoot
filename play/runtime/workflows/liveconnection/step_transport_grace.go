@@ -12,11 +12,20 @@ var (
 		"play_runtime_player_transports_detached_total",
 		"Player transports of a running game lost without leaving, each starting the transport grace.",
 	)
-	transportGracesExpired = metrics.NewCounter(
-		"play_runtime_transport_graces_expired_total",
-		"Participants whose transport grace ran out, so the game was told they disconnected.",
+	participantsDisconnected = metrics.NewCounter(
+		"play_runtime_participants_disconnected_total",
+		"Participants of running games disconnected, so the game was told, by cause: their transport grace ran out, or they left.",
+		disconnectCauseLabel,
 	)
 )
+
+// Why a participant was disconnected, as metric label values.
+const (
+	disconnectGraceExpired = "grace_expired"
+	disconnectLeft         = "left"
+)
+
+var disconnectCauseLabel = metrics.NewLabel("cause", disconnectGraceExpired, disconnectLeft)
 
 // participantPresence is whether a running game's participant still plays.
 // A participant whose transport went away stays connected for the transport
@@ -57,9 +66,17 @@ func (s *liveState) expireGraces(ctx context.Context, grace time.Duration) {
 		if presence.disconnected || presence.detachedAt.IsZero() || now.Sub(presence.detachedAt) < grace {
 			continue
 		}
-		presence.disconnected = true
-		presence.detachedAt = time.Time{}
-		s.enqueue(Operation{ParticipantID: participant.ParticipantID, Disconnected: true})
-		transportGracesExpired.Inc(ctx)
+		s.disconnect(ctx, participant.ParticipantID, disconnectGraceExpired)
 	}
+}
+
+// disconnect makes participantID stop playing for cause: their inputs return
+// to the defaults and playerDisconnected() enters the timeline.
+func (s *liveState) disconnect(ctx context.Context, participantID string, cause string) {
+	presence := s.presence[participantID]
+	presence.disconnected = true
+	presence.detachedAt = time.Time{}
+	s.resetInputs(participantID)
+	s.enqueue(Operation{ParticipantID: participantID, Disconnected: true})
+	participantsDisconnected.Inc(ctx, disconnectCauseLabel.Value(cause))
 }

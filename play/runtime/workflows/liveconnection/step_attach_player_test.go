@@ -120,7 +120,7 @@ func TestAttachPlayer(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			deps := dependencies{players: NewMockplayerJoinChecker(ctrl), manifests: NewMockmanifestLoader(ctrl)}
 			tc := setup(t, deps)
-			resolver := New(nil, deps.players, deps.manifests, nil, nil, nil, nil, nil)
+			resolver := New(nil, deps.players, deps.manifests, nil, nil, nil, nil, nil, nil)
 			t.Cleanup(resolver.Close)
 			if tc.before != nil {
 				tc.before(resolver)
@@ -223,11 +223,12 @@ func TestAdmitPlayer(t *testing.T) {
 				expectedEnd:         runtime.EndDisconnected,
 			}
 		},
-		"leaving_a_running_game_is_not_built_yet": func(t *testing.T) test {
+		"leaving_during_a_start_attempt_is_not_built_yet": func(t *testing.T) test {
 			return test{
 				maxPlayers: 8,
 				after: func(t *testing.T, controller *sessionController, player runtime.PlayerConnection) {
-					startGame(controller)
+					controller.lock().phase = phaseStarting
+					controller.unlock()
 					_, err := player.Leave(ctx)
 					require.ErrorIs(t, err, ErrNotImplemented)
 				},

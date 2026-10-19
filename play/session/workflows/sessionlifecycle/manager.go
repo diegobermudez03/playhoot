@@ -22,12 +22,13 @@ const defaultLobbyTTL = 30 * time.Minute
 // satisfies all of them, so adding a method for one step never changes
 // another step's interface or mocks.
 type Manager struct {
-	createSessionRepo       createSessionRepo
-	checkStartRepo          checkStartRepo
-	commitStartRepo         commitStartRepo
-	abortStartRepo          abortStartRepo
-	loadRunningSessionRepo  loadRunningSessionRepo
-	abortRunningSessionRepo abortRunningSessionRepo
+	createSessionRepo          createSessionRepo
+	checkStartRepo             checkStartRepo
+	commitStartRepo            commitStartRepo
+	abortStartRepo             abortStartRepo
+	loadRunningSessionRepo     loadRunningSessionRepo
+	abortRunningSessionRepo    abortRunningSessionRepo
+	cancelAbandonedSessionRepo cancelAbandonedSessionRepo
 
 	// scripts reads a game version's backend script from object storage.
 	scripts scriptLoader
@@ -46,16 +47,17 @@ type Manager struct {
 func New(db *gorm.DB, store storage.Store) *Manager {
 	repo := internalrepo.New(db)
 	return &Manager{
-		createSessionRepo:       repo,
-		checkStartRepo:          repo,
-		commitStartRepo:         repo,
-		abortStartRepo:          repo,
-		loadRunningSessionRepo:  repo,
-		abortRunningSessionRepo: repo,
-		scripts:                 objectstore.NewLoader(store, objectstore.DefaultLoaderEntries),
-		dbServicer:              repo,
-		now:                     time.Now,
-		newJoinCode:             newJoinCode,
-		lobbyTTL:                defaultLobbyTTL,
+		createSessionRepo:          repo,
+		checkStartRepo:             repo,
+		commitStartRepo:            repo,
+		abortStartRepo:             repo,
+		loadRunningSessionRepo:     repo,
+		abortRunningSessionRepo:    repo,
+		cancelAbandonedSessionRepo: repo,
+		scripts:                    objectstore.NewLoader(store, objectstore.DefaultLoaderEntries),
+		dbServicer:                 repo,
+		now:                        time.Now,
+		newJoinCode:                newJoinCode,
+		lobbyTTL:                   defaultLobbyTTL,
 	}
 }

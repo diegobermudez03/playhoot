@@ -16,4 +16,8 @@ const (
 	// UnrecoverableInfraFailure means the platform could not execute a
 	// running Session's game for too long.
 	UnrecoverableInfraFailure Cause = "UNRECOVERABLE_INFRA_FAILURE"
+
+	// AllPlayersLeft means no participant of a running Session could play
+	// anymore: every one left or was disconnected.
+	AllPlayersLeft Cause = "ALL_PLAYERS_LEFT"
 )

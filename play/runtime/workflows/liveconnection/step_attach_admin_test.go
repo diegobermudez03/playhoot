@@ -119,7 +119,7 @@ func TestAttachAdmin(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			deps := dependencies{sessions: NewMockadminJoinChecker(ctrl), manifests: NewMockmanifestLoader(ctrl)}
 			tc := setup(t, deps)
-			resolver := New(deps.sessions, nil, deps.manifests, nil, nil, nil, nil, nil)
+			resolver := New(deps.sessions, nil, deps.manifests, nil, nil, nil, nil, nil, nil)
 			t.Cleanup(resolver.Close)
 			if tc.before != nil {
 				tc.before(resolver)
