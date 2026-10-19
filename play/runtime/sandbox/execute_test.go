@@ -414,6 +414,50 @@ func TestExecuteTimeNeverGoesBack(t *testing.T) {
 	require.True(t, strings.Contains(err.Error(), "cannot go back"), err.Error())
 }
 
+// pausingGame pauses itself when a player disconnects, waiting 60 s of game
+// time for them; while paused it ignores inputs, and update() ends the wait
+// once the deadline passed.
+const pausingGame = `
+function start() { return { state: { paused: false, deadline: 0, expired: false, moves: 0 } }; }
+function playerDisconnected(state, participant, context) {
+  return { state: { paused: true, deadline: context.sessionTime + 60000, expired: false, moves: state.moves } };
+}
+function samples(state, transitions) {
+  if (state.paused) { return { state: state }; }
+  return { state: { paused: false, deadline: state.deadline, expired: state.expired, moves: state.moves + transitions.length } };
+}
+function update(state) {
+  if (state.paused && Date.now() >= state.deadline) {
+    return { state: { paused: false, deadline: state.deadline, expired: true, moves: state.moves }, events: [{ event: "wait_expired" }] };
+  }
+  return { state: state };
+}
+function project(state) { return state; }
+`
+
+func TestLogicalPauseDoesNotFreezeGameTime(t *testing.T) {
+	host := newTestHost(t)
+	ctx := context.Background()
+	contextID := startedContext(t, host, pausingGame)
+	_, err := host.Execute(ctx, contextID, Batch{Operations: []Operation{{SessionTimeMs: 1000, Disconnected: "P1"}}})
+	require.NoError(t, err)
+
+	waiting, err := host.Execute(ctx, contextID, Batch{Operations: []Operation{
+		{SessionTimeMs: 30000, Transitions: []Transition{transitionAt("P2", 30000)}},
+		{SessionTimeMs: 30000, Update: true},
+	}})
+	require.NoError(t, err)
+	require.Equal(t, ScriptSucceeded, waiting.Outcome, waiting.ScriptError)
+	require.JSONEq(t, `{"paused":true,"deadline":61000,"expired":false,"moves":0}`, string(waiting.State), "paused: inputs ignored, still waiting")
+
+	expired, err := host.Execute(ctx, contextID, Batch{Operations: []Operation{{SessionTimeMs: 61000, Update: true}}})
+
+	require.NoError(t, err)
+	require.Equal(t, ScriptSucceeded, expired.Outcome, expired.ScriptError)
+	require.JSONEq(t, `{"paused":false,"deadline":61000,"expired":true,"moves":0}`, string(expired.State), "game time kept moving while paused, so the deadline passed")
+	require.Equal(t, []GameEvent{{Operation: 0, Event: []byte(`"wait_expired"`)}}, expired.Events)
+}
+
 func TestRestoredContextContinuesTheSameGame(t *testing.T) {
 	host := newTestHost(t)
 	ctx := context.Background()

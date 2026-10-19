@@ -540,6 +540,40 @@ func TestRunBoundaryWithUpdate(t *testing.T) {
 	}
 }
 
+// TestLogicalPauseDoesNotFreezeGameTime: a pause is only the game's state, so
+// a paused game's boundaries keep advancing Session time and calling update().
+func TestLogicalPauseDoesNotFreezeGameTime(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	games, recorder := NewMockgameSandbox(ctrl), NewMockreplayRecorder(ctrl)
+	deps := testDependencies()
+	deps.sandbox, deps.replay = games, recorder
+	controller, _, now := runningGame(t, deps)
+	controller.lock().manifest.Update = true
+	controller.unlock()
+	anyCtx := gomock.Any()
+	paused := []byte(`{"paused":true,"deadline":60100}`)
+	boundaryAt := func(sessionTimeMs int64, revision int64) []any {
+		return []any{
+			games.EXPECT().Execute(anyCtx, "context-1", sandbox.Batch{Operations: []sandbox.Operation{{SessionTimeMs: sessionTimeMs, Update: true}}}).
+				Return(sandbox.ExecutionResult{Outcome: sandbox.ScriptSucceeded, State: paused, PRNGState: []byte{1, 0, 0, 0}, ContextRevision: revision}, nil),
+			games.EXPECT().Project(anyCtx, "context-1", "P1").Return(sandbox.ProjectResult{Outcome: sandbox.ScriptSucceeded, View: []byte(`{"paused":true}`)}, nil),
+			recorder.EXPECT().Offer(anyCtx, testRecordingID, replay.Capture{
+				SessionUUID: boundarySessionUUID, GameVersionUUID: boundaryGameVersion, SessionTimeMs: sessionTimeMs,
+				ContextRevision: revision, State: paused, Participants: []string{"P1"},
+			}),
+		}
+	}
+	gomock.InOrder(append(boundaryAt(100, 2), boundaryAt(60100, 3)...)...)
+	*now = now.Add(100 * time.Millisecond)
+	controller.runBoundary()
+
+	*now = now.Add(time.Minute)
+	controller.runBoundary()
+
+	next, _ := controller.takeBoundary()
+	require.Equal(t, int64(60100), next.game.ExecutedThroughSessionTimeMs, "the paused game's time kept moving")
+}
+
 func TestBatchOf(t *testing.T) {
 	type test struct {
 		work boundary
