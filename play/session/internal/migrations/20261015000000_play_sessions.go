@@ -118,6 +118,40 @@ func migration20261015000000PlaySessions() *gormigrate.Migration {
 					updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 				)`,
 
+				// The replay manifest of each Session that recorded any: its
+				// pinned version, and once the game finished durably, where it
+				// ended. Chunk bytes live in object storage, never here.
+				`CREATE TABLE play_replays (
+					id BIGSERIAL PRIMARY KEY,
+					session_id BIGINT NOT NULL UNIQUE,
+					game_version_id BIGINT NOT NULL,
+					final_session_time_ms BIGINT NULL,
+					finalized_at TIMESTAMPTZ NULL,
+					created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+				)`,
+
+				// Every replay chunk stored, registered only after its object
+				// was written. A Session recorded by several Runtime runs has a
+				// recording each; a later one supersedes earlier ones from its
+				// first chunk's from_session_time_ms.
+				`CREATE TABLE play_replay_chunks (
+					id BIGSERIAL PRIMARY KEY,
+					session_id BIGINT NOT NULL,
+					recording_uuid UUID NOT NULL,
+					recording_started_at TIMESTAMPTZ NOT NULL,
+					chunk_index INT NOT NULL,
+					format_version INT NOT NULL,
+					from_session_time_ms BIGINT NOT NULL,
+					through_session_time_ms BIGINT NOT NULL,
+					final BOOLEAN NOT NULL,
+					object_key TEXT NOT NULL,
+					sha256 TEXT NOT NULL,
+					size BIGINT NOT NULL,
+					created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+					UNIQUE (recording_uuid, chunk_index)
+				)`,
+				`CREATE INDEX play_replay_chunks_session_id_idx ON play_replay_chunks (session_id)`,
+
 				// Idempotency for Session creation. A request is claimed and
 				// completed in the same transaction that creates the Session, so
 				// once committed its outcome is always set.
@@ -141,7 +175,7 @@ func migration20261015000000PlaySessions() *gormigrate.Migration {
 			return nil
 		},
 		Rollback: func(tx *gorm.DB) error {
-			return tx.Exec(`DROP TABLE play_session_status_changes, play_session_checkpoints, play_session_participants, play_create_session_requests, play_session_join_codes, play_sessions, play_game_versions, play_games`).Error
+			return tx.Exec(`DROP TABLE play_replay_chunks, play_replays, play_session_status_changes, play_session_checkpoints, play_session_participants, play_create_session_requests, play_session_join_codes, play_sessions, play_game_versions, play_games`).Error
 		},
 	}
 }

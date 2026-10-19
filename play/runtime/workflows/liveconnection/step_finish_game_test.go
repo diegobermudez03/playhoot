@@ -59,22 +59,22 @@ func TestFinishingBoundary(t *testing.T) {
 	tests := map[string]func(t *testing.T, deps dependencies) test{
 		"final_state_reaches_players_once_the_ending_is_durable": func(t *testing.T, deps dependencies) test {
 			gomock.InOrder(append(executes(deps),
-				deps.replay.EXPECT().Finish(anyCtx, finalCapture).Return(nil),
+				deps.replay.EXPECT().Finish(anyCtx, testRecordingID, finalCapture).Return(nil),
 				deps.ends.EXPECT().EndSession(anyCtx, boundarySessionUUID, gameFinished).Return(finishedNow, nil),
 			)...)
 			return test{expectedView: finalView, expectedEnd: sessionEnded("FINISHED", "GAME_FINISHED")}
 		},
 		"replay_failing_to_store_the_final_state_is_retried_next_tick": func(t *testing.T, deps dependencies) test {
 			gomock.InOrder(append(executes(deps),
-				deps.replay.EXPECT().Finish(anyCtx, finalCapture).Return(errors.New("bucket unavailable")),
-				deps.replay.EXPECT().Finish(anyCtx, finalCapture).Return(nil),
+				deps.replay.EXPECT().Finish(anyCtx, testRecordingID, finalCapture).Return(errors.New("bucket unavailable")),
+				deps.replay.EXPECT().Finish(anyCtx, testRecordingID, finalCapture).Return(nil),
 				deps.ends.EXPECT().EndSession(anyCtx, boundarySessionUUID, gameFinished).Return(finishedNow, nil),
 			)...)
 			return test{boundaries: 1, expectedView: finalView, expectedEnd: sessionEnded("FINISHED", "GAME_FINISHED")}
 		},
 		"durable_failure_is_retried_without_recording_the_final_state_twice": func(t *testing.T, deps dependencies) test {
 			gomock.InOrder(append(executes(deps),
-				deps.replay.EXPECT().Finish(anyCtx, finalCapture).Return(nil),
+				deps.replay.EXPECT().Finish(anyCtx, testRecordingID, finalCapture).Return(nil),
 				deps.ends.EXPECT().EndSession(anyCtx, boundarySessionUUID, gameFinished).Return(sessionpkg.EndSessionResult{}, errors.New("database down")),
 				deps.ends.EXPECT().EndSession(anyCtx, boundarySessionUUID, gameFinished).Return(finishedNow, nil),
 			)...)
@@ -82,7 +82,7 @@ func TestFinishingBoundary(t *testing.T) {
 		},
 		"session_that_ended_otherwise_meanwhile_ends_as_it_did": func(t *testing.T, deps dependencies) test {
 			gomock.InOrder(append(executes(deps),
-				deps.replay.EXPECT().Finish(anyCtx, finalCapture).Return(nil),
+				deps.replay.EXPECT().Finish(anyCtx, testRecordingID, finalCapture).Return(nil),
 				deps.ends.EXPECT().EndSession(anyCtx, boundarySessionUUID, gameFinished).
 					Return(sessionpkg.EndSessionResult{Outcome: sessionpkg.SessionNotEnded, Status: "EXPIRED", EndCause: "MAX_LIFETIME"}, nil),
 			)...)

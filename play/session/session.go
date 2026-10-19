@@ -256,6 +256,22 @@ const (
 	CheckpointSessionNotRunning SaveCheckpointOutcome = "session_not_running"
 )
 
+// ReplayChunk is one piece of a Session's replay history as the live Runtime
+// encoded it; Content is opaque to this domain and stored as an immutable
+// object. Final marks the chunk that holds the game's durable ending.
+type ReplayChunk struct {
+	RecordingUUID      string
+	RecordingStartedAt time.Time
+	Index              int
+	FormatVersion      int
+
+	FromSessionTimeMs    int64
+	ThroughSessionTimeMs int64
+	Final                bool
+
+	Content []byte
+}
+
 // ErrSessionNotRunning is returned when an operation needs a RUNNING Session
 // and the Session is in another status.
 var ErrSessionNotRunning = errors.New("session is not running")

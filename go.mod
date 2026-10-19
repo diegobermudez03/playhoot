@@ -5,11 +5,13 @@ go 1.25.0
 require (
 	cloud.google.com/go/storage v1.68.0
 	github.com/coder/websocket v1.8.15
+	github.com/dop251/goja v0.0.0-20261002135814-104bc28c3abd
 	github.com/fastschema/qjs v0.0.6
 	github.com/go-gormigrate/gormigrate/v2 v2.1.6
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.6.0
 	github.com/joho/godotenv v1.5.1
+	github.com/klauspost/compress v1.18.0
 	github.com/stretchr/testify v1.11.1
 	go.uber.org/mock v0.6.0
 	gorm.io/driver/postgres v1.6.0
@@ -30,8 +32,6 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
-	github.com/dlclark/regexp2/v2 v2.8.1 // indirect
-	github.com/dop251/goja v0.0.0-20261002135814-104bc28c3abd // indirect
 	github.com/envoyproxy/go-control-plane/envoy v1.37.0 // indirect
 	github.com/envoyproxy/protoc-gen-validate v1.3.3 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
@@ -39,7 +39,6 @@ require (
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.3+incompatible // indirect
-	github.com/google/pprof v0.0.0-20230207041349-798e818bf904 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.17 // indirect
 	github.com/googleapis/gax-go/v2 v2.23.0 // indirect

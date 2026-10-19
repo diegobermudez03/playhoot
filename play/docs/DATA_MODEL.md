@@ -72,6 +72,29 @@ erDiagram
         TIMESTAMPTZ created_at
         TIMESTAMPTZ updated_at
     }
+    play_replays {
+        BIGSERIAL id PK
+        BIGINT session_id "unique; play_sessions.id"
+        BIGINT game_version_id "play_game_versions.id; the pinned version replay needs"
+        BIGINT final_session_time_ms "nullable; where a FINISHED game ended"
+        TIMESTAMPTZ finalized_at "nullable; set once the final chunk is stored"
+        TIMESTAMPTZ created_at
+    }
+    play_replay_chunks {
+        BIGSERIAL id PK
+        BIGINT session_id "play_sessions.id"
+        UUID recording_uuid "one per controller run; unique with chunk_index"
+        TIMESTAMPTZ recording_started_at "orders overlapping recordings"
+        INT chunk_index
+        INT format_version
+        BIGINT from_session_time_ms
+        BIGINT through_session_time_ms
+        BOOLEAN final
+        TEXT object_key "replays/{session}/{recording}/{index}.rpl"
+        TEXT sha256
+        BIGINT size "compressed bytes"
+        TIMESTAMPTZ created_at
+    }
     play_create_session_requests {
         BIGSERIAL id PK
         UUID user_uuid "unique with idempotency_key"
@@ -89,6 +112,9 @@ erDiagram
     play_sessions ||--o{ play_session_status_changes : "play_session_status_changes.session_id = play_sessions.id"
     play_sessions ||--o{ play_session_participants : "play_session_participants.session_id = play_sessions.id"
     play_sessions ||--o| play_session_checkpoints : "play_session_checkpoints.session_id = play_sessions.id"
+    play_sessions ||--o| play_replays : "play_replays.session_id = play_sessions.id"
+    play_game_versions ||--o{ play_replays : "play_replays.game_version_id = play_game_versions.id"
+    play_sessions ||--o{ play_replay_chunks : "play_replay_chunks.session_id = play_sessions.id"
     play_sessions |o--o{ play_create_session_requests : "play_create_session_requests.session_id = play_sessions.id"
 ```
 
@@ -104,3 +130,4 @@ Notes:
 - `expires_at` is set at creation (creation + 4 hours, a platform tuning value) and enforced by the live controller; it is durable so it survives recovery, can be queried by a future reconciliation job, and could be shortened by platform limits.
 - Starting or ending a Session releases its join codes.
 - `play_session_status_changes` is the append-only history of every status a Session went through. A row is written in the same transaction as each change of `play_sessions.status`, including the creation (`from_status` NULL), and only through `sessionlifecycle`'s repository (`CreateSession`, `ChangeSessionStatus`), so no status change can skip it. `changed_by_user_uuid` is the user who caused the change (the creator creating or starting it) or NULL for the platform (for example an aborted start).
+- `play_replays` and `play_replay_chunks` are the replay manifest (`play/docs/decisions/SESSION-ADR-0033-replay-recording-produces-immutable-chunks.md`). The chunk bytes are immutable objects in the private bucket, never in the database; a chunk is registered only after its object was written, so an entry always has its object (an orphan object without an entry is possible). Registering the same chunk again changes nothing. A final chunk sets `final_session_time_ms` and `finalized_at` once, before the Session becomes FINISHED; a Session that ended any other way keeps them NULL. Each controller that runs a game records its own `recording_uuid`; when recordings overlap after a recovery, the one with the later `recording_started_at` wins from its first chunk's `from_session_time_ms`. Seed data has no replay rows, since they would point at missing objects.

@@ -25,9 +25,13 @@ const (
 
 var boundaryScript = []byte(`function start() {}`)
 
+// testRecordingID is the replay recording of the games tests start running.
+const testRecordingID = "recording-1"
+
 // runningGame is a controller running a one-player game at revision 1 in
-// context-1, whose clock the test moves, and that player's connection. The
-// game takes the input `move` and the command `pass`.
+// context-1, recorded as testRecordingID, whose clock the test moves, and
+// that player's connection. The game takes the input `move` and the command
+// `pass`.
 func runningGame(t *testing.T, deps *controllerDependencies) (*sessionController, runtime.PlayerConnection, *time.Time) {
 	t.Helper()
 	now := time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC)
@@ -42,6 +46,7 @@ func runningGame(t *testing.T, deps *controllerDependencies) (*sessionController
 	participants, _, ok := controller.beginStart()
 	require.True(t, ok)
 	controller.contextID = "context-1"
+	controller.recordingID = testRecordingID
 	controller.completeStart(participants, Game{
 		GameVersionUUID: boundaryGameVersion, Script: boundaryScript,
 		ContextRevision: 1, State: []byte(`{"x":0}`), PRNGState: []byte{1, 0, 0, 0},
@@ -102,7 +107,7 @@ func TestRunBoundary(t *testing.T) {
 		return append(restores(deps, contextID),
 			deps.sandbox.EXPECT().Execute(anyCtx, contextID, input).Return(executed, nil),
 			projects(deps, contextID),
-			deps.replay.EXPECT().Offer(anyCtx, capture),
+			deps.replay.EXPECT().Offer(anyCtx, testRecordingID, capture),
 		)
 	}
 
@@ -111,7 +116,7 @@ func TestRunBoundary(t *testing.T) {
 			gomock.InOrder(
 				deps.sandbox.EXPECT().Execute(anyCtx, "context-1", input).Return(executed, nil),
 				projects(deps, "context-1"),
-				deps.replay.EXPECT().Offer(anyCtx, capture),
+				deps.replay.EXPECT().Offer(anyCtx, testRecordingID, capture),
 			)
 			return test{expectedView: movedView, expectedContextID: "context-1"}
 		},
@@ -183,7 +188,7 @@ func TestRunBoundary(t *testing.T) {
 			gomock.InOrder(
 				deps.sandbox.EXPECT().Execute(anyCtx, "context-1", input).Return(rejected, nil),
 				projects(deps, "context-1"),
-				deps.replay.EXPECT().Offer(anyCtx, recorded),
+				deps.replay.EXPECT().Offer(anyCtx, testRecordingID, recorded),
 			)
 			view := *movedView
 			view.Errors = [][]byte{[]byte(`{"code":"MOVE_NOT_ALLOWED"}`)}
@@ -203,7 +208,7 @@ func TestRunBoundary(t *testing.T) {
 			gomock.InOrder(
 				deps.sandbox.EXPECT().Execute(anyCtx, "context-1", input).Return(emitted, nil),
 				projects(deps, "context-1"),
-				deps.replay.EXPECT().Offer(anyCtx, recorded),
+				deps.replay.EXPECT().Offer(anyCtx, testRecordingID, recorded),
 			)
 			view := *movedView
 			view.Events = [][]byte{[]byte(`{"type":"EXPLOSION"}`), []byte(`"CARD_REVEALED"`)}
@@ -327,7 +332,7 @@ func TestRunBoundaryWithCommands(t *testing.T) {
 			gomock.InOrder(
 				deps.sandbox.EXPECT().Execute(anyCtx, "context-1", split).Return(executed, nil),
 				projects(deps, "context-1"),
-				deps.replay.EXPECT().Offer(anyCtx, capture(100)),
+				deps.replay.EXPECT().Offer(anyCtx, testRecordingID, capture(100)),
 			)
 			return test{
 				sampleAfter:             true,
@@ -340,7 +345,7 @@ func TestRunBoundaryWithCommands(t *testing.T) {
 			gomock.InOrder(
 				deps.sandbox.EXPECT().Execute(anyCtx, "context-1", endingWithCommand).Return(executed, nil),
 				projects(deps, "context-1"),
-				deps.replay.EXPECT().Offer(anyCtx, capture(50)),
+				deps.replay.EXPECT().Offer(anyCtx, testRecordingID, capture(50)),
 			)
 			return test{
 				expectedResult:          answered,
@@ -358,7 +363,7 @@ func TestRunBoundaryWithCommands(t *testing.T) {
 				deps.sandbox.EXPECT().Restore(anyCtx, "context-2", snapshot).Return(sandbox.RestoreResult{Outcome: sandbox.ScriptSucceeded}, nil),
 				deps.sandbox.EXPECT().Execute(anyCtx, "context-2", endingWithCommand).Return(executed, nil),
 				projects(deps, "context-2"),
-				deps.replay.EXPECT().Offer(anyCtx, capture(50)),
+				deps.replay.EXPECT().Offer(anyCtx, testRecordingID, capture(50)),
 			)
 			return test{
 				expectedResult:          answered,
@@ -463,7 +468,7 @@ func TestRunBoundaryWithUpdate(t *testing.T) {
 			gomock.InOrder(
 				deps.sandbox.EXPECT().Execute(anyCtx, "context-1", updateOnly).Return(executed, nil),
 				projects(deps),
-				deps.replay.EXPECT().Offer(anyCtx, capture),
+				deps.replay.EXPECT().Offer(anyCtx, testRecordingID, capture),
 			)
 			return test{expectedView: moved(0), expectedExecutedThrough: 100}
 		},
@@ -471,7 +476,7 @@ func TestRunBoundaryWithUpdate(t *testing.T) {
 			gomock.InOrder(
 				deps.sandbox.EXPECT().Execute(anyCtx, "context-1", afterSample).Return(executed, nil),
 				projects(deps),
-				deps.replay.EXPECT().Offer(anyCtx, capture),
+				deps.replay.EXPECT().Offer(anyCtx, testRecordingID, capture),
 			)
 			return test{sample: true, expectedView: moved(1), expectedExecutedThrough: 100}
 		},

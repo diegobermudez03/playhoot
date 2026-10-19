@@ -168,6 +168,7 @@ func (c *sessionController) startFrozenLobby(ctx context.Context, userUUID strin
 		return outcome, err
 	}
 	c.completeStart(participants, game, frontendOf(access), views, nil)
+	c.recordStart(ctx)
 	return runtime.SessionStarted, nil
 }
 
@@ -230,6 +231,7 @@ func (c *sessionController) adoptRunningSession(ctx context.Context) (runtime.St
 		return "", fmt.Errorf("projecting the restored game: %w", err)
 	}
 	c.completeStart(participants, game, frontendOf(access), views, &resumedGame{processed: saved.ProcessedCommandTokens, disconnected: saved.Disconnected})
+	c.recordStart(ctx)
 	startedSessionsAdopted.Inc(ctx)
 	return runtime.StartAlreadyStarted, nil
 }

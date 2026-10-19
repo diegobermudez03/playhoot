@@ -23,6 +23,7 @@ import (
 	"github.com/diegobermudez03/playhoot/play/runtime/sandbox"
 	"github.com/diegobermudez03/playhoot/play/runtime/usecases/ownership"
 	"github.com/diegobermudez03/playhoot/play/runtime/workflows/liveconnection"
+	"github.com/diegobermudez03/playhoot/play/runtime/workflows/replayrecording"
 	sessionmigration "github.com/diegobermudez03/playhoot/play/session/migration"
 	"github.com/diegobermudez03/playhoot/play/session/storage"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/checkadminjoin"
@@ -32,6 +33,7 @@ import (
 	"github.com/diegobermudez03/playhoot/play/session/usecases/loadruntimemanifest"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/loadsessionlimits"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/resolvejoincode"
+	"github.com/diegobermudez03/playhoot/play/session/usecases/storereplaychunk"
 	"github.com/diegobermudez03/playhoot/play/session/workflows/sessionlifecycle"
 	"github.com/joho/godotenv"
 	"gorm.io/driver/postgres"
@@ -60,6 +62,9 @@ type envVariables struct {
 
 	// Sandbox limits for this instance; optional, zero takes the defaults.
 	SandboxLimits sandbox.HostLimits
+
+	// Replay recording tuning; optional, zero takes the defaults.
+	Replay replayrecording.Config
 }
 
 // shutdownTimeout bounds how long in-flight requests get to finish once the
@@ -135,7 +140,11 @@ func run() error {
 	sessionLifecycle := sessionlifecycle.New(db, store)
 	playLifecycle := playlifecycle.New(checkplayability.New(), sessionLifecycle)
 	owners := ownership.New(checklivesession.New(db))
-	liveConnections := liveconnection.New(checkadminjoin.New(db), checkplayerjoin.New(db), loadruntimemanifest.New(db), loadsessionlimits.New(db), sessionLifecycle, sessionLifecycle, sessionLifecycle, frontendaccess.New(db, store), sandboxHost, unwiredReplay{}, owners)
+	replayRecorder := replayrecording.New(storereplaychunk.New(db, store), envVars.Replay)
+	// Closed after the controllers, deferred earlier: each stops its
+	// recording first, then pending chunks get a few seconds to be stored.
+	defer replayRecorder.Close()
+	liveConnections := liveconnection.New(checkadminjoin.New(db), checkplayerjoin.New(db), loadruntimemanifest.New(db), loadsessionlimits.New(db), sessionLifecycle, sessionLifecycle, sessionLifecycle, frontendaccess.New(db, store), sandboxHost, replayRecorder, owners)
 	// Closed before the sandbox, deferred later: controllers stop first, so
 	// shutting down never fails a running game.
 	defer liveConnections.Close()
@@ -254,6 +263,15 @@ func readEnvVariables() (*envVariables, error) {
 	if envVars.SandboxLimits.MaxConcurrentExecutions, err = optionalPositiveInt("SANDBOX_MAX_CONCURRENT_EXECUTIONS"); err != nil {
 		return nil, err
 	}
+	if envVars.Replay.StateEveryTicks, err = optionalPositiveInt("REPLAY_STATE_SAMPLE_EVERY_N_TICKS"); err != nil {
+		return nil, err
+	}
+	if envVars.Replay.ChunkDuration, err = optionalPositiveDuration("REPLAY_CHUNK_DURATION"); err != nil {
+		return nil, err
+	}
+	if envVars.Replay.MaxPendingChunks, err = optionalPositiveInt("REPLAY_MAX_PENDING_CHUNKS"); err != nil {
+		return nil, err
+	}
 
 	return envVars, nil
 }
@@ -267,6 +285,20 @@ func optionalPositiveInt(name string) (int, error) {
 	value, err := strconv.Atoi(raw)
 	if err != nil || value < 1 {
 		return 0, fmt.Errorf("%s must be a positive integer", name)
+	}
+	return value, nil
+}
+
+// optionalPositiveDuration reads name as a positive Go duration such as
+// "60s", or 0 when unset.
+func optionalPositiveDuration(name string) (time.Duration, error) {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return 0, nil
+	}
+	value, err := time.ParseDuration(raw)
+	if err != nil || value <= 0 {
+		return 0, fmt.Errorf("%s must be a positive duration such as 60s", name)
 	}
 	return value, nil
 }

@@ -11,6 +11,7 @@ import (
 
 	"github.com/diegobermudez03/playhoot/play/runtime"
 	"github.com/diegobermudez03/playhoot/play/runtime/internal/business/checkpoint"
+	"github.com/diegobermudez03/playhoot/play/runtime/replay"
 	"github.com/diegobermudez03/playhoot/play/runtime/sandbox"
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
@@ -21,6 +22,7 @@ func TestStartSession(t *testing.T) {
 		ends      *MocksessionEnder
 		frontends *MockfrontendSigner
 		sandbox   *MockgameSandbox
+		replay    *MockreplayRecorder
 	}
 	type test struct {
 		expectedOutcome runtime.StartSessionOutcome
@@ -97,10 +99,19 @@ func TestStartSession(t *testing.T) {
 	startFailure := sessionpkg.SessionEnd{Cause: sessionpkg.EndGameStartFailure}
 	aborted := sessionpkg.EndSessionResult{Outcome: sessionpkg.SessionEndedNow, Status: "ABORTED", EndCause: "GAME_START_FAILURE"}
 	abortedEnd := runtime.ConnectionEnd{Reason: runtime.EndSessionEnded, SessionStatus: "ABORTED", EndCause: "GAME_START_FAILURE"}
-	commits := func(deps dependencies) []any {
+	// recordsStart expects the replay to begin at the starting state.
+	recordsStart := func(deps dependencies) []any {
 		return []any{
-			deps.starts.EXPECT().CommitStart(ctx, sessionUUID, creatorUUID, commit).Return(sessionpkg.CommitStartCommitted, nil),
+			deps.replay.EXPECT().StartRecording(sessionUUID).Return(testRecordingID),
+			deps.replay.EXPECT().Offer(ctx, testRecordingID, replay.Capture{
+				SessionUUID: sessionUUID, GameVersionUUID: gameVersionUUID, ContextRevision: 1, State: []byte(`{"round":1}`), Participants: []string{"P1", "P2"},
+			}),
 		}
+	}
+	commits := func(deps dependencies) []any {
+		return append([]any{
+			deps.starts.EXPECT().CommitStart(ctx, sessionUUID, creatorUUID, commit).Return(sessionpkg.CommitStartCommitted, nil),
+		}, recordsStart(deps)...)
 	}
 
 	tests := map[string]func(t *testing.T, deps dependencies) test{
@@ -159,7 +170,7 @@ func TestStartSession(t *testing.T) {
 				deps.frontends.EXPECT().FrontendAccess(ctx, gameVersionUUID).Return(access, nil),
 				deps.sandbox.EXPECT().CreateContext(ctx, spec).Return("context-1", nil),
 				deps.sandbox.EXPECT().Restore(ctx, "context-1", snapshot).Return(sandbox.RestoreResult{Outcome: sandbox.ScriptSucceeded}, nil),
-			}, projects(deps, "context-1")...)...)
+			}, append(projects(deps, "context-1"), recordsStart(deps)...)...)...)
 			return test{expectedOutcome: runtime.StartAlreadyStarted, expectedStarted: true, expectedContextID: "context-1"}
 		},
 		"running_session_that_ended_meanwhile": func(t *testing.T, deps dependencies) test {
@@ -248,10 +259,10 @@ func TestStartSession(t *testing.T) {
 	for name, setup := range tests {
 		t.Run(name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
-			deps := dependencies{starts: NewMocksessionStarter(ctrl), ends: NewMocksessionEnder(ctrl), frontends: NewMockfrontendSigner(ctrl), sandbox: NewMockgameSandbox(ctrl)}
+			deps := dependencies{starts: NewMocksessionStarter(ctrl), ends: NewMocksessionEnder(ctrl), frontends: NewMockfrontendSigner(ctrl), sandbox: NewMockgameSandbox(ctrl), replay: NewMockreplayRecorder(ctrl)}
 			tc := setup(t, deps)
 			controllerDeps := testDependencies()
-			controllerDeps.starts, controllerDeps.ends, controllerDeps.frontends, controllerDeps.sandbox = deps.starts, deps.ends, deps.frontends, deps.sandbox
+			controllerDeps.starts, controllerDeps.ends, controllerDeps.frontends, controllerDeps.sandbox, controllerDeps.replay = deps.starts, deps.ends, deps.frontends, deps.sandbox, deps.replay
 			controllerDeps.seeds = func() uint64 { return seed }
 			sessionController := withManifest(newSessionController(ctx, sessionUUID, 1, controllerDeps), Manifest{MaxPlayers: 4})
 			first, _, admitted := sessionController.joinLobby(ctx, playerA)

@@ -172,7 +172,7 @@ func TestCommittedBoundaryOffersACheckpoint(t *testing.T) {
 		sandboxMock.EXPECT().Execute(anyCtx, "context-1", gomock.Any()).
 			Return(sandbox.ExecutionResult{Outcome: sandbox.ScriptSucceeded, State: []byte(`{"x":1}`), PRNGState: []byte{2, 0, 0, 0}, ContextRevision: 2}, nil),
 		sandboxMock.EXPECT().Project(anyCtx, "context-1", "P1").Return(sandbox.ProjectResult{Outcome: sandbox.ScriptSucceeded, View: []byte(`{"x":1}`)}, nil),
-		replayMock.EXPECT().Offer(anyCtx, gomock.Any()),
+		replayMock.EXPECT().Offer(anyCtx, testRecordingID, gomock.Any()),
 	)
 	*now = now.Add(40 * time.Millisecond)
 	require.NoError(t, player.Sample(context.Background(), runtime.Sample{Sequence: 1, Inputs: []byte(`{"move":[1,0]}`)}))

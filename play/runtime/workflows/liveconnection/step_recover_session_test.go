@@ -12,6 +12,7 @@ import (
 
 	"github.com/diegobermudez03/playhoot/play/runtime"
 	"github.com/diegobermudez03/playhoot/play/runtime/internal/business/checkpoint"
+	"github.com/diegobermudez03/playhoot/play/runtime/replay"
 	"github.com/diegobermudez03/playhoot/play/runtime/sandbox"
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
@@ -60,18 +61,19 @@ type recoveryMocks struct {
 	ends      *MocksessionEnder
 	frontends *MockfrontendSigner
 	sandbox   *MockgameSandbox
+	replay    *MockreplayRecorder
 }
 
 func newRecoveryMocks(ctrl *gomock.Controller) recoveryMocks {
 	return recoveryMocks{
 		limits: NewMocklimitsLoader(ctrl), starts: NewMocksessionStarter(ctrl), ends: NewMocksessionEnder(ctrl),
-		frontends: NewMockfrontendSigner(ctrl), sandbox: NewMockgameSandbox(ctrl),
+		frontends: NewMockfrontendSigner(ctrl), sandbox: NewMockgameSandbox(ctrl), replay: NewMockreplayRecorder(ctrl),
 	}
 }
 
 func (m recoveryMocks) dependencies(now func() time.Time) *controllerDependencies {
 	deps := testDependencies()
-	deps.limits, deps.starts, deps.ends, deps.frontends, deps.sandbox = m.limits, m.starts, m.ends, m.frontends, m.sandbox
+	deps.limits, deps.starts, deps.ends, deps.frontends, deps.sandbox, deps.replay = m.limits, m.starts, m.ends, m.frontends, m.sandbox, m.replay
 	deps.now = now
 	return deps
 }
@@ -87,6 +89,12 @@ func (m recoveryMocks) recovers(setup recoverySetup) []any {
 		m.sandbox.EXPECT().Restore(anyCtx, "context-1", setup.snapshot).Return(sandbox.RestoreResult{Outcome: sandbox.ScriptSucceeded}, nil),
 		m.sandbox.EXPECT().Project(anyCtx, "context-1", "P1").Return(sandbox.ProjectResult{Outcome: sandbox.ScriptSucceeded, View: []byte(`{"me":1}`)}, nil),
 		m.sandbox.EXPECT().Project(anyCtx, "context-1", "P2").Return(sandbox.ProjectResult{Outcome: sandbox.ScriptSucceeded, View: []byte(`{"me":2}`)}, nil),
+		// A new recording starts where the checkpoint was.
+		m.replay.EXPECT().StartRecording(setup.sessionUUID).Return(testRecordingID),
+		m.replay.EXPECT().Offer(anyCtx, testRecordingID, replay.Capture{
+			SessionUUID: setup.sessionUUID, GameVersionUUID: boundaryGameVersion, SessionTimeMs: 4200, ContextRevision: 6,
+			State: []byte(`{"round":3}`), Participants: []string{"P1", "P2"},
+		}),
 	}
 }
 
@@ -268,11 +276,12 @@ func TestConcurrentReconnectionsRecoverOnce(t *testing.T) {
 	players.EXPECT().EligibleToJoinAsPlayer(anyCtx, setup.sessionUUID).Return(sessionpkg.PlayerJoinSessionStarted, nil).Times(2)
 	manifests.EXPECT().LoadRuntimeManifest(anyCtx, setup.sessionUUID).Return(sessionpkg.RuntimeManifest{MinPlayers: 1, MaxPlayers: 4}, nil)
 	gomock.InOrder(mocks.recovers(setup)...)
-	resolver := New(nil, players, manifests, mocks.limits, mocks.starts, mocks.ends, nil, mocks.frontends, mocks.sandbox, nil, ownersReleasing(t, setup.sessionUUID, 1))
+	resolver := New(nil, players, manifests, mocks.limits, mocks.starts, mocks.ends, nil, mocks.frontends, mocks.sandbox, mocks.replay, ownersReleasing(t, setup.sessionUUID, 1))
 	resolver.deps.now = func() time.Time { return setup.now }
 	t.Cleanup(resolver.Close)
-	// The recovered context is discarded when the resolver stops.
+	// The recovered context and recording end when the resolver stops.
 	mocks.sandbox.EXPECT().DiscardContext(anyCtx, "context-1").Return(nil).MaxTimes(1)
+	mocks.replay.EXPECT().StopRecording(testRecordingID).MaxTimes(1)
 
 	var wg sync.WaitGroup
 	results := make([]runtime.AttachPlayerResult, 2)
@@ -309,10 +318,11 @@ func TestAdminReconnectionRecovers(t *testing.T) {
 		admins.EXPECT().EligibleToJoinAsAdmin(anyCtx, setup.sessionUUID, "creator").Return(sessionpkg.AdminJoinEligibleRunning, nil),
 		manifests.EXPECT().LoadRuntimeManifest(anyCtx, setup.sessionUUID).Return(sessionpkg.RuntimeManifest{MinPlayers: 1, MaxPlayers: 4}, nil),
 	}, mocks.recovers(setup)...)...)
-	resolver := New(admins, nil, manifests, mocks.limits, mocks.starts, mocks.ends, nil, mocks.frontends, mocks.sandbox, nil, ownersReleasing(t, setup.sessionUUID, 1))
+	resolver := New(admins, nil, manifests, mocks.limits, mocks.starts, mocks.ends, nil, mocks.frontends, mocks.sandbox, mocks.replay, ownersReleasing(t, setup.sessionUUID, 1))
 	resolver.deps.now = func() time.Time { return setup.now }
 	t.Cleanup(resolver.Close)
 	mocks.sandbox.EXPECT().DiscardContext(anyCtx, "context-1").Return(nil).MaxTimes(1)
+	mocks.replay.EXPECT().StopRecording(testRecordingID).MaxTimes(1)
 
 	result, err := resolver.AttachAdmin(context.Background(), setup.sessionUUID, "creator", 1)
 

@@ -14,6 +14,7 @@ import (
 	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/play/runtime"
 	"github.com/diegobermudez03/playhoot/play/runtime/internal/business/checkpoint"
+	"github.com/diegobermudez03/playhoot/play/runtime/replay"
 	"github.com/diegobermudez03/playhoot/play/runtime/sandbox"
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
@@ -274,6 +275,23 @@ func TestRun(t *testing.T) {
 		requireClosed(t, controller.exited)
 		require.False(t, controller.do(context.Background(), func() {}), "a stopped controller runs nothing")
 	})
+	t.Run("ended_session_stops_its_replay_recording", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		sandboxMock, owners, replayMock := NewMockgameSandbox(ctrl), NewMockownerReleaser(ctrl), NewMockreplayRecorder(ctrl)
+		controller, _, cancel := started(t, sandboxMock, owners)
+		defer cancel()
+		controller.deps.replay = replayMock
+		require.True(t, controller.do(context.Background(), func() { controller.recordingID = testRecordingID }))
+		gomock.InOrder(
+			sandboxMock.EXPECT().DiscardContext(gomock.Any(), "context-1").Return(nil),
+			replayMock.EXPECT().StopRecording(testRecordingID),
+			owners.EXPECT().ReleaseOwner(gomock.Any(), "session-1", int64(1)).Return(nil),
+		)
+
+		controller.retire()
+
+		requireClosed(t, controller.exited)
+	})
 	t.Run("shutting_down_keeps_the_context_and_releases_ownership_for_the_next_owner", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		owners := NewMockownerReleaser(ctrl)
@@ -302,8 +320,12 @@ func TestRun(t *testing.T) {
 		starts := NewMocksessionStarter(ctrl)
 		frontends := NewMockfrontendSigner(ctrl)
 		sandboxMock := NewMockgameSandbox(ctrl)
-		deps.starts, deps.frontends, deps.sandbox = starts, frontends, sandboxMock
+		replayMock := NewMockreplayRecorder(ctrl)
+		deps.starts, deps.frontends, deps.sandbox, deps.replay = starts, frontends, sandboxMock, replayMock
 		deps.owners = ownersReleasing(t, "session-1", 1)
+		// The recording stops with the main goroutine, which a test does not
+		// always wait for.
+		replayMock.EXPECT().StopRecording(testRecordingID).MaxTimes(1)
 		deps.tickInterval = time.Millisecond
 		root, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -326,6 +348,10 @@ func TestRun(t *testing.T) {
 				Participants: []sessionpkg.StartParticipant{{UserUUID: "user-a", ParticipantID: "P1"}},
 				Checkpoint:   sessionpkg.Checkpoint{ContextRevision: 1, Content: encoded},
 			}).Return(sessionpkg.CommitStartCommitted, nil),
+			replayMock.EXPECT().StartRecording("session-1").Return(testRecordingID),
+			replayMock.EXPECT().Offer(anyCtx, testRecordingID, replay.Capture{
+				SessionUUID: "session-1", GameVersionUUID: "game-version", ContextRevision: 1, State: []byte(`{}`), Participants: []string{"P1"},
+			}),
 		)
 
 		result, err := controller.registerAdmin("creator").StartSession(context.Background())

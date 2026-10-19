@@ -26,6 +26,10 @@ The Runtime's entry point (the `liveconnection` ControllerResolver) only finds o
 
 A Session ends durably first, then live, always on its controller's main goroutine and without calling JavaScript, except a game its script finished: the game finishing, its creator cancelling, its deadlines (lobby expiry, maximum lifetime, inactivity of a running game) or the platform terminating it. Every connection then ends told the terminal status and cause, and the controller, its Sandbox context and its place in the resolver go away.
 
+## Replay Recording
+
+The Runtime produces each running game's approximate replay history; a future Replay system consumes it (`play/docs/decisions/SESSION-ADR-0033-replay-recording-produces-immutable-chunks.md`). Each controller run records sampled authoritative state, logical events, logical errors and COMMAND responses with their targets into self-contained chunks of effective Session time, stored as immutable objects with a manifest in `play_replays` / `play_replay_chunks`. Recording is best effort and never makes gameplay wait, except a finished game's final chunk, which is stored before the Session is FINISHED. Replay is not recovery: it holds nothing needed to resume a game.
+
 ## Does Not Own
 
 - Transport/network connections (API owns the transport edge).
@@ -50,14 +54,16 @@ play/                         # a folder, not a Go package: each subpackage expo
       ownership/              # LocateOrClaimOwner (placeholder: single instance, no registry)
     workflows/
       liveconnection/         # the live Session: the ControllerResolver finds or creates each Session's controller; the controller runs everything else, one file per operation
+      replayrecording/        # the Replay Recorder: one recording per controller run, chunks built in memory, a bounded queue storing them in the background
     internal/
-      business/               # pure logic shared by the controller's operations (checkpoint encoding, view patches)
+      business/               # pure logic shared by the Runtime's workflows (checkpoint encoding, view patches, JSON Patch, replay chunks)
   session/
     session.go                # durable Session public contract (CreateSession types, ErrIdempotencyConflict, AdminJoinEligibility)
     migration/                # exposes Migrate(db) and Seed(db) (test data) to the application's migrations.go
     usecases/
       checkadminjoin/         # EligibleToJoinAsAdmin + internal/repo
       checklivesession/       # IsSessionLive (asked by the Runtime's ownership before claiming) + internal/repo
+      storereplaychunk/       # StoreReplayChunk: writes a replay chunk object, then registers it in the manifest + internal/repo
     workflows/
       sessionlifecycle/       # Manager + one file per step (step_create_session.go) + internal/repo
     internal/

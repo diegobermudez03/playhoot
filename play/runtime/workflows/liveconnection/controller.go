@@ -160,11 +160,13 @@ type sessionController struct {
 	manifestLoaded bool
 
 	// contextID is the sandbox context running the game, infraFailures how
-	// many boundaries in a row failed to execute, and lastUpdate when update()
-	// last committed. Only the main goroutine uses them.
+	// many boundaries in a row failed to execute, lastUpdate when update()
+	// last committed, and recordingID the game's replay recording. Only the
+	// main goroutine uses them.
 	contextID     string
 	infraFailures int
 	lastUpdate    time.Time
+	recordingID   string
 
 	// limits are the Session's deadlines, read by the first check that needs
 	// them, and finishing the game its script finished, until its ending is
@@ -274,6 +276,7 @@ func (c *sessionController) unlock() {
 func (c *sessionController) run() {
 	defer close(c.exited)
 	defer c.releaseOwner()
+	defer c.stopRecording()
 	stopWriting, writerStopped := make(chan struct{}), make(chan struct{})
 	go func() {
 		defer close(writerStopped)

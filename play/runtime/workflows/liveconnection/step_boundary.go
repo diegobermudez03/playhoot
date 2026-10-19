@@ -18,16 +18,6 @@ import (
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
 
-//go:generate mockgen -package=liveconnection -destination=step_boundary_mock_test.go . replayRecorder
-
-// replayRecorder takes what a game offers to its replay history. Offer must
-// never block: recording is best effort. Finish stores a finished game's
-// final capture durably, and fails when it could not.
-type replayRecorder interface {
-	Offer(ctx context.Context, capture replay.Capture)
-	Finish(ctx context.Context, capture replay.Capture) error
-}
-
 // maxInfraFailures is how many boundaries in a row may fail to execute before
 // the Session is aborted: about five seconds at a 100 ms cadence.
 const maxInfraFailures = 50
@@ -242,7 +232,7 @@ func (c *sessionController) runBoundary() {
 			c.beginFinishing(ctx, work, executed, capture)
 			return
 		}
-		c.deps.replay.Offer(ctx, capture)
+		c.deps.replay.Offer(ctx, c.recording(), capture)
 		c.offerCheckpoint()
 		c.endIfAbandoned(ctx)
 		return

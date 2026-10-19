@@ -65,7 +65,7 @@ func (c *sessionController) recordFinish(ctx context.Context, finishing *finishe
 	if finishing.recorded {
 		return nil
 	}
-	if err := c.deps.replay.Finish(ctx, finishing.capture); err != nil {
+	if err := c.deps.replay.Finish(ctx, c.recording(), finishing.capture); err != nil {
 		return fmt.Errorf("recording the final replay state: %w", err)
 	}
 	finishing.recorded = true

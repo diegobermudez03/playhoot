@@ -192,7 +192,7 @@ func TestLastPlayerLeavingEndsTheSessionAfterTellingTheGame(t *testing.T) {
 		sandboxMock.EXPECT().Execute(anyCtx, "context-1", sandbox.Batch{Operations: []sandbox.Operation{{SessionTimeMs: 40, Disconnected: "P1"}}}).
 			Return(sandbox.ExecutionResult{Outcome: sandbox.ScriptSucceeded, State: []byte(`{"x":0}`), PRNGState: []byte{1, 0, 0, 0}, ContextRevision: 2}, nil),
 		sandboxMock.EXPECT().Project(anyCtx, "context-1", "P1").Return(sandbox.ProjectResult{Outcome: sandbox.ScriptSucceeded, View: []byte(`{"x":0}`)}, nil),
-		replayMock.EXPECT().Offer(anyCtx, replay.Capture{
+		replayMock.EXPECT().Offer(anyCtx, testRecordingID, replay.Capture{
 			SessionUUID: boundarySessionUUID, GameVersionUUID: boundaryGameVersion, SessionTimeMs: 40, ContextRevision: 2,
 			State: []byte(`{"x":0}`), Participants: []string{"P1"},
 		}),

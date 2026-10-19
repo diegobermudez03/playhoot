@@ -191,7 +191,7 @@ Progress note (2026-10-17): the Runtime side is implemented and tested; the dura
 - [x] Runtime commits live mirror; project() for each player; START + FULL initial projection sent (mirror kept in the controller, `session_started` with roster and signed frontend URL, then a FULL `player_view` per connected player from `sandbox.Host.Project`; run end to end on 2026-10-18 against Postgres, the GCS emulator and real sandbox workers: session created, player joined, admin started, player got `session_started` and its FULL view from the seed script, the signed frontend URL served the package with a matching SHA-256, and the database held RUNNING, roster, checkpoint revision 1, released join code and status history)
 - [ ] start() script failure: retry once from the same pre-start state with fresh context (orchestration done and tested with mocks: same roster and seed, new context, flaky-start alert when the retry succeeds)
 - [x] Second failure: Session ABORTED / GAME_START_FAILURE, never RUNNING, clients informed, transports closed (2026-10-18: through `EndSession` (GAME_START_FAILURE, LOBBY -> ABORTED, join codes released); admin answered `start_failed`, every connection told ABORTED / GAME_START_FAILURE; controller and Postgres integration tests)
-- [ ] After Start: recovery, replay, and checkpoint scheduling begin; script sees only ParticipantIDs
+- [ ] After Start: recovery, replay, and checkpoint scheduling begin; script sees only ParticipantIDs (2026-10-18: replay recording begins at Start, adoption and recovery, with the starting state as first point)
 
 ---
 
@@ -242,7 +242,7 @@ Completed 2026-10-18 (the human accepted it as complete): the COMMAND protocol i
 - [x] Command can trigger an early execution boundary, processing older pending operations first (it requests a flush; the batch runs everything before it in timeline order; controller and boundary tests)
 - [x] command(...) executed via Sandbox; full successful result committed; correlated response sent (boundary and sandbox tests, end-to-end run)
 - [x] Immediate projection flush when observable state changed (the requested boundary sends views like any other)
-- [ ] Response offered to Replay (best effort) with its target participant (deferred to R: closes when the Replay Recorder records the responses captures already carry; offered in `replay.Capture.CommandResponses` with participant, time and order; the recorder is still the placeholder that drops it, see R)
+- [x] Response offered to Replay (best effort) with its target participant (2026-10-18: recorded as a `COMMAND_RESPONSE` record with exactly one participant, its Session time and timeline order, see R)
 - [x] Logical rejection (NOT_YOUR_TURN, etc.) is a normal result; Session continues (sandbox tests, end-to-end run)
 
 ---
@@ -389,16 +389,18 @@ Implemented 2026-10-18 (decided by the human: the client's reconnection through 
 
 ## R. Replay recording - producer side (§22)
 
-- [ ] Replay data contract defined: sessionUUID, gameVersionID, replay format version, participant metadata (ParticipantIDs), full base state, gameTime per state point, sampled state deltas, logical events, COMMAND responses with target participant, timeline order for equal gameTime (decision: encoding/compression/storage technology)
-- [ ] No recovery-only data in replay (sequences, tokens, timers, PRNG, connection state, lease)
-- [ ] Capture cadence independent from execution cadence and chunk duration (three separate knobs)
-- [ ] Replay Recorder receives immutable consistent captures at safe boundaries (never reads mutable state) (2026-10-18: the lane offers `replay.Capture` (state, Session time, revision, participants) after each committed boundary, never blocking; the recorder is a placeholder that drops it)
-- [ ] Chunk = FULL_STATE first, then STATE_DELTA, EVENT, COMMAND_RESPONSE records (COMMAND_RESPONSE input exists since 2026-10-18: `replay.Capture.CommandResponses` with participant, Session time and timeline order; recording it also closes the J item)
-- [ ] Sealed chunks persisted asynchronously; the next chunk starts capturing immediately
-- [ ] Bounded memory queue; retry on failure; when exhausted, degrade/drop best-effort history without stopping gameplay
-- [ ] Transient records keep visibility/target (broadcast, participant-targeted, COMMAND response); a P1-private response is never replayable under P2 (2026-10-18: the Capture carries participant-targeted logical errors, `replay.Capture.Errors`, each with its participant, Session time and timeline order, like COMMAND responses; and logical events, `replay.Capture.Events`, broadcast or with their target participants)
-- [ ] Final state: durable final Replay point persisted BEFORE the durable FINISHED transition and cleanup; final chunk may be shorter
-- [ ] Raw global state stored backend-only
+Implemented 2026-10-18 (design by the human, recorded in `play/docs/decisions/SESSION-ADR-0033-replay-recording-produces-immutable-chunks.md`; decided by the human in this step: one recording per controller run with per-recording object keys, recorder in the Runtime and persistence through `/play/session`, JSON + zstd, the existing bucket under `replays/`). `play/runtime/workflows/replayrecording` (Recorder, one goroutine per recording, one bounded store queue per instance), `play/runtime/internal/business/replaychunk` (builder and versioned codec), `play/runtime/internal/business/jsonpatch` (RFC 6902 diff and apply), `play/session/usecases/storereplaychunk` (object first, then `play_replays` / `play_replay_chunks`). Verified by unit tests, repository tests against Postgres and an end-to-end run against the local emulator: a cancelled Space Drift Session and a game that finishes by itself, with hashes verified, states rebuilt from the deltas, the teleport response targeted to P1 only, and the final chunk registered before FINISHED. Choices made in implementation, to review: a tick at or past the chunk end seals it with that tick's transients and starts the next chunk with its state; the final tick never starts a chunk, it closes the last one (so the final chunk holds the ending's events too, and may run up to one tick past its nominal end); a chunk is also sealed at 16 MiB; a recording's inbox holds 256 ticks (a full one drops the tick, counted); a chunk is tried 5 times (1 s doubling) before being dropped; shutdown waits up to 10 s for the queue; a capture whose state or transient is not JSON is rejected whole (counted, logged); a `COMMAND_RESPONSE` or `ERROR` must have exactly one participant, and an event keeps `null` (everyone) apart from `[]` (no one).
+
+- [x] Replay data contract defined: sessionUUID, gameVersionID, replay format version, participant metadata (ParticipantIDs), full base state, gameTime per state point, sampled state deltas, logical events, COMMAND responses with target participant, timeline order for equal gameTime (decision: encoding/compression/storage technology) (chunk format version 1, JSON + zstd; logical errors recorded too; storage: immutable objects in the private bucket plus a Postgres manifest)
+- [x] No recovery-only data in replay (sequences, tokens, timers, PRNG, connection state, lease)
+- [x] Capture cadence independent from execution cadence and chunk duration (three separate knobs) (`REPLAY_STATE_SAMPLE_EVERY_N_TICKS`, `REPLAY_CHUNK_DURATION` in effective Session time, the 100 ms tick)
+- [x] Replay Recorder receives immutable consistent captures at safe boundaries (never reads mutable state) (the lane offers `replay.Capture` after each committed boundary and the starting state at Start, adoption and recovery; `Offer` never blocks)
+- [x] Chunk = FULL_STATE first, then STATE_DELTA, EVENT, COMMAND_RESPONSE records (plus ERROR; deltas are JSON Patches from the last state the chunk kept; every chunk is self-contained)
+- [x] Sealed chunks persisted asynchronously; the next chunk starts capturing immediately
+- [x] Bounded memory queue; retry on failure; when exhausted, degrade/drop best-effort history without stopping gameplay (`REPLAY_MAX_PENDING_CHUNKS`, default 64, oldest dropped; drops alerted)
+- [x] Transient records keep visibility/target (broadcast, participant-targeted, COMMAND response); a P1-private response is never replayable under P2 (enforced by the codec, which refuses a private record without exactly one participant)
+- [x] Final state: durable final Replay point persisted BEFORE the durable FINISHED transition and cleanup; final chunk may be shorter
+- [x] Raw global state stored backend-only (private bucket; nothing serves it)
 
 ---
 
@@ -406,7 +408,7 @@ Implemented 2026-10-18 (decided by the human: the client's reconnection through 
 
 Implemented 2026-10-18 (decided by the human: `finished: true` with the final state as the result; a durable `play_sessions.expires_at` set at creation; a `session_ended` / `lobby_closed` message with `status` and `end_cause` before closing; platform termination ends as CANCELLED / PLATFORM_TERMINATED). One durable path, `sessionlifecycle.EndSession` (it replaced `AbortStart`, `AbortRunningSession` and `CancelAbandonedSession`), and one live path, the controller's `endSession`. Run end to end against a fresh database: host cancel in the lobby and while running.
 
-- [ ] FINISHED: Sandbox success with FINISHED -> commit -> force durable final Replay state / game result -> durable FINISHED -> final live state/events to connected users -> close transports -> destroy Sandbox context + controller -> release owner (2026-10-18: implemented in this order, retried each tick on failure; but `replay.Finish` is the placeholder that stores nothing (R) and `ReleaseOwner` the one that releases nothing (A1))
+- [ ] FINISHED: Sandbox success with FINISHED -> commit -> force durable final Replay state / game result -> durable FINISHED -> final live state/events to connected users -> close transports -> destroy Sandbox context + controller -> release owner (2026-10-18: implemented in this order, retried each tick on failure; `replay.Finish` stores the final chunk durably since the Replay Recorder exists (R); still open: `ReleaseOwner` is the placeholder that releases nothing (A1))
 - [x] CANCELLED (host), EXPIRED (lobby/inactivity), ABORTED (unrecoverable) complete without calling JavaScript (2026-10-18: also MAX_LIFETIME and PLATFORM_TERMINATED; controller tests)
 - [x] Clients receive a platform terminal message with cause (2026-10-18: `session_ended` or `lobby_closed`, `{type, status, end_cause}`, then close 1000; API tests and the end-to-end run)
 - [x] FINISHED Sessions are historical only; no live reactivation (§30.26) (2026-10-18: owner routing answers 404 for any ended Session, checked by the end-to-end run; the ended controller is gone)
@@ -451,7 +453,7 @@ Implemented 2026-10-18 (decided by the human: `finished: true` with the final st
 - [ ] Guest creation rate limiting at the API edge (pending task, 2026-10-17): `POST /v1/guests` needs no token, so anyone can create Users with it; it must be limited per client (for example per IP) before production
 - [ ] Per-message-type rate limiting at the API edge (pending task, requested by the human 2026-10-17). Every live connection reads with one loop that hands each message to its type's own lane (`api/internal/live/lanes.go`: one goroutine per type, so SAMPLEs only wait for SAMPLEs, COMMANDs for COMMANDs, resyncs for resyncs). Handing off never blocks, so a lane's queue is unbounded: until this limit exists, a client sending faster than its lane is handled grows that queue without bound. The limit must be enforced per type before enqueueing, and bound each lane's queue.
 - [x] Sandbox: CPU/execution budget, memory, deadline, state/output size, non-cooperative code protection (5 s budget per call by killing the worker, 64 MiB memory, 1 MiB stack, 256 KiB state/view, soft 160 MiB Go heap per worker; per instance `SANDBOX_MAX_CONTEXTS` (default 32) and `SANDBOX_MAX_CONCURRENT_EXECUTIONS` (default CPUs), Start answers `sandbox_unavailable` without capacity; tests for each)
-- [ ] Session: max lifetime, inactivity timeout, owner/recovery deadlines, bounded Replay and checkpoint queues (2026-10-18: max lifetime and inactivity done)
+- [ ] Session: max lifetime, inactivity timeout, owner/recovery deadlines, bounded Replay and checkpoint queues (2026-10-18: max lifetime and inactivity done; the replay queue is bounded (R) and the checkpoint writer keeps only the latest)
 - [ ] Scripts cannot request higher tick rates or unbounded buffers
 - [ ] All numeric values chosen and configurable (decision)
 
@@ -518,9 +520,9 @@ Recovery and ownership:
 - [ ] Reconciliation jobs: Sessions expired/aborted per run, job failures
 
 Replay:
-- [ ] Capture rate, chunk size/duration, persistence latency, retry count
-- [ ] Queue depth and dropped chunks/records (alert on drops)
-- [ ] Final-state persistence success/failure (critical alert)
+- [x] Capture rate, chunk size/duration, persistence latency, retry count (2026-10-18: `play_runtime_replay_captures_total{outcome}`, `play_runtime_replay_chunk_bytes`, `play_runtime_replay_chunk_session_seconds`, `play_runtime_replay_chunk_store_duration_seconds{outcome}` counting every attempt; emission pending like every metric)
+- [x] Queue depth and dropped chunks/records (alert on drops) (2026-10-18: `play_runtime_replay_pending_chunks`, `play_runtime_replay_chunks_total{outcome}` by drop reason, dropped ticks in `play_runtime_replay_captures_total{outcome="dropped"}`; every dropped chunk raises `monitoring.Alert`)
+- [x] Final-state persistence success/failure (critical alert) (2026-10-18: `play_runtime_replay_finals_total{outcome}`; the controller alerts when a finished game still cannot end durably after 50 attempts)
 
 Alerts and dashboards:
 - [ ] Alerts defined for: dual ownership, sandbox retry-after-script-error, repeated session aborts, checkpoint staleness, replay drops, final replay failure, boundary lag, sandbox sidecar unhealthy, queue saturation
@@ -561,7 +563,7 @@ Everything here is wired into the running system, so a request flows through it,
 - [x] Join code resolution (`unwiredJoinCodes` in `unwired.go`, in scope, see A3): replaced on 2026-10-17 by `play/session/usecases/resolvejoincode` (the Session of an active, unexpired join code; `not_found` otherwise); the stand-in was deleted.
 - [ ] Controller lifetime (`play/runtime/workflows/liveconnection`, in scope, see H): since 2026-10-18 a controller is destroyed when its Session ends and calls the `ReleaseOwner` placeholder (no registry, A1); a controller created for a rejected connection lives until its lobby deadline ends it.
 - [ ] Forwarding to a remote owner (`api/play/owner_routing.go`, in scope, see A1): a Session owned by another instance is answered `503`; unreachable while single-instance. Real behavior: proxy the connection to the owner (gateway), decided with the multi-instance topology.
-- [ ] Replay recorder (`unwiredReplay` in `unwired.go`, in scope, see R): every capture a running game offers is dropped, and `Finish` drops a finished game's final capture while reporting success (2026-10-18), so FINISHED is reached without the durable final replay state. Real behavior: the Replay Recorder building chunks (FULL_STATE, STATE_DELTA, events, command responses, which captures already carry) and persisting them asynchronously, bounded and best effort.
+- [x] Replay recorder (`unwiredReplay` in `unwired.go`, in scope, see R): replaced 2026-10-18 by `replayrecording.Recorder`; `unwired.go` was deleted. It used to: every capture a running game offers is dropped, and `Finish` drops a finished game's final capture while reporting success (2026-10-18), so FINISHED is reached without the durable final replay state. Real behavior: the Replay Recorder building chunks (FULL_STATE, STATE_DELTA, events, command responses, which captures already carry) and persisting them asynchronously, bounded and best effort.
 - [x] Running games never stop by themselves (`play/runtime/workflows/liveconnection`, in scope, see S and U): replaced 2026-10-18 by finishing, inactivity and maximum lifetime, which end the Session, its controller and context.
 - [ ] Platform termination (`ControllerResolver.TerminateSession`, in scope, see S): ready and tested, nothing calls it (2026-10-18). Real behavior: called by the limits/consumption policy once it exists; a Session owned by another instance must be reached through its owner (A1).
 - [ ] View delivery has no backpressure (`play/runtime/workflows/liveconnection`, in scope, see W): a slow connection's queued views grow without bound. Real behavior: coalesce into one FULL view when a connection falls behind.
@@ -594,8 +596,8 @@ Each needs at least one test or other concrete evidence before ticking.
 - [x] 21. Full resync always available (2026-10-18: served from the projection cache at any point of a running game; `TestResync`)
 - [x] 22. Recovery may roll back (2026-10-18: to the last periodic checkpoint; live crash)
 - [x] 23. Recovery and Replay are separate (checkpoints in `play_session_checkpoints`, replay through its own recorder)
-- [ ] 24. Replay never blocks gameplay indefinitely
-- [ ] 25. FINISHED has a durable ending (2026-10-18: FINISHED is durable before clients learn it, but the final replay state waits for R)
+- [x] 24. Replay never blocks gameplay indefinitely (2026-10-18: `Offer` never blocks; storage runs on the recorder's own goroutines; only a finished game's `Finish` waits for storage, retried each tick)
+- [x] 25. FINISHED has a durable ending (2026-10-18: the final replay chunk is stored and the manifest finalized before FINISHED, which is durable before clients learn it)
 - [x] 26. Finished Sessions are historical, not live (2026-10-18: an ended Session's controller is gone and owner routing answers 404; end-to-end run)
 - [x] 27. Platform termination does not depend on script cleanup (2026-10-18: cancel, expiry, abort and platform termination call no JavaScript; controller tests)
 - [ ] 28. Published GameVersion stays available
