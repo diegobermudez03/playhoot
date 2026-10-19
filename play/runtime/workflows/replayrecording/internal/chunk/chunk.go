@@ -1,7 +1,7 @@
-// Package replaychunk builds and encodes replay chunks: self-contained pieces
+// Package chunk builds and encodes replay chunks: self-contained pieces
 // of a Session's approximate history, each a full authoritative state
 // followed by state deltas and transient records, in timeline order.
-package replaychunk
+package chunk
 
 import (
 	"encoding/json"

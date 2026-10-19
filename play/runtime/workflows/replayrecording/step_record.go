@@ -7,8 +7,8 @@ import (
 
 	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/monitoring"
-	"github.com/diegobermudez03/playhoot/play/runtime/internal/business/replaychunk"
 	"github.com/diegobermudez03/playhoot/play/runtime/replay"
+	"github.com/diegobermudez03/playhoot/play/runtime/workflows/replayrecording/internal/chunk"
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
 
@@ -35,7 +35,7 @@ type recording struct {
 	id          string
 	sessionUUID string
 	startedAt   time.Time
-	builder     *replaychunk.Builder
+	chunks      *chunking
 	inbox       chan message
 
 	// final is the sealed final chunk until it is stored; then finished.
@@ -62,7 +62,7 @@ func (r *Recorder) record(recorded *recording, capture replay.Capture) {
 	if recorded.finished || recorded.final != nil {
 		return
 	}
-	sealed, err := recorded.builder.Add(capture)
+	sealed, err := recorded.chunks.add(capture)
 	if err != nil {
 		r.reject(recorded, err)
 		return
@@ -79,7 +79,7 @@ func (r *Recorder) finish(ctx context.Context, recorded *recording, capture repl
 		return nil
 	}
 	if recorded.final == nil {
-		final, err := recorded.builder.Finish(capture)
+		final, err := recorded.chunks.finish(capture)
 		if err != nil {
 			r.reject(recorded, err)
 			return fmt.Errorf("recording the final tick: %w", err)
@@ -107,14 +107,14 @@ func (r *Recorder) stop(recorded *recording) {
 	case recorded.final != nil:
 		r.queue.add(sealedChunk{sessionUUID: recorded.sessionUUID, chunk: *recorded.final})
 	case !recorded.finished:
-		if sealed := recorded.builder.Seal(); sealed != nil {
+		if sealed := recorded.chunks.seal(); sealed != nil {
 			r.enqueue(recorded, *sealed)
 		}
 	}
 }
 
-func (r *Recorder) enqueue(recorded *recording, chunk replaychunk.Chunk) {
-	encoded, err := r.encode(recorded, chunk)
+func (r *Recorder) enqueue(recorded *recording, sealed chunk.Chunk) {
+	encoded, err := r.encode(recorded, sealed)
 	if err != nil {
 		ctx := logging.Start(context.Background())
 		chunksTotal.Inc(ctx, chunkOutcomeLabel.Value(chunkDroppedEncoding))
@@ -127,22 +127,22 @@ func (r *Recorder) enqueue(recorded *recording, chunk replaychunk.Chunk) {
 	r.queue.add(sealedChunk{sessionUUID: recorded.sessionUUID, chunk: encoded})
 }
 
-func (r *Recorder) encode(recorded *recording, chunk replaychunk.Chunk) (sessionpkg.ReplayChunk, error) {
-	content, err := replaychunk.Encode(chunk)
+func (r *Recorder) encode(recorded *recording, sealed chunk.Chunk) (sessionpkg.ReplayChunk, error) {
+	content, err := chunk.Encode(sealed)
 	if err != nil {
 		return sessionpkg.ReplayChunk{}, err
 	}
 	ctx := context.Background()
 	chunkBytes.Observe(ctx, float64(len(content)))
-	chunkSpan.Observe(ctx, float64(chunk.ThroughSessionTimeMs-chunk.FromSessionTimeMs)/1000)
+	chunkSpan.Observe(ctx, float64(sealed.ThroughSessionTimeMs-sealed.FromSessionTimeMs)/1000)
 	return sessionpkg.ReplayChunk{
 		RecordingUUID:        recorded.id,
 		RecordingStartedAt:   recorded.startedAt,
-		Index:                chunk.Index,
-		FormatVersion:        replaychunk.FormatVersion,
-		FromSessionTimeMs:    chunk.FromSessionTimeMs,
-		ThroughSessionTimeMs: chunk.ThroughSessionTimeMs,
-		Final:                chunk.Final,
+		Index:                sealed.Index,
+		FormatVersion:        chunk.FormatVersion,
+		FromSessionTimeMs:    sealed.FromSessionTimeMs,
+		ThroughSessionTimeMs: sealed.ThroughSessionTimeMs,
+		Final:                sealed.Final,
 		Content:              content,
 	}, nil
 }

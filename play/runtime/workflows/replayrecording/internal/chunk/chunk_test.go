@@ -1,14 +1,12 @@
-package replaychunk
+package chunk
 
 import (
 	"encoding/json"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/diegobermudez03/playhoot/play/runtime/internal/business/jsonpatch"
-	"github.com/diegobermudez03/playhoot/play/runtime/replay"
 )
 
 func TestEncode(t *testing.T) {
@@ -20,7 +18,7 @@ func TestEncode(t *testing.T) {
 
 	tests := map[string]func(t *testing.T) test{
 		"chunk_round_trips_with_who_sees_each_record": func(t *testing.T) test {
-			c := chunk(3, 180_000, 240_000, `{"x":[1,null]}`,
+			c := chunkOf(3, 180_000, 240_000, `{"x":[1,null]}`,
 				delta(180_100, 10, `[{"op":"remove","path":"/x/1"}]`),
 				Record{Type: Event, SessionTimeMs: 180_150, TimelineOrder: 11, Value: json.RawMessage(`"all"`)},
 				Record{Type: Event, SessionTimeMs: 180_150, TimelineOrder: 12, Participants: []string{}, Value: json.RawMessage(`"none"`)},
@@ -31,19 +29,19 @@ func TestEncode(t *testing.T) {
 			return test{chunk: c}
 		},
 		"response_without_its_participant_is_refused": func(t *testing.T) test {
-			return test{chunk: chunk(0, 0, 0, `{}`, Record{Type: CommandResponse, Value: json.RawMessage(`1`)}), expectErr: true}
+			return test{chunk: chunkOf(0, 0, 0, `{}`, Record{Type: CommandResponse, Value: json.RawMessage(`1`)}), expectErr: true}
 		},
 		"error_for_two_participants_is_refused": func(t *testing.T) test {
-			return test{chunk: chunk(0, 0, 0, `{}`, Record{Type: Error, Participants: []string{"P1", "P2"}, Value: json.RawMessage(`1`)}), expectErr: true}
+			return test{chunk: chunkOf(0, 0, 0, `{}`, Record{Type: Error, Participants: []string{"P1", "P2"}, Value: json.RawMessage(`1`)}), expectErr: true}
 		},
 		"delta_with_participants_is_refused": func(t *testing.T) test {
-			return test{chunk: chunk(0, 0, 0, `{}`, Record{Type: StateDelta, Participants: []string{"P1"}, Value: json.RawMessage(`[]`)}), expectErr: true}
+			return test{chunk: chunkOf(0, 0, 0, `{}`, Record{Type: StateDelta, Participants: []string{"P1"}, Value: json.RawMessage(`[]`)}), expectErr: true}
 		},
 		"unknown_record_type_is_refused": func(t *testing.T) test {
-			return test{chunk: chunk(0, 0, 0, `{}`, Record{Type: "TIMER", Value: json.RawMessage(`1`)}), expectErr: true}
+			return test{chunk: chunkOf(0, 0, 0, `{}`, Record{Type: "TIMER", Value: json.RawMessage(`1`)}), expectErr: true}
 		},
 		"chunk_without_base_state_is_refused": func(t *testing.T) test {
-			return test{chunk: Chunk{SessionUUID: sessionUUID}, expectErr: true}
+			return test{chunk: Chunk{SessionUUID: header.SessionUUID}, expectErr: true}
 		},
 	}
 
@@ -75,7 +73,7 @@ func TestDecodeRefusesOtherFormatVersions(t *testing.T) {
 	require.Error(t, err)
 }
 
-// TestStoredChunkRebuildsEveryKeptState checks the whole path: captures built
+// TestStoredChunkRebuildsEveryKeptState checks the whole path: states built
 // into a chunk, stored, read back, and its deltas applied to its base.
 func TestStoredChunkRebuildsEveryKeptState(t *testing.T) {
 	states := []string{
@@ -84,12 +82,11 @@ func TestStoredChunkRebuildsEveryKeptState(t *testing.T) {
 		`{"ships":[{"id":"b","x":4}],"score":{"P2":5}}`,
 		`{"ships":[],"score":{},"over":true}`,
 	}
-	builder := NewBuilder(recordingUUID, Settings{StateEveryTicks: 1, ChunkDuration: time.Minute})
-	for i, state := range states {
-		_, err := builder.Add(replay.Capture{SessionUUID: sessionUUID, SessionTimeMs: int64(i) * 100, State: []byte(state)})
-		require.NoError(t, err)
+	builder := Open(header, 0, 0, 0, mustState(t, states[0]))
+	for i, state := range states[1:] {
+		require.NoError(t, builder.AppendState(int64(i+1)*100, mustState(t, state)))
 	}
-	stored, err := Encode(*builder.Seal())
+	stored, err := Encode(builder.Seal(300, false))
 	require.NoError(t, err)
 
 	decoded, err := Decode(stored)

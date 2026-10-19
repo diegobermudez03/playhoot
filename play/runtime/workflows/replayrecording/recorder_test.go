@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
-	"github.com/diegobermudez03/playhoot/play/runtime/internal/business/replaychunk"
 	"github.com/diegobermudez03/playhoot/play/runtime/replay"
+	"github.com/diegobermudez03/playhoot/play/runtime/workflows/replayrecording/internal/chunk"
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
 
@@ -39,19 +39,19 @@ func tick(sessionTimeMs int64, state string) replay.Capture {
 }
 
 // stored is chunk as the recorder hands it to storage.
-func stored(t *testing.T, recordingID string, chunk replaychunk.Chunk) sessionpkg.ReplayChunk {
+func stored(t *testing.T, recordingID string, expected chunk.Chunk) sessionpkg.ReplayChunk {
 	t.Helper()
-	chunk.SessionUUID, chunk.GameVersionUUID, chunk.RecordingUUID, chunk.Participants = sessionUUID, versionUUID, recordingID, []string{"P1"}
-	content, err := replaychunk.Encode(chunk)
+	expected.SessionUUID, expected.GameVersionUUID, expected.RecordingUUID, expected.Participants = sessionUUID, versionUUID, recordingID, []string{"P1"}
+	content, err := chunk.Encode(expected)
 	require.NoError(t, err)
 	return sessionpkg.ReplayChunk{
-		RecordingUUID: recordingID, RecordingStartedAt: startedAt, Index: chunk.Index, FormatVersion: replaychunk.FormatVersion,
-		FromSessionTimeMs: chunk.FromSessionTimeMs, ThroughSessionTimeMs: chunk.ThroughSessionTimeMs, Final: chunk.Final, Content: content,
+		RecordingUUID: recordingID, RecordingStartedAt: startedAt, Index: expected.Index, FormatVersion: chunk.FormatVersion,
+		FromSessionTimeMs: expected.FromSessionTimeMs, ThroughSessionTimeMs: expected.ThroughSessionTimeMs, Final: expected.Final, Content: content,
 	}
 }
 
-func deltaRecord(sessionTimeMs int64, order uint64, patch string) replaychunk.Record {
-	return replaychunk.Record{Type: replaychunk.StateDelta, SessionTimeMs: sessionTimeMs, TimelineOrder: order, Value: json.RawMessage(patch)}
+func deltaRecord(sessionTimeMs int64, order uint64, patch string) chunk.Record {
+	return chunk.Record{Type: chunk.StateDelta, SessionTimeMs: sessionTimeMs, TimelineOrder: order, Value: json.RawMessage(patch)}
 }
 
 func TestFinish(t *testing.T) {
@@ -70,9 +70,9 @@ func TestFinish(t *testing.T) {
 
 	tests := map[string]func(t *testing.T, deps dependencies, recorder *Recorder, recordingID string) test{
 		"final_chunk_is_stored_before_returning": func(t *testing.T, deps dependencies, recorder *Recorder, recordingID string) test {
-			deps.store.EXPECT().StoreReplayChunk(ctx, sessionUUID, stored(t, recordingID, replaychunk.Chunk{
+			deps.store.EXPECT().StoreReplayChunk(ctx, sessionUUID, stored(t, recordingID, chunk.Chunk{
 				FromSessionTimeMs: 0, ThroughSessionTimeMs: 100, Final: true, Base: json.RawMessage(`{"x":0}`),
-				Records: []replaychunk.Record{deltaRecord(100, 0, `[{"op":"replace","path":"/x","value":"end"}]`)},
+				Records: []chunk.Record{deltaRecord(100, 0, `[{"op":"replace","path":"/x","value":"end"}]`)},
 			})).Return(nil)
 			return test{
 				run: func(t *testing.T, recorder *Recorder, recordingID string) {
@@ -82,9 +82,9 @@ func TestFinish(t *testing.T) {
 			}
 		},
 		"final_tick_past_the_chunk_end_closes_the_last_chunk": func(t *testing.T, deps dependencies, recorder *Recorder, recordingID string) test {
-			deps.store.EXPECT().StoreReplayChunk(ctx, sessionUUID, stored(t, recordingID, replaychunk.Chunk{
+			deps.store.EXPECT().StoreReplayChunk(ctx, sessionUUID, stored(t, recordingID, chunk.Chunk{
 				FromSessionTimeMs: 59_000, ThroughSessionTimeMs: 61_000, Final: true, Base: json.RawMessage(`{"x":0}`),
-				Records: []replaychunk.Record{deltaRecord(61_000, 0, `[{"op":"replace","path":"/x","value":"end"}]`)},
+				Records: []chunk.Record{deltaRecord(61_000, 0, `[{"op":"replace","path":"/x","value":"end"}]`)},
 			})).Return(nil)
 			return test{
 				run: func(t *testing.T, recorder *Recorder, recordingID string) {
@@ -94,7 +94,7 @@ func TestFinish(t *testing.T) {
 			}
 		},
 		"failed_store_fails_and_the_next_call_stores_the_same_chunk": func(t *testing.T, deps dependencies, recorder *Recorder, recordingID string) test {
-			final := stored(t, recordingID, replaychunk.Chunk{FromSessionTimeMs: 100, ThroughSessionTimeMs: 100, Final: true, Base: json.RawMessage(`{}`)})
+			final := stored(t, recordingID, chunk.Chunk{FromSessionTimeMs: 100, ThroughSessionTimeMs: 100, Final: true, Base: json.RawMessage(`{}`)})
 			gomock.InOrder(
 				deps.store.EXPECT().StoreReplayChunk(ctx, sessionUUID, final).Return(errors.New("storage down")),
 				deps.store.EXPECT().StoreReplayChunk(ctx, sessionUUID, final).Return(nil),
@@ -107,7 +107,7 @@ func TestFinish(t *testing.T) {
 			}
 		},
 		"stored_ending_answers_success_again_without_storing": func(t *testing.T, deps dependencies, recorder *Recorder, recordingID string) test {
-			deps.store.EXPECT().StoreReplayChunk(ctx, sessionUUID, stored(t, recordingID, replaychunk.Chunk{
+			deps.store.EXPECT().StoreReplayChunk(ctx, sessionUUID, stored(t, recordingID, chunk.Chunk{
 				FromSessionTimeMs: 100, ThroughSessionTimeMs: 100, Final: true, Base: json.RawMessage(`{}`),
 			})).Return(nil)
 			return test{
@@ -165,27 +165,27 @@ func TestStopRecording(t *testing.T) {
 
 	tests := map[string]func(t *testing.T, deps dependencies, recorder *Recorder, recordingID string) test{
 		"active_chunk_is_stored_in_the_background": func(t *testing.T, deps dependencies, recorder *Recorder, recordingID string) test {
-			deps.store.EXPECT().StoreReplayChunk(recorder.queue.ctx, sessionUUID, stored(t, recordingID, replaychunk.Chunk{
+			deps.store.EXPECT().StoreReplayChunk(recorder.queue.ctx, sessionUUID, stored(t, recordingID, chunk.Chunk{
 				FromSessionTimeMs: 0, ThroughSessionTimeMs: 200, Base: json.RawMessage(`{"x":0}`),
-				Records: []replaychunk.Record{deltaRecord(200, 0, `[{"op":"replace","path":"/x","value":2}]`)},
+				Records: []chunk.Record{deltaRecord(200, 0, `[{"op":"replace","path":"/x","value":2}]`)},
 			})).Return(nil)
 			return test{ticks: []replay.Capture{tick(0, `{"x":0}`), tick(100, `{"x":0}`), tick(200, `{"x":2}`)}}
 		},
 		"chunks_sealed_by_game_time_and_the_last_one_are_all_stored": func(t *testing.T, deps dependencies, recorder *Recorder, recordingID string) test {
-			deps.store.EXPECT().StoreReplayChunk(recorder.queue.ctx, sessionUUID, stored(t, recordingID, replaychunk.Chunk{
+			deps.store.EXPECT().StoreReplayChunk(recorder.queue.ctx, sessionUUID, stored(t, recordingID, chunk.Chunk{
 				FromSessionTimeMs: 0, ThroughSessionTimeMs: 60_000, Base: json.RawMessage(`{"x":0}`),
 			})).Return(nil)
-			deps.store.EXPECT().StoreReplayChunk(recorder.queue.ctx, sessionUUID, stored(t, recordingID, replaychunk.Chunk{
+			deps.store.EXPECT().StoreReplayChunk(recorder.queue.ctx, sessionUUID, stored(t, recordingID, chunk.Chunk{
 				Index: 1, FromSessionTimeMs: 60_000, ThroughSessionTimeMs: 120_000, Base: json.RawMessage(`{"x":1}`),
 			})).Return(nil)
-			deps.store.EXPECT().StoreReplayChunk(recorder.queue.ctx, sessionUUID, stored(t, recordingID, replaychunk.Chunk{
+			deps.store.EXPECT().StoreReplayChunk(recorder.queue.ctx, sessionUUID, stored(t, recordingID, chunk.Chunk{
 				Index: 2, FromSessionTimeMs: 120_000, ThroughSessionTimeMs: 137_400, Base: json.RawMessage(`{"x":2}`),
-				Records: []replaychunk.Record{deltaRecord(137_400, 0, `[{"op":"replace","path":"/x","value":3}]`)},
+				Records: []chunk.Record{deltaRecord(137_400, 0, `[{"op":"replace","path":"/x","value":3}]`)},
 			})).Return(nil)
 			return test{ticks: []replay.Capture{tick(0, `{"x":0}`), tick(60_000, `{"x":1}`), tick(120_000, `{"x":2}`), tick(137_400, `{"x":3}`)}}
 		},
 		"final_chunk_never_stored_is_stored_in_the_background": func(t *testing.T, deps dependencies, recorder *Recorder, recordingID string) test {
-			final := stored(t, recordingID, replaychunk.Chunk{FromSessionTimeMs: 0, ThroughSessionTimeMs: 0, Final: true, Base: json.RawMessage(`{}`)})
+			final := stored(t, recordingID, chunk.Chunk{FromSessionTimeMs: 0, ThroughSessionTimeMs: 0, Final: true, Base: json.RawMessage(`{}`)})
 			gomock.InOrder(
 				deps.store.EXPECT().StoreReplayChunk(ctx, sessionUUID, final).Return(errors.New("storage down")),
 				deps.store.EXPECT().StoreReplayChunk(recorder.queue.ctx, sessionUUID, final).Return(nil),

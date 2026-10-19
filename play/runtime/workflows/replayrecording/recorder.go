@@ -13,7 +13,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/diegobermudez03/playhoot/logging"
-	"github.com/diegobermudez03/playhoot/play/runtime/internal/business/replaychunk"
 	"github.com/diegobermudez03/playhoot/play/runtime/replay"
 )
 
@@ -51,11 +50,11 @@ var errUnknownRecording = errors.New("replay recording not found")
 // Recorder records every running game of this instance. Its methods never
 // make gameplay wait for storage, except Finish, which stores the ending.
 type Recorder struct {
-	store    chunkStore
-	settings replaychunk.Settings
-	queue    *storeQueue
-	now      func() time.Time
-	logger   *slog.Logger
+	store  chunkStore
+	policy chunkingPolicy
+	queue  *storeQueue
+	now    func() time.Time
+	logger *slog.Logger
 
 	mu         sync.Mutex
 	recordings map[string]*recording
@@ -80,7 +79,7 @@ func newRecorder(store chunkStore, config Config, backoff time.Duration, logger 
 	}
 	r := &Recorder{
 		store:      store,
-		settings:   replaychunk.Settings{StateEveryTicks: config.StateEveryTicks, ChunkDuration: config.ChunkDuration, MaxChunkBytes: maxChunkBytes},
+		policy:     chunkingPolicy{stateEveryTicks: config.StateEveryTicks, chunkDuration: config.ChunkDuration, maxChunkBytes: maxChunkBytes},
 		now:        time.Now,
 		logger:     logger,
 		recordings: make(map[string]*recording),
@@ -102,7 +101,7 @@ func (r *Recorder) StartRecording(sessionUUID string) string {
 		id:          id,
 		sessionUUID: sessionUUID,
 		startedAt:   r.now(),
-		builder:     replaychunk.NewBuilder(id, r.settings),
+		chunks:      newChunking(id, r.policy),
 		inbox:       make(chan message, inboxSize),
 	}
 	r.recordings[id] = recorded

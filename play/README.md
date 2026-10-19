@@ -54,9 +54,9 @@ play/                         # a folder, not a Go package: each subpackage expo
       ownership/              # LocateOrClaimOwner (placeholder: single instance, no registry)
     workflows/
       liveconnection/         # the live Session: the ControllerResolver finds or creates each Session's controller; the controller runs everything else, one file per operation
-      replayrecording/        # the Replay Recorder: one recording per controller run, chunks built in memory, a bounded queue storing them in the background
+      replayrecording/        # the Replay Recorder: one recording per controller run, its chunking policy, a bounded queue storing chunks in the background; internal/chunk builds and encodes chunks
     internal/
-      business/               # pure logic shared by the Runtime's workflows (checkpoint encoding, view patches, JSON Patch, replay chunks)
+      business/               # pure logic shared by the Runtime's workflows (checkpoint encoding, view patches, JSON Patch)
   session/
     session.go                # durable Session public contract (CreateSession types, ErrIdempotencyConflict, AdminJoinEligibility)
     migration/                # exposes Migrate(db) and Seed(db) (test data) to the application's migrations.go
