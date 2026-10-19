@@ -130,6 +130,8 @@ func TestCommitStartIntegration(t *testing.T) {
 		expectedCheckpoints  []integrationCheckpoint
 		expectedActiveCodes  int
 		expectedHistory      []string
+		// expectedOwnerSeen means the committing owner's lease is stored.
+		expectedOwnerSeen bool
 	}
 
 	db := testdb.OpenSessionDB(t)
@@ -152,6 +154,7 @@ func TestCommitStartIntegration(t *testing.T) {
 				expectedHistory:      []string{"LOBBY -> RUNNING by " + session.CreatorUUID},
 				expectedParticipants: []integrationParticipant{{UserUUID: userA, ParticipantID: "P1"}, {UserUUID: userB, ParticipantID: "P2"}},
 				expectedCheckpoints:  []integrationCheckpoint{{ContextRevision: 1, Content: []byte(`{"schema_version":1}`)}},
+				expectedOwnerSeen:    true,
 			}
 		},
 		"expired_lobby_records_nothing": func(t *testing.T) test {
@@ -205,6 +208,7 @@ func TestCommitStartIntegration(t *testing.T) {
 			require.Equal(t, tc.expectedCheckpoints, checkpoints)
 			require.Len(t, active, tc.expectedActiveCodes)
 			require.Equal(t, tc.expectedHistory, statusHistory(t, db, tc.session.ID))
+			require.Equal(t, tc.expectedOwnerSeen, ownerLeaseOf(t, db, tc.session.ID) != nil)
 		})
 	}
 }

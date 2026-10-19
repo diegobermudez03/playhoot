@@ -43,6 +43,10 @@ const (
 	// UnrecoverableInfraFailure means the platform could not execute a
 	// running Session's game for too long.
 	UnrecoverableInfraFailure Cause = "UNRECOVERABLE_INFRA_FAILURE"
+
+	// OwnerLost means a running Session went too long without a live owner
+	// and nobody came back to recover it.
+	OwnerLost Cause = "OWNER_LOST"
 )
 
 // Ending is the terminal status a cause leads to, and the statuses a Session
@@ -70,6 +74,7 @@ var endings = map[Cause]Ending{
 	GameStartFailure:          {Status: sessionstatus.Aborted, From: lobby},
 	ScriptFailure:             {Status: sessionstatus.Aborted, From: running},
 	UnrecoverableInfraFailure: {Status: sessionstatus.Aborted, From: running},
+	OwnerLost:                 {Status: sessionstatus.Aborted, From: running},
 }
 
 // EndingOf returns cause's ending; false when a live Session cannot end for

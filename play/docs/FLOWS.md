@@ -166,9 +166,25 @@ A start whose script fails twice ends the Session through End Session with `GAME
 | `INACTIVITY_TIMEOUT` | EXPIRED | RUNNING |
 | `MAX_LIFETIME` | EXPIRED | LOBBY, RUNNING |
 | `GAME_START_FAILURE` | ABORTED | LOBBY |
-| `SCRIPT_FAILURE`, `UNRECOVERABLE_INFRA_FAILURE` | ABORTED | RUNNING |
+| `SCRIPT_FAILURE`, `UNRECOVERABLE_INFRA_FAILURE`, `OWNER_LOST` | ABORTED | RUNNING |
 
 In one transaction it locks the Session; in a status the cause applies to, it changes the status with the cause (by `changedBy`, the creator for `HOST_CANCELLED`, otherwise the platform) and releases its join codes, answering `ended` with the new status and cause. Otherwise it changes nothing and answers `not_ended` with the Session's current status and end cause, so a caller learns how a Session that already ended did. An unknown Session is `ErrSessionNotFound`, an unknown cause an error. Metric `play_session_ended_total{cause}`.
+
+### Owner Heartbeat
+
+`sessionlifecycle.Manager.RecordOwnerHeartbeat(sessionUUID)`, called by the controller running a game as soon as it runs on its instance and then every `sessionpkg.OwnerHeartbeatInterval` (30 s): in one transaction it locks the Session and, while it is RUNNING, renews its owner lease, setting `owner_lease_expires_at` to now + 10 min (`recorded`); otherwise it changes nothing and answers `session_not_running` with the Session's status and end cause, and the controller ends the game live with them. Commit Start grants the first lease in its own transaction. A Session whose lease ran out has no live owner, and nobody came back to recover it in that time. Metric `play_session_owner_heartbeats_total{outcome}`.
+
+### Reconciliation
+
+A background job outside the lifecycle workflow, in its own package with its own persistence (`play/session/batches/reconcilesessions`): `Service.Run`, started by `main` on every instance, runs `ReconcileSessions` every 5 minutes. It only reads Sessions past one of their deadlines, so every Session it reads must end; it never stores a cursor:
+
+| Session, by deadline (one partial index each, holding only Sessions in that status) | Ends as, decided under the row lock by `internal/business/reconciliation.CauseFor` |
+| --- | --- |
+| LOBBY past `lobby_expires_at` | EXPIRED / `LOBBY_EXPIRED` |
+| RUNNING past `expires_at` | finalized replay: FINISHED / `GAME_FINISHED`; otherwise EXPIRED / `MAX_LIFETIME` |
+| RUNNING past `owner_lease_expires_at` | finalized replay: FINISHED / `GAME_FINISHED` (its owner died between storing the end and committing it); otherwise ABORTED / `OWNER_LOST` |
+
+A pass fixes the time it began and reads the due Sessions 100 at a time, the longest overdue first (`FindDue`: one range scan per index, deduplicated). Each is judged again in its own transaction under `FOR UPDATE`, waiting at most 5 s (`lock_timeout`) for a transaction holding it, since all of them are short (heartbeat, checkpoint, End Session). A Session that changed since it was read (its lease renewed, its lobby started, ended elsewhere) is left as it is and is no longer due. A Session that must end is ended by the platform in that same transaction, by the job's own repository: status and end cause, a `play_session_status_changes` row (by the platform), join codes released, as End Session does. Each page ends what it reads, so the pass reads again until a page ends nothing; a Session it failed on (a lock it waited too long for, a database error) is tried once per pass, logged and left for the next one. Metrics `play_session_reconciled_total{cause}` (not counted in `play_session_ended_total`, which counts End Session's endings), `play_session_reconciliation_duration_seconds`, `play_session_reconciliation_failures_total`.
 
 ### Save Checkpoint
 

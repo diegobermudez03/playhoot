@@ -100,6 +100,20 @@ func (mr *MockcommitStartRepoMockRecorder) ReleaseJoinCodes(ctx, tx, sessionID, 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReleaseJoinCodes", reflect.TypeOf((*MockcommitStartRepo)(nil).ReleaseJoinCodes), ctx, tx, sessionID, releasedAt)
 }
 
+// RenewOwnerLease mocks base method.
+func (m *MockcommitStartRepo) RenewOwnerLease(ctx context.Context, tx *gorm.DB, sessionID uint, expiresAt time.Time) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RenewOwnerLease", ctx, tx, sessionID, expiresAt)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RenewOwnerLease indicates an expected call of RenewOwnerLease.
+func (mr *MockcommitStartRepoMockRecorder) RenewOwnerLease(ctx, tx, sessionID, expiresAt any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RenewOwnerLease", reflect.TypeOf((*MockcommitStartRepo)(nil).RenewOwnerLease), ctx, tx, sessionID, expiresAt)
+}
+
 // SaveCheckpoint mocks base method.
 func (m *MockcommitStartRepo) SaveCheckpoint(ctx context.Context, tx *gorm.DB, sessionID uint, contextRevision int64, content []byte, savedAt time.Time) error {
 	m.ctrl.T.Helper()

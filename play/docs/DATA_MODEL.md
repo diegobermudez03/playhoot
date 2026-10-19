@@ -37,6 +37,7 @@ erDiagram
         TEXT end_cause "nullable"
         TIMESTAMPTZ lobby_expires_at
         TIMESTAMPTZ expires_at "the most it may live, whatever its activity"
+        TIMESTAMPTZ owner_lease_expires_at "nullable; when its live owner's lease runs out while RUNNING"
         TIMESTAMPTZ created_at
         TIMESTAMPTZ updated_at
     }

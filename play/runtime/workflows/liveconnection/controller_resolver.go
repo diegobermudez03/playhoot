@@ -11,6 +11,8 @@ import (
 	"log/slog"
 	"sync"
 	"time"
+
+	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
 
 // defaultTickInterval is how often a running game's accepted input is
@@ -60,10 +62,10 @@ type ControllerResolver struct {
 }
 
 // New constructs a ControllerResolver whose controllers admit through
-// adminJoins and playerJoins, read manifests and limits, start, end and
-// checkpoint Sessions, grant frontends, run games in sandbox, offer their
-// history to replay and release their ownership through owners.
-func New(adminJoins adminJoinChecker, playerJoins playerJoinChecker, manifests manifestLoader, limits limitsLoader, starts sessionStarter, ends sessionEnder, checkpoints checkpointStore, frontends frontendSigner, sandbox gameSandbox, replay replayRecorder, owners ownerReleaser) *ControllerResolver {
+// adminJoins and playerJoins, read manifests and limits, start, end,
+// checkpoint and heartbeat Sessions, grant frontends, run games in sandbox,
+// offer their history to replay and release their ownership through owners.
+func New(adminJoins adminJoinChecker, playerJoins playerJoinChecker, manifests manifestLoader, limits limitsLoader, starts sessionStarter, ends sessionEnder, checkpoints checkpointStore, heartbeats ownerHeartbeater, frontends frontendSigner, sandbox gameSandbox, replay replayRecorder, owners ownerReleaser) *ControllerResolver {
 	root, cancel := context.WithCancel(context.Background())
 	return &ControllerResolver{
 		deps: &controllerDependencies{
@@ -74,6 +76,7 @@ func New(adminJoins adminJoinChecker, playerJoins playerJoinChecker, manifests m
 			starts:             starts,
 			ends:               ends,
 			checkpoints:        checkpoints,
+			heartbeats:         heartbeats,
 			frontends:          frontends,
 			sandbox:            sandbox,
 			replay:             replay,
@@ -84,6 +87,7 @@ func New(adminJoins adminJoinChecker, playerJoins playerJoinChecker, manifests m
 			transportGrace:     defaultTransportGrace,
 			recoveryWindow:     defaultRecoveryWindow,
 			contextIdleTimeout: defaultContextIdleTimeout,
+			heartbeatInterval:  sessionpkg.OwnerHeartbeatInterval,
 			checkpointInterval: defaultCheckpointInterval,
 			limitsInterval:     defaultLimitsInterval,
 			inactivityTimeout:  defaultInactivityTimeout,

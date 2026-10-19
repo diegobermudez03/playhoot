@@ -24,6 +24,7 @@ import (
 	"github.com/diegobermudez03/playhoot/play/runtime/usecases/ownership"
 	"github.com/diegobermudez03/playhoot/play/runtime/workflows/liveconnection"
 	"github.com/diegobermudez03/playhoot/play/runtime/workflows/replayrecording"
+	"github.com/diegobermudez03/playhoot/play/session/batches/reconcilesessions"
 	sessionmigration "github.com/diegobermudez03/playhoot/play/session/migration"
 	"github.com/diegobermudez03/playhoot/play/session/storage"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/checkadminjoin"
@@ -144,7 +145,7 @@ func run() error {
 	// Closed after the controllers, deferred earlier: each stops its
 	// recording first, then pending chunks get a few seconds to be stored.
 	defer replayRecorder.Close()
-	liveConnections := liveconnection.New(checkadminjoin.New(db), checkplayerjoin.New(db), loadruntimemanifest.New(db), loadsessionlimits.New(db), sessionLifecycle, sessionLifecycle, sessionLifecycle, frontendaccess.New(db, store), sandboxHost, replayRecorder, owners)
+	liveConnections := liveconnection.New(checkadminjoin.New(db), checkplayerjoin.New(db), loadruntimemanifest.New(db), loadsessionlimits.New(db), sessionLifecycle, sessionLifecycle, sessionLifecycle, sessionLifecycle, frontendaccess.New(db, store), sandboxHost, replayRecorder, owners)
 	// Closed before the sandbox, deferred later: controllers stop first, so
 	// shutting down never fails a running game.
 	defer liveConnections.Close()
@@ -167,6 +168,18 @@ func run() error {
 
 	stopCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// Every instance reconciles: ends the Sessions nothing live will end.
+	reconcileCtx, stopReconciling := context.WithCancel(context.Background())
+	reconciling := make(chan struct{})
+	go func() {
+		defer close(reconciling)
+		reconcilesessions.New(db).Run(reconcileCtx)
+	}()
+	defer func() {
+		stopReconciling()
+		<-reconciling
+	}()
 
 	serveErr := make(chan error, 1)
 	go func() {

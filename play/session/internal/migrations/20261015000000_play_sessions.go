@@ -60,10 +60,17 @@ func migration20261015000000PlaySessions() *gormigrate.Migration {
 					end_cause TEXT NULL,
 					lobby_expires_at TIMESTAMPTZ NOT NULL,
 					expires_at TIMESTAMPTZ NOT NULL,
+					owner_lease_expires_at TIMESTAMPTZ NULL,
 					created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 					updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 				)`,
 				`CREATE INDEX play_sessions_game_version_id_idx ON play_sessions (game_version_id)`,
+				// Reconciliation reads the Sessions past one of their deadlines.
+				// Each index holds only the Sessions its deadline applies to, so
+				// a Session leaves it as soon as it ends.
+				`CREATE INDEX play_sessions_lobby_expiry_idx ON play_sessions (lobby_expires_at) WHERE status = 'LOBBY'`,
+				`CREATE INDEX play_sessions_running_expiry_idx ON play_sessions (expires_at) WHERE status = 'RUNNING'`,
+				`CREATE INDEX play_sessions_owner_lease_idx ON play_sessions (owner_lease_expires_at) WHERE status = 'RUNNING'`,
 
 				// Join codes have their own lifecycle: a code is active until it
 				// is released, and only one active row may hold a given code, so

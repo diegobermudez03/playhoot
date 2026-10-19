@@ -39,6 +39,7 @@ var (
 		string(sessionpkg.EndGameStartFailure),
 		string(sessionpkg.EndScriptFailure),
 		string(sessionpkg.EndUnrecoverableInfraFailure),
+		string(sessionpkg.EndOwnerLost),
 	)
 
 	sessionsEnded = metrics.NewCounter(

@@ -110,6 +110,7 @@ type controllerDependencies struct {
 	starts      sessionStarter
 	ends        sessionEnder
 	checkpoints checkpointStore
+	heartbeats  ownerHeartbeater
 	limits      limitsLoader
 	frontends   frontendSigner
 	sandbox     gameSandbox
@@ -136,6 +137,9 @@ type controllerDependencies struct {
 	// checkpointInterval is the least time between two periodic recovery
 	// checkpoints of a running game.
 	checkpointInterval time.Duration
+	// heartbeatInterval is how often a running game's owner heartbeat is
+	// recorded.
+	heartbeatInterval time.Duration
 	// contextIdleTimeout is how long an unused sandbox context of a game
 	// without update() is kept.
 	contextIdleTimeout time.Duration
@@ -293,6 +297,15 @@ func (c *sessionController) run() {
 	defer func() {
 		close(stopWriting)
 		<-writerStopped
+	}()
+	stopBeating, beatingStopped := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(beatingStopped)
+		c.beatOwnerHeartbeats(stopBeating)
+	}()
+	defer func() {
+		close(stopBeating)
+		<-beatingStopped
 	}()
 	limits := time.NewTicker(c.deps.limitsInterval)
 	defer limits.Stop()

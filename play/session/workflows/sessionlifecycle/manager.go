@@ -21,6 +21,11 @@ const defaultLobbyTTL = 30 * time.Minute
 // whatever its activity; a platform tuning value.
 const defaultMaxLifetime = 4 * time.Hour
 
+// defaultOwnerLease is how long a running Session's owner lease lasts from
+// its last heartbeat: past it the Session has no live owner and nobody came
+// to recover it, so reconciliation aborts it as OWNER_LOST.
+const defaultOwnerLease = 10 * time.Minute
+
 // Manager is the Session lifecycle workflow controller. Each step depends on
 // its own narrow persistence contract, even though one internal/repo.Repo
 // satisfies all of them, so adding a method for one step never changes
@@ -33,6 +38,8 @@ type Manager struct {
 	endSessionRepo         endSessionRepo
 	saveCheckpointRepo     saveCheckpointRepo
 
+	recordOwnerHeartbeatRepo recordOwnerHeartbeatRepo
+
 	// scripts reads a game version's backend script from object storage.
 	scripts scriptLoader
 
@@ -44,6 +51,7 @@ type Manager struct {
 	newJoinCode func() (string, error)
 	lobbyTTL    time.Duration
 	maxLifetime time.Duration
+	ownerLease  time.Duration
 }
 
 // New constructs a Manager persisting to db and reading game version content
@@ -57,11 +65,14 @@ func New(db *gorm.DB, store storage.Store) *Manager {
 		loadRunningSessionRepo: repo,
 		endSessionRepo:         repo,
 		saveCheckpointRepo:     repo,
-		scripts:                objectstore.NewLoader(store, objectstore.DefaultLoaderEntries),
-		dbServicer:             repo,
-		now:                    time.Now,
-		newJoinCode:            newJoinCode,
-		lobbyTTL:               defaultLobbyTTL,
-		maxLifetime:            defaultMaxLifetime,
+
+		recordOwnerHeartbeatRepo: repo,
+		scripts:                  objectstore.NewLoader(store, objectstore.DefaultLoaderEntries),
+		dbServicer:               repo,
+		now:                      time.Now,
+		newJoinCode:              newJoinCode,
+		lobbyTTL:                 defaultLobbyTTL,
+		maxLifetime:              defaultMaxLifetime,
+		ownerLease:               defaultOwnerLease,
 	}
 }

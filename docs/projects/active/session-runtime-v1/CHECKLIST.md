@@ -26,7 +26,7 @@ Progress note (2026-10-15): the API side is implemented and tested (`api/play/ow
 - [ ] Exactly one Runtime pod owns an active Session; two pods can never mutate the same Session concurrently (decision: lease/epoch/fencing mechanism)
 - [x] Browser never learns a pod address; routing is resolved before the request reaches Session logic (`OwnerPlacement.Address` never reaches a client; routing runs before the upgrade)
 - [ ] Owner released on Session termination and on controller destruction (2026-10-18: an ended controller is dropped from the resolver with its Sandbox context, and its main goroutine calls `ownership.ReleaseOwner(sessionUUID, epoch)` whenever it ends: Session ended, controller retired, or shutdown; a release under a stale epoch must change nothing. `ReleaseOwner` is a placeholder until the registry exists)
-- [ ] Owner loss is detectable (needed by recovery and reconciliation)
+- [ ] Owner loss is detectable (needed by recovery and reconciliation) (2026-10-19, decided by the human: a durable owner lease, `play_sessions.owner_lease_expires_at`, granted for 10 min when the Start commits and renewed by the controller running the game at once and every 30 s (`sessionpkg.OwnerHeartbeatInterval`); a RUNNING Session whose lease ran out has no live owner as far as reconciliation knows (see T). The owner registry (above) will replace or absorb it)
 - [ ] Before more than one instance may own Sessions (separate gateway, or more than one instance of the single binary): shared registry, owner-renewed lease + heartbeat, self-fencing, epoch on owner-only durable writes, gateway-to-Runtime trusted identity, addressable-instance deployment. Instructions: `play/docs/decisions/SESSION-ADR-0029-live-session-ownership-and-owner-routing.md`
 
 ### A2. API <-> Runtime duplex boundary (§1)
@@ -93,7 +93,7 @@ Progress note (2026-10-17): the boundary, decided with the human, is a set of op
 Progress note (2026-10-15): the parts Session creation needs are done and verified; lifecycle transitions, end causes, roster and checkpoints come with later operations.
 
 - [x] Session persistence: lifecycle states (LOBBY, RUNNING, FINISHED, CANCELLED, EXPIRED, ABORTED) with enforced transitions (2026-10-18: every terminal transition goes through `sessionlifecycle.EndSession`, whose cause table fixes the status and the statuses it may come from; unit and Postgres integration tests)
-- [ ] endCause recorded on terminal transitions (HOST_CANCELLED, ALL_PLAYERS_LEFT, INACTIVITY_TIMEOUT, MAX_LIFETIME, GAME_START_FAILURE, SCRIPT_FAILURE, RUNTIME_RECOVERY_TIMEOUT, UNRECOVERABLE_INFRA_FAILURE, ...) (2026-10-18: all but RUNTIME_RECOVERY_TIMEOUT, which comes with recovery and reconciliation; also GAME_FINISHED, LOBBY_EXPIRED and PLATFORM_TERMINATED)
+- [ ] endCause recorded on terminal transitions (HOST_CANCELLED, ALL_PLAYERS_LEFT, INACTIVITY_TIMEOUT, MAX_LIFETIME, GAME_START_FAILURE, SCRIPT_FAILURE, RUNTIME_RECOVERY_TIMEOUT, UNRECOVERABLE_INFRA_FAILURE, ...) (2026-10-18: all but RUNTIME_RECOVERY_TIMEOUT, which comes with recovery and reconciliation; also GAME_FINISHED, LOBBY_EXPIRED and PLATFORM_TERMINATED; 2026-10-19: the plan's RUNTIME_RECOVERY_TIMEOUT is `OWNER_LOST` (RUNNING -> ABORTED), decided by the human, recorded by reconciliation)
 - [x] Pinned GameVersion reference stored
 - [x] creatorUUID stored
 - [x] Join code + expiry stored
@@ -418,9 +418,9 @@ Implemented 2026-10-18 (decided by the human: `finished: true` with the final st
 
 ## T. Reconciliation / lifecycle jobs (§24)
 
-- [ ] Expired LOBBY Sessions marked EXPIRED (2026-10-18: only while their controller lives, which checks every second; a lobby without one needs this job)
-- [ ] RUNNING without a valid live owner: not aborted immediately; after the recovery/owner-loss window, marked ABORTED with the right cause
-- [ ] "Valid owner" defined by the owner registry/lease (see A1)
+- [x] Expired LOBBY Sessions marked EXPIRED (2026-10-19: the reconciliation job, `play/session/batches/reconcilesessions` (its own package and repository, outside the lifecycle workflow, decided by the human), run by every instance every 5 minutes, reading only Sessions past a deadline (one partial index per deadline), 100 at a time until a page ends nothing, ends a LOBBY past its `lobby_expires_at` as EXPIRED / LOBBY_EXPIRED with its status history, join codes released; a live controller still ends its own lobby every second, and either learns the other's ending; `TestReconcileSessionsIntegration`)
+- [x] RUNNING without a valid live owner: not aborted immediately; after the recovery/owner-loss window, marked ABORTED with the right cause (2026-10-19, decided by the human: a RUNNING Session is left to lazy recovery until its 10 min owner lease runs out, then ABORTED / OWNER_LOST, or FINISHED / GAME_FINISHED when its replay is finalized (its owner died between storing the end and committing it); one past its `expires_at` is EXPIRED / MAX_LIFETIME (or FINISHED, finalized). The job only reads overdue Sessions, so no cursor is stored; each is judged again under `FOR UPDATE` with a 5 s `lock_timeout` (instances never collide and a heartbeat never crosses an ending), 100 at a time until a page ends nothing (`TestReconcileSessionsDrainsEveryDueSession`). A controller whose heartbeat finds its Session ended ends it here with the durable status and cause. `TestCauseFor`, `reconcilesessions` `TestReconcileSessionInTx` and `TestReconcileSessionsIntegration`, `TestRecordOwnerHeartbeatIntegration`, `TestBeatOwnerHeartbeat`)
+- [ ] "Valid owner" defined by the owner registry/lease (see A1) (2026-10-19: defined by the durable owner lease until the registry exists)
 - [ ] No transparent suspension of healthy controllers; a running Session stays live while meaningfully active
 
 ---

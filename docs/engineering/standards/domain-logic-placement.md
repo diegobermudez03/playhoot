@@ -34,6 +34,7 @@ For application-layer organization specifically:
 
 - Prefer `workflows/<workflow-name>/...` (for example `workflows/sessionlifecycle/...`) for operations belonging to an identifiable lifecycle/process.
 - Prefer `usecases/<independent-capability>/...` for independent application capabilities that are not primarily a lifecycle transition.
+- Put background jobs in `batches/<job-name>/...`: periodic work no request asks for (reconciliation, cleanup), run by the application itself. A batch is never part of a workflow package, even when it changes the state that workflow owns: it is a post-operation with its own service and its own `internal/repo`, and it keeps the same persistence invariants the workflow keeps (for example, writing the status history in the same transaction as a status change). Its decision rules live in `internal/business/<behavior>/` like any other.
 
 See Preferred Workflow Package Shape below for the required shape of a `workflows/<workflow-name>/...` package specifically (one package, one controller, steps split by file - not one sibling package per step). The invariant for application-layer organization generally is that a developer navigating the tree can recognize which operations belong to the same lifecycle without opening every implementation file. A flat, undifferentiated `usecases/` directory containing every unrelated and lifecycle-related operation in a bounded context defeats this invariant just as much as a large domain Service would; package hierarchy itself should help communicate which operations belong together.
 

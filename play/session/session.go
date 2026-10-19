@@ -317,7 +317,37 @@ const (
 	// EndUnrecoverableInfraFailure means the game could not be executed for
 	// too long (ABORTED).
 	EndUnrecoverableInfraFailure EndCause = "UNRECOVERABLE_INFRA_FAILURE"
+
+	// EndOwnerLost means a running Session went too long without a live
+	// owner and nobody came back to recover it (ABORTED).
+	EndOwnerLost EndCause = "OWNER_LOST"
 )
+
+// OwnerHeartbeatInterval is how often the live owner of a RUNNING Session
+// records a heartbeat, which renews its owner lease; a Session whose lease
+// runs out has no live owner.
+const OwnerHeartbeatInterval = 30 * time.Second
+
+// OwnerHeartbeatOutcome is the decision a RecordOwnerHeartbeat call reached.
+type OwnerHeartbeatOutcome string
+
+const (
+	// HeartbeatRecorded means the Session is RUNNING and its owner lease was
+	// renewed.
+	HeartbeatRecorded OwnerHeartbeatOutcome = "recorded"
+
+	// HeartbeatSessionNotRunning means the Session is no longer RUNNING;
+	// Status and EndCause tell where it is.
+	HeartbeatSessionNotRunning OwnerHeartbeatOutcome = "session_not_running"
+)
+
+// OwnerHeartbeatResult is the outcome of a heartbeat. Status and EndCause are
+// set only when the Session is not running; EndCause only once it ended.
+type OwnerHeartbeatResult struct {
+	Outcome  OwnerHeartbeatOutcome
+	Status   string
+	EndCause string
+}
 
 // SessionEnd is a request to end a live Session for Cause. ChangedBy is the
 // user who asked, empty when the platform decided.

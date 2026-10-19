@@ -56,6 +56,7 @@ func TestCommitStartInTx(t *testing.T) {
 				deps.repo.EXPECT().CreateParticipants(ctx, tx, sessionID, participants).Return(nil),
 				deps.repo.EXPECT().SaveCheckpoint(ctx, tx, sessionID, int64(1), []byte(`{"round":1}`), nowInDB).Return(nil),
 				deps.repo.EXPECT().ChangeSessionStatus(ctx, tx, sessionID, "LOBBY", "RUNNING", (*string)(nil), &creator, nowInDB).Return(nil),
+				deps.repo.EXPECT().RenewOwnerLease(ctx, tx, sessionID, nowInDB.Add(10*time.Minute)).Return(nil),
 				deps.repo.EXPECT().ReleaseJoinCodes(ctx, tx, sessionID, nowInDB).Return(nil),
 			)
 			return test{expected: sessionpkg.CommitStartCommitted}
@@ -98,7 +99,7 @@ func TestCommitStartInTx(t *testing.T) {
 			if tc.userUUID == "" {
 				tc.userUUID = startCreatorUUID
 			}
-			manager := &Manager{commitStartRepo: deps.repo, now: func() time.Time { return startNow }}
+			manager := &Manager{commitStartRepo: deps.repo, now: func() time.Time { return startNow }, ownerLease: 10 * time.Minute}
 
 			outcome, err := manager.commitStartInTx(ctx, tx, startSessionUUID, tc.userUUID, participants, checkpoint)
 

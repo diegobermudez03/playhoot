@@ -48,6 +48,15 @@ func ownersReleasing(t *testing.T, sessionUUID string, epochs ...int64) *Mockown
 	return owners
 }
 
+// heartbeatsRecorded returns an owner heartbeater that records every
+// heartbeat of sessionUUID: a running controller beats while a test runs.
+func heartbeatsRecorded(t *testing.T, sessionUUID string) *MockownerHeartbeater {
+	t.Helper()
+	heartbeats := NewMockownerHeartbeater(gomock.NewController(t))
+	heartbeats.EXPECT().RecordOwnerHeartbeat(gomock.Any(), sessionUUID).Return(sessionpkg.OwnerHeartbeatResult{Outcome: sessionpkg.HeartbeatRecorded}, nil).AnyTimes()
+	return heartbeats
+}
+
 // newTestController returns a fresh controller whose game allows maxPlayers,
 // without its main goroutine: tests run its operations directly.
 func newTestController(t *testing.T, maxPlayers int) *sessionController {
@@ -154,7 +163,7 @@ func TestControllerFor(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			tc := setup(t)
 			// Nothing to call: finding or creating a controller asks no one.
-			resolver := New(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ownersReleasing(t, sessionUUID, 1, 2))
+			resolver := New(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ownersReleasing(t, sessionUUID, 1, 2))
 			t.Cleanup(resolver.Close)
 			var existing *sessionController
 			var existingAdmin runtime.AdminConnection

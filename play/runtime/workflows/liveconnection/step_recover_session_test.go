@@ -278,7 +278,7 @@ func TestConcurrentReconnectionsRecoverOnce(t *testing.T) {
 	players.EXPECT().EligibleToJoinAsPlayer(anyCtx, setup.sessionUUID).Return(sessionpkg.PlayerJoinSessionStarted, nil).MinTimes(1).MaxTimes(2)
 	manifests.EXPECT().LoadRuntimeManifest(anyCtx, setup.sessionUUID).Return(sessionpkg.RuntimeManifest{MinPlayers: 1, MaxPlayers: 4}, nil)
 	gomock.InOrder(mocks.recovers(setup)...)
-	resolver := New(nil, players, manifests, mocks.limits, mocks.starts, mocks.ends, nil, mocks.frontends, mocks.sandbox, mocks.replay, ownersReleasing(t, setup.sessionUUID, 1))
+	resolver := New(nil, players, manifests, mocks.limits, mocks.starts, mocks.ends, nil, heartbeatsRecorded(t, setup.sessionUUID), mocks.frontends, mocks.sandbox, mocks.replay, ownersReleasing(t, setup.sessionUUID, 1))
 	resolver.deps.now = func() time.Time { return setup.now }
 	t.Cleanup(resolver.Close)
 	// The recovered context and recording end when the resolver stops.
@@ -320,7 +320,7 @@ func TestAdminReconnectionRecovers(t *testing.T) {
 		admins.EXPECT().EligibleToJoinAsAdmin(anyCtx, setup.sessionUUID, "creator").Return(sessionpkg.AdminJoinEligibleRunning, nil),
 		manifests.EXPECT().LoadRuntimeManifest(anyCtx, setup.sessionUUID).Return(sessionpkg.RuntimeManifest{MinPlayers: 1, MaxPlayers: 4}, nil),
 	}, mocks.recovers(setup)...)...)
-	resolver := New(admins, nil, manifests, mocks.limits, mocks.starts, mocks.ends, nil, mocks.frontends, mocks.sandbox, mocks.replay, ownersReleasing(t, setup.sessionUUID, 1))
+	resolver := New(admins, nil, manifests, mocks.limits, mocks.starts, mocks.ends, nil, heartbeatsRecorded(t, setup.sessionUUID), mocks.frontends, mocks.sandbox, mocks.replay, ownersReleasing(t, setup.sessionUUID, 1))
 	resolver.deps.now = func() time.Time { return setup.now }
 	t.Cleanup(resolver.Close)
 	mocks.sandbox.EXPECT().DiscardContext(anyCtx, "context-1").Return(nil).MaxTimes(1)

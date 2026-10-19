@@ -25,6 +25,7 @@ type commitStartRepo interface {
 	CreateParticipants(ctx context.Context, tx *gorm.DB, sessionID uint, participants []internalrepo.Participant) error
 	SaveCheckpoint(ctx context.Context, tx *gorm.DB, sessionID uint, contextRevision int64, content []byte, savedAt time.Time) error
 	ChangeSessionStatus(ctx context.Context, tx *gorm.DB, sessionID uint, fromStatus string, toStatus string, endCause *string, changedBy *string, changedAt time.Time) error
+	RenewOwnerLease(ctx context.Context, tx *gorm.DB, sessionID uint, expiresAt time.Time) error
 	ReleaseJoinCodes(ctx context.Context, tx *gorm.DB, sessionID uint, releasedAt time.Time) error
 }
 
@@ -94,6 +95,10 @@ func (m *Manager) commitStartInTx(ctx context.Context, tx *gorm.DB, sessionUUID 
 	}
 	startedBy := session.CreatedByUserUUID
 	if err := m.commitStartRepo.ChangeSessionStatus(ctx, tx, session.ID, string(sessionstatus.Lobby), string(sessionstatus.Running), nil, &startedBy, now); err != nil {
+		return "", err
+	}
+	// The instance committing it is its live owner now.
+	if err := m.commitStartRepo.RenewOwnerLease(ctx, tx, session.ID, now.Add(m.ownerLease)); err != nil {
 		return "", err
 	}
 	if err := m.commitStartRepo.ReleaseJoinCodes(ctx, tx, session.ID, now); err != nil {
