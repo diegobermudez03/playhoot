@@ -249,6 +249,8 @@ Completed 2026-10-18 (the human accepted it as complete): the COMMAND protocol i
 
 ## K. Periodic processing and update() (§9)
 
+update() completed 2026-10-18 (the human accepted it as complete). Every boundary of a game that declares `update`, whether its tick or a flush asked by a COMMAND, ends with one `update()`; everything in a boundary (transitions, commands, update) is one atomic sandbox batch with one revision, one `project()` per participant on the final state and one view per player connection, so intermediate states are never sent. A COMMAND's response is its own `command_result` message, sent when the same batch commits. Open here: timers triggering boundaries (L) and activity accounting (U).
+
 - [x] Normal live processing cadence (~100 ms, platform tuning value) (2026-10-18: `gameloop` ticks every 100 ms)
 - [x] Boundary: drain pending timeline -> confirm state -> project -> compare with cache -> send changes/acks (2026-10-18: take the timeline, `samples()`, check the revision, `project()` each participant, commit the mirror, send each connection the patch against the view it last received with its acknowledgement, offer the capture to replay; boundary tests in `liveconnection` and the end-to-end run)
 - [ ] Commands and timers can trigger earlier boundaries (2026-10-18: commands do (controller tests); timers pending)
@@ -266,19 +268,19 @@ Completed 2026-10-18 (the human accepted it as complete): the COMMAND protocol i
 - [ ] Runtime owns the schedule; timers use effective game time
 - [ ] Due timer enters the global timeline and calls timer(...); may trigger an early boundary
 - [ ] Pending timers included in checkpoints; recovery preserves remaining game-time distance
-- [ ] Logical events emitted by mutating functions; delivered live only after the batch commits
-- [ ] Events offered to Replay as best effort; never durable authoritative effects
+- [x] Logical events emitted by mutating functions; delivered live only after the batch commits (2026-10-18: `samples()`, `command()` and `update()` may return `events: [{event, participants?}]`, broadcast without `participants`; once the batch commits each player receives the ones for them inside that boundary's `player_view`, in timeline order; an event for someone who does not play, or a malformed `events`, is a script failure; sandbox and boundary tests)
+- [x] Events offered to Replay as best effort; never durable authoritative effects (2026-10-18: `replay.Capture.Events` with their participants (none: broadcast), Session time and timeline order; never kept by the controller nor in checkpoints, not resent on resync; the recorder placeholder still drops captures, see R)
 
 ---
 
 ## M. Sandbox execution (§11, §1 entrypoints, §1 determinism)
 
 - [ ] Entrypoints: start, samples, command, update (optional), timer, playerDisconnected, playerRejoined (optional), playerLeft, project (2026-10-18: start, samples, command, update, project)
-- [ ] Mutating entrypoints return full new global state + events + timer changes + terminal FINISHED signal + COMMAND response (2026-10-18: state, and the response for `command()`)
+- [ ] Mutating entrypoints return full new global state + events + timer changes + terminal FINISHED signal + COMMAND response (2026-10-18: state, the response for `command()`, and logical `errors` and `events` for the three)
 - [x] project(globalState, participant, context) is pure and deterministic (no wall clock, no random, not even the controlled PRNG) (state deep-frozen, `Math.random` throws, globals frozen after load; `TestProjectCannotChangeTheContext`)
 - [x] Controlled deterministic PRNG; state is part of Runtime state and checkpoints; no uncontrolled Math.random as source of truth (done for start: seeded mulberry32, state exported and checkpointed; restoring it into a recreated context comes with recovery) (2026-10-18: a restored context continues with the same randomness, revision and time (`TestRestoredContextContinuesTheSameGame`))
 - [x] No access to DB, files, secrets, network, processes, or uncontrolled wall clock (corrected 2026-10-18: the earlier tick was wrong, a script could write into the mounted scratch directory and import `qjs:os`; now the patched qjs in `third_party/qjs` mounts nothing and gives fake clocks and randomness, the host helpers are removed, and the worker's empty environment is only defense in depth; `TestPatchedRuntimeHasNoHostCapabilities`, `TestStart/no_host_helper_is_reachable`)
-- [x] A batch of ordered operations is atomic: no partial output escapes (state, events, timers, responses, terminal signal commit as one) (2026-10-18: nothing commits or reaches a client unless samples() and every projection succeed; events and timers will join the same commit; boundary tests in `liveconnection`)
+- [x] A batch of ordered operations is atomic: no partial output escapes (state, events, timers, responses, terminal signal commit as one) (2026-10-18: nothing commits or reaches a client unless samples() and every projection succeed; logical errors and events commit with it (2026-10-18), timers will join; boundary tests in `liveconnection`)
 - [ ] Terminal FINISHED mid-batch: later operations ignored
 - [x] Context revision advances on every successful batch, separate from projection revision and SAMPLE sequence (2026-10-18: the worker and the mirror advance it per batch; a result that does not follow the mirror's revision is out of sync and retried in a restored context; sandbox, controller and boundary tests in `liveconnection`)
 - [x] Executor/infrastructure failure: discard context, recreate from the last confirmed Runtime mirror, retry batch (2026-10-18: retried once in the boundary; if it still fails the transitions are put back for the next boundary, and after 50 boundaries in a row the Session is aborted (UNRECOVERABLE_INFRA_FAILURE); boundary tests in `liveconnection`)
@@ -378,7 +380,7 @@ Completed 2026-10-18 (the human accepted it as complete): the COMMAND protocol i
 - [ ] Chunk = FULL_STATE first, then STATE_DELTA, EVENT, COMMAND_RESPONSE records (COMMAND_RESPONSE input exists since 2026-10-18: `replay.Capture.CommandResponses` with participant, Session time and timeline order; recording it also closes the J item)
 - [ ] Sealed chunks persisted asynchronously; the next chunk starts capturing immediately
 - [ ] Bounded memory queue; retry on failure; when exhausted, degrade/drop best-effort history without stopping gameplay
-- [ ] Transient records keep visibility/target (broadcast, participant-targeted, COMMAND response); a P1-private response is never replayable under P2
+- [ ] Transient records keep visibility/target (broadcast, participant-targeted, COMMAND response); a P1-private response is never replayable under P2 (2026-10-18: the Capture carries participant-targeted logical errors, `replay.Capture.Errors`, each with its participant, Session time and timeline order, like COMMAND responses; and logical events, `replay.Capture.Events`, broadcast or with their target participants)
 - [ ] Final state: durable final Replay point persisted BEFORE the durable FINISHED transition and cleanup; final chunk may be shorter
 - [ ] Raw global state stored backend-only
 
@@ -415,7 +417,7 @@ Completed 2026-10-18 (the human accepted it as complete): the COMMAND protocol i
 ## V. Errors (§27)
 
 - [ ] Protocol/contract errors rejected pre-JS (malformed message, undeclared command, bad payload, bad SAMPLE shape, over-limit, wrong role) (2026-10-18: all of them except rate limits, see W)
-- [x] Logical game results returned as normal data; Session continues (2026-10-18: COMMAND responses)
+- [x] Logical game results returned as normal data; Session continues (2026-10-18: COMMAND responses; and logical errors `errors: [{participant, error}]` returned by `samples()`, `command()` and `update()` next to the state, sent to their player inside that boundary's `player_view` and offered to replay, never persisted nor kept by the controller)
 - [ ] Script/runtime failure handled per M (retry once, then abort)
 - [ ] Infrastructure failure handled per M (recreate + retry)
 - [ ] No partial state/events/timers/responses ever escape a failed batch

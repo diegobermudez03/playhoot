@@ -79,6 +79,14 @@ var (
 		"Wall time between consecutive committed update() calls of a game; well above the cadence means skipped ticks.",
 		metrics.LatencyBuckets(),
 	)
+	gameErrors = metrics.NewCounter(
+		"play_runtime_game_errors_total",
+		"Logical errors committed boundaries returned to participants.",
+	)
+	gameEvents = metrics.NewCounter(
+		"play_runtime_game_events_total",
+		"Logical events committed boundaries emitted, each counted once whoever receives it.",
+	)
 )
 
 // errNotRunning means the game ended here before a boundary could commit.
@@ -105,11 +113,39 @@ type boundary struct {
 }
 
 // execution is what a boundary's batch produced: the new mirror, every
-// participant's view, and each command's response in timeline order.
+// participant's view, each command's response and the logical errors and
+// events, in timeline order.
 type execution struct {
 	game      Game
 	views     map[string][]byte
 	responses [][]byte
+	errors    []gameError
+	events    []gameEvent
+}
+
+// gameEvent is a logical event the game emitted, placed like a gameError and
+// delivered the same way.
+type gameEvent struct {
+	// participantIDs are who receive it; none means every participant.
+	participantIDs []string
+	sessionTimeMs  int64
+	order          uint64
+	value          []byte
+}
+
+// sentTo reports whether participantID receives the event.
+func (e gameEvent) sentTo(participantID string) bool {
+	return e.participantIDs == nil || slices.Contains(e.participantIDs, participantID)
+}
+
+// gameError is a logical error the game returned to a participant, placed in
+// the timeline by the call that returned it; it is delivered, never kept.
+type gameError struct {
+	participantID string
+	sessionTimeMs int64
+	// order is the last timeline operation the call ran; 0 for update().
+	order uint64
+	value []byte
 }
 
 // runBoundary executes what the timeline accepted since the last boundary,
@@ -170,6 +206,8 @@ func (c *sessionController) runBoundary() {
 			State:            executed.game.State,
 			Participants:     work.participantIDs,
 			CommandResponses: commandResponses(work, executed.responses),
+			Errors:           replayErrors(executed.errors),
+			Events:           replayEvents(executed.events),
 		})
 		return
 	case c.root.Err() != nil:
@@ -229,7 +267,8 @@ func (c *sessionController) execute(ctx context.Context, work boundary) (executi
 
 // attempt runs work in the game's context as one batch.
 func (c *sessionController) attempt(ctx context.Context, work boundary) (execution, error) {
-	result, err := c.deps.sandbox.Execute(ctx, c.contextID, batchOf(work))
+	batch, orders := batchOf(work)
+	result, err := c.deps.sandbox.Execute(ctx, c.contextID, batch)
 	if err != nil {
 		return execution{}, fmt.Errorf("executing batch: %w", err)
 	}
@@ -242,6 +281,15 @@ func (c *sessionController) attempt(ctx context.Context, work boundary) (executi
 	if commands := countCommands(work.operations); len(result.CommandResponses) != commands {
 		return execution{}, fmt.Errorf("%w: %d responses to %d commands", errOutOfSync, len(result.CommandResponses), commands)
 	}
+	placement := timeline{participantIDs: work.participantIDs, batch: batch, orders: orders}
+	placedErrors, err := placeErrors(placement, result.Errors)
+	if err != nil {
+		return execution{}, err
+	}
+	placedEvents, err := placeEvents(placement, result.Events)
+	if err != nil {
+		return execution{}, err
+	}
 	views, err := c.projectAll(ctx, work.participantIDs)
 	if err != nil {
 		return execution{}, err
@@ -250,33 +298,96 @@ func (c *sessionController) attempt(ctx context.Context, work boundary) (executi
 	game.ContextRevision = result.ContextRevision
 	game.State = result.State
 	game.PRNGState = result.PRNGState
-	return execution{game: game, views: views, responses: result.CommandResponses}, nil
+	return execution{game: game, views: views, responses: result.CommandResponses, errors: placedErrors, events: placedEvents}, nil
 }
 
-// batchOf turns work's operations into one sandbox batch, in timeline order:
-// adjacent transitions share a samples() call, each command runs alone, and
-// update() ends it. Each runs at its own time (transitions at their last
-// one's, update at the boundary's), but transitions ending a batch run until
-// the boundary's; never before the confirmed state's time.
-func batchOf(work boundary) sandbox.Batch {
+// timeline places what a batch's calls returned at the time and order of the
+// call that returned it, for participants who play.
+type timeline struct {
+	participantIDs []string
+	batch          sandbox.Batch
+	orders         []uint64
+}
+
+// at is the Session time and order of the batch's operation. An operation
+// the batch does not have means the context drifted.
+func (t timeline) at(operation int) (int64, uint64, error) {
+	if operation < 0 || operation >= len(t.batch.Operations) {
+		return 0, 0, fmt.Errorf("%w: operation %d in a batch of %d", errOutOfSync, operation, len(t.batch.Operations))
+	}
+	return t.batch.Operations[operation].SessionTimeMs, t.orders[operation], nil
+}
+
+// mustPlay fails as the script's failure when participantID does not play.
+func (t timeline) mustPlay(participantID string) error {
+	if !slices.Contains(t.participantIDs, participantID) {
+		return errScript{detail: fmt.Sprintf("returned an error or event for %q, who does not play", participantID)}
+	}
+	return nil
+}
+
+// placeErrors places each error the batch returned.
+func placeErrors(t timeline, returned []sandbox.GameError) ([]gameError, error) {
+	placed := make([]gameError, 0, len(returned))
+	for _, returnedError := range returned {
+		sessionTimeMs, order, err := t.at(returnedError.Operation)
+		if err != nil {
+			return nil, err
+		}
+		if err := t.mustPlay(returnedError.ParticipantID); err != nil {
+			return nil, err
+		}
+		placed = append(placed, gameError{participantID: returnedError.ParticipantID, sessionTimeMs: sessionTimeMs, order: order, value: returnedError.Error})
+	}
+	return placed, nil
+}
+
+// placeEvents places each event the batch emitted.
+func placeEvents(t timeline, emitted []sandbox.GameEvent) ([]gameEvent, error) {
+	placed := make([]gameEvent, 0, len(emitted))
+	for _, emittedEvent := range emitted {
+		sessionTimeMs, order, err := t.at(emittedEvent.Operation)
+		if err != nil {
+			return nil, err
+		}
+		for _, participantID := range emittedEvent.Participants {
+			if err := t.mustPlay(participantID); err != nil {
+				return nil, err
+			}
+		}
+		placed = append(placed, gameEvent{participantIDs: emittedEvent.Participants, sessionTimeMs: sessionTimeMs, order: order, value: emittedEvent.Event})
+	}
+	return placed, nil
+}
+
+// batchOf turns work's operations into one sandbox batch, with the order of
+// the last timeline operation each call runs (0 for update). Adjacent
+// transitions share a samples() call, each command runs alone, update() ends
+// it; each call runs at its own time, never before the confirmed state's.
+func batchOf(work boundary) (sandbox.Batch, []uint64) {
 	var batch sandbox.Batch
+	var orders []uint64
 	for _, operation := range work.operations {
 		if command := operation.Command; command != nil {
 			batch.Operations = append(batch.Operations, sandbox.Operation{
 				SessionTimeMs: operation.SessionTimeMs,
 				Command:       &sandbox.Command{ParticipantID: operation.ParticipantID, Name: command.name, Payload: command.payload},
 			})
+			orders = append(orders, operation.Order)
 			continue
 		}
 		transition := sandbox.Transition{ParticipantID: operation.ParticipantID, Inputs: []byte(operation.Inputs), SessionTimeMs: operation.SessionTimeMs}
 		if n := len(batch.Operations); n > 0 && batch.Operations[n-1].Command == nil {
 			batch.Operations[n-1].Transitions = append(batch.Operations[n-1].Transitions, transition)
+			orders[n-1] = operation.Order
 			continue
 		}
 		batch.Operations = append(batch.Operations, sandbox.Operation{Transitions: []sandbox.Transition{transition}})
+		orders = append(orders, operation.Order)
 	}
 	if work.update {
 		batch.Operations = append(batch.Operations, sandbox.Operation{SessionTimeMs: work.sessionTimeMs, Update: true})
+		orders = append(orders, 0)
 	}
 	at := work.game.ExecutedThroughSessionTimeMs
 	for i := range batch.Operations {
@@ -291,7 +402,7 @@ func batchOf(work boundary) sandbox.Batch {
 		operation.SessionTimeMs = max(operation.SessionTimeMs, at)
 		at = operation.SessionTimeMs
 	}
-	return batch
+	return batch, orders
 }
 
 func countCommands(operations []Operation) int {
@@ -320,6 +431,34 @@ func commandResponses(work boundary, responses [][]byte) []replay.CommandRespons
 		})
 	}
 	return answered
+}
+
+// replayErrors are a boundary's logical errors, as replay records them.
+func replayErrors(placed []gameError) []replay.GameError {
+	var recorded []replay.GameError
+	for _, placedError := range placed {
+		recorded = append(recorded, replay.GameError{
+			ParticipantID: placedError.participantID,
+			SessionTimeMs: placedError.sessionTimeMs,
+			Order:         placedError.order,
+			Error:         placedError.value,
+		})
+	}
+	return recorded
+}
+
+// replayEvents are a boundary's logical events, as replay records them.
+func replayEvents(placed []gameEvent) []replay.GameEvent {
+	var recorded []replay.GameEvent
+	for _, placedEvent := range placed {
+		recorded = append(recorded, replay.GameEvent{
+			Participants:  placedEvent.participantIDs,
+			SessionTimeMs: placedEvent.sessionTimeMs,
+			Order:         placedEvent.order,
+			Event:         placedEvent.value,
+		})
+	}
+	return recorded
 }
 
 // abort ends the Session for cause: durably first, then live. A failed
@@ -384,8 +523,8 @@ func (c *sessionController) requeue(work boundary) {
 
 // commitBoundary confirms what a boundary's execution produced: the new
 // mirror, every command executed with its response, and each connected
-// player told what changed in their view and how far their SAMPLEs were
-// consumed.
+// player told what changed in their view, how far their SAMPLEs were consumed
+// and the logical errors the game returned to them.
 func (c *sessionController) commitBoundary(ctx context.Context, work boundary, executed execution) error {
 	s := c.lock()
 	defer c.unlock()
@@ -405,7 +544,13 @@ func (c *sessionController) commitBoundary(ctx context.Context, work boundary, e
 			answered++
 		}
 	}
-	s.acknowledge(ctx, work, executed.views)
+	if len(executed.errors) > 0 {
+		gameErrors.Add(ctx, float64(len(executed.errors)))
+	}
+	if len(executed.events) > 0 {
+		gameEvents.Add(ctx, float64(len(executed.events)))
+	}
+	s.acknowledge(ctx, work, executed)
 	return nil
 }
 
@@ -417,10 +562,12 @@ func (c *sessionController) acknowledgeOnly(ctx context.Context, work boundary) 
 	if s.phase != phaseRunning {
 		return
 	}
-	s.acknowledge(ctx, work, nil)
+	s.acknowledge(ctx, work, execution{})
 }
 
-func (s *liveState) acknowledge(ctx context.Context, work boundary, views map[string][]byte) {
+// acknowledge sends every connected player their view of executed, with how
+// far their SAMPLEs were consumed and their logical errors and events.
+func (s *liveState) acknowledge(ctx context.Context, work boundary, executed execution) {
 	for participantID, acked := range work.acks {
 		s.inputs[participantID].consumedThrough = acked
 	}
@@ -429,14 +576,42 @@ func (s *liveState) acknowledge(ctx context.Context, work boundary, views map[st
 		if !found || player.isEnded() {
 			continue
 		}
-		s.sendView(ctx, player, participant.ParticipantID, views[participant.ParticipantID])
+		s.sendView(ctx, player, participant.ParticipantID, executed.views[participant.ParticipantID], executed.transientsFor(participant.ParticipantID))
 	}
 }
 
+// transients are the logical errors and events a player receives once, with
+// a view.
+type transients struct {
+	errors [][]byte
+	events [][]byte
+}
+
+func (t transients) empty() bool {
+	return len(t.errors) == 0 && len(t.events) == 0
+}
+
+// transientsFor are the errors and events of executed that participantID
+// receives, in timeline order.
+func (e execution) transientsFor(participantID string) transients {
+	var received transients
+	for _, placedError := range e.errors {
+		if placedError.participantID == participantID {
+			received.errors = append(received.errors, placedError.value)
+		}
+	}
+	for _, placedEvent := range e.events {
+		if placedEvent.sentTo(participantID) {
+			received.events = append(received.events, placedEvent.value)
+		}
+	}
+	return received
+}
+
 // sendView sends player what changed in their view since the last one their
-// connection received, with their acknowledgement; nothing when neither
-// changed.
-func (s *liveState) sendView(ctx context.Context, player *connection, participantID string, view []byte) {
+// connection received, with their acknowledgement and their transients;
+// nothing when none of them is new.
+func (s *liveState) sendView(ctx context.Context, player *connection, participantID string, view []byte, received transients) {
 	acked := s.inputs[participantID].consumedThrough
 	patch, full := []byte(`{}`), false
 	if view != nil {
@@ -448,7 +623,7 @@ func (s *liveState) sendView(ctx context.Context, player *connection, participan
 		patch, full = diff, wasFull
 		player.lastView = view
 	}
-	if !full && string(patch) == "{}" && acked == player.lastAck {
+	if !full && string(patch) == "{}" && acked == player.lastAck && received.empty() {
 		return
 	}
 	kind := viewPatch
@@ -463,5 +638,7 @@ func (s *liveState) sendView(ctx context.Context, player *connection, participan
 	player.views.publish(runtime.OwnView{
 		PlayerView:                    runtime.PlayerView{ParticipantID: participantID, Full: full, State: patch},
 		ConsumedThroughSampleSequence: acked,
+		Errors:                        received.errors,
+		Events:                        received.events,
 	})
 }

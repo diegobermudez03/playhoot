@@ -177,6 +177,12 @@ func (h *Host) Execute(ctx context.Context, contextID string, batch Batch) (Exec
 	for _, response := range resp.CommandResponses {
 		result.CommandResponses = append(result.CommandResponses, response)
 	}
+	for _, gameError := range resp.Errors {
+		result.Errors = append(result.Errors, GameError{Operation: gameError.Step, ParticipantID: gameError.Participant, Error: gameError.Error})
+	}
+	for _, gameEvent := range resp.Events {
+		result.Events = append(result.Events, GameEvent{Operation: gameEvent.Step, Participants: gameEvent.Participants, Event: gameEvent.Event})
+	}
 	return result, nil
 }
 

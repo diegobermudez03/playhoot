@@ -11,13 +11,17 @@ import (
 
 // batchGame logs every transition, samples() call, command and update() it
 // receives, with times and elapsed time, and draws a random number per samples() call,
-// so tests can see order, time and randomness. A command named "nope" is
-// rejected by the game's rules; "silent" answers nothing.
+// so tests can see order, time and randomness. Commands "nope", "silent" and
+// "blame" are rejected, answer nothing, and return an error to P2 and an event
+// to P1; inputs {"cheat":true} return an error and an event for everyone.
 const batchGame = `
 function start(participants) { return { state: { log: [], rolls: [] } }; }
 function samples(state, transitions, context) {
 	const log = state.log.concat(transitions.map((t) => t.participant + "@" + t.sessionTime + ":" + JSON.stringify(t.inputs)));
-	return { state: { log: log.concat(["samples@" + context.sessionTime + "+" + context.elapsed]), rolls: state.rolls.concat([Math.random()]) } };
+	const cheats = transitions.filter((t) => t.inputs.cheat);
+	const errors = cheats.map((t) => ({ participant: t.participant, error: { code: "CHEATING", at: t.sessionTime } }));
+	const events = cheats.map((t) => ({ event: { type: "CHEATER_CAUGHT", who: t.participant } }));
+	return { state: { log: log.concat(["samples@" + context.sessionTime + "+" + context.elapsed]), rolls: state.rolls.concat([Math.random()]) }, errors, events };
 }
 function command(state, cmd, context) {
 	const log = state.log.concat([cmd.participant + "@" + cmd.sessionTime + ":" + cmd.name + JSON.stringify(cmd.payload) + "+" + context.elapsed]);
@@ -26,6 +30,9 @@ function command(state, cmd, context) {
 	}
 	if (cmd.name === "silent") {
 		return { state: { log, rolls: state.rolls } };
+	}
+	if (cmd.name === "blame") {
+		return { state: { log, rolls: state.rolls }, response: { ok: true }, errors: [{ participant: "P2", error: "BLAMED" }], events: [{ event: "BLAMING", participants: ["P1"] }] };
 	}
 	return { state: { log, rolls: state.rolls }, response: { ok: true, now: Date.now() } };
 }
@@ -50,6 +57,8 @@ func TestExecute(t *testing.T) {
 
 		expectedLog           []string
 		expectedResponses     []string
+		expectedErrors        []GameError
+		expectedEvents        []GameEvent
 		expectedOutcome       ScriptOutcome
 		expectedErrorContains string
 	}
@@ -148,6 +157,91 @@ func TestExecute(t *testing.T) {
 				expectedErrorContains: "exceeding",
 			}
 		},
+		"errors_of_every_operation_in_batch_order": func(t *testing.T) test {
+			return test{
+				script: batchGame,
+				batch: Batch{Operations: []Operation{
+					{SessionTimeMs: 30, Transitions: []Transition{{ParticipantID: "P1", Inputs: []byte(`{"cheat":true}`), SessionTimeMs: 20}, transitionAt("P2", 25)}},
+					commandAt(40, "P1", "blame", `{}`),
+					{SessionTimeMs: 100, Update: true},
+				}},
+				expectedLog:       []string{`P1@20:{"cheat":true}`, "P2@25:{}", "samples@30+30", "P1@40:blame{}+10", "update@100+60"},
+				expectedResponses: []string{`{"ok":true}`},
+				expectedErrors: []GameError{
+					{Operation: 0, ParticipantID: "P1", Error: []byte(`{"code":"CHEATING","at":20}`)},
+					{Operation: 1, ParticipantID: "P2", Error: []byte(`"BLAMED"`)},
+				},
+				expectedEvents: []GameEvent{
+					{Operation: 0, Event: []byte(`{"type":"CHEATER_CAUGHT","who":"P1"}`)},
+					{Operation: 1, Participants: []string{"P1"}, Event: []byte(`"BLAMING"`)},
+				},
+				expectedOutcome: ScriptSucceeded,
+			}
+		},
+		"errors_that_are_not_an_array": func(t *testing.T) test {
+			return test{
+				script:                `function start() { return { state: {} }; } function update(state) { return { state, errors: { participant: "P1", error: 1 } }; } function project() { return {}; }`,
+				batch:                 Batch{Operations: []Operation{{SessionTimeMs: 100, Update: true}}},
+				expectedOutcome:       ScriptFailed,
+				expectedErrorContains: "update() must return errors as an array",
+			}
+		},
+		"error_without_a_participant": func(t *testing.T) test {
+			return test{
+				script:                `function start() { return { state: {} }; } function update(state) { return { state, errors: [{ error: "LATE" }] }; } function project() { return {}; }`,
+				batch:                 Batch{Operations: []Operation{{SessionTimeMs: 100, Update: true}}},
+				expectedOutcome:       ScriptFailed,
+				expectedErrorContains: "without a participant or an error value",
+			}
+		},
+		"error_without_a_value": func(t *testing.T) test {
+			return test{
+				script:                `function start() { return { state: {} }; } function update(state) { return { state, errors: [{ participant: "P1", error: null }] }; } function project() { return {}; }`,
+				batch:                 Batch{Operations: []Operation{{SessionTimeMs: 100, Update: true}}},
+				expectedOutcome:       ScriptFailed,
+				expectedErrorContains: "without a participant or an error value",
+			}
+		},
+		"errors_over_the_output_limit": func(t *testing.T) test {
+			return test{
+				script:                `function start() { return { state: {} }; } function update(state) { return { state, errors: [{ participant: "P1", error: "x".repeat(300000) }] }; } function project() { return {}; }`,
+				batch:                 Batch{Operations: []Operation{{SessionTimeMs: 100, Update: true}}},
+				expectedOutcome:       ScriptFailed,
+				expectedErrorContains: "exceeding",
+			}
+		},
+		"events_that_are_not_an_array": func(t *testing.T) test {
+			return test{
+				script:                `function start() { return { state: {} }; } function update(state) { return { state, events: { event: 1 } }; } function project() { return {}; }`,
+				batch:                 Batch{Operations: []Operation{{SessionTimeMs: 100, Update: true}}},
+				expectedOutcome:       ScriptFailed,
+				expectedErrorContains: "update() must return events as an array",
+			}
+		},
+		"event_without_a_value": func(t *testing.T) test {
+			return test{
+				script:                `function start() { return { state: {} }; } function update(state) { return { state, events: [{ participants: ["P1"] }] }; } function project() { return {}; }`,
+				batch:                 Batch{Operations: []Operation{{SessionTimeMs: 100, Update: true}}},
+				expectedOutcome:       ScriptFailed,
+				expectedErrorContains: "without an event value",
+			}
+		},
+		"event_for_nobody": func(t *testing.T) test {
+			return test{
+				script:                `function start() { return { state: {} }; } function update(state) { return { state, events: [{ event: "BOOM", participants: [] }] }; } function project() { return {}; }`,
+				batch:                 Batch{Operations: []Operation{{SessionTimeMs: 100, Update: true}}},
+				expectedOutcome:       ScriptFailed,
+				expectedErrorContains: "empty participant list",
+			}
+		},
+		"events_over_the_output_limit": func(t *testing.T) test {
+			return test{
+				script:                `function start() { return { state: {} }; } function update(state) { return { state, events: [{ event: "x".repeat(300000) }] }; } function project() { return {}; }`,
+				batch:                 Batch{Operations: []Operation{{SessionTimeMs: 100, Update: true}}},
+				expectedOutcome:       ScriptFailed,
+				expectedErrorContains: "exceeding",
+			}
+		},
 		"script_that_mutates_its_state": func(t *testing.T) test {
 			return test{
 				script:                `function start() { return { state: { log: [] } }; } function samples(state) { state.log.push(1); return { state }; } function project() { return {}; }`,
@@ -186,6 +280,8 @@ func TestExecute(t *testing.T) {
 			} else {
 				require.Equal(t, tc.expectedResponses, responses)
 			}
+			require.Equal(t, tc.expectedErrors, result.Errors)
+			require.Equal(t, tc.expectedEvents, result.Events)
 		})
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"os"
 	"runtime/debug"
 	runtimemetrics "runtime/metrics"
+	"slices"
 
 	"github.com/fastschema/qjs"
 )
@@ -180,11 +181,12 @@ func (w *worker) start(req workerRequest) workerResponse {
 		w.broken = true
 		return *failure
 	}
-	state, _, failure := resultOf("start", result)
+	returned, failure := resultOf("start", result)
 	if failure != nil {
 		w.broken = true
 		return *failure
 	}
+	state := returned.State
 
 	randomState, err := w.randomState()
 	if err != nil {
@@ -199,7 +201,8 @@ func (w *worker) start(req workerRequest) workerResponse {
 // execute runs a batch's steps in order on the confirmed state, each at its
 // Session time: samples(state, transitions, context), update(state, context)
 // and command(state, command, context), the last returning {state, response}
-// and the others {state}. Nothing of the batch is kept unless all succeed.
+// and the others {state}; any of them may add errors and events. Nothing of
+// the batch is kept unless all succeed.
 func (w *worker) execute(req workerRequest) workerResponse {
 	if !w.started {
 		return fatal("game not started")
@@ -210,7 +213,9 @@ func (w *worker) execute(req workerRequest) workerResponse {
 	state := json.RawMessage(w.state)
 	at := w.sessionTimeMs
 	var responses []json.RawMessage
-	for _, step := range req.Steps {
+	var gameErrors []workerError
+	var gameEvents []workerEvent
+	for index, step := range req.Steps {
 		if step.SessionTime < at {
 			return fatal("session time cannot go back")
 		}
@@ -245,15 +250,27 @@ func (w *worker) execute(req workerRequest) workerResponse {
 			w.broken = true
 			return *failure
 		}
-		next, response, failure := resultOf(entrypoint, result)
+		returned, failure := resultOf(entrypoint, result)
 		if failure != nil {
 			w.broken = true
 			return *failure
 		}
-		state = next
-		if step.Command != nil {
-			responses = append(responses, response)
+		stepErrors, failure := errorsOf(entrypoint, index, returned.Errors)
+		if failure != nil {
+			w.broken = true
+			return *failure
 		}
+		stepEvents, failure := eventsOf(entrypoint, index, returned.Events)
+		if failure != nil {
+			w.broken = true
+			return *failure
+		}
+		state = returned.State
+		if step.Command != nil {
+			responses = append(responses, returned.Response)
+		}
+		gameErrors = append(gameErrors, stepErrors...)
+		gameEvents = append(gameEvents, stepEvents...)
 		at = step.SessionTime
 	}
 	randomState, err := w.randomState()
@@ -263,19 +280,27 @@ func (w *worker) execute(req workerRequest) workerResponse {
 	w.state = string(state)
 	w.sessionTimeMs = at
 	w.revision++
-	return workerResponse{State: state, PRNGState: encodeRandomState(randomState), ContextRevision: w.revision, CommandResponses: responses}
+	return workerResponse{
+		State: state, PRNGState: encodeRandomState(randomState), ContextRevision: w.revision,
+		CommandResponses: responses, Errors: gameErrors, Events: gameEvents,
+	}
 }
 
-// resultOf reads what a mutating entrypoint returned as {state, response};
-// a missing response is null.
-func resultOf(entrypoint string, result string) (state json.RawMessage, response json.RawMessage, failure *workerResponse) {
-	var shape struct {
-		State    json.RawMessage `json:"state"`
-		Response json.RawMessage `json:"response"`
-	}
-	fail := func(reason string) (json.RawMessage, json.RawMessage, *workerResponse) {
+// entrypointResult is what a mutating entrypoint returned.
+type entrypointResult struct {
+	State    json.RawMessage `json:"state"`
+	Response json.RawMessage `json:"response"`
+	Errors   json.RawMessage `json:"errors"`
+	Events   json.RawMessage `json:"events"`
+}
+
+// resultOf reads what a mutating entrypoint returned as {state, response,
+// errors, events}; a missing response is null.
+func resultOf(entrypoint string, result string) (entrypointResult, *workerResponse) {
+	var shape entrypointResult
+	fail := func(reason string) (entrypointResult, *workerResponse) {
 		failure := scriptFailure(reason)
-		return nil, nil, &failure
+		return entrypointResult{}, &failure
 	}
 	if err := json.Unmarshal([]byte(result), &shape); err != nil || len(shape.State) == 0 || string(shape.State) == "null" {
 		return fail(entrypoint + "() must return an object with a state")
@@ -286,10 +311,71 @@ func resultOf(entrypoint string, result string) (state json.RawMessage, response
 	if len(shape.Response) > defaultMaxOutputBytes {
 		return fail(fmt.Sprintf("%s() returned a response of %d bytes, exceeding the %d-byte limit", entrypoint, len(shape.Response), defaultMaxOutputBytes))
 	}
+	if len(shape.Errors) > defaultMaxOutputBytes {
+		return fail(fmt.Sprintf("%s() returned errors of %d bytes, exceeding the %d-byte limit", entrypoint, len(shape.Errors), defaultMaxOutputBytes))
+	}
+	if len(shape.Events) > defaultMaxOutputBytes {
+		return fail(fmt.Sprintf("%s() returned events of %d bytes, exceeding the %d-byte limit", entrypoint, len(shape.Events), defaultMaxOutputBytes))
+	}
 	if len(shape.Response) == 0 {
 		shape.Response = json.RawMessage(`null`)
 	}
-	return shape.State, shape.Response, nil
+	return shape, nil
+}
+
+// errorsOf reads the errors the step at index returned: missing or null, or
+// an array of {participant, error}, error being any JSON but null.
+func errorsOf(entrypoint string, index int, returned json.RawMessage) ([]workerError, *workerResponse) {
+	if len(returned) == 0 || string(returned) == "null" {
+		return nil, nil
+	}
+	var shapes []struct {
+		Participant string          `json:"participant"`
+		Error       json.RawMessage `json:"error"`
+	}
+	if err := json.Unmarshal(returned, &shapes); err != nil {
+		failure := scriptFailure(entrypoint + "() must return errors as an array of {participant, error}")
+		return nil, &failure
+	}
+	gameErrors := make([]workerError, len(shapes))
+	for i, shape := range shapes {
+		if shape.Participant == "" || len(shape.Error) == 0 || string(shape.Error) == "null" {
+			failure := scriptFailure(entrypoint + "() returned an error without a participant or an error value")
+			return nil, &failure
+		}
+		gameErrors[i] = workerError{Step: index, Participant: shape.Participant, Error: shape.Error}
+	}
+	return gameErrors, nil
+}
+
+// eventsOf reads the events the step at index emitted: missing or null, or an
+// array of {event, participants}, event being any JSON but null and
+// participants, when present, a non-empty array of ParticipantIDs.
+func eventsOf(entrypoint string, index int, emitted json.RawMessage) ([]workerEvent, *workerResponse) {
+	if len(emitted) == 0 || string(emitted) == "null" {
+		return nil, nil
+	}
+	var shapes []struct {
+		Event        json.RawMessage `json:"event"`
+		Participants []string        `json:"participants"`
+	}
+	if err := json.Unmarshal(emitted, &shapes); err != nil {
+		failure := scriptFailure(entrypoint + "() must return events as an array of {event, participants}")
+		return nil, &failure
+	}
+	gameEvents := make([]workerEvent, len(shapes))
+	for i, shape := range shapes {
+		if len(shape.Event) == 0 || string(shape.Event) == "null" {
+			failure := scriptFailure(entrypoint + "() returned an event without an event value")
+			return nil, &failure
+		}
+		if shape.Participants != nil && (len(shape.Participants) == 0 || slices.Contains(shape.Participants, "")) {
+			failure := scriptFailure(entrypoint + "() returned an event for an empty participant list or an empty participant")
+			return nil, &failure
+		}
+		gameEvents[i] = workerEvent{Step: index, Participants: shape.Participants, Event: shape.Event}
+	}
+	return gameEvents, nil
 }
 
 // restore sets the context at a running game's confirmed state, PRNG state

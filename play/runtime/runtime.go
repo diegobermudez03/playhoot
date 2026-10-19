@@ -318,6 +318,15 @@ type PlayerConnection struct {
 type OwnView struct {
 	PlayerView
 	ConsumedThroughSampleSequence int64
+
+	// Errors are the logical errors the game returned to the player while
+	// producing this view, in timeline order, each as JSON only the game
+	// defines. They are sent once and never again, not even on a resync.
+	Errors [][]byte
+
+	// Events are the logical events the game emitted for the player while
+	// producing this view, in timeline order, delivered like Errors.
+	Events [][]byte
 }
 
 // Sample is a player's full input state. Sequence increases per player;

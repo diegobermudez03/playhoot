@@ -52,11 +52,13 @@ type playerSessionStartedMessage struct {
 }
 
 type playerOwnViewMessage struct {
-	Type                          string          `json:"type"`
-	ParticipantID                 string          `json:"participant_id"`
-	Full                          bool            `json:"full"`
-	State                         json.RawMessage `json:"state"`
-	ConsumedThroughSampleSequence int64           `json:"consumed_through_sample_sequence"`
+	Type                          string            `json:"type"`
+	ParticipantID                 string            `json:"participant_id"`
+	Full                          bool              `json:"full"`
+	State                         json.RawMessage   `json:"state"`
+	ConsumedThroughSampleSequence int64             `json:"consumed_through_sample_sequence"`
+	Errors                        []json.RawMessage `json:"errors,omitempty"`
+	Events                        []json.RawMessage `json:"events,omitempty"`
 }
 
 var errIncompletePlayerConnection = errors.New("player connection is missing operations")
@@ -178,7 +180,7 @@ func playerStartedMessage(start runtime.PlayerStart) any {
 }
 
 // ownViewMessage is the player's own view, with how far their SAMPLEs were
-// consumed.
+// consumed and the logical errors and events the game produced for them.
 func ownViewMessage(view runtime.OwnView) any {
 	return playerOwnViewMessage{
 		Type:                          livePlayerView,
@@ -186,7 +188,18 @@ func ownViewMessage(view runtime.OwnView) any {
 		Full:                          view.Full,
 		State:                         gameJSON(view.State),
 		ConsumedThroughSampleSequence: view.ConsumedThroughSampleSequence,
+		Errors:                        gameJSONs(view.Errors),
+		Events:                        gameJSONs(view.Events),
 	}
+}
+
+// gameJSONs are values only the game defines, as JSON; nil when none.
+func gameJSONs(values [][]byte) []json.RawMessage {
+	var encoded []json.RawMessage
+	for _, value := range values {
+		encoded = append(encoded, gameJSON(value))
+	}
+	return encoded
 }
 
 // isJSONObject reports whether raw, as decoded from a field, is an object.

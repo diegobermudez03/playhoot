@@ -212,6 +212,25 @@ func TestHandlePlayerJoin(t *testing.T) {
 				expectedDisconnects: 1,
 			}
 		},
+		"views_carry_the_game_errors_and_events": func(t *testing.T, deps dependencies) test {
+			player := startedFakePlayer()
+			player.views <- runtime.OwnView{
+				PlayerView:                    runtime.PlayerView{ParticipantID: "P1", State: []byte(`{}`)},
+				ConsumedThroughSampleSequence: 3,
+				Errors:                        [][]byte{[]byte(`{"code":"NOT_YOUR_TURN"}`), []byte(`"OUT_OF_FUEL"`)},
+				Events:                        [][]byte{[]byte(`{"type":"EXPLOSION"}`)},
+			}
+			accept(deps, player)
+			return test{
+				player:       player,
+				clientCloses: true,
+				expectedReceived: []string{
+					playerStartedJSON,
+					`{"type":"player_view","participant_id":"P1","full":false,"state":{},"consumed_through_sample_sequence":3,"errors":[{"code":"NOT_YOUR_TURN"},"OUT_OF_FUEL"],"events":[{"type":"EXPLOSION"}]}`,
+				},
+				expectedDisconnects: 1,
+			}
+		},
 		"resync_is_followed_by_a_full_view": func(t *testing.T, deps dependencies) test {
 			player := startedFakePlayer()
 			player.resyncView = runtime.OwnView{

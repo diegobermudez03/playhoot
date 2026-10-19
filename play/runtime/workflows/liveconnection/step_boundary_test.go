@@ -175,6 +175,58 @@ func TestRunBoundary(t *testing.T) {
 			)
 			return test{expectedRequeued: true, expectedInfraFailures: 1}
 		},
+		"logical_errors_reach_their_player_with_the_view_and_replay": func(t *testing.T, deps dependencies) test {
+			rejected := executed
+			rejected.Errors = []sandbox.GameError{{Operation: 0, ParticipantID: "P1", Error: []byte(`{"code":"MOVE_NOT_ALLOWED"}`)}}
+			recorded := capture
+			recorded.Errors = []replay.GameError{{ParticipantID: "P1", SessionTimeMs: 100, Order: 1, Error: []byte(`{"code":"MOVE_NOT_ALLOWED"}`)}}
+			gomock.InOrder(
+				deps.sandbox.EXPECT().Execute(anyCtx, "context-1", input).Return(rejected, nil),
+				projects(deps, "context-1"),
+				deps.replay.EXPECT().Offer(anyCtx, recorded),
+			)
+			view := *movedView
+			view.Errors = [][]byte{[]byte(`{"code":"MOVE_NOT_ALLOWED"}`)}
+			return test{expectedView: &view, expectedContextID: "context-1"}
+		},
+		"logical_events_reach_their_players_with_the_view_and_replay": func(t *testing.T, deps dependencies) test {
+			emitted := executed
+			emitted.Events = []sandbox.GameEvent{
+				{Operation: 0, Event: []byte(`{"type":"EXPLOSION"}`)},
+				{Operation: 0, Participants: []string{"P1"}, Event: []byte(`"CARD_REVEALED"`)},
+			}
+			recorded := capture
+			recorded.Events = []replay.GameEvent{
+				{SessionTimeMs: 100, Order: 1, Event: []byte(`{"type":"EXPLOSION"}`)},
+				{Participants: []string{"P1"}, SessionTimeMs: 100, Order: 1, Event: []byte(`"CARD_REVEALED"`)},
+			}
+			gomock.InOrder(
+				deps.sandbox.EXPECT().Execute(anyCtx, "context-1", input).Return(emitted, nil),
+				projects(deps, "context-1"),
+				deps.replay.EXPECT().Offer(anyCtx, recorded),
+			)
+			view := *movedView
+			view.Events = [][]byte{[]byte(`{"type":"EXPLOSION"}`), []byte(`"CARD_REVEALED"`)}
+			return test{expectedView: &view, expectedContextID: "context-1"}
+		},
+		"event_for_someone_who_does_not_play_is_a_script_failure": func(t *testing.T, deps dependencies) test {
+			stray := executed
+			stray.Events = []sandbox.GameEvent{{Operation: 0, Participants: []string{"P1", "P9"}, Event: []byte(`"BOOM"`)}}
+			gomock.InOrder(append([]any{
+				deps.sandbox.EXPECT().Execute(anyCtx, "context-1", input).Return(stray, nil),
+				deps.sandbox.EXPECT().DiscardContext(anyCtx, "context-1").Return(nil),
+			}, retriedIn(deps, "context-2")...)...)
+			return test{expectedView: movedView, expectedContextID: "context-2"}
+		},
+		"error_to_someone_who_does_not_play_is_a_script_failure": func(t *testing.T, deps dependencies) test {
+			stray := executed
+			stray.Errors = []sandbox.GameError{{Operation: 0, ParticipantID: "P9", Error: []byte(`"LATE"`)}}
+			gomock.InOrder(append([]any{
+				deps.sandbox.EXPECT().Execute(anyCtx, "context-1", input).Return(stray, nil),
+				deps.sandbox.EXPECT().DiscardContext(anyCtx, "context-1").Return(nil),
+			}, retriedIn(deps, "context-2")...)...)
+			return test{expectedView: movedView, expectedContextID: "context-2"}
+		},
 		"too_many_failed_boundaries_abort_the_session": func(t *testing.T, deps dependencies) test {
 			gomock.InOrder(
 				deps.sandbox.EXPECT().Execute(anyCtx, "context-1", input).Return(sandbox.ExecutionResult{}, errors.New("worker died")),
@@ -487,11 +539,13 @@ func TestBatchOf(t *testing.T) {
 	type test struct {
 		work boundary
 
-		expected sandbox.Batch
+		expected       sandbox.Batch
+		expectedOrders []uint64
 	}
 
+	// transition is ordered by its time, which the tests never repeat.
 	transition := func(at int64) Operation {
-		return Operation{ParticipantID: "P1", Inputs: `{}`, SessionTimeMs: at}
+		return Operation{ParticipantID: "P1", Inputs: `{}`, SessionTimeMs: at, Order: uint64(at)}
 	}
 	sandboxTransition := func(at int64) sandbox.Transition {
 		return sandbox.Transition{ParticipantID: "P1", Inputs: []byte(`{}`), SessionTimeMs: at}
@@ -502,8 +556,9 @@ func TestBatchOf(t *testing.T) {
 	tests := map[string]func(t *testing.T) test{
 		"transitions_ending_a_batch_run_until_the_boundary": func(t *testing.T) test {
 			return test{
-				work:     boundary{operations: []Operation{transition(40), transition(70)}, sessionTimeMs: 100},
-				expected: sandbox.Batch{Operations: []sandbox.Operation{{SessionTimeMs: 100, Transitions: []sandbox.Transition{sandboxTransition(40), sandboxTransition(70)}}}},
+				work:           boundary{operations: []Operation{transition(40), transition(70)}, sessionTimeMs: 100},
+				expected:       sandbox.Batch{Operations: []sandbox.Operation{{SessionTimeMs: 100, Transitions: []sandbox.Transition{sandboxTransition(40), sandboxTransition(70)}}}},
+				expectedOrders: []uint64{70},
 			}
 		},
 		"transitions_before_update_run_until_their_last_one": func(t *testing.T) test {
@@ -513,10 +568,11 @@ func TestBatchOf(t *testing.T) {
 					{SessionTimeMs: 70, Transitions: []sandbox.Transition{sandboxTransition(40), sandboxTransition(70)}},
 					{SessionTimeMs: 100, Update: true},
 				}},
+				expectedOrders: []uint64{70, 0},
 			}
 		},
 		"command_splits_the_transitions_each_at_its_time": func(t *testing.T) test {
-			command := Operation{ParticipantID: "P1", SessionTimeMs: 50, Command: pass}
+			command := Operation{ParticipantID: "P1", SessionTimeMs: 50, Order: 50, Command: pass}
 			return test{
 				work: boundary{operations: []Operation{transition(40), command, transition(70)}, sessionTimeMs: 100, update: true},
 				expected: sandbox.Batch{Operations: []sandbox.Operation{
@@ -525,12 +581,14 @@ func TestBatchOf(t *testing.T) {
 					{SessionTimeMs: 70, Transitions: []sandbox.Transition{sandboxTransition(70)}},
 					{SessionTimeMs: 100, Update: true},
 				}},
+				expectedOrders: []uint64{40, 50, 70, 0},
 			}
 		},
 		"update_alone": func(t *testing.T) test {
 			return test{
-				work:     boundary{sessionTimeMs: 100, update: true},
-				expected: sandbox.Batch{Operations: []sandbox.Operation{{SessionTimeMs: 100, Update: true}}},
+				work:           boundary{sessionTimeMs: 100, update: true},
+				expected:       sandbox.Batch{Operations: []sandbox.Operation{{SessionTimeMs: 100, Update: true}}},
+				expectedOrders: []uint64{0},
 			}
 		},
 		"nothing_runs_before_the_confirmed_state": func(t *testing.T) test {
@@ -540,6 +598,7 @@ func TestBatchOf(t *testing.T) {
 					{SessionTimeMs: 60, Transitions: []sandbox.Transition{sandboxTransition(40)}},
 					{SessionTimeMs: 100, Update: true},
 				}},
+				expectedOrders: []uint64{40, 0},
 			}
 		},
 	}
@@ -548,9 +607,10 @@ func TestBatchOf(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			tc := setup(t)
 
-			batch := batchOf(tc.work)
+			batch, orders := batchOf(tc.work)
 
 			require.Equal(t, tc.expected, batch)
+			require.Equal(t, tc.expectedOrders, orders)
 		})
 	}
 }
@@ -593,6 +653,7 @@ func TestCommitBoundary(t *testing.T) {
 		sequence int64
 		view     string
 		revision int64
+		errors   []gameError
 
 		expectedErrorIs error
 		expectedViews   []runtime.OwnView
@@ -615,6 +676,19 @@ func TestCommitBoundary(t *testing.T) {
 		"nothing_new_sends_nothing": func(t *testing.T) test {
 			return test{view: `{"round":1,"me":{"x":0,"y":0}}`, revision: 2}
 		},
+		"errors_are_sent_although_nothing_else_changed": func(t *testing.T) test {
+			return test{
+				view: `{"round":1,"me":{"x":0,"y":0}}`, revision: 2,
+				errors: []gameError{
+					{participantID: "P1", sessionTimeMs: 10, order: 1, value: []byte(`"NOT_YOUR_TURN"`)},
+					{participantID: "P1", sessionTimeMs: 20, value: []byte(`{"code":"OUT_OF_FUEL"}`)},
+				},
+				expectedViews: []runtime.OwnView{{
+					PlayerView: runtime.PlayerView{ParticipantID: "P1", State: []byte(`{}`)},
+					Errors:     [][]byte{[]byte(`"NOT_YOUR_TURN"`), []byte(`{"code":"OUT_OF_FUEL"}`)},
+				}},
+			}
+		},
 		"field_that_disappeared_sends_the_view_whole": func(t *testing.T) test {
 			return test{
 				view: `{"round":1}`, revision: 2,
@@ -636,7 +710,7 @@ func TestCommitBoundary(t *testing.T) {
 			}
 			boundary, _ := controller.takeBoundary()
 
-			err := controller.commitBoundary(ctx, boundary, execution{game: Game{ContextRevision: tc.revision, State: []byte(`{"n":1}`)}, views: map[string][]byte{"P1": []byte(tc.view)}})
+			err := controller.commitBoundary(ctx, boundary, execution{game: Game{ContextRevision: tc.revision, State: []byte(`{"n":1}`)}, views: map[string][]byte{"P1": []byte(tc.view)}, errors: tc.errors})
 
 			if tc.expectedErrorIs != nil {
 				require.ErrorIs(t, err, tc.expectedErrorIs)
@@ -648,6 +722,37 @@ func TestCommitBoundary(t *testing.T) {
 			require.Equal(t, tc.revision, committed.game.ContextRevision, "the mirror follows the execution")
 		})
 	}
+}
+
+func TestCommitBoundaryTransientsReachOnlyTheirParticipants(t *testing.T) {
+	controller, players, _ := runningController(t, map[string][]byte{"P1": []byte(`{}`), "P2": []byte(`{}`), "P3": []byte(`{}`)}, "user-a", "user-b", "user-c")
+	ctx := context.Background()
+	boundary, _ := controller.takeBoundary()
+
+	err := controller.commitBoundary(ctx, boundary, execution{
+		game:   Game{ContextRevision: 2, State: []byte(`{}`)},
+		views:  map[string][]byte{"P1": []byte(`{}`), "P2": []byte(`{}`), "P3": []byte(`{}`)},
+		errors: []gameError{{participantID: "P2", sessionTimeMs: 10, order: 1, value: []byte(`"NOT_YOUR_TURN"`)}},
+		events: []gameEvent{
+			{sessionTimeMs: 10, order: 1, value: []byte(`"ROUND_CHANGED"`)},
+			{participantIDs: []string{"P1", "P2"}, sessionTimeMs: 20, value: []byte(`"CARD_REVEALED"`)},
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, []runtime.OwnView{{
+		PlayerView: runtime.PlayerView{ParticipantID: "P1", State: []byte(`{}`)},
+		Events:     [][]byte{[]byte(`"ROUND_CHANGED"`), []byte(`"CARD_REVEALED"`)},
+	}}, drainViews(t, players["user-a"]))
+	require.Equal(t, []runtime.OwnView{{
+		PlayerView: runtime.PlayerView{ParticipantID: "P2", State: []byte(`{}`)},
+		Errors:     [][]byte{[]byte(`"NOT_YOUR_TURN"`)},
+		Events:     [][]byte{[]byte(`"ROUND_CHANGED"`), []byte(`"CARD_REVEALED"`)},
+	}}, drainViews(t, players["user-b"]))
+	require.Equal(t, []runtime.OwnView{{
+		PlayerView: runtime.PlayerView{ParticipantID: "P3", State: []byte(`{}`)},
+		Events:     [][]byte{[]byte(`"ROUND_CHANGED"`)},
+	}}, drainViews(t, players["user-c"]))
 }
 
 func TestAcknowledgeOnly(t *testing.T) {

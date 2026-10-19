@@ -92,6 +92,22 @@ type workerTransition struct {
 	SessionTime int64           `json:"sessionTime"`
 }
 
+// workerError is a logical error the step at index Step returned to
+// Participant.
+type workerError struct {
+	Step        int             `json:"step"`
+	Participant string          `json:"participant"`
+	Error       json.RawMessage `json:"error"`
+}
+
+// workerEvent is a logical event the step at index Step emitted, for
+// Participants or, when none, for everyone.
+type workerEvent struct {
+	Step         int             `json:"step"`
+	Participants []string        `json:"participants,omitempty"`
+	Event        json.RawMessage `json:"event"`
+}
+
 // workerResponse is the line a context worker answers each request with. At
 // most one of ScriptError (the authored code failed) or Fatal (the worker
 // itself failed) is set.
@@ -106,6 +122,12 @@ type workerResponse struct {
 
 	// CommandResponses answer an execute request's command steps, in order.
 	CommandResponses []json.RawMessage `json:"commandResponses,omitempty"`
+
+	// Errors are the logical errors an execute request's steps returned.
+	Errors []workerError `json:"errors,omitempty"`
+
+	// Events are the logical events an execute request's steps emitted.
+	Events []workerEvent `json:"events,omitempty"`
 
 	// MemoryBytes is all the memory the worker process holds after the call.
 	MemoryBytes uint64 `json:"memoryBytes,omitempty"`

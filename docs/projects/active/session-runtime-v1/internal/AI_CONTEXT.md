@@ -1,11 +1,11 @@
 Process: Project execution (session-runtime-v1), human-directed implementation
 Topic: Real-time Session Runtime per plans/session_runtime architecture plan
-Current stage: COMMAND protocol completed and verified (2026-10-18); waiting for the human's next instruction
+Current stage: logical transient errors and events implemented and tested (2026-10-18); waiting for the human's review
 Current execution surface: CODEBASE AGENT
 Related durable artifacts: docs/projects/active/session-runtime-v1/PROJECT.md, docs/projects/active/session-runtime-v1/CHECKLIST.md, plans/session_runtime/Playhoot_Session_Runtime_Architecture_Plan_with_TOC.docx, play/docs/decisions/SESSION-ADR-0028-real-time-session-runtime-supersedes-discrete-turn-architecture.md
 Blocked by: nothing
 Next action: wait for the human's next instruction
-Last durable checkpoint: COMMAND protocol completed end to end, CHECKLIST J and CURRENT_STATE updated (2026-10-18); the progress notes below stop at 2026-10-15, CHECKLIST.md and PROJECT.md hold everything since
+Last durable checkpoint: logical transient errors and events (`errors: [{participant, error}]`, `events: [{event, participants?}]` from samples/command/update, delivered inside player_view, offered to replay) implemented, CHECKLIST L/V/R, CURRENT_STATE and PROJECT updated (2026-10-18); the progress notes below stop at 2026-10-15, CHECKLIST.md and PROJECT.md hold everything since
 Last updated: 2026-10-18
 
 ## Working agreement (human decisions)

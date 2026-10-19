@@ -69,8 +69,8 @@ type Batch struct {
 }
 
 // ExecutionResult is the outcome of a mutating execution. State, PRNGState,
-// ContextRevision and CommandResponses are set only when it succeeded,
-// ScriptError only when not.
+// ContextRevision, CommandResponses and Errors are set only when it
+// succeeded, ScriptError only when not.
 type ExecutionResult struct {
 	Outcome         ScriptOutcome
 	State           []byte
@@ -81,7 +81,37 @@ type ExecutionResult struct {
 	// order, as JSON.
 	CommandResponses [][]byte
 
+	// Errors are the logical errors the operations returned, in batch order.
+	Errors []GameError
+
+	// Events are the logical events the operations emitted, in batch order.
+	Events []GameEvent
+
 	ScriptError string
+}
+
+// GameEvent is a logical event an operation emitted, such as something that
+// happened in the game, for every participant or only for Participants.
+type GameEvent struct {
+	// Operation is the index in the batch of the operation that emitted it.
+	Operation int
+
+	// Participants are who receive it; none means every participant.
+	Participants []string
+
+	// Event is what the game emitted, as JSON whose shape only it defines.
+	Event []byte
+}
+
+// GameError is a logical error an operation returned to one participant,
+// such as an action the game's rules reject.
+type GameError struct {
+	// Operation is the index in the batch of the operation that returned it.
+	Operation     int
+	ParticipantID string
+
+	// Error is what the game returned, as JSON whose shape only it defines.
+	Error []byte
 }
 
 // ScriptOutcome is whether authored code completed an execution.
