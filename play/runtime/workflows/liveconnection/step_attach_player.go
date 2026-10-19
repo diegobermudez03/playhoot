@@ -21,7 +21,9 @@ type playerJoinChecker interface {
 var (
 	playerAttachOutcomeLabel = metrics.NewLabel("outcome",
 		"accepted",
+		attachReattached,
 		string(runtime.RejectLobbyFull),
+		string(runtime.RejectParticipantDisconnected),
 		string(runtime.RejectSessionStarted),
 		string(runtime.RejectSessionUnavailable),
 		string(runtime.RejectOwnerChanged),
@@ -29,7 +31,7 @@ var (
 
 	playerAttaches = metrics.NewCounter(
 		"play_runtime_player_attach_total",
-		"Player connections attached to a live Session's lobby, by outcome.",
+		"Player connections attached to a live Session, into its lobby or back into its running game, by outcome.",
 		playerAttachOutcomeLabel,
 	)
 )
@@ -45,9 +47,13 @@ func (r *ControllerResolver) AttachPlayer(ctx context.Context, sessionUUID strin
 	return sessionController.attachPlayer(ctx, userUUID)
 }
 
-// attachPlayer admits userUUID's player connection into the lobby if the
-// durable Session accepts players.
+// attachPlayer takes userUUID's player connection back into the running game
+// if they play it, or admits it into the lobby if the durable Session accepts
+// players.
 func (c *sessionController) attachPlayer(ctx context.Context, userUUID string) (runtime.AttachPlayerResult, error) {
+	if result, participant := c.reattachPlayer(ctx, userUUID); participant {
+		return result, nil
+	}
 	eligibility, err := c.deps.playerJoins.EligibleToJoinAsPlayer(ctx, c.sessionUUID)
 	if err != nil {
 		return runtime.AttachPlayerResult{}, fmt.Errorf("checking player eligibility: %w", err)
@@ -110,7 +116,12 @@ func (c *sessionController) joinLobby(ctx context.Context, userUUID string) (run
 		s.broadcastLobby()
 	}
 	c.unlock()
+	return c.playerConnection(player), "", true
+}
 
+// playerConnection is what the caller can do with player, admitted into the
+// lobby or back into the running game.
+func (c *sessionController) playerConnection(player *connection) runtime.PlayerConnection {
 	return runtime.PlayerConnection{
 		Leave: func(context.Context) (runtime.LeaveResult, error) {
 			s := c.lock()
@@ -151,18 +162,15 @@ func (c *sessionController) joinLobby(ctx context.Context, userUUID string) (run
 			s := c.lock()
 			// Once frozen the participant stays; only the lobby forgets. A
 			// cancelled Start attempt takes them out of the lobby then. In a
-			// running game their inputs return to the defaults at once.
-			// Placeholder: a running game's transport grace is not built.
+			// running game they keep playing for the transport grace.
 			switch s.phase {
 			case phaseLobby:
 				s.leaveLobby(player)
 			case phaseRunning:
-				if s.players[player.userUUID] == player {
-					s.resetInputs(player.participantID)
-				}
+				s.detachPlayer(c.root, player)
 			}
 			c.unlock()
 			player.end(runtime.EndDisconnected)
 		},
-	}, "", true
+	}
 }

@@ -106,7 +106,10 @@ type controllerDependencies struct {
 	seeds func() uint64
 	// tickInterval is a running game's boundary cadence.
 	tickInterval time.Duration
-	logger       *slog.Logger
+	// transportGrace is how long a participant who lost their transport stays
+	// connected before the game is told they disconnected.
+	transportGrace time.Duration
+	logger         *slog.Logger
 }
 
 // sessionController is one live Session on its owner instance. Connections
@@ -160,6 +163,8 @@ func newSessionController(root context.Context, sessionUUID string, epoch int64,
 			players:  make(map[string]*connection),
 			inputs:   make(map[string]*participantInputs),
 			commands: make(map[string]*participantCommands),
+			presence: make(map[string]*participantPresence),
+			views:    make(map[string][]byte),
 		},
 		operations: make(chan func()),
 		flush:      make(chan struct{}, 1),
@@ -373,6 +378,12 @@ type liveState struct {
 	inputs map[string]*participantInputs
 	// commands is each participant's COMMAND tokens, by ParticipantID.
 	commands map[string]*participantCommands
+	// presence is whether each participant is still playing, by
+	// ParticipantID.
+	presence map[string]*participantPresence
+	// views is each participant's current projection, by ParticipantID, as
+	// the last committed state gave it.
+	views map[string][]byte
 	// timeline holds the operations accepted and not yet executed, in order.
 	timeline  []Operation
 	nextOrder uint64
@@ -380,8 +391,8 @@ type liveState struct {
 
 // Operation is one entry of the Session's single timeline, at the effective
 // Session time it was accepted; Order breaks ties between operations accepted
-// at the same time. It is a participant's new input state, or their COMMAND
-// when Command is set.
+// at the same time. It is a participant's new input state, their COMMAND when
+// Command is set, or their disconnection when Disconnected is.
 type Operation struct {
 	ParticipantID string
 	SessionTimeMs int64
@@ -390,7 +401,14 @@ type Operation struct {
 	// Inputs is the full input snapshot of an input transition.
 	Inputs inputs.Snapshot
 
-	Command *pendingCommand
+	Command      *pendingCommand
+	Disconnected bool
+}
+
+// runsAlone reports whether the operation is its own call, at its own time,
+// rather than a transition sharing a samples() call.
+func (o Operation) runsAlone() bool {
+	return o.Command != nil || o.Disconnected
 }
 
 // enqueue appends operation to the timeline at the current Session time.

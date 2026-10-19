@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"time"
 
@@ -107,9 +108,16 @@ type boundary struct {
 	participantIDs []string
 	// acks is how far each participant's SAMPLEs are consumed once the
 	// batch commits.
-	acks map[string]int64
+	acks map[string]sampleAck
 	// update means the batch ends with update(), at sessionTimeMs.
 	update bool
+}
+
+// sampleAck is how far the SAMPLE sequence of the connection stream was
+// accepted when a boundary was taken.
+type sampleAck struct {
+	stream  string
+	through int64
 }
 
 // execution is what a boundary's batch produced: the new mirror, every
@@ -362,22 +370,26 @@ func placeEvents(t timeline, emitted []sandbox.GameEvent) ([]gameEvent, error) {
 
 // batchOf turns work's operations into one sandbox batch, with the order of
 // the last timeline operation each call runs (0 for update). Adjacent
-// transitions share a samples() call, each command runs alone, update() ends
-// it; each call runs at its own time, never before the confirmed state's.
+// transitions share a samples() call, each command or disconnection runs
+// alone, update() ends it; each runs at its own time, never before the
+// confirmed state's.
 func batchOf(work boundary) (sandbox.Batch, []uint64) {
 	var batch sandbox.Batch
 	var orders []uint64
 	for _, operation := range work.operations {
-		if command := operation.Command; command != nil {
-			batch.Operations = append(batch.Operations, sandbox.Operation{
-				SessionTimeMs: operation.SessionTimeMs,
-				Command:       &sandbox.Command{ParticipantID: operation.ParticipantID, Name: command.name, Payload: command.payload},
-			})
+		if operation.runsAlone() {
+			alone := sandbox.Operation{SessionTimeMs: operation.SessionTimeMs}
+			if command := operation.Command; command != nil {
+				alone.Command = &sandbox.Command{ParticipantID: operation.ParticipantID, Name: command.name, Payload: command.payload}
+			} else {
+				alone.Disconnected = operation.ParticipantID
+			}
+			batch.Operations = append(batch.Operations, alone)
 			orders = append(orders, operation.Order)
 			continue
 		}
 		transition := sandbox.Transition{ParticipantID: operation.ParticipantID, Inputs: []byte(operation.Inputs), SessionTimeMs: operation.SessionTimeMs}
-		if n := len(batch.Operations); n > 0 && batch.Operations[n-1].Command == nil {
+		if n := len(batch.Operations); n > 0 && len(batch.Operations[n-1].Transitions) > 0 {
 			batch.Operations[n-1].Transitions = append(batch.Operations[n-1].Transitions, transition)
 			orders[n-1] = operation.Order
 			continue
@@ -393,7 +405,7 @@ func batchOf(work boundary) (sandbox.Batch, []uint64) {
 	for i := range batch.Operations {
 		operation := &batch.Operations[i]
 		switch {
-		case operation.Command != nil, operation.Update:
+		case operation.Command != nil, operation.Update, operation.Disconnected != "":
 		case i+1 < len(batch.Operations):
 			operation.SessionTimeMs = operation.Transitions[len(operation.Transitions)-1].SessionTimeMs
 		default:
@@ -487,24 +499,26 @@ func (c *sessionController) takeBoundary() (boundary, bool) {
 	if s.phase != phaseRunning {
 		return boundary{}, false
 	}
+	s.expireGraces(c.root, c.deps.transportGrace)
 	work := boundary{
 		operations:    s.timeline,
 		sessionTimeMs: max(s.sessionTime(), s.game.ExecutedThroughSessionTimeMs),
 		game:          s.game,
-		acks:          make(map[string]int64, len(s.inputs)),
+		acks:          make(map[string]sampleAck, len(s.inputs)),
 		update:        s.manifest.Update,
 	}
 	if n := len(s.timeline); n > 0 {
 		last := s.timeline[n-1]
 		work.sessionTimeMs = max(work.sessionTimeMs, last.SessionTimeMs)
-		if last.Command != nil && !work.update {
+		if last.runsAlone() && !work.update {
 			work.sessionTimeMs = max(last.SessionTimeMs, s.game.ExecutedThroughSessionTimeMs)
 		}
 	}
 	s.timeline = nil
 	for _, participant := range s.participants {
 		work.participantIDs = append(work.participantIDs, participant.ParticipantID)
-		work.acks[participant.ParticipantID] = s.inputs[participant.ParticipantID].maxAccepted
+		ingress := s.inputs[participant.ParticipantID]
+		work.acks[participant.ParticipantID] = sampleAck{stream: ingress.stream, through: ingress.maxAccepted}
 	}
 	return work, true
 }
@@ -537,6 +551,7 @@ func (c *sessionController) commitBoundary(ctx context.Context, work boundary, e
 	}
 	game.ExecutedThroughSessionTimeMs = work.sessionTimeMs
 	s.game = game
+	maps.Copy(s.views, executed.views)
 	answered := 0
 	for _, operation := range work.operations {
 		if operation.Command != nil {
@@ -569,7 +584,10 @@ func (c *sessionController) acknowledgeOnly(ctx context.Context, work boundary) 
 // far their SAMPLEs were consumed and their logical errors and events.
 func (s *liveState) acknowledge(ctx context.Context, work boundary, executed execution) {
 	for participantID, acked := range work.acks {
-		s.inputs[participantID].consumedThrough = acked
+		// A connection that took over since numbers its SAMPLEs anew.
+		if ingress := s.inputs[participantID]; ingress.stream == acked.stream {
+			ingress.consumedThrough = acked.through
+		}
 	}
 	for _, participant := range s.participants {
 		player, found := s.players[participant.UserUUID]

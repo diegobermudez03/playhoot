@@ -1,6 +1,6 @@
 Process: Project execution (session-runtime-v1), human-directed implementation
 Topic: Real-time Session Runtime per plans/session_runtime architecture plan
-Current stage: logical transient errors and events implemented; timers dropped by SESSION-ADR-0031 and tested (2026-10-18); waiting for the human's review
+Current stage: transport recovery (grace, reattach, device switch, playerDisconnected on expiry) implemented 2026-10-18; earlier: logical errors and events, timers dropped by SESSION-ADR-0031 and tested (2026-10-18); waiting for the human's review
 Current execution surface: CODEBASE AGENT
 Related durable artifacts: docs/projects/active/session-runtime-v1/PROJECT.md, docs/projects/active/session-runtime-v1/CHECKLIST.md, plans/session_runtime/Playhoot_Session_Runtime_Architecture_Plan_with_TOC.docx, play/docs/decisions/SESSION-ADR-0028-real-time-session-runtime-supersedes-discrete-turn-architecture.md
 Blocked by: nothing

@@ -277,7 +277,7 @@ Timers were moved out of scope by the human 2026-10-18: no platform timers, time
 
 ## M. Sandbox execution (§11, §1 entrypoints, §1 determinism)
 
-- [ ] Entrypoints: start, samples, command, update (optional), playerDisconnected, playerRejoined (optional), playerLeft, project (2026-10-18: start, samples, command, update, project)
+- [ ] Entrypoints: start, samples, command, update (optional), playerDisconnected, playerRejoined (optional), playerLeft, project (2026-10-18: start, samples, command, update, playerDisconnected, project)
 - [ ] Mutating entrypoints return full new global state + events + terminal FINISHED signal + COMMAND response (2026-10-18: state, the response for `command()`, and logical `errors` and `events` for the three)
 - [x] project(globalState, participant, context) is pure and deterministic (no wall clock, no random, not even the controlled PRNG) (state deep-frozen, `Math.random` throws, globals frozen after load; `TestProjectCannotChangeTheContext`)
 - [x] Controlled deterministic PRNG; state is part of Runtime state and checkpoints; no uncontrolled Math.random as source of truth (done for start: seeded mulberry32, state exported and checkpointed; restoring it into a recreated context comes with recovery) (2026-10-18: a restored context continues with the same randomness, revision and time (`TestRestoredContextContinuesTheSameGame`))
@@ -297,7 +297,7 @@ Timers were moved out of scope by the human 2026-10-18: no platform timers, time
 
 ## N. Projection, replication, resync (§12)
 
-- [ ] Runtime keeps the current full projection per ParticipantID
+- [x] Runtime keeps the current full projection per ParticipantID (2026-10-18: the controller keeps each participant's last committed view, set at start and every committed boundary; reattach sends it FULL)
 - [x] Script returns full projections; Runtime computes patches/deltas as optimization (decision: patch representation) (2026-10-18, decided by the human: a patch holds only the fields whose value changed, nested objects patched the same way, lists sent whole; a view's shape is fixed, so a field that disappears makes the view be sent FULL; an unchanged view with a new acknowledgement is `{}`; `viewpatch` tests and the end-to-end run)
 - [ ] Revision continuity belongs to each viewer connection, not to the participant projection (2026-10-18: each player connection keeps the view and acknowledgement it last received and gets patches against them; no revision numbers yet, so a client that missed a message cannot detect it until resync exists)
 - [ ] FULL projection + fresh baseline on: new transport attach, admin selects a player, reconnect, recovery
@@ -311,15 +311,18 @@ Timers were moved out of scope by the human 2026-10-18: no platform timers, time
 ## O. Connection resilience and participant lifecycle (§14-§19)
 
 ### O1. Transport loss and reattach (§14)
-- [ ] Transport detach reported immediately by /api
-- [ ] Participant stays CONNECTED for the platform-time grace (~3 s)
-- [x] Logical SAMPLE state reset to defaults immediately on detach (2026-10-18: a running game's `Disconnect` queues a transition back to the default inputs at once; liveconnection sample tests. Transport grace itself is not built)
-- [ ] No playerDisconnected() during grace
-- [ ] Reattach within grace: FULL projection + fresh baseline; FE sends full SAMPLE snapshot; no playerDisconnected/playerRejoined calls
+
+Transport recovery implemented 2026-10-18 (decided by the human: grace expiry runs playerDisconnected() now, and each player connection numbers its own SAMPLEs, starting again from 1 on a new socket, while a replaced connection's late SAMPLEs and COMMANDs are ignored). Tests: `step_reattach_player_test.go`, `step_transport_grace_test.go`, `TestBatchOf`, sandbox `TestExecute`.
+
+- [x] Transport detach reported immediately by /api (the API calls the connection's `Disconnect` as soon as its socket ends; the Runtime starts the grace there)
+- [x] Participant stays CONNECTED for the platform-time grace (~3 s) (2026-10-18: `defaultTransportGrace`, 3 s of wall time; a participant without a connection when the game starts gets the same grace from the start)
+- [x] Logical SAMPLE state reset to defaults immediately on detach (2026-10-18: a running game's `Disconnect` queues a transition back to the default inputs at once; liveconnection sample tests)
+- [x] No playerDisconnected() during grace (2026-10-18: `TestExpireGraces`)
+- [x] Reattach within grace: FULL projection + fresh baseline; FE sends full SAMPLE snapshot; no playerDisconnected/playerRejoined calls (2026-10-18: `AttachPlayer` of a participant of the running game skips the durable check, ends any older connection as `replaced`, resets the inputs, sends `session_started` and a FULL view from the Runtime's per-participant projection cache; the new connection's SAMPLE sequence starts anew; the game is not told)
 
 ### O2. Logical disconnect (§15)
-- [ ] Grace expiry inserts playerDisconnected(P) into the timeline
-- [ ] Participant status becomes DISCONNECTED
+- [x] Grace expiry inserts playerDisconnected(P) into the timeline (2026-10-18: checked when each boundary is taken, so within the tick cadence; `playerDisconnected(state, participant, context)` runs alone at its place in the batch and returns `{state}` plus optional errors and events; required in every game script; metric `play_runtime_transport_graces_expired_total`)
+- [x] Participant status becomes DISCONNECTED (2026-10-18: in the controller's memory, as soon as the grace runs out; a later attach is rejected `participant_disconnected` until rejoin exists (O4); persisting it in checkpoints belongs to P)
 - [ ] Game without playerRejoined(): no route back
 - [ ] All remaining participants disconnected and no rejoin capability: Session proceeds toward termination per platform rules
 - [ ] With rejoin support, controller stays active, bounded by inactivity and max lifetime
@@ -338,9 +341,9 @@ Timers were moved out of scope by the human 2026-10-18: no platform timers, time
 - [ ] Transport dying right after accepted rejoin starts a normal grace flow (rejoin not rolled back)
 
 ### O5. Device switch (§19)
-- [ ] At most one active PLAYER transport per participant
-- [ ] New transport replaces old; old closed; no playerDisconnected/playerRejoined
-- [ ] Inputs reset to defaults; new transport gets FULL projection + highest accepted SAMPLE sequence baseline
+- [x] At most one active PLAYER transport per participant (2026-10-18: a newer connection replaces the older; `TestReattachPlayer`)
+- [x] New transport replaces old; old closed; no playerDisconnected/playerRejoined (2026-10-18: the older connection ends as `replaced`, closed 1000 by the API)
+- [x] Inputs reset to defaults; new transport gets FULL projection + highest accepted SAMPLE sequence baseline (2026-10-18, changed by the human: instead of a baseline, each connection numbers its SAMPLEs from 1; acknowledgements of a boundary taken before the switch never reach the newer connection; `TestReattachedConnectionNumbersItsSamplesAnew`)
 
 ---
 
@@ -540,7 +543,7 @@ Everything here is wired into the running system, so a request flows through it,
 - [x] Sandbox execution contexts (`unwiredSandbox` in `unwired.go`, in scope, see G and M): replaced on 2026-10-17 by `sandbox.Host`; `unwired.go` was deleted.
 - [ ] Sandbox contexts of running games (`play/runtime/sandbox`, in scope, see H and M): never discarded, since controllers are never destroyed; they live until the process exits. Real behavior: discarded when the Session ends or its controller is retired.
 - [x] Player admission (`unwiredPlayerAdmission` in `unwired.go`, in scope, see F): replaced on 2026-10-17 by `liveconnection.Manager.AttachPlayer`; `unwired.go` was deleted.
-- [ ] Player operations of a running game (`play/runtime/workflows/liveconnection`, in scope, see I, J, M): the controller has a phase (lobby, running; Start will move it to running) and lobby behavior only applies in the lobby: there `Sample` is dropped, `Resync` does nothing, `NextView` never produces a view and `Command` answers `session_not_running`. In a running game, `Leave` answers "not implemented" (also during a Start attempt; `Command` is real since 2026-10-18, see J), `Disconnect` only ends the connection (no transport grace yet), and new players are rejected as `session_started`; lobby updates are never sent once running.
+- [ ] Player operations of a running game (`play/runtime/workflows/liveconnection`, in scope, see I, J, M): the controller has a phase (lobby, running; Start will move it to running) and lobby behavior only applies in the lobby: there `Sample` is dropped, `Resync` does nothing, `NextView` never produces a view and `Command` answers `session_not_running`. In a running game, `Leave` answers "not implemented" (also during a Start attempt; `Command` is real since 2026-10-18, see J), and new players are rejected as `session_started`; lobby updates are never sent once running. Since 2026-10-18 `Disconnect` starts the transport grace and participants reattach within it (O1); a participant whose grace ran out is rejected `participant_disconnected`, the placeholder for rejoin (O4).
 - [x] Join code resolution (`unwiredJoinCodes` in `unwired.go`, in scope, see A3): replaced on 2026-10-17 by `play/session/usecases/resolvejoincode` (the Session of an active, unexpired join code; `not_found` otherwise); the stand-in was deleted.
 - [ ] Controller lifetime (`play/runtime/workflows/liveconnection`, in scope, see H): controllers are created but never destroyed or released, so they accumulate for the process lifetime. Real behavior: destroyed on terminal states with owner release.
 - [ ] Forwarding to a remote owner (`api/play/owner_routing.go`, in scope, see A1): a Session owned by another instance is answered `503`; unreachable while single-instance. Real behavior: proxy the connection to the owner (gateway), decided with the multi-instance topology.
@@ -559,7 +562,7 @@ Each needs at least one test or other concrete evidence before ticking.
 - [ ] 4. Lobby membership is ephemeral; durable participants only at Start
 - [ ] 5. ParticipantID is the script's identity; userUUID stays platform-side
 - [ ] 6. No late new players after Start
-- [ ] 7. Transport recovery is not game rejoin
+- [x] 7. Transport recovery is not game rejoin (2026-10-18: a reattach within the grace never reaches the game; `TestReattachPlayer`)
 - [x] 8. Disconnect resets inputs immediately (2026-10-18: a disconnect enqueues the default inputs at once; controller tests)
 - [ ] 9. Explicit leave is permanent
 - [x] 10. SAMPLE sequence vs COMMAND token identity rules (2026-10-18: separate state per participant, tokens per participant; controller tests)

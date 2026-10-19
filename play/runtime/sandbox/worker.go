@@ -199,10 +199,9 @@ func (w *worker) start(req workerRequest) workerResponse {
 }
 
 // execute runs a batch's steps in order on the confirmed state, each at its
-// Session time: samples(state, transitions, context), update(state, context)
-// and command(state, command, context), the last returning {state, response}
-// and the others {state}; any of them may add errors and events. Nothing of
-// the batch is kept unless all succeed.
+// Session time: samples, update, command (which also returns a response) or
+// playerDisconnected(state, participant, context), each returning {state}
+// plus optional errors and events. Nothing is kept unless all succeed.
 func (w *worker) execute(req workerRequest) workerResponse {
 	if !w.started {
 		return fatal("game not started")
@@ -220,13 +219,13 @@ func (w *worker) execute(req workerRequest) workerResponse {
 			return fatal("session time cannot go back")
 		}
 		kinds := 0
-		for _, set := range []bool{len(step.Transitions) > 0, step.Command != nil, step.Update} {
+		for _, set := range []bool{len(step.Transitions) > 0, step.Command != nil, step.Update, step.Disconnected != ""} {
 			if set {
 				kinds++
 			}
 		}
 		if kinds != 1 {
-			return fatal("a step runs exactly one of input transitions, a command or update")
+			return fatal("a step runs exactly one of input transitions, a command, update or a disconnection")
 		}
 		if err := w.setTime(step.SessionTime); err != nil {
 			return fatal(err.Error())
@@ -236,8 +235,11 @@ func (w *worker) execute(req workerRequest) workerResponse {
 		if !step.Update {
 			entrypoint = "samples"
 			var argument any = step.Transitions
-			if step.Command != nil {
+			switch {
+			case step.Command != nil:
 				entrypoint, argument = "command", step.Command
+			case step.Disconnected != "":
+				entrypoint, argument = "playerDisconnected", step.Disconnected
 			}
 			argumentJSON, err := json.Marshal(argument)
 			if err != nil {

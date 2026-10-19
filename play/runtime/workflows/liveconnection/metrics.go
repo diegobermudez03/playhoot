@@ -35,7 +35,7 @@ var sampleResultLabel = metrics.NewLabel("result", sampleTransition, sampleRefre
 
 var samplesReceived = metrics.NewCounter(
 	"play_runtime_samples_total",
-	"SAMPLEs received, by result: a new input state, a refresh of the current one, a stale or repeated sequence, invalid, or dropped because no game runs.",
+	"SAMPLEs received, by result: a new input state, a refresh of the current one, a stale or repeated sequence, invalid, or dropped because no game runs or a newer connection replaced the sender.",
 	sampleResultLabel,
 )
 

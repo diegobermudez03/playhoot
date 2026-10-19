@@ -32,7 +32,8 @@ const seedSpaceDriftScript = `// Space Drift: each ship accelerates along its mo
 // command moves a ship to a point and stops it, at most once every three
 // seconds: earlier, the game answers COOLDOWN and nothing changes. update()
 // keeps the world moving while nobody sends anything; the state records how
-// far it was simulated and every operation integrates up to its time.
+// far it was simulated and every operation integrates up to its time. A
+// disconnected player's ship stops and stays, announced as SHIP_ADRIFT.
 const ARENA_SIZE = 1000;
 const THRUST = 400;
 const BOOST_FACTOR = 2;
@@ -94,6 +95,15 @@ function command(state, cmd, context) {
 	ship.vy = 0;
 	ship.teleportReadyAt = cmd.sessionTime + TELEPORT_COOLDOWN_MS;
 	return { state: world, response: { ok: true, x: ship.x, y: ship.y } };
+}
+
+function playerDisconnected(state, participant, context) {
+	const world = copyWorld(state);
+	simulate(world, context.sessionTime);
+	const ship = world.ships[participant];
+	ship.vx = 0;
+	ship.vy = 0;
+	return { state: world, events: [{ event: { type: "SHIP_ADRIFT", ship: participant } }] };
 }
 
 function project(state, participant, context) {

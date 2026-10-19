@@ -404,6 +404,9 @@ func (c *sessionController) completeStart(participants []runtime.Participant, ga
 	for _, participant := range participants {
 		s.inputs[participant.ParticipantID] = &participantInputs{current: defaults}
 		s.commands[participant.ParticipantID] = newParticipantCommands(processed[participant.ParticipantID])
+		// Whoever has no connection now gets the transport grace to come.
+		s.presence[participant.ParticipantID] = &participantPresence{detachedAt: s.runningSince}
+		s.views[participant.ParticipantID] = views[participant.ParticipantID]
 	}
 	inRoster := make(map[string]bool, len(participants))
 	for _, participant := range participants {
@@ -424,6 +427,8 @@ func (c *sessionController) completeStart(participants []runtime.Participant, ga
 			continue
 		}
 		player.participantID = participant.ParticipantID
+		s.presence[participant.ParticipantID].detachedAt = time.Time{}
+		s.inputs[participant.ParticipantID].stream = player.id
 		player.lastView = views[participant.ParticipantID]
 		player.views.publish(runtime.OwnView{PlayerView: runtime.PlayerView{
 			ParticipantID: participant.ParticipantID,

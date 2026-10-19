@@ -39,6 +39,9 @@ function command(state, cmd, context) {
 function update(state, context) {
 	return { state: { log: state.log.concat(["update@" + context.sessionTime + "+" + context.elapsed]), rolls: state.rolls } };
 }
+function playerDisconnected(state, participant, context) {
+	return { state: { log: state.log.concat(["gone:" + participant + "@" + context.sessionTime + "+" + context.elapsed]), rolls: state.rolls }, events: [{ event: "GONE" }] };
+}
 function project(state, participant, context) { return { log: state.log }; }
 `
 
@@ -178,6 +181,27 @@ func TestExecute(t *testing.T) {
 				expectedOutcome: ScriptSucceeded,
 			}
 		},
+		"disconnection_runs_at_its_place_in_the_batch": func(t *testing.T) test {
+			return test{
+				script: batchGame,
+				batch: Batch{Operations: []Operation{
+					{SessionTimeMs: 30, Transitions: []Transition{transitionAt("P1", 30)}},
+					{SessionTimeMs: 60, Disconnected: "P2"},
+					{SessionTimeMs: 100, Update: true},
+				}},
+				expectedLog:     []string{"P1@30:{}", "samples@30+30", "gone:P2@60+30", "update@100+40"},
+				expectedEvents:  []GameEvent{{Operation: 1, Event: []byte(`"GONE"`)}},
+				expectedOutcome: ScriptSucceeded,
+			}
+		},
+		"script_without_player_disconnected": func(t *testing.T) test {
+			return test{
+				script:                `function start() { return { state: {} }; } function project() { return {}; }`,
+				batch:                 Batch{Operations: []Operation{{SessionTimeMs: 100, Disconnected: "P1"}}},
+				expectedOutcome:       ScriptFailed,
+				expectedErrorContains: "does not define a global playerDisconnected function",
+			}
+		},
 		"errors_that_are_not_an_array": func(t *testing.T) test {
 			return test{
 				script:                `function start() { return { state: {} }; } function update(state) { return { state, errors: { participant: "P1", error: 1 } }; } function project() { return {}; }`,
@@ -288,11 +312,12 @@ func TestExecute(t *testing.T) {
 
 func TestExecuteRejectsMalformedBatches(t *testing.T) {
 	tests := map[string]Batch{
-		"empty_batch":            {},
-		"time_going_back":        {Operations: []Operation{commandAt(200, "P1", "move", `{}`), commandAt(100, "P1", "move", `{}`)}},
-		"step_with_both_kinds":   {Operations: []Operation{{SessionTimeMs: 10, Transitions: []Transition{transitionAt("P1", 10)}, Command: &Command{ParticipantID: "P1", Name: "move", Payload: []byte(`{}`)}}}},
-		"step_with_neither_kind": {Operations: []Operation{{SessionTimeMs: 10}}},
-		"update_with_a_command":  {Operations: []Operation{{SessionTimeMs: 10, Update: true, Command: &Command{ParticipantID: "P1", Name: "move", Payload: []byte(`{}`)}}}},
+		"empty_batch":                 {},
+		"time_going_back":             {Operations: []Operation{commandAt(200, "P1", "move", `{}`), commandAt(100, "P1", "move", `{}`)}},
+		"step_with_both_kinds":        {Operations: []Operation{{SessionTimeMs: 10, Transitions: []Transition{transitionAt("P1", 10)}, Command: &Command{ParticipantID: "P1", Name: "move", Payload: []byte(`{}`)}}}},
+		"step_with_neither_kind":      {Operations: []Operation{{SessionTimeMs: 10}}},
+		"update_with_a_command":       {Operations: []Operation{{SessionTimeMs: 10, Update: true, Command: &Command{ParticipantID: "P1", Name: "move", Payload: []byte(`{}`)}}}},
+		"update_with_a_disconnection": {Operations: []Operation{{SessionTimeMs: 10, Update: true, Disconnected: "P1"}}},
 	}
 
 	for name, batch := range tests {

@@ -52,13 +52,15 @@ type Command struct {
 }
 
 // Operation is one step of a Batch, run at SessionTimeMs: a run of input
-// transitions for samples(), one COMMAND for command(), or a call to
-// update(). Exactly one of Transitions, Command and Update is set.
+// transitions for samples(), one COMMAND for command(), a call to update(),
+// or playerDisconnected() for the participant Disconnected names. Exactly one
+// of Transitions, Command, Update and Disconnected is set.
 type Operation struct {
 	SessionTimeMs int64
 	Transitions   []Transition
 	Command       *Command
 	Update        bool
+	Disconnected  string
 }
 
 // Batch is operations executed in order as one atomic step: either all of

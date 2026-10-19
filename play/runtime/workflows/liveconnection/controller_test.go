@@ -22,10 +22,11 @@ import (
 // fixed seed and a tick that never comes.
 func testDependencies() *controllerDependencies {
 	return &controllerDependencies{
-		now:          time.Now,
-		seeds:        func() uint64 { return 42 },
-		tickInterval: time.Hour,
-		logger:       slog.Default(),
+		now:            time.Now,
+		seeds:          func() uint64 { return 42 },
+		tickInterval:   time.Hour,
+		transportGrace: 3 * time.Second,
+		logger:         slog.Default(),
 	}
 }
 

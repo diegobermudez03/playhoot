@@ -103,7 +103,8 @@ func (c *sessionController) runCommand(ctx context.Context, player *connection, 
 		return runtime.CommandResult{Token: command.Token, Outcome: outcome}
 	}
 	s := c.lock()
-	if s.phase != phaseRunning || player.participantID == "" {
+	if s.phase != phaseRunning || player.participantID == "" || s.players[player.userUUID] != player {
+		// A replaced connection no longer plays; it is ending anyway.
 		c.unlock()
 		return answer(runtime.CommandNotRunning), nil
 	}

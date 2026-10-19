@@ -17,6 +17,10 @@ import (
 // executed, a platform tuning value games must not rely on.
 const defaultTickInterval = 100 * time.Millisecond
 
+// defaultTransportGrace is how long a player who lost their transport may
+// reattach before the game is told they disconnected; platform time.
+const defaultTransportGrace = 3 * time.Second
+
 // ControllerResolver finds or creates the controller of each Session this
 // instance owns, hands every new connection to it, and stops them all when
 // the instance shuts down.
@@ -43,18 +47,19 @@ func New(adminJoins adminJoinChecker, playerJoins playerJoinChecker, manifests m
 	root, cancel := context.WithCancel(context.Background())
 	return &ControllerResolver{
 		deps: &controllerDependencies{
-			adminJoins:   adminJoins,
-			playerJoins:  playerJoins,
-			manifests:    manifests,
-			starts:       starts,
-			aborts:       aborts,
-			frontends:    frontends,
-			sandbox:      sandbox,
-			replay:       replay,
-			now:          time.Now,
-			seeds:        randomSeed,
-			tickInterval: defaultTickInterval,
-			logger:       slog.Default(),
+			adminJoins:     adminJoins,
+			playerJoins:    playerJoins,
+			manifests:      manifests,
+			starts:         starts,
+			aborts:         aborts,
+			frontends:      frontends,
+			sandbox:        sandbox,
+			replay:         replay,
+			now:            time.Now,
+			seeds:          randomSeed,
+			tickInterval:   defaultTickInterval,
+			transportGrace: defaultTransportGrace,
+			logger:         slog.Default(),
 		},
 		controllers: make(map[string]*sessionController),
 		root:        root,

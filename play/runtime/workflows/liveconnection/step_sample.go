@@ -8,13 +8,22 @@ import (
 	"github.com/diegobermudez03/playhoot/play/runtime"
 )
 
-// participantInputs is one participant's SAMPLE ingress: the highest
-// sequence accepted, how far it was consumed, and the input state the
+// participantInputs is one participant's SAMPLE ingress: the connection whose
+// SAMPLE sequence it follows (each connection numbers its own), the highest
+// sequence accepted from it, how far it was consumed, and the input state the
 // accepted SAMPLEs left.
 type participantInputs struct {
+	stream          string
 	maxAccepted     int64
 	consumedThrough int64
 	current         inputs.Snapshot
+}
+
+// follow starts the SAMPLE sequence of the connection connectionID.
+func (i *participantInputs) follow(connectionID string) {
+	i.stream = connectionID
+	i.maxAccepted = 0
+	i.consumedThrough = 0
 }
 
 // acceptSample takes a player's SAMPLE into the timeline, without waiting for
@@ -24,8 +33,9 @@ type participantInputs struct {
 func (c *sessionController) acceptSample(ctx context.Context, player *connection, sample runtime.Sample) error {
 	s := c.lock()
 	defer c.unlock()
-	if s.phase != phaseRunning || player.participantID == "" {
-		// Before the game runs there is nothing to consume it.
+	if s.phase != phaseRunning || player.participantID == "" || s.players[player.userUUID] != player {
+		// Before the game runs there is nothing to consume it, and a replaced
+		// connection no longer plays.
 		samplesReceived.Inc(ctx, sampleResultLabel.Value(sampleDropped))
 		return nil
 	}

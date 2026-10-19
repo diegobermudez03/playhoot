@@ -29,6 +29,10 @@ function samples(state, transitions, context) {
 	return { state: { round: state.round, positions } };
 }
 
+function playerDisconnected(state, participant, context) {
+	return { state };
+}
+
 function project(state, participant, context) {
 	const others = {};
 	for (const id of Object.keys(state.positions)) {

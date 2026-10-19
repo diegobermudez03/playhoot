@@ -69,12 +69,14 @@ type workerRequest struct {
 }
 
 // workerStep is one operation of an execution batch at SessionTime:
-// transitions for samples(), one command for command(), or update().
+// transitions for samples(), one command for command(), update(), or
+// playerDisconnected() for the participant Disconnected names.
 type workerStep struct {
-	SessionTime int64              `json:"sessionTime"`
-	Transitions []workerTransition `json:"transitions,omitempty"`
-	Command     *workerCommand     `json:"command,omitempty"`
-	Update      bool               `json:"update,omitempty"`
+	SessionTime  int64              `json:"sessionTime"`
+	Transitions  []workerTransition `json:"transitions,omitempty"`
+	Command      *workerCommand     `json:"command,omitempty"`
+	Update       bool               `json:"update,omitempty"`
+	Disconnected string             `json:"disconnected,omitempty"`
 }
 
 // workerCommand is one COMMAND, as command() receives it.

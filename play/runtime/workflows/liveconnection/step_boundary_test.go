@@ -584,6 +584,18 @@ func TestBatchOf(t *testing.T) {
 				expectedOrders: []uint64{40, 50, 70, 0},
 			}
 		},
+		"disconnection_splits_the_transitions_at_its_time": func(t *testing.T) test {
+			gone := Operation{ParticipantID: "P2", SessionTimeMs: 55, Order: 55, Disconnected: true}
+			return test{
+				work: boundary{operations: []Operation{transition(40), gone, transition(70)}, sessionTimeMs: 100},
+				expected: sandbox.Batch{Operations: []sandbox.Operation{
+					{SessionTimeMs: 40, Transitions: []sandbox.Transition{sandboxTransition(40)}},
+					{SessionTimeMs: 55, Disconnected: "P2"},
+					{SessionTimeMs: 100, Transitions: []sandbox.Transition{sandboxTransition(70)}},
+				}},
+				expectedOrders: []uint64{40, 55, 70},
+			}
+		},
 		"update_alone": func(t *testing.T) test {
 			return test{
 				work:           boundary{sessionTimeMs: 100, update: true},
@@ -627,7 +639,8 @@ func TestTakeBoundary(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, int64(100), boundary.sessionTimeMs)
 	require.Equal(t, []string{"P1", "P2"}, boundary.participantIDs)
-	require.Equal(t, map[string]int64{"P1": 3, "P2": 7}, boundary.acks, "refreshes are acknowledged too")
+	streams := map[string]string{"P1": controller.state.inputs["P1"].stream, "P2": controller.state.inputs["P2"].stream}
+	require.Equal(t, map[string]sampleAck{"P1": {stream: streams["P1"], through: 3}, "P2": {stream: streams["P2"], through: 7}}, boundary.acks, "refreshes are acknowledged too")
 	require.Equal(t, Game{ContextRevision: 1, State: []byte(`{}`)}, boundary.game)
 	next, ok := controller.takeBoundary()
 	require.True(t, ok)
