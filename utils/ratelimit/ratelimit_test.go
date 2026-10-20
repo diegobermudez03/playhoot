@@ -139,6 +139,9 @@ func TestKeyedAllow(t *testing.T) {
 		after time.Duration
 
 		expectedAllowed bool
+		// expectedSwept means the call also forgot the keys whose room came
+		// back, which happens at most once per the longest limit.
+		expectedSwept bool
 	}
 	type test struct {
 		limits []Limit
@@ -152,7 +155,7 @@ func TestKeyedAllow(t *testing.T) {
 			return test{
 				limits: []Limit{{Count: 1, Per: time.Second}},
 				calls: []call{
-					{key: "a", expectedAllowed: true},
+					{key: "a", expectedAllowed: true, expectedSwept: true},
 					{key: "a", expectedAllowed: false},
 					{key: "b", expectedAllowed: true},
 				},
@@ -163,9 +166,9 @@ func TestKeyedAllow(t *testing.T) {
 			return test{
 				limits: []Limit{{Count: 1, Per: time.Second}, {Count: 5, Per: time.Minute}},
 				calls: []call{
-					{key: "a", expectedAllowed: true},
+					{key: "a", expectedAllowed: true, expectedSwept: true},
 					{key: "b", expectedAllowed: true},
-					{key: "c", after: time.Minute, expectedAllowed: true},
+					{key: "c", after: time.Minute, expectedAllowed: true, expectedSwept: true},
 				},
 				expectedKeys: 1,
 			}
@@ -174,9 +177,9 @@ func TestKeyedAllow(t *testing.T) {
 			return test{
 				limits: []Limit{{Count: 1, Per: time.Minute}},
 				calls: []call{
-					{key: "a", expectedAllowed: true},
+					{key: "a", expectedAllowed: true, expectedSwept: true},
 					{key: "b", after: 59 * time.Second, expectedAllowed: true},
-					{key: "c", after: 2 * time.Second, expectedAllowed: true},
+					{key: "c", after: 2 * time.Second, expectedAllowed: true, expectedSwept: true},
 					{key: "b", expectedAllowed: false},
 				},
 				expectedKeys: 2,
@@ -191,8 +194,9 @@ func TestKeyedAllow(t *testing.T) {
 			now := epoch
 			for i, c := range tc.calls {
 				now = now.Add(c.after)
-				allowed, _ := keyed.Allow(c.key, now)
+				allowed, _, swept := keyed.Allow(c.key, now)
 				require.Equal(t, c.expectedAllowed, allowed, "call %d", i)
+				require.Equal(t, c.expectedSwept, swept, "call %d", i)
 			}
 			require.Equal(t, tc.expectedKeys, keyed.Len())
 		})

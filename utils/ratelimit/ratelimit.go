@@ -159,10 +159,11 @@ func NewKeyed(limits ...Limit) *Keyed {
 
 // Allow takes one of key's events at now when every limit has room for it.
 // Otherwise it takes nothing and returns how long until it would have room.
-func (k *Keyed) Allow(key string, now time.Time) (bool, time.Duration) {
+// swept reports that this call also forgot the keys whose room came back.
+func (k *Keyed) Allow(key string, now time.Time) (allowed bool, retryAfter time.Duration, swept bool) {
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	k.sweep(now)
+	swept = k.sweep(now)
 	buckets, found := k.subjects[key]
 	if !found {
 		buckets = make([]bucket, len(k.limits))
@@ -171,7 +172,8 @@ func (k *Keyed) Allow(key string, now time.Time) (bool, time.Duration) {
 		}
 		k.subjects[key] = buckets
 	}
-	return allow(buckets, now, 1)
+	allowed, retryAfter = allow(buckets, now, 1)
+	return allowed, retryAfter, swept
 }
 
 // Len returns how many keys are remembered.
@@ -182,10 +184,10 @@ func (k *Keyed) Len() int {
 }
 
 // sweep forgets, at most once per sweepEvery, every key whose room fully came
-// back: it behaves exactly as a key never seen.
-func (k *Keyed) sweep(now time.Time) {
+// back: it behaves exactly as a key never seen. It reports whether it swept.
+func (k *Keyed) sweep(now time.Time) bool {
 	if now.Sub(k.lastSweep) < k.sweepEvery {
-		return
+		return false
 	}
 	k.lastSweep = now
 	for key, buckets := range k.subjects {
@@ -200,4 +202,5 @@ func (k *Keyed) sweep(now time.Time) {
 			delete(k.subjects, key)
 		}
 	}
+	return true
 }

@@ -37,10 +37,20 @@ var (
 	keyUser   = keyLabel.Value("user")
 	keyClient = keyLabel.Value("client")
 
+	sweptLabel = metrics.NewLabel("swept", "true", "false")
+
 	rateLimited = metrics.NewCounter(
 		"api_http_rate_limited_total",
 		"Requests refused for exceeding their route's limits, by what the caller was limited as.",
 		keyLabel,
+	)
+	checkDuration = metrics.NewHistogram(
+		"api_http_rate_limit_check_duration_seconds",
+		"Time a request spent in its route's rate limit check, by what the caller was limited as and whether the check also forgot the keys whose room came back.",
+		// A check takes microseconds; one that sweeps grows with the keys
+		// remembered.
+		[]float64{0.00001, 0.00005, 0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1},
+		keyLabel, sweptLabel,
 	)
 )
 
@@ -90,7 +100,10 @@ func Requests(limits routing.RequestLimits, clients ClientAddress, now func() ti
 				key = clients.Of(r)
 			}
 			if limiter != nil {
-				if allowed, retryAfter := limiter.Allow(key, now()); !allowed {
+				began := time.Now()
+				allowed, retryAfter, swept := limiter.Allow(key, now())
+				checkDuration.ObserveDuration(ctx, time.Since(began), kind, sweptLabel.Value(strconv.FormatBool(swept)))
+				if !allowed {
 					rateLimited.Inc(ctx, kind)
 					logging.LogFields(ctx, logging.Field("rate_limited", true))
 					w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(retryAfter.Seconds()))))

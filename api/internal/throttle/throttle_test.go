@@ -1,7 +1,11 @@
 package throttle
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -12,6 +16,7 @@ import (
 	"github.com/diegobermudez03/playhoot/api/internal/auth"
 	"github.com/diegobermudez03/playhoot/api/internal/httpx"
 	"github.com/diegobermudez03/playhoot/api/internal/routing"
+	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/utils/ratelimit"
 )
 
@@ -24,6 +29,9 @@ func TestRequests(t *testing.T) {
 
 		expectedStatus     int
 		expectedRetryAfter string
+		// expectedCheck are the labels the limit check was measured with;
+		// nil when no limit applies.
+		expectedCheck map[string]any
 	}
 	type test struct {
 		limits routing.RequestLimits
@@ -35,16 +43,21 @@ func TestRequests(t *testing.T) {
 		PerClient: []ratelimit.Limit{{Count: 1, Per: time.Second}},
 	}
 
+	user := func(swept bool) map[string]any { return map[string]any{"key": "user", "swept": fmt.Sprint(swept)} }
+	client := func(swept bool) map[string]any { return map[string]any{"key": "client", "swept": fmt.Sprint(swept)} }
+
 	tests := map[string]func(t *testing.T) test{
 		"a_user_is_limited_per_second_and_per_minute": func(t *testing.T) test {
 			return test{
 				limits: limits,
 				calls: []call{
-					{userUUID: "u1", remoteAddr: "10.0.0.1:1", expectedStatus: http.StatusOK},
-					{userUUID: "u1", remoteAddr: "10.0.0.1:1", expectedStatus: http.StatusOK},
-					{userUUID: "u1", remoteAddr: "10.0.0.1:1", expectedStatus: http.StatusTooManyRequests, expectedRetryAfter: "1"},
-					{userUUID: "u1", remoteAddr: "10.0.0.1:1", after: time.Second, expectedStatus: http.StatusOK},
-					{userUUID: "u1", remoteAddr: "10.0.0.1:1", after: time.Second, expectedStatus: http.StatusTooManyRequests, expectedRetryAfter: "18"},
+					{userUUID: "u1", remoteAddr: "10.0.0.1:1", expectedStatus: http.StatusOK, expectedCheck: user(true)},
+					{userUUID: "u1", remoteAddr: "10.0.0.1:1", expectedStatus: http.StatusOK, expectedCheck: user(false)},
+					{userUUID: "u1", remoteAddr: "10.0.0.1:1", expectedStatus: http.StatusTooManyRequests, expectedRetryAfter: "1", expectedCheck: user(false)},
+					{userUUID: "u1", remoteAddr: "10.0.0.1:1", after: time.Second, expectedStatus: http.StatusOK, expectedCheck: user(false)},
+					{userUUID: "u1", remoteAddr: "10.0.0.1:1", after: time.Second, expectedStatus: http.StatusTooManyRequests, expectedRetryAfter: "18", expectedCheck: user(false)},
+					// A minute after the last sweep, a check sweeps again.
+					{userUUID: "u1", remoteAddr: "10.0.0.1:1", after: time.Minute, expectedStatus: http.StatusOK, expectedCheck: user(true)},
 				},
 			}
 		},
@@ -52,9 +65,9 @@ func TestRequests(t *testing.T) {
 			return test{
 				limits: limits,
 				calls: []call{
-					{userUUID: "u1", remoteAddr: "10.0.0.1:1", expectedStatus: http.StatusOK},
-					{userUUID: "u2", remoteAddr: "10.0.0.1:2", expectedStatus: http.StatusOK},
-					{userUUID: "u3", remoteAddr: "10.0.0.1:3", expectedStatus: http.StatusOK},
+					{userUUID: "u1", remoteAddr: "10.0.0.1:1", expectedStatus: http.StatusOK, expectedCheck: user(true)},
+					{userUUID: "u2", remoteAddr: "10.0.0.1:2", expectedStatus: http.StatusOK, expectedCheck: user(false)},
+					{userUUID: "u3", remoteAddr: "10.0.0.1:3", expectedStatus: http.StatusOK, expectedCheck: user(false)},
 				},
 			}
 		},
@@ -62,9 +75,9 @@ func TestRequests(t *testing.T) {
 			return test{
 				limits: limits,
 				calls: []call{
-					{remoteAddr: "10.0.0.1:1", expectedStatus: http.StatusOK},
-					{remoteAddr: "10.0.0.1:2", expectedStatus: http.StatusTooManyRequests, expectedRetryAfter: "1"},
-					{remoteAddr: "10.0.0.2:1", expectedStatus: http.StatusOK},
+					{remoteAddr: "10.0.0.1:1", expectedStatus: http.StatusOK, expectedCheck: client(true)},
+					{remoteAddr: "10.0.0.1:2", expectedStatus: http.StatusTooManyRequests, expectedRetryAfter: "1", expectedCheck: client(false)},
+					{remoteAddr: "10.0.0.2:1", expectedStatus: http.StatusOK, expectedCheck: client(false)},
 				},
 			}
 		},
@@ -90,11 +103,14 @@ func TestRequests(t *testing.T) {
 				now = now.Add(c.after)
 				r := httptest.NewRequest(http.MethodGet, "/", nil)
 				r.RemoteAddr = c.remoteAddr
+				ctx := logging.Start(r.Context())
 				if c.userUUID != "" {
-					r = r.WithContext(auth.WithUserUUID(r.Context(), c.userUUID))
+					ctx = auth.WithUserUUID(ctx, c.userUUID)
 				}
 				w := httptest.NewRecorder()
-				handler(w, r)
+				handler(w, r.WithContext(ctx))
+
+				require.Equal(t, c.expectedCheck, checkLabels(t, ctx), "call %d", i)
 
 				require.Equal(t, c.expectedStatus, w.Code, "call %d", i)
 				require.Equal(t, c.expectedRetryAfter, w.Header().Get("Retry-After"), "call %d", i)
@@ -106,6 +122,27 @@ func TestRequests(t *testing.T) {
 			}
 		})
 	}
+}
+
+// checkLabels are the labels ctx's request log measured the limit check
+// with; nil when it was not measured.
+func checkLabels(t *testing.T, ctx context.Context) map[string]any {
+	t.Helper()
+	var output bytes.Buffer
+	logging.FinishRequestLog(ctx, slog.New(slog.NewJSONHandler(&output, nil)), "test")
+	var entry struct {
+		Metrics []struct {
+			Metric string         `json:"metric"`
+			Labels map[string]any `json:"labels"`
+		} `json:"metrics"`
+	}
+	require.NoError(t, json.Unmarshal(output.Bytes(), &entry))
+	for _, measurement := range entry.Metrics {
+		if measurement.Metric == "api_http_rate_limit_check_duration_seconds" {
+			return measurement.Labels
+		}
+	}
+	return nil
 }
 
 func TestClientAddressOf(t *testing.T) {
