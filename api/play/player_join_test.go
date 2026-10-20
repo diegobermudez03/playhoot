@@ -301,7 +301,7 @@ func TestHandlePlayerJoin(t *testing.T) {
 				player:       player,
 				clientCloses: true,
 				expectedReceived: []string{
-					`{"type":"lobby_update","members":[{"user_uuid":"u1"},{"user_uuid":"u2"}]}`,
+					`{"type":"lobby_update",` + sessionUUIDJSON + `,"members":[{"user_uuid":"u1"},{"user_uuid":"u2"}]}`,
 					playerStartedJSON,
 					`{"type":"player_view","participant_id":"P2","full":true,"revision":1,"state":{"round":1},"consumed_through_sample_sequence":0}`,
 				},
@@ -316,7 +316,7 @@ func TestHandlePlayerJoin(t *testing.T) {
 			return test{
 				player: player,
 				expectedReceived: []string{
-					`{"type":"lobby_update","members":[{"user_uuid":"` + callerUUID + `"}]}`,
+					`{"type":"lobby_update",` + sessionUUIDJSON + `,"members":[{"user_uuid":"` + callerUUID + `"}]}`,
 					`{"type":"lobby_closed","status":"CANCELLED","end_cause":"HOST_CANCELLED"}`,
 				},
 				expectedCloseStatus: websocket.StatusNormalClosure,
@@ -357,7 +357,7 @@ func TestHandlePlayerJoin(t *testing.T) {
 			return test{
 				player:              player,
 				clientCloses:        true,
-				expectedReceived:    []string{`{"type":"lobby_update","members":[{"user_uuid":"` + callerUUID + `"}]}`},
+				expectedReceived:    []string{`{"type":"lobby_update",` + sessionUUIDJSON + `,"members":[{"user_uuid":"` + callerUUID + `"}]}`},
 				expectedDisconnects: 1,
 			}
 		},

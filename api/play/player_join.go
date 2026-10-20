@@ -48,6 +48,7 @@ type playerCommandResultMessage struct {
 
 type playerSessionStartedMessage struct {
 	Type          string               `json:"type"`
+	SessionUUID   string               `json:"session_uuid"`
 	ParticipantID string               `json:"participant_id"`
 	Participants  []participantMessage `json:"participants"`
 	Frontend      frontendMessage      `json:"frontend"`
@@ -133,6 +134,7 @@ func (h *Handler) handlePlayerJoin(w http.ResponseWriter, r *http.Request) {
 	}
 	h.live.Serve(ctx, conn, disconnect, append(loops,
 		sendSession(session.liveSession, sessionStream[runtime.PlayerStart, runtime.OwnView]{
+			sessionUUID:     routed.sessionUUID,
 			nextLobbyUpdate: player.NextLobbyUpdate,
 			started:         player.Started,
 			startMessage:    playerStartedMessage,
@@ -217,11 +219,12 @@ func (s *playerSession) leave(ctx context.Context, _ []byte) (live.End, bool) {
 	return live.WriteMessage(ctx, s.conn, outcomeMessage{Type: playerLeaveResult, Outcome: string(result.Outcome)})
 }
 
-// playerStartedMessage tells the player who plays, which participant they
-// are, and the frontend to play with.
-func playerStartedMessage(start runtime.PlayerStart) any {
+// playerStartedMessage tells the player which Session started, who plays,
+// which participant they are, and the frontend to play with.
+func playerStartedMessage(sessionUUID string, start runtime.PlayerStart) any {
 	return playerSessionStartedMessage{
 		Type:          liveSessionStarted,
+		SessionUUID:   sessionUUID,
 		ParticipantID: start.ParticipantID,
 		Participants:  participantsJSON(start.SessionStart),
 		Frontend:      frontendJSON(start.SessionStart),

@@ -63,7 +63,8 @@ type liveLimits struct {
 	sessionCommands     []ratelimit.Limit
 	pendingCommands     int
 	// processedTokens is how many executed COMMAND tokens a participant
-	// keeps; the oldest is forgotten first.
+	// keeps, the oldest forgotten first: a retry comes within seconds, and
+	// every one kept is written in each checkpoint.
 	processedTokens int
 	// pendingPerParticipant and pendingPerSession bound the players'
 	// operations waiting in the timeline; the platform's own never wait on
@@ -92,7 +93,7 @@ func defaultLiveLimits() liveLimits {
 		participantCommands:   []ratelimit.Limit{{Count: 10, Per: time.Second}, {Count: 120, Per: time.Minute}},
 		sessionCommands:       []ratelimit.Limit{{Count: 60, Per: time.Second}, {Count: 600, Per: time.Minute}},
 		pendingCommands:       4,
-		processedTokens:       10000,
+		processedTokens:       1000,
 		pendingPerParticipant: 128,
 		pendingPerSession:     2048,
 		boundaryOperations:    256,

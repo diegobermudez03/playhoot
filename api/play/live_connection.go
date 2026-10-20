@@ -51,8 +51,9 @@ type rejectedMessage struct {
 }
 
 type lobbyUpdateMessage struct {
-	Type    string               `json:"type"`
-	Members []lobbyMemberMessage `json:"members"`
+	Type        string               `json:"type"`
+	SessionUUID string               `json:"session_uuid"`
+	Members     []lobbyMemberMessage `json:"members"`
 }
 
 type lobbyMemberMessage struct {
@@ -234,11 +235,14 @@ func (s *liveSession) closeRateLimited(context.Context, []byte) (live.End, bool)
 }
 
 // sessionStream is what a connection receives from the Runtime, in the order
-// it must be sent: lobby updates, then the start, then the views.
+// it must be sent: lobby updates, then the start, then the views. sessionUUID
+// is the Session the connection joined, which its lobby updates and start
+// carry so that a client that joined by join code learns it.
 type sessionStream[S, V any] struct {
+	sessionUUID     string
 	nextLobbyUpdate func(ctx context.Context) (runtime.LobbyUpdate, bool)
 	started         func(ctx context.Context) (S, bool)
-	startMessage    func(start S) any
+	startMessage    func(sessionUUID string, start S) any
 	nextView        func(ctx context.Context) (V, bool)
 	viewMessage     func(view V) any
 }
@@ -251,7 +255,7 @@ func sendSession[S, V any](s *liveSession, stream sessionStream[S, V]) live.Loop
 	return func(ctx context.Context) (live.End, bool) {
 		defer s.streams.Done()
 		end, ended, more := sendAll(ctx, s, stream.nextLobbyUpdate, func(update runtime.LobbyUpdate) (any, bool) {
-			return lobbyMessage(update), false
+			return lobbyMessage(stream.sessionUUID, update), false
 		})
 		if ended || !more {
 			return end, ended
@@ -260,7 +264,7 @@ func sendSession[S, V any](s *liveSession, stream sessionStream[S, V]) live.Loop
 		if !ok {
 			return live.End{}, false
 		}
-		end, ended = live.WriteMessage(ctx, s.conn, stream.startMessage(start))
+		end, ended = live.WriteMessage(ctx, s.conn, stream.startMessage(stream.sessionUUID, start))
 		if ended || ctx.Err() != nil {
 			return end, ended
 		}
@@ -291,13 +295,13 @@ func sendAll[T any](ctx context.Context, s *liveSession, next func(ctx context.C
 	}
 }
 
-// lobbyMessage is a lobby update on the wire.
-func lobbyMessage(update runtime.LobbyUpdate) any {
+// lobbyMessage is a lobby update of the Session sessionUUID on the wire.
+func lobbyMessage(sessionUUID string, update runtime.LobbyUpdate) any {
 	members := make([]lobbyMemberMessage, 0, len(update.Members))
 	for _, member := range update.Members {
 		members = append(members, lobbyMemberMessage{UserUUID: member.UserUUID})
 	}
-	return lobbyUpdateMessage{Type: liveLobbyUpdate, Members: members}
+	return lobbyUpdateMessage{Type: liveLobbyUpdate, SessionUUID: sessionUUID, Members: members}
 }
 
 // closeOnRuntimeEnd closes the connection once the Runtime ends it, after every

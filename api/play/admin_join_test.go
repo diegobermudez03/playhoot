@@ -88,8 +88,13 @@ var roster = runtime.SessionStart{
 	},
 }
 
-// rosterJSON is roster's fields on the wire, inside a session_started.
-const rosterJSON = `"participants":[{"participant_id":"P1","user_uuid":"u1"},{"participant_id":"P2","user_uuid":"u2"}],` +
+// sessionUUIDJSON is the routed Session of these tests, as lobby updates and
+// session_started carry it.
+const sessionUUIDJSON = `"session_uuid":"7c9e6679-7425-40de-944b-e07fc1f90ae7"`
+
+// rosterJSON is roster's fields on the wire, inside a session_started, with
+// the Session it started.
+const rosterJSON = sessionUUIDJSON + `,"participants":[{"participant_id":"P1","user_uuid":"u1"},{"participant_id":"P2","user_uuid":"u2"}],` +
 	`"frontend":{"url":"https://storage.example/frontend?sig=abc","sha256":"9f86d081","expires_at":"2026-10-17T21:00:00Z"}`
 
 // fakeLobby is the lobby side of a fake Runtime connection: its lobby stream
@@ -320,7 +325,7 @@ func TestHandleAdminJoin(t *testing.T) {
 				admin:        admin,
 				clientCloses: true,
 				expectedReceived: []string{
-					`{"type":"lobby_update","members":[{"user_uuid":"u1"},{"user_uuid":"u2"}]}`,
+					`{"type":"lobby_update",` + sessionUUIDJSON + `,"members":[{"user_uuid":"u1"},{"user_uuid":"u2"}]}`,
 					`{"type":"session_started",` + rosterJSON + `}`,
 					`{"type":"player_view","participant_id":"P1","full":true,"revision":1,"state":{"round":1}}`,
 				},
@@ -348,7 +353,7 @@ func TestHandleAdminJoin(t *testing.T) {
 				protocols: []string{"playhoot.v1"},
 				admin:     admin,
 				expectedReceived: []string{
-					`{"type":"lobby_update","members":[{"user_uuid":"u1"},{"user_uuid":"u2"}]}`,
+					`{"type":"lobby_update",` + sessionUUIDJSON + `,"members":[{"user_uuid":"u1"},{"user_uuid":"u2"}]}`,
 					`{"type":"lobby_closed","status":"EXPIRED","end_cause":"LOBBY_EXPIRED"}`,
 				},
 				expectedCloseStatus: websocket.StatusNormalClosure,

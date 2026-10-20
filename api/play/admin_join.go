@@ -31,6 +31,7 @@ type adminSelectPerspectiveRequest struct {
 
 type adminSessionStartedMessage struct {
 	Type         string               `json:"type"`
+	SessionUUID  string               `json:"session_uuid"`
 	Participants []participantMessage `json:"participants"`
 	Frontend     frontendMessage      `json:"frontend"`
 }
@@ -115,6 +116,7 @@ func (h *Handler) handleAdminJoin(w http.ResponseWriter, r *http.Request) {
 	}
 	h.live.Serve(ctx, conn, disconnect, append(loops,
 		sendSession(session.liveSession, sessionStream[runtime.SessionStart, runtime.WatchedView]{
+			sessionUUID:     routed.sessionUUID,
 			nextLobbyUpdate: admin.NextLobbyUpdate,
 			started:         admin.Started,
 			startMessage:    adminStartedMessage,
@@ -167,10 +169,10 @@ func (s *adminSession) cancelSession(ctx context.Context, _ []byte) (live.End, b
 	return live.WriteMessage(ctx, s.conn, outcomeMessage{Type: adminCancelSessionResult, Outcome: string(result.Outcome)})
 }
 
-// adminStartedMessage tells the admin who plays and the frontend to render
-// them with.
-func adminStartedMessage(start runtime.SessionStart) any {
-	return adminSessionStartedMessage{Type: liveSessionStarted, Participants: participantsJSON(start), Frontend: frontendJSON(start)}
+// adminStartedMessage tells the admin which Session started, who plays and
+// the frontend to render them with.
+func adminStartedMessage(sessionUUID string, start runtime.SessionStart) any {
+	return adminSessionStartedMessage{Type: liveSessionStarted, SessionUUID: sessionUUID, Participants: participantsJSON(start), Frontend: frontendJSON(start)}
 }
 
 // adminViewMessage is a view of the selected participant with their logical
