@@ -3,6 +3,7 @@ package play
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -16,6 +17,21 @@ import (
 	"github.com/diegobermudez03/playhoot/api/internal/wsx"
 	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/play/runtime"
+	"github.com/diegobermudez03/playhoot/utils/ratelimit"
+)
+
+// connectionLimits bound everything one client sends on a live connection;
+// a client beyond them is closed (1008). They sit above what each message
+// type allows, so only a misbehaving client reaches them.
+var connectionLimits = live.ConnectionLimits{
+	Messages: []ratelimit.Limit{{Count: 120, Per: time.Second}, {Count: 6000, Per: time.Minute}},
+	Bytes:    []ratelimit.Limit{{Count: 256 << 10, Per: time.Second}, {Count: 4 << 20, Per: time.Minute}},
+}
+
+// Error codes of a live connection refused before its upgrade.
+const (
+	codeServerBusy         = "server_busy"
+	codeTooManyConnections = "too_many_connections"
 )
 
 // Wire messages every kind of live connection sends: every frame is a JSON
@@ -91,10 +107,14 @@ type routedConnection struct {
 	userUUID    string
 	sessionUUID string
 	ownerEpoch  int64
+	// release gives back the room the connection holds on this instance; it
+	// may be called more than once.
+	release func()
 }
 
 // acceptRouted upgrades a request its route's middlewares authorized and
-// routed here. On false the request was answered or the connection closed.
+// routed here, once this instance and the caller have room for one more live
+// connection. On false the request was answered or the connection closed.
 func (h *Handler) acceptRouted(w http.ResponseWriter, r *http.Request) (routedConnection, bool) {
 	ctx := r.Context()
 
@@ -107,8 +127,20 @@ func (h *Handler) acceptRouted(w http.ResponseWriter, r *http.Request) (routedCo
 		return routedConnection{}, false
 	}
 
+	release, err := h.live.Reserve(ctx, userUUID)
+	switch {
+	case errors.Is(err, live.ErrCallerFull):
+		httpx.WriteCodedError(w, http.StatusTooManyRequests, codeTooManyConnections, "too many live connections open")
+		return routedConnection{}, false
+	case err != nil:
+		logging.LogFields(ctx, logging.Field("live_connection_refused", err.Error()))
+		httpx.WriteCodedError(w, http.StatusServiceUnavailable, codeServerBusy, "server busy, try again later")
+		return routedConnection{}, false
+	}
+
 	conn, err := wsx.Accept(w, r, h.webSocketOriginPatterns)
 	if err != nil {
+		release()
 		// Accept already answered the request.
 		logging.LogError(ctx, err)
 		return routedConnection{}, false
@@ -119,6 +151,7 @@ func (h *Handler) acceptRouted(w http.ResponseWriter, r *http.Request) (routedCo
 		userUUID:    userUUID,
 		sessionUUID: sessionUUID,
 		ownerEpoch:  ownerEpoch,
+		release:     release,
 	}, true
 }
 
@@ -157,22 +190,47 @@ func newLiveSession(conn *websocket.Conn) *liveSession {
 	return &liveSession{conn: conn}
 }
 
+// request is how a connection handles one type of client message, and how
+// often and how many of it it takes.
+type request struct {
+	handle live.Handler
+	limits live.LaneLimits
+}
+
 // serveRequests returns the loops handling the client's messages: one reader
 // and one lane per message type, so each type only waits for its own earlier
-// messages. Every other type ends the connection.
-func (s *liveSession) serveRequests(handlers map[string]live.Handler) []live.Loop {
-	lanes := make(map[string]*live.Lane, len(handlers))
-	loops := make([]live.Loop, 0, len(handlers)+1)
-	for messageType, handle := range handlers {
-		lane := live.NewLane(func(ctx context.Context, data []byte) (live.End, bool) {
-			s.answering.RLock()
-			defer s.answering.RUnlock()
-			return handle(ctx, data)
-		})
+// messages. Every other type ends the connection, and so does a client
+// sending beyond connectionLimits.
+func (s *liveSession) serveRequests(requests map[string]request) []live.Loop {
+	lanes := make(map[string]*live.Lane, len(requests))
+	loops := make([]live.Loop, 0, len(requests)+1)
+	for messageType, handling := range requests {
+		limits := handling.limits
+		limits.Excess = s.answer(limits.Excess)
+		lane := live.NewLane(s.answer(handling.handle), limits)
 		lanes[messageType] = lane
 		loops = append(loops, lane.Run)
 	}
-	return append(loops, live.Dispatch(s.conn, lanes))
+	return append(loops, live.Dispatch(s.conn, lanes, connectionLimits))
+}
+
+// answer runs handle while holding the connection open for its answer; nil
+// stays nil.
+func (s *liveSession) answer(handle live.Handler) live.Handler {
+	if handle == nil {
+		return nil
+	}
+	return func(ctx context.Context, data []byte) (live.End, bool) {
+		s.answering.RLock()
+		defer s.answering.RUnlock()
+		return handle(ctx, data)
+	}
+}
+
+// closeRateLimited ends the connection of a client that sent a message more
+// often than its type allows.
+func (s *liveSession) closeRateLimited(context.Context, []byte) (live.End, bool) {
+	return live.CloseRateLimited(s.conn), true
 }
 
 // sessionStream is what a connection receives from the Runtime, in the order

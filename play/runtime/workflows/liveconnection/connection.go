@@ -185,14 +185,33 @@ func newViewFeed() viewFeed {
 	return viewFeed{signal: make(chan struct{}, 1)}
 }
 
-func (f *viewFeed) publish(view runtime.OwnView) {
+// publish adds view, whose whole state is whole. A connection that left
+// maxPending views untaken is behind: they and view become one FULL view of
+// whole, keeping the errors and events they carried for the same participant,
+// in order. collapsed reports that it happened.
+func (f *viewFeed) publish(view runtime.OwnView, whole []byte, maxPending int) (collapsed bool) {
 	f.mu.Lock()
-	f.pending = append(f.pending, view)
+	if maxPending > 0 && len(f.pending) >= maxPending && whole != nil {
+		merged := view
+		merged.Full, merged.State = true, whole
+		merged.Errors, merged.Events = nil, nil
+		for _, behind := range append(f.pending, view) {
+			if behind.ParticipantID == view.ParticipantID {
+				merged.Errors = append(merged.Errors, behind.Errors...)
+				merged.Events = append(merged.Events, behind.Events...)
+			}
+		}
+		f.pending = []runtime.OwnView{merged}
+		collapsed = true
+	} else {
+		f.pending = append(f.pending, view)
+	}
 	f.mu.Unlock()
 	select {
 	case f.signal <- struct{}{}:
 	default:
 	}
+	return collapsed
 }
 
 func (f *viewFeed) take() (runtime.OwnView, bool) {

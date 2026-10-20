@@ -109,7 +109,7 @@ func TestRejoin(t *testing.T) {
 			waitForTimeline(t, controller, 1)
 			requireClosed(t, controller.flush)
 			work, _ := controller.takeBoundary()
-			require.Equal(t, []Operation{{ParticipantID: "P1", Order: 2, Rejoin: work.operations[0].Rejoin}}, withoutTimes(work.operations))
+			require.Equal(t, []Operation{{ParticipantID: "P1", Order: 2, Rejoin: work.operations[0].Rejoin}}, withoutTimesOrStreams(work.operations))
 			require.NotNil(t, work.operations[0].Rejoin)
 			tc.decide(t, controller, work)
 

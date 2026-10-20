@@ -463,7 +463,7 @@ func testCancelStart(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			tc := setup(t)
 			controller, players := newStartController(t, 8, "user-a", "user-b")
-			admin := controller.registerAdmin("creator")
+			admin := controller.mustRegisterAdmin("creator")
 			_, _, ok := controller.beginStart()
 			require.True(t, ok)
 			if tc.during != nil {
@@ -519,7 +519,7 @@ func testCompleteStart(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			tc := setup(t)
 			controller, players := newStartController(t, 8, "user-a", "user-b")
-			admin := controller.registerAdmin("creator")
+			admin := controller.mustRegisterAdmin("creator")
 			participants, _, ok := controller.beginStart()
 			require.True(t, ok)
 			if tc.during != nil {
@@ -552,7 +552,7 @@ func testCompleteStart(t *testing.T) {
 				require.Equal(t, "P1", view.ParticipantID)
 			}
 
-			later := controller.registerAdmin("creator")
+			later := controller.mustRegisterAdmin("creator")
 			_, more := later.NextLobbyUpdate(context.Background())
 			require.False(t, more, "an admin attached to a running game gets no lobby")
 			laterStart, started := startedWith(t, later.Started)
@@ -585,7 +585,7 @@ func testAbortStart(t *testing.T) {
 	controller.deps.ends = ends
 	ends.EXPECT().EndSession(context.Background(), "session-1", sessionpkg.SessionEnd{Cause: sessionpkg.EndGameStartFailure}).
 		Return(sessionpkg.EndSessionResult{Outcome: sessionpkg.SessionEndedNow, Status: "ABORTED", EndCause: "GAME_START_FAILURE"}, nil)
-	admin := controller.registerAdmin("creator")
+	admin := controller.mustRegisterAdmin("creator")
 	_, _, ok := controller.beginStart()
 	require.True(t, ok)
 
@@ -602,5 +602,5 @@ func testAbortStart(t *testing.T) {
 	_, rejection, admitted := controller.joinLobby(context.Background(), "user-b")
 	require.False(t, admitted)
 	require.Equal(t, runtime.RejectSessionUnavailable, rejection)
-	require.Equal(t, runtime.EndSessionEnded, endedWith(t, controller.registerAdmin("creator").Ended))
+	require.Equal(t, runtime.EndSessionEnded, endedWith(t, controller.mustRegisterAdmin("creator").Ended))
 }

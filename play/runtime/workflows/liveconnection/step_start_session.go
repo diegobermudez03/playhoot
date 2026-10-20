@@ -415,8 +415,8 @@ func (c *sessionController) completeStart(participants []runtime.Participant, ga
 	}
 	defaults := s.manifest.Inputs.Defaults()
 	for _, participant := range participants {
-		s.inputs[participant.ParticipantID] = &participantInputs{current: defaults}
-		s.commands[participant.ParticipantID] = newParticipantCommands(resumed.processed[participant.ParticipantID])
+		s.inputs[participant.ParticipantID] = newParticipantInputs(defaults, s.limits)
+		s.commands[participant.ParticipantID] = newParticipantCommands(resumed.processed[participant.ParticipantID], s.limits)
 		// Whoever has no connection now has until awaitUntil to come.
 		presence := &participantPresence{disconnected: slices.Contains(resumed.disconnected, participant.ParticipantID)}
 		if !presence.disconnected {

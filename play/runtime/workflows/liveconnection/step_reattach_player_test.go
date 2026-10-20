@@ -41,7 +41,7 @@ func TestReattachPlayer(t *testing.T) {
 				expectedResult:      runtime.AttachPlayerResult{Outcome: runtime.AttachAccepted},
 				expectedOlderEnd:    runtime.EndDisconnected,
 				expectedTimeline: []Operation{
-					{ParticipantID: "P1", Order: 1, Inputs: moving},
+					{ParticipantID: "P1", Order: 1, Inputs: moving, fromPlayer: true, sampleSequence: 1},
 					{ParticipantID: "P1", Order: 2, Inputs: defaults},
 				},
 			}
@@ -55,7 +55,7 @@ func TestReattachPlayer(t *testing.T) {
 				expectedResult:      runtime.AttachPlayerResult{Outcome: runtime.AttachAccepted},
 				expectedOlderEnd:    runtime.EndReplaced,
 				expectedTimeline: []Operation{
-					{ParticipantID: "P1", Order: 1, Inputs: moving},
+					{ParticipantID: "P1", Order: 1, Inputs: moving, fromPlayer: true, sampleSequence: 1},
 					{ParticipantID: "P1", Order: 2, Inputs: defaults},
 				},
 			}
@@ -112,7 +112,7 @@ func TestReattachPlayer(t *testing.T) {
 			require.Equal(t, runtime.OwnView{PlayerView: runtime.PlayerView{ParticipantID: "P1", Full: true, Revision: 1, State: []byte(`{"x":1}`)}}, view)
 			clock.Advance(time.Second)
 			next, _ := controller.takeBoundary()
-			require.Equal(t, tc.expectedTimeline, withoutTimes(next.operations), "the game is never told about a reattach")
+			require.Equal(t, tc.expectedTimeline, withoutTimesOrStreams(next.operations), "the game is never told about a reattach")
 		})
 	}
 }
@@ -138,16 +138,28 @@ func TestReattachedConnectionNumbersItsSamplesAnew(t *testing.T) {
 
 	require.Equal(t, []Operation{
 		{ParticipantID: "P1", Order: 2, Inputs: inputs.Snapshot(`{"move":[0,0]}`)},
-		{ParticipantID: "P1", Order: 3, Inputs: inputs.Snapshot(`{"move":[0,1]}`)},
-	}, withoutTimes(next.operations), "only the newer connection plays")
+		{ParticipantID: "P1", Order: 3, Inputs: inputs.Snapshot(`{"move":[0,1]}`), fromPlayer: true, sampleSequence: 1},
+	}, withoutTimesOrStreams(next.operations), "only the newer connection plays")
 	require.Equal(t, int64(1), next.acks["P1"].through)
 }
 
-// withoutTimes returns operations with their Session times cleared.
-func withoutTimes(operations []Operation) []Operation {
+// withoutTimesOrStreams returns operations with their Session times and the
+// random IDs of the connections their SAMPLEs came from cleared.
+func withoutTimesOrStreams(operations []Operation) []Operation {
+	var cleared []Operation
+	for _, operation := range withoutStreams(operations) {
+		operation.SessionTimeMs = 0
+		cleared = append(cleared, operation)
+	}
+	return cleared
+}
+
+// withoutStreams returns operations with the random IDs of the connections
+// their SAMPLEs came from cleared.
+func withoutStreams(operations []Operation) []Operation {
 	var cleared []Operation
 	for _, operation := range operations {
-		operation.SessionTimeMs = 0
+		operation.sampleStream = ""
 		cleared = append(cleared, operation)
 	}
 	return cleared

@@ -538,10 +538,10 @@ func replayEvents(placed []gameEvent) []replay.GameEvent {
 	return recorded
 }
 
-// takeBoundary moves every pending operation into a boundary, so operations
-// accepted from now on go to the next one; false means the game does not run
-// here. A game with update() calls it every boundary; without it, a boundary
-// ending with a command ends at that command's time.
+// takeBoundary moves the pending operations into a boundary; false means the
+// game does not run here. Without update(), one ending with a command ends at
+// its time; one taking only part of a long timeline ends at its last
+// operation, without update(), and asks for the next at once.
 func (c *sessionController) takeBoundary() (boundary, bool) {
 	s := c.lock()
 	defer c.unlock()
@@ -549,27 +549,55 @@ func (c *sessionController) takeBoundary() (boundary, bool) {
 		return boundary{}, false
 	}
 	s.expireGraces(c.root)
+	taken, rest := s.timeline, []Operation(nil)
+	if limit := s.limits.boundaryOperations; limit > 0 && len(taken) > limit {
+		taken, rest = s.timeline[:limit:limit], slices.Clone(s.timeline[limit:])
+	}
 	work := boundary{
-		operations:    s.timeline,
+		operations:    taken,
 		sessionTimeMs: max(s.sessionTime(), s.game.ExecutedThroughSessionTimeMs),
 		game:          s.game,
 		acks:          make(map[string]sampleAck, len(s.inputs)),
-		update:        s.manifest.Update,
+		update:        s.manifest.Update && rest == nil,
 	}
-	if n := len(s.timeline); n > 0 {
-		last := s.timeline[n-1]
+	if n := len(taken); n > 0 {
+		last := taken[n-1]
 		work.sessionTimeMs = max(work.sessionTimeMs, last.SessionTimeMs)
-		if last.runsAlone() && !work.update {
+		if (last.runsAlone() && !work.update) || rest != nil {
 			work.sessionTimeMs = max(last.SessionTimeMs, s.game.ExecutedThroughSessionTimeMs)
 		}
 	}
-	s.timeline = nil
+	s.timeline = rest
+	s.recount()
 	for _, participant := range s.participants {
 		work.participantIDs = append(work.participantIDs, participant.ParticipantID)
 		ingress := s.inputs[participant.ParticipantID]
-		work.acks[participant.ParticipantID] = sampleAck{stream: ingress.stream, through: ingress.maxAccepted}
+		work.acks[participant.ParticipantID] = sampleAck{stream: ingress.stream, through: ackThrough(ingress, taken, rest, participant.ParticipantID)}
+	}
+	if rest != nil {
+		boundariesSplit.Inc(c.root)
+		c.requestFlush()
 	}
 	return work, true
+}
+
+// ackThrough is how far a boundary that took taken, leaving rest, consumes
+// the SAMPLEs of ingress's connection for participantID: everything accepted
+// when none of its transitions are left, otherwise its last one taken.
+func ackThrough(ingress *participantInputs, taken []Operation, rest []Operation, participantID string) int64 {
+	left := slices.ContainsFunc(rest, func(operation Operation) bool {
+		return operation.ParticipantID == participantID && operation.sampleStream == ingress.stream && operation.sampleSequence > 0
+	})
+	if !left {
+		return ingress.maxAccepted
+	}
+	through := ingress.consumedThrough
+	for _, operation := range taken {
+		if operation.ParticipantID == participantID && operation.sampleStream == ingress.stream {
+			through = max(through, operation.sampleSequence)
+		}
+	}
+	return through
 }
 
 // requeue puts back the operations of a boundary that could not execute,
@@ -582,6 +610,7 @@ func (c *sessionController) requeue(work boundary) {
 		return
 	}
 	s.timeline = append(slices.Clone(work.operations), s.timeline...)
+	s.recount()
 }
 
 // commitBoundary confirms what a boundary's execution produced: the new
@@ -725,12 +754,20 @@ func (s *liveState) sendView(ctx context.Context, viewer *connection, participan
 	}
 	viewsSent.Inc(ctx, viewKindLabel.Value(kind))
 	viewer.lastAck = acked
-	viewer.views.publish(runtime.OwnView{
+	s.publishView(ctx, viewer, runtime.OwnView{
 		PlayerView:                    runtime.PlayerView{ParticipantID: participantID, Full: full, Revision: viewer.revision, State: patch},
 		ConsumedThroughSampleSequence: acked,
 		Errors:                        received.errors,
 		Events:                        received.events,
 	})
+}
+
+// publishView hands viewer a view; a viewer too far behind gets one FULL view
+// of what it last received instead of everything it did not take.
+func (s *liveState) publishView(ctx context.Context, viewer *connection, view runtime.OwnView) {
+	if viewer.views.publish(view, viewer.lastView, s.limits.pendingViews) {
+		viewsCollapsed.Inc(ctx)
+	}
 }
 
 // sendFull sends viewer participantID's current view whole, as a fresh
@@ -741,7 +778,7 @@ func (s *liveState) sendFull(ctx context.Context, viewer *connection, participan
 	viewer.lastAck = acked
 	viewer.revision++
 	viewsSent.Inc(ctx, viewKindLabel.Value(viewFull))
-	viewer.views.publish(runtime.OwnView{
+	s.publishView(ctx, viewer, runtime.OwnView{
 		PlayerView:                    runtime.PlayerView{ParticipantID: participantID, Full: true, Revision: viewer.revision, State: viewer.lastView},
 		ConsumedThroughSampleSequence: acked,
 	})

@@ -17,6 +17,7 @@ import (
 	"github.com/diegobermudez03/playhoot/api/internal/auth"
 	"github.com/diegobermudez03/playhoot/api/internal/live"
 	"github.com/diegobermudez03/playhoot/play/runtime"
+	"github.com/diegobermudez03/playhoot/utils/ratelimit"
 )
 
 // fakePlayer is a Runtime player connection whose streams and end the test
@@ -146,7 +147,11 @@ func TestHandlePlayerJoin(t *testing.T) {
 		// clientCloses ends the connection from the client once it received
 		// expectedReceived; otherwise it reads until the server ends it.
 		clientCloses bool
+		// callerConnections are the caller's other live connections here.
+		callerConnections int
 
+		// expectedRefusal is the status refusing the upgrade, if refused.
+		expectedRefusal     int
 		expectedReceived    []string
 		expectedCloseStatus websocket.StatusCode
 		expectedSamples     []runtime.Sample
@@ -186,6 +191,38 @@ func TestHandlePlayerJoin(t *testing.T) {
 				},
 				expectedCommands:    []runtime.Command{{Token: "t1", Name: "play_card", Payload: []byte(`{"card":"A"}`)}},
 				expectedDisconnects: 1,
+			}
+		},
+		"command_beyond_its_rate_is_answered_without_reaching_the_runtime": func(t *testing.T, deps dependencies) test {
+			previous := playerCommandLimits
+			playerCommandLimits = live.LaneLimits{Rate: []ratelimit.Limit{{Count: 1, Per: time.Hour}}, Capacity: 16}
+			t.Cleanup(func() { playerCommandLimits = previous })
+			player := newFakePlayer()
+			// t1 is answered only after the SAMPLE sent behind t2, so t2's
+			// refusal always comes first.
+			player.commandAwaitsSamples = 1
+			accept(deps, player)
+			return test{
+				player: player,
+				clientSends: []string{
+					`{"type":"command","token":"t1","name":"play_card"}`,
+					`{"type":"command","token":"t2","name":"play_card"}`,
+					`{"type":"sample","sequence":1,"inputs":{}}`,
+				},
+				clientCloses: true,
+				expectedReceived: []string{
+					`{"type":"command_result","token":"t2","outcome":"rate_limited"}`,
+					`{"type":"command_result","token":"t1","outcome":"executed","response":{"result":"NOT_YOUR_TURN"}}`,
+				},
+				expectedSamples:     []runtime.Sample{{Sequence: 1, Inputs: []byte(`{}`)}},
+				expectedCommands:    []runtime.Command{{Token: "t1", Name: "play_card"}},
+				expectedDisconnects: 1,
+			}
+		},
+		"caller_with_as_many_connections_as_allowed_is_refused_before_the_upgrade": func(t *testing.T, deps dependencies) test {
+			return test{
+				callerConnections: live.MaxConnectionsPerCaller,
+				expectedRefusal:   http.StatusTooManyRequests,
 			}
 		},
 		"command_without_payload_or_response": func(t *testing.T, deps dependencies) test {
@@ -438,7 +475,11 @@ func TestHandlePlayerJoin(t *testing.T) {
 			deps := dependencies{players: NewMockplayerAttacher(ctrl)}
 			tc := setup(t, deps)
 
-			connections := live.New()
+			connections := live.New(0)
+			for range tc.callerConnections {
+				_, err := connections.Reserve(context.Background(), callerUUID)
+				require.NoError(t, err)
+			}
 			handler := NewHandler(nil, nil, nil, nil, deps.players, nil, connections, nil)
 			handlerDone := make(chan struct{})
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -450,9 +491,14 @@ func TestHandlePlayerJoin(t *testing.T) {
 
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			conn, _, err := websocket.Dial(ctx, server.URL+"/sessions/"+sessionUUID+"/player", &websocket.DialOptions{
+			conn, response, err := websocket.Dial(ctx, server.URL+"/sessions/"+sessionUUID+"/player", &websocket.DialOptions{
 				Subprotocols: []string{"playhoot.v1"},
 			})
+			if tc.expectedRefusal != 0 {
+				require.Error(t, err)
+				require.Equal(t, tc.expectedRefusal, response.StatusCode)
+				return
+			}
 			require.NoError(t, err)
 			for _, message := range tc.clientSends {
 				require.NoError(t, conn.Write(ctx, websocket.MessageText, []byte(message)))

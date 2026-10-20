@@ -32,14 +32,14 @@ func TestSelectPerspective(t *testing.T) {
 	tests := map[string]func(t *testing.T) test{
 		"selected_participant_is_sent_whole_without_acknowledgement": func(t *testing.T) test {
 			return test{
-				admin:           running(t, "user-a", "user-b").registerAdmin("creator"),
+				admin:           running(t, "user-a", "user-b").mustRegisterAdmin("creator"),
 				participantID:   "P2",
 				expectedOutcome: runtime.PerspectiveSelected,
 				expectedViews:   []runtime.WatchedView{{PlayerView: runtime.PlayerView{ParticipantID: "P2", Full: true, Revision: 1, State: []byte(`{"x":2}`)}}},
 			}
 		},
 		"each_selection_is_a_fresh_baseline": func(t *testing.T) test {
-			admin := running(t, "user-a", "user-b").registerAdmin("creator")
+			admin := running(t, "user-a", "user-b").mustRegisterAdmin("creator")
 			selected, err := admin.SelectPerspective(ctx, "P1")
 			require.NoError(t, err)
 			require.Equal(t, runtime.PerspectiveSelected, selected.Outcome)
@@ -53,14 +53,14 @@ func TestSelectPerspective(t *testing.T) {
 		},
 		"unknown_participant": func(t *testing.T) test {
 			return test{
-				admin:           running(t, "user-a").registerAdmin("creator"),
+				admin:           running(t, "user-a").mustRegisterAdmin("creator"),
 				participantID:   "P9",
 				expectedOutcome: runtime.PerspectiveUnknownParticipant,
 			}
 		},
 		"creator_who_plays_watches_nobody": func(t *testing.T) test {
 			return test{
-				admin:           running(t, "creator", "user-b").registerAdmin("creator"),
+				admin:           running(t, "creator", "user-b").mustRegisterAdmin("creator"),
 				participantID:   "P2",
 				expectedOutcome: runtime.PerspectiveCreatorPlaying,
 			}
@@ -76,20 +76,20 @@ func TestSelectPerspective(t *testing.T) {
 			require.True(t, ok)
 			controller.completeStart(participants, Game{ContextRevision: 1, State: []byte(`{}`)}, runtime.GameFrontend{}, views, nil)
 			return test{
-				admin:           controller.registerAdmin("creator"),
+				admin:           controller.mustRegisterAdmin("creator"),
 				participantID:   "P1",
 				expectedOutcome: runtime.PerspectiveCreatorPlaying,
 			}
 		},
 		"lobby_is_not_running": func(t *testing.T) test {
 			return test{
-				admin:           newTestController(t, 4).registerAdmin("creator"),
+				admin:           newTestController(t, 4).mustRegisterAdmin("creator"),
 				participantID:   "P1",
 				expectedOutcome: runtime.PerspectiveNotRunning,
 			}
 		},
 		"disconnected_admin_selects_nothing": func(t *testing.T) test {
-			admin := running(t, "user-a").registerAdmin("creator")
+			admin := running(t, "user-a").mustRegisterAdmin("creator")
 			admin.Disconnect()
 			return test{
 				admin:           admin,
@@ -171,7 +171,7 @@ func TestWatchedViews(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			tc := setup(t)
 			controller, players, _ := runningController(t, map[string][]byte{"P1": []byte(`{"x":1,"y":0}`), "P2": []byte(`{"x":2,"y":0}`)}, "user-a", "user-b")
-			admin := controller.registerAdmin("creator")
+			admin := controller.mustRegisterAdmin("creator")
 			_, err := admin.SelectPerspective(ctx, "P1")
 			require.NoError(t, err)
 			require.Len(t, drainWatched(t, admin), 1, "the FULL view of the selection")
@@ -212,7 +212,7 @@ func TestAdminResync(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			tc := setup(t)
 			controller, _, _ := runningController(t, map[string][]byte{"P1": []byte(`{"x":1}`)}, "user-a")
-			admin := controller.registerAdmin("creator")
+			admin := controller.mustRegisterAdmin("creator")
 			if tc.selects != "" {
 				_, err := admin.SelectPerspective(ctx, tc.selects)
 				require.NoError(t, err)

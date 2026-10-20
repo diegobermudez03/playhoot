@@ -55,6 +55,16 @@ type envVariables struct {
 	// live connections from. Optional.
 	WebSocketAllowedOrigins []string
 
+	// TrustedProxyHops is how many proxies in front of the server append the
+	// client address to X-Forwarded-For (1 behind Cloud Run alone). Optional:
+	// unset trusts none and limits by the connection's own address.
+	TrustedProxyHops int
+
+	// MaxLiveConnections bounds this instance's live connections and
+	// MaxLiveSessions its live Sessions. Optional, zero takes the defaults.
+	MaxLiveConnections int
+	MaxLiveSessions    int
+
 	// GCSProjectID and GCSBucket name the object storage of game version
 	// content. Optional: without them every storage call fails. An emulator
 	// is selected with STORAGE_EMULATOR_HOST.
@@ -145,7 +155,7 @@ func run() error {
 	// Closed after the controllers, deferred earlier: each stops its
 	// recording first, then pending chunks get a few seconds to be stored.
 	defer replayRecorder.Close()
-	liveConnections := liveconnection.New(checkadminjoin.New(db), checkplayerjoin.New(db), loadruntimemanifest.New(db), loadsessionlimits.New(db), sessionLifecycle, sessionLifecycle, sessionLifecycle, sessionLifecycle, frontendaccess.New(db, store), sandboxHost, replayRecorder, owners)
+	liveConnections := liveconnection.New(envVars.MaxLiveSessions, checkadminjoin.New(db), checkplayerjoin.New(db), loadruntimemanifest.New(db), loadsessionlimits.New(db), sessionLifecycle, sessionLifecycle, sessionLifecycle, sessionLifecycle, frontendaccess.New(db, store), sandboxHost, replayRecorder, owners)
 	// Closed before the sandbox, deferred later: controllers stop first, so
 	// shutting down never fails a running game.
 	defer liveConnections.Close()
@@ -157,13 +167,23 @@ func run() error {
 		liveConnections,
 		liveConnections,
 		resolvejoincode.New(db),
-		envVars.WebSocketAllowedOrigins,
+		api.Config{
+			WebSocketOriginPatterns: envVars.WebSocketAllowedOrigins,
+			TrustedProxyHops:        envVars.TrustedProxyHops,
+			MaxLiveConnections:      envVars.MaxLiveConnections,
+		},
 	)
 
+	// The timeouts bound a request's exchange; a live connection is no longer
+	// subject to them once upgraded, since upgrading clears its deadlines.
 	httpServer := &http.Server{
 		Addr:              ":" + envVars.HTTPPort,
 		Handler:           server.Routes(),
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    64 << 10,
 	}
 
 	stopCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -270,6 +290,15 @@ func readEnvVariables() (*envVariables, error) {
 		return nil, fmt.Errorf("HTTP_PORT must be a valid TCP port")
 	}
 
+	if envVars.TrustedProxyHops, err = optionalPositiveInt("TRUSTED_PROXY_HOPS"); err != nil {
+		return nil, err
+	}
+	if envVars.MaxLiveConnections, err = optionalPositiveInt("LIVE_MAX_CONNECTIONS"); err != nil {
+		return nil, err
+	}
+	if envVars.MaxLiveSessions, err = optionalPositiveInt("RUNTIME_MAX_LIVE_SESSIONS"); err != nil {
+		return nil, err
+	}
 	if envVars.SandboxLimits.MaxContexts, err = optionalPositiveInt("SANDBOX_MAX_CONTEXTS"); err != nil {
 		return nil, err
 	}

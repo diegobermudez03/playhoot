@@ -6,17 +6,23 @@ import (
 
 	"github.com/diegobermudez03/playhoot/play/internal/business/inputs"
 	"github.com/diegobermudez03/playhoot/play/runtime"
+	"github.com/diegobermudez03/playhoot/utils/ratelimit"
 )
 
 // participantInputs is one participant's SAMPLE ingress: the connection whose
 // SAMPLE sequence it follows (each connection numbers its own), the highest
-// sequence accepted from it, how far it was consumed, and the input state the
-// accepted SAMPLEs left.
+// sequence accepted from it, how far it was consumed, the input state the
+// accepted SAMPLEs left, and how often it may change.
 type participantInputs struct {
 	stream          string
 	maxAccepted     int64
 	consumedThrough int64
 	current         inputs.Snapshot
+	transitions     *ratelimit.Limiter
+}
+
+func newParticipantInputs(current inputs.Snapshot, limits liveLimits) *participantInputs {
+	return &participantInputs{current: current, transitions: ratelimit.New(limits.sampleTransitions...)}
 }
 
 // follow starts the SAMPLE sequence of the connection connectionID.
@@ -26,10 +32,10 @@ func (i *participantInputs) follow(connectionID string) {
 	i.consumedThrough = 0
 }
 
-// acceptSample takes a player's SAMPLE into the timeline, without waiting for
-// a boundary in flight: it joins the next one. A stale or repeated sequence
-// is ignored, a refresh of the current state only moves the acknowledgement,
-// and a SAMPLE the game does not declare is runtime.ErrInvalidSample.
+// acceptSample takes a player's SAMPLE into the next boundary's timeline. A
+// stale sequence is ignored, a refresh only moves the acknowledgement, a
+// transition beyond the limits is dropped unacknowledged (the next SAMPLE
+// carries the state), and undeclared inputs are runtime.ErrInvalidSample.
 func (c *sessionController) acceptSample(ctx context.Context, player *connection, sample runtime.Sample) error {
 	s := c.lock()
 	defer c.unlock()
@@ -49,12 +55,25 @@ func (c *sessionController) acceptSample(ctx context.Context, player *connection
 		samplesReceived.Inc(ctx, sampleResultLabel.Value(sampleInvalid))
 		return fmt.Errorf("%w: %v", runtime.ErrInvalidSample, err)
 	}
-	ingress.maxAccepted = sample.Sequence
 	if snapshot == ingress.current {
+		ingress.maxAccepted = sample.Sequence
 		samplesReceived.Inc(ctx, sampleResultLabel.Value(sampleRefresh))
 		return nil
 	}
-	s.enqueueTransition(player.participantID, snapshot)
+	limit := s.timelineRoom(player.participantID)
+	if limit == "" {
+		if allowed, _ := ingress.transitions.Allow(s.now()); !allowed {
+			limit = limitSampleRate
+		}
+	}
+	if limit != "" {
+		refused(ctx, limit)
+		samplesReceived.Inc(ctx, sampleResultLabel.Value(sampleLimited))
+		return nil
+	}
+	ingress.maxAccepted = sample.Sequence
+	ingress.current = snapshot
+	s.enqueuePlayer(Operation{ParticipantID: player.participantID, Inputs: snapshot, sampleStream: ingress.stream, sampleSequence: sample.Sequence})
 	// Only a distinct transition is someone playing; a refresh is not.
 	s.recordActivity()
 	samplesReceived.Inc(ctx, sampleResultLabel.Value(sampleTransition))

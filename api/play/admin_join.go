@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/diegobermudez03/playhoot/api/internal/live"
 	"github.com/diegobermudez03/playhoot/api/internal/wsx"
 	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/play/runtime"
+	"github.com/diegobermudez03/playhoot/utils/ratelimit"
 )
 
 // Admin wire messages, besides the ones every live connection shares.
@@ -44,6 +46,24 @@ type adminPlayerViewMessage struct {
 
 var errIncompleteAdminConnection = errors.New("admin connection is missing operations")
 
+// Admin message limits. A perspective selection or a lifecycle request beyond
+// them closes the connection (1008): no admin needs more. Extra resyncs are
+// dropped, since the one waiting already brings the current view.
+var (
+	adminSelectPerspectiveLimits = live.LaneLimits{
+		Rate:     []ratelimit.Limit{{Count: 5, Per: time.Second}, {Count: 60, Per: time.Minute}},
+		Capacity: 4,
+	}
+	adminLifecycleLimits = live.LaneLimits{
+		Rate:     []ratelimit.Limit{{Count: 2, Per: time.Second}, {Count: 20, Per: time.Minute}},
+		Capacity: 2,
+	}
+	resyncLimits = live.LaneLimits{
+		Rate:     []ratelimit.Limit{{Count: 2, Per: time.Second}, {Count: 30, Per: time.Minute}},
+		Capacity: 1,
+	}
+)
+
 // handleAdminJoin upgrades the creator's admin connection and hands it to the
 // live connections. Admission is the Runtime's decision: an open WebSocket is
 // not yet admitted.
@@ -53,6 +73,12 @@ func (h *Handler) handleAdminJoin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx, conn := routed.ctx, routed.conn
+	served := false
+	defer func() {
+		if !served {
+			routed.release()
+		}
+	}()
 
 	attached, err := h.admins.AttachAdmin(ctx, routed.sessionUUID, routed.userUUID, routed.ownerEpoch)
 	if err != nil {
@@ -72,13 +98,22 @@ func (h *Handler) handleAdminJoin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	session := &adminSession{liveSession: newLiveSession(conn), admin: admin}
-	loops := session.serveRequests(map[string]live.Handler{
-		adminSelectPerspective: session.selectPerspective,
-		adminStartSession:      session.startSession,
-		adminCancelSession:     session.cancelSession,
-		adminResync:            session.resync,
+	lifecycle := adminLifecycleLimits
+	lifecycle.Excess = session.closeRateLimited
+	selection := adminSelectPerspectiveLimits
+	selection.Excess = session.closeRateLimited
+	loops := session.serveRequests(map[string]request{
+		adminSelectPerspective: {handle: session.selectPerspective, limits: selection},
+		adminStartSession:      {handle: session.startSession, limits: lifecycle},
+		adminCancelSession:     {handle: session.cancelSession, limits: lifecycle},
+		adminResync:            {handle: session.resync, limits: resyncLimits},
 	})
-	h.live.Serve(ctx, conn, admin.Disconnect, append(loops,
+	served = true
+	disconnect := func() {
+		admin.Disconnect()
+		routed.release()
+	}
+	h.live.Serve(ctx, conn, disconnect, append(loops,
 		sendSession(session.liveSession, sessionStream[runtime.SessionStart, runtime.WatchedView]{
 			nextLobbyUpdate: admin.NextLobbyUpdate,
 			started:         admin.Started,

@@ -21,6 +21,44 @@ var (
 	)
 )
 
+// Limits a live Session's requests can exceed, as metric label values.
+const (
+	limitSampleRate          = "sample_rate"
+	limitTimelineParticipant = "timeline_participant"
+	limitTimelineSession     = "timeline_session"
+	limitCommandPending      = "command_pending"
+	limitCommandParticipant  = "command_participant_rate"
+	limitCommandSession      = "command_session_rate"
+	limitAdminConnections    = "admin_connections"
+	limitLiveSessions        = "live_sessions"
+)
+
+var limitLabel = metrics.NewLabel("limit",
+	limitSampleRate, limitTimelineParticipant, limitTimelineSession,
+	limitCommandPending, limitCommandParticipant, limitCommandSession,
+	limitAdminConnections, limitLiveSessions,
+)
+
+var (
+	limitRejections = metrics.NewCounter(
+		"play_runtime_limit_rejections_total",
+		"Requests a live Session refused for exceeding a platform limit, by limit.",
+		limitLabel,
+	)
+	boundariesDeferred = metrics.NewCounter(
+		"play_runtime_boundaries_deferred_total",
+		"Boundaries asked for (by COMMANDs, leaves, rejoins) beyond the Session's boundary rate, left to the next tick.",
+	)
+	boundariesSplit = metrics.NewCounter(
+		"play_runtime_boundaries_split_total",
+		"Boundaries that took only part of the timeline because it held more operations than one boundary executes.",
+	)
+	viewsCollapsed = metrics.NewCounter(
+		"play_runtime_views_collapsed_total",
+		"Times a connection left so many views untaken that they were replaced by one FULL view.",
+	)
+)
+
 var playersReplaced = metrics.NewCounter(
 	"play_runtime_player_connections_replaced_total",
 	"Player connections ended because the same user opened a newer one.",
@@ -33,13 +71,14 @@ const (
 	sampleStale      = "stale"
 	sampleInvalid    = "invalid"
 	sampleDropped    = "dropped"
+	sampleLimited    = "rate_limited"
 )
 
-var sampleResultLabel = metrics.NewLabel("result", sampleTransition, sampleRefresh, sampleStale, sampleInvalid, sampleDropped)
+var sampleResultLabel = metrics.NewLabel("result", sampleTransition, sampleRefresh, sampleStale, sampleInvalid, sampleDropped, sampleLimited)
 
 var samplesReceived = metrics.NewCounter(
 	"play_runtime_samples_total",
-	"SAMPLEs received, by result: a new input state, a refresh of the current one, a stale or repeated sequence, invalid, or dropped because no game runs or a newer connection replaced the sender.",
+	"SAMPLEs received, by result: a new input state, a refresh of the current one, a stale or repeated sequence, invalid, dropped because no game runs or a newer connection replaced the sender, or refused by a limit.",
 	sampleResultLabel,
 )
 

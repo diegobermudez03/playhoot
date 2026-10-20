@@ -51,9 +51,11 @@ type joinCodeResolver interface {
 	ResolveJoinCode(ctx context.Context, joinCode string) (sessionpkg.JoinCodeResolution, error)
 }
 
-// liveRunner serves admitted live connections in the background until they
-// end or the server shuts down; it refuses new ones once shutdown started.
+// liveRunner bounds the live connections of this instance and serves
+// admitted ones in the background until they end or the server shuts down; it
+// refuses new ones once shutdown started.
 type liveRunner interface {
+	Reserve(ctx context.Context, caller string) (release func(), err error)
 	Serve(ctx context.Context, conn *websocket.Conn, disconnect func(), loops ...live.Loop) bool
 }
 
@@ -88,41 +90,39 @@ func NewHandler(authorizer authorizer, creator sessionCreator, owners ownerLocat
 func (h *Handler) RESTRoutes() []routing.Route {
 	return []routing.Route{
 		{
-			Pattern: "POST /v1/sessions",
-			Handler: h.handleCreateSession,
-			Middlewares: []routing.Middleware{
-				auth.Require(h.authorizer, identity.OperationCreateSession),
-			},
+			Pattern:       "POST /v1/sessions",
+			Handler:       h.handleCreateSession,
+			Authorization: auth.Require(h.authorizer, identity.OperationCreateSession),
 		},
 	}
 }
 
-// WebSocketRoutes returns this group's live endpoints. Authorization runs
-// before join code and owner routing, so an unauthorized caller never learns
-// a Session nor makes one owned.
+// WebSocketRoutes returns this group's live endpoints. Authorization and rate
+// limiting run before join code and owner routing, so an unauthorized or
+// limited caller never learns a Session nor makes one owned.
 func (h *Handler) WebSocketRoutes() []routing.Route {
 	return []routing.Route{
 		{
-			Pattern: "GET /v1/play/join/sessions/{sessionUUID}/admin",
-			Handler: h.handleAdminJoin,
+			Pattern:       "GET /v1/play/join/sessions/{sessionUUID}/admin",
+			Handler:       h.handleAdminJoin,
+			Authorization: auth.RequireWebSocket(h.authorizer, identity.OperationJoinSessionAsAdmin),
 			Middlewares: []routing.Middleware{
-				auth.RequireWebSocket(h.authorizer, identity.OperationJoinSessionAsAdmin),
 				requireOwner(h.owners, "sessionUUID"),
 			},
 		},
 		{
-			Pattern: "GET /v1/play/join/sessions/{sessionUUID}/player",
-			Handler: h.handlePlayerJoin,
+			Pattern:       "GET /v1/play/join/sessions/{sessionUUID}/player",
+			Handler:       h.handlePlayerJoin,
+			Authorization: auth.RequireWebSocket(h.authorizer, identity.OperationJoinSessionAsPlayer),
 			Middlewares: []routing.Middleware{
-				auth.RequireWebSocket(h.authorizer, identity.OperationJoinSessionAsPlayer),
 				requireOwner(h.owners, "sessionUUID"),
 			},
 		},
 		{
-			Pattern: "GET /v1/play/join/{joinCode}",
-			Handler: h.handlePlayerJoin,
+			Pattern:       "GET /v1/play/join/{joinCode}",
+			Handler:       h.handlePlayerJoin,
+			Authorization: auth.RequireWebSocket(h.authorizer, identity.OperationJoinSessionAsPlayer),
 			Middlewares: []routing.Middleware{
-				auth.RequireWebSocket(h.authorizer, identity.OperationJoinSessionAsPlayer),
 				resolveJoinCode(h.joinCodes, "joinCode", "sessionUUID"),
 				requireOwner(h.owners, "sessionUUID"),
 			},

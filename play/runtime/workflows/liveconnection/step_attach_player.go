@@ -28,6 +28,7 @@ var (
 		string(runtime.RejectSessionStarted),
 		string(runtime.RejectSessionUnavailable),
 		string(runtime.RejectOwnerChanged),
+		string(runtime.RejectServerBusy),
 	)
 
 	playerAttaches = metrics.NewCounter(
@@ -41,9 +42,9 @@ var (
 // controller under ownerEpoch, creating the controller if it has none. An
 // error means admission could not be decided.
 func (r *ControllerResolver) AttachPlayer(ctx context.Context, sessionUUID string, userUUID string, ownerEpoch int64) (runtime.AttachPlayerResult, error) {
-	sessionController, ok := r.controllerFor(ctx, sessionUUID, ownerEpoch)
-	if !ok {
-		return rejectPlayer(ctx, runtime.RejectOwnerChanged), nil
+	sessionController, rejection := r.controllerFor(ctx, sessionUUID, ownerEpoch)
+	if sessionController == nil {
+		return rejectPlayer(ctx, rejection), nil
 	}
 	return sessionController.attachPlayer(ctx, userUUID)
 }

@@ -45,7 +45,7 @@ func TestShutdown(t *testing.T) {
 	for name, setup := range tests {
 		t.Run(name, func(t *testing.T) {
 			tc := setup(t)
-			controller := New()
+			controller := New(0)
 			for range tc.connections {
 				require.True(t, controller.start(tc.serve))
 			}
@@ -56,6 +56,76 @@ func TestShutdown(t *testing.T) {
 
 			require.ErrorIs(t, err, tc.expectedErr)
 			require.False(t, controller.start(func(context.Context) { t.Error("connection started after shutdown") }))
+		})
+	}
+}
+
+func TestReserve(t *testing.T) {
+	type reservation struct {
+		caller string
+		// release gives the room back right after taking it.
+		release bool
+
+		expectedErr error
+	}
+	type test struct {
+		maxConnections int
+		reservations   []reservation
+	}
+
+	repeat := func(n int, r reservation) []reservation {
+		reservations := make([]reservation, n)
+		for i := range reservations {
+			reservations[i] = r
+		}
+		return reservations
+	}
+
+	tests := map[string]func(t *testing.T) test{
+		"an_instance_full_refuses_every_caller": func(t *testing.T) test {
+			return test{
+				maxConnections: 2,
+				reservations: []reservation{
+					{caller: "a"},
+					{caller: "b"},
+					{caller: "c", expectedErr: ErrInstanceFull},
+				},
+			}
+		},
+		"a_caller_with_as_many_as_allowed_is_refused_while_others_are_not": func(t *testing.T) test {
+			return test{
+				reservations: append(repeat(MaxConnectionsPerCaller, reservation{caller: "a"}),
+					reservation{caller: "a", expectedErr: ErrCallerFull},
+					reservation{caller: "b"},
+				),
+			}
+		},
+		"released_room_is_taken_again": func(t *testing.T) test {
+			return test{
+				maxConnections: 1,
+				reservations: []reservation{
+					{caller: "a", release: true},
+					{caller: "b", release: true},
+					{caller: "a"},
+					{caller: "c", expectedErr: ErrInstanceFull},
+				},
+			}
+		},
+	}
+
+	for name, setup := range tests {
+		t.Run(name, func(t *testing.T) {
+			tc := setup(t)
+			controller := New(tc.maxConnections)
+			for i, r := range tc.reservations {
+				release, err := controller.Reserve(context.Background(), r.caller)
+				require.ErrorIs(t, err, r.expectedErr, "reservation %d", i)
+				if r.release {
+					release()
+					// Releasing twice gives back nothing more.
+					release()
+				}
+			}
 		})
 	}
 }

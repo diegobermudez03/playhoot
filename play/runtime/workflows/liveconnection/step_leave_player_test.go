@@ -31,7 +31,7 @@ func TestLeave(t *testing.T) {
 					return players["user-a"]
 				},
 				expectedTimeline: []Operation{
-					{ParticipantID: "P1", Order: 1, Inputs: inputs.Snapshot(`{"move":[1,0]}`)},
+					{ParticipantID: "P1", Order: 1, Inputs: inputs.Snapshot(`{"move":[1,0]}`), fromPlayer: true, sampleSequence: 1},
 					{ParticipantID: "P1", Order: 2, Inputs: inputs.Snapshot(`{"move":[0,0]}`)},
 					{ParticipantID: "P1", Order: 3, Disconnected: true},
 				},
@@ -63,7 +63,7 @@ func TestLeave(t *testing.T) {
 			require.Equal(t, tc.expectedFlush, len(controller.flush) == 1)
 			require.Equal(t, tc.expectedDisconnected, controller.state.presence["P1"].disconnected)
 			work, _ := controller.takeBoundary()
-			require.Equal(t, tc.expectedTimeline, withoutTimes(work.operations))
+			require.Equal(t, tc.expectedTimeline, withoutTimesOrStreams(work.operations))
 			if tc.expectedDisconnected {
 				require.Equal(t, runtime.EndLeft, endedWith(t, leaving.Ended))
 				back, participant, err := controller.attachParticipant(ctx, "user-a")

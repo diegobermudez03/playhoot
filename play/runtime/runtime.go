@@ -73,6 +73,14 @@ const (
 	// RejectOwnerChanged means the connection was routed to a former owner;
 	// the client should reconnect.
 	RejectOwnerChanged RejectReason = "owner_changed"
+
+	// RejectTooManyAdmins means the Session has as many admin connections as
+	// it allows.
+	RejectTooManyAdmins RejectReason = "too_many_admins"
+
+	// RejectServerBusy means this instance runs as many live Sessions as it
+	// may; the client may try again later.
+	RejectServerBusy RejectReason = "server_busy"
 )
 
 // EndReason is why the Runtime ended a live connection.
@@ -416,6 +424,10 @@ const (
 
 	// CommandNotRunning means the Session is not running a game.
 	CommandNotRunning CommandOutcome = "session_not_running"
+
+	// CommandRateLimited means the player, or the Session, sent more commands
+	// than allowed; the token was not used, so it may be retried later.
+	CommandRateLimited CommandOutcome = "rate_limited"
 )
 
 // CommandResult is the outcome of a Command. Response is set only when

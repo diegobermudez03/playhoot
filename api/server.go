@@ -7,10 +7,12 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"time"
 
 	apiidentity "github.com/diegobermudez03/playhoot/api/identity"
 	"github.com/diegobermudez03/playhoot/api/internal/live"
 	"github.com/diegobermudez03/playhoot/api/internal/routing"
+	"github.com/diegobermudez03/playhoot/api/internal/throttle"
 	apiplay "github.com/diegobermudez03/playhoot/api/play"
 	"github.com/diegobermudez03/playhoot/logging"
 )
@@ -28,16 +30,28 @@ type Server struct {
 	live *live.Controller
 }
 
+// Config tunes this instance's API edge.
+type Config struct {
+	// WebSocketOriginPatterns are the extra origin hosts (path.Match patterns)
+	// browser pages may open live connections from.
+	WebSocketOriginPatterns []string
+	// TrustedProxyHops is how many proxies in front of the server append the
+	// client address to X-Forwarded-For; 0 trusts none.
+	TrustedProxyHops int
+	// MaxLiveConnections bounds this instance's live connections; 0 takes the
+	// default.
+	MaxLiveConnections int
+}
+
 // NewServer constructs a Server exposing every route group's endpoints.
-// webSocketOriginPatterns are the extra origin hosts (path.Match patterns)
-// browser pages may open live connections from.
-func NewServer(authorizer authorizer, guests guestCreator, sessionCreator sessionCreator, owners ownerLocator, admins adminAttacher, players playerAttacher, joinCodes joinCodeResolver, webSocketOriginPatterns []string) *Server {
+func NewServer(authorizer authorizer, guests guestCreator, sessionCreator sessionCreator, owners ownerLocator, admins adminAttacher, players playerAttacher, joinCodes joinCodeResolver, config Config) *Server {
 	mux := http.NewServeMux()
-	liveConnections := live.New()
+	liveConnections := live.New(config.MaxLiveConnections)
 	groups := []routeGroup{
 		apiidentity.NewHandler(guests),
-		apiplay.NewHandler(authorizer, sessionCreator, owners, admins, players, joinCodes, liveConnections, webSocketOriginPatterns),
+		apiplay.NewHandler(authorizer, sessionCreator, owners, admins, players, joinCodes, liveConnections, config.WebSocketOriginPatterns),
 	}
+	clients := throttle.ClientAddress{TrustedProxies: config.TrustedProxyHops}
 	var restRoutes, wsRoutes []routing.Route
 	for _, group := range groups {
 		restRoutes = append(restRoutes, group.RESTRoutes()...)
@@ -64,14 +78,28 @@ func NewServer(authorizer authorizer, guests guestCreator, sessionCreator sessio
 		// Observability goes first (outermost), so it sees every
 		// request/response regardless of what a route-specific
 		// middleware does to it.
-		mws := append([]routing.Middleware{restObservability(route.Pattern, restRequestMetrics)}, route.Middlewares...)
-		mux.HandleFunc(route.Pattern, chain(mws, route.Handler))
+		mux.HandleFunc(route.Pattern, chain(routeMiddlewares(route, restObservability(route.Pattern, restRequestMetrics), clients), route.Handler))
 	}
 	for _, route := range wsRoutes {
-		mws := append([]routing.Middleware{wsObservability(route.Pattern, handshakeMetrics)}, route.Middlewares...)
-		mux.HandleFunc(route.Pattern, chain(mws, route.Handler))
+		mux.HandleFunc(route.Pattern, chain(routeMiddlewares(route, wsObservability(route.Pattern, handshakeMetrics), clients), route.Handler))
 	}
 	return &Server{mux: mux, live: liveConnections}
+}
+
+// routeMiddlewares are what a request to route passes through, in order:
+// observability, the route's authorization, rate limiting, then the route's
+// own middlewares. Limiting after authorization limits a caller as a user.
+func routeMiddlewares(route routing.Route, observability routing.Middleware, clients throttle.ClientAddress) []routing.Middleware {
+	limits := throttle.DefaultLimits
+	if route.Limits != nil {
+		limits = *route.Limits
+	}
+	mws := []routing.Middleware{observability}
+	if route.Authorization != nil {
+		mws = append(mws, route.Authorization)
+	}
+	mws = append(mws, throttle.Requests(limits, clients, time.Now))
+	return append(mws, route.Middlewares...)
 }
 
 // restObservability starts and flushes the request log of every REST route

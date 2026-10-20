@@ -129,7 +129,7 @@ func TestAttachPlayer(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			deps := dependencies{players: NewMockplayerJoinChecker(ctrl), manifests: NewMockmanifestLoader(ctrl), limits: NewMocklimitsLoader(ctrl), starts: NewMocksessionStarter(ctrl)}
 			tc := setup(t, deps)
-			resolver := New(nil, deps.players, deps.manifests, deps.limits, deps.starts, nil, nil, nil, nil, nil, nil, ownersReleasing(t, sessionUUID, 1, 2))
+			resolver := New(0, nil, deps.players, deps.manifests, deps.limits, deps.starts, nil, nil, nil, nil, nil, nil, ownersReleasing(t, sessionUUID, 1, 2))
 			t.Cleanup(resolver.Close)
 			if tc.before != nil {
 				tc.before(resolver)
@@ -314,7 +314,7 @@ func TestAdmitPlayer(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			tc := setup(t)
 			controller := newTestController(t, tc.maxPlayers)
-			admin := controller.registerAdmin("creator")
+			admin := controller.mustRegisterAdmin("creator")
 			if tc.before != nil {
 				tc.before(t, controller)
 			}

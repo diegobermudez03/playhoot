@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/diegobermudez03/playhoot/play/runtime"
+	"github.com/diegobermudez03/playhoot/utils/ratelimit"
 )
 
 type commandAnswer struct {
@@ -80,6 +81,8 @@ func TestAcceptCommand(t *testing.T) {
 	type test struct {
 		// processed are the tokens each participant executed before.
 		processed map[string][]string
+		// limits changes the Session's limits.
+		limits func(*liveLimits)
 		// run sends commands to the running game and returns their answers.
 		run func(t *testing.T, controller *sessionController, players map[string]runtime.PlayerConnection, clock *testClock) []runtime.CommandResult
 
@@ -196,6 +199,70 @@ func TestAcceptCommand(t *testing.T) {
 				expectedResults: []runtime.CommandResult{{Token: "t1", Outcome: runtime.CommandNotRunning}},
 			}
 		},
+		"commands_beyond_the_pending_limit_are_rate_limited_and_their_token_stays_unused": func(t *testing.T) test {
+			return test{
+				limits: func(limits *liveLimits) { limits.pendingCommands = 1 },
+				run: func(t *testing.T, controller *sessionController, players map[string]runtime.PlayerConnection, clock *testClock) []runtime.CommandResult {
+					first := sendCommand(players["user-a"], runtime.Command{Token: "t1", Name: "pass"})
+					waitForTimeline(t, controller, 1)
+					refused, err := players["user-a"].Command(ctx, runtime.Command{Token: "t2", Name: "pass"})
+					require.NoError(t, err)
+					commitCommands(t, controller, `{"ok":1}`)
+					retried := sendCommand(players["user-a"], runtime.Command{Token: "t2", Name: "pass"})
+					waitForTimeline(t, controller, 1)
+					commitCommands(t, controller, `{"ok":2}`)
+					return []runtime.CommandResult{refused, receive(t, first), receive(t, retried)}
+				},
+				expectedResults: []runtime.CommandResult{
+					{Token: "t2", Outcome: runtime.CommandRateLimited},
+					{Token: "t1", Outcome: runtime.CommandExecuted, Response: []byte(`{"ok":1}`)},
+					{Token: "t2", Outcome: runtime.CommandExecuted, Response: []byte(`{"ok":2}`)},
+				},
+			}
+		},
+		"participant_sending_commands_beyond_its_rate_is_limited_but_not_the_others": func(t *testing.T) test {
+			return test{
+				limits: func(limits *liveLimits) {
+					limits.participantCommands = []ratelimit.Limit{{Count: 1, Per: time.Second}}
+				},
+				run: func(t *testing.T, controller *sessionController, players map[string]runtime.PlayerConnection, clock *testClock) []runtime.CommandResult {
+					sendCommand(players["user-a"], runtime.Command{Token: "t1", Name: "pass"})
+					waitForTimeline(t, controller, 1)
+					refused, err := players["user-a"].Command(ctx, runtime.Command{Token: "t2", Name: "pass"})
+					require.NoError(t, err)
+					sendCommand(players["user-b"], runtime.Command{Token: "t1", Name: "pass"})
+					waitForTimeline(t, controller, 2)
+					return []runtime.CommandResult{refused}
+				},
+				expectedResults: []runtime.CommandResult{{Token: "t2", Outcome: runtime.CommandRateLimited}},
+				expectedPending: []string{"P1:t1:pass:{}@0", "P2:t1:pass:{}@0"},
+			}
+		},
+		"session_receiving_commands_beyond_its_rate_limits_every_participant": func(t *testing.T) test {
+			return test{
+				limits: func(limits *liveLimits) {
+					limits.sessionCommands = []ratelimit.Limit{{Count: 1, Per: time.Second}, {Count: 2, Per: time.Minute}}
+				},
+				run: func(t *testing.T, controller *sessionController, players map[string]runtime.PlayerConnection, clock *testClock) []runtime.CommandResult {
+					sendCommand(players["user-a"], runtime.Command{Token: "t1", Name: "pass"})
+					waitForTimeline(t, controller, 1)
+					tooSoon, err := players["user-b"].Command(ctx, runtime.Command{Token: "t1", Name: "pass"})
+					require.NoError(t, err)
+					clock.Advance(time.Second)
+					sendCommand(players["user-b"], runtime.Command{Token: "t2", Name: "pass"})
+					waitForTimeline(t, controller, 2)
+					clock.Advance(time.Second)
+					tooMany, err := players["user-b"].Command(ctx, runtime.Command{Token: "t3", Name: "pass"})
+					require.NoError(t, err)
+					return []runtime.CommandResult{tooSoon, tooMany}
+				},
+				expectedResults: []runtime.CommandResult{
+					{Token: "t1", Outcome: runtime.CommandRateLimited},
+					{Token: "t3", Outcome: runtime.CommandRateLimited},
+				},
+				expectedPending: []string{"P1:t1:pass:{}@0", "P2:t2:pass:{}@1000"},
+			}
+		},
 		"commands_and_transitions_share_the_timeline_in_arrival_order": func(t *testing.T) test {
 			return test{
 				run: func(t *testing.T, controller *sessionController, players map[string]runtime.PlayerConnection, clock *testClock) []runtime.CommandResult {
@@ -219,7 +286,7 @@ func TestAcceptCommand(t *testing.T) {
 	for name, setup := range tests {
 		t.Run(name, func(t *testing.T) {
 			tc := setup(t)
-			controller, players, clock := runningControllerWithTokens(t, map[string][]byte{"P1": []byte(`{}`), "P2": []byte(`{}`)}, tc.processed, "user-a", "user-b")
+			controller, players, clock := runningControllerWithTokens(t, map[string][]byte{"P1": []byte(`{}`), "P2": []byte(`{}`)}, tc.processed, tc.limits, "user-a", "user-b")
 
 			results := tc.run(t, controller, players, clock)
 

@@ -2,6 +2,7 @@ package live
 
 import (
 	"context"
+	"errors"
 	"sync"
 
 	"github.com/coder/websocket"
@@ -9,21 +10,74 @@ import (
 	"github.com/diegobermudez03/playhoot/logging"
 )
 
-// Controller runs the live connections of this instance and ends them on
-// Shutdown.
+// DefaultMaxConnections bounds an instance's live connections when not
+// configured.
+const DefaultMaxConnections = 2000
+
+// MaxConnectionsPerCaller bounds one caller's live connections on an
+// instance: a few tabs and devices, never an unbounded number.
+const MaxConnectionsPerCaller = 10
+
+var (
+	// ErrInstanceFull means this instance serves as many live connections as
+	// it may.
+	ErrInstanceFull = errors.New("instance serves as many live connections as it may")
+	// ErrCallerFull means the caller has as many live connections as it may.
+	ErrCallerFull = errors.New("caller has as many live connections as it may")
+)
+
+// Controller runs the live connections of this instance, bounds how many
+// there are, and ends them on Shutdown.
 type Controller struct {
 	mu       sync.Mutex
 	stopping bool
 	running  sync.WaitGroup
+	// reserved counts the connections reserved, in total and by caller.
+	maxConnections int
+	reserved       int
+	reservedBy     map[string]int
 
 	shutdown       context.Context
 	signalShutdown context.CancelFunc
 }
 
-// New constructs a Controller.
-func New() *Controller {
+// New constructs a Controller serving at most maxConnections live
+// connections; 0 takes DefaultMaxConnections.
+func New(maxConnections int) *Controller {
+	if maxConnections <= 0 {
+		maxConnections = DefaultMaxConnections
+	}
 	shutdown, signalShutdown := context.WithCancel(context.Background())
-	return &Controller{shutdown: shutdown, signalShutdown: signalShutdown}
+	return &Controller{maxConnections: maxConnections, reservedBy: make(map[string]int), shutdown: shutdown, signalShutdown: signalShutdown}
+}
+
+// Reserve holds room for one more live connection of caller, to take before
+// upgrading it; release gives it back and may be called more than once. It
+// fails with ErrInstanceFull or ErrCallerFull when there is no room.
+func (c *Controller) Reserve(ctx context.Context, caller string) (release func(), err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	switch {
+	case c.reserved >= c.maxConnections:
+		connectionsRefused.Inc(ctx, refusedLabel.Value(refusedInstanceFull))
+		return nil, ErrInstanceFull
+	case c.reservedBy[caller] >= MaxConnectionsPerCaller:
+		connectionsRefused.Inc(ctx, refusedLabel.Value(refusedCallerFull))
+		return nil, ErrCallerFull
+	}
+	c.reserved++
+	c.reservedBy[caller]++
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			c.mu.Lock()
+			defer c.mu.Unlock()
+			c.reserved--
+			if c.reservedBy[caller]--; c.reservedBy[caller] == 0 {
+				delete(c.reservedBy, caller)
+			}
+		})
+	}, nil
 }
 
 // Serve runs conn's loops in the background until one ends the connection or

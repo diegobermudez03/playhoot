@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -28,8 +29,15 @@ func TestServe(t *testing.T) {
 		shuttingDown bool
 		clientSends  []clientMessage
 		// clientCloses ends the connection from the client; otherwise the
-		// client reads until the server ends it.
+		// client reads until the server ends it, unless clientSilent, when it
+		// never reads, so it answers no ping and takes no message.
 		clientCloses bool
+		clientSilent bool
+		// pingEvery, pongWithin and writeWithin replace the keepalive and
+		// write timings.
+		pingEvery   time.Duration
+		pongWithin  time.Duration
+		writeWithin time.Duration
 
 		expectedCloseStatus websocket.StatusCode
 		expectedCloseCause  Cause
@@ -48,6 +56,17 @@ func TestServe(t *testing.T) {
 			time.Sleep(delay)
 			_ = conn.Close(websocket.StatusNormalClosure, "session_ended")
 			return End{Cause: CauseEndedByOwner, Detail: "session_ended"}, true
+		}
+	}
+	// readQuietly reads, so pings are answered, without ever ending the
+	// connection itself.
+	readQuietly := func(conn *websocket.Conn) Loop {
+		return func(ctx context.Context) (End, bool) {
+			for {
+				if _, _, err := conn.Read(ctx); err != nil {
+					return End{}, false
+				}
+			}
 		}
 	}
 	readUntilEnd := func(conn *websocket.Conn) Loop {
@@ -121,6 +140,46 @@ func TestServe(t *testing.T) {
 				expectedCloseCause:  CauseMalformedMessage,
 			}
 		},
+		"client_answering_pings_stays_connected": func(t *testing.T) test {
+			return test{
+				loops: func(conn *websocket.Conn) []Loop {
+					return []Loop{readQuietly(conn), endAfter(conn, 300*time.Millisecond)}
+				},
+				pingEvery:           20 * time.Millisecond,
+				pongWithin:          100 * time.Millisecond,
+				expectedCloseStatus: websocket.StatusNormalClosure,
+				expectedCloseCause:  CauseEndedByOwner,
+				expectedCloseDetail: "session_ended",
+			}
+		},
+		"client_not_answering_pings_is_unresponsive": func(t *testing.T) test {
+			return test{
+				loops:              func(conn *websocket.Conn) []Loop { return []Loop{readUntilEnd(conn)} },
+				clientSilent:       true,
+				pingEvery:          20 * time.Millisecond,
+				pongWithin:         50 * time.Millisecond,
+				expectedCloseCause: CauseUnresponsive,
+			}
+		},
+		"client_not_taking_a_message_in_time_is_too_slow": func(t *testing.T) test {
+			huge := strings.Repeat("x", 64<<20)
+			return test{
+				loops: func(conn *websocket.Conn) []Loop {
+					return []Loop{readUntilEnd(conn), func(ctx context.Context) (End, bool) {
+						// The socket's buffers take a few before the client is
+						// seen not taking them.
+						for {
+							if end, ended := WriteMessage(ctx, conn, huge); ended || ctx.Err() != nil {
+								return end, ended
+							}
+						}
+					}}
+				},
+				clientSilent:       true,
+				writeWithin:        100 * time.Millisecond,
+				expectedCloseCause: CauseSlowConsumer,
+			}
+		},
 		"binary_client_message_ends_the_connection": func(t *testing.T) test {
 			return test{
 				loops:               func(conn *websocket.Conn) []Loop { return []Loop{readUntilEnd(conn)} },
@@ -134,6 +193,16 @@ func TestServe(t *testing.T) {
 	for name, setup := range tests {
 		t.Run(name, func(t *testing.T) {
 			tc := setup(t)
+			if tc.pingEvery > 0 {
+				previousInterval, previousTimeout := pingInterval, pongTimeout
+				pingInterval, pongTimeout = tc.pingEvery, tc.pongWithin
+				t.Cleanup(func() { pingInterval, pongTimeout = previousInterval, previousTimeout })
+			}
+			if tc.writeWithin > 0 {
+				previous := writeTimeout
+				writeTimeout = tc.writeWithin
+				t.Cleanup(func() { writeTimeout = previous })
+			}
 
 			var output bytes.Buffer
 			previous := slog.Default()
@@ -166,9 +235,12 @@ func TestServe(t *testing.T) {
 			for _, message := range tc.clientSends {
 				require.NoError(t, conn.Write(ctx, message.messageType, []byte(message.data)))
 			}
-			if tc.clientCloses {
+			switch {
+			case tc.clientCloses:
 				require.NoError(t, conn.Close(websocket.StatusNormalClosure, ""))
-			} else {
+			case tc.clientSilent:
+				defer conn.CloseNow()
+			default:
 				_, _, err := conn.Read(ctx)
 				require.Equal(t, tc.expectedCloseStatus, websocket.CloseStatus(err))
 			}

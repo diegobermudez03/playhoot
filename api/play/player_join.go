@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/diegobermudez03/playhoot/api/internal/live"
 	"github.com/diegobermudez03/playhoot/api/internal/wsx"
 	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/play/runtime"
+	"github.com/diegobermudez03/playhoot/utils/ratelimit"
 )
 
 // Player wire messages, besides the ones every live connection shares.
@@ -64,6 +66,25 @@ type playerOwnViewMessage struct {
 
 var errIncompletePlayerConnection = errors.New("player connection is missing operations")
 
+// Player message limits. A SAMPLE beyond them is dropped: each one is a full
+// snapshot, so the next one carries the state and sequence gaps are allowed.
+// A COMMAND beyond them is answered rate_limited without using its token. A
+// resync or leave beyond them is dropped: the one waiting does the same.
+var (
+	playerSampleLimits = live.LaneLimits{
+		Rate:     []ratelimit.Limit{{Count: 60, Per: time.Second}, {Count: 3600, Per: time.Minute}},
+		Capacity: 64,
+	}
+	playerCommandLimits = live.LaneLimits{
+		Rate:     []ratelimit.Limit{{Count: 20, Per: time.Second}, {Count: 300, Per: time.Minute}},
+		Capacity: 16,
+	}
+	playerLeaveLimits = live.LaneLimits{
+		Rate:     []ratelimit.Limit{{Count: 1, Per: time.Second}},
+		Capacity: 1,
+	}
+)
+
 // handlePlayerJoin upgrades a player's connection and hands it to the live
 // connections. Admission into the lobby is the Runtime's decision.
 func (h *Handler) handlePlayerJoin(w http.ResponseWriter, r *http.Request) {
@@ -72,6 +93,12 @@ func (h *Handler) handlePlayerJoin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx, conn := routed.ctx, routed.conn
+	served := false
+	defer func() {
+		if !served {
+			routed.release()
+		}
+	}()
 
 	attached, err := h.players.AttachPlayer(ctx, routed.sessionUUID, routed.userUUID, routed.ownerEpoch)
 	if err != nil {
@@ -91,13 +118,20 @@ func (h *Handler) handlePlayerJoin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	session := &playerSession{liveSession: newLiveSession(conn), player: player}
-	loops := session.serveRequests(map[string]live.Handler{
-		playerSample:  session.sample,
-		playerCommand: session.command,
-		playerResync:  session.resync,
-		playerLeave:   session.leave,
+	commands := playerCommandLimits
+	commands.Excess = session.commandRateLimited
+	loops := session.serveRequests(map[string]request{
+		playerSample:  {handle: session.sample, limits: playerSampleLimits},
+		playerCommand: {handle: session.command, limits: commands},
+		playerResync:  {handle: session.resync, limits: resyncLimits},
+		playerLeave:   {handle: session.leave, limits: playerLeaveLimits},
 	})
-	h.live.Serve(ctx, conn, player.Disconnect, append(loops,
+	served = true
+	disconnect := func() {
+		player.Disconnect()
+		routed.release()
+	}
+	h.live.Serve(ctx, conn, disconnect, append(loops,
 		sendSession(session.liveSession, sessionStream[runtime.PlayerStart, runtime.OwnView]{
 			nextLobbyUpdate: player.NextLobbyUpdate,
 			started:         player.Started,
@@ -150,6 +184,20 @@ func (s *playerSession) command(ctx context.Context, data []byte) (live.End, boo
 		Token:    request.Token,
 		Outcome:  string(result.Outcome),
 		Response: gameJSON(result.Response),
+	})
+}
+
+// commandRateLimited answers a COMMAND sent more often than allowed without
+// handing it to the Runtime, so its token stays unused for a retry.
+func (s *playerSession) commandRateLimited(ctx context.Context, data []byte) (live.End, bool) {
+	var request playerCommandRequest
+	if err := json.Unmarshal(data, &request); err != nil || request.Token == "" || len(request.Token) > maxCommandTokenLength {
+		return live.CloseMalformed(s.conn), true
+	}
+	return live.WriteMessage(ctx, s.conn, playerCommandResultMessage{
+		Type:    playerCommandResult,
+		Token:   request.Token,
+		Outcome: string(runtime.CommandRateLimited),
 	})
 }
 

@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -23,10 +25,25 @@ const (
 	CauseBinaryFrame        Cause = "binary_frame"
 	CauseMalformedMessage   Cause = "malformed_message"
 	CauseUnknownMessageType Cause = "unknown_message_type"
+	CauseRateLimited        Cause = "rate_limited"
 	CauseEndedByOwner       Cause = "ended_by_owner"
 	CauseServerShutdown     Cause = "server_shutdown"
 	CauseServerFailure      Cause = "server_failure"
 	CauseWriteFailed        Cause = "write_failed"
+	CauseSlowConsumer       Cause = "slow_consumer"
+	CauseUnresponsive       Cause = "unresponsive"
+)
+
+// writeTimeout bounds how long one message may take to reach a client; a
+// client that cannot take it in that time is too slow to keep.
+var writeTimeout = 10 * time.Second
+
+// pingInterval is how often an idle-looking client is asked to prove it is
+// still there, and pongTimeout how long it has to answer, so a half-open
+// connection is noticed instead of held.
+var (
+	pingInterval = 15 * time.Second
+	pongTimeout  = 10 * time.Second
 )
 
 // End is how a served connection ended.
@@ -61,12 +78,32 @@ func serve(ctx context.Context, shutdown context.Context, conn *websocket.Conn, 
 			results <- loopResult{end: end, ended: ended}
 		}()
 	}
+	// The keepalive never stops by itself, so it is not one of the loops
+	// whose stopping means nothing serves the connection anymore.
+	alive := make(chan loopResult, 1)
+	go func() {
+		end, ended := keepalive(conn)(ctx)
+		alive <- loopResult{end: end, ended: ended}
+	}()
+	aliveStopped := false
+	defer func() {
+		if !aliveStopped {
+			<-alive
+		}
+	}()
 
 	end, decided, pending := End{}, false, len(loops)
 	for !decided && pending > 0 {
+		var aliveResult <-chan loopResult
+		if !aliveStopped {
+			aliveResult = alive
+		}
 		select {
 		case result := <-results:
 			pending--
+			end, decided = result.end, result.ended
+		case result := <-aliveResult:
+			aliveStopped = true
 			end, decided = result.end, result.ended
 		case <-shutdown.Done():
 			_ = conn.Close(websocket.StatusGoingAway, "server shutting down")
@@ -80,6 +117,7 @@ func serve(ctx context.Context, shutdown context.Context, conn *websocket.Conn, 
 
 	cancel()
 	disconnect()
+	defer droppedConnections.Delete(conn)
 	// Releases the socket if the ending loop did not close it; a no-op otherwise.
 	_ = conn.CloseNow()
 	for ; pending > 0; pending-- {
@@ -96,6 +134,9 @@ func ReadMessage(ctx context.Context, conn *websocket.Conn) (messageType string,
 	if err != nil {
 		if ctx.Err() != nil {
 			return "", nil, End{}, false
+		}
+		if cause, dropped := droppedConnections.Load(conn); dropped {
+			return "", nil, End{Cause: cause.(Cause)}, true
 		}
 		return "", nil, End{Cause: CauseClientClosed}, true
 	}
@@ -125,26 +166,80 @@ func CloseUnknownType(conn *websocket.Conn, messageType string) End {
 	return End{Cause: CauseUnknownMessageType, Detail: messageType}
 }
 
+// CloseRateLimited closes conn because the client sent more than its limits
+// allow.
+func CloseRateLimited(conn *websocket.Conn) End {
+	_ = conn.Close(websocket.StatusPolicyViolation, "rate limited")
+	return End{Cause: CauseRateLimited}
+}
+
 // CloseServerFailure closes conn because the server could not go on.
 func CloseServerFailure(conn *websocket.Conn, err error) End {
 	wsx.Abort(conn)
 	return End{Cause: CauseServerFailure, Detail: err.Error()}
 }
 
-// WriteMessage sends message as a JSON text frame. ended is false when ctx was
+// WriteMessage sends message as a JSON text frame. A client that does not take
+// it within writeTimeout is dropped as too slow. ended is false when ctx was
 // cancelled instead.
 func WriteMessage(ctx context.Context, conn *websocket.Conn, message any) (End, bool) {
 	data, err := json.Marshal(message)
 	if err != nil {
 		return CloseServerFailure(conn, err), true
 	}
-	if err := conn.Write(ctx, websocket.MessageText, data); err != nil {
-		if ctx.Err() != nil {
-			return End{}, false
-		}
-		return End{Cause: CauseWriteFailed}, true
+	// The server drops the client itself, after recording why, so a reader
+	// failing on the dropped socket reports the same cause.
+	var slow atomic.Bool
+	tooSlow := time.AfterFunc(writeTimeout, func() {
+		slow.Store(true)
+		droppedConnections.Store(conn, CauseSlowConsumer)
+		_ = conn.CloseNow()
+	})
+	err = conn.Write(ctx, websocket.MessageText, data)
+	tooSlow.Stop()
+	switch {
+	case slow.Load():
+		return End{Cause: CauseSlowConsumer}, true
+	case err == nil:
+		return End{}, false
+	case ctx.Err() != nil:
+		return End{}, false
 	}
-	return End{}, false
+	return End{Cause: CauseWriteFailed}, true
+}
+
+// droppedConnections are the connections the server dropped, with why, until
+// served connections are done with them.
+var droppedConnections sync.Map
+
+// keepalive pings the client every pingInterval and ends the connection when
+// a pong does not come back within pongTimeout. It relies on the connection
+// being read, which Dispatch always does.
+func keepalive(conn *websocket.Conn) Loop {
+	return func(ctx context.Context) (End, bool) {
+		ticker := time.NewTicker(pingInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+			case <-ctx.Done():
+				return End{}, false
+			}
+			pingCtx, cancel := context.WithTimeout(ctx, pongTimeout)
+			err := conn.Ping(pingCtx)
+			timedOut := pingCtx.Err() != nil && ctx.Err() == nil
+			cancel()
+			switch {
+			case timedOut:
+				// Closed by serve once it takes this end, so a reader failing
+				// on the closed socket cannot report it first.
+				return End{Cause: CauseUnresponsive}, true
+			case err != nil:
+				// Closed by whatever ended it, which reports why.
+				return End{}, false
+			}
+		}
+	}
 }
 
 func logConnectionEnd(ctx context.Context, end End, duration time.Duration) {

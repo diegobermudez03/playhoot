@@ -159,7 +159,7 @@ Left for future steps, on purpose:
 - The operations of a running game: `Sample`, `Command`, `Resync`, views and `Leave` in a running game; the controller has a lobby/running phase, but nothing moves it to running until Start (G) exists (see I, J, M, O and Placeholders).
 - Start itself (G), which ends the lobby with `session_started` and uses the manifest's minimum (orchestrated since 2026-10-17, see G).
 - Device/control capabilities checked against the manifest, once the manifest declares them (B).
-- Rate limiting per message type on live connections and on guest creation (W); until then each lane's queue is unbounded.
+- Rate limiting per message type on live connections and on guest creation (W); done 2026-10-19.
 - Ownership is still a single-instance placeholder, the controller serializes with a mutex instead of the single mutation lane, and controllers are never destroyed (A1, H).
 
 - [x] Join by join code or Session UUID; guest display name when a new guest is created (the Session Runtime side is done: both routes, and the guest named through `POST /v1/guests` before joining; Identity's real guest creation is out of scope and tracked under Placeholders)
@@ -412,7 +412,7 @@ Implemented 2026-10-18 (decided by the human: `finished: true` with the final st
 - [x] CANCELLED (host), EXPIRED (lobby/inactivity), ABORTED (unrecoverable) complete without calling JavaScript (2026-10-18: also MAX_LIFETIME and PLATFORM_TERMINATED; controller tests)
 - [x] Clients receive a platform terminal message with cause (2026-10-18: `session_ended` or `lobby_closed`, `{type, status, end_cause}`, then close 1000; API tests and the end-to-end run)
 - [x] FINISHED Sessions are historical only; no live reactivation (§30.26) (2026-10-18: owner routing answers 404 for any ended Session, checked by the end-to-end run; the ended controller is gone)
-- [ ] Platform-forced termination wired to its triggers (limits, consumption): `ControllerResolver.TerminateSession` is ready and tested, nothing calls it yet (requested by the human 2026-10-18)
+- [ ] Platform-forced termination wired to its triggers (limits, consumption): `ControllerResolver.TerminateSession` is ready and tested, nothing calls it yet (requested by the human 2026-10-18). 2026-10-19, decided by the human: no rate limit or resource control triggers it (a boundary beyond the rate is deferred, a misbehaving player is limited); consumption triggers remain open
 
 ---
 
@@ -437,7 +437,7 @@ Implemented 2026-10-18 (decided by the human: `finished: true` with the final st
 
 ## V. Errors (§27)
 
-- [ ] Protocol/contract errors rejected pre-JS (malformed message, undeclared command, bad payload, bad SAMPLE shape, over-limit, wrong role) (2026-10-18: all of them except rate limits, see W)
+- [x] Protocol/contract errors rejected pre-JS (malformed message, undeclared command, bad payload, bad SAMPLE shape, over-limit, wrong role) (2026-10-18: all of them except rate limits; 2026-10-19: rate limits too, see W)
 - [x] Logical game results returned as normal data; Session continues (2026-10-18: COMMAND responses; and logical errors `errors: [{participant, error}]` returned by `samples()`, `command()` and `update()` next to the state, sent to their player inside that boundary's `player_view` and offered to replay, never persisted nor kept by the controller)
 - [ ] Script/runtime failure handled per M (retry once, then abort)
 - [ ] Infrastructure failure handled per M (recreate + retry)
@@ -447,15 +447,20 @@ Implemented 2026-10-18 (decided by the human: `finished: true` with the final st
 
 ## W. Rate limits and resource controls (§28)
 
-- [ ] SAMPLE: per-participant ingress rate, max distinct transitions per window, bounded pending buffer, payload size, identical-refresh dedup
-- [ ] COMMAND: per-participant token bucket, max pending, bounded queue, payload size
-- [ ] WebSocket: messages/s, bytes/s, max message size, outbound backpressure protection
-- [ ] Guest creation rate limiting at the API edge (pending task, 2026-10-17): `POST /v1/guests` needs no token, so anyone can create Users with it; it must be limited per client (for example per IP) before production
-- [ ] Per-message-type rate limiting at the API edge (pending task, requested by the human 2026-10-17). Every live connection reads with one loop that hands each message to its type's own lane (`api/internal/live/lanes.go`: one goroutine per type, so SAMPLEs only wait for SAMPLEs, COMMANDs for COMMANDs, resyncs for resyncs). Handing off never blocks, so a lane's queue is unbounded: until this limit exists, a client sending faster than its lane is handled grows that queue without bound. The limit must be enforced per type before enqueueing, and bound each lane's queue.
+Implemented 2026-10-19 from the list the human approved (one session: planned, approved with changes, then built). Every limit combines a short and a long window where it is a rate (a token bucket per window, `utils/ratelimit`, exact integer time), decided by the human: "at most X a second and Y a minute", or "one every N minutes". Values are platform constants next to their owner, with environment variables only for an instance's capacity (`LIVE_MAX_CONNECTIONS`, `RUNTIME_MAX_LIVE_SESSIONS`, `TRUSTED_PROXY_HOPS`). Where each limit lives and its values: `api/README.md` (API edge) and `play/CURRENT_STATE.md` (Runtime). Verified by unit tests in `utils/ratelimit`, `api/internal/throttle`, `api/internal/live`, `api`, `api/play` and `liveconnection`, and by a smoke run of the server (bursts answered `429`). Not verified with the race detector (no C compiler on the machine). Decided by the human: no limit ends a Session (a boundary asked for beyond the rate waits for the next tick instead of aborting the game), so `TerminateSession` stays unwired (see S).
+
+- [x] SAMPLE: per-participant ingress rate, max distinct transitions per window, bounded pending buffer, payload size, identical-refresh dedup (2026-10-19: the API edge drops SAMPLEs beyond 60 a second and 3600 a minute per connection, 64 waiting; the Runtime drops distinct transitions beyond 120 a second and 3600 a minute per participant, and beyond 128 waiting per participant or 2048 per Session, unacknowledged so the next SAMPLE carries the state; payload bounded by the schema and the 32 KiB message limit; refresh dedup since I; `TestAcceptSample`, `TestDispatch`, `TestLaneOffer`)
+- [x] COMMAND: per-participant token bucket, max pending, bounded queue, payload size (2026-10-19: edge 20 a second and 300 a minute per connection, 16 waiting, beyond them `command_result` `rate_limited` without reaching the Runtime; Runtime 10 a second and 120 a minute per participant and, asked by the human, 60 a second and 600 a minute for the whole Session, 4 pending per participant, answered `rate_limited` with the token unused; executed tokens kept up to 10000 per participant, oldest forgotten first, checkpointed oldest first (decided by the human); `TestAcceptCommand`, `TestParticipantCommandsRemember`, `TestHandlePlayerJoin`)
+- [x] WebSocket: messages/s, bytes/s, max message size, outbound backpressure protection (2026-10-19: per connection 120 messages a second and 6000 a minute, 256 KiB a second and 4 MiB a minute, beyond them closed 1008 `rate limited`; 32 KiB per message; a write not taken in 10 s drops the client (`slow_consumer`); a ping every 15 s, closed when no pong in 10 s (`unresponsive`); a connection leaving 8 views untaken gets one FULL view keeping their errors and events (decided by the human); `TestServe`, `TestDispatch`, `TestViewFeedPublish`)
+- [x] Guest creation rate limiting at the API edge (2026-10-19, changed by the human into a general middleware: every REST route and WebSocket handshake is limited after its authorization, by user when authorized (default 5 a second and 30 a minute) and by client address otherwise (20 a second and 300 a minute, higher because a classroom shares one address), each route with its own budget and able to declare its own limits; `429` `rate_limited` with `Retry-After`; client address from `X-Forwarded-For` behind `TRUSTED_PROXY_HOPS` proxies; in memory per instance; `TestRequests`, `TestClientAddressOf`, `TestRouteMiddlewares`)
+- [x] Per-message-type rate limiting at the API edge (2026-10-19: every lane has a rate and a bounded queue, checked before enqueueing on the reading goroutine; beyond them a type drops (SAMPLE, resync, leave), answers (COMMAND) or closes (admin requests); `TestLaneOffer`, `TestHandlePlayerJoin`)
 - [x] Sandbox: CPU/execution budget, memory, deadline, state/output size, non-cooperative code protection (5 s budget per call by killing the worker, 64 MiB memory, 1 MiB stack, 256 KiB state/view, soft 160 MiB Go heap per worker; per instance `SANDBOX_MAX_CONTEXTS` (default 32) and `SANDBOX_MAX_CONCURRENT_EXECUTIONS` (default CPUs), Start answers `sandbox_unavailable` without capacity; tests for each)
-- [ ] Session: max lifetime, inactivity timeout, owner/recovery deadlines, bounded Replay and checkpoint queues (2026-10-18: max lifetime and inactivity done; the replay queue is bounded (R) and the checkpoint writer keeps only the latest)
-- [ ] Scripts cannot request higher tick rates or unbounded buffers
-- [ ] All numeric values chosen and configurable (decision)
+- [x] Session: max lifetime, inactivity timeout, owner/recovery deadlines, bounded Replay and checkpoint queues (max lifetime and inactivity 2026-10-18 (U), owner lease and recovery window (T, Q), the replay queue bounded (R), the checkpoint writer keeps only the latest (P))
+- [x] Boundary rate per Session (asked by the human 2026-10-19, separate from the COMMAND limits so anything that may force a boundary in the future is caught): at most 25 boundaries a second and 1200 a minute; ticks always run and count, a boundary asked for beyond them is deferred to the next tick; at most 256 operations per boundary, the rest in the next one (the partial boundary ends at its last operation without update() and acknowledges only the SAMPLEs it took) (`TestRunRequestedBoundary`, `TestTakeBoundaryTakesALongTimelineInPart`)
+- [x] Instance capacity: at most `LIVE_MAX_CONNECTIONS` live connections (default 2000, `503` `server_busy`) and 10 per caller (`429` `too_many_connections`) before the upgrade; at most `RUNTIME_MAX_LIVE_SESSIONS` live Sessions (default 500, rejected `server_busy`); at most 8 admin connections per Session (`too_many_admins`); HTTP server timeouts (`TestReserve`, `TestControllerFor`, `TestRegisterAdminBeyondTheSessionsLimit`)
+- [x] Scripts cannot request higher tick rates or unbounded buffers (the tick, buffers and every limit are platform values; the manifest declares no such field and ignores unknown ones, and the script contract has no way to ask)
+- [x] All numeric values chosen and configurable (decision) (decided by the human 2026-10-19: the values above; constants beside their owner, environment variables only for instance capacity)
+- [ ] Limit on active Sessions per creator (product rule, not a resource control; noted by the human 2026-10-19 for the future, not part of this project)
 
 ---
 
@@ -492,7 +497,7 @@ Session lifecycle:
 Connections and protocol:
 - [ ] Open WebSockets by role (PLAYER/ADMIN); attach/detach rates; transport-grace expirations (API side so far, without role: `api_live_connections_active`, `api_live_connections_closed_total{close_cause}`, `api_live_connection_duration_seconds` in `api/internal/live`; per-role and admission counts belong to the Runtime)
 - [ ] Logical disconnects, leaves, rejoins (accepted/rejected), device switches
-- [ ] Protocol/contract rejections by reason; rate-limit hits by limit type
+- [ ] Protocol/contract rejections by reason; rate-limit hits by limit type (2026-10-19: rate-limit hits declared and recorded: `api_http_rate_limited_total{key}`, `api_live_messages_refused_total{limit}`, `api_live_connections_refused_total{reason}`, `play_runtime_limit_rejections_total{limit}`, `play_runtime_boundaries_deferred_total`, `play_runtime_boundaries_split_total`, `play_runtime_views_collapsed_total`, `rate_limited` in the SAMPLE and COMMAND outcomes, close causes `rate_limited`, `slow_consumer`, `unresponsive`; emission pending like every metric)
 - [ ] Inbound/outbound message and byte rates; outbound backpressure/slow-consumer events (network message counts belong in `api/internal/live`; per-Session aggregates such as messages per Session belong to the Runtime)
 
 Execution timeline:
@@ -566,7 +571,7 @@ Everything here is wired into the running system, so a request flows through it,
 - [x] Replay recorder (`unwiredReplay` in `unwired.go`, in scope, see R): replaced 2026-10-18 by `replayrecording.Recorder`; `unwired.go` was deleted. It used to: every capture a running game offers is dropped, and `Finish` drops a finished game's final capture while reporting success (2026-10-18), so FINISHED is reached without the durable final replay state. Real behavior: the Replay Recorder building chunks (FULL_STATE, STATE_DELTA, events, command responses, which captures already carry) and persisting them asynchronously, bounded and best effort.
 - [x] Running games never stop by themselves (`play/runtime/workflows/liveconnection`, in scope, see S and U): replaced 2026-10-18 by finishing, inactivity and maximum lifetime, which end the Session, its controller and context.
 - [ ] Platform termination (`ControllerResolver.TerminateSession`, in scope, see S): ready and tested, nothing calls it (2026-10-18). Real behavior: called by the limits/consumption policy once it exists; a Session owned by another instance must be reached through its owner (A1).
-- [ ] View delivery has no backpressure (`play/runtime/workflows/liveconnection`, in scope, see W): a slow connection's queued views grow without bound. Real behavior: coalesce into one FULL view when a connection falls behind.
+- [x] View delivery has no backpressure (`play/runtime/workflows/liveconnection`, in scope, see W): replaced 2026-10-19: a connection leaving 8 views untaken gets one FULL view keeping their errors and events. It used to: let a slow connection's queued views grow without bound.
 - [ ] Metrics emission (`monitoring/metrics`, `record`): measurements are only written to the request log; nothing is sent to a metrics backend (see Y).
 
 ## Invariants verification (§30)

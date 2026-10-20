@@ -522,7 +522,7 @@ func TestHandleAdminJoin(t *testing.T) {
 			deps := dependencies{admins: NewMockadminAttacher(ctrl)}
 			tc := setup(t, deps)
 
-			connections := live.New()
+			connections := live.New(0)
 			if tc.shuttingDown {
 				require.NoError(t, connections.Shutdown(context.Background()))
 			}

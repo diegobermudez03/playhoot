@@ -13,7 +13,11 @@ import (
 	"github.com/coder/websocket"
 	"github.com/stretchr/testify/require"
 
+	"github.com/diegobermudez03/playhoot/api/internal/auth"
+	"github.com/diegobermudez03/playhoot/api/internal/routing"
+	"github.com/diegobermudez03/playhoot/api/internal/throttle"
 	"github.com/diegobermudez03/playhoot/api/internal/wsx"
+	"github.com/diegobermudez03/playhoot/utils/ratelimit"
 )
 
 func TestRestObservability(t *testing.T) {
@@ -191,6 +195,96 @@ func TestWSObservability(t *testing.T) {
 			require.NoError(t, json.Unmarshal(output.Bytes(), &entry))
 			require.Equal(t, wsMetricsTestPattern, entry.Message)
 			require.Equal(t, tc.expectedMetrics, entry.Metrics)
+		})
+	}
+}
+
+func TestRouteMiddlewares(t *testing.T) {
+	type test struct {
+		route    routing.Route
+		requests int
+
+		expectedStatuses []int
+		// expectedPassed is what each request passed through, in order.
+		expectedPassed [][]string
+	}
+
+	limitedToOne := &routing.RequestLimits{
+		PerUser:   []ratelimit.Limit{{Count: 1, Per: time.Hour}},
+		PerClient: []ratelimit.Limit{{Count: 1, Per: time.Hour}},
+	}
+
+	tests := map[string]func(t *testing.T, passed *[]string) test{
+		"an_authorized_caller_is_limited_after_authorization_and_before_the_route": func(t *testing.T, passed *[]string) test {
+			return test{
+				route: routing.Route{
+					Authorization: func(next http.HandlerFunc) http.HandlerFunc {
+						return func(w http.ResponseWriter, r *http.Request) {
+							*passed = append(*passed, "authorization")
+							next(w, r.WithContext(auth.WithUserUUID(r.Context(), "u1")))
+						}
+					},
+					Limits: limitedToOne,
+					Middlewares: []routing.Middleware{func(next http.HandlerFunc) http.HandlerFunc {
+						return func(w http.ResponseWriter, r *http.Request) {
+							*passed = append(*passed, "route")
+							next(w, r)
+						}
+					}},
+				},
+				requests:         2,
+				expectedStatuses: []int{http.StatusOK, http.StatusTooManyRequests},
+				expectedPassed:   [][]string{{"observability", "authorization", "route", "handler"}, {"observability", "authorization"}},
+			}
+		},
+		"a_route_without_authorization_is_limited_by_client": func(t *testing.T, passed *[]string) test {
+			return test{
+				route:            routing.Route{Limits: limitedToOne},
+				requests:         2,
+				expectedStatuses: []int{http.StatusOK, http.StatusTooManyRequests},
+				expectedPassed:   [][]string{{"observability", "handler"}, {"observability"}},
+			}
+		},
+		"a_route_without_its_own_limits_takes_the_defaults": func(t *testing.T, passed *[]string) test {
+			statuses := make([]int, throttle.DefaultLimits.PerClient[0].Count+1)
+			passes := make([][]string, len(statuses))
+			for i := range statuses {
+				statuses[i] = http.StatusOK
+				passes[i] = []string{"observability", "handler"}
+			}
+			statuses[len(statuses)-1] = http.StatusTooManyRequests
+			passes[len(passes)-1] = []string{"observability"}
+			return test{
+				route:            routing.Route{},
+				requests:         len(statuses),
+				expectedStatuses: statuses,
+				expectedPassed:   passes,
+			}
+		},
+	}
+
+	for name, setup := range tests {
+		t.Run(name, func(t *testing.T) {
+			var passed []string
+			tc := setup(t, &passed)
+			observability := func(next http.HandlerFunc) http.HandlerFunc {
+				return func(w http.ResponseWriter, r *http.Request) {
+					passed = append(passed, "observability")
+					next(w, r)
+				}
+			}
+			handler := chain(routeMiddlewares(tc.route, observability, throttle.ClientAddress{}), func(w http.ResponseWriter, r *http.Request) {
+				passed = append(passed, "handler")
+			})
+
+			for i := range tc.requests {
+				passed = nil
+				r := httptest.NewRequest(http.MethodGet, "/", nil)
+				w := httptest.NewRecorder()
+				handler(w, r)
+				require.Equal(t, tc.expectedStatuses[i], w.Code, "request %d", i)
+				require.Equal(t, tc.expectedPassed[i], passed, "request %d", i)
+			}
 		})
 	}
 }

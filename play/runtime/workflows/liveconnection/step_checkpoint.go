@@ -104,13 +104,9 @@ func (s *liveState) checkpoint() checkpoint.Checkpoint {
 	for _, participant := range s.participants {
 		participantID := participant.ParticipantID
 		snapshot.Participants = append(snapshot.Participants, participantID)
-		var tokens []string
-		for token := range s.commands[participantID].processed {
-			tokens = append(tokens, token)
-		}
-		slices.Sort(tokens)
-		if tokens != nil {
-			snapshot.ProcessedCommandTokens[participantID] = tokens
+		// Oldest first, so a recovered game forgets the same ones first.
+		if tokens := s.commands[participantID].order; len(tokens) > 0 {
+			snapshot.ProcessedCommandTokens[participantID] = slices.Clone(tokens)
 		}
 		// One the game was not told about yet is still playing in State.
 		if s.presence[participantID].disconnected && !s.disconnectionPending(participantID) {

@@ -119,7 +119,7 @@ func TestAttachAdmin(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			deps := dependencies{sessions: NewMockadminJoinChecker(ctrl), manifests: NewMockmanifestLoader(ctrl)}
 			tc := setup(t, deps)
-			resolver := New(deps.sessions, nil, deps.manifests, nil, nil, nil, nil, nil, nil, nil, nil, ownersReleasing(t, sessionUUID, 1, 2))
+			resolver := New(0, deps.sessions, nil, deps.manifests, nil, nil, nil, nil, nil, nil, nil, nil, ownersReleasing(t, sessionUUID, 1, 2))
 			t.Cleanup(resolver.Close)
 			if tc.before != nil {
 				tc.before(resolver)
@@ -161,8 +161,8 @@ func TestAdminConnection(t *testing.T) {
 	player, _, ok := controller.joinLobby(ctx, "player-1")
 	require.True(t, ok)
 
-	first := controller.registerAdmin("creator")
-	second := controller.registerAdmin("creator")
+	first := controller.mustRegisterAdmin("creator")
+	second := controller.mustRegisterAdmin("creator")
 	require.Equal(t, 2, controller.AdminCount())
 
 	update, more := first.NextLobbyUpdate(ctx)

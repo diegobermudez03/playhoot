@@ -7,6 +7,7 @@ import (
 
 	"github.com/diegobermudez03/playhoot/monitoring/metrics"
 	"github.com/diegobermudez03/playhoot/play/runtime"
+	"github.com/diegobermudez03/playhoot/utils/ratelimit"
 )
 
 var (
@@ -15,11 +16,12 @@ var (
 		string(runtime.CommandAlreadyProcessed),
 		string(runtime.CommandInvalid),
 		string(runtime.CommandNotRunning),
+		string(runtime.CommandRateLimited),
 	)
 
 	commandsReceived = metrics.NewCounter(
 		"play_runtime_commands_total",
-		"COMMANDs received, by outcome: executed, token already executed, invalid against the manifest, or no game running.",
+		"COMMANDs received, by outcome: executed, token already executed, invalid against the manifest, no game running, or refused by a limit.",
 		commandOutcomeLabel,
 	)
 	commandDuration = metrics.NewHistogram(
@@ -31,18 +33,27 @@ var (
 )
 
 // participantCommands is one participant's COMMAND tokens: those waiting in
-// the timeline, and every one executed in the Session, kept for its lifetime.
+// the timeline, and the latest ones executed in the Session, oldest first, up
+// to a maximum; and how often they may send one.
 type participantCommands struct {
 	pending   map[string]*pendingCommand
 	processed map[string]bool
+	order     []string
+	keep      int
+	rate      *ratelimit.Limiter
 }
 
 // newParticipantCommands starts a participant's tokens with processed, the
-// ones already executed.
-func newParticipantCommands(processed []string) *participantCommands {
-	tokens := &participantCommands{pending: make(map[string]*pendingCommand), processed: make(map[string]bool, len(processed))}
+// ones already executed, oldest first.
+func newParticipantCommands(processed []string, limits liveLimits) *participantCommands {
+	tokens := &participantCommands{
+		pending:   make(map[string]*pendingCommand),
+		processed: make(map[string]bool, len(processed)),
+		keep:      limits.processedTokens,
+		rate:      ratelimit.New(limits.participantCommands...),
+	}
 	for _, token := range processed {
-		tokens.processed[token] = true
+		tokens.remember(token)
 	}
 	return tokens
 }
@@ -50,8 +61,23 @@ func newParticipantCommands(processed []string) *participantCommands {
 // executed moves a pending command's token to processed once it executed.
 func (t *participantCommands) executed(command *pendingCommand, response []byte) {
 	delete(t.pending, command.token)
-	t.processed[command.token] = true
+	t.remember(command.token)
 	command.resolve(runtime.CommandExecuted, response)
+}
+
+// remember keeps token as executed, forgetting the oldest beyond the
+// maximum: a retry that late is not a retry anymore.
+func (t *participantCommands) remember(token string) {
+	if t.processed[token] {
+		return
+	}
+	t.processed[token] = true
+	t.order = append(t.order, token)
+	for len(t.order) > t.keep {
+		delete(t.processed, t.order[0])
+		t.order[0] = ""
+		t.order = t.order[1:]
+	}
 }
 
 // abandonPending answers every pending command as no longer running; their
@@ -84,8 +110,9 @@ func (p *pendingCommand) resolve(outcome runtime.CommandOutcome, response []byte
 }
 
 // acceptCommand runs a player's COMMAND and waits for its answer. It is
-// checked against the manifest before any JavaScript, executed once per
-// token at its place in the timeline, and asks for a boundary at once.
+// checked against the manifest and the limits before any JavaScript, executed
+// once per token at its place in the timeline, and asks for a boundary at
+// once. One refused by a limit leaves its token unused.
 func (c *sessionController) acceptCommand(ctx context.Context, player *connection, command runtime.Command) (runtime.CommandResult, error) {
 	received := time.Now()
 	result, err := c.runCommand(ctx, player, command)
@@ -120,9 +147,14 @@ func (c *sessionController) runCommand(ctx context.Context, player *connection, 
 	}
 	pending, duplicate := tokens.pending[command.Token]
 	if !duplicate {
+		if limit := s.commandRoom(player.participantID); limit != "" {
+			c.unlock()
+			refused(ctx, limit)
+			return answer(runtime.CommandRateLimited), nil
+		}
 		pending = &pendingCommand{token: command.Token, name: command.Name, payload: payload, done: make(chan struct{})}
 		tokens.pending[command.Token] = pending
-		s.enqueue(Operation{ParticipantID: player.participantID, Command: pending})
+		s.enqueuePlayer(Operation{ParticipantID: player.participantID, Command: pending})
 		s.recordActivity()
 	}
 	c.unlock()

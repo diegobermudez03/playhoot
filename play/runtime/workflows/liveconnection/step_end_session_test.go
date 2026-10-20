@@ -70,7 +70,7 @@ func TestEndSession(t *testing.T) {
 			tc := setup(t, ends)
 			controller, players, _ := runningController(t, map[string][]byte{"P1": []byte(`{}`)}, "user-a")
 			controller.deps.ends = ends
-			admin := controller.registerAdmin("creator")
+			admin := controller.mustRegisterAdmin("creator")
 			onEnded := false
 
 			_, err := controller.endSession(ctx, end, func(*liveState) { onEnded = true })

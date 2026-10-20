@@ -24,6 +24,8 @@ var (
 		string(runtime.RejectNotCreator),
 		string(runtime.RejectSessionUnavailable),
 		string(runtime.RejectOwnerChanged),
+		string(runtime.RejectTooManyAdmins),
+		string(runtime.RejectServerBusy),
 	)
 
 	adminAttaches = metrics.NewCounter(
@@ -37,9 +39,9 @@ var (
 // under ownerEpoch, creating the controller if it has none. An error means
 // admission could not be decided.
 func (r *ControllerResolver) AttachAdmin(ctx context.Context, sessionUUID string, userUUID string, ownerEpoch int64) (runtime.AttachAdminResult, error) {
-	sessionController, ok := r.controllerFor(ctx, sessionUUID, ownerEpoch)
-	if !ok {
-		return rejectAdmin(ctx, runtime.RejectOwnerChanged), nil
+	sessionController, rejection := r.controllerFor(ctx, sessionUUID, ownerEpoch)
+	if sessionController == nil {
+		return rejectAdmin(ctx, rejection), nil
 	}
 	return sessionController.attachAdmin(ctx, userUUID)
 }
@@ -73,8 +75,13 @@ func (c *sessionController) attachAdmin(ctx context.Context, userUUID string) (r
 			return rejectAdmin(ctx, runtime.RejectSessionUnavailable), nil
 		}
 	}
+	admin, registered := c.registerAdmin(userUUID)
+	if !registered {
+		limitRejections.Inc(ctx, limitLabel.Value(limitAdminConnections))
+		return rejectAdmin(ctx, runtime.RejectTooManyAdmins), nil
+	}
 	adminAttaches.Inc(ctx, attachOutcomeLabel.Value("accepted"))
-	return runtime.AttachAdminResult{Outcome: runtime.AttachAccepted, Connection: c.registerAdmin(userUUID)}, nil
+	return runtime.AttachAdminResult{Outcome: runtime.AttachAccepted, Connection: admin}, nil
 }
 
 func rejectAdmin(ctx context.Context, reason runtime.RejectReason) runtime.AttachAdminResult {
@@ -83,12 +90,17 @@ func rejectAdmin(ctx context.Context, reason runtime.RejectReason) runtime.Attac
 }
 
 // registerAdmin registers userUUID's admin connection and returns its
-// operations. Several admin connections of the same creator may be attached
-// at once. Before the game runs, the first lobby update is the lobby as it is
+// operations; false when the Session has as many admin connections as it
+// allows. Several admin connections of the same creator may be attached at
+// once. Before the game runs, the first lobby update is the lobby as it is
 // now.
-func (c *sessionController) registerAdmin(userUUID string) runtime.AdminConnection {
+func (c *sessionController) registerAdmin(userUUID string) (runtime.AdminConnection, bool) {
 	admin := newConnection(uuid.NewString(), userUUID)
 	s := c.lock()
+	if len(s.admins) >= c.deps.liveLimits.admins {
+		c.unlock()
+		return runtime.AdminConnection{}, false
+	}
 	switch s.phase {
 	case phaseLobby, phaseStarting:
 		admin.lobbyUpdates.publish(s.lobbyUpdate())
@@ -129,5 +141,5 @@ func (c *sessionController) registerAdmin(userUUID string) runtime.AdminConnecti
 			c.unlock()
 			admin.end(runtime.EndDisconnected)
 		},
-	}
+	}, true
 }

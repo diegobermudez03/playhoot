@@ -14,6 +14,7 @@ import (
 	"github.com/diegobermudez03/playhoot/play/internal/business/inputs"
 	"github.com/diegobermudez03/playhoot/play/runtime"
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
+	"github.com/diegobermudez03/playhoot/utils/ratelimit"
 )
 
 //go:generate mockgen -package=liveconnection -destination=controller_mock_test.go . manifestLoader,ownerReleaser
@@ -143,7 +144,9 @@ type controllerDependencies struct {
 	// contextIdleTimeout is how long an unused sandbox context of a game
 	// without update() is kept.
 	contextIdleTimeout time.Duration
-	logger             *slog.Logger
+	// liveLimits bound what players and the platform may ask of the Session.
+	liveLimits liveLimits
+	logger     *slog.Logger
 }
 
 // sessionController is one live Session on its owner instance. Connections
@@ -190,6 +193,10 @@ type sessionController struct {
 	// own goroutine, which the main goroutine runs and stops.
 	checkpointWriter *checkpointWriter
 
+	// boundaryRate bounds how often boundaries run; only the main goroutine
+	// uses it.
+	boundaryRate *ratelimit.Limiter
+
 	// operations are run by the main goroutine, in order.
 	operations chan func()
 	// flush asks the main goroutine for a boundary before the next tick.
@@ -210,6 +217,9 @@ func newSessionController(root context.Context, sessionUUID string, epoch int64,
 		state: liveState{
 			now:            deps.now,
 			transportGrace: deps.transportGrace,
+			limits:         deps.liveLimits,
+			queued:         make(map[string]int),
+			commandRate:    ratelimit.New(deps.liveLimits.sessionCommands...),
 			phase:          phaseLobby,
 			admins:         make(map[string]*connection),
 			players:        make(map[string]*connection),
@@ -221,6 +231,7 @@ func newSessionController(root context.Context, sessionUUID string, epoch int64,
 			playedBy:       make(map[string]bool),
 		},
 		checkpointWriter: newCheckpointWriter(),
+		boundaryRate:     ratelimit.New(deps.liveLimits.boundaries...),
 		operations:       make(chan func()),
 		flush:            make(chan struct{}, 1),
 		ended:            make(chan struct{}),
@@ -331,9 +342,9 @@ func (c *sessionController) run() {
 			c.enforceLimits()
 			c.evictIdleContext()
 		case <-ticks:
-			c.runBoundary()
+			c.runTick()
 		case <-c.flush:
-			c.runBoundary()
+			c.runRequestedBoundary()
 		}
 		if ticker == nil && c.isRunning() {
 			ticker = time.NewTicker(c.deps.tickInterval)
@@ -359,6 +370,25 @@ func (c *sessionController) do(ctx context.Context, operation func()) bool {
 	}
 	// Once begun it always finishes, so its result is never lost.
 	<-finished
+	return true
+}
+
+// runTick runs the boundary of a tick. A tick always runs, so a game never
+// stops, but it counts against the Session's boundary rate.
+func (c *sessionController) runTick() {
+	c.boundaryRate.Record(c.deps.now())
+	c.runBoundary()
+}
+
+// runRequestedBoundary runs a boundary something asked for before the next
+// tick, unless the Session already ran as many as its rate allows; then what
+// asked for it waits for the next tick. It reports whether it ran.
+func (c *sessionController) runRequestedBoundary() bool {
+	if allowed, _ := c.boundaryRate.Allow(c.deps.now()); !allowed {
+		boundariesDeferred.Inc(c.root)
+		return false
+	}
+	c.runBoundary()
 	return true
 }
 
@@ -405,6 +435,7 @@ func (c *sessionController) end(s *liveState, ending runtime.ConnectionEnd) {
 	s.phase = phaseEnded
 	s.lobby = nil
 	s.timeline = nil
+	s.recount()
 	for _, tokens := range s.commands {
 		tokens.abandonPending()
 	}
@@ -453,6 +484,8 @@ type liveState struct {
 	// transportGrace is how long a participant without a transport keeps
 	// playing.
 	transportGrace time.Duration
+	// limits bound what players may ask of the Session.
+	limits liveLimits
 
 	phase  phase
 	admins map[string]*connection
@@ -497,6 +530,12 @@ type liveState struct {
 	// timeline holds the operations accepted and not yet executed, in order.
 	timeline  []Operation
 	nextOrder uint64
+	// queued counts the players' own operations in the timeline, by
+	// ParticipantID, and queuedTotal all of them.
+	queued      map[string]int
+	queuedTotal int
+	// commandRate bounds the COMMANDs of the whole Session.
+	commandRate *ratelimit.Limiter
 }
 
 // Operation is one entry of the Session's single timeline, at the effective
@@ -515,6 +554,14 @@ type Operation struct {
 	Command      *pendingCommand
 	Disconnected bool
 	Rejoin       *pendingRejoin
+
+	// fromPlayer marks an operation a player sent, which the timeline's
+	// limits count; the platform's own are never refused.
+	fromPlayer bool
+	// sampleStream and sampleSequence are the connection and SAMPLE an input
+	// transition came from; empty for the platform's own transitions.
+	sampleStream   string
+	sampleSequence int64
 }
 
 // runsAlone reports whether the operation is its own call, at its own time,

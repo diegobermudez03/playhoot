@@ -33,7 +33,7 @@ func TestOfferCheckpoint(t *testing.T) {
 	base := checkpoint.Checkpoint{
 		GameVersionUUID: "game-version", ContextRevision: 4, ExecutedThroughSessionTimeMs: 900,
 		State: []byte(`{"round":2}`), PRNGState: []byte{3, 0, 0, 0}, Participants: []string{"P1", "P2"},
-		ProcessedCommandTokens: map[string][]string{"P1": {"a", "b"}},
+		ProcessedCommandTokens: map[string][]string{"P1": {"b", "a"}},
 	}
 
 	tests := map[string]func(t *testing.T) test{
@@ -82,7 +82,7 @@ func TestOfferCheckpoint(t *testing.T) {
 	for name, setup := range tests {
 		t.Run(name, func(t *testing.T) {
 			tc := setup(t)
-			controller, players, clock := runningControllerWithTokens(t, map[string][]byte{"P1": []byte(`{}`), "P2": []byte(`{}`)}, map[string][]string{"P1": {"b", "a"}}, "user-a", "user-b")
+			controller, players, clock := runningControllerWithTokens(t, map[string][]byte{"P1": []byte(`{}`), "P2": []byte(`{}`)}, map[string][]string{"P1": {"b", "a"}}, nil, "user-a", "user-b")
 			controller.deps.checkpointInterval = 5 * time.Second
 			tc.play(t, controller, players, clock)
 

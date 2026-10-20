@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"testing"
 	"time"
@@ -32,8 +33,19 @@ func testDependencies() *controllerDependencies {
 		contextIdleTimeout: time.Hour,
 		limitsInterval:     time.Hour,
 		inactivityTimeout:  10 * time.Minute,
+		liveLimits:         defaultLiveLimits(),
 		logger:             slog.Default(),
 	}
+}
+
+// mustRegisterAdmin registers userUUID's admin connection, which the test
+// expects to fit within the Session's limit.
+func (c *sessionController) mustRegisterAdmin(userUUID string) runtime.AdminConnection {
+	admin, registered := c.registerAdmin(userUUID)
+	if !registered {
+		panic("admin connection limit reached")
+	}
+	return admin
 }
 
 // ownersReleasing returns an owner releaser that may be asked once per epoch
@@ -131,8 +143,12 @@ func TestControllerFor(t *testing.T) {
 		// registered for the Session.
 		existingEpoch int64
 		epoch         int64
+		// maxLiveSessions bounds the resolver, and otherSessions are the live
+		// Sessions it already runs besides this one.
+		maxLiveSessions int
+		otherSessions   int
 
-		expectedOK bool
+		expectedRejection runtime.RejectReason
 		// expectedReplaced means the existing controller was retired and a
 		// new one returned.
 		expectedReplaced bool
@@ -146,16 +162,22 @@ func TestControllerFor(t *testing.T) {
 
 	tests := map[string]func(t *testing.T) test{
 		"no_controller_creates_one_without_asking_anything": func(t *testing.T) test {
-			return test{epoch: 1, expectedOK: true, expectedCreations: 1}
+			return test{epoch: 1, expectedCreations: 1}
 		},
 		"existing_controller_under_the_same_epoch_is_reused": func(t *testing.T) test {
-			return test{existingEpoch: 1, epoch: 1, expectedOK: true}
+			return test{existingEpoch: 1, epoch: 1}
 		},
 		"older_epoch_than_the_existing_controller_is_refused": func(t *testing.T) test {
-			return test{existingEpoch: 2, epoch: 1}
+			return test{existingEpoch: 2, epoch: 1, expectedRejection: runtime.RejectOwnerChanged}
+		},
+		"an_instance_running_as_many_sessions_as_it_may_refuses_another": func(t *testing.T) test {
+			return test{epoch: 1, maxLiveSessions: 2, otherSessions: 2, expectedRejection: runtime.RejectServerBusy}
+		},
+		"an_instance_at_its_maximum_still_serves_the_sessions_it_runs": func(t *testing.T) test {
+			return test{existingEpoch: 1, epoch: 1, maxLiveSessions: 2, otherSessions: 1}
 		},
 		"newer_epoch_retires_and_replaces_the_existing_controller": func(t *testing.T) test {
-			return test{existingEpoch: 1, epoch: 2, expectedOK: true, expectedReplaced: true, expectedCreations: 1}
+			return test{existingEpoch: 1, epoch: 2, expectedReplaced: true, expectedCreations: 1}
 		},
 	}
 
@@ -163,24 +185,32 @@ func TestControllerFor(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			tc := setup(t)
 			// Nothing to call: finding or creating a controller asks no one.
-			resolver := New(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ownersReleasing(t, sessionUUID, 1, 2))
+			owners := ownersReleasing(t, sessionUUID, 1, 2)
+			for i := range tc.otherSessions {
+				owners.EXPECT().ReleaseOwner(gomock.Any(), fmt.Sprintf("other-%d", i), int64(1)).Return(nil).MaxTimes(1)
+			}
+			resolver := New(tc.maxLiveSessions, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, owners)
 			t.Cleanup(resolver.Close)
+			for i := range tc.otherSessions {
+				_, rejection := resolver.controllerFor(ctx, fmt.Sprintf("other-%d", i), 1)
+				require.Empty(t, rejection)
+			}
 			var existing *sessionController
 			var existingAdmin runtime.AdminConnection
 			var existingPlayer runtime.PlayerConnection
 			if tc.existingEpoch != 0 {
 				existing, _ = resolver.controllerFor(ctx, sessionUUID, tc.existingEpoch)
 				withManifest(existing, Manifest{MaxPlayers: 6})
-				existingAdmin = existing.registerAdmin("creator")
+				existingAdmin, _ = existing.registerAdmin("creator")
 				existingPlayer, _, _ = existing.joinLobby(ctx, "player")
 			}
 
 			logCtx := logging.Start(ctx)
-			controller, ok := resolver.controllerFor(logCtx, sessionUUID, tc.epoch)
+			controller, rejection := resolver.controllerFor(logCtx, sessionUUID, tc.epoch)
 
 			require.Equal(t, tc.expectedCreations, recordedCreations(t, logCtx))
-			require.Equal(t, tc.expectedOK, ok)
-			if !tc.expectedOK {
+			require.Equal(t, tc.expectedRejection, rejection)
+			if tc.expectedRejection != "" {
 				require.Nil(t, controller)
 				return
 			}
@@ -364,7 +394,7 @@ func TestRun(t *testing.T) {
 			}),
 		)
 
-		result, err := controller.registerAdmin("creator").StartSession(context.Background())
+		result, err := controller.mustRegisterAdmin("creator").StartSession(context.Background())
 
 		require.NoError(t, err)
 		require.Equal(t, runtime.StartSessionResult{Outcome: runtime.SessionStarted}, result)
