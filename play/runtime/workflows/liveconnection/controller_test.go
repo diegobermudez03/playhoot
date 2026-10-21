@@ -34,14 +34,22 @@ func testDependencies() *controllerDependencies {
 		limitsInterval:     time.Hour,
 		inactivityTimeout:  10 * time.Minute,
 		liveLimits:         defaultLiveLimits(),
+		frontends:          fixedFrontends{},
 		logger:             slog.Default(),
 	}
+}
+
+// fixedFrontends signs every frontend access as the same, empty one.
+type fixedFrontends struct{}
+
+func (fixedFrontends) FrontendAccess(context.Context, string) (sessionpkg.FrontendAccess, error) {
+	return sessionpkg.FrontendAccess{}, nil
 }
 
 // mustRegisterAdmin registers userUUID's admin connection, which the test
 // expects to fit within the Session's limit.
 func (c *sessionController) mustRegisterAdmin(userUUID string) runtime.AdminConnection {
-	admin, registered := c.registerAdmin(userUUID)
+	admin, registered := c.registerAdmin(userUUID, nil)
 	if !registered {
 		panic("admin connection limit reached")
 	}
@@ -201,7 +209,7 @@ func TestControllerFor(t *testing.T) {
 			if tc.existingEpoch != 0 {
 				existing, _ = resolver.controllerFor(ctx, sessionUUID, tc.existingEpoch)
 				withManifest(existing, Manifest{MaxPlayers: 6})
-				existingAdmin, _ = existing.registerAdmin("creator")
+				existingAdmin, _ = existing.registerAdmin("creator", nil)
 				existingPlayer, _, _ = existing.joinLobby(ctx, runtime.Player{UserUUID: "player"})
 			}
 

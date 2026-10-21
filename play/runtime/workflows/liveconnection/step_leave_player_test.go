@@ -42,7 +42,7 @@ func TestLeave(t *testing.T) {
 		"replaced_connection_leaving_changes_nothing": func(t *testing.T) test {
 			return test{
 				leaving: func(t *testing.T, controller *sessionController, players map[string]runtime.PlayerConnection) runtime.PlayerConnection {
-					_, participant, _ := controller.reattachPlayer(ctx, runtime.Player{UserUUID: "user-a"})
+					_, participant, _ := controller.reattachPlayer(ctx, runtime.Player{UserUUID: "user-a"}, nil)
 					require.True(t, participant)
 					return players["user-a"]
 				},

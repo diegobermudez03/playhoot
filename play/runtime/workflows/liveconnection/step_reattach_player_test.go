@@ -124,7 +124,7 @@ func TestReattachedConnectionNumbersItsSamplesAnew(t *testing.T) {
 	require.NoError(t, older.Sample(ctx, sample(40, `{"move":[1,0]}`)))
 	inFlight, _ := controller.takeBoundary()
 
-	reattached, participant, _ := controller.reattachPlayer(ctx, runtime.Player{UserUUID: "user-a"})
+	reattached, participant, _ := controller.reattachPlayer(ctx, runtime.Player{UserUUID: "user-a"}, nil)
 	require.True(t, participant)
 	newer := reattached.Connection
 	_, ok := newer.NextView(ctx)

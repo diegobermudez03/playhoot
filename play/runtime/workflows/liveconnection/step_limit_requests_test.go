@@ -128,12 +128,12 @@ func TestRegisterAdminBeyondTheSessionsLimit(t *testing.T) {
 	first := controller.mustRegisterAdmin("creator")
 	controller.mustRegisterAdmin("creator")
 
-	_, registered := controller.registerAdmin("creator")
+	_, registered := controller.registerAdmin("creator", nil)
 	require.False(t, registered)
 	require.Equal(t, 2, controller.AdminCount())
 
 	first.Disconnect()
-	_, registered = controller.registerAdmin("creator")
+	_, registered = controller.registerAdmin("creator", nil)
 	require.True(t, registered, "a disconnected admin gives its place back")
 }
 

@@ -73,7 +73,7 @@ func TestParticipantWithoutConnectionAtStartGetsTheGrace(t *testing.T) {
 	gone.Disconnect()
 	controller.completeStart(participants, Game{ContextRevision: 1, State: []byte(`{}`)}, runtime.GameFrontend{}, map[string][]byte{"P1": []byte(`{}`), "P2": []byte(`{}`)}, nil)
 
-	reattached, participant, _ := controller.reattachPlayer(ctx, runtime.Player{UserUUID: "user-b"})
+	reattached, participant, _ := controller.reattachPlayer(ctx, runtime.Player{UserUUID: "user-b"}, nil)
 	require.True(t, participant)
 	require.Equal(t, runtime.AttachAccepted, reattached.Outcome, "within the grace they may still come")
 	reattached.Connection.Disconnect()
@@ -164,7 +164,7 @@ func TestRosterUpdates(t *testing.T) {
 			return test{
 				change: func(t *testing.T, controller *sessionController, players map[string]runtime.PlayerConnection, _ *testClock) {
 					players["user-b"].Disconnect()
-					_, participant, _ := controller.reattachPlayer(context.Background(), runtime.Player{UserUUID: "user-b", DisplayName: "Bruno"})
+					_, participant, _ := controller.reattachPlayer(context.Background(), runtime.Player{UserUUID: "user-b", DisplayName: "Bruno"}, nil)
 					require.True(t, participant)
 				},
 				expected: rosterOf(runtime.PresenceActive, runtime.PresenceActive),

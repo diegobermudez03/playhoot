@@ -215,7 +215,7 @@ func TestRecoveredGameResumesWhereItsCheckpointWas(t *testing.T) {
 	controller.unlock()
 
 	// P2 comes back only by rejoining, which this game does not support.
-	rejected, participant, disconnected := controller.reattachPlayer(context.Background(), runtime.Player{UserUUID: "user-b"})
+	rejected, participant, disconnected := controller.reattachPlayer(context.Background(), runtime.Player{UserUUID: "user-b"}, nil)
 	require.True(t, participant)
 	require.True(t, disconnected)
 	require.Equal(t, runtime.AttachPlayerResult{}, rejected)
@@ -247,7 +247,7 @@ func TestRecoveryWindow(t *testing.T) {
 			_, err := controller.recoverSession(context.Background())
 			require.NoError(t, err)
 			if tc.returns {
-				_, participant, disconnected := controller.reattachPlayer(context.Background(), runtime.Player{UserUUID: "user-a"})
+				_, participant, disconnected := controller.reattachPlayer(context.Background(), runtime.Player{UserUUID: "user-a"}, nil)
 				require.True(t, participant)
 				require.False(t, disconnected)
 			}
@@ -278,6 +278,8 @@ func TestConcurrentReconnectionsRecoverOnce(t *testing.T) {
 	players.EXPECT().EligibleToJoinAsPlayer(anyCtx, setup.sessionUUID).Return(sessionpkg.PlayerJoinSessionStarted, nil).MinTimes(1).MaxTimes(2)
 	manifests.EXPECT().LoadRuntimeManifest(anyCtx, setup.sessionUUID).Return(sessionpkg.RuntimeManifest{MinPlayers: 1, MaxPlayers: 4}, nil)
 	gomock.InOrder(mocks.recovers(setup)...)
+	// Each participant attaching to the recovered game is told access signed for them.
+	mocks.frontends.EXPECT().FrontendAccess(anyCtx, boundaryGameVersion).Return(freshAccess, nil).MinTimes(1).MaxTimes(2)
 	resolver := New(0, nil, players, manifests, mocks.limits, mocks.starts, mocks.ends, nil, heartbeatsRecorded(t, setup.sessionUUID), mocks.frontends, mocks.sandbox, mocks.replay, ownersReleasing(t, setup.sessionUUID, 1))
 	resolver.deps.now = func() time.Time { return setup.now }
 	t.Cleanup(resolver.Close)
@@ -305,6 +307,7 @@ func TestConcurrentReconnectionsRecoverOnce(t *testing.T) {
 	start, ok := startedWith(t, results[0].Connection.Started)
 	require.True(t, ok)
 	require.Equal(t, "P1", start.ParticipantID)
+	require.Equal(t, frontendOf(freshAccess), start.Frontend, "access signed for this connection")
 	view, ok := results[0].Connection.NextView(context.Background())
 	require.True(t, ok)
 	require.Equal(t, runtime.OwnView{PlayerView: runtime.PlayerView{ParticipantID: "P1", Full: true, Revision: 1, State: []byte(`{"me":1}`)}}, view)
@@ -320,6 +323,7 @@ func TestAdminReconnectionRecovers(t *testing.T) {
 		admins.EXPECT().EligibleToJoinAsAdmin(anyCtx, setup.sessionUUID, "creator").Return(sessionpkg.AdminJoinEligibleRunning, nil),
 		manifests.EXPECT().LoadRuntimeManifest(anyCtx, setup.sessionUUID).Return(sessionpkg.RuntimeManifest{MinPlayers: 1, MaxPlayers: 4}, nil),
 	}, mocks.recovers(setup)...)...)
+	mocks.frontends.EXPECT().FrontendAccess(anyCtx, boundaryGameVersion).Return(freshAccess, nil)
 	resolver := New(0, admins, nil, manifests, mocks.limits, mocks.starts, mocks.ends, nil, heartbeatsRecorded(t, setup.sessionUUID), mocks.frontends, mocks.sandbox, mocks.replay, ownersReleasing(t, setup.sessionUUID, 1))
 	resolver.deps.now = func() time.Time { return setup.now }
 	t.Cleanup(resolver.Close)
@@ -333,4 +337,8 @@ func TestAdminReconnectionRecovers(t *testing.T) {
 	start, ok := startedWith(t, result.Connection.Started)
 	require.True(t, ok, "the admin sees the recovered game as started")
 	require.Equal(t, []runtime.Participant{{ParticipantID: "P1", UserUUID: "user-a"}, {ParticipantID: "P2", UserUUID: "user-b"}}, start.Participants)
+	require.Equal(t, frontendOf(freshAccess), start.Frontend, "access signed for this connection")
 }
+
+// freshAccess is frontend access signed after the game started, for a joining connection.
+var freshAccess = sessionpkg.FrontendAccess{URL: "https://storage.example/frontend?sig=fresh", SHA256: "9f86d081", ExpiresAt: time.Date(2026, 10, 18, 13, 0, 0, 0, time.UTC)}

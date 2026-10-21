@@ -75,7 +75,7 @@ func (c *sessionController) attachAdmin(ctx context.Context, userUUID string) (r
 			return rejectAdmin(ctx, runtime.RejectSessionUnavailable), nil
 		}
 	}
-	admin, registered := c.registerAdmin(userUUID)
+	admin, registered := c.admitAdmin(ctx, userUUID)
 	if !registered {
 		limitRejections.Inc(ctx, limitLabel.Value(limitAdminConnections))
 		return rejectAdmin(ctx, runtime.RejectTooManyAdmins), nil
@@ -89,12 +89,21 @@ func rejectAdmin(ctx context.Context, reason runtime.RejectReason) runtime.Attac
 	return runtime.AttachAdminResult{Outcome: runtime.AttachRejected, Rejection: reason}
 }
 
+// admitAdmin registers userUUID's admin connection, told a start with frontend
+// access signed now when the game runs (see signedStart).
+func (c *sessionController) admitAdmin(ctx context.Context, userUUID string) (runtime.AdminConnection, bool) {
+	var signed *runtime.SessionStart
+	if start, ok := c.signedStart(ctx, func(*liveState) bool { return true }); ok {
+		signed = &start
+	}
+	return c.registerAdmin(userUUID, signed)
+}
+
 // registerAdmin registers userUUID's admin connection and returns its
 // operations; false when the Session has as many admin connections as it
-// allows. Several admin connections of the same creator may be attached at
-// once. Before the game runs, the first lobby update is the lobby as it is
-// now.
-func (c *sessionController) registerAdmin(userUUID string) (runtime.AdminConnection, bool) {
+// allows. Several of the same creator may be attached at once. A running
+// game's start is told as signed when set, as stored otherwise.
+func (c *sessionController) registerAdmin(userUUID string, signed *runtime.SessionStart) (runtime.AdminConnection, bool) {
 	admin := newConnection(uuid.NewString(), runtime.Player{UserUUID: userUUID})
 	s := c.lock()
 	if len(s.admins) >= c.deps.liveLimits.admins {
@@ -107,7 +116,11 @@ func (c *sessionController) registerAdmin(userUUID string) (runtime.AdminConnect
 	case phaseEnded:
 		admin.end(runtime.EndSessionEnded)
 	default:
-		admin.markStarted(s.start)
+		start := s.start
+		if signed != nil {
+			start = *signed
+		}
+		admin.markStarted(start)
 	}
 	if s.phase != phaseEnded {
 		s.admins[admin.id] = admin

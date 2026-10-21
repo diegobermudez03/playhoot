@@ -13,10 +13,10 @@ import (
 const attachReattached = "reattached"
 
 // reattachPlayer takes player's new connection into the game they play,
-// without telling it: any older connection is replaced, inputs reset, and a
-// FULL view sent. participant is false when they play no game here;
-// disconnected means they must rejoin first, and nothing was attached.
-func (c *sessionController) reattachPlayer(ctx context.Context, player runtime.Player) (result runtime.AttachPlayerResult, participant bool, disconnected bool) {
+// without telling it: any older connection is replaced, inputs reset, a FULL
+// view sent, and the start told as signed when set. participant is false when
+// they play no game here; disconnected means they must rejoin first.
+func (c *sessionController) reattachPlayer(ctx context.Context, player runtime.Player, signed *runtime.SessionStart) (result runtime.AttachPlayerResult, participant bool, disconnected bool) {
 	s := c.lock()
 	defer c.unlock()
 	if s.phase != phaseRunning {
@@ -44,7 +44,11 @@ func (c *sessionController) reattachPlayer(ctx context.Context, player runtime.P
 	s.inputs[participantID].follow(attached.id)
 	s.sendFull(ctx, attached, participantID)
 	// Last, so everything above is visible to whoever sees the start.
-	attached.markStarted(s.start)
+	start := s.start
+	if signed != nil {
+		start = *signed
+	}
+	attached.markStarted(start)
 	s.broadcastRoster()
 
 	playerAttaches.Inc(ctx, playerAttachOutcomeLabel.Value(attachReattached))

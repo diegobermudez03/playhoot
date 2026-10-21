@@ -45,7 +45,14 @@ func (p *pendingRejoin) resolve(outcome string) {
 // them back when they were disconnected. participant is false when this
 // controller runs no game player plays.
 func (c *sessionController) attachParticipant(ctx context.Context, player runtime.Player) (result runtime.AttachPlayerResult, participant bool, err error) {
-	result, participant, disconnected := c.reattachPlayer(ctx, player)
+	var signed *runtime.SessionStart
+	if start, ok := c.signedStart(ctx, func(s *liveState) bool {
+		_, found := s.participantOf(player.UserUUID)
+		return found
+	}); ok {
+		signed = &start
+	}
+	result, participant, disconnected := c.reattachPlayer(ctx, player, signed)
 	if !disconnected {
 		return result, participant, nil
 	}
@@ -63,7 +70,7 @@ func (c *sessionController) attachParticipant(ctx context.Context, player runtim
 	default:
 		return rejectPlayer(ctx, runtime.RejectSessionUnavailable), true, nil
 	}
-	result, _, disconnected = c.reattachPlayer(ctx, player)
+	result, _, disconnected = c.reattachPlayer(ctx, player, signed)
 	if disconnected {
 		// Accepted, then disconnected again before this connection attached.
 		return rejectPlayer(ctx, runtime.RejectParticipantDisconnected), true, nil
