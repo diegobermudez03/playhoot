@@ -1,0 +1,152 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Parqués</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #1b2b22;
+        color: #f4f1e8;
+        font-family: system-ui, sans-serif;
+        user-select: none;
+        touch-action: manipulation;
+      }
+      #app {
+        display: grid;
+        grid-template-rows: minmax(0, 1fr) auto;
+        height: 100%;
+      }
+      @media (min-aspect-ratio: 5/4) {
+        #app {
+          grid-template-rows: none;
+          grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
+        }
+      }
+      #stage {
+        position: relative;
+        min-width: 0;
+        min-height: 0;
+      }
+      #board {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        cursor: pointer;
+      }
+      #hud {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 12px;
+        background: rgba(0, 0, 0, 0.25);
+        min-height: 0;
+        overflow: hidden;
+      }
+      #status {
+        font-size: 1.15rem;
+        font-weight: 700;
+      }
+      #timer {
+        height: 4px;
+        border-radius: 2px;
+        background: rgba(255, 255, 255, 0.15);
+        overflow: hidden;
+      }
+      #timer > div {
+        height: 100%;
+        background: #f4f1e8;
+      }
+      #players {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        font-size: 0.85rem;
+      }
+      .player {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        padding: 3px 8px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.08);
+      }
+      .player.turn {
+        outline: 2px solid #f4f1e8;
+      }
+      .player.away {
+        opacity: 0.45;
+      }
+      .swatch {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+      }
+      #dice {
+        display: flex;
+        gap: 10px;
+        font-size: 3rem;
+        line-height: 1;
+        min-height: 3rem;
+      }
+      #dice .used {
+        opacity: 0.3;
+      }
+      #actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      button {
+        font: inherit;
+        font-weight: 700;
+        padding: 10px 16px;
+        border: 0;
+        border-radius: 10px;
+        background: #f4f1e8;
+        color: #1b2b22;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+      #hint {
+        min-height: 1.2em;
+        font-size: 0.9rem;
+        opacity: 0.85;
+      }
+      #log {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        font-size: 0.85rem;
+        opacity: 0.8;
+        overflow: hidden;
+      }
+      #log li {
+        padding: 2px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div id="stage"><canvas id="board"></canvas></div>
+      <div id="hud">
+        <div id="status"></div>
+        <div id="timer"><div></div></div>
+        <div id="players"></div>
+        <div id="dice"></div>
+        <div id="actions"></div>
+        <div id="hint"></div>
+        <ul id="log"></ul>
+      </div>
+    </div>
+    <script>(function(){var e=`playhoot.bridge`,t=[1],n={maxMessageBytes:32768,maxCommandNameLength:64,maxAssetKeyLength:128,maxRequestId:2**53-1};function r(e){return typeof e==`object`&&!!e&&e.bridge===`playhoot.bridge`&&typeof e.type==`string`}function i(){return{post(e){window.parent.postMessage(e,`*`)},listen(e){let t=t=>{t.source===window.parent&&e(t.data)};return window.addEventListener(`message`,t),()=>window.removeEventListener(`message`,t)}}}var a=class extends Error{name=`PlayhootError`};function o(o=i()){let l=new Set,u=new Set,d=new Set,f=new Set,p=new Map,m=new Map,h=new Map,g=null,_=null,v=null,y=!1,b=0,x=0,S=e=>{if(c(e)>n.maxMessageBytes)throw new a(`${e.type} is over the ${n.maxMessageBytes}-byte limit`);o.post(e)},C=e=>{if(e.projection){let t=e.projection;l.forEach(e=>e(t))}e.events.forEach(e=>u.forEach(t=>t(e))),e.errors.forEach(e=>d.forEach(t=>t(e))),f.forEach(t=>t(e))};o.listen(e=>{if(!r(e))return;let t=e;switch(t.type){case`start`:if(y)return;if(y=!0,_?.(t.context),t.projection){let e=t.projection;Promise.resolve().then(()=>C({projection:e,ack:e.ack,events:[],errors:[]}))}return;case`incompatible`:v?.(new a(`this game needs a newer Playhoot`));return;case`update`:if(!y)return;C({...t.projection&&{projection:t.projection},ack:t.ack,events:t.events??[],errors:t.errors??[]});return;case`command_result`:{let e=p.get(t.id);p.delete(t.id),e?.(t.response===void 0?{outcome:t.outcome}:{outcome:t.outcome,response:t.response});return}case`asset`:{let e=m.get(t.id);if(m.delete(t.id),!e)return;if(!t.found){e.reject(new a(`no asset "${t.key}"`));return}let n=URL.createObjectURL(new Blob([t.bytes],{type:t.mimeType}));h.set(t.key,n),e.resolve(n);return}}});let w=e=>{if(!y)throw new a(`${e} before ready() resolved`)};return{ready(){return g||(g=new Promise((e,t)=>{_=e,v=t}),S({bridge:e,type:`ready`,versions:[...t]})),g},onProjection:e=>s(l,e),onEvent:e=>s(u,e),onError:e=>s(d,e),onUpdate:e=>s(f,e),sample(t){return w(`sample()`),b+=1,S({bridge:e,type:`sample`,id:b,inputs:t}),b},command(t,n){w(`command()`),x+=1;let r=x;return new Promise(i=>{p.set(r,i),S({bridge:e,type:`command`,id:r,name:t,...n!==void 0&&{payload:n}})})},requestAsset(t){w(`requestAsset()`);let n=h.get(t);if(n)return Promise.resolve(n);x+=1;let r=x;return new Promise((n,i)=>{m.set(r,{resolve:n,reject:i}),S({bridge:e,type:`request_asset`,id:r,key:t})})}}}function s(e,t){return e.add(t),()=>e.delete(t)}function c(e){return new TextEncoder().encode(JSON.stringify(e)).length}var l={colors:[`Amarillo`,`Azul`,`Rojo`,`Verde`],you:`tú`,yourRoll:`Tu turno: lanza los dados`,yourMove:`Mueve una ficha`,jailTry:e=>`Intento ${e+1} de 3 para sacar pares`,turnOf:e=>`Turno de ${e}`,youWon:`¡Ganaste!`,won:e=>`¡Ganó ${e}!`,roll:`Lanzar dados`,pick:`Elige con qué dado mover, o toca la casilla`,sum:`Suma`,rolled:(e,t,n)=>`${e} sacó ${t} y ${n}`,captured:(e,t)=>`${e} mandó a la cárcel una ficha de ${t}`,released:e=>`${e} sacó sus fichas de la cárcel`,crowned:e=>`¡Tres pares! ${e} corona una ficha`,goal:e=>`${e} llevó una ficha al cielo`,timeout:e=>`${e} se quedó sin tiempo`,left:e=>`${e} se desconectó`,back:e=>`${e} volvió`,refused:{NOT_YOUR_TURN:`No es tu turno`,ALREADY_ROLLED:`Ya lanzaste`,ROLL_FIRST:`Primero lanza los dados`,DIE_USED:`Ese dado ya se usó`,PIECE_CANNOT_MOVE:`Esa ficha no se puede mover`,TOO_FAR:`Te pasas del cielo`,GAME_OVER:`La partida terminó`},failed:`No se pudo enviar, intenta de nuevo`},u={colors:[`Yellow`,`Blue`,`Red`,`Green`],you:`you`,yourRoll:`Your turn: roll the dice`,yourMove:`Move a piece`,jailTry:e=>`Try ${e+1} of 3 to roll a pair`,turnOf:e=>`${e}'s turn`,youWon:`You won!`,won:e=>`${e} won!`,roll:`Roll dice`,pick:`Pick which die to move with, or tap the square`,sum:`Sum`,rolled:(e,t,n)=>`${e} rolled ${t} and ${n}`,captured:(e,t)=>`${e} sent a ${t} piece to jail`,released:e=>`${e} got their pieces out of jail`,crowned:e=>`Three pairs! ${e} crowns a piece`,goal:e=>`${e} brought a piece home`,timeout:e=>`${e} ran out of time`,left:e=>`${e} disconnected`,back:e=>`${e} is back`,refused:{NOT_YOUR_TURN:`Not your turn`,ALREADY_ROLLED:`You already rolled`,ROLL_FIRST:`Roll the dice first`,DIE_USED:`That die is used`,PIECE_CANNOT_MOVE:`That piece cannot move`,TOO_FAR:`That overshoots home`,GAME_OVER:`The game is over`},failed:`Could not send, try again`},d={colors:[`Amarelo`,`Azul`,`Vermelho`,`Verde`],you:`você`,yourRoll:`Sua vez: jogue os dados`,yourMove:`Mova uma peça`,jailTry:e=>`Tentativa ${e+1} de 3 para tirar dupla`,turnOf:e=>`Vez do ${e}`,youWon:`Você venceu!`,won:e=>`${e} venceu!`,roll:`Jogar dados`,pick:`Escolha com qual dado mover, ou toque a casa`,sum:`Soma`,rolled:(e,t,n)=>`${e} tirou ${t} e ${n}`,captured:(e,t)=>`${e} mandou uma peça do ${t} para a prisão`,released:e=>`${e} tirou suas peças da prisão`,crowned:e=>`Três duplas! ${e} coroa uma peça`,goal:e=>`${e} levou uma peça ao céu`,timeout:e=>`${e} ficou sem tempo`,left:e=>`${e} se desconectou`,back:e=>`${e} voltou`,refused:{NOT_YOUR_TURN:`Não é a sua vez`,ALREADY_ROLLED:`Você já jogou`,ROLL_FIRST:`Jogue os dados primeiro`,DIE_USED:`Esse dado já foi usado`,PIECE_CANNOT_MOVE:`Essa peça não pode se mover`,TOO_FAR:`Passa do céu`,GAME_OVER:`A partida terminou`},failed:`Não foi possível enviar, tente de novo`},f={felt:`#1b2b22`,board:`#efe6cf`,square:`#fffaf0`,line:`#5b4a32`,safe:`#5b4a32`,seats:[`#f2c230`,`#2f7fd8`,`#d9363e`,`#2e9e57`],lightSeats:[`#f8e29a`,`#a9c9ef`,`#efa8ab`,`#a5d8b6`],highlight:`#ffffff`},p=[`⚀`,`⚁`,`⚂`,`⚃`,`⚄`,`⚅`],m=[{x:0,y:1},{x:1,y:0},{x:0,y:-1},{x:-1,y:0}],h=document.getElementById(`board`),g=h.getContext(`2d`),_={status:document.getElementById(`status`),timer:document.querySelector(`#timer > div`),players:document.getElementById(`players`),dice:document.getElementById(`dice`),actions:document.getElementById(`actions`),hint:document.getElementById(`hint`),log:document.getElementById(`log`)},v=o(),y=l,b=``,x=null,S=null,C=!1,w={key:``,at:0},T={text:``,until:0},E=[],D=new Map;v.onProjection(e=>{x=e.state,e.full&&D.clear();let t=`${x.turn.player}:${x.turn.deadline}`;t!==w.key&&(w={key:t,at:performance.now()}),S!==null&&!x.moves.some(e=>e.piece===S)&&(S=null),G()}),v.onEvent(e=>{let t=ee(e.event??e);t&&(E.unshift(t),E.length=Math.min(E.length,8),G())}),v.ready().then(e=>{b=e.participantId;let t=e.locale.toLowerCase();y=t.startsWith(`en`)?u:t.startsWith(`pt`)?d:l,L(),G()});function O(){return((x?.board.side??17)-1)/2}function k(){return O()+1}function A(){return x?.players.find(e=>e.id===b)?.seat??0}function j(e){return m[((e-A())%4+4)%4]}function M(e,t,n){let r=j(e),i=j(e+1),a=k();return{x:a+r.x*(1+t)+i.x*n,y:a+r.y*(1+t)+i.y*n}}function N(e){let t=x?.board.side??17,n=O(),r=e%t,i=Math.floor(e/t);return r<n?M(i,r+1,-1):r===n?M(i,n,0):M(i,t-r,1)}function P(e){let t=j(e),n=j(e+1),r=(O()+3)/2;return{x:k()+(t.x+n.x)*r,y:k()+(t.y+n.y)*r}}function F(e,t,n){let r=x.board;if(t<0){let t=P(e);return{x:t.x+(n%2?1:-1)*1.1,y:t.y+(n<2?-1:1)*1.1}}if(t<=r.lap)return N((e*r.side+r.exit+t)%r.ring);if(t<r.goal)return M(e,O()-1-(t-r.lap-1),0);let i=j(e),a=j(e+1),o=(n-1.5)*.3;return{x:k()+i.x*.75+a.x*o,y:k()+i.y*.75+a.y*o}}function I(e){let t=new Map,n=new Map;for(let r of e.players)r.pieces.forEach((i,a)=>{let o=F(r.seat,i,a),s=`${r.id}:${a}`;if(t.set(s,o),i>=0&&i<e.board.goal){let e=`${o.x},${o.y}`;n.set(e,[...n.get(e)??[],s])}});for(let e of n.values())e.length<2||e.forEach((n,r)=>{let i=t.get(n),a=r/e.length*Math.PI*2-Math.PI/4;t.set(n,{x:i.x+Math.cos(a)*.22,y:i.y+Math.sin(a)*.22})});return t}function L(){h.addEventListener(`pointerdown`,e=>{if(!x)return;let{left:t,top:n,cell:r}=Y(),i={x:(e.clientX-h.getBoundingClientRect().left-t)/r-.5,y:(e.clientY-h.getBoundingClientRect().top-n)/r-.5};if(S!==null){let e=H(S).find(e=>$(U(e),i,.55));if(e){B(e);return}}let a=x.players.find(e=>e.id===b)?.pieces.findIndex((e,t)=>x.moves.some(e=>e.piece===t)&&$(D.get(`${b}:${t}`)??{x:-9,y:-9},i,.55));if(a===void 0||a<0)S=null;else{let e=H(a);e.length===1?B(e[0]):S=a}G()}),addEventListener(`keydown`,e=>{(e.code===`Space`||e.code===`Enter`)&&R()&&(e.preventDefault(),z())})}function R(){return!!x&&!C&&!x.winner&&x.turn.player===b&&x.turn.dice===null}function z(){C=!0,G(),v.command(`roll`,{}).then(V)}function B(e){C||(C=!0,S=null,G(),v.command(`move`,{piece:e.piece,die:e.die}).then(V))}function V(e){C=!1;let t=e.response;e.outcome===`executed`?t?.ok||q(y.refused[t?.reason??``]??y.failed):q(y.failed),G()}function H(e){let t=new Set;return(x?.moves??[]).filter(n=>n.piece!==e||t.has(n.to)?!1:(t.add(n.to),!0))}function U(e){return F(A(),e.to,e.piece)}function W(e){let t=x?.turn.dice??[0,0];return e.die===`a`?t[0]:e.die===`b`?t[1]:t[0]+t[1]}function G(){if(!x)return;let e=x,t=e.players.find(t=>t.id===e.turn.player),n=e.players.find(e=>e.id===b),r=e.turn.player===b&&!e.winner;if(e.winner)_.status.textContent=e.winner===b?y.youWon:y.won(J(e.winner));else if(r&&e.turn.dice)_.status.textContent=y.yourMove;else if(r){let t=n?.pieces.every(t=>t<0||t===e.board.goal);_.status.textContent=t&&e.turn.jailRolls>0?y.jailTry(e.turn.jailRolls):y.yourRoll}else _.status.textContent=y.turnOf(J(e.turn.player));_.status.style.color=t?f.seats[t.seat]:``,_.players.replaceChildren(...e.players.map(t=>{let n=document.createElement(`span`);n.className=`player`,n.classList.toggle(`turn`,t.id===e.turn.player&&!e.winner),n.classList.toggle(`away`,!t.connected);let r=document.createElement(`span`);r.className=`swatch`,r.style.background=f.seats[t.seat];let i=t.pieces.filter(t=>t===e.board.goal).length;return n.append(r,`${J(t.id)}${t.id===b?` (${y.you})`:``} ${i}/4`),n}));let i=e.turn.dice;_.dice.replaceChildren(...(i??e.lastRoll?.dice??[]).map((t,n)=>{let r=document.createElement(`span`);return r.textContent=p[t-1],r.classList.toggle(`used`,!i||e.turn.used[n]),r}));let a=[];if(r&&!i&&a.push(K(y.roll,z,!R())),r&&i&&S!==null)for(let e of H(S)){let t=e.die===`sum`?`${y.sum} ${W(e)}`:`${p[W(e)-1]} ${W(e)}`;a.push(K(t,()=>B(e),C))}_.actions.replaceChildren(...a),_.hint.textContent=performance.now()<T.until?T.text:r&&S!==null?y.pick:``,_.log.replaceChildren(...E.map(e=>{let t=document.createElement(`li`);return t.textContent=e,t}))}function K(e,t,n){let r=document.createElement(`button`);return r.textContent=e,r.disabled=n,r.addEventListener(`click`,t),r}function q(e){T={text:e,until:performance.now()+2500},setTimeout(G,2600)}function J(e){let t=x?.players.find(t=>t.id===e)?.seat??0;return y.colors[t]}function ee(e){let t=typeof e.player==`string`?J(e.player):``;switch(e.type){case`ROLLED`:{let[n,r]=e.dice;return y.rolled(t,n,r)}case`CAPTURED`:return y.captured(t,J(e.victim));case`RELEASED`:return y.released(t);case`CROWNED`:return y.crowned(t);case`GOAL`:return y.goal(t);case`TURN_TIMEOUT`:return y.timeout(t);case`PLAYER_LEFT`:return y.left(t);case`PLAYER_BACK`:return y.back(t);case`WINNER`:return e.player===b?y.youWon:y.won(t);default:return null}}function Y(){let e=2*O()+3,t=h.clientWidth,n=h.clientHeight,r=Math.min(t,n)*.96;return{left:(t-r)/2,top:(n-r)/2,size:r,cell:r/e}}function X(e){let t=devicePixelRatio||1,n=h.clientWidth,r=h.clientHeight;if((h.width!==Math.round(n*t)||h.height!==Math.round(r*t))&&(h.width=Math.round(n*t),h.height=Math.round(r*t)),g.setTransform(t,0,0,t,0,0),g.fillStyle=f.felt,g.fillRect(0,0,n,r),x){te(x),ne(x,e);let t=x.board.turnMs-(e-w.at);_.timer.style.width=x.winner?`0%`:`${Math.max(0,t/x.board.turnMs*100)}%`}requestAnimationFrame(X)}function te(e){let{left:t,top:n,size:r,cell:i}=Y(),a=e.board,o=O();g.save(),g.translate(t,n),g.fillStyle=f.board,Q(0,0,r,r,i*.5),g.fill();let s=e.players.find(t=>t.id===e.turn.player)?.seat;for(let t=0;t<4;t+=1){let n=P(t),r=o/2-.2;g.fillStyle=f.lightSeats[t],g.strokeStyle=f.seats[t],g.lineWidth=i*.15,Q((n.x+.5-r)*i,(n.y+.5-r)*i,r*2*i,r*2*i,i*.6),g.fill(),g.stroke(),t===s&&!e.winner&&(g.strokeStyle=f.highlight,g.lineWidth=i*.12,g.stroke());for(let e=1;e<o;e+=1)Z(M(t,e,0),f.lightSeats[t],i)}for(let e=0;e<a.ring;e+=1){let t=e%a.side,n=Math.floor(e/a.side),r=N(e);Z(r,t===a.exit?f.seats[n]:f.square,i),a.safe.includes(t)&&(g.strokeStyle=f.safe,g.lineWidth=i*.06,g.beginPath(),g.arc((r.x+.5)*i,(r.y+.5)*i,i*.3,0,Math.PI*2),g.stroke())}let c=(k()+.5)*i;for(let e=0;e<4;e+=1){let t=j(e),n=j(e+1);g.fillStyle=f.seats[e],g.beginPath(),g.moveTo(c,c),g.lineTo(c+(t.x+n.x)*1.5*i,c+(t.y+n.y)*1.5*i),g.lineTo(c+(t.x-n.x)*1.5*i,c+(t.y-n.y)*1.5*i),g.closePath(),g.fill()}if(S!==null){g.setLineDash([i*.15,i*.1]),g.strokeStyle=f.highlight,g.lineWidth=i*.1,g.fillStyle=f.line,g.font=`700 ${i*.45}px system-ui, sans-serif`,g.textAlign=`center`,g.textBaseline=`middle`;for(let e of H(S)){let t=U(e);g.strokeRect((t.x+.05)*i,(t.y+.05)*i,i*.9,i*.9),g.fillText(String(W(e)),(t.x+.5)*i,(t.y+.5)*i)}g.setLineDash([])}g.restore()}function ne(e,t){let{left:n,top:r,cell:i}=Y(),a=I(e),o=new Set(e.moves.map(e=>e.piece));g.save(),g.translate(n,r);for(let n of e.players)n.pieces.forEach((e,r)=>{let s=`${n.id}:${r}`,c=a.get(s),l=D.get(s),u=l?{x:l.x+(c.x-l.x)*.2,y:l.y+(c.y-l.y)*.2}:c;D.set(s,u);let d=(u.x+.5)*i,p=(u.y+.5)*i,m=i*.34;n.id===b&&o.has(r)&&!C&&(g.strokeStyle=f.highlight,g.globalAlpha=r===S?1:.55+Math.sin(t/160)*.45,g.lineWidth=i*.1,g.beginPath(),g.arc(d,p,m+i*.12,0,Math.PI*2),g.stroke(),g.globalAlpha=1),g.fillStyle=f.seats[n.seat],g.strokeStyle=f.line,g.lineWidth=i*.06,g.shadowColor=`rgba(0,0,0,0.35)`,g.shadowBlur=i*.15,g.beginPath(),g.arc(d,p,m,0,Math.PI*2),g.fill(),g.shadowBlur=0,g.stroke()});g.restore()}function Z(e,t,n){g.fillStyle=t,g.strokeStyle=f.line,g.lineWidth=n*.04,g.fillRect(e.x*n,e.y*n,n,n),g.strokeRect(e.x*n,e.y*n,n,n)}function Q(e,t,n,r,i){g.beginPath(),g.roundRect(e,t,n,r,i)}function $(e,t,n){return Math.hypot(e.x-t.x,e.y-t.y)<n}requestAnimationFrame(X)})();</script>
+  </body>
+</html>

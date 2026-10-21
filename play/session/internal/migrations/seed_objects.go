@@ -2,6 +2,7 @@ package migrations
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 
 	"github.com/diegobermudez03/playhoot/play/session/internal/objectstore"
@@ -55,9 +56,17 @@ const seedFrontendPackage = `<!doctype html>
 </html>
 `
 
+// seedSpaceDriftFrontendPackage is Space Drift's real frontend package, built
+// with the Playhoot Game SDK by the frontend repository (seeddata/README.md).
+//
+//go:embed seeddata/space_drift_frontend.html
+var seedSpaceDriftFrontendPackage []byte
+
 var (
 	seedBackendScriptLocator   = objectstore.LocatorFor(backendScriptPrefix, []byte(seedBackendScript))
 	seedFrontendPackageLocator = objectstore.LocatorFor(frontendPackagePrefix, []byte(seedFrontendPackage))
+
+	seedSpaceDriftFrontendPackageLocator = objectstore.LocatorFor(frontendPackagePrefix, seedSpaceDriftFrontendPackage)
 )
 
 // SeedObjects stores the content the seed game versions reference. Keys are
@@ -71,6 +80,9 @@ func SeedObjects(ctx context.Context, store objectstore.Store) error {
 		{prefix: backendScriptPrefix, content: seedBackendScript, contentType: "text/javascript"},
 		{prefix: backendScriptPrefix, content: seedSpaceDriftScript, contentType: "text/javascript"},
 		{prefix: frontendPackagePrefix, content: seedFrontendPackage, contentType: "text/html"},
+		{prefix: frontendPackagePrefix, content: string(seedSpaceDriftFrontendPackage), contentType: "text/html"},
+		{prefix: backendScriptPrefix, content: seedParquesScript, contentType: "text/javascript"},
+		{prefix: frontendPackagePrefix, content: string(seedParquesFrontendPackage), contentType: "text/html"},
 	}
 	for _, object := range objects {
 		if _, err := objectstore.PutContent(ctx, store, object.prefix, []byte(object.content), object.contentType); err != nil {

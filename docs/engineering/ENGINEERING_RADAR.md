@@ -66,7 +66,34 @@ No items have yet been persisted under the Engineering Radar mechanism.
 
 The concern does not need immediate action but is likely worth addressing before a meaningful near-term milestone or before continued development makes it materially more expensive/risky.
 
-No items have yet been persisted under the Engineering Radar mechanism.
+### CORS on the production bucket for game frontend packages
+
+**Area**
+Infrastructure / Web client integration
+
+**Current state / evidence**
+- `session_started` gives clients a signed GCS URL to the game's frontend package (`play/session/usecases/frontendaccess`).
+- The web frontend's GameHost downloads it with `fetch` (no credentials), checks its SHA-256 and caches it by hash before running it in a sandboxed iframe (frontend repository, `docs/decisions/architecture/ADR-0005-game-host-bridge-protocol-v1.md`, accepted 2026-10-20). A cross-origin `fetch` needs the bucket to answer CORS.
+- Local development works: fake-gcs answers `Access-Control-Allow-Origin: *` (checked 2026-10-20). No CORS configuration exists for a real bucket (no infrastructure code in this repository sets it).
+
+**Risk / opportunity**
+- In any real deployment, browsers refuse the download and no game ever loads, although every backend check passes.
+
+**Recommendation**
+- When the production (or any shared) bucket is provisioned, set a CORS rule on it: method `GET`, origin(s) = the web frontend's origin(s), response header `Content-Type`, a reasonable max age. Keep it limited to the frontend origins, not `*`.
+- Verify with a browser (or `curl -H "Origin: <web origin>"`) against a signed URL before the first deployment.
+
+**Why this horizon**
+- Nothing is deployed yet; it must be done before the first deployment the web frontend uses, and it is easy to forget because local development hides it.
+
+**Reevaluate when**
+- The bucket is provisioned or the web frontend is first deployed against a non-emulated bucket.
+
+**Next process**
+- None (infrastructure configuration when deploying).
+
+**Last reviewed**
+2026-10-20
 
 ## LATER
 
