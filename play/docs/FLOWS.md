@@ -116,7 +116,7 @@ A pinned version that is not EXECUTABLE, has an invalid manifest or no backend s
 
 ### Frontend Access
 
-`frontendaccess.Service.FrontendAccess(gameVersionUUID)` reads the version's frontend package locator from `play_game_versions` and signs a read URL to it in object storage, valid for 15 minutes, returned with the package's SHA-256. An unknown or non-EXECUTABLE version is an error; an EXECUTABLE one without a frontend package raises an alert and is an error.
+`frontendaccess.Service.FrontendAccess(gameVersionUUID)` reads the version's frontend package locator from `play_game_versions` and signs a read URL to it in object storage, valid for 15 minutes, returned with the package's SHA-256 and its viewport: the version's aspect ratio and that ratio's logical resolution. An unknown or non-EXECUTABLE version is an error; an EXECUTABLE one without a frontend package, or without an aspect ratio Playhoot offers, raises an alert and is an error.
 
 ### Commit Start
 

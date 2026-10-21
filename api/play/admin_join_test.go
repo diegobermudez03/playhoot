@@ -86,6 +86,7 @@ var roster = runtime.SessionStart{
 		URL:       "https://storage.example/frontend?sig=abc",
 		SHA256:    "9f86d081",
 		ExpiresAt: time.Date(2026, 10, 17, 21, 0, 0, 0, time.UTC),
+		Viewport:  runtime.GameViewport{AspectRatio: "9:16", Width: 1080, Height: 1920},
 	},
 }
 
@@ -96,7 +97,8 @@ const sessionUUIDJSON = `"session_uuid":"7c9e6679-7425-40de-944b-e07fc1f90ae7"`
 // rosterJSON is roster's fields on the wire, inside a session_started, with
 // the Session it started.
 const rosterJSON = sessionUUIDJSON + `,"participants":[{"participant_id":"P1","user_uuid":"u1","display_name":"Ana"},{"participant_id":"P2","user_uuid":"u2","display_name":"Bruno"}],` +
-	`"frontend":{"url":"https://storage.example/frontend?sig=abc","sha256":"9f86d081","expires_at":"2026-10-17T21:00:00Z"}`
+	`"frontend":{"url":"https://storage.example/frontend?sig=abc","sha256":"9f86d081","expires_at":"2026-10-17T21:00:00Z",` +
+	`"viewport":{"aspect_ratio":"9:16","width":1080,"height":1920}}`
 
 // fakeLobby is the lobby side of a fake Runtime connection: its lobby stream
 // ends once the Session starts or the connection ends.

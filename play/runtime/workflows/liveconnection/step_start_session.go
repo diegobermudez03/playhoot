@@ -237,7 +237,12 @@ func (c *sessionController) adoptRunningSession(ctx context.Context) (runtime.St
 }
 
 func frontendOf(access sessionpkg.FrontendAccess) runtime.GameFrontend {
-	return runtime.GameFrontend{URL: access.URL, SHA256: access.SHA256, ExpiresAt: access.ExpiresAt}
+	return runtime.GameFrontend{
+		URL:       access.URL,
+		SHA256:    access.SHA256,
+		ExpiresAt: access.ExpiresAt,
+		Viewport:  runtime.GameViewport{AspectRatio: access.Viewport.AspectRatio, Width: access.Viewport.Width, Height: access.Viewport.Height},
+	}
 }
 
 // commitStart makes the Session RUNNING with its roster and initial

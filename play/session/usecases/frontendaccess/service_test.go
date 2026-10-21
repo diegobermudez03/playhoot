@@ -28,18 +28,23 @@ func TestFrontendAccess(t *testing.T) {
 
 	const versionUUID = "c1d2e3f4-0000-4000-8000-000000000001"
 	ctx := context.Background()
-	key, sha := "game-versions/frontend-packages/9f86d081", "9f86d081"
+	key, sha, landscape, unoffered := "game-versions/frontend-packages/9f86d081", "9f86d081", "16:9", "21:9"
 	expiresAt := time.Date(2026, 10, 17, 12, 15, 0, 0, time.UTC)
 
 	tests := map[string]func(t *testing.T, deps dependencies) test{
 		"executable_version_is_granted_a_signed_url": func(t *testing.T, deps dependencies) test {
 			gomock.InOrder(
-				deps.frontends.EXPECT().FindFrontend(ctx, versionUUID).Return(&internalrepo.Frontend{Status: "EXECUTABLE", ObjectKey: &key, SHA256: &sha}, nil),
+				deps.frontends.EXPECT().FindFrontend(ctx, versionUUID).Return(&internalrepo.Frontend{Status: "EXECUTABLE", ObjectKey: &key, SHA256: &sha, AspectRatio: &landscape}, nil),
 				deps.signer.EXPECT().PresignGet(ctx, key, urlTTL).Return(objectstore.SignedURL{URL: "https://storage.example/f?sig=1", ExpiresAt: expiresAt}, nil),
 			)
 			return test{
 				gameVersionUUID: versionUUID,
-				expected:        sessionpkg.FrontendAccess{URL: "https://storage.example/f?sig=1", SHA256: sha, ExpiresAt: expiresAt},
+				expected: sessionpkg.FrontendAccess{
+					URL:       "https://storage.example/f?sig=1",
+					SHA256:    sha,
+					ExpiresAt: expiresAt,
+					Viewport:  sessionpkg.Viewport{AspectRatio: "16:9", Width: 1920, Height: 1080},
+				},
 			}
 		},
 		"invalid_version_uuid": func(t *testing.T, deps dependencies) test {
@@ -57,9 +62,17 @@ func TestFrontendAccess(t *testing.T) {
 			deps.frontends.EXPECT().FindFrontend(ctx, versionUUID).Return(&internalrepo.Frontend{Status: "EXECUTABLE"}, nil)
 			return test{gameVersionUUID: versionUUID, expectErr: true}
 		},
+		"executable_version_without_aspect_ratio_is_broken_data": func(t *testing.T, deps dependencies) test {
+			deps.frontends.EXPECT().FindFrontend(ctx, versionUUID).Return(&internalrepo.Frontend{Status: "EXECUTABLE", ObjectKey: &key, SHA256: &sha}, nil)
+			return test{gameVersionUUID: versionUUID, expectErr: true}
+		},
+		"executable_version_with_an_aspect_ratio_not_offered_is_broken_data": func(t *testing.T, deps dependencies) test {
+			deps.frontends.EXPECT().FindFrontend(ctx, versionUUID).Return(&internalrepo.Frontend{Status: "EXECUTABLE", ObjectKey: &key, SHA256: &sha, AspectRatio: &unoffered}, nil)
+			return test{gameVersionUUID: versionUUID, expectErr: true}
+		},
 		"signing_fails": func(t *testing.T, deps dependencies) test {
 			gomock.InOrder(
-				deps.frontends.EXPECT().FindFrontend(ctx, versionUUID).Return(&internalrepo.Frontend{Status: "EXECUTABLE", ObjectKey: &key, SHA256: &sha}, nil),
+				deps.frontends.EXPECT().FindFrontend(ctx, versionUUID).Return(&internalrepo.Frontend{Status: "EXECUTABLE", ObjectKey: &key, SHA256: &sha, AspectRatio: &landscape}, nil),
 				deps.signer.EXPECT().PresignGet(ctx, key, urlTTL).Return(objectstore.SignedURL{}, objectstore.ErrNotConfigured),
 			)
 			return test{gameVersionUUID: versionUUID, expectErr: true}

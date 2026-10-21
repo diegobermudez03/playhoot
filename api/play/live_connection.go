@@ -77,14 +77,27 @@ type participantMessage struct {
 }
 
 type frontendMessage struct {
-	URL       string    `json:"url"`
-	SHA256    string    `json:"sha256"`
-	ExpiresAt time.Time `json:"expires_at"`
+	URL       string          `json:"url"`
+	SHA256    string          `json:"sha256"`
+	ExpiresAt time.Time       `json:"expires_at"`
+	Viewport  viewportMessage `json:"viewport"`
+}
+
+type viewportMessage struct {
+	AspectRatio string `json:"aspect_ratio"`
+	Width       int    `json:"width"`
+	Height      int    `json:"height"`
 }
 
 // frontendJSON is a started Session's game frontend, on the wire.
 func frontendJSON(start runtime.SessionStart) frontendMessage {
-	return frontendMessage{URL: start.Frontend.URL, SHA256: start.Frontend.SHA256, ExpiresAt: start.Frontend.ExpiresAt}
+	viewport := start.Frontend.Viewport
+	return frontendMessage{
+		URL:       start.Frontend.URL,
+		SHA256:    start.Frontend.SHA256,
+		ExpiresAt: start.Frontend.ExpiresAt,
+		Viewport:  viewportMessage{AspectRatio: viewport.AspectRatio, Width: viewport.Width, Height: viewport.Height},
+	}
 }
 
 // participantsJSON is who plays a started Session, on the wire.

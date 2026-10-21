@@ -66,6 +66,8 @@ Display names and the roster (2026-10-20, asked by the human for the frontend): 
 
 Every `lobby_update` and `session_started`, for players and admins, carries the routed Session as `session_uuid` (added 2026-10-20 at the human's request for the frontend): a client that joined by join code learns which Session it is in, so it can reconnect through `/v1/play/join/sessions/{sessionUUID}/player` once the Session starts and its code is released. The API only returns identifiers; URLs are the frontend's.
 
+The game frontend in `session_started` is `{"url":...,"sha256":...,"expires_at":...,"viewport":{"aspect_ratio":...,"width":...,"height":...}}` (`viewport` added 2026-10-20 at the human's request for the frontend's fixed-aspect game viewport): `aspect_ratio` is one of the ratios Playhoot offers (`16:9`, `9:16`, `4:3`, `3:4`, `1:1`), and `width` / `height` are its logical resolution, the size the game's frontend draws in and receives input in on any device.
+
 ### Live connection limits
 
 Before the upgrade, `api/internal/live` reserves room for the connection: at most `LIVE_MAX_CONNECTIONS` per instance (default 2000; beyond it `503` with code `server_busy`) and 10 per caller (beyond it `429` with code `too_many_connections`), counted in `api_live_connections_refused_total{reason}`; the room is given back when the connection ends or is never served. Once served, everything a client sends is bounded at two levels, all values chosen by the platform and declared by each endpoint (`live_connection.go`, `admin_join.go`, `player_join.go`):

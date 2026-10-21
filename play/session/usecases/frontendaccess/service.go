@@ -50,8 +50,8 @@ func New(db *gorm.DB, store storage.Store) *Service {
 }
 
 // FrontendAccess returns a signed, expiring URL to gameVersionUUID's frontend
-// package, with the package's content hash. Only an executable version, one a
-// Session can be pinned to, is granted.
+// package, with the package's content hash and the viewport it is shown in.
+// Only an executable version, one a Session can be pinned to, is granted.
 func (s *Service) FrontendAccess(ctx context.Context, gameVersionUUID string) (sessionpkg.FrontendAccess, error) {
 	if _, err := uuid.Parse(gameVersionUUID); err != nil {
 		return sessionpkg.FrontendAccess{}, errGameVersionNotFound
@@ -70,9 +70,27 @@ func (s *Service) FrontendAccess(ctx context.Context, gameVersionUUID string) (s
 		monitoring.Alert(ctx, "play executable game version has no frontend package")
 		return sessionpkg.FrontendAccess{}, fmt.Errorf("game version %s has no frontend package", gameVersionUUID)
 	}
+	viewport, ok := viewportOf(frontend.AspectRatio)
+	if !ok {
+		monitoring.Alert(ctx, "play executable game version has no offered aspect ratio")
+		return sessionpkg.FrontendAccess{}, fmt.Errorf("game version %s has no offered aspect ratio", gameVersionUUID)
+	}
 	signed, err := s.signer.PresignGet(ctx, *frontend.ObjectKey, s.ttl)
 	if err != nil {
 		return sessionpkg.FrontendAccess{}, fmt.Errorf("signing frontend package url: %w", err)
 	}
-	return sessionpkg.FrontendAccess{URL: signed.URL, SHA256: *frontend.SHA256, ExpiresAt: signed.ExpiresAt}, nil
+	return sessionpkg.FrontendAccess{URL: signed.URL, SHA256: *frontend.SHA256, ExpiresAt: signed.ExpiresAt, Viewport: viewport}, nil
+}
+
+// viewportOf is the viewport of a stored aspect ratio; ok is false when there
+// is none or Playhoot does not offer it.
+func viewportOf(aspectRatio *string) (viewport sessionpkg.Viewport, ok bool) {
+	if aspectRatio == nil {
+		return sessionpkg.Viewport{}, false
+	}
+	resolution, ok := gameversion.AspectRatio(*aspectRatio).Resolution()
+	if !ok {
+		return sessionpkg.Viewport{}, false
+	}
+	return sessionpkg.Viewport{AspectRatio: *aspectRatio, Width: resolution.Width, Height: resolution.Height}, true
 }

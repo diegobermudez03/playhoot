@@ -313,6 +313,16 @@ type GameFrontend struct {
 	URL       string
 	SHA256    string
 	ExpiresAt time.Time
+	Viewport  GameViewport
+}
+
+// GameViewport is the fixed shape the game's frontend is shown in: one of the
+// aspect ratios Playhoot offers and its logical resolution, the size the
+// frontend draws in and receives input in.
+type GameViewport struct {
+	AspectRatio string
+	Width       int
+	Height      int
 }
 
 // Participant is a player of a started Session. The game knows them only by

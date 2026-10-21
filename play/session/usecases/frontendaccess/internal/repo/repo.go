@@ -19,12 +19,13 @@ func New(db *gorm.DB) *Repo {
 	return &Repo{db: db}
 }
 
-// Frontend is a game version's status and the locator of its frontend
-// package; the locator fields are nil when it has none.
+// Frontend is a game version's status, the locator of its frontend package
+// and the aspect ratio it is shown in; each is nil when the version has none.
 type Frontend struct {
-	Status    string
-	ObjectKey *string
-	SHA256    *string
+	Status      string
+	ObjectKey   *string
+	SHA256      *string
+	AspectRatio *string
 }
 
 // FindFrontend returns gameVersionUUID's frontend package, or nil when there
@@ -32,7 +33,7 @@ type Frontend struct {
 func (r *Repo) FindFrontend(ctx context.Context, gameVersionUUID string) (*Frontend, error) {
 	var frontend Frontend
 	result := r.db.WithContext(ctx).Raw(`
-		SELECT status, frontend_object_key AS object_key, frontend_sha256 AS sha256
+		SELECT status, frontend_object_key AS object_key, frontend_sha256 AS sha256, aspect_ratio
 		FROM play_game_versions
 		WHERE uuid = ?
 	`, gameVersionUUID).Scan(&frontend)

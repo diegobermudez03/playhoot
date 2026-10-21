@@ -12,16 +12,17 @@ import (
 )
 
 // seedVersion creates a Game with one version in status, whose frontend
-// package is at key with hash sha when key is not nil.
-func seedVersion(t *testing.T, db *gorm.DB, status string, key *string, sha *string) string {
+// package is at key with hash sha when key is not nil, shown in aspectRatio
+// when it is not nil.
+func seedVersion(t *testing.T, db *gorm.DB, status string, key *string, sha *string, aspectRatio *string) string {
 	t.Helper()
 	var gameID uint
 	require.NoError(t, db.Raw(`INSERT INTO play_games (game_uuid) VALUES (?) RETURNING id`, uuid.NewString()).Scan(&gameID).Error)
 	versionUUID := uuid.NewString()
 	require.NoError(t, db.Exec(`
-		INSERT INTO play_game_versions (uuid, game_id, status, manifest, frontend_object_key, frontend_sha256, frontend_size)
-		VALUES (?, ?, ?, '{"schema_version":1,"players":{"min":1,"max":8}}', ?, ?, 10)
-	`, versionUUID, gameID, status, key, sha).Error)
+		INSERT INTO play_game_versions (uuid, game_id, status, manifest, frontend_object_key, frontend_sha256, frontend_size, aspect_ratio)
+		VALUES (?, ?, ?, '{"schema_version":1,"players":{"min":1,"max":8}}', ?, ?, 10, ?)
+	`, versionUUID, gameID, status, key, sha, aspectRatio).Error)
 	return versionUUID
 }
 
@@ -34,14 +35,14 @@ func TestFindFrontend(t *testing.T) {
 
 	tests := map[string]func(t *testing.T, db *gorm.DB) test{
 		"version_with_its_frontend_package": func(t *testing.T, db *gorm.DB) test {
-			key, sha := "game-versions/frontend-packages/"+uuid.NewString(), "9f86d081"
+			key, sha, square := "game-versions/frontend-packages/"+uuid.NewString(), "9f86d081", "1:1"
 			return test{
-				gameVersionUUID: seedVersion(t, db, "EXECUTABLE", &key, &sha),
-				expected:        &Frontend{Status: "EXECUTABLE", ObjectKey: &key, SHA256: &sha},
+				gameVersionUUID: seedVersion(t, db, "EXECUTABLE", &key, &sha, &square),
+				expected:        &Frontend{Status: "EXECUTABLE", ObjectKey: &key, SHA256: &sha, AspectRatio: &square},
 			}
 		},
 		"version_without_frontend_package": func(t *testing.T, db *gorm.DB) test {
-			return test{gameVersionUUID: seedVersion(t, db, "DRAFT", nil, nil), expected: &Frontend{Status: "DRAFT"}}
+			return test{gameVersionUUID: seedVersion(t, db, "DRAFT", nil, nil, nil), expected: &Frontend{Status: "DRAFT"}}
 		},
 		"unknown_version": func(t *testing.T, db *gorm.DB) test {
 			return test{gameVersionUUID: uuid.NewString()}
@@ -60,4 +61,17 @@ func TestFindFrontend(t *testing.T) {
 			require.Equal(t, tc.expected, frontend)
 		})
 	}
+}
+
+func TestAspectRatioIsOneOfTheOffered(t *testing.T) {
+	db := testdb.OpenSessionDB(t)
+	var gameID uint
+	require.NoError(t, db.Raw(`INSERT INTO play_games (game_uuid) VALUES (?) RETURNING id`, uuid.NewString()).Scan(&gameID).Error)
+
+	err := db.Exec(`
+		INSERT INTO play_game_versions (uuid, game_id, status, manifest, aspect_ratio)
+		VALUES (?, ?, 'DRAFT', '{"schema_version":1,"players":{"min":1,"max":8}}', '21:9')
+	`, uuid.NewString(), gameID).Error
+
+	require.ErrorContains(t, err, "play_game_versions_aspect_ratio_check")
 }
