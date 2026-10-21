@@ -158,7 +158,7 @@ func TestAdminConnection(t *testing.T) {
 	go controller.run()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	player, _, ok := controller.joinLobby(ctx, "player-1")
+	player, _, ok := controller.joinLobby(ctx, runtime.Player{UserUUID: "player-1"})
 	require.True(t, ok)
 
 	first := controller.mustRegisterAdmin("creator")

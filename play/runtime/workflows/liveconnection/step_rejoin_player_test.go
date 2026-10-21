@@ -24,7 +24,7 @@ type attachAnswer struct {
 func attachInBackground(controller *sessionController, userUUID string) <-chan attachAnswer {
 	answers := make(chan attachAnswer, 1)
 	go func() {
-		result, participant, err := controller.attachParticipant(context.Background(), userUUID)
+		result, participant, err := controller.attachParticipant(context.Background(), runtime.Player{UserUUID: userUUID})
 		answers <- attachAnswer{result: result, participant: participant, err: err}
 	}()
 	return answers
@@ -138,7 +138,7 @@ func TestRejoinOfAGameWithoutIt(t *testing.T) {
 	controller.lock().manifest.Rejoin = false
 	controller.unlock()
 
-	result, participant, err := controller.attachParticipant(context.Background(), "user-a")
+	result, participant, err := controller.attachParticipant(context.Background(), runtime.Player{UserUUID: "user-a"})
 
 	require.NoError(t, err)
 	require.True(t, participant)

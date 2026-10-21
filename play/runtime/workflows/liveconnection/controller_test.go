@@ -202,7 +202,7 @@ func TestControllerFor(t *testing.T) {
 				existing, _ = resolver.controllerFor(ctx, sessionUUID, tc.existingEpoch)
 				withManifest(existing, Manifest{MaxPlayers: 6})
 				existingAdmin, _ = existing.registerAdmin("creator")
-				existingPlayer, _, _ = existing.joinLobby(ctx, "player")
+				existingPlayer, _, _ = existing.joinLobby(ctx, runtime.Player{UserUUID: "player"})
 			}
 
 			logCtx := logging.Start(ctx)
@@ -266,7 +266,7 @@ func TestRun(t *testing.T) {
 		deps.sandbox, deps.owners = sandboxMock, owners
 		root, cancel := context.WithCancel(context.Background())
 		controller := withManifest(newSessionController(root, "session-1", 1, deps), Manifest{MaxPlayers: 4})
-		player, _, admitted := controller.joinLobby(context.Background(), "user-a")
+		player, _, admitted := controller.joinLobby(context.Background(), runtime.Player{UserUUID: "user-a"})
 		require.True(t, admitted)
 		participants, _, ok := controller.beginStart()
 		require.True(t, ok)
@@ -370,7 +370,7 @@ func TestRun(t *testing.T) {
 		root, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		controller := withManifest(newSessionController(root, "session-1", 1, deps), Manifest{MaxPlayers: 4})
-		player, _, _ := controller.joinLobby(context.Background(), "user-a")
+		player, _, _ := controller.joinLobby(context.Background(), runtime.Player{UserUUID: "user-a"})
 		go controller.run()
 		anyCtx := gomock.Any()
 		script := []byte(`function start() {}`)

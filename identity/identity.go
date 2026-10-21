@@ -23,6 +23,14 @@ const (
 	OperationJoinSessionAsPlayer Operation = "JOIN_SESSION_AS_PLAYER"
 )
 
+// User is who a credential stands for, as Identity resolves it.
+type User struct {
+	UUID string
+
+	// DisplayName is how other people see the User; Identity decides it.
+	DisplayName string
+}
+
 // AccessDecision is Identity's answer to whether a caller may perform an
 // Operation.
 type AccessDecision string

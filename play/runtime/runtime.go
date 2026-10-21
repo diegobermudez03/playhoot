@@ -38,6 +38,14 @@ type OwnerPlacement struct {
 	Epoch int64
 }
 
+// Player is who opens a player connection, as the caller resolved them.
+type Player struct {
+	UserUUID string
+
+	// DisplayName is how the other players see them.
+	DisplayName string
+}
+
 // AttachOutcome is whether a connection was admitted into a Session.
 type AttachOutcome string
 
@@ -288,7 +296,8 @@ type LobbyUpdate struct {
 
 // LobbyMember is a player waiting in the lobby.
 type LobbyMember struct {
-	UserUUID string
+	UserUUID    string
+	DisplayName string
 }
 
 // SessionStart is a started Session: who plays, in ParticipantID order, and
@@ -311,6 +320,40 @@ type GameFrontend struct {
 type Participant struct {
 	ParticipantID string
 	UserUUID      string
+	DisplayName   string
+}
+
+// PresenceStatus is whether a running game's participant is playing.
+type PresenceStatus string
+
+const (
+	// PresenceActive is a participant playing with a connection.
+	PresenceActive PresenceStatus = "active"
+
+	// PresenceReconnecting is a participant who lost their connection, or
+	// came back by rejoining, and still plays for a short grace until a
+	// connection attaches.
+	PresenceReconnecting PresenceStatus = "reconnecting"
+
+	// PresenceDisconnected is a participant the game was told disconnected
+	// because their connection did not come back in time.
+	PresenceDisconnected PresenceStatus = "disconnected"
+
+	// PresenceLeft is a participant the game was told disconnected because
+	// they left.
+	PresenceLeft PresenceStatus = "left"
+)
+
+// RosterMember is a participant of a running game with their presence.
+type RosterMember struct {
+	Participant
+	Status PresenceStatus
+}
+
+// RosterUpdate is every participant of a running game, in ParticipantID
+// order, after a change of presence.
+type RosterUpdate struct {
+	Members []RosterMember
 }
 
 // PlayerStart is a Session's start as one of its players sees it.
@@ -360,6 +403,11 @@ type PlayerConnection struct {
 	// NextView blocks until the player's next view. Every view produced
 	// before the connection ended is returned before false.
 	NextView func(ctx context.Context) (OwnView, bool)
+
+	// NextRosterUpdate blocks until the running game's roster changes, the
+	// first one right after the start; see RosterUpdate. Only the latest
+	// not yet returned is kept. False means the connection ended.
+	NextRosterUpdate func(ctx context.Context) (RosterUpdate, bool)
 
 	// Ended blocks until the connection ends and reports why; false means
 	// ctx was done first.

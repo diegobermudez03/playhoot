@@ -56,7 +56,7 @@ func TestAttachPlayer(t *testing.T) {
 			loadsManifest(deps, 1)
 			return test{
 				before: func(resolver *ControllerResolver) {
-					result, err := resolver.AttachPlayer(ctx, sessionUUID, otherUUID, 1)
+					result, err := resolver.AttachPlayer(ctx, sessionUUID, runtime.Player{UserUUID: otherUUID}, 1)
 					require.NoError(t, err)
 					require.Equal(t, runtime.AttachAccepted, result.Outcome)
 				},
@@ -71,7 +71,7 @@ func TestAttachPlayer(t *testing.T) {
 			loadsManifest(deps, 8)
 			return test{
 				before: func(resolver *ControllerResolver) {
-					_, err := resolver.AttachPlayer(ctx, sessionUUID, otherUUID, 2)
+					_, err := resolver.AttachPlayer(ctx, sessionUUID, runtime.Player{UserUUID: otherUUID}, 2)
 					require.NoError(t, err)
 				},
 				ownerEpoch:        1,
@@ -135,7 +135,7 @@ func TestAttachPlayer(t *testing.T) {
 				tc.before(resolver)
 			}
 
-			result, err := resolver.AttachPlayer(ctx, sessionUUID, playerUUID, tc.ownerEpoch)
+			result, err := resolver.AttachPlayer(ctx, sessionUUID, runtime.Player{UserUUID: playerUUID}, tc.ownerEpoch)
 
 			require.Contains(t, resolver.controllers, sessionUUID, "the controller exists whatever the answer")
 
@@ -175,7 +175,7 @@ func TestAdmitPlayer(t *testing.T) {
 	ctx := context.Background()
 	admit := func(t *testing.T, controller *sessionController, userUUID string) runtime.PlayerConnection {
 		t.Helper()
-		player, _, ok := controller.joinLobby(ctx, userUUID)
+		player, _, ok := controller.joinLobby(ctx, runtime.Player{UserUUID: userUUID})
 		require.True(t, ok)
 		return player
 	}
@@ -319,7 +319,7 @@ func TestAdmitPlayer(t *testing.T) {
 				tc.before(t, controller)
 			}
 
-			player, rejection, ok := controller.joinLobby(ctx, "user-a")
+			player, rejection, ok := controller.joinLobby(ctx, runtime.Player{UserUUID: "user-a"})
 
 			require.Equal(t, tc.expectedOK, ok)
 			require.Equal(t, tc.expectedRejection, rejection)

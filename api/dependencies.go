@@ -15,7 +15,7 @@ type guestCreator interface {
 
 // authorizer is Identity's coarse authorization.
 type authorizer interface {
-	Authorize(ctx context.Context, token string, operation identity.Operation) (string, identity.AccessDecision, error)
+	Authorize(ctx context.Context, token string, operation identity.Operation) (identity.User, identity.AccessDecision, error)
 }
 
 // sessionCreator coordinates Session creation.
@@ -35,7 +35,7 @@ type adminAttacher interface {
 
 // playerAttacher is the Runtime's admission of player connections.
 type playerAttacher interface {
-	AttachPlayer(ctx context.Context, sessionUUID string, userUUID string, ownerEpoch int64) (runtime.AttachPlayerResult, error)
+	AttachPlayer(ctx context.Context, sessionUUID string, player runtime.Player, ownerEpoch int64) (runtime.AttachPlayerResult, error)
 }
 
 // joinCodeResolver is the durable Session's join code lookup.

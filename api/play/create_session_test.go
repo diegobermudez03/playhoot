@@ -13,6 +13,7 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/diegobermudez03/playhoot/api/internal/auth"
+	"github.com/diegobermudez03/playhoot/identity"
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
 
@@ -33,7 +34,7 @@ func TestHandleCreateSession(t *testing.T) {
 	)
 	expiresAt := time.Date(2026, 10, 14, 12, 30, 0, 0, time.UTC)
 	callerCtx := func() context.Context {
-		return auth.WithUserUUID(context.Background(), callerUUID)
+		return auth.WithCaller(context.Background(), identity.User{UUID: callerUUID})
 	}
 	validBody := `{"game_uuid":"` + gameUUID + `","idempotency_key":"key-1"}`
 

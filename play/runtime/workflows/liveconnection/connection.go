@@ -11,13 +11,16 @@ import (
 type connection struct {
 	id       string
 	userUUID string
+	// displayName is how the other players see a player connection's user.
+	displayName string
 	// participantID is set when the game starts, for a player's connection.
 	participantID string
 	// watching is the participant an admin's connection selected to watch.
 	watching string
 
-	lobbyUpdates lobbyFeed
-	views        viewFeed
+	lobbyUpdates  latestFeed[runtime.LobbyUpdate]
+	rosterUpdates latestFeed[runtime.RosterUpdate]
+	views         viewFeed
 	// lastView, lastAck and revision are the view, acknowledgement and view
 	// revision this connection last received; the next view is a patch
 	// against them.
@@ -34,8 +37,12 @@ type connection struct {
 	ending runtime.ConnectionEnd
 }
 
-func newConnection(id string, userUUID string) *connection {
-	return &connection{id: id, userUUID: userUUID, lobbyUpdates: newLobbyFeed(), views: newViewFeed(), started: make(chan struct{}), ended: make(chan struct{})}
+func newConnection(id string, player runtime.Player) *connection {
+	return &connection{
+		id: id, userUUID: player.UserUUID, displayName: player.DisplayName,
+		lobbyUpdates: newLatestFeed[runtime.LobbyUpdate](), rosterUpdates: newLatestFeed[runtime.RosterUpdate](), views: newViewFeed(),
+		started: make(chan struct{}), ended: make(chan struct{}),
+	}
 }
 
 func (c *connection) end(reason runtime.EndReason) {
@@ -100,21 +107,28 @@ func (c *connection) nextLobbyUpdate(ctx context.Context) (runtime.LobbyUpdate, 
 	return c.lobbyUpdates.next(ctx, c.ended)
 }
 
-// lobbyFeed holds the latest lobby update a connection has not taken yet.
-// Each update is the whole lobby, so a newer one replaces one not yet taken.
-// Once finished it reports no more updates after the pending one.
-type lobbyFeed struct {
+// nextRosterUpdate returns the latest roster update not yet returned; one
+// published before the end is still returned before false.
+func (c *connection) nextRosterUpdate(ctx context.Context) (runtime.RosterUpdate, bool) {
+	return c.rosterUpdates.next(ctx, c.ended)
+}
+
+// latestFeed holds the latest update a connection has not taken yet. Each
+// update is whole (the whole lobby, the whole roster), so a newer one replaces
+// one not yet taken. Once finished it reports no more updates after the
+// pending one.
+type latestFeed[T any] struct {
 	mu       sync.Mutex
-	pending  *runtime.LobbyUpdate
+	pending  *T
 	finished bool
 	signal   chan struct{}
 }
 
-func newLobbyFeed() lobbyFeed {
-	return lobbyFeed{signal: make(chan struct{}, 1)}
+func newLatestFeed[T any]() latestFeed[T] {
+	return latestFeed[T]{signal: make(chan struct{}, 1)}
 }
 
-func (f *lobbyFeed) publish(update runtime.LobbyUpdate) {
+func (f *latestFeed[T]) publish(update T) {
 	f.mu.Lock()
 	if f.finished {
 		f.mu.Unlock()
@@ -125,15 +139,15 @@ func (f *lobbyFeed) publish(update runtime.LobbyUpdate) {
 	f.wake()
 }
 
-// finish ends the feed: the lobby is over for this connection.
-func (f *lobbyFeed) finish() {
+// finish ends the feed: nothing more is published to this connection.
+func (f *latestFeed[T]) finish() {
 	f.mu.Lock()
 	f.finished = true
 	f.mu.Unlock()
 	f.wake()
 }
 
-func (f *lobbyFeed) wake() {
+func (f *latestFeed[T]) wake() {
 	select {
 	case f.signal <- struct{}{}:
 	default:
@@ -142,25 +156,22 @@ func (f *lobbyFeed) wake() {
 
 // take returns the pending update; more is false once the feed finished
 // with nothing pending.
-func (f *lobbyFeed) take() (update runtime.LobbyUpdate, ok bool, more bool) {
+func (f *latestFeed[T]) take() (update T, ok bool, more bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.pending == nil {
-		return runtime.LobbyUpdate{}, false, !f.finished
+		return update, false, !f.finished
 	}
 	update = *f.pending
 	f.pending = nil
 	return update, true, true
 }
 
-func (f *lobbyFeed) next(ctx context.Context, ended <-chan struct{}) (runtime.LobbyUpdate, bool) {
+func (f *latestFeed[T]) next(ctx context.Context, ended <-chan struct{}) (T, bool) {
 	for {
 		update, ok, more := f.take()
-		if ok {
-			return update, true
-		}
-		if !more {
-			return runtime.LobbyUpdate{}, false
+		if ok || !more {
+			return update, ok
 		}
 		select {
 		case <-f.signal:
@@ -168,7 +179,8 @@ func (f *lobbyFeed) next(ctx context.Context, ended <-chan struct{}) (runtime.Lo
 			update, ok, _ := f.take()
 			return update, ok
 		case <-ctx.Done():
-			return runtime.LobbyUpdate{}, false
+			var none T
+			return none, false
 		}
 	}
 }

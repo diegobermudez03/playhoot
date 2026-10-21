@@ -46,7 +46,7 @@ func (r *Repo) FindRunningSession(ctx context.Context, sessionUUID string) (*Run
 func (r *Repo) FindParticipants(ctx context.Context, sessionID uint) ([]Participant, error) {
 	var participants []Participant
 	result := r.db.WithContext(ctx).Raw(`
-		SELECT user_uuid, participant_id
+		SELECT user_uuid, participant_id, display_name
 		FROM play_session_participants
 		WHERE session_id = ?
 		ORDER BY id

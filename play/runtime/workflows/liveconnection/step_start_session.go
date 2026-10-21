@@ -204,7 +204,7 @@ func (c *sessionController) adoptRunningSession(ctx context.Context) (runtime.St
 	participants := make([]runtime.Participant, len(running.Participants))
 	participantIDs := make([]string, len(running.Participants))
 	for i, participant := range running.Participants {
-		participants[i] = runtime.Participant{ParticipantID: participant.ParticipantID, UserUUID: participant.UserUUID}
+		participants[i] = runtime.Participant{ParticipantID: participant.ParticipantID, UserUUID: participant.UserUUID, DisplayName: participant.DisplayName}
 		participantIDs[i] = participant.ParticipantID
 	}
 	game := Game{
@@ -247,7 +247,7 @@ func (c *sessionController) commitStart(ctx context.Context, userUUID string, pa
 	roster := make([]sessionpkg.StartParticipant, len(participants))
 	for i, participant := range participants {
 		participantIDs[i] = participant.ParticipantID
-		roster[i] = sessionpkg.StartParticipant{UserUUID: participant.UserUUID, ParticipantID: participant.ParticipantID}
+		roster[i] = sessionpkg.StartParticipant{UserUUID: participant.UserUUID, ParticipantID: participant.ParticipantID, DisplayName: participant.DisplayName}
 	}
 	encoded, err := checkpoint.Encode(checkpoint.Checkpoint{
 		GameVersionUUID: game.GameVersionUUID,
@@ -359,7 +359,7 @@ func (c *sessionController) beginStart() (participants []runtime.Participant, ou
 	s.phase = phaseStarting
 	s.participants = make([]runtime.Participant, len(s.lobby))
 	for i, userUUID := range s.lobby {
-		s.participants[i] = runtime.Participant{ParticipantID: fmt.Sprintf("P%d", i+1), UserUUID: userUUID}
+		s.participants[i] = runtime.Participant{ParticipantID: fmt.Sprintf("P%d", i+1), UserUUID: userUUID, DisplayName: s.players[userUUID].displayName}
 	}
 	return slices.Clone(s.participants), "", true
 }
@@ -456,6 +456,7 @@ func (c *sessionController) completeStart(participants []runtime.Participant, ga
 		// Last, so everything above is visible to whoever sees the start.
 		player.markStarted(s.start)
 	}
+	s.broadcastRoster()
 }
 
 // abortStart ends the Session after its game failed to start, durably and

@@ -22,6 +22,7 @@ const (
 	playerResync        = "resync"
 	playerLeaveResult   = "leave_result"
 	playerCommandResult = "command_result"
+	playerRosterUpdate  = "roster_update"
 )
 
 // maxCommandTokenLength bounds a command's idempotency token, which the
@@ -65,6 +66,18 @@ type playerOwnViewMessage struct {
 	Events                        []json.RawMessage `json:"events,omitempty"`
 }
 
+// playerRosterUpdateMessage is every participant of the running game with
+// whether they play: active, reconnecting, disconnected or left.
+type playerRosterUpdateMessage struct {
+	Type    string                `json:"type"`
+	Members []rosterMemberMessage `json:"members"`
+}
+
+type rosterMemberMessage struct {
+	participantMessage
+	Status string `json:"status"`
+}
+
 var errIncompletePlayerConnection = errors.New("player connection is missing operations")
 
 // Player message limits. A SAMPLE beyond them is dropped: each one is a full
@@ -101,7 +114,8 @@ func (h *Handler) handlePlayerJoin(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	attached, err := h.players.AttachPlayer(ctx, routed.sessionUUID, routed.userUUID, routed.ownerEpoch)
+	attached, err := h.players.AttachPlayer(ctx, routed.sessionUUID,
+		runtime.Player{UserUUID: routed.caller.UUID, DisplayName: routed.caller.DisplayName}, routed.ownerEpoch)
 	if err != nil {
 		logging.LogError(ctx, err)
 		wsx.Abort(conn)
@@ -113,7 +127,8 @@ func (h *Handler) handlePlayerJoin(w http.ResponseWriter, r *http.Request) {
 
 	player := attached.Connection
 	if player.Leave == nil || player.Sample == nil || player.Command == nil || player.Resync == nil ||
-		player.NextLobbyUpdate == nil || player.Started == nil || player.NextView == nil || player.Ended == nil || player.Disconnect == nil {
+		player.NextLobbyUpdate == nil || player.Started == nil || player.NextView == nil || player.NextRosterUpdate == nil ||
+		player.Ended == nil || player.Disconnect == nil {
 		logging.LogError(ctx, errIncompletePlayerConnection)
 		wsx.Abort(conn)
 		return
@@ -141,6 +156,7 @@ func (h *Handler) handlePlayerJoin(w http.ResponseWriter, r *http.Request) {
 			nextView:        player.NextView,
 			viewMessage:     ownViewMessage,
 		}),
+		sendRoster(session.liveSession, player.NextRosterUpdate),
 		session.closeOnRuntimeEnd(player.Ended),
 	)...)
 }
@@ -229,6 +245,38 @@ func playerStartedMessage(sessionUUID string, start runtime.PlayerStart) any {
 		Participants:  participantsJSON(start.SessionStart),
 		Frontend:      frontendJSON(start.SessionStart),
 	}
+}
+
+// sendRoster returns a loop that sends the running game's roster updates,
+// all after the start the client was sent; none when it was never sent.
+func sendRoster(s *liveSession, nextRosterUpdate func(ctx context.Context) (runtime.RosterUpdate, bool)) live.Loop {
+	// Counted when the loop is built, so closeOnRuntimeEnd can never miss it.
+	s.streams.Add(1)
+	return func(ctx context.Context) (live.End, bool) {
+		defer s.streams.Done()
+		select {
+		case <-s.startSent:
+		case <-s.sessionSent:
+		case <-ctx.Done():
+			return live.End{}, false
+		}
+		if !s.started.Load() {
+			return live.End{}, false
+		}
+		end, ended, _ := sendAll(ctx, s, nextRosterUpdate, func(update runtime.RosterUpdate) (any, bool) {
+			return rosterMessage(update), false
+		})
+		return end, ended
+	}
+}
+
+// rosterMessage is a roster update on the wire.
+func rosterMessage(update runtime.RosterUpdate) any {
+	members := make([]rosterMemberMessage, 0, len(update.Members))
+	for _, member := range update.Members {
+		members = append(members, rosterMemberMessage{participantMessage: participantJSON(member.Participant), Status: string(member.Status)})
+	}
+	return playerRosterUpdateMessage{Type: playerRosterUpdate, Members: members}
 }
 
 // ownViewMessage is the player's own view, with how far their SAMPLEs were

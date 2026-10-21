@@ -67,10 +67,10 @@ func TestSelectPerspective(t *testing.T) {
 		},
 		"creator_who_left_the_lobby_watches_nobody": func(t *testing.T) test {
 			controller := newTestController(t, 4)
-			creator, _, admitted := controller.joinLobby(ctx, "creator")
+			creator, _, admitted := controller.joinLobby(ctx, runtime.Player{UserUUID: "creator"})
 			require.True(t, admitted)
 			creator.Disconnect()
-			_, _, admitted = controller.joinLobby(ctx, "user-a")
+			_, _, admitted = controller.joinLobby(ctx, runtime.Player{UserUUID: "user-a"})
 			require.True(t, admitted)
 			participants, _, ok := controller.beginStart()
 			require.True(t, ok)

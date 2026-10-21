@@ -41,7 +41,7 @@ func runningGame(t *testing.T, deps *controllerDependencies) (*sessionController
 	require.NoError(t, err)
 	deps.now = func() time.Time { return now }
 	controller := withManifest(newSessionController(context.Background(), boundarySessionUUID, 1, deps), Manifest{MaxPlayers: 4, Inputs: schema, Commands: catalog})
-	player, _, admitted := controller.joinLobby(context.Background(), "user-a")
+	player, _, admitted := controller.joinLobby(context.Background(), runtime.Player{UserUUID: "user-a"})
 	require.True(t, admitted)
 	participants, _, ok := controller.beginStart()
 	require.True(t, ok)

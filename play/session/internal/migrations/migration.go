@@ -11,6 +11,7 @@ import (
 func MigrateTables(db *gorm.DB) error {
 	migrations := []*gormigrate.Migration{
 		migration20261015000000PlaySessions(),
+		migration20261021000000PlaySessionParticipantDisplayNames(),
 	}
 
 	// gormigrate refuses to run with an empty list.

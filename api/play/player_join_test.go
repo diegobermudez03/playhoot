@@ -16,6 +16,7 @@ import (
 
 	"github.com/diegobermudez03/playhoot/api/internal/auth"
 	"github.com/diegobermudez03/playhoot/api/internal/live"
+	"github.com/diegobermudez03/playhoot/identity"
 	"github.com/diegobermudez03/playhoot/play/runtime"
 	"github.com/diegobermudez03/playhoot/utils/ratelimit"
 )
@@ -25,6 +26,7 @@ import (
 type fakePlayer struct {
 	*fakeLobby[runtime.PlayerStart]
 	views      chan runtime.OwnView
+	rosters    chan runtime.RosterUpdate
 	commandErr error
 	// sampleErr is what Sample answers, after recording the SAMPLE.
 	sampleErr error
@@ -48,6 +50,7 @@ func newFakePlayer() *fakePlayer {
 	return &fakePlayer{
 		fakeLobby: newFakeLobby[runtime.PlayerStart](),
 		views:     make(chan runtime.OwnView, 4),
+		rosters:   make(chan runtime.RosterUpdate, 4),
 		sampled:   make(chan struct{}, 8),
 		ended:     make(chan struct{}),
 	}
@@ -120,6 +123,9 @@ func (f *fakePlayer) connection() runtime.PlayerConnection {
 		NextView: func(ctx context.Context) (runtime.OwnView, bool) {
 			return nextOf(ctx, f.views, f.ended)
 		},
+		NextRosterUpdate: func(ctx context.Context) (runtime.RosterUpdate, bool) {
+			return nextOf(ctx, f.rosters, f.ended)
+		},
 		Ended: func(ctx context.Context) (runtime.ConnectionEnd, bool) {
 			select {
 			case <-f.ended:
@@ -161,12 +167,13 @@ func TestHandlePlayerJoin(t *testing.T) {
 
 	const (
 		callerUUID  = "0f8fad5b-d9cb-469f-a165-70867728950e"
+		callerName  = "Ana"
 		sessionUUID = "7c9e6679-7425-40de-944b-e07fc1f90ae7"
 		ownerEpoch  = int64(3)
 	)
 	accept := func(deps dependencies, player *fakePlayer) {
 		deps.players.EXPECT().
-			AttachPlayer(gomock.Any(), sessionUUID, callerUUID, ownerEpoch).
+			AttachPlayer(gomock.Any(), sessionUUID, runtime.Player{UserUUID: callerUUID, DisplayName: callerName}, ownerEpoch).
 			Return(runtime.AttachPlayerResult{Outcome: runtime.AttachAccepted, Connection: player.connection()}, nil)
 	}
 
@@ -273,6 +280,25 @@ func TestHandlePlayerJoin(t *testing.T) {
 				expectedDisconnects: 1,
 			}
 		},
+		"roster_updates_follow_the_start": func(t *testing.T, deps dependencies) test {
+			player := newFakePlayer()
+			player.rosters <- runtime.RosterUpdate{Members: []runtime.RosterMember{
+				{Participant: roster.Participants[0], Status: runtime.PresenceReconnecting},
+				{Participant: roster.Participants[1], Status: runtime.PresenceActive},
+			}}
+			player.start(runtime.PlayerStart{SessionStart: roster, ParticipantID: "P2"})
+			accept(deps, player)
+			return test{
+				player:       player,
+				clientCloses: true,
+				expectedReceived: []string{
+					playerStartedJSON,
+					`{"type":"roster_update","members":[{"participant_id":"P1","user_uuid":"u1","display_name":"Ana","status":"reconnecting"},` +
+						`{"participant_id":"P2","user_uuid":"u2","display_name":"Bruno","status":"active"}]}`,
+				},
+				expectedDisconnects: 1,
+			}
+		},
 		"resync_is_followed_by_a_full_view": func(t *testing.T, deps dependencies) test {
 			player := startedFakePlayer()
 			player.resyncView = runtime.OwnView{
@@ -293,7 +319,7 @@ func TestHandlePlayerJoin(t *testing.T) {
 		},
 		"start_follows_the_lobby_and_precedes_the_views": func(t *testing.T, deps dependencies) test {
 			player := newFakePlayer()
-			player.lobby <- runtime.LobbyUpdate{Members: []runtime.LobbyMember{{UserUUID: "u1"}, {UserUUID: "u2"}}}
+			player.lobby <- runtime.LobbyUpdate{Members: []runtime.LobbyMember{{UserUUID: "u1", DisplayName: "Ana"}, {UserUUID: "u2", DisplayName: "Bruno"}}}
 			player.views <- runtime.OwnView{PlayerView: runtime.PlayerView{ParticipantID: "P2", Full: true, Revision: 1, State: []byte(`{"round":1}`)}}
 			player.start(runtime.PlayerStart{SessionStart: roster, ParticipantID: "P2"})
 			accept(deps, player)
@@ -301,7 +327,7 @@ func TestHandlePlayerJoin(t *testing.T) {
 				player:       player,
 				clientCloses: true,
 				expectedReceived: []string{
-					`{"type":"lobby_update",` + sessionUUIDJSON + `,"members":[{"user_uuid":"u1"},{"user_uuid":"u2"}]}`,
+					`{"type":"lobby_update",` + sessionUUIDJSON + `,"members":[{"user_uuid":"u1","display_name":"Ana"},{"user_uuid":"u2","display_name":"Bruno"}]}`,
 					playerStartedJSON,
 					`{"type":"player_view","participant_id":"P2","full":true,"revision":1,"state":{"round":1},"consumed_through_sample_sequence":0}`,
 				},
@@ -310,13 +336,13 @@ func TestHandlePlayerJoin(t *testing.T) {
 		},
 		"lobby_closed_without_starting_tells_how": func(t *testing.T, deps dependencies) test {
 			player := newFakePlayer()
-			player.lobby <- runtime.LobbyUpdate{Members: []runtime.LobbyMember{{UserUUID: callerUUID}}}
+			player.lobby <- runtime.LobbyUpdate{Members: []runtime.LobbyMember{{UserUUID: callerUUID, DisplayName: callerName}}}
 			player.endWith(hostCancelled)
 			accept(deps, player)
 			return test{
 				player: player,
 				expectedReceived: []string{
-					`{"type":"lobby_update",` + sessionUUIDJSON + `,"members":[{"user_uuid":"` + callerUUID + `"}]}`,
+					`{"type":"lobby_update",` + sessionUUIDJSON + `,"members":[{"user_uuid":"` + callerUUID + `","display_name":"` + callerName + `"}]}`,
 					`{"type":"lobby_closed","status":"CANCELLED","end_cause":"HOST_CANCELLED"}`,
 				},
 				expectedCloseStatus: websocket.StatusNormalClosure,
@@ -352,12 +378,12 @@ func TestHandlePlayerJoin(t *testing.T) {
 		},
 		"lobby_updates_are_delivered": func(t *testing.T, deps dependencies) test {
 			player := newFakePlayer()
-			player.lobby <- runtime.LobbyUpdate{Members: []runtime.LobbyMember{{UserUUID: callerUUID}}}
+			player.lobby <- runtime.LobbyUpdate{Members: []runtime.LobbyMember{{UserUUID: callerUUID, DisplayName: callerName}}}
 			accept(deps, player)
 			return test{
 				player:              player,
 				clientCloses:        true,
-				expectedReceived:    []string{`{"type":"lobby_update",` + sessionUUIDJSON + `,"members":[{"user_uuid":"` + callerUUID + `"}]}`},
+				expectedReceived:    []string{`{"type":"lobby_update",` + sessionUUIDJSON + `,"members":[{"user_uuid":"` + callerUUID + `","display_name":"` + callerName + `"}]}`},
 				expectedDisconnects: 1,
 			}
 		},
@@ -448,7 +474,7 @@ func TestHandlePlayerJoin(t *testing.T) {
 		},
 		"rejected_connection_receives_the_reason_and_closes": func(t *testing.T, deps dependencies) test {
 			deps.players.EXPECT().
-				AttachPlayer(gomock.Any(), sessionUUID, callerUUID, ownerEpoch).
+				AttachPlayer(gomock.Any(), sessionUUID, runtime.Player{UserUUID: callerUUID, DisplayName: callerName}, ownerEpoch).
 				Return(runtime.AttachPlayerResult{Outcome: runtime.AttachRejected, Rejection: runtime.RejectLobbyFull}, nil)
 			return test{
 				expectedReceived:    []string{`{"type":"rejected","reason":"lobby_full"}`},
@@ -457,13 +483,13 @@ func TestHandlePlayerJoin(t *testing.T) {
 		},
 		"attach_fails": func(t *testing.T, deps dependencies) test {
 			deps.players.EXPECT().
-				AttachPlayer(gomock.Any(), sessionUUID, callerUUID, ownerEpoch).
+				AttachPlayer(gomock.Any(), sessionUUID, runtime.Player{UserUUID: callerUUID, DisplayName: callerName}, ownerEpoch).
 				Return(runtime.AttachPlayerResult{}, errors.New("runtime down"))
 			return test{expectedCloseStatus: websocket.StatusInternalError}
 		},
 		"accepted_without_operations": func(t *testing.T, deps dependencies) test {
 			deps.players.EXPECT().
-				AttachPlayer(gomock.Any(), sessionUUID, callerUUID, ownerEpoch).
+				AttachPlayer(gomock.Any(), sessionUUID, runtime.Player{UserUUID: callerUUID, DisplayName: callerName}, ownerEpoch).
 				Return(runtime.AttachPlayerResult{Outcome: runtime.AttachAccepted}, nil)
 			return test{expectedCloseStatus: websocket.StatusInternalError}
 		},
@@ -484,7 +510,7 @@ func TestHandlePlayerJoin(t *testing.T) {
 			handlerDone := make(chan struct{})
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				defer close(handlerDone)
-				ctx := withRoutedSession(auth.WithUserUUID(r.Context(), callerUUID), sessionUUID, ownerEpoch)
+				ctx := withRoutedSession(auth.WithCaller(r.Context(), identity.User{UUID: callerUUID, DisplayName: callerName}), sessionUUID, ownerEpoch)
 				handler.handlePlayerJoin(w, r.WithContext(ctx))
 			}))
 			t.Cleanup(server.Close)

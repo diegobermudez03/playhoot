@@ -298,7 +298,7 @@ func TestAcceptCommand(t *testing.T) {
 
 func TestCommandBeforeTheGameRuns(t *testing.T) {
 	controller := newTestController(t, 8)
-	player, _, ok := controller.joinLobby(context.Background(), "user-a")
+	player, _, ok := controller.joinLobby(context.Background(), runtime.Player{UserUUID: "user-a"})
 	require.True(t, ok)
 
 	result, err := player.Command(context.Background(), runtime.Command{Token: "t1", Name: "pass"})

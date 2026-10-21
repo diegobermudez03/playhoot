@@ -63,6 +63,7 @@ erDiagram
         BIGINT session_id "play_sessions.id; unique with participant_id and with user_uuid"
         UUID user_uuid "Identity User"
         TEXT participant_id "P1..Pn, what the game knows the player as"
+        TEXT display_name "as Identity named them when the game started; empty before 20261021000000"
         TIMESTAMPTZ created_at
     }
     play_session_checkpoints {

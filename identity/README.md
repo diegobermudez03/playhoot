@@ -13,6 +13,7 @@ Identity maintains a stable Playhoot identity for a person so other domains may 
 - Guest-to-registered continuity of the same `UserUUID` in the normal conversion path.
 - Resolution of public `UserUUID` to the current internal representation once implemented.
 - Creating guest Users and their bearer credentials, including the display name a guest is created with (decided by the human on 2026-10-17: a client without an account creates a guest, naming it, before joining a Session as a player).
+- Each User's display name, with whatever identity attributes are added later: `Authorize` resolves a credential to an `identity.User` (UserUUID and display name), which the API's authorization middleware passes on. Other domains never read a User structure of Identity's: their callers build each domain's own type from it (decided by the human on 2026-10-20).
 
 ## Does Not Own
 

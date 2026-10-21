@@ -160,18 +160,18 @@ func (m *MockplayerAttacher) EXPECT() *MockplayerAttacherMockRecorder {
 }
 
 // AttachPlayer mocks base method.
-func (m *MockplayerAttacher) AttachPlayer(ctx context.Context, sessionUUID, userUUID string, ownerEpoch int64) (runtime.AttachPlayerResult, error) {
+func (m *MockplayerAttacher) AttachPlayer(ctx context.Context, sessionUUID string, player runtime.Player, ownerEpoch int64) (runtime.AttachPlayerResult, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "AttachPlayer", ctx, sessionUUID, userUUID, ownerEpoch)
+	ret := m.ctrl.Call(m, "AttachPlayer", ctx, sessionUUID, player, ownerEpoch)
 	ret0, _ := ret[0].(runtime.AttachPlayerResult)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // AttachPlayer indicates an expected call of AttachPlayer.
-func (mr *MockplayerAttacherMockRecorder) AttachPlayer(ctx, sessionUUID, userUUID, ownerEpoch any) *gomock.Call {
+func (mr *MockplayerAttacherMockRecorder) AttachPlayer(ctx, sessionUUID, player, ownerEpoch any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AttachPlayer", reflect.TypeOf((*MockplayerAttacher)(nil).AttachPlayer), ctx, sessionUUID, userUUID, ownerEpoch)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AttachPlayer", reflect.TypeOf((*MockplayerAttacher)(nil).AttachPlayer), ctx, sessionUUID, player, ownerEpoch)
 }
 
 // MockjoinCodeResolver is a mock of joinCodeResolver interface.

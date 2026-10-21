@@ -128,7 +128,7 @@ func validStartCommit(commit sessionpkg.StartCommit) ([]internalrepo.Participant
 			return nil, fmt.Errorf("%w: participant %q of user %q is repeated", errInvalidStartCommit, participant.ParticipantID, participant.UserUUID)
 		}
 		users[user], participantIDs[participant.ParticipantID] = true, true
-		participants = append(participants, internalrepo.Participant{UserUUID: user.String(), ParticipantID: participant.ParticipantID})
+		participants = append(participants, internalrepo.Participant{UserUUID: user.String(), ParticipantID: participant.ParticipantID, DisplayName: participant.DisplayName})
 	}
 	return participants, nil
 }

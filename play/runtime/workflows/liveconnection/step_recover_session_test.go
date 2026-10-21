@@ -215,7 +215,7 @@ func TestRecoveredGameResumesWhereItsCheckpointWas(t *testing.T) {
 	controller.unlock()
 
 	// P2 comes back only by rejoining, which this game does not support.
-	rejected, participant, disconnected := controller.reattachPlayer(context.Background(), "user-b")
+	rejected, participant, disconnected := controller.reattachPlayer(context.Background(), runtime.Player{UserUUID: "user-b"})
 	require.True(t, participant)
 	require.True(t, disconnected)
 	require.Equal(t, runtime.AttachPlayerResult{}, rejected)
@@ -247,7 +247,7 @@ func TestRecoveryWindow(t *testing.T) {
 			_, err := controller.recoverSession(context.Background())
 			require.NoError(t, err)
 			if tc.returns {
-				_, participant, disconnected := controller.reattachPlayer(context.Background(), "user-a")
+				_, participant, disconnected := controller.reattachPlayer(context.Background(), runtime.Player{UserUUID: "user-a"})
 				require.True(t, participant)
 				require.False(t, disconnected)
 			}
@@ -292,7 +292,7 @@ func TestConcurrentReconnectionsRecoverOnce(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			results[i], errs[i] = resolver.AttachPlayer(context.Background(), setup.sessionUUID, userUUID, 1)
+			results[i], errs[i] = resolver.AttachPlayer(context.Background(), setup.sessionUUID, runtime.Player{UserUUID: userUUID}, 1)
 		}()
 	}
 	wg.Wait()

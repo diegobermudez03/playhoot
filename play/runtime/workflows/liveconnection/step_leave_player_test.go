@@ -42,7 +42,7 @@ func TestLeave(t *testing.T) {
 		"replaced_connection_leaving_changes_nothing": func(t *testing.T) test {
 			return test{
 				leaving: func(t *testing.T, controller *sessionController, players map[string]runtime.PlayerConnection) runtime.PlayerConnection {
-					_, participant, _ := controller.reattachPlayer(ctx, "user-a")
+					_, participant, _ := controller.reattachPlayer(ctx, runtime.Player{UserUUID: "user-a"})
 					require.True(t, participant)
 					return players["user-a"]
 				},
@@ -66,7 +66,7 @@ func TestLeave(t *testing.T) {
 			require.Equal(t, tc.expectedTimeline, withoutTimesOrStreams(work.operations))
 			if tc.expectedDisconnected {
 				require.Equal(t, runtime.EndLeft, endedWith(t, leaving.Ended))
-				back, participant, err := controller.attachParticipant(ctx, "user-a")
+				back, participant, err := controller.attachParticipant(ctx, runtime.Player{UserUUID: "user-a"})
 				require.NoError(t, err)
 				require.True(t, participant)
 				require.Equal(t, runtime.RejectParticipantDisconnected, back.Rejection, "only rejoining brings them back")

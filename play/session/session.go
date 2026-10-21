@@ -199,6 +199,10 @@ type FrontendAccess struct {
 type StartParticipant struct {
 	UserUUID      string
 	ParticipantID string
+
+	// DisplayName is how the other players saw them when the game started,
+	// kept so a recovered game still shows them.
+	DisplayName string
 }
 
 // StartCommit is what a Session records when it becomes RUNNING.

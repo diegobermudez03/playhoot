@@ -26,7 +26,7 @@ type sessionCreator interface {
 
 // authorizer is Identity's coarse authorization.
 type authorizer interface {
-	Authorize(ctx context.Context, token string, operation identity.Operation) (string, identity.AccessDecision, error)
+	Authorize(ctx context.Context, token string, operation identity.Operation) (identity.User, identity.AccessDecision, error)
 }
 
 // ownerLocator returns a Session's owner, claiming one when there is none.
@@ -43,7 +43,7 @@ type adminAttacher interface {
 // playerAttacher admits player connections into a Session's lobby. Its
 // Connection is served only when accepted; an error means no connection exists.
 type playerAttacher interface {
-	AttachPlayer(ctx context.Context, sessionUUID string, userUUID string, ownerEpoch int64) (runtime.AttachPlayerResult, error)
+	AttachPlayer(ctx context.Context, sessionUUID string, player runtime.Player, ownerEpoch int64) (runtime.AttachPlayerResult, error)
 }
 
 // joinCodeResolver finds the Session a join code names.

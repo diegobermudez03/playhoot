@@ -81,7 +81,7 @@ func (h *Handler) handleAdminJoin(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	attached, err := h.admins.AttachAdmin(ctx, routed.sessionUUID, routed.userUUID, routed.ownerEpoch)
+	attached, err := h.admins.AttachAdmin(ctx, routed.sessionUUID, routed.caller.UUID, routed.ownerEpoch)
 	if err != nil {
 		logging.LogError(ctx, err)
 		wsx.Abort(conn)

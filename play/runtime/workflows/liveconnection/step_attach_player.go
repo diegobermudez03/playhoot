@@ -38,23 +38,23 @@ var (
 	)
 )
 
-// AttachPlayer hands userUUID's player connection to sessionUUID's
-// controller under ownerEpoch, creating the controller if it has none. An
-// error means admission could not be decided.
-func (r *ControllerResolver) AttachPlayer(ctx context.Context, sessionUUID string, userUUID string, ownerEpoch int64) (runtime.AttachPlayerResult, error) {
+// AttachPlayer hands player's connection to sessionUUID's controller under
+// ownerEpoch, creating the controller if it has none. An error means
+// admission could not be decided.
+func (r *ControllerResolver) AttachPlayer(ctx context.Context, sessionUUID string, player runtime.Player, ownerEpoch int64) (runtime.AttachPlayerResult, error) {
 	sessionController, rejection := r.controllerFor(ctx, sessionUUID, ownerEpoch)
 	if sessionController == nil {
 		return rejectPlayer(ctx, rejection), nil
 	}
-	return sessionController.attachPlayer(ctx, userUUID)
+	return sessionController.attachPlayer(ctx, player)
 }
 
-// attachPlayer takes userUUID's player connection back into the running game
-// if they play it, recovering the game first when the database runs it and
-// this instance does not, or admits it into the lobby if the durable Session
+// attachPlayer takes player's connection back into the running game if they
+// play it, recovering the game first when the database runs it and this
+// instance does not, or admits it into the lobby if the durable Session
 // accepts players.
-func (c *sessionController) attachPlayer(ctx context.Context, userUUID string) (runtime.AttachPlayerResult, error) {
-	if result, participant, err := c.attachParticipant(ctx, userUUID); participant {
+func (c *sessionController) attachPlayer(ctx context.Context, player runtime.Player) (runtime.AttachPlayerResult, error) {
+	if result, participant, err := c.attachParticipant(ctx, player); participant {
 		return result, err
 	}
 	eligibility, err := c.deps.playerJoins.EligibleToJoinAsPlayer(ctx, c.sessionUUID)
@@ -64,7 +64,7 @@ func (c *sessionController) attachPlayer(ctx context.Context, userUUID string) (
 	switch eligibility {
 	case sessionpkg.PlayerJoinEligible:
 	case sessionpkg.PlayerJoinSessionStarted:
-		return c.attachRecoveredPlayer(ctx, userUUID)
+		return c.attachRecoveredPlayer(ctx, player)
 	case sessionpkg.PlayerJoinSessionNotFound, sessionpkg.PlayerJoinSessionNotJoinable:
 		return rejectPlayer(ctx, runtime.RejectSessionUnavailable), nil
 	default:
@@ -73,7 +73,7 @@ func (c *sessionController) attachPlayer(ctx context.Context, userUUID string) (
 	if err := c.loadManifest(ctx); err != nil {
 		return runtime.AttachPlayerResult{}, err
 	}
-	connection, rejection, admitted := c.joinLobby(ctx, userUUID)
+	connection, rejection, admitted := c.joinLobby(ctx, player)
 	if !admitted {
 		return rejectPlayer(ctx, rejection), nil
 	}
@@ -81,9 +81,9 @@ func (c *sessionController) attachPlayer(ctx context.Context, userUUID string) (
 	return runtime.AttachPlayerResult{Outcome: runtime.AttachAccepted, Connection: connection}, nil
 }
 
-// attachRecoveredPlayer takes userUUID's connection into the running game,
+// attachRecoveredPlayer takes player's connection into the running game,
 // recovered first if it does not run here; only its participants come in.
-func (c *sessionController) attachRecoveredPlayer(ctx context.Context, userUUID string) (runtime.AttachPlayerResult, error) {
+func (c *sessionController) attachRecoveredPlayer(ctx context.Context, player runtime.Player) (runtime.AttachPlayerResult, error) {
 	if err := c.loadManifest(ctx); err != nil {
 		return runtime.AttachPlayerResult{}, err
 	}
@@ -94,7 +94,7 @@ func (c *sessionController) attachRecoveredPlayer(ctx context.Context, userUUID 
 	if recovery == recoveryEnded {
 		return rejectPlayer(ctx, runtime.RejectSessionUnavailable), nil
 	}
-	if result, participant, err := c.attachParticipant(ctx, userUUID); participant {
+	if result, participant, err := c.attachParticipant(ctx, player); participant {
 		return result, err
 	}
 	return rejectPlayer(ctx, runtime.RejectSessionStarted), nil
@@ -105,11 +105,12 @@ func rejectPlayer(ctx context.Context, reason runtime.RejectReason) runtime.Atta
 	return runtime.AttachPlayerResult{Outcome: runtime.AttachRejected, Rejection: reason}
 }
 
-// joinLobby admits userUUID's player connection into the lobby, serialized
+// joinLobby admits joining's player connection into the lobby, serialized
 // with every other admission. A user already in it keeps their place: their
 // older connection ends as replaced. Rejection is set only when not admitted.
-func (c *sessionController) joinLobby(ctx context.Context, userUUID string) (runtime.PlayerConnection, runtime.RejectReason, bool) {
-	player := newConnection(uuid.NewString(), userUUID)
+func (c *sessionController) joinLobby(ctx context.Context, joining runtime.Player) (runtime.PlayerConnection, runtime.RejectReason, bool) {
+	userUUID := joining.UserUUID
+	player := newConnection(uuid.NewString(), joining)
 
 	s := c.lock()
 	switch s.phase {
@@ -171,7 +172,8 @@ func (c *sessionController) playerConnection(player *connection) runtime.PlayerC
 		NextView: func(ctx context.Context) (runtime.OwnView, bool) {
 			return player.views.next(ctx, player.ended)
 		},
-		Ended: player.wait,
+		NextRosterUpdate: player.nextRosterUpdate,
+		Ended:            player.wait,
 		Disconnect: func() {
 			s := c.lock()
 			// Once frozen the participant stays; only the lobby forgets. A

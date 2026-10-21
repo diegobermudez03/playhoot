@@ -37,6 +37,7 @@ type LockedSession struct {
 type Participant struct {
 	UserUUID      string
 	ParticipantID string
+	DisplayName   string
 }
 
 // FindStartCandidate returns sessionUUID with its game version, or nil when
@@ -83,9 +84,9 @@ func (r *Repo) LockSession(ctx context.Context, tx *gorm.DB, sessionUUID string)
 func (r *Repo) CreateParticipants(ctx context.Context, tx *gorm.DB, sessionID uint, participants []Participant) error {
 	for _, participant := range participants {
 		result := tx.WithContext(ctx).Exec(`
-			INSERT INTO play_session_participants (session_id, user_uuid, participant_id)
-			VALUES (?, ?, ?)
-		`, sessionID, participant.UserUUID, participant.ParticipantID)
+			INSERT INTO play_session_participants (session_id, user_uuid, participant_id, display_name)
+			VALUES (?, ?, ?, ?)
+		`, sessionID, participant.UserUUID, participant.ParticipantID, participant.DisplayName)
 		if result.Error != nil {
 			return fmt.Errorf("inserting participant: %w", result.Error)
 		}

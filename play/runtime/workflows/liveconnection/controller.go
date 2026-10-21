@@ -582,7 +582,7 @@ func (s *liveState) enqueue(operation Operation) {
 func (s *liveState) lobbyUpdate() runtime.LobbyUpdate {
 	members := make([]runtime.LobbyMember, len(s.lobby))
 	for i, userUUID := range s.lobby {
-		members[i] = runtime.LobbyMember{UserUUID: userUUID}
+		members[i] = runtime.LobbyMember{UserUUID: userUUID, DisplayName: s.players[userUUID].displayName}
 	}
 	return runtime.LobbyUpdate{Members: members}
 }

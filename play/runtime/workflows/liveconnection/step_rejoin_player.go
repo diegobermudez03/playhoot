@@ -40,16 +40,16 @@ func (p *pendingRejoin) resolve(outcome string) {
 	close(p.done)
 }
 
-// attachParticipant takes userUUID's new connection into the running game
+// attachParticipant takes player's new connection into the running game
 // they play: at once within the transport grace, or once the game accepts
 // them back when they were disconnected. participant is false when this
-// controller runs no game userUUID plays.
-func (c *sessionController) attachParticipant(ctx context.Context, userUUID string) (result runtime.AttachPlayerResult, participant bool, err error) {
-	result, participant, disconnected := c.reattachPlayer(ctx, userUUID)
+// controller runs no game player plays.
+func (c *sessionController) attachParticipant(ctx context.Context, player runtime.Player) (result runtime.AttachPlayerResult, participant bool, err error) {
+	result, participant, disconnected := c.reattachPlayer(ctx, player)
 	if !disconnected {
 		return result, participant, nil
 	}
-	outcome, err := c.rejoin(ctx, userUUID)
+	outcome, err := c.rejoin(ctx, player.UserUUID)
 	if err != nil {
 		return runtime.AttachPlayerResult{}, true, err
 	}
@@ -63,7 +63,7 @@ func (c *sessionController) attachParticipant(ctx context.Context, userUUID stri
 	default:
 		return rejectPlayer(ctx, runtime.RejectSessionUnavailable), true, nil
 	}
-	result, _, disconnected = c.reattachPlayer(ctx, userUUID)
+	result, _, disconnected = c.reattachPlayer(ctx, player)
 	if disconnected {
 		// Accepted, then disconnected again before this connection attached.
 		return rejectPlayer(ctx, runtime.RejectParticipantDisconnected), true, nil
@@ -114,7 +114,8 @@ func (s *liveState) decideRejoin(participantID string, request *pendingRejoin, a
 		return
 	}
 	presence := s.presence[participantID]
-	presence.disconnected = false
+	presence.disconnected, presence.disconnectCause = false, ""
 	presence.await(s.now().Add(s.transportGrace), disconnectGraceExpired)
 	request.resolve(rejoinAccepted)
+	s.broadcastRoster()
 }

@@ -16,6 +16,7 @@ import (
 
 	"github.com/diegobermudez03/playhoot/api/internal/auth"
 	"github.com/diegobermudez03/playhoot/api/internal/live"
+	"github.com/diegobermudez03/playhoot/identity"
 	"github.com/diegobermudez03/playhoot/play/runtime"
 )
 
@@ -78,8 +79,8 @@ var hostCancelled = runtime.ConnectionEnd{Reason: runtime.EndSessionEnded, Sessi
 // roster is the Session start the fakes report.
 var roster = runtime.SessionStart{
 	Participants: []runtime.Participant{
-		{ParticipantID: "P1", UserUUID: "u1"},
-		{ParticipantID: "P2", UserUUID: "u2"},
+		{ParticipantID: "P1", UserUUID: "u1", DisplayName: "Ana"},
+		{ParticipantID: "P2", UserUUID: "u2", DisplayName: "Bruno"},
 	},
 	Frontend: runtime.GameFrontend{
 		URL:       "https://storage.example/frontend?sig=abc",
@@ -94,7 +95,7 @@ const sessionUUIDJSON = `"session_uuid":"7c9e6679-7425-40de-944b-e07fc1f90ae7"`
 
 // rosterJSON is roster's fields on the wire, inside a session_started, with
 // the Session it started.
-const rosterJSON = sessionUUIDJSON + `,"participants":[{"participant_id":"P1","user_uuid":"u1"},{"participant_id":"P2","user_uuid":"u2"}],` +
+const rosterJSON = sessionUUIDJSON + `,"participants":[{"participant_id":"P1","user_uuid":"u1","display_name":"Ana"},{"participant_id":"P2","user_uuid":"u2","display_name":"Bruno"}],` +
 	`"frontend":{"url":"https://storage.example/frontend?sig=abc","sha256":"9f86d081","expires_at":"2026-10-17T21:00:00Z"}`
 
 // fakeLobby is the lobby side of a fake Runtime connection: its lobby stream
@@ -317,7 +318,7 @@ func TestHandleAdminJoin(t *testing.T) {
 		},
 		"start_follows_the_lobby_and_precedes_the_views": func(t *testing.T, deps dependencies) test {
 			admin := newFakeAdmin(runtime.WatchedView{PlayerView: runtime.PlayerView{ParticipantID: "P1", Full: true, Revision: 1, State: []byte(`{"round":1}`)}})
-			admin.lobby <- runtime.LobbyUpdate{Members: []runtime.LobbyMember{{UserUUID: "u1"}, {UserUUID: "u2"}}}
+			admin.lobby <- runtime.LobbyUpdate{Members: []runtime.LobbyMember{{UserUUID: "u1", DisplayName: "Ana"}, {UserUUID: "u2", DisplayName: "Bruno"}}}
 			admin.start(roster)
 			accept(deps, admin)
 			return test{
@@ -325,7 +326,7 @@ func TestHandleAdminJoin(t *testing.T) {
 				admin:        admin,
 				clientCloses: true,
 				expectedReceived: []string{
-					`{"type":"lobby_update",` + sessionUUIDJSON + `,"members":[{"user_uuid":"u1"},{"user_uuid":"u2"}]}`,
+					`{"type":"lobby_update",` + sessionUUIDJSON + `,"members":[{"user_uuid":"u1","display_name":"Ana"},{"user_uuid":"u2","display_name":"Bruno"}]}`,
 					`{"type":"session_started",` + rosterJSON + `}`,
 					`{"type":"player_view","participant_id":"P1","full":true,"revision":1,"state":{"round":1}}`,
 				},
@@ -346,14 +347,14 @@ func TestHandleAdminJoin(t *testing.T) {
 		},
 		"lobby_updates_are_delivered_until_the_lobby_closes": func(t *testing.T, deps dependencies) test {
 			admin := newFakeAdmin()
-			admin.lobby <- runtime.LobbyUpdate{Members: []runtime.LobbyMember{{UserUUID: "u1"}, {UserUUID: "u2"}}}
+			admin.lobby <- runtime.LobbyUpdate{Members: []runtime.LobbyMember{{UserUUID: "u1", DisplayName: "Ana"}, {UserUUID: "u2", DisplayName: "Bruno"}}}
 			admin.endWith(runtime.ConnectionEnd{Reason: runtime.EndSessionEnded, SessionStatus: "EXPIRED", EndCause: "LOBBY_EXPIRED"})
 			accept(deps, admin)
 			return test{
 				protocols: []string{"playhoot.v1"},
 				admin:     admin,
 				expectedReceived: []string{
-					`{"type":"lobby_update",` + sessionUUIDJSON + `,"members":[{"user_uuid":"u1"},{"user_uuid":"u2"}]}`,
+					`{"type":"lobby_update",` + sessionUUIDJSON + `,"members":[{"user_uuid":"u1","display_name":"Ana"},{"user_uuid":"u2","display_name":"Bruno"}]}`,
 					`{"type":"lobby_closed","status":"EXPIRED","end_cause":"LOBBY_EXPIRED"}`,
 				},
 				expectedCloseStatus: websocket.StatusNormalClosure,
@@ -537,7 +538,7 @@ func TestHandleAdminJoin(t *testing.T) {
 				defer close(handlerDone)
 				ctx := r.Context()
 				if !tc.unrouted {
-					ctx = withRoutedSession(auth.WithUserUUID(ctx, callerUUID), sessionUUID, ownerEpoch)
+					ctx = withRoutedSession(auth.WithCaller(ctx, identity.User{UUID: callerUUID}), sessionUUID, ownerEpoch)
 				}
 				handler.handleAdminJoin(w, r.WithContext(ctx))
 			}))

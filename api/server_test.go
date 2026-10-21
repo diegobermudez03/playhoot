@@ -17,6 +17,7 @@ import (
 	"github.com/diegobermudez03/playhoot/api/internal/routing"
 	"github.com/diegobermudez03/playhoot/api/internal/throttle"
 	"github.com/diegobermudez03/playhoot/api/internal/wsx"
+	"github.com/diegobermudez03/playhoot/identity"
 	"github.com/diegobermudez03/playhoot/utils/ratelimit"
 )
 
@@ -221,7 +222,7 @@ func TestRouteMiddlewares(t *testing.T) {
 					Authorization: func(next http.HandlerFunc) http.HandlerFunc {
 						return func(w http.ResponseWriter, r *http.Request) {
 							*passed = append(*passed, "authorization")
-							next(w, r.WithContext(auth.WithUserUUID(r.Context(), "u1")))
+							next(w, r.WithContext(auth.WithCaller(r.Context(), identity.User{UUID: "u1"})))
 						}
 					},
 					Limits: limitedToOne,

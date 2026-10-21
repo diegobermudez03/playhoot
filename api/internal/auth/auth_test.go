@@ -25,12 +25,13 @@ func TestRequire(t *testing.T) {
 		expectedBody       string
 		expectedAuthHeader string
 		expectedNextCalled bool
-		expectedCaller     string
+		expectedCaller     identity.User
 	}
 
 	const (
 		operation  = identity.OperationCreateSession
 		callerUUID = "0f8fad5b-d9cb-469f-a165-70867728950e"
+		callerName = "Ana"
 	)
 
 	tests := map[string]func(t *testing.T, deps dependencies) test{
@@ -38,26 +39,26 @@ func TestRequire(t *testing.T) {
 			ctx := context.Background()
 			deps.authorizer.EXPECT().
 				Authorize(ctx, "jwt-token", operation).
-				Return(callerUUID, identity.AccessAllowed, nil)
+				Return(identity.User{UUID: callerUUID, DisplayName: callerName}, identity.AccessAllowed, nil)
 			return test{
 				ctx:                ctx,
 				authorization:      "Bearer jwt-token",
 				expectedCode:       http.StatusNoContent,
 				expectedNextCalled: true,
-				expectedCaller:     callerUUID,
+				expectedCaller:     identity.User{UUID: callerUUID, DisplayName: callerName},
 			}
 		},
 		"allowed_with_lowercase_scheme": func(t *testing.T, deps dependencies) test {
 			ctx := context.Background()
 			deps.authorizer.EXPECT().
 				Authorize(ctx, "jwt-token", operation).
-				Return(callerUUID, identity.AccessAllowed, nil)
+				Return(identity.User{UUID: callerUUID, DisplayName: callerName}, identity.AccessAllowed, nil)
 			return test{
 				ctx:                ctx,
 				authorization:      "bearer jwt-token",
 				expectedCode:       http.StatusNoContent,
 				expectedNextCalled: true,
-				expectedCaller:     callerUUID,
+				expectedCaller:     identity.User{UUID: callerUUID, DisplayName: callerName},
 			}
 		},
 		"missing_authorization_header": func(t *testing.T, deps dependencies) test {
@@ -90,7 +91,7 @@ func TestRequire(t *testing.T) {
 			ctx := context.Background()
 			deps.authorizer.EXPECT().
 				Authorize(ctx, "expired", operation).
-				Return("", identity.AccessUnauthenticated, nil)
+				Return(identity.User{}, identity.AccessUnauthenticated, nil)
 			return test{
 				ctx:                ctx,
 				authorization:      "Bearer expired",
@@ -103,7 +104,7 @@ func TestRequire(t *testing.T) {
 			ctx := context.Background()
 			deps.authorizer.EXPECT().
 				Authorize(ctx, "guest-token", operation).
-				Return(callerUUID, identity.AccessForbidden, nil)
+				Return(identity.User{UUID: callerUUID, DisplayName: callerName}, identity.AccessForbidden, nil)
 			return test{
 				ctx:           ctx,
 				authorization: "Bearer guest-token",
@@ -115,7 +116,7 @@ func TestRequire(t *testing.T) {
 			ctx := context.Background()
 			deps.authorizer.EXPECT().
 				Authorize(ctx, "jwt-token", operation).
-				Return("", identity.AccessDecision(""), errors.New("identity down"))
+				Return(identity.User{}, identity.AccessDecision(""), errors.New("identity down"))
 			return test{
 				ctx:           ctx,
 				authorization: "Bearer jwt-token",
@@ -127,7 +128,7 @@ func TestRequire(t *testing.T) {
 			ctx := context.Background()
 			deps.authorizer.EXPECT().
 				Authorize(ctx, "jwt-token", operation).
-				Return("", identity.AccessAllowed, nil)
+				Return(identity.User{}, identity.AccessAllowed, nil)
 			return test{
 				ctx:           ctx,
 				authorization: "Bearer jwt-token",
@@ -139,7 +140,7 @@ func TestRequire(t *testing.T) {
 			ctx := context.Background()
 			deps.authorizer.EXPECT().
 				Authorize(ctx, "jwt-token", operation).
-				Return(callerUUID, identity.AccessDecision("something_new"), nil)
+				Return(identity.User{UUID: callerUUID, DisplayName: callerName}, identity.AccessDecision("something_new"), nil)
 			return test{
 				ctx:           ctx,
 				authorization: "Bearer jwt-token",
@@ -156,10 +157,10 @@ func TestRequire(t *testing.T) {
 			tc := setup(t, deps)
 
 			nextCalled := false
-			var caller string
+			var caller identity.User
 			next := func(w http.ResponseWriter, r *http.Request) {
 				nextCalled = true
-				caller, _ = UserUUID(r.Context())
+				caller, _ = Caller(r.Context())
 				w.WriteHeader(http.StatusNoContent)
 			}
 
@@ -196,12 +197,13 @@ func TestRequireWebSocket(t *testing.T) {
 		expectedBody       string
 		expectedAuthHeader string
 		expectedNextCalled bool
-		expectedCaller     string
+		expectedCaller     identity.User
 	}
 
 	const (
 		operation  = identity.OperationJoinSessionAsAdmin
 		callerUUID = "0f8fad5b-d9cb-469f-a165-70867728950e"
+		callerName = "Ana"
 	)
 
 	tests := map[string]func(t *testing.T, deps dependencies) test{
@@ -209,34 +211,34 @@ func TestRequireWebSocket(t *testing.T) {
 			ctx := context.Background()
 			deps.authorizer.EXPECT().
 				Authorize(ctx, "jwt.token", operation).
-				Return(callerUUID, identity.AccessAllowed, nil)
+				Return(identity.User{UUID: callerUUID, DisplayName: callerName}, identity.AccessAllowed, nil)
 			return test{
 				ctx:                ctx,
 				protocols:          []string{"playhoot.v1, " + bearerProtocol("jwt.token")},
 				expectedCode:       http.StatusNoContent,
 				expectedNextCalled: true,
-				expectedCaller:     callerUUID,
+				expectedCaller:     identity.User{UUID: callerUUID, DisplayName: callerName},
 			}
 		},
 		"allowed_with_authorization_header": func(t *testing.T, deps dependencies) test {
 			ctx := context.Background()
 			deps.authorizer.EXPECT().
 				Authorize(ctx, "jwt.token", operation).
-				Return(callerUUID, identity.AccessAllowed, nil)
+				Return(identity.User{UUID: callerUUID, DisplayName: callerName}, identity.AccessAllowed, nil)
 			return test{
 				ctx:                ctx,
 				authorization:      "Bearer jwt.token",
 				protocols:          []string{"playhoot.v1"},
 				expectedCode:       http.StatusNoContent,
 				expectedNextCalled: true,
-				expectedCaller:     callerUUID,
+				expectedCaller:     identity.User{UUID: callerUUID, DisplayName: callerName},
 			}
 		},
 		"forbidden_with_token_subprotocol": func(t *testing.T, deps dependencies) test {
 			ctx := context.Background()
 			deps.authorizer.EXPECT().
 				Authorize(ctx, "guest-token", operation).
-				Return(callerUUID, identity.AccessForbidden, nil)
+				Return(identity.User{UUID: callerUUID, DisplayName: callerName}, identity.AccessForbidden, nil)
 			return test{
 				ctx:          ctx,
 				protocols:    []string{"playhoot.v1", bearerProtocol("guest-token")},
@@ -271,10 +273,10 @@ func TestRequireWebSocket(t *testing.T) {
 			tc := setup(t, deps)
 
 			nextCalled := false
-			var caller string
+			var caller identity.User
 			next := func(w http.ResponseWriter, r *http.Request) {
 				nextCalled = true
-				caller, _ = UserUUID(r.Context())
+				caller, _ = Caller(r.Context())
 				w.WriteHeader(http.StatusNoContent)
 			}
 
@@ -436,7 +438,7 @@ func TestUserUUID(t *testing.T) {
 	tests := map[string]func(t *testing.T) test{
 		"caller_present": func(t *testing.T) test {
 			return test{
-				ctx:           WithUserUUID(context.Background(), "user-1"),
+				ctx:           WithCaller(context.Background(), identity.User{UUID: "user-1", DisplayName: "Ana"}),
 				expectedUUID:  "user-1",
 				expectedFound: true,
 			}
@@ -445,7 +447,7 @@ func TestUserUUID(t *testing.T) {
 			return test{ctx: context.Background()}
 		},
 		"empty_caller_is_not_a_caller": func(t *testing.T) test {
-			return test{ctx: WithUserUUID(context.Background(), "")}
+			return test{ctx: WithCaller(context.Background(), identity.User{DisplayName: "Ana"})}
 		},
 	}
 

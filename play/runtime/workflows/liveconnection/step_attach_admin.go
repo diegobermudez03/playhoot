@@ -95,7 +95,7 @@ func rejectAdmin(ctx context.Context, reason runtime.RejectReason) runtime.Attac
 // once. Before the game runs, the first lobby update is the lobby as it is
 // now.
 func (c *sessionController) registerAdmin(userUUID string) (runtime.AdminConnection, bool) {
-	admin := newConnection(uuid.NewString(), userUUID)
+	admin := newConnection(uuid.NewString(), runtime.Player{UserUUID: userUUID})
 	s := c.lock()
 	if len(s.admins) >= c.deps.liveLimits.admins {
 		c.unlock()

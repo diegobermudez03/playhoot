@@ -16,6 +16,7 @@ import (
 	"github.com/diegobermudez03/playhoot/api/internal/auth"
 	"github.com/diegobermudez03/playhoot/api/internal/httpx"
 	"github.com/diegobermudez03/playhoot/api/internal/routing"
+	"github.com/diegobermudez03/playhoot/identity"
 	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/utils/ratelimit"
 )
@@ -105,7 +106,7 @@ func TestRequests(t *testing.T) {
 				r.RemoteAddr = c.remoteAddr
 				ctx := logging.Start(r.Context())
 				if c.userUUID != "" {
-					ctx = auth.WithUserUUID(ctx, c.userUUID)
+					ctx = auth.WithCaller(ctx, identity.User{UUID: c.userUUID})
 				}
 				w := httptest.NewRecorder()
 				handler(w, r.WithContext(ctx))

@@ -22,7 +22,7 @@ func TestLoadRunningSessionIntegration(t *testing.T) {
 	t.Run("committed_start_is_read_back", func(t *testing.T) {
 		session := seedStartableSession(t, db, store, "LOBBY", time.Now().Add(time.Hour))
 		commit := sessionpkg.StartCommit{
-			Participants: []sessionpkg.StartParticipant{{UserUUID: uuid.NewString(), ParticipantID: "P1"}, {UserUUID: uuid.NewString(), ParticipantID: "P2"}},
+			Participants: []sessionpkg.StartParticipant{{UserUUID: uuid.NewString(), ParticipantID: "P1", DisplayName: "Ana"}, {UserUUID: uuid.NewString(), ParticipantID: "P2", DisplayName: "Bruno"}},
 			Checkpoint:   sessionpkg.Checkpoint{ContextRevision: 1, Content: []byte(`{"schema_version":1}`)},
 		}
 		outcome, err := manager.CommitStart(ctx, session.UUID, session.CreatorUUID, commit)

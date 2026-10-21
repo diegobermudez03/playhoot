@@ -20,10 +20,10 @@ import (
 
 //go:generate mockgen -package=auth -destination=auth_mock_test.go . authorizer
 
-// authorizer resolves a token to the caller's UserUUID and decides whether
+// authorizer resolves a token to the caller's User and decides whether
 // they may perform operation. A refusal is a decision, not an error.
 type authorizer interface {
-	Authorize(ctx context.Context, token string, operation identity.Operation) (string, identity.AccessDecision, error)
+	Authorize(ctx context.Context, token string, operation identity.Operation) (identity.User, identity.AccessDecision, error)
 }
 
 var (
@@ -49,18 +49,25 @@ var (
 	)
 )
 
-type userUUIDContextKey struct{}
+type callerContextKey struct{}
 
-// WithUserUUID returns ctx carrying userUUID as the authorized caller.
-func WithUserUUID(ctx context.Context, userUUID string) context.Context {
-	return context.WithValue(ctx, userUUIDContextKey{}, userUUID)
+// WithCaller returns ctx carrying user as the authorized caller.
+func WithCaller(ctx context.Context, user identity.User) context.Context {
+	return context.WithValue(ctx, callerContextKey{}, user)
 }
 
-// UserUUID returns the authorized caller, or false when the request was not
-// authorized by this package's middleware.
+// Caller returns the authorized caller as Identity resolved them, or false
+// when the request was not authorized by this package's middleware.
+func Caller(ctx context.Context) (identity.User, bool) {
+	user, ok := ctx.Value(callerContextKey{}).(identity.User)
+	return user, ok && user.UUID != ""
+}
+
+// UserUUID returns the authorized caller's UserUUID, or false when the
+// request was not authorized by this package's middleware.
 func UserUUID(ctx context.Context) (string, bool) {
-	userUUID, ok := ctx.Value(userUUIDContextKey{}).(string)
-	return userUUID, ok && userUUID != ""
+	user, ok := Caller(ctx)
+	return user.UUID, ok
 }
 
 // webSocketBearerProtocolPrefix carries a bearer token as a WebSocket
@@ -118,13 +125,13 @@ func requireToken(authorizer authorizer, operation identity.Operation, tokenFrom
 			}
 
 			started := time.Now()
-			userUUID, decision, err := authorizer.Authorize(ctx, token, operation)
+			user, decision, err := authorizer.Authorize(ctx, token, operation)
 
 			result := decisionError
 			switch {
 			case err != nil:
 				logging.LogError(ctx, err)
-			case decision == identity.AccessAllowed && userUUID != "":
+			case decision == identity.AccessAllowed && user.UUID != "":
 				result = decisionAllowed
 			case decision == identity.AccessUnauthenticated:
 				result = decisionUnauthenticated
@@ -141,8 +148,8 @@ func requireToken(authorizer authorizer, operation identity.Operation, tokenFrom
 
 			switch result {
 			case decisionAllowed:
-				logging.LogFields(ctx, logging.Field("user_uuid", userUUID))
-				next(w, r.WithContext(WithUserUUID(ctx, userUUID)))
+				logging.LogFields(ctx, logging.Field("user_uuid", user.UUID))
+				next(w, r.WithContext(WithCaller(ctx, user)))
 			case decisionUnauthenticated:
 				writeUnauthenticated(w, codeTokenInvalid, "invalid or expired token")
 			case decisionForbidden:

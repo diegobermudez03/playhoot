@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/diegobermudez03/playhoot/monitoring/metrics"
+	"github.com/diegobermudez03/playhoot/play/runtime"
 )
 
 var (
@@ -34,9 +35,26 @@ var disconnectCauseLabel = metrics.NewLabel("cause", disconnectGraceExpired, dis
 // they are disconnected for graceCause.
 type participantPresence struct {
 	disconnected bool
+	// disconnectCause is why they were disconnected; empty when it is not
+	// known, as for a participant a recovered checkpoint had disconnected.
+	disconnectCause string
 	// graceEndsAt is zero while they have a transport.
 	graceEndsAt time.Time
 	graceCause  string
+}
+
+// status is the presence as the other players are told it.
+func (p *participantPresence) status() runtime.PresenceStatus {
+	switch {
+	case p.disconnected && p.disconnectCause == disconnectLeft:
+		return runtime.PresenceLeft
+	case p.disconnected:
+		return runtime.PresenceDisconnected
+	case !p.graceEndsAt.IsZero():
+		return runtime.PresenceReconnecting
+	default:
+		return runtime.PresenceActive
+	}
 }
 
 // attached reports whether the participant has a transport now.
@@ -69,6 +87,7 @@ func (s *liveState) detachPlayer(ctx context.Context, player *connection) {
 	s.resetInputs(player.participantID)
 	presence.await(s.now().Add(s.transportGrace), disconnectGraceExpired)
 	transportsDetached.Inc(ctx)
+	s.broadcastRoster()
 }
 
 // expireGraces tells the game, through the timeline, about every participant
@@ -89,8 +108,30 @@ func (s *liveState) expireGraces(ctx context.Context) {
 func (s *liveState) disconnect(ctx context.Context, participantID string, cause string) {
 	presence := s.presence[participantID]
 	presence.disconnected = true
+	presence.disconnectCause = cause
 	presence.attach()
 	s.resetInputs(participantID)
 	s.enqueue(Operation{ParticipantID: participantID, Disconnected: true})
 	participantsDisconnected.Inc(ctx, disconnectCauseLabel.Value(cause))
+	s.broadcastRoster()
+}
+
+// rosterUpdate is every participant with their presence, as the players see it.
+func (s *liveState) rosterUpdate() runtime.RosterUpdate {
+	members := make([]runtime.RosterMember, len(s.participants))
+	for i, participant := range s.participants {
+		members[i] = runtime.RosterMember{Participant: participant, Status: s.presence[participant.ParticipantID].status()}
+	}
+	return runtime.RosterUpdate{Members: members}
+}
+
+// broadcastRoster tells every player connection of the running game who plays
+// and how; a connection not yet told the start learns it with the start.
+func (s *liveState) broadcastRoster() {
+	update := s.rosterUpdate()
+	for _, player := range s.players {
+		if player.participantID != "" {
+			player.rosterUpdates.publish(update)
+		}
+	}
 }

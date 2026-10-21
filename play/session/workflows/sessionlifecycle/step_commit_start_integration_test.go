@@ -58,6 +58,7 @@ func seedStartableSession(t *testing.T, db *gorm.DB, store objectstore.Store, st
 type integrationParticipant struct {
 	UserUUID      string
 	ParticipantID string
+	DisplayName   string
 }
 
 type integrationCheckpoint struct {
@@ -76,7 +77,7 @@ func startEffects(t *testing.T, db *gorm.DB, sessionID uint) (integrationStatus,
 	var status integrationStatus
 	require.NoError(t, db.Raw(`SELECT status, end_cause FROM play_sessions WHERE id = ?`, sessionID).Scan(&status).Error)
 	var participants []integrationParticipant
-	require.NoError(t, db.Raw(`SELECT user_uuid, participant_id FROM play_session_participants WHERE session_id = ? ORDER BY id`, sessionID).Scan(&participants).Error)
+	require.NoError(t, db.Raw(`SELECT user_uuid, participant_id, display_name FROM play_session_participants WHERE session_id = ? ORDER BY id`, sessionID).Scan(&participants).Error)
 	var checkpoints []integrationCheckpoint
 	require.NoError(t, db.Raw(`SELECT context_revision, content FROM play_session_checkpoints WHERE session_id = ?`, sessionID).Scan(&checkpoints).Error)
 	var active []integrationJoinCode
@@ -146,13 +147,13 @@ func TestCommitStartIntegration(t *testing.T) {
 			return test{
 				session: session,
 				commit: sessionpkg.StartCommit{
-					Participants: []sessionpkg.StartParticipant{{UserUUID: userA, ParticipantID: "P1"}, {UserUUID: userB, ParticipantID: "P2"}},
+					Participants: []sessionpkg.StartParticipant{{UserUUID: userA, ParticipantID: "P1", DisplayName: "Ana"}, {UserUUID: userB, ParticipantID: "P2", DisplayName: "Bruno"}},
 					Checkpoint:   checkpoint,
 				},
 				expected:             sessionpkg.CommitStartCommitted,
 				expectedStatus:       integrationStatus{Status: "RUNNING"},
 				expectedHistory:      []string{"LOBBY -> RUNNING by " + session.CreatorUUID},
-				expectedParticipants: []integrationParticipant{{UserUUID: userA, ParticipantID: "P1"}, {UserUUID: userB, ParticipantID: "P2"}},
+				expectedParticipants: []integrationParticipant{{UserUUID: userA, ParticipantID: "P1", DisplayName: "Ana"}, {UserUUID: userB, ParticipantID: "P2", DisplayName: "Bruno"}},
 				expectedCheckpoints:  []integrationCheckpoint{{ContextRevision: 1, Content: []byte(`{"schema_version":1}`)}},
 				expectedOwnerSeen:    true,
 			}

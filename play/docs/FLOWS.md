@@ -120,7 +120,7 @@ A pinned version that is not EXECUTABLE, has an invalid manifest or no backend s
 
 ### Commit Start
 
-`sessionlifecycle.Manager.CommitStart(sessionUUID, userUUID, commit)`, in one transaction:
+`sessionlifecycle.Manager.CommitStart(sessionUUID, userUUID, commit)`, in one transaction (each participant is stored with the display name it had when the game started, a snapshot Play keeps; Identity stays the owner of names):
 
 ```mermaid
 sequenceDiagram
@@ -200,7 +200,7 @@ Every change of `play_sessions.status` appends a row to `play_session_status_cha
 
 ### Load Running Session
 
-`sessionlifecycle.Manager.LoadRunningSession(sessionUUID)` returns what running a started Session again needs: the pinned version's UUID and backend script (loaded from object storage, verified), the roster from `play_session_participants` in the order it was recorded, and the latest `play_session_checkpoints` row. An unknown Session is `ErrSessionNotFound`, one in another status `ErrSessionNotRunning`; a RUNNING Session without checkpoint, participants or script locator raises an alert and is an error. The live Runtime calls it when a start finds the Session already RUNNING, and recovery will reuse it.
+`sessionlifecycle.Manager.LoadRunningSession(sessionUUID)` returns what running a started Session again needs: the pinned version's UUID and backend script (loaded from object storage, verified), the roster from `play_session_participants` in the order it was recorded (with each participant's display name), and the latest `play_session_checkpoints` row. An unknown Session is `ErrSessionNotFound`, one in another status `ErrSessionNotRunning`; a RUNNING Session without checkpoint, participants or script locator raises an alert and is an error. The live Runtime calls it when a start finds the Session already RUNNING, and recovery will reuse it.
 
 ## Replay Recording
 

@@ -42,10 +42,10 @@ func (m *Mockauthorizer) EXPECT() *MockauthorizerMockRecorder {
 }
 
 // Authorize mocks base method.
-func (m *Mockauthorizer) Authorize(ctx context.Context, token string, operation identity.Operation) (string, identity.AccessDecision, error) {
+func (m *Mockauthorizer) Authorize(ctx context.Context, token string, operation identity.Operation) (identity.User, identity.AccessDecision, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Authorize", ctx, token, operation)
-	ret0, _ := ret[0].(string)
+	ret0, _ := ret[0].(identity.User)
 	ret1, _ := ret[1].(identity.AccessDecision)
 	ret2, _ := ret[2].(error)
 	return ret0, ret1, ret2

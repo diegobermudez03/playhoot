@@ -51,7 +51,7 @@ Progress note (2026-10-17): the boundary, decided with the human, is a set of op
 - [ ] Guest token -> existing guest userUUID
 - [ ] No identity -> guest created, returned userUUID + guest credentials for the FE to keep (decided by the human 2026-10-17: authorization always needs an existing token; a client without one gets `401` with code `token_required` and calls `POST /v1/guests {display_name, idempotency_key}` first, then joins with the guest token. Identity stores the guest's display name. API side done and tested (`api/identity`); Identity's `CreateGuest` is a placeholder, see Placeholders)
 - [ ] CREATE_SESSION capability check (real account required, guest-only rejected)
-- [x] Other domains receive only userUUID (no account/guest awareness)
+- [x] Other domains receive only userUUID (no account/guest awareness) (2026-10-20, by the human: they also receive the display name Identity resolves, still without account/guest awareness; each domain defines its own type, e.g. `runtime.Player`)
 - [x] Identity does not decide object-level permissions (creator check lives in Session)
 
 ### A5. Two clocks (§1)

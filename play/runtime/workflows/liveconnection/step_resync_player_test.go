@@ -46,7 +46,7 @@ func TestResync(t *testing.T) {
 		"replaced_connection_gets_nothing": func(t *testing.T) test {
 			return test{
 				asking: func(t *testing.T, controller *sessionController, players map[string]runtime.PlayerConnection) runtime.PlayerConnection {
-					_, participant, _ := controller.reattachPlayer(ctx, "user-a")
+					_, participant, _ := controller.reattachPlayer(ctx, runtime.Player{UserUUID: "user-a"})
 					require.True(t, participant)
 					return players["user-a"]
 				},
@@ -85,7 +85,7 @@ func TestPatchesFollowTheResyncBaseline(t *testing.T) {
 
 func TestResyncBeforeTheGameRunsSendsNothing(t *testing.T) {
 	controller := newTestController(t, 4)
-	player, _, admitted := controller.joinLobby(context.Background(), "user-a")
+	player, _, admitted := controller.joinLobby(context.Background(), runtime.Player{UserUUID: "user-a"})
 	require.True(t, admitted)
 
 	require.NoError(t, player.Resync(context.Background()))

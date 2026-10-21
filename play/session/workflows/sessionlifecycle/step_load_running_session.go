@@ -69,7 +69,7 @@ func (m *Manager) LoadRunningSession(ctx context.Context, sessionUUID string) (s
 
 	roster := make([]sessionpkg.StartParticipant, len(participants))
 	for i, participant := range participants {
-		roster[i] = sessionpkg.StartParticipant{UserUUID: participant.UserUUID, ParticipantID: participant.ParticipantID}
+		roster[i] = sessionpkg.StartParticipant{UserUUID: participant.UserUUID, ParticipantID: participant.ParticipantID, DisplayName: participant.DisplayName}
 	}
 	return sessionpkg.RunningSession{
 		GameVersionUUID: record.GameVersionUUID,

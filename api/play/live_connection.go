@@ -15,6 +15,7 @@ import (
 	"github.com/diegobermudez03/playhoot/api/internal/httpx"
 	"github.com/diegobermudez03/playhoot/api/internal/live"
 	"github.com/diegobermudez03/playhoot/api/internal/wsx"
+	"github.com/diegobermudez03/playhoot/identity"
 	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/play/runtime"
 	"github.com/diegobermudez03/playhoot/utils/ratelimit"
@@ -57,7 +58,8 @@ type lobbyUpdateMessage struct {
 }
 
 type lobbyMemberMessage struct {
-	UserUUID string `json:"user_uuid"`
+	UserUUID    string `json:"user_uuid"`
+	DisplayName string `json:"display_name"`
 }
 
 // sessionEndMessage tells a client how its Session ended: as lobby_closed
@@ -71,6 +73,7 @@ type sessionEndMessage struct {
 type participantMessage struct {
 	ParticipantID string `json:"participant_id"`
 	UserUUID      string `json:"user_uuid"`
+	DisplayName   string `json:"display_name"`
 }
 
 type frontendMessage struct {
@@ -88,9 +91,14 @@ func frontendJSON(start runtime.SessionStart) frontendMessage {
 func participantsJSON(start runtime.SessionStart) []participantMessage {
 	participants := make([]participantMessage, 0, len(start.Participants))
 	for _, participant := range start.Participants {
-		participants = append(participants, participantMessage{ParticipantID: participant.ParticipantID, UserUUID: participant.UserUUID})
+		participants = append(participants, participantJSON(participant))
 	}
 	return participants
+}
+
+// participantJSON is a participant of a started Session, on the wire.
+func participantJSON(participant runtime.Participant) participantMessage {
+	return participantMessage{ParticipantID: participant.ParticipantID, UserUUID: participant.UserUUID, DisplayName: participant.DisplayName}
 }
 
 type outcomeMessage struct {
@@ -105,7 +113,7 @@ type routedConnection struct {
 	// lifetime, which ends at the upgrade.
 	ctx         context.Context
 	conn        *websocket.Conn
-	userUUID    string
+	caller      identity.User
 	sessionUUID string
 	ownerEpoch  int64
 	// release gives back the room the connection holds on this instance; it
@@ -119,7 +127,7 @@ type routedConnection struct {
 func (h *Handler) acceptRouted(w http.ResponseWriter, r *http.Request) (routedConnection, bool) {
 	ctx := r.Context()
 
-	userUUID, callerOK := auth.UserUUID(ctx)
+	caller, callerOK := auth.Caller(ctx)
 	sessionUUID, ownerEpoch, routedOK := routedSessionFrom(ctx)
 	if !callerOK || !routedOK {
 		// Only possible if the route was registered without its middlewares.
@@ -128,7 +136,7 @@ func (h *Handler) acceptRouted(w http.ResponseWriter, r *http.Request) (routedCo
 		return routedConnection{}, false
 	}
 
-	release, err := h.live.Reserve(ctx, userUUID)
+	release, err := h.live.Reserve(ctx, caller.UUID)
 	switch {
 	case errors.Is(err, live.ErrCallerFull):
 		httpx.WriteCodedError(w, http.StatusTooManyRequests, codeTooManyConnections, "too many live connections open")
@@ -149,7 +157,7 @@ func (h *Handler) acceptRouted(w http.ResponseWriter, r *http.Request) (routedCo
 	return routedConnection{
 		ctx:         context.WithoutCancel(ctx),
 		conn:        conn,
-		userUUID:    userUUID,
+		caller:      caller,
 		sessionUUID: sessionUUID,
 		ownerEpoch:  ownerEpoch,
 		release:     release,
@@ -183,12 +191,15 @@ type liveSession struct {
 	// close, so lanes never wait for each other and an answer is never cut.
 	answering sync.RWMutex
 	streams   sync.WaitGroup
-	// started is set once the client was sent the Session's start.
-	started atomic.Bool
+	// started is set, and startSent closed, once the client was sent the
+	// Session's start; sessionSent is closed once the session stream stopped.
+	started     atomic.Bool
+	startSent   chan struct{}
+	sessionSent chan struct{}
 }
 
 func newLiveSession(conn *websocket.Conn) *liveSession {
-	return &liveSession{conn: conn}
+	return &liveSession{conn: conn, startSent: make(chan struct{}), sessionSent: make(chan struct{})}
 }
 
 // request is how a connection handles one type of client message, and how
@@ -254,6 +265,7 @@ func sendSession[S, V any](s *liveSession, stream sessionStream[S, V]) live.Loop
 	s.streams.Add(1)
 	return func(ctx context.Context) (live.End, bool) {
 		defer s.streams.Done()
+		defer close(s.sessionSent)
 		end, ended, more := sendAll(ctx, s, stream.nextLobbyUpdate, func(update runtime.LobbyUpdate) (any, bool) {
 			return lobbyMessage(stream.sessionUUID, update), false
 		})
@@ -269,6 +281,7 @@ func sendSession[S, V any](s *liveSession, stream sessionStream[S, V]) live.Loop
 			return end, ended
 		}
 		s.started.Store(true)
+		close(s.startSent)
 		end, ended, _ = sendAll(ctx, s, stream.nextView, func(view V) (any, bool) {
 			return stream.viewMessage(view), false
 		})
@@ -299,7 +312,7 @@ func sendAll[T any](ctx context.Context, s *liveSession, next func(ctx context.C
 func lobbyMessage(sessionUUID string, update runtime.LobbyUpdate) any {
 	members := make([]lobbyMemberMessage, 0, len(update.Members))
 	for _, member := range update.Members {
-		members = append(members, lobbyMemberMessage{UserUUID: member.UserUUID})
+		members = append(members, lobbyMemberMessage{UserUUID: member.UserUUID, DisplayName: member.DisplayName})
 	}
 	return lobbyUpdateMessage{Type: liveLobbyUpdate, SessionUUID: sessionUUID, Members: members}
 }

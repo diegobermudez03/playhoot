@@ -265,9 +265,9 @@ func TestStartSession(t *testing.T) {
 			controllerDeps.starts, controllerDeps.ends, controllerDeps.frontends, controllerDeps.sandbox, controllerDeps.replay = deps.starts, deps.ends, deps.frontends, deps.sandbox, deps.replay
 			controllerDeps.seeds = func() uint64 { return seed }
 			sessionController := withManifest(newSessionController(ctx, sessionUUID, 1, controllerDeps), Manifest{MaxPlayers: 4})
-			first, _, admitted := sessionController.joinLobby(ctx, playerA)
+			first, _, admitted := sessionController.joinLobby(ctx, runtime.Player{UserUUID: playerA})
 			require.True(t, admitted)
-			second, _, admitted := sessionController.joinLobby(ctx, playerB)
+			second, _, admitted := sessionController.joinLobby(ctx, runtime.Player{UserUUID: playerB})
 			require.True(t, admitted)
 
 			result, err := sessionController.startSession(ctx, creatorUUID)
@@ -304,7 +304,7 @@ func TestStartSession(t *testing.T) {
 			} else {
 				require.False(t, ended)
 			}
-			_, _, admitted = sessionController.joinLobby(ctx, "aaaaaaaa-aaaa-4aaa-8aaa-000000000003")
+			_, _, admitted = sessionController.joinLobby(ctx, runtime.Player{UserUUID: "aaaaaaaa-aaaa-4aaa-8aaa-000000000003"})
 			require.Equal(t, tc.expectedLobby, admitted)
 			require.Equal(t, tc.expectedContextID, sessionController.contextID)
 		})
@@ -318,7 +318,7 @@ func newStartController(t *testing.T, maxPlayers int, userUUIDs ...string) (*ses
 	controller := newTestController(t, maxPlayers)
 	players := make(map[string]runtime.PlayerConnection, len(userUUIDs))
 	for _, userUUID := range userUUIDs {
-		player, _, admitted := controller.joinLobby(context.Background(), userUUID)
+		player, _, admitted := controller.joinLobby(context.Background(), runtime.Player{UserUUID: userUUID})
 		require.True(t, admitted)
 		players[userUUID] = player
 	}
@@ -417,7 +417,7 @@ func testBeginStart(t *testing.T) {
 			require.Equal(t, tc.expectedOutcome, outcome)
 			require.Equal(t, tc.expectedParticipants, participants)
 			require.Equal(t, tc.expectedPhase, controller.currentPhase())
-			_, rejection, admitted := controller.joinLobby(context.Background(), "late-user")
+			_, rejection, admitted := controller.joinLobby(context.Background(), runtime.Player{UserUUID: "late-user"})
 			switch tc.expectedPhase {
 			case phaseLobby:
 				require.True(t, admitted)
@@ -476,7 +476,7 @@ func testCancelStart(t *testing.T) {
 			require.Equal(t, phaseLobby, controller.currentPhase())
 			require.Equal(t, tc.expectedLobby, controller.lobbySnapshot())
 			require.Equal(t, tc.expectedAdminLobby, latestLobby(t, admin.NextLobbyUpdate))
-			_, _, admitted := controller.joinLobby(context.Background(), "user-c")
+			_, _, admitted := controller.joinLobby(context.Background(), runtime.Player{UserUUID: "user-c"})
 			require.True(t, admitted, "the lobby admits players again")
 		})
 	}
@@ -599,7 +599,7 @@ func testAbortStart(t *testing.T) {
 	require.Equal(t, runtime.EndSessionEnded, endedWith(t, players["user-a"].Ended))
 	_, started := startedWith(t, players["user-a"].Started)
 	require.False(t, started)
-	_, rejection, admitted := controller.joinLobby(context.Background(), "user-b")
+	_, rejection, admitted := controller.joinLobby(context.Background(), runtime.Player{UserUUID: "user-b"})
 	require.False(t, admitted)
 	require.Equal(t, runtime.RejectSessionUnavailable, rejection)
 	require.Equal(t, runtime.EndSessionEnded, endedWith(t, controller.mustRegisterAdmin("creator").Ended))

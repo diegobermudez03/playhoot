@@ -49,7 +49,7 @@ func runningControllerWithTokens(t *testing.T, views map[string][]byte, processe
 	controller := withManifest(newSessionController(context.Background(), "session-1", 1, deps), Manifest{MaxPlayers: 8, Inputs: schema, Commands: catalog})
 	players := make(map[string]runtime.PlayerConnection, len(userUUIDs))
 	for _, userUUID := range userUUIDs {
-		player, _, admitted := controller.joinLobby(context.Background(), userUUID)
+		player, _, admitted := controller.joinLobby(context.Background(), runtime.Player{UserUUID: userUUID})
 		require.True(t, admitted)
 		players[userUUID] = player
 	}
@@ -234,7 +234,7 @@ func TestAcceptSample(t *testing.T) {
 
 func TestSampleBeforeTheGameRunsIsDropped(t *testing.T) {
 	controller := newTestController(t, 8)
-	player, _, ok := controller.joinLobby(context.Background(), "user-a")
+	player, _, ok := controller.joinLobby(context.Background(), runtime.Player{UserUUID: "user-a"})
 	require.True(t, ok)
 
 	require.NoError(t, player.Sample(context.Background(), sample(1, `{"anything":1}`)))
