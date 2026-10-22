@@ -20,6 +20,7 @@ const (
 	playerSample        = "sample"
 	playerCommand       = "command"
 	playerResync        = "resync"
+	playerGameFault     = "game_fault"
 	playerLeaveResult   = "leave_result"
 	playerCommandResult = "command_result"
 	playerRosterUpdate  = "roster_update"
@@ -38,6 +39,27 @@ type playerCommandRequest struct {
 	Token   string          `json:"token"`
 	Name    string          `json:"name"`
 	Payload json.RawMessage `json:"payload"`
+}
+
+// playerGameFaultRequest reports that the client saw the game frontend fail
+// or misbehave. kind is one of the Runtime's fault kinds, as on the wire.
+type playerGameFaultRequest struct {
+	Kind   string          `json:"kind"`
+	Detail json.RawMessage `json:"detail"`
+}
+
+// maxGameFaultDetailBytes bounds a game fault's detail, which is stored for
+// auditing.
+const maxGameFaultDetailBytes = 2048
+
+// gameFaultKinds are the fault kinds a client may report, by wire name.
+var gameFaultKinds = map[string]runtime.GameFaultKind{
+	string(runtime.GameFaultArtifactUnreachable):      runtime.GameFaultArtifactUnreachable,
+	string(runtime.GameFaultArtifactHashMismatch):     runtime.GameFaultArtifactHashMismatch,
+	string(runtime.GameFaultReadyTimeout):             runtime.GameFaultReadyTimeout,
+	string(runtime.GameFaultUnsupportedBridgeVersion): runtime.GameFaultUnsupportedBridgeVersion,
+	string(runtime.GameFaultContainerViolation):       runtime.GameFaultContainerViolation,
+	string(runtime.GameFaultBridgeAbuse):              runtime.GameFaultBridgeAbuse,
 }
 
 type playerCommandResultMessage struct {
@@ -97,6 +119,12 @@ var (
 		Rate:     []ratelimit.Limit{{Count: 1, Per: time.Second}},
 		Capacity: 1,
 	}
+	// A client reports a game fault once when it stops the game; beyond these
+	// a report is dropped, as the stored one already counts it.
+	playerGameFaultLimits = live.LaneLimits{
+		Rate:     []ratelimit.Limit{{Count: 1, Per: time.Second}, {Count: 10, Per: time.Minute}},
+		Capacity: 2,
+	}
 )
 
 // handlePlayerJoin upgrades a player's connection and hands it to the live
@@ -126,7 +154,7 @@ func (h *Handler) handlePlayerJoin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	player := attached.Connection
-	if player.Leave == nil || player.Sample == nil || player.Command == nil || player.Resync == nil ||
+	if player.Leave == nil || player.Sample == nil || player.Command == nil || player.Resync == nil || player.ReportGameFault == nil ||
 		player.NextLobbyUpdate == nil || player.Started == nil || player.NextView == nil || player.NextRosterUpdate == nil ||
 		player.Ended == nil || player.Disconnect == nil {
 		logging.LogError(ctx, errIncompletePlayerConnection)
@@ -137,10 +165,11 @@ func (h *Handler) handlePlayerJoin(w http.ResponseWriter, r *http.Request) {
 	commands := playerCommandLimits
 	commands.Excess = session.commandRateLimited
 	loops := session.serveRequests(map[string]request{
-		playerSample:  {handle: session.sample, limits: playerSampleLimits},
-		playerCommand: {handle: session.command, limits: commands},
-		playerResync:  {handle: session.resync, limits: resyncLimits},
-		playerLeave:   {handle: session.leave, limits: playerLeaveLimits},
+		playerSample:    {handle: session.sample, limits: playerSampleLimits},
+		playerCommand:   {handle: session.command, limits: commands},
+		playerResync:    {handle: session.resync, limits: resyncLimits},
+		playerLeave:     {handle: session.leave, limits: playerLeaveLimits},
+		playerGameFault: {handle: session.gameFault, limits: playerGameFaultLimits},
 	})
 	served = true
 	disconnect := func() {
@@ -224,6 +253,23 @@ func (s *playerSession) resync(ctx context.Context, _ []byte) (live.End, bool) {
 		return live.CloseServerFailure(s.conn, err), true
 	}
 	// The FULL view it asked for comes as any other view.
+	return live.End{}, false
+}
+
+// gameFault hands a game fault report to the Runtime, which keeps it for
+// auditing. It is never answered: the client already stopped the game.
+func (s *playerSession) gameFault(ctx context.Context, data []byte) (live.End, bool) {
+	var request playerGameFaultRequest
+	kind, known := runtime.GameFaultKind(""), false
+	if err := json.Unmarshal(data, &request); err == nil {
+		kind, known = gameFaultKinds[request.Kind]
+	}
+	if !known || !isJSONObject(request.Detail) || len(request.Detail) > maxGameFaultDetailBytes {
+		return live.CloseMalformed(s.conn), true
+	}
+	if err := s.player.ReportGameFault(ctx, runtime.GameFault{Kind: kind, Detail: request.Detail}); err != nil {
+		return live.CloseServerFailure(s.conn, err), true
+	}
 	return live.End{}, false
 }
 

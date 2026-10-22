@@ -123,11 +123,11 @@ type ControllerResolver struct {
 }
 
 // New constructs a ControllerResolver running at most maxLiveSessions live
-// Sessions (0 takes DefaultMaxLiveSessions), whose controllers admit through
-// adminJoins and playerJoins, read manifests and limits, start, end,
-// checkpoint and heartbeat Sessions, grant frontends, run games in sandbox,
-// offer their history to replay and release their ownership through owners.
-func New(maxLiveSessions int, adminJoins adminJoinChecker, playerJoins playerJoinChecker, manifests manifestLoader, limits limitsLoader, starts sessionStarter, ends sessionEnder, checkpoints checkpointStore, heartbeats ownerHeartbeater, frontends frontendSigner, sandbox gameSandbox, replay replayRecorder, owners ownerReleaser) *ControllerResolver {
+// Sessions (0 takes DefaultMaxLiveSessions), whose controllers run their
+// Sessions through the given dependencies, one per concern: admission,
+// manifests, limits, lifecycle, checkpoints, heartbeats, frontends, sandbox,
+// replay, ownership and the game faults players report.
+func New(maxLiveSessions int, adminJoins adminJoinChecker, playerJoins playerJoinChecker, manifests manifestLoader, limits limitsLoader, starts sessionStarter, ends sessionEnder, checkpoints checkpointStore, heartbeats ownerHeartbeater, frontends frontendSigner, sandbox gameSandbox, replay replayRecorder, owners ownerReleaser, faults gameFaultRecorder) *ControllerResolver {
 	if maxLiveSessions <= 0 {
 		maxLiveSessions = DefaultMaxLiveSessions
 	}
@@ -147,6 +147,7 @@ func New(maxLiveSessions int, adminJoins adminJoinChecker, playerJoins playerJoi
 			sandbox:            sandbox,
 			replay:             replay,
 			owners:             owners,
+			faults:             faults,
 			now:                time.Now,
 			seeds:              randomSeed,
 			tickInterval:       defaultTickInterval,

@@ -101,7 +101,35 @@ The concern is legitimate, but current conditions do not justify acting on it.
 
 A LATER item should have a meaningful reevaluation trigger where possible.
 
-No items have yet been persisted under the Engineering Radar mechanism.
+### Acting on reported game faults: verification and review
+
+**Area**
+Security / Game quality
+
+**Current state / evidence**
+- Players' clients report game frontend faults (unreachable, hash mismatch, no READY, bridge version, container violation, bridge abuse) on their live connection; they are stored in `play_game_faults`, one row per Session, reporter and kind (`play/docs/DATA_MODEL.md`, `play/docs/FLOWS.md` Game Fault Reports; 2026-10-20).
+- A report is the client's claim. Nothing reads the table automatically; no game is flagged and no Session ends because of it, by the human's decision (a false report must cost nothing to the accused game).
+
+**Risk / opportunity**
+- Problems are auditable but only found when someone runs the audit queries; a bad game could keep being played meanwhile.
+- A client could fabricate reports; raw counts alone do not tell a bad game from coordinated false reports.
+
+**Recommendation**
+- When games are published for real, add a review step fed by the table: flag a version for review once enough distinct reporters across distinct Sessions report it, never on one report.
+- Confirm a flagged version objectively: its frontend package is an immutable HTML file, so a harness can run it headless in the same sandbox and bridge and check whether it really floods the bridge, opens frames or never answers READY. A false accusation then costs one verification run.
+- Look at reporters too: one user reporting many versions points at the client.
+
+**Why this horizon**
+- No Game is published yet (Game Management is not built), so there is nothing to protect players from at scale; the evidence is being collected from now on.
+
+**Reevaluate when**
+- Game publishing exists, or the audit queries show a version with reports from several distinct reporters.
+
+**Next process**
+- PRODUCT_DISCUSSION (what happens to a flagged game) then DOMAIN_DESIGN (which domain owns game health).
+
+**Last reviewed**
+2026-10-20
 
 ## NOT NEEDED
 

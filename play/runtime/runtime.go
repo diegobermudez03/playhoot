@@ -402,6 +402,12 @@ type PlayerConnection struct {
 	// through NextView.
 	Resync func(ctx context.Context) error
 
+	// ReportGameFault records that the player's client saw the running
+	// game's frontend fail or misbehave. It is not answered and never changes
+	// the game: a report from a connection that does not play the running
+	// game, or that cannot be stored, is dropped.
+	ReportGameFault func(ctx context.Context, fault GameFault) error
+
 	// NextLobbyUpdate blocks until the lobby changes; see LobbyUpdate. False
 	// means no update follows: the Session started or the connection ended.
 	NextLobbyUpdate func(ctx context.Context) (LobbyUpdate, bool)
@@ -452,6 +458,27 @@ type Sample struct {
 	// Inputs is a JSON object of the inputs the game declares; omitted ones
 	// take their defaults.
 	Inputs []byte
+}
+
+// GameFaultKind is how a player's client saw the game frontend fail or
+// misbehave.
+type GameFaultKind string
+
+const (
+	GameFaultArtifactUnreachable      GameFaultKind = "artifact_unreachable"
+	GameFaultArtifactHashMismatch     GameFaultKind = "artifact_hash_mismatch"
+	GameFaultReadyTimeout             GameFaultKind = "ready_timeout"
+	GameFaultUnsupportedBridgeVersion GameFaultKind = "unsupported_bridge_version"
+	GameFaultContainerViolation       GameFaultKind = "container_violation"
+	GameFaultBridgeAbuse              GameFaultKind = "bridge_abuse"
+)
+
+// GameFault is a player's client reporting a fault of the game frontend it
+// ran: the client's claim, kept as audit evidence, never trusted. Detail is a
+// JSON object the client chose.
+type GameFault struct {
+	Kind   GameFaultKind
+	Detail []byte
 }
 
 // Command is a request to the game. Token makes it idempotent within the

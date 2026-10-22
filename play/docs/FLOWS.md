@@ -212,3 +212,13 @@ Design: `play/docs/decisions/SESSION-ADR-0033-replay-recording-produces-immutabl
 4. The queue's workers store each chunk: `play/session/usecases/storereplaychunk` writes the object `replays/{session}/{recording}/{index:06d}.rpl`, then registers it in `play_replay_chunks`, creating the Session's `play_replays` row with its pinned version on the first chunk. A failure is retried up to 5 times with a growing wait, then the chunk is dropped. A full queue (`REPLAY_MAX_PENDING_CHUNKS`) drops its oldest chunk. Drops are counted and alerted, and the game never waits.
 5. A game its script finished: before End Session, the controller calls `Finish` with the final tick. The tick closes the last chunk as final (its transients and state included, even past the chunk's end), which is stored synchronously and finalizes `play_replays`. A failure fails the call, and the controller retries at the next tick, storing the same chunk. Only then does the Session become FINISHED.
 6. When the controller ends (any other ending, or the instance shutting down), it stops its recording. What the recording holds is sealed and queued, best effort. On shutdown, the recorder waits up to 10 s for the queue to drain, after the controllers stop.
+
+## Game Fault Reports
+
+Added 2026-10-20 at the human's request, with the frontend's game isolation hardening (frontend ADR-0006): a player's client that stops the game frontend because it failed or misbehaved tells the backend, which keeps it for auditing.
+
+1. The client sends `{"type":"game_fault","kind":...,"detail":{...}}` on its player connection (`api/play/player_join.go`). Its lane allows 1 a second and 10 a minute (2 waiting); more are dropped, since the stored record already counts the kind. An unknown kind, or a detail that is not a JSON object within 2 KiB, closes the connection as malformed (`1007`). It is never answered.
+2. The Runtime (`liveconnection`, `reportGameFault`, on the lane's goroutine, never the main one) drops it unless the connection is the current one of a participant of the running game, maps the kind to the durable one and hands it to `play/session/usecases/recordgamefault`.
+3. `recordgamefault` checks the kind and the detail again and writes `play_game_faults` in one statement that requires the Session RUNNING and the reporter to be that participant; a second report of the same kind by the same participant in the Session adds to `occurrences`. A storing failure is only logged: the report is evidence, not an operation the client waits for.
+4. Every report is counted in `play_runtime_game_faults_reported_total{kind,outcome}` (`recorded`, `not_recorded`, `dropped`, `failed`). Nothing else happens: the game, the Session and the other players are untouched.
+

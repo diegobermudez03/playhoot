@@ -117,6 +117,7 @@ type controllerDependencies struct {
 	sandbox     gameSandbox
 	replay      replayRecorder
 	owners      ownerReleaser
+	faults      gameFaultRecorder
 
 	// now is the clock Session time is measured with.
 	now func() time.Time

@@ -160,6 +160,10 @@ func (c *sessionController) playerConnection(player *connection) runtime.PlayerC
 			c.resync(ctx, player)
 			return nil
 		},
+		ReportGameFault: func(ctx context.Context, fault runtime.GameFault) error {
+			c.reportGameFault(ctx, player, fault)
+			return nil
+		},
 		NextLobbyUpdate: player.nextLobbyUpdate,
 		Started: func(ctx context.Context) (runtime.PlayerStart, bool) {
 			start, ok := player.sessionStart(ctx)

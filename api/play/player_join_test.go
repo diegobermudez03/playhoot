@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -43,6 +44,7 @@ type fakePlayer struct {
 	mu          sync.Mutex
 	samples     []runtime.Sample
 	commands    []runtime.Command
+	faults      []runtime.GameFault
 	disconnects int
 }
 
@@ -116,6 +118,12 @@ func (f *fakePlayer) connection() runtime.PlayerConnection {
 			f.views <- f.resyncView
 			return nil
 		},
+		ReportGameFault: func(_ context.Context, fault runtime.GameFault) error {
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			f.faults = append(f.faults, fault)
+			return nil
+		},
 		NextLobbyUpdate: f.nextLobbyUpdate,
 		Started: func(ctx context.Context) (runtime.PlayerStart, bool) {
 			return f.waitStarted(ctx, f.ended)
@@ -162,6 +170,7 @@ func TestHandlePlayerJoin(t *testing.T) {
 		expectedCloseStatus websocket.StatusCode
 		expectedSamples     []runtime.Sample
 		expectedCommands    []runtime.Command
+		expectedFaults      []runtime.GameFault
 		expectedDisconnects int
 	}
 
@@ -420,6 +429,48 @@ func TestHandlePlayerJoin(t *testing.T) {
 				expectedDisconnects: 1,
 			}
 		},
+		"game_fault_is_handed_to_the_runtime_unanswered": func(t *testing.T, deps dependencies) test {
+			player := startedFakePlayer()
+			accept(deps, player)
+			return test{
+				player:              player,
+				clientSends:         []string{`{"type":"game_fault","kind":"bridge_abuse","detail":{"refused":{"sample":900}}}`},
+				clientCloses:        true,
+				expectedReceived:    []string{playerStartedJSON},
+				expectedFaults:      []runtime.GameFault{{Kind: runtime.GameFaultBridgeAbuse, Detail: []byte(`{"refused":{"sample":900}}`)}},
+				expectedDisconnects: 1,
+			}
+		},
+		"game_fault_of_an_unknown_kind_is_malformed": func(t *testing.T, deps dependencies) test {
+			player := newFakePlayer()
+			accept(deps, player)
+			return test{
+				player:              player,
+				clientSends:         []string{`{"type":"game_fault","kind":"cheating","detail":{}}`},
+				expectedCloseStatus: websocket.StatusInvalidFramePayloadData,
+				expectedDisconnects: 1,
+			}
+		},
+		"game_fault_detail_must_be_an_object": func(t *testing.T, deps dependencies) test {
+			player := newFakePlayer()
+			accept(deps, player)
+			return test{
+				player:              player,
+				clientSends:         []string{`{"type":"game_fault","kind":"ready_timeout","detail":"slow"}`},
+				expectedCloseStatus: websocket.StatusInvalidFramePayloadData,
+				expectedDisconnects: 1,
+			}
+		},
+		"game_fault_detail_over_its_limit_is_malformed": func(t *testing.T, deps dependencies) test {
+			player := newFakePlayer()
+			accept(deps, player)
+			return test{
+				player:              player,
+				clientSends:         []string{`{"type":"game_fault","kind":"ready_timeout","detail":{"x":"` + strings.Repeat("a", 2048) + `"}}`},
+				expectedCloseStatus: websocket.StatusInvalidFramePayloadData,
+				expectedDisconnects: 1,
+			}
+		},
 		"sample_without_a_sequence_is_malformed": func(t *testing.T, deps dependencies) test {
 			player := newFakePlayer()
 			accept(deps, player)
@@ -564,6 +615,7 @@ func TestHandlePlayerJoin(t *testing.T) {
 				defer tc.player.mu.Unlock()
 				require.Equal(t, tc.expectedSamples, tc.player.samples)
 				require.Equal(t, tc.expectedCommands, tc.player.commands)
+				require.Equal(t, tc.expectedFaults, tc.player.faults)
 				require.Equal(t, tc.expectedDisconnects, tc.player.disconnects)
 			}
 		})

@@ -337,6 +337,63 @@ const (
 	EndOwnerLost EndCause = "OWNER_LOST"
 )
 
+// GameFaultKind is how a player's client saw the game frontend of their
+// running Session fail or misbehave.
+type GameFaultKind string
+
+const (
+	// GameFaultArtifactUnreachable means the frontend package could not be
+	// downloaded (network, expired URL, storage CORS).
+	GameFaultArtifactUnreachable GameFaultKind = "ARTIFACT_UNREACHABLE"
+
+	// GameFaultArtifactHashMismatch means the downloaded package did not
+	// match the version's SHA-256, so it was not run.
+	GameFaultArtifactHashMismatch GameFaultKind = "ARTIFACT_HASH_MISMATCH"
+
+	// GameFaultReadyTimeout means the frontend never completed the bridge
+	// handshake: it failed to load, crashed, or does not use the SDK.
+	GameFaultReadyTimeout GameFaultKind = "READY_TIMEOUT"
+
+	// GameFaultUnsupportedBridgeVersion means the frontend speaks no bridge
+	// version the client does.
+	GameFaultUnsupportedBridgeVersion GameFaultKind = "UNSUPPORTED_BRIDGE_VERSION"
+
+	// GameFaultContainerViolation means the frontend tried to leave its
+	// isolated container (navigating its frame, opening nested frames).
+	GameFaultContainerViolation GameFaultKind = "CONTAINER_VIOLATION"
+
+	// GameFaultBridgeAbuse means the frontend kept sending the client more
+	// messages than allowed, so the client stopped it.
+	GameFaultBridgeAbuse GameFaultKind = "BRIDGE_ABUSE"
+)
+
+// GameFault is a participant's client reporting a fault of the game frontend
+// it was running. It is the client's claim, never verified: evidence for an
+// audit telling a faulty game from a lying client, never a verdict. Detail is
+// a small JSON object the client chose; nothing reads it but people.
+type GameFault struct {
+	UserUUID      string
+	ParticipantID string
+	Kind          GameFaultKind
+	Detail        []byte
+}
+
+// RecordGameFaultOutcome is the decision a RecordGameFault call reached.
+type RecordGameFaultOutcome string
+
+const (
+	// GameFaultRecorded means the fault was stored, or counted again when the
+	// same participant had already reported that kind in the Session.
+	GameFaultRecorded RecordGameFaultOutcome = "recorded"
+
+	// GameFaultNotRecorded means the Session is not running, or the reporter
+	// is not its participant, so nothing was stored.
+	GameFaultNotRecorded RecordGameFaultOutcome = "not_recorded"
+)
+
+// MaxGameFaultDetailBytes bounds a game fault's detail.
+const MaxGameFaultDetailBytes = 2048
+
 // OwnerHeartbeatInterval is how often the live owner of a RUNNING Session
 // records a heartbeat, which renews its owner lease; a Session whose lease
 // runs out has no live owner.
