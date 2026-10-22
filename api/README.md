@@ -50,6 +50,22 @@ A WebSocket handler never blocks for the connection's lifetime. Once the connect
 
 `api/identity` declares `POST /v1/guests`, the only way a client without an account obtains a token. It needs no token. It takes `{display_name, idempotency_key}` and returns `201 {user_uuid, token}`; the client keeps the token and sends it like any other. The idempotency key must be a UUID: with no caller to scope it, it has to be unguessable, since replaying it returns the same guest and token. `400` for an invalid body, a key that is not a UUID, a missing name or one over 64 characters, or a name Identity rejects; `409` when the key was used with another name. Identity owns the rules of a valid display name; the API only bounds its length.
 
+## The client telemetry route group
+
+`api/clienttelemetry` declares `POST /v1/client-telemetry` (added 2026-10-21 at the human's request, so the platform sees what players experience: frontend plan §17, frontend ADR-0007). Any identity may call it, guests included (`identity.OperationReportClientTelemetry`), within the general per-user request limits. It takes `{"events":[...]}`, at most 100 events in at most 16 KiB (more is `400`), and answers `204` whatever the events held, so a client never retries telemetry. Each event is checked against a closed catalog and recorded as a `client_*` metric; an event outside it is dropped and counted in `client_telemetry_events_refused_total{reason}` (`unknown_event`, `invalid_value`):
+
+| Event | Fields | Metric |
+| --- | --- | --- |
+| `artifact_load` | `duration_ms` (0..600000), `cached` | `client_game_artifact_load_seconds{cache}` |
+| `game_ready` | `duration_ms` | `client_game_ready_seconds` |
+| `connection_lost` | `close` (retryable, unreachable, protocol, replaced, left, session_ended, disconnected, other), `count?` | `client_connections_lost_total{close}` |
+| `reconnect` | `outcome` (reconnected, gave_up), `count?` | `client_reconnects_total{outcome}` |
+| `resync` | `count?` | `client_resyncs_total` |
+| `bridge_refusal` | `reason` (invalid, over_limit), `count?` | `client_bridge_refusals_total{reason}` |
+| `error` | `origin` and `kind` from the catalog in `api/clienttelemetry/catalog.go`, `count?` (1..10000) | `client_errors_total{origin,kind}` |
+
+A client is not trusted: these metrics are trends of what players experience, never evidence about a user or a game (the game fault and limit audit in `play_game_faults` is the evidence). They are declared in the route group because it owns the contract of client telemetry, the behavior they describe being the client's. Like every metric today, they reach the logs only, until a metrics provider is integrated.
+
 ## The play route group
 
 `api/play` is the play domain's route group, and today the only one. It declares `POST /sessions` (create a Session), `GET /sessions/{sessionUUID}/admin` (the creator's live admin connection), and the player's live connection, by Session UUID (`GET /sessions/{sessionUUID}/player`) or by join code (`GET /join/{joinCode}`); the other live endpoints are added as the real-time design is accepted.

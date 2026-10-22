@@ -95,6 +95,33 @@ Infrastructure / Web client integration
 **Last reviewed**
 2026-10-20
 
+### A metrics provider for server and client metrics
+
+**Area**
+Observability
+
+**Current state / evidence**
+- `monitoring/metrics` records every measurement into the request log only (`instrument.record`: "TODO: forward the measurement to the metrics backend once one is integrated").
+- Since 2026-10-21 players' clients also send telemetry (`POST /v1/client-telemetry`, `client_*` metrics), which ends in the same logs.
+
+**Risk / opportunity**
+- Nobody can see trends, set alerts or build dashboards; client telemetry, collected to see what players experience, is only visible by reading logs.
+
+**Recommendation**
+- Choose a metrics provider (for example an OpenTelemetry collector feeding Grafana, or a hosted one) and implement it behind `monitoring/metrics`, which callers do not need to change. Client metrics come along with no frontend change.
+
+**Why this horizon**
+- Nothing is deployed yet; it is needed before the first real players, to see load times, reconnections and errors.
+
+**Reevaluate when**
+- The first deployment is planned.
+
+**Next process**
+- ARCHITECTURE_DISCUSSION (provider and deployment).
+
+**Last reviewed**
+2026-10-21
+
 ## LATER
 
 The concern is legitimate, but current conditions do not justify acting on it.

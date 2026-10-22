@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"time"
 
+	apiclienttelemetry "github.com/diegobermudez03/playhoot/api/clienttelemetry"
 	apiidentity "github.com/diegobermudez03/playhoot/api/identity"
 	"github.com/diegobermudez03/playhoot/api/internal/live"
 	"github.com/diegobermudez03/playhoot/api/internal/routing"
@@ -49,6 +50,7 @@ func NewServer(authorizer authorizer, guests guestCreator, sessionCreator sessio
 	liveConnections := live.New(config.MaxLiveConnections)
 	groups := []routeGroup{
 		apiidentity.NewHandler(guests),
+		apiclienttelemetry.NewHandler(authorizer),
 		apiplay.NewHandler(authorizer, sessionCreator, owners, admins, players, joinCodes, liveConnections, config.WebSocketOriginPatterns),
 	}
 	clients := throttle.ClientAddress{TrustedProxies: config.TrustedProxyHops}

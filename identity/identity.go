@@ -21,6 +21,11 @@ const (
 	// OperationJoinSessionAsPlayer is opening a player connection to a live
 	// Session. Guests may perform it.
 	OperationJoinSessionAsPlayer Operation = "JOIN_SESSION_AS_PLAYER"
+
+	// OperationReportClientTelemetry is sending the client's operational
+	// telemetry (load times, reconnections, classified errors). Guests may
+	// perform it.
+	OperationReportClientTelemetry Operation = "REPORT_CLIENT_TELEMETRY"
 )
 
 // User is who a credential stands for, as Identity resolves it.
