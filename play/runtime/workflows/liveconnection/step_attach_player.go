@@ -160,6 +160,9 @@ func (c *sessionController) playerConnection(player *connection) runtime.PlayerC
 			c.resync(ctx, player)
 			return nil
 		},
+		LimitHit: func(ctx context.Context, limit string) {
+			c.deps.auditor().Hit(ctx, c.sessionUUID, player.userUUID, limit)
+		},
 		ReportGameFault: func(ctx context.Context, fault runtime.GameFault) error {
 			c.reportGameFault(ctx, player, fault)
 			return nil

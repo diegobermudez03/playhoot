@@ -115,17 +115,18 @@ var (
 		Rate:     []ratelimit.Limit{{Count: 20, Per: time.Second}, {Count: 300, Per: time.Minute}},
 		Capacity: 16,
 	}
-	playerLeaveLimits = live.LaneLimits{
-		Rate:     []ratelimit.Limit{{Count: 1, Per: time.Second}},
-		Capacity: 1,
-	}
-	// A client reports a game fault once when it stops the game; beyond these
-	// a report is dropped, as the stored one already counts it.
-	playerGameFaultLimits = live.LaneLimits{
-		Rate:     []ratelimit.Limit{{Count: 1, Per: time.Second}, {Count: 10, Per: time.Minute}},
-		Capacity: 2,
+	// A game fault and a leave share one lane, so a client that reports the
+	// game it stopped and then leaves has its report kept before it leaves.
+	// A client reports once when it stops the game; reports beyond these are
+	// dropped, as the stored one already counts them.
+	playerExitLimits = live.LaneLimits{
+		Rate:     []ratelimit.Limit{{Count: 2, Per: time.Second}, {Count: 20, Per: time.Minute}},
+		Capacity: 3,
 	}
 )
+
+// playerExitLane is the lane game faults and leaves share.
+const playerExitLane = "exit"
 
 // handlePlayerJoin upgrades a player's connection and hands it to the live
 // connections. Admission into the lobby is the Runtime's decision.
@@ -154,7 +155,7 @@ func (h *Handler) handlePlayerJoin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	player := attached.Connection
-	if player.Leave == nil || player.Sample == nil || player.Command == nil || player.Resync == nil || player.ReportGameFault == nil ||
+	if player.Leave == nil || player.Sample == nil || player.Command == nil || player.Resync == nil || player.ReportGameFault == nil || player.LimitHit == nil ||
 		player.NextLobbyUpdate == nil || player.Started == nil || player.NextView == nil || player.NextRosterUpdate == nil ||
 		player.Ended == nil || player.Disconnect == nil {
 		logging.LogError(ctx, errIncompletePlayerConnection)
@@ -168,9 +169,9 @@ func (h *Handler) handlePlayerJoin(w http.ResponseWriter, r *http.Request) {
 		playerSample:    {handle: session.sample, limits: playerSampleLimits},
 		playerCommand:   {handle: session.command, limits: commands},
 		playerResync:    {handle: session.resync, limits: resyncLimits},
-		playerLeave:     {handle: session.leave, limits: playerLeaveLimits},
-		playerGameFault: {handle: session.gameFault, limits: playerGameFaultLimits},
-	})
+		playerLeave:     {handle: session.leave, limits: playerExitLimits, lane: playerExitLane},
+		playerGameFault: {handle: session.gameFault, limits: playerExitLimits, lane: playerExitLane},
+	}, player.LimitHit)
 	served = true
 	disconnect := func() {
 		player.Disconnect()

@@ -63,7 +63,7 @@ func TestTerminateSession(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			deps := dependencies{adminJoins: NewMockadminJoinChecker(ctrl), manifests: NewMockmanifestLoader(ctrl), ends: NewMocksessionEnder(ctrl)}
 			tc := setup(t, deps)
-			resolver := New(0, deps.adminJoins, nil, deps.manifests, nil, nil, deps.ends, nil, nil, nil, nil, nil, ownersReleasing(t, sessionUUID, 1), nil)
+			resolver := New(0, deps.adminJoins, nil, deps.manifests, nil, nil, deps.ends, nil, nil, nil, nil, nil, ownersReleasing(t, sessionUUID, 1), nil, nil)
 			t.Cleanup(resolver.Close)
 			var admin runtime.AdminConnection
 			if tc.live {

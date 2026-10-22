@@ -3,6 +3,7 @@ package live
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,6 +23,9 @@ type LaneLimits struct {
 	Rate     []ratelimit.Limit
 	Capacity int
 	Excess   Handler
+	// Refused, when set, is told every message these limits refuse, by limit:
+	// "rate" or "queue".
+	Refused func(ctx context.Context, limit string)
 }
 
 // ConnectionLimits bound everything a client sends on one connection, all
@@ -29,6 +33,9 @@ type LaneLimits struct {
 type ConnectionLimits struct {
 	Messages []ratelimit.Limit
 	Bytes    []ratelimit.Limit
+	// Refused, when set, is told the limit that ended the connection:
+	// "messages" or "bytes".
+	Refused func(ctx context.Context, limit string)
 }
 
 // Lane handles one message type's messages in order, on its own goroutine, so a
@@ -36,6 +43,7 @@ type ConnectionLimits struct {
 type Lane struct {
 	handle   Handler
 	excess   Handler
+	refused  func(ctx context.Context, limit string)
 	rate     *ratelimit.Limiter
 	capacity int
 
@@ -51,7 +59,7 @@ func NewLane(handle Handler, limits LaneLimits) *Lane {
 	if limits.Capacity < 1 {
 		panic(fmt.Sprintf("live: lane capacity must be positive, got %d", limits.Capacity))
 	}
-	lane := &Lane{handle: handle, excess: limits.Excess, capacity: limits.Capacity, wake: make(chan struct{}, 1)}
+	lane := &Lane{handle: handle, excess: limits.Excess, refused: limits.Refused, capacity: limits.Capacity, wake: make(chan struct{}, 1)}
 	if len(limits.Rate) > 0 {
 		lane.rate = ratelimit.New(limits.Rate...)
 	}
@@ -84,6 +92,9 @@ func (l *Lane) offer(ctx context.Context, data []byte, now time.Time) (End, bool
 
 func (l *Lane) refuse(ctx context.Context, data []byte, limit string) (End, bool) {
 	messagesRefused.Inc(ctx, limitLabel.Value(limit))
+	if l.refused != nil {
+		l.refused(ctx, strings.TrimPrefix(limit, "type_"))
+	}
 	if l.excess == nil {
 		return End{}, false
 	}
@@ -144,12 +155,18 @@ func Dispatch(conn *websocket.Conn, lanes map[string]*Lane, limits ConnectionLim
 			if messages != nil {
 				if allowed, _ := messages.Allow(now); !allowed {
 					messagesRefused.Inc(ctx, limitLabel.Value(limitConnectionMessages))
+					if limits.Refused != nil {
+						limits.Refused(ctx, "messages")
+					}
 					return CloseRateLimited(conn), true
 				}
 			}
 			if bytes != nil {
 				if allowed, _ := bytes.AllowN(now, len(data)); !allowed {
 					messagesRefused.Inc(ctx, limitLabel.Value(limitConnectionBytes))
+					if limits.Refused != nil {
+						limits.Refused(ctx, "bytes")
+					}
 					return CloseRateLimited(conn), true
 				}
 			}

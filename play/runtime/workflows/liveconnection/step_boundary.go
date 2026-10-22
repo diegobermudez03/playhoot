@@ -767,6 +767,7 @@ func (s *liveState) sendView(ctx context.Context, viewer *connection, participan
 func (s *liveState) publishView(ctx context.Context, viewer *connection, view runtime.OwnView) {
 	if viewer.views.publish(view, viewer.lastView, s.limits.pendingViews) {
 		viewsCollapsed.Inc(ctx)
+		s.limitHit(ctx, viewer.userUUID, limitViewsCollapsed)
 	}
 }
 

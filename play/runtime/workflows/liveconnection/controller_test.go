@@ -197,7 +197,7 @@ func TestControllerFor(t *testing.T) {
 			for i := range tc.otherSessions {
 				owners.EXPECT().ReleaseOwner(gomock.Any(), fmt.Sprintf("other-%d", i), int64(1)).Return(nil).MaxTimes(1)
 			}
-			resolver := New(tc.maxLiveSessions, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, owners, nil)
+			resolver := New(tc.maxLiveSessions, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, owners, nil, nil)
 			t.Cleanup(resolver.Close)
 			for i := range tc.otherSessions {
 				_, rejection := resolver.controllerFor(ctx, fmt.Sprintf("other-%d", i), 1)

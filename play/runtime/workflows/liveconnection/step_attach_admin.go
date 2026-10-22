@@ -78,6 +78,7 @@ func (c *sessionController) attachAdmin(ctx context.Context, userUUID string) (r
 	admin, registered := c.admitAdmin(ctx, userUUID)
 	if !registered {
 		limitRejections.Inc(ctx, limitLabel.Value(limitAdminConnections))
+		c.deps.auditor().Hit(ctx, c.sessionUUID, userUUID, runtimeLimitPrefix+limitAdminConnections)
 		return rejectAdmin(ctx, runtime.RejectTooManyAdmins), nil
 	}
 	adminAttaches.Inc(ctx, attachOutcomeLabel.Value("accepted"))
@@ -134,6 +135,9 @@ func (c *sessionController) registerAdmin(userUUID string, signed *runtime.Sessi
 		Resync: func(ctx context.Context) error {
 			c.resyncAdmin(ctx, admin)
 			return nil
+		},
+		LimitHit: func(ctx context.Context, limit string) {
+			c.deps.auditor().Hit(ctx, c.sessionUUID, userUUID, limit)
 		},
 		StartSession: func(ctx context.Context) (runtime.StartSessionResult, error) {
 			return c.requestStart(ctx, userUUID)

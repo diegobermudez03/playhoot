@@ -158,6 +158,7 @@ func endedBy(reason runtime.EndReason) *fakeAdmin {
 
 func (f *fakeAdmin) connection() runtime.AdminConnection {
 	return runtime.AdminConnection{
+		LimitHit: func(context.Context, string) {},
 		SelectPerspective: func(_ context.Context, participantID string) (runtime.SelectPerspectiveResult, error) {
 			f.mu.Lock()
 			defer f.mu.Unlock()

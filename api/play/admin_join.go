@@ -92,7 +92,7 @@ func (h *Handler) handleAdminJoin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	admin := attached.Connection
-	if admin.SelectPerspective == nil || admin.Resync == nil || admin.StartSession == nil || admin.CancelSession == nil ||
+	if admin.SelectPerspective == nil || admin.Resync == nil || admin.StartSession == nil || admin.CancelSession == nil || admin.LimitHit == nil ||
 		admin.NextLobbyUpdate == nil || admin.Started == nil || admin.NextView == nil || admin.Ended == nil || admin.Disconnect == nil {
 		logging.LogError(ctx, errIncompleteAdminConnection)
 		wsx.Abort(conn)
@@ -108,7 +108,7 @@ func (h *Handler) handleAdminJoin(w http.ResponseWriter, r *http.Request) {
 		adminStartSession:      {handle: session.startSession, limits: lifecycle},
 		adminCancelSession:     {handle: session.cancelSession, limits: lifecycle},
 		adminResync:            {handle: session.resync, limits: resyncLimits},
-	})
+	}, admin.LimitHit)
 	served = true
 	disconnect := func() {
 		admin.Disconnect()

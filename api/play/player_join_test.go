@@ -45,6 +45,7 @@ type fakePlayer struct {
 	samples     []runtime.Sample
 	commands    []runtime.Command
 	faults      []runtime.GameFault
+	limitHits   []string
 	disconnects int
 }
 
@@ -118,6 +119,11 @@ func (f *fakePlayer) connection() runtime.PlayerConnection {
 			f.views <- f.resyncView
 			return nil
 		},
+		LimitHit: func(_ context.Context, limit string) {
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			f.limitHits = append(f.limitHits, limit)
+		},
 		ReportGameFault: func(_ context.Context, fault runtime.GameFault) error {
 			f.mu.Lock()
 			defer f.mu.Unlock()
@@ -171,6 +177,7 @@ func TestHandlePlayerJoin(t *testing.T) {
 		expectedSamples     []runtime.Sample
 		expectedCommands    []runtime.Command
 		expectedFaults      []runtime.GameFault
+		expectedLimitHits   []string
 		expectedDisconnects int
 	}
 
@@ -232,6 +239,22 @@ func TestHandlePlayerJoin(t *testing.T) {
 				},
 				expectedSamples:     []runtime.Sample{{Sequence: 1, Inputs: []byte(`{}`)}},
 				expectedCommands:    []runtime.Command{{Token: "t1", Name: "play_card"}},
+				expectedLimitHits:   []string{"api.command.rate"},
+				expectedDisconnects: 1,
+			}
+		},
+		"game_fault_then_leave_keeps_the_report_before_leaving": func(t *testing.T, deps dependencies) test {
+			player := startedFakePlayer()
+			accept(deps, player)
+			return test{
+				player: player,
+				clientSends: []string{
+					`{"type":"game_fault","kind":"bridge_abuse","detail":{}}`,
+					`{"type":"leave"}`,
+				},
+				expectedReceived:    []string{playerStartedJSON, `{"type":"leave_result","outcome":"left"}`},
+				expectedCloseStatus: websocket.StatusNormalClosure,
+				expectedFaults:      []runtime.GameFault{{Kind: runtime.GameFaultBridgeAbuse, Detail: []byte(`{}`)}},
 				expectedDisconnects: 1,
 			}
 		},
@@ -616,6 +639,7 @@ func TestHandlePlayerJoin(t *testing.T) {
 				require.Equal(t, tc.expectedSamples, tc.player.samples)
 				require.Equal(t, tc.expectedCommands, tc.player.commands)
 				require.Equal(t, tc.expectedFaults, tc.player.faults)
+				require.Equal(t, tc.expectedLimitHits, tc.player.limitHits)
 				require.Equal(t, tc.expectedDisconnects, tc.player.disconnects)
 			}
 		})

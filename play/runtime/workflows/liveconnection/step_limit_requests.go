@@ -59,7 +59,9 @@ func (s *liveState) commandRoom(participantID string) string {
 	return ""
 }
 
-// refused records a request refused by limit.
-func refused(ctx context.Context, limit string) {
+// refused records a request of userUUID refused by limit, also for the
+// Session's audit records.
+func (s *liveState) refused(ctx context.Context, userUUID, limit string) {
 	limitRejections.Inc(ctx, limitLabel.Value(limit))
+	s.limitHit(ctx, userUUID, limit)
 }

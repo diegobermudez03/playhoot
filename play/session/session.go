@@ -391,6 +391,17 @@ const (
 	GameFaultNotRecorded RecordGameFaultOutcome = "not_recorded"
 )
 
+// LimitHit is how many times one of the platform's rate or resource limits
+// refused what a user of a live Session sent, since the last time it was
+// recorded. Limit names the limit, such as api.command.rate or
+// runtime.command_participant_rate.
+type LimitHit struct {
+	SessionUUID string
+	UserUUID    string
+	Limit       string
+	Count       int
+}
+
 // MaxGameFaultDetailBytes bounds a game fault's detail.
 const MaxGameFaultDetailBytes = 2048
 

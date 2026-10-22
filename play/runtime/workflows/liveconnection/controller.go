@@ -118,6 +118,7 @@ type controllerDependencies struct {
 	replay      replayRecorder
 	owners      ownerReleaser
 	faults      gameFaultRecorder
+	limitHits   limitHitAuditor
 
 	// now is the clock Session time is measured with.
 	now func() time.Time
@@ -219,7 +220,10 @@ func newSessionController(root context.Context, sessionUUID string, epoch int64,
 			now:            deps.now,
 			transportGrace: deps.transportGrace,
 			limits:         deps.liveLimits,
-			queued:         make(map[string]int),
+			limitHit: func(ctx context.Context, userUUID, limit string) {
+				deps.auditor().Hit(ctx, sessionUUID, userUUID, runtimeLimitPrefix+limit)
+			},
+			queued: make(map[string]int),
 			commandRate:    ratelimit.New(deps.liveLimits.sessionCommands...),
 			phase:          phaseLobby,
 			admins:         make(map[string]*connection),
@@ -485,8 +489,10 @@ type liveState struct {
 	// transportGrace is how long a participant without a transport keeps
 	// playing.
 	transportGrace time.Duration
-	// limits bound what players may ask of the Session.
-	limits liveLimits
+	// limits bound what players may ask of the Session, and limitHit
+	// records for auditing that one of them refused what userUUID sent.
+	limits   liveLimits
+	limitHit func(ctx context.Context, userUUID, limit string)
 
 	phase  phase
 	admins map[string]*connection

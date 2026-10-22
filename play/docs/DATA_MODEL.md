@@ -102,10 +102,11 @@ erDiagram
         BIGSERIAL id PK
         BIGINT session_id "play_sessions.id; unique with user_uuid and kind"
         BIGINT game_version_id "play_game_versions.id, copied from the Session"
-        UUID user_uuid "the reporter, Identity User"
-        TEXT participant_id "the reporter's participant"
-        TEXT kind "ARTIFACT_UNREACHABLE | ARTIFACT_HASH_MISMATCH | READY_TIMEOUT | UNSUPPORTED_BRIDGE_VERSION | CONTAINER_VIOLATION | BRIDGE_ABUSE"
-        JSONB detail "the client's latest evidence, at most 2 KiB"
+        UUID user_uuid "the reporter, or the user who hit a limit; Identity User"
+        TEXT participant_id "nullable; their participant (a SERVER record of an admin has none)"
+        TEXT source "CLIENT (a client's report) | SERVER (limits the platform enforced)"
+        TEXT kind "CLIENT: ARTIFACT_UNREACHABLE | ARTIFACT_HASH_MISMATCH | READY_TIMEOUT | UNSUPPORTED_BRIDGE_VERSION | CONTAINER_VIOLATION | BRIDGE_ABUSE; SERVER: SERVER_LIMIT"
+        JSONB detail "CLIENT: the client's latest evidence, at most 2 KiB; SERVER: limits by name with their counts"
         INTEGER occurrences "times reported"
         TIMESTAMPTZ first_reported_at
         TIMESTAMPTZ last_reported_at
@@ -143,6 +144,7 @@ Notes:
 - A join code is active while `released_at` is NULL. An expired code is released lazily when a new Session needs that same code.
 - An EXECUTABLE version must have both locators (`script_*`, `frontend_*`: object key, SHA-256 as lowercase hex, size in bytes); this is checked by the application, and a missing one is treated as broken data. Keys are content-addressed under `game-versions/backend-scripts/` and `game-versions/frontend-packages/`. The frontend package is one self-contained HTML file (decided by the human 2026-10-17 for v1); a game's assets will be resolved separately by Playhoot.
 - `aspect_ratio` is the fixed shape the version's frontend is shown in, one of the ratios Playhoot offers (decided by the human 2026-10-20: a game picks one, it cannot declare its own). The database accepts only the offered values (`play_game_versions_aspect_ratio_check`); each has a logical resolution, 1080 units on the short side (`play/session/internal/business/gameversion`), which is not stored. Like the locators it is nullable for a DRAFT, and an EXECUTABLE version without one is checked by the application and treated as broken data. Offering another ratio changes both the constraint and that catalog.
+- `play_game_faults` also keeps, as `source = 'SERVER'` and `kind = 'SERVER_LIMIT'`, the platform's rate and resource limits a live Session's users hit (added 2026-10-21 at the human's request: every limit hit within a Session is to be persisted, best effort). One record per Session and user; `detail.limits` counts each limit by name (`api.<message type or lane>.rate|queue`, `api.connection.messages|bytes`, `runtime.<limit>` such as `runtime.command_participant_rate` or `runtime.views_collapsed`) and `occurrences` their total. Hits are gathered in memory and written every 5 s (and once more on shutdown); a failed write is logged and dropped. Such a record is written for any status of an existing Session, an admin's without a participant id. A CLIENT record always has its participant (`play_game_faults_kind_check`).
 - `play_game_faults` keeps the faults players' clients report about the game frontend of their running Session (added 2026-10-20 at the human's request: the backend must be able to audit, from the database, games with problems and tell a misbehaving game from a lying client). A row is written only while the Session is RUNNING and only for its participant under their own participant id (checked in the same statement); one row per Session, reporter and kind, so reporting again counts `occurrences` and keeps the newer `detail`. A report is the client's claim, never verified and never acted on: no Session ends and nothing is flagged because of it. Reading it: a game version reported by many distinct `user_uuid` across many Sessions points at the game; one `user_uuid` reporting many versions points at the client, for example:
 
   ```sql
@@ -151,7 +153,13 @@ Notes:
 
   SELECT user_uuid, COUNT(DISTINCT game_version_id) AS versions, COUNT(DISTINCT session_id) AS sessions, SUM(occurrences) AS reports
   FROM play_game_faults GROUP BY user_uuid ORDER BY versions DESC;
+
+  -- What the platform refused, per user, next to what their client reported, in one Session
+  SELECT user_uuid, source, kind, occurrences, detail
+  FROM play_game_faults WHERE session_id = 42 ORDER BY user_uuid, source;
   ```
+
+  A SERVER record next to a CLIENT report of the same user and Session is the strongest sign: the client said the game abused it, and the platform saw the traffic. A SERVER record alone, from a client that never reported, points at a client sending traffic itself.
 - `play_session_participants` and the first `play_session_checkpoints` row are written in the same transaction that makes a Session RUNNING, so a RUNNING Session always has its roster and a recoverable checkpoint. While the Session is RUNNING, its live controller replaces that row every few seconds with a newer checkpoint, never with one of a lower `context_revision`; there is no history (replay is a separate mechanism).
 - `end_cause` is set with a terminal status: `GAME_FINISHED` (FINISHED); `HOST_CANCELLED`, `ALL_PLAYERS_LEFT`, `PLATFORM_TERMINATED` (CANCELLED); `LOBBY_EXPIRED`, `INACTIVITY_TIMEOUT`, `MAX_LIFETIME` (EXPIRED); `GAME_START_FAILURE`, `SCRIPT_FAILURE`, `UNRECOVERABLE_INFRA_FAILURE` (ABORTED). Which statuses each cause applies from is in `play/docs/FLOWS.md` (End Session).
 - `expires_at` is set at creation (creation + 4 hours, a platform tuning value) and enforced by the live controller; it is durable so it survives recovery, can be queried by a future reconciliation job, and could be shortened by platform limits.

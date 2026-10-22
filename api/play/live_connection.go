@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -216,27 +217,89 @@ func newLiveSession(conn *websocket.Conn) *liveSession {
 }
 
 // request is how a connection handles one type of client message, and how
-// often and how many of it it takes.
+// often and how many of it it takes. Types naming the same lane share it,
+// with its first type's limits, so they are handled in the order they came.
 type request struct {
 	handle live.Handler
 	limits live.LaneLimits
+	lane   string
+}
+
+// limitAuditor records, for the Session's audit, a limit that refused what
+// the connection's user sent.
+type limitAuditor func(ctx context.Context, limit string)
+
+// auditedLimits are limits telling audit which one refused, named
+// api.<name>.<limit>.
+func auditedLimits(limits live.LaneLimits, name string, audit limitAuditor) live.LaneLimits {
+	limits.Refused = func(ctx context.Context, limit string) { audit(ctx, "api."+name+"."+limit) }
+	return limits
 }
 
 // serveRequests returns the loops handling the client's messages: one reader
-// and one lane per message type, so each type only waits for its own earlier
-// messages. Every other type ends the connection, and so does a client
-// sending beyond connectionLimits.
-func (s *liveSession) serveRequests(requests map[string]request) []live.Loop {
+// and one lane per message type, or per shared lane, so each type only waits
+// for its own lane's earlier messages. Every other type ends the connection,
+// and so does a client sending beyond connectionLimits. Every refusal is
+// audited through audit.
+func (s *liveSession) serveRequests(requests map[string]request, audit limitAuditor) []live.Loop {
 	lanes := make(map[string]*live.Lane, len(requests))
 	loops := make([]live.Loop, 0, len(requests)+1)
+	shared := make(map[string]map[string]live.Handler)
 	for messageType, handling := range requests {
-		limits := handling.limits
+		if handling.lane == "" {
+			continue
+		}
+		if shared[handling.lane] == nil {
+			shared[handling.lane] = make(map[string]live.Handler)
+		}
+		shared[handling.lane][messageType] = handling.handle
+	}
+	byLane := make(map[string]*live.Lane, len(shared))
+	for _, messageType := range sortedTypes(requests) {
+		handling := requests[messageType]
+		name, handle := messageType, handling.handle
+		if handling.lane != "" {
+			if lane, found := byLane[handling.lane]; found {
+				lanes[messageType] = lane
+				continue
+			}
+			name, handle = handling.lane, byType(shared[handling.lane])
+		}
+		limits := auditedLimits(handling.limits, name, audit)
 		limits.Excess = s.answer(limits.Excess)
-		lane := live.NewLane(s.answer(handling.handle), limits)
+		lane := live.NewLane(s.answer(handle), limits)
 		lanes[messageType] = lane
+		if handling.lane != "" {
+			byLane[handling.lane] = lane
+		}
 		loops = append(loops, lane.Run)
 	}
-	return append(loops, live.Dispatch(s.conn, lanes, connectionLimits))
+	limits := connectionLimits
+	limits.Refused = func(ctx context.Context, limit string) { audit(ctx, "api.connection."+limit) }
+	return append(loops, live.Dispatch(s.conn, lanes, limits))
+}
+
+// sortedTypes is requests' message types in a fixed order, so a shared lane
+// always takes the same type's limits.
+func sortedTypes(requests map[string]request) []string {
+	types := make([]string, 0, len(requests))
+	for messageType := range requests {
+		types = append(types, messageType)
+	}
+	sort.Strings(types)
+	return types
+}
+
+// byType handles a shared lane's messages with their own type's handler.
+func byType(handlers map[string]live.Handler) live.Handler {
+	return func(ctx context.Context, data []byte) (live.End, bool) {
+		var message struct {
+			Type string `json:"type"`
+		}
+		// Dispatch already read the type, so this cannot fail.
+		_ = json.Unmarshal(data, &message)
+		return handlers[message.Type](ctx, data)
+	}
 }
 
 // answer runs handle while holding the connection open for its answer; nil

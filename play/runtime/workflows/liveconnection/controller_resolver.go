@@ -126,13 +126,13 @@ type ControllerResolver struct {
 // Sessions (0 takes DefaultMaxLiveSessions), whose controllers run their
 // Sessions through the given dependencies, one per concern: admission,
 // manifests, limits, lifecycle, checkpoints, heartbeats, frontends, sandbox,
-// replay, ownership and the game faults players report.
-func New(maxLiveSessions int, adminJoins adminJoinChecker, playerJoins playerJoinChecker, manifests manifestLoader, limits limitsLoader, starts sessionStarter, ends sessionEnder, checkpoints checkpointStore, heartbeats ownerHeartbeater, frontends frontendSigner, sandbox gameSandbox, replay replayRecorder, owners ownerReleaser, faults gameFaultRecorder) *ControllerResolver {
+// replay, ownership, the game faults players report and the limits they hit.
+func New(maxLiveSessions int, adminJoins adminJoinChecker, playerJoins playerJoinChecker, manifests manifestLoader, limits limitsLoader, starts sessionStarter, ends sessionEnder, checkpoints checkpointStore, heartbeats ownerHeartbeater, frontends frontendSigner, sandbox gameSandbox, replay replayRecorder, owners ownerReleaser, faults gameFaultRecorder, limitHits limitHitStore) *ControllerResolver {
 	if maxLiveSessions <= 0 {
 		maxLiveSessions = DefaultMaxLiveSessions
 	}
 	root, cancel := context.WithCancel(context.Background())
-	return &ControllerResolver{
+	resolver := &ControllerResolver{
 		maxLiveSessions: maxLiveSessions,
 		deps: &controllerDependencies{
 			adminJoins:         adminJoins,
@@ -165,6 +165,8 @@ func New(maxLiveSessions int, adminJoins adminJoinChecker, playerJoins playerJoi
 		root:        root,
 		cancel:      cancel,
 	}
+	resolver.deps.limitHits = resolver.startLimitAudit(limitHits)
+	return resolver
 }
 
 // Close stops every controller and waits for them. Work in flight is put

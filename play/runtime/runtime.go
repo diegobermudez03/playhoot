@@ -145,6 +145,10 @@ type AdminConnection struct {
 	// view follows through NextView.
 	Resync func(ctx context.Context) error
 
+	// LimitHit records, for the Session's audit, that a limit of the entry
+	// point refused what this admin sent. It never blocks.
+	LimitHit func(ctx context.Context, limit string)
+
 	// StartSession starts the game with the players in the lobby.
 	StartSession func(ctx context.Context) (StartSessionResult, error)
 
@@ -401,6 +405,11 @@ type PlayerConnection struct {
 	// Resync asks for the player's current state again; a FULL view follows
 	// through NextView.
 	Resync func(ctx context.Context) error
+
+	// LimitHit records, for the Session's audit, that a limit of the entry
+	// point refused what this player sent; limit names it, such as
+	// api.command.rate. It never blocks.
+	LimitHit func(ctx context.Context, limit string)
 
 	// ReportGameFault records that the player's client saw the running
 	// game's frontend fail or misbehave. It is not answered and never changes

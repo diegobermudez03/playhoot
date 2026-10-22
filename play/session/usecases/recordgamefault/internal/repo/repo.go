@@ -34,9 +34,9 @@ type Fault struct {
 // and keeps the newer detail. recorded is false when nothing was stored.
 func (r *Repo) RecordFault(ctx context.Context, sessionUUID string, fault Fault, reportedAt time.Time) (recorded bool, err error) {
 	result := r.db.WithContext(ctx).Exec(`
-		INSERT INTO play_game_faults (session_id, game_version_id, user_uuid, participant_id, kind, detail,
+		INSERT INTO play_game_faults (session_id, game_version_id, user_uuid, participant_id, source, kind, detail,
 			occurrences, first_reported_at, last_reported_at)
-		SELECT s.id, s.game_version_id, p.user_uuid, p.participant_id, ?, ?, 1, ?, ?
+		SELECT s.id, s.game_version_id, p.user_uuid, p.participant_id, 'CLIENT', ?, ?, 1, ?, ?
 		FROM play_sessions s
 		JOIN play_session_participants p ON p.session_id = s.id
 		WHERE s.uuid = ? AND s.status = 'RUNNING' AND p.user_uuid = ? AND p.participant_id = ?

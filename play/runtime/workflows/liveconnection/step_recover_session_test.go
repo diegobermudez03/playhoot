@@ -280,7 +280,7 @@ func TestConcurrentReconnectionsRecoverOnce(t *testing.T) {
 	gomock.InOrder(mocks.recovers(setup)...)
 	// Each participant attaching to the recovered game is told access signed for them.
 	mocks.frontends.EXPECT().FrontendAccess(anyCtx, boundaryGameVersion).Return(freshAccess, nil).MinTimes(1).MaxTimes(2)
-	resolver := New(0, nil, players, manifests, mocks.limits, mocks.starts, mocks.ends, nil, heartbeatsRecorded(t, setup.sessionUUID), mocks.frontends, mocks.sandbox, mocks.replay, ownersReleasing(t, setup.sessionUUID, 1), nil)
+	resolver := New(0, nil, players, manifests, mocks.limits, mocks.starts, mocks.ends, nil, heartbeatsRecorded(t, setup.sessionUUID), mocks.frontends, mocks.sandbox, mocks.replay, ownersReleasing(t, setup.sessionUUID, 1), nil, nil)
 	resolver.deps.now = func() time.Time { return setup.now }
 	t.Cleanup(resolver.Close)
 	// The recovered context and recording end when the resolver stops.
@@ -324,7 +324,7 @@ func TestAdminReconnectionRecovers(t *testing.T) {
 		manifests.EXPECT().LoadRuntimeManifest(anyCtx, setup.sessionUUID).Return(sessionpkg.RuntimeManifest{MinPlayers: 1, MaxPlayers: 4}, nil),
 	}, mocks.recovers(setup)...)...)
 	mocks.frontends.EXPECT().FrontendAccess(anyCtx, boundaryGameVersion).Return(freshAccess, nil)
-	resolver := New(0, admins, nil, manifests, mocks.limits, mocks.starts, mocks.ends, nil, heartbeatsRecorded(t, setup.sessionUUID), mocks.frontends, mocks.sandbox, mocks.replay, ownersReleasing(t, setup.sessionUUID, 1), nil)
+	resolver := New(0, admins, nil, manifests, mocks.limits, mocks.starts, mocks.ends, nil, heartbeatsRecorded(t, setup.sessionUUID), mocks.frontends, mocks.sandbox, mocks.replay, ownersReleasing(t, setup.sessionUUID, 1), nil, nil)
 	resolver.deps.now = func() time.Time { return setup.now }
 	t.Cleanup(resolver.Close)
 	mocks.sandbox.EXPECT().DiscardContext(anyCtx, "context-1").Return(nil).MaxTimes(1)

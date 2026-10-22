@@ -31,6 +31,11 @@ const (
 	limitCommandSession      = "command_session_rate"
 	limitAdminConnections    = "admin_connections"
 	limitLiveSessions        = "live_sessions"
+	// limitViewsCollapsed is no refusal but is audited like one: a
+	// connection taking views too slowly lost them to one FULL view.
+	limitViewsCollapsed = "views_collapsed"
+	// runtimeLimitPrefix names the Runtime's limits in the audit records.
+	runtimeLimitPrefix = "runtime."
 )
 
 var limitLabel = metrics.NewLabel("limit",

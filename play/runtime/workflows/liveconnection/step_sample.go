@@ -67,7 +67,7 @@ func (c *sessionController) acceptSample(ctx context.Context, player *connection
 		}
 	}
 	if limit != "" {
-		refused(ctx, limit)
+		s.refused(ctx, player.userUUID, limit)
 		samplesReceived.Inc(ctx, sampleResultLabel.Value(sampleLimited))
 		return nil
 	}

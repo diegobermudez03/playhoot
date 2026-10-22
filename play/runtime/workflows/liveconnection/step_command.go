@@ -148,8 +148,8 @@ func (c *sessionController) runCommand(ctx context.Context, player *connection, 
 	pending, duplicate := tokens.pending[command.Token]
 	if !duplicate {
 		if limit := s.commandRoom(player.participantID); limit != "" {
+			s.refused(ctx, player.userUUID, limit)
 			c.unlock()
-			refused(ctx, limit)
 			return answer(runtime.CommandRateLimited), nil
 		}
 		pending = &pendingCommand{token: command.Token, name: command.Name, payload: payload, done: make(chan struct{})}

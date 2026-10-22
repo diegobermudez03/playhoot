@@ -32,6 +32,7 @@ import (
 	"github.com/diegobermudez03/playhoot/play/session/usecases/checkplayerjoin"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/frontendaccess"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/recordgamefault"
+	"github.com/diegobermudez03/playhoot/play/session/usecases/recordlimithits"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/loadruntimemanifest"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/loadsessionlimits"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/resolvejoincode"
@@ -156,7 +157,7 @@ func run() error {
 	// Closed after the controllers, deferred earlier: each stops its
 	// recording first, then pending chunks get a few seconds to be stored.
 	defer replayRecorder.Close()
-	liveConnections := liveconnection.New(envVars.MaxLiveSessions, checkadminjoin.New(db), checkplayerjoin.New(db), loadruntimemanifest.New(db), loadsessionlimits.New(db), sessionLifecycle, sessionLifecycle, sessionLifecycle, sessionLifecycle, frontendaccess.New(db, store), sandboxHost, replayRecorder, owners, recordgamefault.New(db))
+	liveConnections := liveconnection.New(envVars.MaxLiveSessions, checkadminjoin.New(db), checkplayerjoin.New(db), loadruntimemanifest.New(db), loadsessionlimits.New(db), sessionLifecycle, sessionLifecycle, sessionLifecycle, sessionLifecycle, frontendaccess.New(db, store), sandboxHost, replayRecorder, owners, recordgamefault.New(db), recordlimithits.New(db))
 	// Closed before the sandbox, deferred later: controllers stop first, so
 	// shutting down never fails a running game.
 	defer liveConnections.Close()

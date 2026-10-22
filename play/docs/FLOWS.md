@@ -217,8 +217,16 @@ Design: `play/docs/decisions/SESSION-ADR-0033-replay-recording-produces-immutabl
 
 Added 2026-10-20 at the human's request, with the frontend's game isolation hardening (frontend ADR-0006): a player's client that stops the game frontend because it failed or misbehaved tells the backend, which keeps it for auditing.
 
-1. The client sends `{"type":"game_fault","kind":...,"detail":{...}}` on its player connection (`api/play/player_join.go`). Its lane allows 1 a second and 10 a minute (2 waiting); more are dropped, since the stored record already counts the kind. An unknown kind, or a detail that is not a JSON object within 2 KiB, closes the connection as malformed (`1007`). It is never answered.
+1. The client sends `{"type":"game_fault","kind":...,"detail":{...}}` on its player connection (`api/play/player_join.go`), and usually `leave` right after (frontend ADR-0006: a game stopped for misbehaving makes its player leave). Both share one lane (`exit`: 2 a second, 20 a minute, 3 waiting; more are dropped), so the report is handled, and stored, before the leave. An unknown kind, or a detail that is not a JSON object within 2 KiB, closes the connection as malformed (`1007`). It is never answered.
 2. The Runtime (`liveconnection`, `reportGameFault`, on the lane's goroutine, never the main one) drops it unless the connection is the current one of a participant of the running game, maps the kind to the durable one and hands it to `play/session/usecases/recordgamefault`.
 3. `recordgamefault` checks the kind and the detail again and writes `play_game_faults` in one statement that requires the Session RUNNING and the reporter to be that participant; a second report of the same kind by the same participant in the Session adds to `occurrences`. A storing failure is only logged: the report is evidence, not an operation the client waits for.
 4. Every report is counted in `play_runtime_game_faults_reported_total{kind,outcome}` (`recorded`, `not_recorded`, `dropped`, `failed`). Nothing else happens: the game, the Session and the other players are untouched.
 
+## Limit Audit
+
+Added 2026-10-21 at the human's request: every platform limit a live Session's user hits is also persisted, best effort, next to the game faults clients report.
+
+1. Where a limit refuses something a user of a live Session sent, it is told who and which limit: the API's per-type lanes and per-connection rates (`api/internal/live`, through `LaneLimits.Refused` / `ConnectionLimits.Refused`, then the connection's `LimitHit`) and the Runtime's limits (`liveconnection`: SAMPLE and COMMAND limits per participant and per Session, the admin connection cap, and views collapsed into a FULL view for a slow connection).
+2. `play/runtime/usecases/limitaudit.Auditor` counts each Session, user and limit in memory, never blocking the caller (at most 10,000 distinct ones between writes; more are dropped and counted). The resolver runs it: every 5 s, and once more when the instance stops, it hands the counts to `play/session/usecases/recordlimithits`.
+3. `recordlimithits` adds them, in one transaction, to each Session and user's `SERVER_LIMIT` record in `play_game_faults`, summing each limit's count in `detail.limits`. A failed write is logged and the batch dropped. Counted in `play_runtime_limit_hits_audited_total{outcome}`.
+4. Nothing else changes: each limit still answers as before (dropped, `rate_limited`, closed `1008`), and its metric still counts it. Limits outside a Session (HTTP, handshakes, connection caps) stay metrics only.
