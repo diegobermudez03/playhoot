@@ -28,40 +28,54 @@ func TestResolveJoinCode(t *testing.T) {
 	now := time.Date(2026, 10, 17, 12, 0, 0, 0, time.UTC)
 	ctx := context.Background()
 
+	latest := func(status string, expiresAt time.Time) *internalrepo.JoinCode {
+		return &internalrepo.JoinCode{SessionUUID: sessionUUID, SessionStatus: status, ExpiresAt: expiresAt}
+	}
+	found := sessionpkg.JoinCodeResolution{Outcome: sessionpkg.JoinCodeFound, SessionUUID: sessionUUID}
+
 	tests := map[string]func(t *testing.T, deps dependencies) test{
-		"active_code": func(t *testing.T, deps dependencies) test {
-			deps.joinCodes.EXPECT().FindActiveJoinCode(ctx, "K7QX2M").
-				Return(&internalrepo.JoinCode{SessionUUID: sessionUUID, ExpiresAt: now.Add(time.Minute)}, nil)
-			return test{
-				joinCode:           "K7QX2M",
-				expectedResolution: sessionpkg.JoinCodeResolution{Outcome: sessionpkg.JoinCodeFound, SessionUUID: sessionUUID},
-			}
+		"lobby_code_not_expired": func(t *testing.T, deps dependencies) test {
+			deps.joinCodes.EXPECT().FindLatestJoinCode(ctx, "K7QX2M").Return(latest("LOBBY", now.Add(time.Minute)), nil)
+			return test{joinCode: "K7QX2M", expectedResolution: found}
 		},
 		"code_typed_in_lowercase": func(t *testing.T, deps dependencies) test {
-			deps.joinCodes.EXPECT().FindActiveJoinCode(ctx, "K7QX2M").
-				Return(&internalrepo.JoinCode{SessionUUID: sessionUUID, ExpiresAt: now.Add(time.Minute)}, nil)
-			return test{
-				joinCode:           "k7qx2m",
-				expectedResolution: sessionpkg.JoinCodeResolution{Outcome: sessionpkg.JoinCodeFound, SessionUUID: sessionUUID},
-			}
+			deps.joinCodes.EXPECT().FindLatestJoinCode(ctx, "K7QX2M").Return(latest("LOBBY", now.Add(time.Minute)), nil)
+			return test{joinCode: "k7qx2m", expectedResolution: found}
 		},
-		"code_whose_expiry_passed": func(t *testing.T, deps dependencies) test {
-			deps.joinCodes.EXPECT().FindActiveJoinCode(ctx, "K7QX2M").
-				Return(&internalrepo.JoinCode{SessionUUID: sessionUUID, ExpiresAt: now}, nil)
-			return test{
-				joinCode:           "K7QX2M",
-				expectedResolution: sessionpkg.JoinCodeResolution{Outcome: sessionpkg.JoinCodeNotFound},
-			}
+		"lobby_code_whose_expiry_passed": func(t *testing.T, deps dependencies) test {
+			deps.joinCodes.EXPECT().FindLatestJoinCode(ctx, "K7QX2M").Return(latest("LOBBY", now), nil)
+			return test{joinCode: "K7QX2M", expectedResolution: sessionpkg.JoinCodeResolution{Outcome: sessionpkg.JoinCodeExpired}}
 		},
-		"no_active_code": func(t *testing.T, deps dependencies) test {
-			deps.joinCodes.EXPECT().FindActiveJoinCode(ctx, "K7QX2M").Return(nil, nil)
-			return test{
-				joinCode:           "K7QX2M",
-				expectedResolution: sessionpkg.JoinCodeResolution{Outcome: sessionpkg.JoinCodeNotFound},
-			}
+		"running_session": func(t *testing.T, deps dependencies) test {
+			deps.joinCodes.EXPECT().FindLatestJoinCode(ctx, "K7QX2M").Return(latest("RUNNING", now.Add(time.Minute)), nil)
+			return test{joinCode: "K7QX2M", expectedResolution: sessionpkg.JoinCodeResolution{Outcome: sessionpkg.JoinCodeSessionStarted}}
+		},
+		"running_session_whose_code_expired": func(t *testing.T, deps dependencies) test {
+			deps.joinCodes.EXPECT().FindLatestJoinCode(ctx, "K7QX2M").Return(latest("RUNNING", now.Add(-time.Hour)), nil)
+			return test{joinCode: "K7QX2M", expectedResolution: sessionpkg.JoinCodeResolution{Outcome: sessionpkg.JoinCodeSessionStarted}}
+		},
+		"finished_session": func(t *testing.T, deps dependencies) test {
+			deps.joinCodes.EXPECT().FindLatestJoinCode(ctx, "K7QX2M").Return(latest("FINISHED", now.Add(time.Minute)), nil)
+			return test{joinCode: "K7QX2M", expectedResolution: sessionpkg.JoinCodeResolution{Outcome: sessionpkg.JoinCodeInvalid}}
+		},
+		"cancelled_session": func(t *testing.T, deps dependencies) test {
+			deps.joinCodes.EXPECT().FindLatestJoinCode(ctx, "K7QX2M").Return(latest("CANCELLED", now.Add(time.Minute)), nil)
+			return test{joinCode: "K7QX2M", expectedResolution: sessionpkg.JoinCodeResolution{Outcome: sessionpkg.JoinCodeInvalid}}
+		},
+		"expired_session": func(t *testing.T, deps dependencies) test {
+			deps.joinCodes.EXPECT().FindLatestJoinCode(ctx, "K7QX2M").Return(latest("EXPIRED", now.Add(-time.Minute)), nil)
+			return test{joinCode: "K7QX2M", expectedResolution: sessionpkg.JoinCodeResolution{Outcome: sessionpkg.JoinCodeInvalid}}
+		},
+		"aborted_session": func(t *testing.T, deps dependencies) test {
+			deps.joinCodes.EXPECT().FindLatestJoinCode(ctx, "K7QX2M").Return(latest("ABORTED", now.Add(time.Minute)), nil)
+			return test{joinCode: "K7QX2M", expectedResolution: sessionpkg.JoinCodeResolution{Outcome: sessionpkg.JoinCodeInvalid}}
+		},
+		"code_never_given_out": func(t *testing.T, deps dependencies) test {
+			deps.joinCodes.EXPECT().FindLatestJoinCode(ctx, "K7QX2M").Return(nil, nil)
+			return test{joinCode: "K7QX2M", expectedResolution: sessionpkg.JoinCodeResolution{Outcome: sessionpkg.JoinCodeInvalid}}
 		},
 		"reading_the_code_fails": func(t *testing.T, deps dependencies) test {
-			deps.joinCodes.EXPECT().FindActiveJoinCode(ctx, "K7QX2M").Return(nil, errors.New("database down"))
+			deps.joinCodes.EXPECT().FindLatestJoinCode(ctx, "K7QX2M").Return(nil, errors.New("database down"))
 			return test{joinCode: "K7QX2M", expectedErr: true}
 		},
 	}

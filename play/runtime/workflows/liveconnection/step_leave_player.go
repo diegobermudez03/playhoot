@@ -6,21 +6,21 @@ import (
 	"github.com/diegobermudez03/playhoot/play/runtime"
 )
 
-// leave takes player out of the Session at their request. In the lobby they
-// leave it. In a running game they are disconnected at once, without the
-// transport grace, and a boundary runs right away to tell the game; like any
-// disconnected participant, only rejoining brings them back. The connection
-// ends as left.
+// leave takes player out of the Session at their request, ending the
+// connection as left. In the lobby they leave it; in a running game they are
+// disconnected at once, without the grace, and a boundary tells the game. A
+// leave during a Start attempt applies once the attempt ends.
 func (c *sessionController) leave(ctx context.Context, player *connection) (runtime.LeaveResult, error) {
-	s := c.lock()
+	// The lobby is frozen during a Start attempt, so whether the player
+	// leaves a lobby or a running game is only known once the attempt ends.
+	s, err := c.lockSettled(ctx)
+	if err != nil {
+		return runtime.LeaveResult{}, err
+	}
 	flush := false
 	switch s.phase {
 	case phaseLobby:
 		s.leaveLobby(player)
-	case phaseStarting:
-		c.unlock()
-		// Placeholder: leaving while the lobby is frozen for a Start attempt is not built.
-		return runtime.LeaveResult{}, ErrNotImplemented
 	case phaseRunning:
 		// A replaced connection no longer plays, so its leave changes nothing.
 		if presence, found := s.presence[player.participantID]; found && s.players[player.userUUID] == player && !presence.disconnected {

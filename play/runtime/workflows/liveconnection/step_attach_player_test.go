@@ -232,20 +232,6 @@ func TestAdmitPlayer(t *testing.T) {
 				expectedEnd:         runtime.EndDisconnected,
 			}
 		},
-		"leaving_during_a_start_attempt_is_not_built_yet": func(t *testing.T) test {
-			return test{
-				maxPlayers: 8,
-				after: func(t *testing.T, controller *sessionController, player runtime.PlayerConnection) {
-					controller.lock().phase = phaseStarting
-					controller.unlock()
-					_, err := player.Leave(ctx)
-					require.ErrorIs(t, err, ErrNotImplemented)
-				},
-				expectedOK:          true,
-				expectedLobby:       []string{"user-a"},
-				expectedPlayerLobby: []string{"user-a"},
-			}
-		},
 		"same_user_replaces_their_older_connection_even_when_full": func(t *testing.T) test {
 			var older runtime.PlayerConnection
 			return test{

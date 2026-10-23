@@ -123,7 +123,7 @@ func (h *Handler) WebSocketRoutes() []routing.Route {
 			Handler:       h.handlePlayerJoin,
 			Authorization: auth.RequireWebSocket(h.authorizer, identity.OperationJoinSessionAsPlayer),
 			Middlewares: []routing.Middleware{
-				resolveJoinCode(h.joinCodes, "joinCode", "sessionUUID"),
+				resolveJoinCode(h.joinCodes, h.refuseUpgraded, "joinCode", "sessionUUID"),
 				requireOwner(h.owners, "sessionUUID"),
 			},
 		},

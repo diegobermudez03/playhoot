@@ -150,22 +150,8 @@ func (h *Handler) acceptRouted(w http.ResponseWriter, r *http.Request) (routedCo
 		return routedConnection{}, false
 	}
 
-	release, err := h.live.Reserve(ctx, caller.UUID)
-	switch {
-	case errors.Is(err, live.ErrCallerFull):
-		httpx.WriteCodedError(w, http.StatusTooManyRequests, codeTooManyConnections, "too many live connections open")
-		return routedConnection{}, false
-	case err != nil:
-		logging.LogFields(ctx, logging.Field("live_connection_refused", err.Error()))
-		httpx.WriteCodedError(w, http.StatusServiceUnavailable, codeServerBusy, "server busy, try again later")
-		return routedConnection{}, false
-	}
-
-	conn, err := wsx.Accept(w, r, h.webSocketOriginPatterns)
-	if err != nil {
-		release()
-		// Accept already answered the request.
-		logging.LogError(ctx, err)
+	conn, release, ok := h.upgrade(w, r, caller.UUID)
+	if !ok {
 		return routedConnection{}, false
 	}
 	return routedConnection{
@@ -178,6 +164,54 @@ func (h *Handler) acceptRouted(w http.ResponseWriter, r *http.Request) (routedCo
 	}, true
 }
 
+// refuseUpgraded tells an authorized caller who cannot join why, as a
+// rejection on an upgraded connection it then closes, since browsers cannot
+// read why an upgrade was refused. The connection holds no room afterwards.
+func (h *Handler) refuseUpgraded(w http.ResponseWriter, r *http.Request, reason string) {
+	ctx := r.Context()
+
+	caller, ok := auth.Caller(ctx)
+	if !ok {
+		// Only possible if the route was registered without its authorization.
+		logging.LogFields(ctx, logging.Field("wiring_error", "live join refused without an authorized caller"))
+		httpx.WriteError(w, http.StatusInternalServerError, "joining session failed")
+		return
+	}
+	conn, release, ok := h.upgrade(w, r, caller.UUID)
+	if !ok {
+		return
+	}
+	defer release()
+	reject(ctx, conn, reason)
+}
+
+// upgrade upgrades r once this instance and callerUUID have room for one more
+// live connection; release gives that room back. On false the request was
+// answered.
+func (h *Handler) upgrade(w http.ResponseWriter, r *http.Request, callerUUID string) (*websocket.Conn, func(), bool) {
+	ctx := r.Context()
+
+	release, err := h.live.Reserve(ctx, callerUUID)
+	switch {
+	case errors.Is(err, live.ErrCallerFull):
+		httpx.WriteCodedError(w, http.StatusTooManyRequests, codeTooManyConnections, "too many live connections open")
+		return nil, nil, false
+	case err != nil:
+		logging.LogFields(ctx, logging.Field("live_connection_refused", err.Error()))
+		httpx.WriteCodedError(w, http.StatusServiceUnavailable, codeServerBusy, "server busy, try again later")
+		return nil, nil, false
+	}
+
+	conn, err := wsx.Accept(w, r, h.webSocketOriginPatterns)
+	if err != nil {
+		release()
+		// Accept already answered the request.
+		logging.LogError(ctx, err)
+		return nil, nil, false
+	}
+	return conn, release, true
+}
+
 // admitted reports whether the Runtime accepted the connection. Otherwise it
 // sent the rejection, or failed the connection, and closed it.
 func admitted(ctx context.Context, conn *websocket.Conn, outcome runtime.AttachOutcome, rejection runtime.RejectReason) bool {
@@ -186,14 +220,20 @@ func admitted(ctx context.Context, conn *websocket.Conn, outcome runtime.AttachO
 	case runtime.AttachAccepted:
 		return true
 	case runtime.AttachRejected:
-		logging.LogFields(ctx, logging.Field("reject_reason", string(rejection)))
-		_, _ = live.WriteMessage(ctx, conn, rejectedMessage{Type: liveRejected, Reason: string(rejection)})
-		_ = conn.Close(websocket.StatusPolicyViolation, "admission rejected")
+		reject(ctx, conn, string(rejection))
 	default:
 		logging.LogFields(ctx, logging.Field("attach_error", "unknown admission outcome"))
 		wsx.Abort(conn)
 	}
 	return false
+}
+
+// reject tells the client why it may not join, as on the wire, and closes
+// the connection.
+func reject(ctx context.Context, conn *websocket.Conn, reason string) {
+	logging.LogFields(ctx, logging.Field("reject_reason", reason))
+	_, _ = live.WriteMessage(ctx, conn, rejectedMessage{Type: liveRejected, Reason: reason})
+	_ = conn.Close(websocket.StatusPolicyViolation, "admission rejected")
 }
 
 // liveSession is what every served live connection shares: its socket, the

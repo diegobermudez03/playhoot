@@ -67,15 +67,19 @@ Implemented behavior:
 
 ## Join Code Resolution
 
-`resolvejoincode.Service.ResolveJoinCode(joinCode)`, called by the API before owner routing when a player joins by join code (`GET /join/{joinCode}`). It only reads `play_session_join_codes` joined with `play_sessions`. The code is matched in upper case, so codes typed in lower case resolve too.
+`resolvejoincode.Service.ResolveJoinCode(joinCode)`, called by the API before owner routing when a player joins by join code (`GET /v1/play/join/{joinCode}`). It only reads `play_session_join_codes` joined with `play_sessions`. The code is matched in upper case, so codes typed in lower case resolve too.
 
-| Join code | Answer |
+The code is decided by its most recent assignment (its newest row, released or not) and that Session's status (decided by the human 2026-10-21). A code is only given again once its previous row was released, so the newest row is the current one, and a reused code answers for its newest Session. Releasing at start or end and recycling expired codes at creation are unchanged; the code's expiry only matters in the lobby, since a code can expire while its Session is still played.
+
+| Most recent assignment of the code | Answer |
 | --- | --- |
-| Unreleased row holding the code, `expires_at` still in the future | `found`, with that Session's UUID |
-| Unreleased row past `expires_at` | `not_found`; the code is not released here |
-| Only released rows, or no row | `not_found` |
+| Session in `LOBBY`, `expires_at` still in the future | `found`, with that Session's UUID |
+| Session in `LOBBY`, past `expires_at` | `expired` (it no longer accepts players); the code is not released here |
+| Session `RUNNING` (left its lobby, not ended) | `session_started` |
+| Session FINISHED, CANCELLED, EXPIRED or ABORTED | `invalid`: a finished Session's code is treated as deleted |
+| No row | `invalid` |
 
-The Session's state is not checked: a code expires with its lobby, and is released when the Session starts or its start is aborted, so a started Session's code resolves to `not_found`.
+Only `found` carries the Session's UUID. Metric `play_session_join_codes_resolved_total{outcome}`.
 
 ## Player Join Eligibility
 

@@ -30,9 +30,6 @@ type ownerReleaser interface {
 	ReleaseOwner(ctx context.Context, sessionUUID string, epoch int64) error
 }
 
-// ErrNotImplemented is returned by connection operations not built yet.
-var ErrNotImplemented = errors.New("live operation not implemented yet")
-
 // errStopped means the controller stopped before it could run an operation.
 var errStopped = errors.New("session controller stopped")
 
@@ -85,8 +82,8 @@ const (
 	phaseLobby phase = "lobby"
 
 	// phaseStarting is an attempt to start the game: the lobby is frozen,
-	// so nobody joins and nobody who disconnects leaves it until the attempt
-	// ends.
+	// so nobody joins and nobody who disconnects or asks to leave leaves it
+	// until the attempt ends.
 	phaseStarting phase = "starting"
 
 	// phaseRunning is a started game: its participants are fixed and the
@@ -438,6 +435,7 @@ func (c *sessionController) isRunning() bool {
 // The caller holds the lock.
 func (c *sessionController) end(s *liveState, ending runtime.ConnectionEnd) {
 	s.phase = phaseEnded
+	s.settleStart()
 	s.lobby = nil
 	s.timeline = nil
 	s.recount()
@@ -506,6 +504,9 @@ type liveState struct {
 	// participants are the lobby frozen by the current Start attempt, kept
 	// once the game runs.
 	participants []runtime.Participant
+	// startSettled is closed once the current Start attempt ends, however it
+	// ends; set only while the phase is phaseStarting.
+	startSettled chan struct{}
 	// game is the confirmed state of the running game.
 	game Game
 	// start is what every connection is told when the game starts.
@@ -602,6 +603,34 @@ func (s *liveState) broadcastLobby() {
 	}
 	for _, player := range s.players {
 		player.lobbyUpdates.publish(update)
+	}
+}
+
+// settleStart wakes whoever waits for the current Start attempt to end; the
+// phase must already be the one the attempt ended in.
+func (s *liveState) settleStart() {
+	if s.startSettled != nil {
+		close(s.startSettled)
+		s.startSettled = nil
+	}
+}
+
+// lockSettled takes the controller's state once no Start attempt is in
+// progress, waiting for one to end without holding the lock. It fails only
+// when ctx is done first.
+func (c *sessionController) lockSettled(ctx context.Context) (*liveState, error) {
+	for {
+		s := c.lock()
+		if s.phase != phaseStarting {
+			return s, nil
+		}
+		settled := s.startSettled
+		c.unlock()
+		select {
+		case <-settled:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 	}
 }
 

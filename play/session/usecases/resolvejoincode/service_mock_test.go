@@ -41,17 +41,17 @@ func (m *MockjoinCodeFinder) EXPECT() *MockjoinCodeFinderMockRecorder {
 	return m.recorder
 }
 
-// FindActiveJoinCode mocks base method.
-func (m *MockjoinCodeFinder) FindActiveJoinCode(ctx context.Context, code string) (*repo.JoinCode, error) {
+// FindLatestJoinCode mocks base method.
+func (m *MockjoinCodeFinder) FindLatestJoinCode(ctx context.Context, code string) (*repo.JoinCode, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "FindActiveJoinCode", ctx, code)
+	ret := m.ctrl.Call(m, "FindLatestJoinCode", ctx, code)
 	ret0, _ := ret[0].(*repo.JoinCode)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// FindActiveJoinCode indicates an expected call of FindActiveJoinCode.
-func (mr *MockjoinCodeFinderMockRecorder) FindActiveJoinCode(ctx, code any) *gomock.Call {
+// FindLatestJoinCode indicates an expected call of FindLatestJoinCode.
+func (mr *MockjoinCodeFinderMockRecorder) FindLatestJoinCode(ctx, code any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindActiveJoinCode", reflect.TypeOf((*MockjoinCodeFinder)(nil).FindActiveJoinCode), ctx, code)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindLatestJoinCode", reflect.TypeOf((*MockjoinCodeFinder)(nil).FindLatestJoinCode), ctx, code)
 }

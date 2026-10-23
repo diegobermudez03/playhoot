@@ -362,6 +362,7 @@ func (c *sessionController) beginStart() (participants []runtime.Participant, ou
 		return nil, runtime.StartNotInLobby, false
 	}
 	s.phase = phaseStarting
+	s.startSettled = make(chan struct{})
 	s.participants = make([]runtime.Participant, len(s.lobby))
 	for i, userUUID := range s.lobby {
 		s.participants[i] = runtime.Participant{ParticipantID: fmt.Sprintf("P%d", i+1), UserUUID: userUUID, DisplayName: s.players[userUUID].displayName}
@@ -378,6 +379,7 @@ func (c *sessionController) cancelStart() {
 		return
 	}
 	s.phase = phaseLobby
+	s.settleStart()
 	s.participants = nil
 	before := len(s.lobby)
 	s.lobby = slices.DeleteFunc(s.lobby, func(userUUID string) bool {
@@ -404,6 +406,7 @@ func (c *sessionController) completeStart(participants []runtime.Participant, ga
 		return
 	}
 	s.phase = phaseRunning
+	s.settleStart()
 	s.participants = slices.Clone(participants)
 	s.game = game
 	s.start = runtime.SessionStart{Participants: slices.Clone(participants), Frontend: frontend}

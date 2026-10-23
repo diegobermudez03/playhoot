@@ -51,9 +51,9 @@ type testJoinCode struct {
 
 func (testJoinCode) TableName() string { return "play_session_join_codes" }
 
-// seedJoinCode creates a LOBBY Session holding code, released at releasedAt
-// when set.
-func seedJoinCode(t *testing.T, db *gorm.DB, code string, expiresAt time.Time, releasedAt *time.Time) testSession {
+// seedJoinCode creates a Session in status holding code, released at
+// releasedAt when set.
+func seedJoinCode(t *testing.T, db *gorm.DB, status string, code string, expiresAt time.Time, releasedAt *time.Time) testSession {
 	t.Helper()
 	game := testGame{GameUUID: uuid.NewString()}
 	require.NoError(t, db.Create(&game).Error)
@@ -63,7 +63,7 @@ func seedJoinCode(t *testing.T, db *gorm.DB, code string, expiresAt time.Time, r
 		UUID:              uuid.NewString(),
 		GameVersionID:     version.ID,
 		CreatedByUserUUID: uuid.NewString(),
-		Status:            "LOBBY",
+		Status:            status,
 		LobbyExpiresAt:    expiresAt,
 		ExpiresAt:         expiresAt.Add(4 * time.Hour),
 	}
@@ -72,7 +72,7 @@ func seedJoinCode(t *testing.T, db *gorm.DB, code string, expiresAt time.Time, r
 	return session
 }
 
-func TestFindActiveJoinCode(t *testing.T) {
+func TestFindLatestJoinCode(t *testing.T) {
 	type test struct {
 		code             string
 		expectedJoinCode *JoinCode
@@ -83,20 +83,25 @@ func TestFindActiveJoinCode(t *testing.T) {
 
 	tests := map[string]func(t *testing.T, db *gorm.DB) test{
 		"active_code": func(t *testing.T, db *gorm.DB) test {
-			seeded := seedJoinCode(t, db, "AAAAA1", expiresAt, nil)
-			return test{code: "AAAAA1", expectedJoinCode: &JoinCode{SessionUUID: seeded.UUID, ExpiresAt: expiresAt}}
+			seeded := seedJoinCode(t, db, "LOBBY", "AAAAA1", expiresAt, nil)
+			return test{code: "AAAAA1", expectedJoinCode: &JoinCode{SessionUUID: seeded.UUID, SessionStatus: "LOBBY", ExpiresAt: expiresAt}}
 		},
-		"active_code_reused_after_a_released_one": func(t *testing.T, db *gorm.DB) test {
-			seedJoinCode(t, db, "AAAAA2", expiresAt, &releasedAt)
-			current := seedJoinCode(t, db, "AAAAA2", expiresAt.Add(time.Hour), nil)
-			return test{code: "AAAAA2", expectedJoinCode: &JoinCode{SessionUUID: current.UUID, ExpiresAt: expiresAt.Add(time.Hour)}}
+		"code_reused_after_a_released_one_names_its_newest_session": func(t *testing.T, db *gorm.DB) test {
+			seedJoinCode(t, db, "FINISHED", "AAAAA2", expiresAt, &releasedAt)
+			current := seedJoinCode(t, db, "LOBBY", "AAAAA2", expiresAt.Add(time.Hour), nil)
+			return test{code: "AAAAA2", expectedJoinCode: &JoinCode{SessionUUID: current.UUID, SessionStatus: "LOBBY", ExpiresAt: expiresAt.Add(time.Hour)}}
 		},
-		"released_code": func(t *testing.T, db *gorm.DB) test {
-			seedJoinCode(t, db, "AAAAA3", expiresAt, &releasedAt)
-			return test{code: "AAAAA3"}
+		"code_released_by_the_start_still_names_its_session": func(t *testing.T, db *gorm.DB) test {
+			seeded := seedJoinCode(t, db, "RUNNING", "AAAAA3", expiresAt, &releasedAt)
+			return test{code: "AAAAA3", expectedJoinCode: &JoinCode{SessionUUID: seeded.UUID, SessionStatus: "RUNNING", ExpiresAt: expiresAt}}
+		},
+		"code_reused_and_released_again_names_its_newest_session": func(t *testing.T, db *gorm.DB) test {
+			seedJoinCode(t, db, "LOBBY", "AAAAA5", expiresAt, &releasedAt)
+			newest := seedJoinCode(t, db, "CANCELLED", "AAAAA5", expiresAt.Add(time.Hour), &releasedAt)
+			return test{code: "AAAAA5", expectedJoinCode: &JoinCode{SessionUUID: newest.UUID, SessionStatus: "CANCELLED", ExpiresAt: expiresAt.Add(time.Hour)}}
 		},
 		"unknown_code": func(t *testing.T, db *gorm.DB) test {
-			seedJoinCode(t, db, "AAAAA4", expiresAt, nil)
+			seedJoinCode(t, db, "LOBBY", "AAAAA4", expiresAt, nil)
 			return test{code: "ZZZZZ9"}
 		},
 	}
@@ -106,7 +111,7 @@ func TestFindActiveJoinCode(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			tc := setup(t, db)
 
-			joinCode, err := New(db).FindActiveJoinCode(context.Background(), tc.code)
+			joinCode, err := New(db).FindLatestJoinCode(context.Background(), tc.code)
 
 			require.NoError(t, err)
 			if tc.expectedJoinCode == nil {
@@ -115,6 +120,7 @@ func TestFindActiveJoinCode(t *testing.T) {
 			}
 			require.NotNil(t, joinCode)
 			require.Equal(t, tc.expectedJoinCode.SessionUUID, joinCode.SessionUUID)
+			require.Equal(t, tc.expectedJoinCode.SessionStatus, joinCode.SessionStatus)
 			require.True(t, tc.expectedJoinCode.ExpiresAt.Equal(joinCode.ExpiresAt))
 		})
 	}

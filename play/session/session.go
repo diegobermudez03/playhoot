@@ -64,19 +64,31 @@ const (
 	AdminJoinNotCreator AdminJoinEligibility = "not_creator"
 )
 
-// JoinCodeOutcome is whether a join code names a Session.
+// JoinCodeOutcome is whether a join code names a Session players can join
+// now, and why not otherwise. It is decided by the Session the code was most
+// recently given to.
 type JoinCodeOutcome string
 
 const (
+	// JoinCodeFound means the code names a Session in its lobby and the code
+	// has not expired.
 	JoinCodeFound JoinCodeOutcome = "found"
 
-	// JoinCodeNotFound means the code is unknown, released or expired; the
-	// cases are deliberately not distinguished.
-	JoinCodeNotFound JoinCodeOutcome = "not_found"
+	// JoinCodeInvalid means the code was never given out, or its Session
+	// already ended: a finished Session's code no longer exists.
+	JoinCodeInvalid JoinCodeOutcome = "invalid"
+
+	// JoinCodeExpired means the code's Session is still in its lobby but the
+	// code expired, so it no longer accepts players.
+	JoinCodeExpired JoinCodeOutcome = "expired"
+
+	// JoinCodeSessionStarted means the code's Session left its lobby and has
+	// not ended.
+	JoinCodeSessionStarted JoinCodeOutcome = "session_started"
 )
 
 // JoinCodeResolution is the Session a join code names. SessionUUID is set
-// only when Outcome is JoinCodeFound.
+// only when Outcome is JoinCodeFound, so a refused code never reveals it.
 type JoinCodeResolution struct {
 	Outcome     JoinCodeOutcome
 	SessionUUID string

@@ -56,6 +56,15 @@ func TestRecord(t *testing.T) {
 		"error_of_its_origin": func(t *testing.T) test {
 			return test{event: `{"name":"error","origin":"artifact","kind":"ready_timeout"}`, expectedRecorded: true, expectedKnown: true}
 		},
+		"invalid_join_code_rejection": func(t *testing.T) test {
+			return test{event: `{"name":"error","origin":"backend_rejection","kind":"invalid_join_code"}`, expectedRecorded: true, expectedKnown: true}
+		},
+		"expired_join_code_rejection": func(t *testing.T) test {
+			return test{event: `{"name":"error","origin":"backend_rejection","kind":"join_code_expired"}`, expectedRecorded: true, expectedKnown: true}
+		},
+		"join_code_rejection_of_another_origin": func(t *testing.T) test {
+			return test{event: `{"name":"error","origin":"transport","kind":"join_code_expired"}`, expectedKnown: true}
+		},
 		"error_kind_of_another_origin": func(t *testing.T) test {
 			return test{event: `{"name":"error","origin":"presentation","kind":"ready_timeout"}`, expectedKnown: true}
 		},
