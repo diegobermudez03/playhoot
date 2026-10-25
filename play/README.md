@@ -62,7 +62,7 @@ play/                         # a folder, not a Go package: each subpackage expo
     migration/                # exposes Migrate(db) and Seed(db) (test data) to the application's migrations.go
     usecases/
       checkadminjoin/         # EligibleToJoinAsAdmin + internal/repo
-      checklivesession/       # IsSessionLive (asked by the Runtime's ownership before claiming) + internal/repo
+      checklivesession/       # CheckLiveSession (asked by the Runtime's ownership before claiming) + internal/repo
       frontendaccess/         # FrontendAccess: a Session's signed URLs to its game frontend and assets, one batch per version shared by its Sessions + internal/repo
       storereplaychunk/       # StoreReplayChunk: writes a replay chunk object, then registers it in the manifest + internal/repo
     workflows/

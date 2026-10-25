@@ -13,6 +13,7 @@ import (
 	context "context"
 	reflect "reflect"
 
+	session "github.com/diegobermudez03/playhoot/play/session"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -40,17 +41,17 @@ func (m *MockliveSessionChecker) EXPECT() *MockliveSessionCheckerMockRecorder {
 	return m.recorder
 }
 
-// IsSessionLive mocks base method.
-func (m *MockliveSessionChecker) IsSessionLive(ctx context.Context, sessionUUID string) (bool, error) {
+// CheckLiveSession mocks base method.
+func (m *MockliveSessionChecker) CheckLiveSession(ctx context.Context, sessionUUID string) (session.LiveSessionCheck, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "IsSessionLive", ctx, sessionUUID)
-	ret0, _ := ret[0].(bool)
+	ret := m.ctrl.Call(m, "CheckLiveSession", ctx, sessionUUID)
+	ret0, _ := ret[0].(session.LiveSessionCheck)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// IsSessionLive indicates an expected call of IsSessionLive.
-func (mr *MockliveSessionCheckerMockRecorder) IsSessionLive(ctx, sessionUUID any) *gomock.Call {
+// CheckLiveSession indicates an expected call of CheckLiveSession.
+func (mr *MockliveSessionCheckerMockRecorder) CheckLiveSession(ctx, sessionUUID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsSessionLive", reflect.TypeOf((*MockliveSessionChecker)(nil).IsSessionLive), ctx, sessionUUID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CheckLiveSession", reflect.TypeOf((*MockliveSessionChecker)(nil).CheckLiveSession), ctx, sessionUUID)
 }

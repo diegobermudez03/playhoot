@@ -94,6 +94,34 @@ type JoinCodeResolution struct {
 	SessionUUID string
 }
 
+// LiveSessionOutcome is whether a Session can have live connections, and why
+// not otherwise.
+type LiveSessionOutcome string
+
+const (
+	// LiveSessionLive means the Session is in LOBBY before its expiry, or
+	// RUNNING.
+	LiveSessionLive LiveSessionOutcome = "live"
+
+	LiveSessionNotFound LiveSessionOutcome = "not_found"
+
+	// LiveSessionEnded means the Session is in a terminal status.
+	LiveSessionEnded LiveSessionOutcome = "ended"
+
+	// LiveSessionLobbyExpired means the Session is still in LOBBY but its
+	// lobby expired, before anything recorded its end.
+	LiveSessionLobbyExpired LiveSessionOutcome = "lobby_expired"
+)
+
+// LiveSessionCheck is whether a Session can have live connections. Status
+// and EndCause are its terminal status and why it ended, set only when
+// Outcome is LiveSessionEnded.
+type LiveSessionCheck struct {
+	Outcome  LiveSessionOutcome
+	Status   string
+	EndCause string
+}
+
 // PlayerJoinEligibility is whether a Session accepts new players.
 type PlayerJoinEligibility string
 
@@ -135,6 +163,20 @@ type RuntimeManifest struct {
 	// Rejoin means the game implements playerRejoined(), so a disconnected
 	// participant may ask to come back.
 	Rejoin bool
+
+	// InputRequirements are the interactions the game uses and the devices
+	// that can play it.
+	InputRequirements RuntimeInputRequirements
+}
+
+// RuntimeInputRequirements are the interactions a game version uses: keyboard
+// keys, moving the pointer without pressing (hover), and pressing or dragging.
+// Devices is desktop, mobile or both: the device classes that can play it.
+type RuntimeInputRequirements struct {
+	Devices          string
+	UsesKeyboard     bool
+	UsesPointerHover bool
+	UsesPointerPress bool
 }
 
 // RuntimeCommand is one declared COMMAND; its payload fields are declared

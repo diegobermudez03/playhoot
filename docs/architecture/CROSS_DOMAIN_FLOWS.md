@@ -51,8 +51,11 @@ sequenceDiagram
     API->>Identity: Authorize(token, JOIN_SESSION_AS_ADMIN)
     Identity-->>API: userUUID, allowed / unauthenticated (401) / forbidden (403)
     API->>Owner: LocateOrClaimOwner(sessionUUID)
-    Owner-->>API: owned here (epoch) / session unavailable (404) / owned elsewhere (503, no forwarding yet)
+    Owner-->>API: owned here (epoch) / not found, ended (status, end cause) or unavailable / owned elsewhere (503, no forwarding yet)
     API->>API: upgrade (playhoot.v1, allowed origin)
+    opt not found, ended or unavailable
+        API->>Client: rejected message (invalid_session / session_ended + status, end_cause / session_unavailable), close 1008; nothing below follows
+    end
     API->>Live: AttachAdmin(sessionUUID, userUUID, epoch)
     Live->>Live: EligibleToJoinAsAdmin (play/session), then find or create the Session's controller
     alt rejected

@@ -162,7 +162,9 @@ func TestHandlePlayerJoin(t *testing.T) {
 		players *MockplayerAttacher
 	}
 	type test struct {
-		player      *fakePlayer
+		player *fakePlayer
+		// query is the join URL's query string, with its "?", if any.
+		query       string
 		clientSends []string
 		// receivedBeforeSending is how many of expectedReceived the client
 		// reads before it sends clientSends, as a client acting on them would.
@@ -610,6 +612,50 @@ func TestHandlePlayerJoin(t *testing.T) {
 				expectedCloseStatus: websocket.StatusPolicyViolation,
 			}
 		},
+		"device_is_passed_to_the_runtime": func(t *testing.T, deps dependencies) test {
+			player := newFakePlayer()
+			deps.players.EXPECT().
+				AttachPlayer(gomock.Any(), sessionUUID, runtime.Player{UserUUID: callerUUID, DisplayName: callerName, Device: runtime.DeviceMobile}, ownerEpoch).
+				Return(runtime.AttachPlayerResult{Outcome: runtime.AttachAccepted, Connection: player.connection()}, nil)
+			return test{
+				player:              player,
+				query:               "?device=mobile",
+				clientSends:         []string{`{"type":"leave"}`},
+				expectedReceived:    []string{`{"type":"leave_result","outcome":"left"}`},
+				expectedCloseStatus: websocket.StatusNormalClosure,
+				expectedDisconnects: 1,
+			}
+		},
+		"unsupported_device_receives_the_requirements_and_closes": func(t *testing.T, deps dependencies) test {
+			deps.players.EXPECT().
+				AttachPlayer(gomock.Any(), sessionUUID, runtime.Player{UserUUID: callerUUID, DisplayName: callerName, Device: runtime.Device("tablet")}, ownerEpoch).
+				Return(runtime.AttachPlayerResult{
+					Outcome:      runtime.AttachRejected,
+					Rejection:    runtime.RejectDeviceNotSupported,
+					Requirements: runtime.InputRequirements{Devices: "desktop", UsesKeyboard: true, UsesPointerPress: true},
+				}, nil)
+			return test{
+				query: "?device=tablet",
+				expectedReceived: []string{`{"type":"rejected","reason":"device_not_supported","requirements":` +
+					`{"devices":"desktop","uses_keyboard":true,"uses_pointer_hover":false,"uses_pointer_press":true}}`},
+				expectedCloseStatus: websocket.StatusPolicyViolation,
+				expectedCloseReason: "admission rejected",
+			}
+		},
+		"missing_device_reaches_the_runtime_empty": func(t *testing.T, deps dependencies) test {
+			deps.players.EXPECT().
+				AttachPlayer(gomock.Any(), sessionUUID, runtime.Player{UserUUID: callerUUID, DisplayName: callerName}, ownerEpoch).
+				Return(runtime.AttachPlayerResult{
+					Outcome:      runtime.AttachRejected,
+					Rejection:    runtime.RejectDeviceNotSupported,
+					Requirements: runtime.InputRequirements{Devices: "both", UsesPointerPress: true},
+				}, nil)
+			return test{
+				expectedReceived: []string{`{"type":"rejected","reason":"device_not_supported","requirements":` +
+					`{"devices":"both","uses_keyboard":false,"uses_pointer_hover":false,"uses_pointer_press":true}}`},
+				expectedCloseStatus: websocket.StatusPolicyViolation,
+			}
+		},
 		"attach_fails": func(t *testing.T, deps dependencies) test {
 			deps.players.EXPECT().
 				AttachPlayer(gomock.Any(), sessionUUID, runtime.Player{UserUUID: callerUUID, DisplayName: callerName}, ownerEpoch).
@@ -646,7 +692,7 @@ func TestHandlePlayerJoin(t *testing.T) {
 
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			conn, response, err := websocket.Dial(ctx, server.URL+"/sessions/"+sessionUUID+"/player", &websocket.DialOptions{
+			conn, response, err := websocket.Dial(ctx, server.URL+"/sessions/"+sessionUUID+"/player"+tc.query, &websocket.DialOptions{
 				Subprotocols: []string{"playhoot.v1"},
 			})
 			if tc.expectedRefusal != 0 {

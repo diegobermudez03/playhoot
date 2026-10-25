@@ -50,7 +50,14 @@ Implemented behavior:
 
 ## Live Session Check
 
-`checklivesession.Service.IsSessionLive(sessionUUID)`, called by the Runtime's ownership (`LocateOrClaimOwner`) before every live upgrade, so that only a live Session is ever claimed and gets a controller. It only reads `play_sessions`: the Session is live when it is RUNNING, or in LOBBY before `lobby_expires_at`. An unknown Session (or not a UUID), an ended one, or an overdue lobby is not live (the expiry is not recorded here); the API answers 404.
+`checklivesession.Service.CheckLiveSession(sessionUUID)`, called by the Runtime's ownership (`LocateOrClaimOwner`) before every live upgrade, so that only a live Session is ever claimed and gets a controller. It only reads `play_sessions` (`status`, `lobby_expires_at`, `end_cause`) and answers one outcome, counted in `play_session_live_checks_total{outcome}`:
+
+- `live`: RUNNING, or LOBBY before `lobby_expires_at`;
+- `not_found`: no Session has that UUID, or it is not a UUID;
+- `ended`: FINISHED, CANCELLED, EXPIRED or ABORTED, with that status and its `end_cause`; a terminal status without an end cause raises an alert and is an error;
+- `lobby_expired`: LOBBY past `lobby_expires_at` (the expiry is not recorded here; reconciliation ends it later as EXPIRED / LOBBY_EXPIRED).
+
+Any other status raises an alert and is an error. The Runtime's ownership answers `session_not_found`, `session_ended` (with the status and end cause) or `session_unavailable` for them, and the API refuses the connection after the upgrade as `invalid_session`, `session_ended` (with `status` and `end_cause`) or `session_unavailable` (`api/README.md`), decided by the human 2026-10-25. An overdue lobby keeps `session_unavailable`, consistently with a join by code, which answers `join_code_expired` for it rather than the ended Session's `invalid_join_code`: nothing recorded its end yet.
 
 ## Admin Join Eligibility
 
@@ -96,11 +103,25 @@ Only `found` carries the Session's UUID. Metric `play_session_join_codes_resolve
 | FINISHED, CANCELLED, EXPIRED, ABORTED | `session_not_joinable` |
 | Any other status (broken data) | alert and error |
 
-The lobby's capacity is not checked here: the live controller checks it against the manifest's maximum while admitting.
+The lobby's capacity is not checked here: the live controller checks it against the manifest's maximum while admitting. Nor is the player's device: the controller checks it first, on every player connection (Player Device Check).
 
 ## Runtime Manifest Load
 
-`loadruntimemanifest.Service.LoadRuntimeManifest(sessionUUID)`, called by a Session's live controller on its first admitted connection, which keeps the manifest for the Session's lifetime (it cannot change: the version is pinned and immutable). It reads `play_sessions` joined with `play_game_versions`. The manifest declares the player limits, the SAMPLE inputs and the COMMANDs, each command with payload fields declared like inputs (`play/internal/business/commands`). An unknown Session is `ErrSessionNotFound`; a pinned version that is missing or holds an invalid manifest raises an alert and is an error.
+`loadruntimemanifest.Service.LoadRuntimeManifest(sessionUUID)`, called by a Session's live controller on its first admitted connection, which keeps the manifest for the Session's lifetime (it cannot change: the version is pinned and immutable). It reads `play_sessions` joined with `play_game_versions`. The manifest declares the player limits, the SAMPLE inputs and the COMMANDs, each command with payload fields declared like inputs (`play/internal/business/commands`). It also reads the version's row in `play_game_version_input_requirements` (the interactions the game uses and the devices that can play it). An unknown Session is `ErrSessionNotFound`; a pinned version that is missing, holds an invalid manifest, has no input requirements or has `devices` other than `desktop`, `mobile` or `both` raises an alert and is an error.
+
+## Player Device Check
+
+Decided by the human 2026-10-25 (`play/docs/decisions/SESSION-ADR-0035-game-input-requirements-and-player-device-check.md`): only a device that can play the Session's game attaches as a player.
+
+1. The client names its class in the `device` query parameter of either player endpoint (`desktop` or `mobile`); the API passes it to the Runtime as it came.
+2. The Session's controller (`liveconnection`, `attachPlayer`) checks the device on every player connection (lobby join, reattach, rejoin and device switch), only once the Session admits the player (decided by the human 2026-10-25): a participant of the game running here; or, from the durable eligibility, a lobby that accepts players, or a running Session recovered here that the player plays. A Session that cannot be joined answers its own reason whatever the device: `session_unavailable` when not found or not joinable, `session_started` for a non-participant of a running game. The device check comes before the lobby's capacity, a reattach or a rejoin, so a refused connection neither takes a lobby place, replaces the player's current connection nor asks the game about a rejoin. The manifest with the input requirements is loaded once per controller when first needed.
+3. The rule (`play/internal/business/inputrequirements`, shared by `play/session` and `play/runtime`): `desktop` plays a version whose `devices` is `desktop` or `both`, `mobile` one whose `devices` is `mobile` or `both`. A missing or unknown device plays nothing. `devices` other than the three values raises an alert and is an error.
+4. A refused device is rejected `device_not_supported` with the version's requirements; the API sends `{"type":"rejected","reason":"device_not_supported","requirements":{"devices":...,"uses_keyboard":...,"uses_pointer_hover":...,"uses_pointer_press":...}}` and closes `1008` `admission rejected`. Counted in `play_runtime_player_attach_total{outcome="device_not_supported"}`; the attach log carries `device` (the class, or `unknown`).
+5. Admins are never checked.
+
+Which devices a version allows is computed by whoever writes its requirements (`inputrequirements.DevicesFor`, checked by `Requirements.Validate`): `both` when it uses no keyboard and at most one of hover or press, `desktop` otherwise. `mobile` is reserved; the rule never produces it. Today only the seed migrations write requirements, through that rule.
+
+Required in the future (not built): games receive input only through Playhoot SDK built-in functions (keyboard, hover, press/drag); publishing a version runs a static analysis of its frontend script that infers which of them it uses and writes its requirements through the rule; a game directory filters games by `devices` for the visitor's device class.
 
 ## Start Session (durable side)
 

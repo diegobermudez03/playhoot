@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	"github.com/diegobermudez03/playhoot/play/internal/business/inputrequirements"
 	"github.com/diegobermudez03/playhoot/play/runtime"
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
@@ -24,9 +25,11 @@ func TestAttachPlayer(t *testing.T) {
 		// before runs against the Manager before the attach under test.
 		before     func(resolver *ControllerResolver)
 		ownerEpoch int64
+		device     runtime.Device
 
 		expectedOutcome      runtime.AttachOutcome
 		expectedRejection    runtime.RejectReason
+		expectedRequirements runtime.InputRequirements
 		expectedErr          bool
 		expectedPlayersAfter int
 	}
@@ -37,44 +40,139 @@ func TestAttachPlayer(t *testing.T) {
 		otherUUID   = "aaaaaaaa-aaaa-4aaa-8aaa-000000000002"
 	)
 	ctx := context.Background()
-	loadsManifest := func(deps dependencies, maxPlayers int) {
-		deps.manifests.EXPECT().LoadRuntimeManifest(ctx, sessionUUID).Return(sessionpkg.RuntimeManifest{MinPlayers: 1, MaxPlayers: maxPlayers}, nil)
+	anyDevice := sessionpkg.RuntimeInputRequirements{Devices: "both", UsesPointerPress: true}
+	desktopOnly := sessionpkg.RuntimeInputRequirements{Devices: "desktop", UsesKeyboard: true, UsesPointerPress: true}
+	loadsManifest := func(deps dependencies, maxPlayers int, requirements sessionpkg.RuntimeInputRequirements) {
+		deps.manifests.EXPECT().LoadRuntimeManifest(ctx, sessionUUID).
+			Return(sessionpkg.RuntimeManifest{MinPlayers: 1, MaxPlayers: maxPlayers, InputRequirements: requirements}, nil)
+	}
+	// eligible makes the Session admit players, checked before the device.
+	eligible := func(deps dependencies) *gomock.Call {
+		return deps.players.EXPECT().EligibleToJoinAsPlayer(ctx, sessionUUID).Return(sessionpkg.PlayerJoinEligible, nil)
 	}
 
 	tests := map[string]func(t *testing.T, deps dependencies) test{
 		"first_player_creates_the_controller_and_joins_the_lobby": func(t *testing.T, deps dependencies) test {
+			loadsManifest(deps, 8, anyDevice)
 			deps.players.EXPECT().EligibleToJoinAsPlayer(ctx, sessionUUID).Return(sessionpkg.PlayerJoinEligible, nil)
-			loadsManifest(deps, 8)
 			return test{
 				ownerEpoch:           1,
+				device:               runtime.DeviceDesktop,
 				expectedOutcome:      runtime.AttachAccepted,
 				expectedPlayersAfter: 1,
 			}
 		},
+		"mobile_joins_a_game_for_both": func(t *testing.T, deps dependencies) test {
+			loadsManifest(deps, 8, anyDevice)
+			deps.players.EXPECT().EligibleToJoinAsPlayer(ctx, sessionUUID).Return(sessionpkg.PlayerJoinEligible, nil)
+			return test{
+				ownerEpoch:           1,
+				device:               runtime.DeviceMobile,
+				expectedOutcome:      runtime.AttachAccepted,
+				expectedPlayersAfter: 1,
+			}
+		},
+		"desktop_joins_a_desktop_game": func(t *testing.T, deps dependencies) test {
+			loadsManifest(deps, 8, desktopOnly)
+			deps.players.EXPECT().EligibleToJoinAsPlayer(ctx, sessionUUID).Return(sessionpkg.PlayerJoinEligible, nil)
+			return test{
+				ownerEpoch:           1,
+				device:               runtime.DeviceDesktop,
+				expectedOutcome:      runtime.AttachAccepted,
+				expectedPlayersAfter: 1,
+			}
+		},
+		"mobile_is_rejected_from_a_desktop_game_with_its_requirements": func(t *testing.T, deps dependencies) test {
+			eligible(deps)
+			loadsManifest(deps, 8, desktopOnly)
+			return test{
+				ownerEpoch:           1,
+				device:               runtime.DeviceMobile,
+				expectedOutcome:      runtime.AttachRejected,
+				expectedRejection:    runtime.RejectDeviceNotSupported,
+				expectedRequirements: runtime.InputRequirements{Devices: "desktop", UsesKeyboard: true, UsesPointerPress: true},
+			}
+		},
+		"desktop_is_rejected_from_a_mobile_game": func(t *testing.T, deps dependencies) test {
+			eligible(deps)
+			loadsManifest(deps, 8, sessionpkg.RuntimeInputRequirements{Devices: "mobile", UsesPointerPress: true})
+			return test{
+				ownerEpoch:           1,
+				device:               runtime.DeviceDesktop,
+				expectedOutcome:      runtime.AttachRejected,
+				expectedRejection:    runtime.RejectDeviceNotSupported,
+				expectedRequirements: runtime.InputRequirements{Devices: "mobile", UsesPointerPress: true},
+			}
+		},
+		"missing_device_is_unsupported": func(t *testing.T, deps dependencies) test {
+			eligible(deps)
+			loadsManifest(deps, 8, anyDevice)
+			return test{
+				ownerEpoch:           1,
+				expectedOutcome:      runtime.AttachRejected,
+				expectedRejection:    runtime.RejectDeviceNotSupported,
+				expectedRequirements: runtime.InputRequirements{Devices: "both", UsesPointerPress: true},
+			}
+		},
+		"unknown_device_is_unsupported": func(t *testing.T, deps dependencies) test {
+			eligible(deps)
+			loadsManifest(deps, 8, anyDevice)
+			return test{
+				ownerEpoch:           1,
+				device:               runtime.Device("tablet"),
+				expectedOutcome:      runtime.AttachRejected,
+				expectedRejection:    runtime.RejectDeviceNotSupported,
+				expectedRequirements: runtime.InputRequirements{Devices: "both", UsesPointerPress: true},
+			}
+		},
+		"unknown_devices_of_the_game_are_broken_data": func(t *testing.T, deps dependencies) test {
+			eligible(deps)
+			loadsManifest(deps, 8, sessionpkg.RuntimeInputRequirements{Devices: "tv"})
+			return test{ownerEpoch: 1, device: runtime.DeviceDesktop, expectedErr: true}
+		},
 		"full_lobby_rejects": func(t *testing.T, deps dependencies) test {
+			loadsManifest(deps, 1, anyDevice)
 			deps.players.EXPECT().EligibleToJoinAsPlayer(ctx, sessionUUID).Return(sessionpkg.PlayerJoinEligible, nil).Times(2)
-			loadsManifest(deps, 1)
 			return test{
 				before: func(resolver *ControllerResolver) {
-					result, err := resolver.AttachPlayer(ctx, sessionUUID, runtime.Player{UserUUID: otherUUID}, 1)
+					result, err := resolver.AttachPlayer(ctx, sessionUUID, runtime.Player{UserUUID: otherUUID, Device: runtime.DeviceDesktop}, 1)
 					require.NoError(t, err)
 					require.Equal(t, runtime.AttachAccepted, result.Outcome)
 				},
 				ownerEpoch:           1,
+				device:               runtime.DeviceDesktop,
 				expectedOutcome:      runtime.AttachRejected,
 				expectedRejection:    runtime.RejectLobbyFull,
 				expectedPlayersAfter: 1,
 			}
 		},
-		"request_under_an_older_epoch_rejects_as_owner_changed": func(t *testing.T, deps dependencies) test {
-			deps.players.EXPECT().EligibleToJoinAsPlayer(ctx, sessionUUID).Return(sessionpkg.PlayerJoinEligible, nil)
-			loadsManifest(deps, 8)
+		"same_user_on_an_unsupported_device_keeps_the_older_connection": func(t *testing.T, deps dependencies) test {
+			loadsManifest(deps, 8, desktopOnly)
+			eligible(deps).Times(2)
 			return test{
 				before: func(resolver *ControllerResolver) {
-					_, err := resolver.AttachPlayer(ctx, sessionUUID, runtime.Player{UserUUID: otherUUID}, 2)
+					result, err := resolver.AttachPlayer(ctx, sessionUUID, runtime.Player{UserUUID: playerUUID, Device: runtime.DeviceDesktop}, 1)
+					require.NoError(t, err)
+					require.Equal(t, runtime.AttachAccepted, result.Outcome)
+				},
+				ownerEpoch:           1,
+				device:               runtime.DeviceMobile,
+				expectedOutcome:      runtime.AttachRejected,
+				expectedRejection:    runtime.RejectDeviceNotSupported,
+				expectedRequirements: runtime.InputRequirements{Devices: "desktop", UsesKeyboard: true, UsesPointerPress: true},
+				expectedPlayersAfter: 1,
+			}
+		},
+		"request_under_an_older_epoch_rejects_as_owner_changed": func(t *testing.T, deps dependencies) test {
+			loadsManifest(deps, 8, anyDevice)
+			deps.players.EXPECT().EligibleToJoinAsPlayer(ctx, sessionUUID).Return(sessionpkg.PlayerJoinEligible, nil)
+			return test{
+				before: func(resolver *ControllerResolver) {
+					_, err := resolver.AttachPlayer(ctx, sessionUUID, runtime.Player{UserUUID: otherUUID, Device: runtime.DeviceDesktop}, 2)
 					require.NoError(t, err)
 				},
 				ownerEpoch:        1,
+				device:            runtime.DeviceDesktop,
 				expectedOutcome:   runtime.AttachRejected,
 				expectedRejection: runtime.RejectOwnerChanged,
 			}
@@ -83,12 +181,14 @@ func TestAttachPlayer(t *testing.T) {
 			anyCtx := gomock.Any()
 			gomock.InOrder(
 				deps.players.EXPECT().EligibleToJoinAsPlayer(ctx, sessionUUID).Return(sessionpkg.PlayerJoinSessionStarted, nil),
-				deps.manifests.EXPECT().LoadRuntimeManifest(ctx, sessionUUID).Return(sessionpkg.RuntimeManifest{MinPlayers: 1, MaxPlayers: 8}, nil),
+				deps.manifests.EXPECT().LoadRuntimeManifest(ctx, sessionUUID).
+					Return(sessionpkg.RuntimeManifest{MinPlayers: 1, MaxPlayers: 8, InputRequirements: anyDevice}, nil),
 				deps.limits.EXPECT().LoadSessionLimits(anyCtx, sessionUUID).Return(sessionpkg.SessionLimits{ExpiresAt: time.Now().Add(time.Hour)}, nil),
 				deps.starts.EXPECT().LoadRunningSession(anyCtx, sessionUUID).Return(sessionpkg.RunningSession{}, sessionpkg.ErrSessionNotRunning),
 			)
 			return test{
 				ownerEpoch:        1,
+				device:            runtime.DeviceDesktop,
 				expectedOutcome:   runtime.AttachRejected,
 				expectedRejection: runtime.RejectSessionStarted,
 			}
@@ -97,6 +197,7 @@ func TestAttachPlayer(t *testing.T) {
 			deps.players.EXPECT().EligibleToJoinAsPlayer(ctx, sessionUUID).Return(sessionpkg.PlayerJoinSessionNotFound, nil)
 			return test{
 				ownerEpoch:        1,
+				device:            runtime.DeviceDesktop,
 				expectedOutcome:   runtime.AttachRejected,
 				expectedRejection: runtime.RejectSessionUnavailable,
 			}
@@ -105,22 +206,57 @@ func TestAttachPlayer(t *testing.T) {
 			deps.players.EXPECT().EligibleToJoinAsPlayer(ctx, sessionUUID).Return(sessionpkg.PlayerJoinSessionNotJoinable, nil)
 			return test{
 				ownerEpoch:        1,
+				device:            runtime.DeviceDesktop,
 				expectedOutcome:   runtime.AttachRejected,
 				expectedRejection: runtime.RejectSessionUnavailable,
 			}
 		},
+		"ended_session_on_an_unsupported_device_rejects_as_unavailable": func(t *testing.T, deps dependencies) test {
+			// The device is never checked: the manifest is not even read.
+			deps.players.EXPECT().EligibleToJoinAsPlayer(ctx, sessionUUID).Return(sessionpkg.PlayerJoinSessionNotJoinable, nil)
+			return test{
+				ownerEpoch:        1,
+				device:            runtime.Device("tablet"),
+				expectedOutcome:   runtime.AttachRejected,
+				expectedRejection: runtime.RejectSessionUnavailable,
+			}
+		},
+		"unknown_session_without_a_device_rejects_as_unavailable": func(t *testing.T, deps dependencies) test {
+			deps.players.EXPECT().EligibleToJoinAsPlayer(ctx, sessionUUID).Return(sessionpkg.PlayerJoinSessionNotFound, nil)
+			return test{
+				ownerEpoch:        1,
+				expectedOutcome:   runtime.AttachRejected,
+				expectedRejection: runtime.RejectSessionUnavailable,
+			}
+		},
+		"running_session_rejects_a_non_participant_as_started_whatever_the_device": func(t *testing.T, deps dependencies) test {
+			anyCtx := gomock.Any()
+			gomock.InOrder(
+				deps.players.EXPECT().EligibleToJoinAsPlayer(ctx, sessionUUID).Return(sessionpkg.PlayerJoinSessionStarted, nil),
+				deps.manifests.EXPECT().LoadRuntimeManifest(ctx, sessionUUID).
+					Return(sessionpkg.RuntimeManifest{MinPlayers: 1, MaxPlayers: 8, InputRequirements: desktopOnly}, nil),
+				deps.limits.EXPECT().LoadSessionLimits(anyCtx, sessionUUID).Return(sessionpkg.SessionLimits{ExpiresAt: time.Now().Add(time.Hour)}, nil),
+				deps.starts.EXPECT().LoadRunningSession(anyCtx, sessionUUID).Return(sessionpkg.RunningSession{}, sessionpkg.ErrSessionNotRunning),
+			)
+			return test{
+				ownerEpoch:        1,
+				device:            runtime.DeviceMobile,
+				expectedOutcome:   runtime.AttachRejected,
+				expectedRejection: runtime.RejectSessionStarted,
+			}
+		},
 		"loading_the_manifest_fails": func(t *testing.T, deps dependencies) test {
-			deps.players.EXPECT().EligibleToJoinAsPlayer(ctx, sessionUUID).Return(sessionpkg.PlayerJoinEligible, nil)
+			eligible(deps)
 			deps.manifests.EXPECT().LoadRuntimeManifest(ctx, sessionUUID).Return(sessionpkg.RuntimeManifest{}, errors.New("database down"))
-			return test{ownerEpoch: 1, expectedErr: true}
+			return test{ownerEpoch: 1, device: runtime.DeviceDesktop, expectedErr: true}
 		},
 		"eligibility_check_fails": func(t *testing.T, deps dependencies) test {
 			deps.players.EXPECT().EligibleToJoinAsPlayer(ctx, sessionUUID).Return(sessionpkg.PlayerJoinEligibility(""), errors.New("database down"))
-			return test{ownerEpoch: 1, expectedErr: true}
+			return test{ownerEpoch: 1, device: runtime.DeviceDesktop, expectedErr: true}
 		},
 		"unknown_eligibility": func(t *testing.T, deps dependencies) test {
 			deps.players.EXPECT().EligibleToJoinAsPlayer(ctx, sessionUUID).Return(sessionpkg.PlayerJoinEligibility("something_new"), nil)
-			return test{ownerEpoch: 1, expectedErr: true}
+			return test{ownerEpoch: 1, device: runtime.DeviceDesktop, expectedErr: true}
 		},
 	}
 
@@ -135,7 +271,7 @@ func TestAttachPlayer(t *testing.T) {
 				tc.before(resolver)
 			}
 
-			result, err := resolver.AttachPlayer(ctx, sessionUUID, runtime.Player{UserUUID: playerUUID}, tc.ownerEpoch)
+			result, err := resolver.AttachPlayer(ctx, sessionUUID, runtime.Player{UserUUID: playerUUID, Device: tc.device}, tc.ownerEpoch)
 
 			require.Contains(t, resolver.controllers, sessionUUID, "the controller exists whatever the answer")
 
@@ -146,6 +282,7 @@ func TestAttachPlayer(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedOutcome, result.Outcome)
 			require.Equal(t, tc.expectedRejection, result.Rejection)
+			require.Equal(t, tc.expectedRequirements, result.Requirements)
 			if tc.expectedOutcome == runtime.AttachAccepted {
 				require.NotNil(t, result.Connection.Disconnect)
 			}
@@ -319,6 +456,78 @@ func TestAdmitPlayer(t *testing.T) {
 			}
 			require.Equal(t, tc.expectedPlayerLobby, latestLobby(t, player.NextLobbyUpdate))
 			require.Equal(t, tc.expectedEnd, endedWith(t, player.Ended))
+		})
+	}
+}
+
+func TestAttachPlayerChecksTheDeviceOfEveryConnection(t *testing.T) {
+	type test struct {
+		// before runs against the running game of user-a (P1) and user-b (P2).
+		before func(t *testing.T, controller *sessionController, players map[string]runtime.PlayerConnection)
+		device runtime.Device
+
+		expectedResult   runtime.AttachPlayerResult
+		expectedOlderEnd runtime.EndReason
+	}
+
+	ctx := context.Background()
+	desktopOnly := inputrequirements.Requirements{UsesKeyboard: true, UsesPointerPress: true, Devices: inputrequirements.DevicesDesktop}
+	rejected := runtime.AttachPlayerResult{
+		Outcome:      runtime.AttachRejected,
+		Rejection:    runtime.RejectDeviceNotSupported,
+		Requirements: runtime.InputRequirements{Devices: "desktop", UsesKeyboard: true, UsesPointerPress: true},
+	}
+
+	tests := map[string]func(t *testing.T) test{
+		"reattach_on_a_supported_device_replaces_the_older_connection": func(t *testing.T) test {
+			return test{
+				device:           runtime.DeviceDesktop,
+				expectedResult:   runtime.AttachPlayerResult{Outcome: runtime.AttachAccepted},
+				expectedOlderEnd: runtime.EndReplaced,
+			}
+		},
+		"device_switch_to_an_unsupported_device_keeps_the_older_connection": func(t *testing.T) test {
+			return test{device: runtime.DeviceMobile, expectedResult: rejected}
+		},
+		"reattach_without_a_device_is_rejected": func(t *testing.T) test {
+			return test{expectedResult: rejected}
+		},
+		"rejoin_on_an_unsupported_device_is_rejected_before_the_game_is_asked": func(t *testing.T) test {
+			return test{
+				before: func(t *testing.T, controller *sessionController, players map[string]runtime.PlayerConnection) {
+					controller.lock().manifest.Rejoin = true
+					controller.unlock()
+					_, err := players["user-a"].Leave(ctx)
+					require.NoError(t, err)
+					controller.takeBoundary()
+				},
+				device:           runtime.DeviceMobile,
+				expectedResult:   rejected,
+				expectedOlderEnd: runtime.EndLeft,
+			}
+		},
+	}
+
+	for name, setup := range tests {
+		t.Run(name, func(t *testing.T) {
+			tc := setup(t)
+			controller, players, _ := runningController(t, map[string][]byte{"P1": []byte(`{}`), "P2": []byte(`{}`)}, "user-a", "user-b")
+			controller.lock().manifest.Requirements = desktopOnly
+			controller.unlock()
+			if tc.before != nil {
+				tc.before(t, controller, players)
+			}
+
+			result, err := controller.attachPlayer(ctx, runtime.Player{UserUUID: "user-a", Device: tc.device})
+
+			require.NoError(t, err)
+			result.Connection = runtime.PlayerConnection{}
+			require.Equal(t, tc.expectedResult, result)
+			require.Equal(t, tc.expectedOlderEnd, endedWith(t, players["user-a"].Ended))
+			if tc.expectedResult.Outcome == runtime.AttachRejected {
+				next, _ := controller.takeBoundary()
+				require.Empty(t, next.operations, "the game is not asked about a rejected device")
+			}
 		})
 	}
 }

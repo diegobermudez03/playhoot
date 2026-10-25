@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/diegobermudez03/playhoot/monitoring"
+	"github.com/diegobermudez03/playhoot/play/internal/business/inputrequirements"
 	"github.com/diegobermudez03/playhoot/play/internal/business/inputs"
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 	"github.com/diegobermudez03/playhoot/play/session/internal/business/manifest"
@@ -21,10 +22,13 @@ import (
 
 // manifestFinder reads a Session's raw manifest.
 type manifestFinder interface {
-	FindSessionManifest(ctx context.Context, sessionUUID string) ([]byte, bool, error)
+	FindSessionManifest(ctx context.Context, sessionUUID string) (internalrepo.SessionManifest, bool, error)
 }
 
-var errBrokenManifest = errors.New("session's game version has no valid manifest")
+var (
+	errBrokenManifest     = errors.New("session's game version has no valid manifest")
+	errBrokenRequirements = errors.New("session's game version has no valid input requirements")
+)
 
 // Service is the runtime manifest use case.
 type Service struct {
@@ -42,19 +46,23 @@ func (s *Service) LoadRuntimeManifest(ctx context.Context, sessionUUID string) (
 	if _, err := uuid.Parse(sessionUUID); err != nil {
 		return sessionpkg.RuntimeManifest{}, sessionpkg.ErrSessionNotFound
 	}
-	raw, found, err := s.manifests.FindSessionManifest(ctx, sessionUUID)
+	stored, found, err := s.manifests.FindSessionManifest(ctx, sessionUUID)
 	if err != nil {
 		return sessionpkg.RuntimeManifest{}, err
 	}
 	if !found {
 		return sessionpkg.RuntimeManifest{}, sessionpkg.ErrSessionNotFound
 	}
-	parsed, err := manifest.Parse(raw)
+	parsed, err := manifest.Parse(stored.Manifest)
 	if err != nil {
 		// Only an EXECUTABLE version, whose manifest was valid when frozen,
 		// can be pinned: anything else is broken data.
 		monitoring.Alert(ctx, "play session is pinned to a game version without a valid runtime manifest")
 		return sessionpkg.RuntimeManifest{}, fmt.Errorf("%w: %w", errBrokenManifest, err)
+	}
+	requirements, err := runtimeInputRequirements(ctx, stored.InputRequirements)
+	if err != nil {
+		return sessionpkg.RuntimeManifest{}, err
 	}
 	var declaredCommands []sessionpkg.RuntimeCommand
 	for _, command := range parsed.Commands {
@@ -67,6 +75,30 @@ func (s *Service) LoadRuntimeManifest(ctx context.Context, sessionUUID string) (
 		Commands:   declaredCommands,
 		Update:     parsed.Update,
 		Rejoin:     parsed.Rejoin,
+
+		InputRequirements: requirements,
+	}, nil
+}
+
+// runtimeInputRequirements returns the pinned version's stored requirements.
+// Only an EXECUTABLE version can be pinned, and every one has them with known
+// devices: anything else is broken data.
+func runtimeInputRequirements(ctx context.Context, stored *internalrepo.InputRequirements) (sessionpkg.RuntimeInputRequirements, error) {
+	if stored == nil {
+		monitoring.Alert(ctx, "play session is pinned to a game version without input requirements")
+		return sessionpkg.RuntimeInputRequirements{}, errBrokenRequirements
+	}
+	switch inputrequirements.Devices(stored.Devices) {
+	case inputrequirements.DevicesDesktop, inputrequirements.DevicesMobile, inputrequirements.DevicesBoth:
+	default:
+		monitoring.Alert(ctx, "play game version has input requirements with unknown devices")
+		return sessionpkg.RuntimeInputRequirements{}, fmt.Errorf("%w: unknown devices %q", errBrokenRequirements, stored.Devices)
+	}
+	return sessionpkg.RuntimeInputRequirements{
+		Devices:          stored.Devices,
+		UsesKeyboard:     stored.UsesKeyboard,
+		UsesPointerHover: stored.UsesPointerHover,
+		UsesPointerPress: stored.UsesPointerPress,
 	}, nil
 }
 

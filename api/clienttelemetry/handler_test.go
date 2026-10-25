@@ -62,6 +62,12 @@ func TestRecord(t *testing.T) {
 		"expired_join_code_rejection": func(t *testing.T) test {
 			return test{event: `{"name":"error","origin":"backend_rejection","kind":"join_code_expired"}`, expectedRecorded: true, expectedKnown: true}
 		},
+		"unsupported_device_rejection": func(t *testing.T) test {
+			return test{event: `{"name":"error","origin":"backend_rejection","kind":"device_not_supported"}`, expectedRecorded: true, expectedKnown: true}
+		},
+		"unsupported_device_of_another_origin": func(t *testing.T) test {
+			return test{event: `{"name":"error","origin":"bridge","kind":"device_not_supported"}`, expectedKnown: true}
+		},
 		"join_code_rejection_of_another_origin": func(t *testing.T) test {
 			return test{event: `{"name":"error","origin":"transport","kind":"join_code_expired"}`, expectedKnown: true}
 		},

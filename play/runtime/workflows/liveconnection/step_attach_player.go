@@ -6,7 +6,10 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/diegobermudez03/playhoot/logging"
+	"github.com/diegobermudez03/playhoot/monitoring"
 	"github.com/diegobermudez03/playhoot/monitoring/metrics"
+	"github.com/diegobermudez03/playhoot/play/internal/business/inputrequirements"
 	"github.com/diegobermudez03/playhoot/play/runtime"
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
@@ -29,6 +32,7 @@ var (
 		string(runtime.RejectSessionUnavailable),
 		string(runtime.RejectOwnerChanged),
 		string(runtime.RejectServerBusy),
+		string(runtime.RejectDeviceNotSupported),
 	)
 
 	playerAttaches = metrics.NewCounter(
@@ -52,10 +56,16 @@ func (r *ControllerResolver) AttachPlayer(ctx context.Context, sessionUUID strin
 // attachPlayer takes player's connection back into the running game if they
 // play it, recovering the game first when the database runs it and this
 // instance does not, or admits it into the lobby if the durable Session
-// accepts players.
+// accepts players. Only then is the device checked, on every connection: an
+// older connection is never replaced by one on a device that cannot play.
 func (c *sessionController) attachPlayer(ctx context.Context, player runtime.Player) (runtime.AttachPlayerResult, error) {
-	if result, participant, err := c.attachParticipant(ctx, player); participant {
-		return result, err
+	if c.playsHere(player.UserUUID) {
+		if result, supported, err := c.admitDevice(ctx, player.Device); !supported {
+			return result, err
+		}
+		if result, participant, err := c.attachParticipant(ctx, player); participant {
+			return result, err
+		}
 	}
 	eligibility, err := c.deps.playerJoins.EligibleToJoinAsPlayer(ctx, c.sessionUUID)
 	if err != nil {
@@ -70,8 +80,8 @@ func (c *sessionController) attachPlayer(ctx context.Context, player runtime.Pla
 	default:
 		return runtime.AttachPlayerResult{}, fmt.Errorf("unknown player eligibility %q", eligibility)
 	}
-	if err := c.loadManifest(ctx); err != nil {
-		return runtime.AttachPlayerResult{}, err
+	if result, supported, err := c.admitDevice(ctx, player.Device); !supported {
+		return result, err
 	}
 	connection, rejection, admitted := c.joinLobby(ctx, player)
 	if !admitted {
@@ -82,7 +92,8 @@ func (c *sessionController) attachPlayer(ctx context.Context, player runtime.Pla
 }
 
 // attachRecoveredPlayer takes player's connection into the running game,
-// recovered first if it does not run here; only its participants come in.
+// recovered first if it does not run here; only its participants come in,
+// on a device that can play it.
 func (c *sessionController) attachRecoveredPlayer(ctx context.Context, player runtime.Player) (runtime.AttachPlayerResult, error) {
 	if err := c.loadManifest(ctx); err != nil {
 		return runtime.AttachPlayerResult{}, err
@@ -94,10 +105,65 @@ func (c *sessionController) attachRecoveredPlayer(ctx context.Context, player ru
 	if recovery == recoveryEnded {
 		return rejectPlayer(ctx, runtime.RejectSessionUnavailable), nil
 	}
+	if !c.playsHere(player.UserUUID) {
+		return rejectPlayer(ctx, runtime.RejectSessionStarted), nil
+	}
+	if result, supported, err := c.admitDevice(ctx, player.Device); !supported {
+		return result, err
+	}
 	if result, participant, err := c.attachParticipant(ctx, player); participant {
 		return result, err
 	}
 	return rejectPlayer(ctx, runtime.RejectSessionStarted), nil
+}
+
+// playsHere reports whether userUUID is a participant of the game running
+// here.
+func (c *sessionController) playsHere(userUUID string) bool {
+	s := c.lock()
+	defer c.unlock()
+	_, found := s.participantOf(userUUID)
+	return s.phase == phaseRunning && found
+}
+
+// admitDevice is checkDevice once the Session's manifest is loaded.
+func (c *sessionController) admitDevice(ctx context.Context, device runtime.Device) (result runtime.AttachPlayerResult, supported bool, err error) {
+	if err := c.loadManifest(ctx); err != nil {
+		return runtime.AttachPlayerResult{}, false, err
+	}
+	return c.checkDevice(ctx, device)
+}
+
+// checkDevice reports whether device can play the Session's game; when it
+// cannot, result is the rejection carrying the game's requirements. An error
+// means the requirements could not be read.
+func (c *sessionController) checkDevice(ctx context.Context, device runtime.Device) (result runtime.AttachPlayerResult, supported bool, err error) {
+	s := c.lock()
+	requirements := s.manifest.Requirements
+	c.unlock()
+
+	parsed, known := inputrequirements.ParseDevice(string(device))
+	if known {
+		logging.LogFields(ctx, logging.Field("device", string(parsed)))
+	} else {
+		logging.LogFields(ctx, logging.Field("device", "unknown"))
+	}
+	allowed, knownDevices := requirements.Devices.Allows(parsed)
+	if !knownDevices {
+		monitoring.Alert(ctx, "play game version has input requirements with unknown devices")
+		return runtime.AttachPlayerResult{}, false, fmt.Errorf("game version allows unknown devices %q", requirements.Devices)
+	}
+	if allowed {
+		return runtime.AttachPlayerResult{}, true, nil
+	}
+	result = rejectPlayer(ctx, runtime.RejectDeviceNotSupported)
+	result.Requirements = runtime.InputRequirements{
+		Devices:          string(requirements.Devices),
+		UsesKeyboard:     requirements.UsesKeyboard,
+		UsesPointerHover: requirements.UsesPointerHover,
+		UsesPointerPress: requirements.UsesPointerPress,
+	}
+	return result, false, nil
 }
 
 func rejectPlayer(ctx context.Context, reason runtime.RejectReason) runtime.AttachPlayerResult {

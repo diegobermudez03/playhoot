@@ -114,7 +114,7 @@ func TestResolveJoinCode(t *testing.T) {
 				w.WriteHeader(http.StatusNoContent)
 			}
 			var refusal string
-			refuse := func(_ http.ResponseWriter, _ *http.Request, reason string) { refusal = reason }
+			refuse := func(_ http.ResponseWriter, _ *http.Request, rejection rejectedMessage) { refusal = rejection.Reason }
 
 			request := httptest.NewRequest(http.MethodGet, "/join/x", nil).WithContext(ctx)
 			request.SetPathValue("joinCode", tc.joinCode)
@@ -175,7 +175,7 @@ func TestRefuseUpgraded(t *testing.T) {
 				if !tc.withoutCaller {
 					ctx = auth.WithCaller(ctx, identity.User{UUID: callerUUID})
 				}
-				handler.refuseUpgraded(w, r.WithContext(ctx), "join_code_expired")
+				handler.refuseUpgraded(w, r.WithContext(ctx), rejectedMessage{Reason: "join_code_expired"})
 			}))
 			t.Cleanup(server.Close)
 

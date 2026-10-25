@@ -15,6 +15,7 @@ func SeedTables(db *gorm.DB) error {
 		seed20261020100000Parques(),
 		seed20261022000000AspectRatios(),
 		seed20261026000000SpaceDriftAssets(),
+		seed20261028000000InputRequirements(),
 	}
 
 	migrator := gormigrate.New(db, &gormigrate.Options{

@@ -276,7 +276,8 @@ func TestConcurrentReconnectionsRecoverOnce(t *testing.T) {
 	// Session, one arriving after skips it as a participant's; only one
 	// recovers it.
 	players.EXPECT().EligibleToJoinAsPlayer(anyCtx, setup.sessionUUID).Return(sessionpkg.PlayerJoinSessionStarted, nil).MinTimes(1).MaxTimes(2)
-	manifests.EXPECT().LoadRuntimeManifest(anyCtx, setup.sessionUUID).Return(sessionpkg.RuntimeManifest{MinPlayers: 1, MaxPlayers: 4}, nil)
+	manifests.EXPECT().LoadRuntimeManifest(anyCtx, setup.sessionUUID).Return(sessionpkg.RuntimeManifest{MinPlayers: 1, MaxPlayers: 4,
+		InputRequirements: sessionpkg.RuntimeInputRequirements{Devices: "both", UsesPointerPress: true}}, nil)
 	gomock.InOrder(mocks.recovers(setup)...)
 	// Each participant attaching to the recovered game is told access signed for them.
 	mocks.frontends.EXPECT().FrontendAccess(anyCtx, boundarySessionUUID).Return(freshAccess, nil).MinTimes(1).MaxTimes(2)
@@ -294,7 +295,7 @@ func TestConcurrentReconnectionsRecoverOnce(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			results[i], errs[i] = resolver.AttachPlayer(context.Background(), setup.sessionUUID, runtime.Player{UserUUID: userUUID}, 1)
+			results[i], errs[i] = resolver.AttachPlayer(context.Background(), setup.sessionUUID, runtime.Player{UserUUID: userUUID, Device: runtime.DeviceMobile}, 1)
 		}()
 	}
 	wg.Wait()

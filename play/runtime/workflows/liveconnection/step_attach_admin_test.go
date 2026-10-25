@@ -48,6 +48,16 @@ func TestAttachAdmin(t *testing.T) {
 				expectedAdminsAfter: 1,
 			}
 		},
+		"admins_are_not_checked_for_a_device": func(t *testing.T, deps dependencies) test {
+			deps.sessions.EXPECT().EligibleToJoinAsAdmin(ctx, sessionUUID, creatorUUID).Return(sessionpkg.AdminJoinEligible, nil)
+			deps.manifests.EXPECT().LoadRuntimeManifest(ctx, sessionUUID).Return(sessionpkg.RuntimeManifest{MinPlayers: 1, MaxPlayers: 8,
+				InputRequirements: sessionpkg.RuntimeInputRequirements{Devices: "mobile", UsesPointerPress: true}}, nil)
+			return test{
+				ownerEpoch:          1,
+				expectedOutcome:     runtime.AttachAccepted,
+				expectedAdminsAfter: 1,
+			}
+		},
 		"another_admin_joins_the_existing_controller": func(t *testing.T, deps dependencies) test {
 			deps.sessions.EXPECT().EligibleToJoinAsAdmin(ctx, sessionUUID, creatorUUID).Return(sessionpkg.AdminJoinEligible, nil).Times(2)
 			// Only the controller's creation loads it.

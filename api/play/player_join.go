@@ -26,6 +26,10 @@ const (
 	playerRosterUpdate  = "roster_update"
 )
 
+// playerDeviceParameter is the query parameter a player's client names its
+// device class in: desktop or mobile.
+const playerDeviceParameter = "device"
+
 // maxCommandTokenLength bounds a command's idempotency token, which the
 // Runtime keeps for the Session's lifetime.
 const maxCommandTokenLength = 128
@@ -143,14 +147,17 @@ func (h *Handler) handlePlayerJoin(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
+	// The client classifies its own device; the Runtime refuses one that is
+	// missing or unknown.
+	device := runtime.Device(r.URL.Query().Get(playerDeviceParameter))
 	attached, err := h.players.AttachPlayer(ctx, routed.sessionUUID,
-		runtime.Player{UserUUID: routed.caller.UUID, DisplayName: routed.caller.DisplayName}, routed.ownerEpoch)
+		runtime.Player{UserUUID: routed.caller.UUID, DisplayName: routed.caller.DisplayName, Device: device}, routed.ownerEpoch)
 	if err != nil {
 		logging.LogError(ctx, err)
 		wsx.Abort(conn)
 		return
 	}
-	if !admitted(ctx, conn, attached.Outcome, attached.Rejection) {
+	if !admitted(ctx, conn, attached.Outcome, playerRejection(attached)) {
 		return
 	}
 
@@ -189,6 +196,21 @@ func (h *Handler) handlePlayerJoin(w http.ResponseWriter, r *http.Request) {
 		sendRoster(session.liveSession, player.NextRosterUpdate),
 		session.closeOnRuntimeEnd(player.Ended),
 	)...)
+}
+
+// playerRejection is how a player is told why attached was rejected: a
+// device that cannot play the game also learns what the game needs.
+func playerRejection(attached runtime.AttachPlayerResult) rejectedMessage {
+	rejection := rejectedMessage{Reason: string(attached.Rejection)}
+	if attached.Rejection == runtime.RejectDeviceNotSupported {
+		rejection.Requirements = &inputRequirementsMessage{
+			Devices:          attached.Requirements.Devices,
+			UsesKeyboard:     attached.Requirements.UsesKeyboard,
+			UsesPointerHover: attached.Requirements.UsesPointerHover,
+			UsesPointerPress: attached.Requirements.UsesPointerPress,
+		}
+	}
+	return rejection
 }
 
 // playerSession is one served player connection.

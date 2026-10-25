@@ -41,6 +41,29 @@ type testSession struct {
 
 func (testSession) TableName() string { return "play_sessions" }
 
+type testInputRequirements struct {
+	ID               uint
+	GameVersionID    uint
+	UsesKeyboard     bool
+	UsesPointerHover bool
+	UsesPointerPress bool
+	Devices          string
+}
+
+func (testInputRequirements) TableName() string { return "play_game_version_input_requirements" }
+
+// seedRequirements stores requirements for versionID.
+func seedRequirements(t *testing.T, db *gorm.DB, versionID uint, requirements InputRequirements) {
+	t.Helper()
+	require.NoError(t, db.Create(&testInputRequirements{
+		GameVersionID:    versionID,
+		UsesKeyboard:     requirements.UsesKeyboard,
+		UsesPointerHover: requirements.UsesPointerHover,
+		UsesPointerPress: requirements.UsesPointerPress,
+		Devices:          requirements.Devices,
+	}).Error)
+}
+
 func seedVersion(t *testing.T, db *gorm.DB, manifest string) testGameVersion {
 	t.Helper()
 	game := testGame{GameUUID: uuid.NewString()}
@@ -69,16 +92,25 @@ func TestFindSessionManifest(t *testing.T) {
 	type test struct {
 		sessionUUID string
 
-		expectedFound    bool
-		expectedManifest string
+		expectedFound        bool
+		expectedManifest     string
+		expectedRequirements *InputRequirements
 	}
 
 	const manifest = `{"schema_version":1,"players":{"min":2,"max":6}}`
+	keyboardGame := InputRequirements{UsesKeyboard: true, UsesPointerPress: true, Devices: "desktop"}
 
 	tests := map[string]func(t *testing.T, db *gorm.DB) test{
-		"pinned_version_manifest": func(t *testing.T, db *gorm.DB) test {
+		"pinned_version_manifest_and_requirements": func(t *testing.T, db *gorm.DB) test {
+			pinned := seedVersion(t, db, manifest)
+			seedRequirements(t, db, pinned.ID, keyboardGame)
+			session := seedSession(t, db, pinned.ID)
+			other := seedVersion(t, db, `{"schema_version":1,"players":{"min":1,"max":1}}`)
+			seedRequirements(t, db, other.ID, InputRequirements{UsesPointerPress: true, Devices: "both"})
+			return test{sessionUUID: session.UUID, expectedFound: true, expectedManifest: manifest, expectedRequirements: &keyboardGame}
+		},
+		"version_without_requirements": func(t *testing.T, db *gorm.DB) test {
 			session := seedSession(t, db, seedVersion(t, db, manifest).ID)
-			seedVersion(t, db, `{"schema_version":1,"players":{"min":1,"max":1}}`)
 			return test{sessionUUID: session.UUID, expectedFound: true, expectedManifest: manifest}
 		},
 		"version_row_missing": func(t *testing.T, db *gorm.DB) test {
@@ -96,15 +128,16 @@ func TestFindSessionManifest(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			tc := setup(t, db)
 
-			raw, found, err := New(db).FindSessionManifest(context.Background(), tc.sessionUUID)
+			stored, found, err := New(db).FindSessionManifest(context.Background(), tc.sessionUUID)
 
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedFound, found)
+			require.Equal(t, tc.expectedRequirements, stored.InputRequirements)
 			if tc.expectedManifest == "" {
-				require.Empty(t, raw)
+				require.Empty(t, stored.Manifest)
 				return
 			}
-			require.JSONEq(t, tc.expectedManifest, string(raw))
+			require.JSONEq(t, tc.expectedManifest, string(stored.Manifest))
 		})
 	}
 }

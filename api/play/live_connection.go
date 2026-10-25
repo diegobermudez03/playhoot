@@ -50,6 +50,23 @@ const (
 type rejectedMessage struct {
 	Type   string `json:"type"`
 	Reason string `json:"reason"`
+
+	// Requirements is set only when the reason is device_not_supported.
+	Requirements *inputRequirementsMessage `json:"requirements,omitempty"`
+
+	// Status and EndCause are how the Session ended, set only when the
+	// reason is session_ended.
+	Status   string `json:"status,omitempty"`
+	EndCause string `json:"end_cause,omitempty"`
+}
+
+// inputRequirementsMessage is what a game needs of a player's device: the
+// device classes that can play it and the interactions it uses.
+type inputRequirementsMessage struct {
+	Devices          string `json:"devices"`
+	UsesKeyboard     bool   `json:"uses_keyboard"`
+	UsesPointerHover bool   `json:"uses_pointer_hover"`
+	UsesPointerPress bool   `json:"uses_pointer_press"`
 }
 
 type lobbyUpdateMessage struct {
@@ -179,10 +196,10 @@ func (h *Handler) acceptRouted(w http.ResponseWriter, r *http.Request) (routedCo
 	}, true
 }
 
-// refuseUpgraded tells an authorized caller who cannot join why, as a
+// refuseUpgraded tells an authorized caller who cannot join why, as
 // rejection on an upgraded connection it then closes, since browsers cannot
 // read why an upgrade was refused. The connection holds no room afterwards.
-func (h *Handler) refuseUpgraded(w http.ResponseWriter, r *http.Request, reason string) {
+func (h *Handler) refuseUpgraded(w http.ResponseWriter, r *http.Request, rejection rejectedMessage) {
 	ctx := r.Context()
 
 	caller, ok := auth.Caller(ctx)
@@ -197,7 +214,7 @@ func (h *Handler) refuseUpgraded(w http.ResponseWriter, r *http.Request, reason 
 		return
 	}
 	defer release()
-	reject(ctx, conn, reason)
+	reject(ctx, conn, rejection)
 }
 
 // upgrade upgrades r once this instance and callerUUID have room for one more
@@ -229,13 +246,13 @@ func (h *Handler) upgrade(w http.ResponseWriter, r *http.Request, callerUUID str
 
 // admitted reports whether the Runtime accepted the connection. Otherwise it
 // sent the rejection, or failed the connection, and closed it.
-func admitted(ctx context.Context, conn *websocket.Conn, outcome runtime.AttachOutcome, rejection runtime.RejectReason) bool {
+func admitted(ctx context.Context, conn *websocket.Conn, outcome runtime.AttachOutcome, rejection rejectedMessage) bool {
 	logging.LogFields(ctx, logging.Field("attach_outcome", string(outcome)))
 	switch outcome {
 	case runtime.AttachAccepted:
 		return true
 	case runtime.AttachRejected:
-		reject(ctx, conn, string(rejection))
+		reject(ctx, conn, rejection)
 	default:
 		logging.LogFields(ctx, logging.Field("attach_error", "unknown admission outcome"))
 		wsx.Abort(conn)
@@ -243,11 +260,12 @@ func admitted(ctx context.Context, conn *websocket.Conn, outcome runtime.AttachO
 	return false
 }
 
-// reject tells the client why it may not join, as on the wire, and closes
-// the connection.
-func reject(ctx context.Context, conn *websocket.Conn, reason string) {
-	logging.LogFields(ctx, logging.Field("reject_reason", reason))
-	_, _ = live.WriteMessage(ctx, conn, rejectedMessage{Type: liveRejected, Reason: reason})
+// reject tells the client why it may not join, as rejection, and closes the
+// connection.
+func reject(ctx context.Context, conn *websocket.Conn, rejection rejectedMessage) {
+	logging.LogFields(ctx, logging.Field("reject_reason", rejection.Reason))
+	rejection.Type = liveRejected
+	_, _ = live.WriteMessage(ctx, conn, rejection)
 	_ = conn.Close(websocket.StatusPolicyViolation, "admission rejected")
 }
 

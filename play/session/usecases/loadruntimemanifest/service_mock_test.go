@@ -13,6 +13,7 @@ import (
 	context "context"
 	reflect "reflect"
 
+	repo "github.com/diegobermudez03/playhoot/play/session/usecases/loadruntimemanifest/internal/repo"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -41,10 +42,10 @@ func (m *MockmanifestFinder) EXPECT() *MockmanifestFinderMockRecorder {
 }
 
 // FindSessionManifest mocks base method.
-func (m *MockmanifestFinder) FindSessionManifest(ctx context.Context, sessionUUID string) ([]byte, bool, error) {
+func (m *MockmanifestFinder) FindSessionManifest(ctx context.Context, sessionUUID string) (repo.SessionManifest, bool, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "FindSessionManifest", ctx, sessionUUID)
-	ret0, _ := ret[0].([]byte)
+	ret0, _ := ret[0].(repo.SessionManifest)
 	ret1, _ := ret[1].(bool)
 	ret2, _ := ret[2].(error)
 	return ret0, ret1, ret2

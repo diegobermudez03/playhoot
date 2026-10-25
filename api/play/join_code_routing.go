@@ -35,8 +35,8 @@ var joinCodeRejections = map[sessionpkg.JoinCodeOutcome]string{
 var errJoinCodeWithoutSession = errors.New("join code found without a session UUID")
 
 // joinRefuser answers an authorized live request that may not join, with
-// reason as on the wire.
-type joinRefuser func(w http.ResponseWriter, r *http.Request, reason string)
+// rejection as on the wire.
+type joinRefuser func(w http.ResponseWriter, r *http.Request, rejection rejectedMessage)
 
 // resolveJoinCode replaces the route's codeValue wildcard with the Session it
 // names, set as the sessionValue path value requireOwner reads. A code that
@@ -51,7 +51,7 @@ func resolveJoinCode(resolver joinCodeResolver, refuse joinRefuser, codeValue st
 			joinCode := r.PathValue(codeValue)
 			if joinCode == "" || len(joinCode) > maxJoinCodeLength {
 				logging.LogFields(ctx, logging.Field("join_code_outcome", joinCodeMalformed))
-				refuse(w, r, rejectInvalidJoinCode)
+				refuse(w, r, rejectedMessage{Reason: rejectInvalidJoinCode})
 				return
 			}
 			logging.LogFields(ctx, logging.Field("join_code", joinCode))
@@ -77,7 +77,7 @@ func resolveJoinCode(resolver joinCodeResolver, refuse joinRefuser, codeValue st
 				httpx.WriteError(w, http.StatusInternalServerError, "resolving join code failed")
 				return
 			}
-			refuse(w, r, reason)
+			refuse(w, r, rejectedMessage{Reason: reason})
 		}
 	}
 }

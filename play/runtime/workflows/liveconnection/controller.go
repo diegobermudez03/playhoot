@@ -11,6 +11,7 @@ import (
 
 	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/play/internal/business/commands"
+	"github.com/diegobermudez03/playhoot/play/internal/business/inputrequirements"
 	"github.com/diegobermudez03/playhoot/play/internal/business/inputs"
 	"github.com/diegobermudez03/playhoot/play/runtime"
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
@@ -49,6 +50,10 @@ type Manifest struct {
 	// Rejoin means the game implements playerRejoined(), so a disconnected
 	// participant may ask to come back.
 	Rejoin bool
+
+	// Requirements are the interactions the game uses and the devices that
+	// can play it.
+	Requirements inputrequirements.Requirements
 }
 
 // Game is the confirmed state of a running game: everything needed to
@@ -266,8 +271,14 @@ func (c *sessionController) loadManifest(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("reading the manifest's commands: %w", err)
 	}
+	requirements := inputrequirements.Requirements{
+		UsesKeyboard:     loaded.InputRequirements.UsesKeyboard,
+		UsesPointerHover: loaded.InputRequirements.UsesPointerHover,
+		UsesPointerPress: loaded.InputRequirements.UsesPointerPress,
+		Devices:          inputrequirements.Devices(loaded.InputRequirements.Devices),
+	}
 	s := c.lock()
-	s.manifest = Manifest{MaxPlayers: loaded.MaxPlayers, Inputs: schema, Commands: catalog, Update: loaded.Update, Rejoin: loaded.Rejoin}
+	s.manifest = Manifest{MaxPlayers: loaded.MaxPlayers, Inputs: schema, Commands: catalog, Update: loaded.Update, Rejoin: loaded.Rejoin, Requirements: requirements}
 	c.unlock()
 	c.manifestLoaded = true
 	return nil

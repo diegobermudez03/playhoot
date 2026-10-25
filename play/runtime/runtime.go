@@ -20,13 +20,22 @@ const (
 	// OwnerElsewhere means another instance owns the Session.
 	OwnerElsewhere OwnerOutcome = "owned_elsewhere"
 
-	// OwnerSessionUnavailable means the Session does not exist or cannot be
-	// joined live, so it was not claimed.
+	// OwnerSessionNotFound means no Session has that UUID, so none was
+	// claimed.
+	OwnerSessionNotFound OwnerOutcome = "session_not_found"
+
+	// OwnerSessionEnded means the Session ended, so it was not claimed;
+	// Ended says how.
+	OwnerSessionEnded OwnerOutcome = "session_ended"
+
+	// OwnerSessionUnavailable means the Session exists and has not ended but
+	// cannot be joined live, such as a lobby past its expiry, so it was not
+	// claimed.
 	OwnerSessionUnavailable OwnerOutcome = "session_unavailable"
 )
 
 // OwnerPlacement is the live owner of a Session. Address and Epoch are set
-// only when the Session has an owner.
+// only when the Session has an owner, Ended only when it ended.
 type OwnerPlacement struct {
 	Outcome OwnerOutcome
 
@@ -36,6 +45,15 @@ type OwnerPlacement struct {
 	// Epoch identifies this period of ownership; the owner rejects live
 	// operations routed under an older one.
 	Epoch int64
+
+	Ended EndedSession
+}
+
+// EndedSession is how a Session ended: its terminal status and end cause, as
+// the durable Session records them.
+type EndedSession struct {
+	Status   string
+	EndCause string
 }
 
 // Player is who opens a player connection, as the caller resolved them.
@@ -44,6 +62,28 @@ type Player struct {
 
 	// DisplayName is how the other players see them.
 	DisplayName string
+
+	// Device is the class the client says it is; any value other than
+	// DeviceDesktop or DeviceMobile, none included, is a device no game
+	// supports.
+	Device Device
+}
+
+// Device is the class a player's client classifies itself as.
+type Device string
+
+const (
+	DeviceDesktop Device = "desktop"
+	DeviceMobile  Device = "mobile"
+)
+
+// InputRequirements are the interactions a game version uses and the device
+// classes that can play it: Devices is desktop, mobile or both.
+type InputRequirements struct {
+	Devices          string
+	UsesKeyboard     bool
+	UsesPointerHover bool
+	UsesPointerPress bool
 }
 
 // AttachOutcome is whether a connection was admitted into a Session.
@@ -89,6 +129,11 @@ const (
 	// RejectServerBusy means this instance runs as many live Sessions as it
 	// may; the client may try again later.
 	RejectServerBusy RejectReason = "server_busy"
+
+	// RejectDeviceNotSupported means the player's device cannot play the
+	// Session's game, checked on every player connection; the rejection
+	// carries the game's InputRequirements.
+	RejectDeviceNotSupported RejectReason = "device_not_supported"
 )
 
 // EndReason is why the Runtime ended a live connection.
@@ -396,11 +441,13 @@ type PlayerStart struct {
 }
 
 // AttachPlayerResult is the outcome of attaching a player connection.
-// Rejection is set only when rejected, Connection only when accepted.
+// Rejection is set only when rejected, Connection only when accepted, and
+// Requirements only when rejected as RejectDeviceNotSupported.
 type AttachPlayerResult struct {
-	Outcome    AttachOutcome
-	Rejection  RejectReason
-	Connection PlayerConnection
+	Outcome      AttachOutcome
+	Rejection    RejectReason
+	Connection   PlayerConnection
+	Requirements InputRequirements
 }
 
 // PlayerConnection is everything a caller can do with an admitted player

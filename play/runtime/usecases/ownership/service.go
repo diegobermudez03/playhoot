@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/diegobermudez03/playhoot/play/runtime"
+	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
 
 //go:generate mockgen -package=ownership -destination=service_mock_test.go . liveSessionChecker
@@ -13,7 +14,7 @@ import (
 // liveSessionChecker is the durable Session's side of claiming: only a
 // Session that can have live connections is ever owned.
 type liveSessionChecker interface {
-	IsSessionLive(ctx context.Context, sessionUUID string) (bool, error)
+	CheckLiveSession(ctx context.Context, sessionUUID string) (sessionpkg.LiveSessionCheck, error)
 }
 
 // singleInstanceEpoch never changes because, with one instance and no
@@ -31,15 +32,27 @@ func New(sessions liveSessionChecker) *Service {
 }
 
 // LocateOrClaimOwner returns the owner of sessionUUID, atomically claiming
-// the Session when it has none. Sessions that cannot be joined live are
-// reported as unavailable, never claimed.
+// the Session when it has none. A Session that cannot be joined live is never
+// claimed: the outcome says whether it does not exist, ended (and how), or is
+// otherwise unavailable.
 func (s *Service) LocateOrClaimOwner(ctx context.Context, sessionUUID string) (runtime.OwnerPlacement, error) {
-	live, err := s.sessions.IsSessionLive(ctx, sessionUUID)
+	check, err := s.sessions.CheckLiveSession(ctx, sessionUUID)
 	if err != nil {
 		return runtime.OwnerPlacement{}, fmt.Errorf("checking live session: %w", err)
 	}
-	if !live {
+	switch check.Outcome {
+	case sessionpkg.LiveSessionLive:
+	case sessionpkg.LiveSessionNotFound:
+		return runtime.OwnerPlacement{Outcome: runtime.OwnerSessionNotFound}, nil
+	case sessionpkg.LiveSessionEnded:
+		return runtime.OwnerPlacement{
+			Outcome: runtime.OwnerSessionEnded,
+			Ended:   runtime.EndedSession{Status: check.Status, EndCause: check.EndCause},
+		}, nil
+	case sessionpkg.LiveSessionLobbyExpired:
 		return runtime.OwnerPlacement{Outcome: runtime.OwnerSessionUnavailable}, nil
+	default:
+		return runtime.OwnerPlacement{}, fmt.Errorf("unknown live session outcome %q", check.Outcome)
 	}
 	// Placeholder: claims every live Session for this instance, without a registry, lease or epoch change.
 	return runtime.OwnerPlacement{Outcome: runtime.OwnerHere, Epoch: singleInstanceEpoch}, nil

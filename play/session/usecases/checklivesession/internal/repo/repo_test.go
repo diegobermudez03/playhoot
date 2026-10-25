@@ -35,13 +35,14 @@ type testSession struct {
 	GameVersionID     uint
 	CreatedByUserUUID string
 	Status            string
+	EndCause          *string
 	LobbyExpiresAt    time.Time
 	ExpiresAt         time.Time
 }
 
 func (testSession) TableName() string { return "play_sessions" }
 
-func seedSession(t *testing.T, db *gorm.DB, status string, lobbyExpiresAt time.Time) testSession {
+func seedSession(t *testing.T, db *gorm.DB, status string, endCause *string, lobbyExpiresAt time.Time) testSession {
 	t.Helper()
 	game := testGame{GameUUID: uuid.NewString()}
 	require.NoError(t, db.Create(&game).Error)
@@ -52,6 +53,7 @@ func seedSession(t *testing.T, db *gorm.DB, status string, lobbyExpiresAt time.T
 		GameVersionID:     version.ID,
 		CreatedByUserUUID: uuid.NewString(),
 		Status:            status,
+		EndCause:          endCause,
 		LobbyExpiresAt:    lobbyExpiresAt,
 		ExpiresAt:         lobbyExpiresAt.Add(4 * time.Hour),
 	}
@@ -66,10 +68,11 @@ func TestFindSession(t *testing.T) {
 	}
 
 	lobbyExpiresAt := time.Date(2026, 10, 17, 12, 30, 0, 0, time.UTC)
+	hostCancelled := "HOST_CANCELLED"
 
 	tests := map[string]func(t *testing.T, db *gorm.DB) test{
 		"existing_session": func(t *testing.T, db *gorm.DB) test {
-			seeded := seedSession(t, db, "RUNNING", lobbyExpiresAt)
+			seeded := seedSession(t, db, "RUNNING", nil, lobbyExpiresAt)
 			return test{
 				sessionUUID: seeded.UUID,
 				expectedSession: &Session{
@@ -78,8 +81,19 @@ func TestFindSession(t *testing.T) {
 				},
 			}
 		},
+		"ended_session_with_its_end_cause": func(t *testing.T, db *gorm.DB) test {
+			seeded := seedSession(t, db, "CANCELLED", &hostCancelled, lobbyExpiresAt)
+			return test{
+				sessionUUID: seeded.UUID,
+				expectedSession: &Session{
+					Status:         "CANCELLED",
+					LobbyExpiresAt: lobbyExpiresAt,
+					EndCause:       &hostCancelled,
+				},
+			}
+		},
 		"unknown_session": func(t *testing.T, db *gorm.DB) test {
-			seedSession(t, db, "LOBBY", lobbyExpiresAt)
+			seedSession(t, db, "LOBBY", nil, lobbyExpiresAt)
 			return test{sessionUUID: uuid.NewString()}
 		},
 	}
@@ -98,6 +112,7 @@ func TestFindSession(t *testing.T) {
 			}
 			require.NotNil(t, session)
 			require.Equal(t, tc.expectedSession.Status, session.Status)
+			require.Equal(t, tc.expectedSession.EndCause, session.EndCause)
 			require.True(t, tc.expectedSession.LobbyExpiresAt.Equal(session.LobbyExpiresAt))
 		})
 	}

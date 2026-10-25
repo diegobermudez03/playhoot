@@ -30,16 +30,32 @@ func routedSessionFrom(ctx context.Context) (string, int64, bool) {
 	return routed.sessionUUID, routed.epoch, ok && routed.sessionUUID != ""
 }
 
+// Reasons a join by Session UUID is rejected, on the wire, besides the
+// Runtime's own.
+const (
+	// rejectInvalidSession means no Session has that UUID, or it is not one.
+	rejectInvalidSession = "invalid_session"
+
+	// rejectSessionEnded means the Session ended; the rejection says how.
+	rejectSessionEnded = "session_ended"
+)
+
+// ownerMalformed is the logged outcome of a Session UUID not worth routing.
+const ownerMalformed = "malformed"
+
 // requireOwner lets a live request through only when this instance owns the
 // Session named by the route's pathValue wildcard. It runs before the upgrade.
-func requireOwner(locator ownerLocator, pathValue string) routing.Middleware {
+// A Session that cannot be joined is answered through refuse, telling only
+// whether it exists and how it ended.
+func requireOwner(locator ownerLocator, refuse joinRefuser, pathValue string) routing.Middleware {
 	return func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
 
 			parsed, err := uuid.Parse(r.PathValue(pathValue))
 			if err != nil {
-				httpx.WriteError(w, http.StatusBadRequest, "session UUID must be a valid UUID")
+				logging.LogFields(ctx, logging.Field("owner_outcome", ownerMalformed))
+				refuse(w, r, rejectedMessage{Reason: rejectInvalidSession})
 				return
 			}
 			sessionUUID := parsed.String()
@@ -59,8 +75,12 @@ func requireOwner(locator ownerLocator, pathValue string) routing.Middleware {
 			switch placement.Outcome {
 			case runtime.OwnerHere:
 				next(w, r.WithContext(withRoutedSession(ctx, sessionUUID, placement.Epoch)))
+			case runtime.OwnerSessionNotFound:
+				refuse(w, r, rejectedMessage{Reason: rejectInvalidSession})
+			case runtime.OwnerSessionEnded:
+				refuse(w, r, rejectedMessage{Reason: rejectSessionEnded, Status: placement.Ended.Status, EndCause: placement.Ended.EndCause})
 			case runtime.OwnerSessionUnavailable:
-				httpx.WriteError(w, http.StatusNotFound, "session not found or not joinable")
+				refuse(w, r, rejectedMessage{Reason: string(runtime.RejectSessionUnavailable)})
 			case runtime.OwnerElsewhere:
 				// Unreachable while only one instance can own Sessions;
 				// forwarding to the owner comes with multiple instances.

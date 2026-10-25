@@ -87,7 +87,7 @@ func (h *Handler) handleAdminJoin(w http.ResponseWriter, r *http.Request) {
 		wsx.Abort(conn)
 		return
 	}
-	if !admitted(ctx, conn, attached.Outcome, attached.Rejection) {
+	if !admitted(ctx, conn, attached.Outcome, rejectedMessage{Reason: string(attached.Rejection)}) {
 		return
 	}
 

@@ -24,6 +24,8 @@ func New(db *gorm.DB) *Repo {
 type Session struct {
 	Status         string
 	LobbyExpiresAt time.Time
+	// EndCause is nil while the Session has not ended.
+	EndCause *string
 }
 
 // FindSession returns the Session identified by sessionUUID, or nil when there
@@ -31,7 +33,7 @@ type Session struct {
 func (r *Repo) FindSession(ctx context.Context, sessionUUID string) (*Session, error) {
 	var session Session
 	result := r.db.WithContext(ctx).Raw(`
-		SELECT status, lobby_expires_at
+		SELECT status, lobby_expires_at, end_cause
 		FROM play_sessions
 		WHERE uuid = ?
 	`, sessionUUID).Scan(&session)
