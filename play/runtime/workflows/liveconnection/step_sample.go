@@ -6,6 +6,7 @@ import (
 
 	"github.com/diegobermudez03/playhoot/play/internal/business/inputs"
 	"github.com/diegobermudez03/playhoot/play/runtime"
+	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 	"github.com/diegobermudez03/playhoot/utils/ratelimit"
 )
 
@@ -35,30 +36,44 @@ func (i *participantInputs) follow(connectionID string) {
 // acceptSample takes a player's SAMPLE into the next boundary's timeline. A
 // stale sequence is ignored, a refresh only moves the acknowledgement, a
 // transition beyond the limits is dropped unacknowledged (the next SAMPLE
-// carries the state), and undeclared inputs are runtime.ErrInvalidSample.
+// carries the state), and undeclared inputs are recorded as a fault of the
+// game and are runtime.ErrInvalidSample.
 func (c *sessionController) acceptSample(ctx context.Context, player *connection, sample runtime.Sample) error {
+	participantID, invalid := c.takeSample(ctx, player, sample)
+	if invalid == nil {
+		return nil
+	}
+	// Recorded once the lock is released, before the caller ends the
+	// connection.
+	c.recordInvalidGameData(ctx, player.userUUID, participantID, sessionpkg.GameFaultInvalidSample, invalidSampleDetail(invalid))
+	return fmt.Errorf("%w: %v", runtime.ErrInvalidSample, invalid)
+}
+
+// takeSample is acceptSample under the controller's lock. invalid is why the
+// inputs do not match the game's declarations, for participantID.
+func (c *sessionController) takeSample(ctx context.Context, player *connection, sample runtime.Sample) (participantID string, invalid error) {
 	s := c.lock()
 	defer c.unlock()
 	if s.phase != phaseRunning || player.participantID == "" || s.players[player.userUUID] != player {
 		// Before the game runs there is nothing to consume it, and a replaced
 		// connection no longer plays.
 		samplesReceived.Inc(ctx, sampleResultLabel.Value(sampleDropped))
-		return nil
+		return "", nil
 	}
 	ingress := s.inputs[player.participantID]
 	if sample.Sequence <= ingress.maxAccepted {
 		samplesReceived.Inc(ctx, sampleResultLabel.Value(sampleStale))
-		return nil
+		return "", nil
 	}
 	snapshot, err := s.manifest.Inputs.Normalize(sample.Inputs)
 	if err != nil {
 		samplesReceived.Inc(ctx, sampleResultLabel.Value(sampleInvalid))
-		return fmt.Errorf("%w: %v", runtime.ErrInvalidSample, err)
+		return player.participantID, err
 	}
 	if snapshot == ingress.current {
 		ingress.maxAccepted = sample.Sequence
 		samplesReceived.Inc(ctx, sampleResultLabel.Value(sampleRefresh))
-		return nil
+		return "", nil
 	}
 	limit := s.timelineRoom(player.participantID)
 	if limit == "" {
@@ -69,7 +84,7 @@ func (c *sessionController) acceptSample(ctx context.Context, player *connection
 	if limit != "" {
 		s.refused(ctx, player.userUUID, limit)
 		samplesReceived.Inc(ctx, sampleResultLabel.Value(sampleLimited))
-		return nil
+		return "", nil
 	}
 	ingress.maxAccepted = sample.Sequence
 	ingress.current = snapshot
@@ -77,7 +92,7 @@ func (c *sessionController) acceptSample(ctx context.Context, player *connection
 	// Only a distinct transition is someone playing; a refresh is not.
 	s.recordActivity()
 	samplesReceived.Inc(ctx, sampleResultLabel.Value(sampleTransition))
-	return nil
+	return "", nil
 }
 
 // sessionTime is the effective Session time now: monotonic, starting where

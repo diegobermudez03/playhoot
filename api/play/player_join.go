@@ -204,8 +204,9 @@ func (s *playerSession) sample(ctx context.Context, data []byte) (live.End, bool
 	}
 	if err := s.player.Sample(ctx, runtime.Sample{Sequence: request.Sequence, Inputs: request.Inputs}); err != nil {
 		if errors.Is(err, runtime.ErrInvalidSample) {
-			// The game does not declare these inputs: a protocol error.
-			return live.CloseMalformed(s.conn), true
+			// The game does not declare these inputs: its frontend's fault,
+			// already recorded.
+			return live.CloseInvalidGameData(s.conn, err.Error()), true
 		}
 		return live.CloseServerFailure(s.conn, err), true
 	}
@@ -224,6 +225,11 @@ func (s *playerSession) command(ctx context.Context, data []byte) (live.End, boo
 		payload = nil
 	}
 	result, err := s.player.Command(ctx, runtime.Command{Token: request.Token, Name: request.Name, Payload: payload})
+	if errors.Is(err, runtime.ErrInvalidCommand) {
+		// The game does not declare this command or payload: its frontend's
+		// fault, already recorded. It is never answered.
+		return live.CloseInvalidGameData(s.conn, err.Error()), true
+	}
 	if err != nil {
 		return live.CloseServerFailure(s.conn, err), true
 	}

@@ -413,10 +413,13 @@ type PlayerConnection struct {
 	Leave func(ctx context.Context) (LeaveResult, error)
 
 	// Sample delivers the player's current input state. It is not answered;
-	// how far SAMPLEs were consumed arrives with the views.
+	// how far SAMPLEs were consumed arrives with the views. Inputs the game
+	// does not declare are ErrInvalidSample.
 	Sample func(ctx context.Context, sample Sample) error
 
-	// Command runs a game command and returns its correlated result.
+	// Command runs a game command and returns its correlated result. A
+	// command the game does not declare, or whose payload does not match its
+	// declaration, is ErrInvalidCommand.
 	Command func(ctx context.Context, command Command) (CommandResult, error)
 
 	// Resync asks for the player's current state again; a FULL view follows
@@ -529,10 +532,6 @@ const (
 	// original response is not kept.
 	CommandAlreadyProcessed CommandOutcome = "already_processed"
 
-	// CommandInvalid means the command is not declared by the game or its
-	// payload does not match the declaration.
-	CommandInvalid CommandOutcome = "invalid"
-
 	// CommandNotRunning means the Session is not running a game.
 	CommandNotRunning CommandOutcome = "session_not_running"
 
@@ -562,5 +561,15 @@ type LeaveResult struct {
 }
 
 // ErrInvalidSample is returned by Sample for inputs the game does not
-// declare, or values they cannot hold; the SAMPLE never reaches the game.
+// declare, or values they cannot hold: the game's frontend sent data the game
+// cannot take. The SAMPLE never reaches the game, it was recorded as a fault
+// of the game before returning (a failure to record it is only logged), and
+// the caller ends the player's connection.
 var ErrInvalidSample = errors.New("invalid sample")
+
+// ErrInvalidCommand is returned by Command for a command the game does not
+// declare, or a payload that does not match its declaration, as
+// ErrInvalidSample is for a SAMPLE. The command never runs and its token stays
+// unused. A command the game ran and answered with a rejection of its own is
+// CommandExecuted, never this.
+var ErrInvalidCommand = errors.New("invalid command")

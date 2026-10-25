@@ -53,7 +53,7 @@ func TestReportGameFault(t *testing.T) {
 				},
 				fault: abuse,
 				expected: []sessionpkg.GameFault{{
-					UserUUID: "user-b", ParticipantID: "P2", Kind: sessionpkg.GameFaultBridgeAbuse, Detail: abuse.Detail,
+					UserUUID: "user-b", ParticipantID: "P2", Source: sessionpkg.GameFaultFromClient, Kind: sessionpkg.GameFaultBridgeAbuse, Detail: abuse.Detail,
 				}},
 			}
 		},
@@ -64,7 +64,7 @@ func TestReportGameFault(t *testing.T) {
 				},
 				fault: runtime.GameFault{Kind: runtime.GameFaultContainerViolation, Detail: []byte(`{}`)},
 				expected: []sessionpkg.GameFault{{
-					UserUUID: "user-a", ParticipantID: "P1", Kind: sessionpkg.GameFaultContainerViolation, Detail: []byte(`{}`),
+					UserUUID: "user-a", ParticipantID: "P1", Source: sessionpkg.GameFaultFromClient, Kind: sessionpkg.GameFaultContainerViolation, Detail: []byte(`{}`),
 				}},
 			}
 		},
@@ -94,7 +94,7 @@ func TestReportGameFault(t *testing.T) {
 				fault:    abuse,
 				storeErr: errors.New("database down"),
 				expected: []sessionpkg.GameFault{{
-					UserUUID: "user-a", ParticipantID: "P1", Kind: sessionpkg.GameFaultBridgeAbuse, Detail: abuse.Detail,
+					UserUUID: "user-a", ParticipantID: "P1", Source: sessionpkg.GameFaultFromClient, Kind: sessionpkg.GameFaultBridgeAbuse, Detail: abuse.Detail,
 				}},
 			}
 		},

@@ -366,8 +366,23 @@ const (
 	EndOwnerLost EndCause = "OWNER_LOST"
 )
 
-// GameFaultKind is how a player's client saw the game frontend of their
-// running Session fail or misbehave.
+// GameFaultSource is who saw a game fault: the player's client, or the
+// platform itself.
+type GameFaultSource string
+
+const (
+	// GameFaultFromClient is a fault the player's client reported: its claim,
+	// never verified.
+	GameFaultFromClient GameFaultSource = "CLIENT"
+
+	// GameFaultFromServer is a fault the platform saw itself in what the
+	// player's connection sent.
+	GameFaultFromServer GameFaultSource = "SERVER"
+)
+
+// GameFaultKind is how the game frontend of a running Session failed or
+// misbehaved for a player: as their client saw it (CLIENT kinds), or as the
+// platform saw it in what the frontend sent (SERVER kinds).
 type GameFaultKind string
 
 const (
@@ -394,15 +409,23 @@ const (
 	// GameFaultBridgeAbuse means the frontend kept sending the client more
 	// messages than allowed, so the client stopped it.
 	GameFaultBridgeAbuse GameFaultKind = "BRIDGE_ABUSE"
+
+	// GameFaultInvalidSample means the frontend sent a SAMPLE whose inputs
+	// the game does not declare, or values they cannot hold (SERVER).
+	GameFaultInvalidSample GameFaultKind = "INVALID_SAMPLE"
+
+	// GameFaultInvalidCommand means the frontend sent a COMMAND the game does
+	// not declare, or a payload that does not match its declaration (SERVER).
+	GameFaultInvalidCommand GameFaultKind = "INVALID_COMMAND"
 )
 
-// GameFault is a participant's client reporting a fault of the game frontend
-// it was running. It is the client's claim, never verified: evidence for an
-// audit telling a faulty game from a lying client, never a verdict. Detail is
-// a small JSON object the client chose; nothing reads it but people.
+// GameFault is a fault of the game frontend a participant ran, seen by
+// Source: a CLIENT fault is the client's unverified claim, a SERVER fault what
+// the platform refused from them. Detail is a small JSON object for people.
 type GameFault struct {
 	UserUUID      string
 	ParticipantID string
+	Source        GameFaultSource
 	Kind          GameFaultKind
 	Detail        []byte
 }

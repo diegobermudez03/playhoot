@@ -168,26 +168,6 @@ func TestAcceptCommand(t *testing.T) {
 				},
 			}
 		},
-		"undeclared_command_never_reaches_the_game": func(t *testing.T) test {
-			return test{
-				run: func(t *testing.T, controller *sessionController, players map[string]runtime.PlayerConnection, clock *testClock) []runtime.CommandResult {
-					result, err := players["user-a"].Command(ctx, runtime.Command{Token: "t1", Name: "fly"})
-					require.NoError(t, err)
-					return []runtime.CommandResult{result}
-				},
-				expectedResults: []runtime.CommandResult{{Token: "t1", Outcome: runtime.CommandInvalid}},
-			}
-		},
-		"invalid_payload_never_reaches_the_game": func(t *testing.T) test {
-			return test{
-				run: func(t *testing.T, controller *sessionController, players map[string]runtime.PlayerConnection, clock *testClock) []runtime.CommandResult {
-					result, err := players["user-a"].Command(ctx, runtime.Command{Token: "t1", Name: "move_to", Payload: []byte(`{"x":11}`)})
-					require.NoError(t, err)
-					return []runtime.CommandResult{result}
-				},
-				expectedResults: []runtime.CommandResult{{Token: "t1", Outcome: runtime.CommandInvalid}},
-			}
-		},
 		"session_ending_answers_pending_commands_as_not_running": func(t *testing.T) test {
 			return test{
 				run: func(t *testing.T, controller *sessionController, players map[string]runtime.PlayerConnection, clock *testClock) []runtime.CommandResult {

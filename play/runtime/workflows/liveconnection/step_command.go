@@ -2,26 +2,33 @@ package liveconnection
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/diegobermudez03/playhoot/monitoring/metrics"
 	"github.com/diegobermudez03/playhoot/play/runtime"
+	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 	"github.com/diegobermudez03/playhoot/utils/ratelimit"
 )
+
+// commandInvalid is the metric outcome of a COMMAND refused as
+// runtime.ErrInvalidCommand, which is no runtime.CommandOutcome: nothing
+// answers it, the connection ends.
+const commandInvalid = "invalid"
 
 var (
 	commandOutcomeLabel = metrics.NewLabel("outcome",
 		string(runtime.CommandExecuted),
 		string(runtime.CommandAlreadyProcessed),
-		string(runtime.CommandInvalid),
+		commandInvalid,
 		string(runtime.CommandNotRunning),
 		string(runtime.CommandRateLimited),
 	)
 
 	commandsReceived = metrics.NewCounter(
 		"play_runtime_commands_total",
-		"COMMANDs received, by outcome: executed, token already executed, invalid against the manifest, no game running, or refused by a limit.",
+		"COMMANDs received, by outcome: executed, token already executed, invalid against the manifest (the connection ends), no game running, or refused by a limit.",
 		commandOutcomeLabel,
 	)
 	commandDuration = metrics.NewHistogram(
@@ -109,13 +116,19 @@ func (p *pendingCommand) resolve(outcome runtime.CommandOutcome, response []byte
 	close(p.done)
 }
 
-// acceptCommand runs a player's COMMAND and waits for its answer. It is
-// checked against the manifest and the limits before any JavaScript, executed
-// once per token at its place in the timeline, and asks for a boundary at
-// once. One refused by a limit leaves its token unused.
+// acceptCommand runs a player's COMMAND and waits for its answer: checked
+// against the manifest (a mismatch is recorded, runtime.ErrInvalidCommand) and
+// the limits before any JavaScript, executed once per token in the timeline
+// with a boundary asked at once. One refused by a limit leaves its token unused.
 func (c *sessionController) acceptCommand(ctx context.Context, player *connection, command runtime.Command) (runtime.CommandResult, error) {
 	received := time.Now()
 	result, err := c.runCommand(ctx, player, command)
+	if errors.Is(err, runtime.ErrInvalidCommand) {
+		outcome := commandOutcomeLabel.Value(commandInvalid)
+		commandsReceived.Inc(ctx, outcome)
+		commandDuration.ObserveDuration(ctx, time.Since(received), outcome)
+		return runtime.CommandResult{}, err
+	}
 	if err != nil {
 		return runtime.CommandResult{}, err
 	}
@@ -135,10 +148,14 @@ func (c *sessionController) runCommand(ctx context.Context, player *connection, 
 		c.unlock()
 		return answer(runtime.CommandNotRunning), nil
 	}
-	payload, err := s.manifest.Commands.Normalize(command.Name, command.Payload)
-	if err != nil {
+	payload, invalid := s.manifest.Commands.Normalize(command.Name, command.Payload)
+	if invalid != nil {
+		participantID := player.participantID
 		c.unlock()
-		return answer(runtime.CommandInvalid), nil
+		// Recorded once the lock is released, before the caller ends the
+		// connection.
+		c.recordInvalidGameData(ctx, player.userUUID, participantID, sessionpkg.GameFaultInvalidCommand, invalidCommandDetail(command.Name, invalid))
+		return runtime.CommandResult{}, fmt.Errorf("%w: %v", runtime.ErrInvalidCommand, invalid)
 	}
 	tokens := s.commands[player.participantID]
 	if tokens.processed[command.Token] {

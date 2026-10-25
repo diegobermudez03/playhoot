@@ -66,6 +66,7 @@ func (c *sessionController) reportGameFault(ctx context.Context, player *connect
 	outcome, err := c.deps.faults.RecordGameFault(ctx, c.sessionUUID, sessionpkg.GameFault{
 		UserUUID:      player.userUUID,
 		ParticipantID: participantID,
+		Source:        sessionpkg.GameFaultFromClient,
 		Kind:          kind,
 		Detail:        fault.Detail,
 	})

@@ -110,8 +110,8 @@ func (f *fakePlayer) connection() runtime.PlayerConnection {
 			if f.commandErr != nil {
 				return runtime.CommandResult{}, f.commandErr
 			}
-			if command.Name == "unknown" {
-				return runtime.CommandResult{Token: command.Token, Outcome: runtime.CommandInvalid}, nil
+			if command.Name == "replayed" {
+				return runtime.CommandResult{Token: command.Token, Outcome: runtime.CommandAlreadyProcessed}, nil
 			}
 			return runtime.CommandResult{Token: command.Token, Outcome: runtime.CommandExecuted, Response: []byte(`{"result":"NOT_YOUR_TURN"}`)}, nil
 		},
@@ -177,6 +177,8 @@ func TestHandlePlayerJoin(t *testing.T) {
 		expectedRefusal     int
 		expectedReceived    []string
 		expectedCloseStatus websocket.StatusCode
+		// expectedCloseReason, when set, is the reason the server closed with.
+		expectedCloseReason string
 		expectedSamples     []runtime.Sample
 		expectedCommands    []runtime.Command
 		expectedFaults      []runtime.GameFault
@@ -274,10 +276,55 @@ func TestHandlePlayerJoin(t *testing.T) {
 			accept(deps, player)
 			return test{
 				player:              player,
-				clientSends:         []string{`{"type":"command","token":"t2","name":"unknown","payload":null}`},
+				clientSends:         []string{`{"type":"command","token":"t2","name":"replayed","payload":null}`},
 				clientCloses:        true,
-				expectedReceived:    []string{`{"type":"command_result","token":"t2","outcome":"invalid"}`},
-				expectedCommands:    []runtime.Command{{Token: "t2", Name: "unknown"}},
+				expectedReceived:    []string{`{"type":"command_result","token":"t2","outcome":"already_processed"}`},
+				expectedCommands:    []runtime.Command{{Token: "t2", Name: "replayed"}},
+				expectedDisconnects: 1,
+			}
+		},
+		"command_the_game_rejects_is_answered_and_the_connection_stays": func(t *testing.T, deps dependencies) test {
+			player := newFakePlayer()
+			accept(deps, player)
+			return test{
+				player: player,
+				clientSends: []string{
+					`{"type":"command","token":"t1","name":"play_card","payload":{"card":3}}`,
+					`{"type":"command","token":"t2","name":"play_card","payload":{"card":4}}`,
+				},
+				clientCloses: true,
+				expectedReceived: []string{
+					`{"type":"command_result","token":"t1","outcome":"executed","response":{"result":"NOT_YOUR_TURN"}}`,
+					`{"type":"command_result","token":"t2","outcome":"executed","response":{"result":"NOT_YOUR_TURN"}}`,
+				},
+				expectedCommands: []runtime.Command{
+					{Token: "t1", Name: "play_card", Payload: []byte(`{"card":3}`)},
+					{Token: "t2", Name: "play_card", Payload: []byte(`{"card":4}`)},
+				},
+				expectedDisconnects: 1,
+			}
+		},
+		"command_the_game_does_not_declare_ends_the_connection_unanswered": func(t *testing.T, deps dependencies) test {
+			player := newFakePlayer()
+			player.commandErr = fmt.Errorf("%w: undeclared command: fly", runtime.ErrInvalidCommand)
+			accept(deps, player)
+			return test{
+				player:              player,
+				clientSends:         []string{`{"type":"command","token":"t1","name":"fly","payload":{}}`},
+				expectedCloseStatus: websocket.StatusInvalidFramePayloadData,
+				expectedCloseReason: "invalid_game_data",
+				expectedCommands:    []runtime.Command{{Token: "t1", Name: "fly", Payload: []byte(`{}`)}},
+				expectedDisconnects: 1,
+			}
+		},
+		"message_without_a_type_is_malformed_and_reaches_no_one": func(t *testing.T, deps dependencies) test {
+			player := newFakePlayer()
+			accept(deps, player)
+			return test{
+				player:              player,
+				clientSends:         []string{`{"sequence":1,"inputs":{"jump":true}}`},
+				expectedCloseStatus: websocket.StatusInvalidFramePayloadData,
+				expectedCloseReason: "malformed message",
 				expectedDisconnects: 1,
 			}
 		},
@@ -445,7 +492,7 @@ func TestHandlePlayerJoin(t *testing.T) {
 				expectedDisconnects: 1,
 			}
 		},
-		"sample_of_inputs_the_game_does_not_declare_is_malformed": func(t *testing.T, deps dependencies) test {
+		"sample_of_inputs_the_game_does_not_declare_is_invalid_game_data": func(t *testing.T, deps dependencies) test {
 			player := newFakePlayer()
 			player.sampleErr = fmt.Errorf("%w: jump is not a declared input", runtime.ErrInvalidSample)
 			accept(deps, player)
@@ -453,6 +500,7 @@ func TestHandlePlayerJoin(t *testing.T) {
 				player:              player,
 				clientSends:         []string{`{"type":"sample","sequence":1,"inputs":{"jump":true}}`},
 				expectedCloseStatus: websocket.StatusInvalidFramePayloadData,
+				expectedCloseReason: "invalid_game_data",
 				expectedSamples:     []runtime.Sample{{Sequence: 1, Inputs: []byte(`{"jump":true}`)}},
 				expectedDisconnects: 1,
 			}
@@ -506,6 +554,7 @@ func TestHandlePlayerJoin(t *testing.T) {
 				player:              player,
 				clientSends:         []string{`{"type":"sample","inputs":{"move":[1,0]}}`},
 				expectedCloseStatus: websocket.StatusInvalidFramePayloadData,
+				expectedCloseReason: "malformed message",
 				expectedDisconnects: 1,
 			}
 		},
@@ -526,6 +575,7 @@ func TestHandlePlayerJoin(t *testing.T) {
 				player:              player,
 				clientSends:         []string{`{"type":"command","name":"play_card"}`},
 				expectedCloseStatus: websocket.StatusInvalidFramePayloadData,
+				expectedCloseReason: "malformed message",
 				expectedDisconnects: 1,
 			}
 		},
@@ -627,6 +677,11 @@ func TestHandlePlayerJoin(t *testing.T) {
 					_, data, err := conn.Read(ctx)
 					if err != nil {
 						require.Equal(t, tc.expectedCloseStatus, websocket.CloseStatus(err))
+						if tc.expectedCloseReason != "" {
+							var closed websocket.CloseError
+							require.ErrorAs(t, err, &closed)
+							require.Equal(t, tc.expectedCloseReason, closed.Reason)
+						}
 						break
 					}
 					received = append(received, string(data))

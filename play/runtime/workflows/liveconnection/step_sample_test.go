@@ -29,7 +29,7 @@ func runningController(t *testing.T, views map[string][]byte, userUUIDs ...strin
 
 // runningControllerWithTokens is runningController with the COMMAND tokens
 // each participant already executed, and its limits changed by limits when
-// set.
+// set. Its game faults go to a recordedFaults.
 func runningControllerWithTokens(t *testing.T, views map[string][]byte, processed map[string][]string, limits func(*liveLimits), userUUIDs ...string) (*sessionController, map[string]runtime.PlayerConnection, *testClock) {
 	t.Helper()
 	clock := &testClock{now: time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC)}
@@ -43,6 +43,7 @@ func runningControllerWithTokens(t *testing.T, views map[string][]byte, processe
 	require.NoError(t, err)
 	deps := testDependencies()
 	deps.now = clock.Now
+	deps.faults = &recordedFaults{}
 	if limits != nil {
 		limits(&deps.liveLimits)
 	}
@@ -184,14 +185,6 @@ func TestAcceptSample(t *testing.T) {
 					{ParticipantID: "P1", Inputs: `{"move":[0,0]}`, SessionTimeMs: 0, Order: 2},
 				},
 				expectedAcked: 1,
-			}
-		},
-		"undeclared_input_is_invalid": func(t *testing.T) test {
-			return test{
-				send: func(t *testing.T, players map[string]runtime.PlayerConnection, clock *testClock) error {
-					return players["user-a"].Sample(ctx, sample(1, `{"jump":true}`))
-				},
-				expectedErrorIs: runtime.ErrInvalidSample,
 			}
 		},
 		"disconnecting_returns_inputs_to_their_defaults": func(t *testing.T) test {

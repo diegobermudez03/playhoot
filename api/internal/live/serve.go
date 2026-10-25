@@ -24,6 +24,7 @@ const (
 	CauseClientClosed       Cause = "client_closed"
 	CauseBinaryFrame        Cause = "binary_frame"
 	CauseMalformedMessage   Cause = "malformed_message"
+	CauseInvalidGameData    Cause = "invalid_game_data"
 	CauseUnknownMessageType Cause = "unknown_message_type"
 	CauseRateLimited        Cause = "rate_limited"
 	CauseEndedByOwner       Cause = "ended_by_owner"
@@ -135,8 +136,8 @@ func ReadMessage(ctx context.Context, conn *websocket.Conn) (messageType string,
 		if ctx.Err() != nil {
 			return "", nil, End{}, false
 		}
-		if cause, dropped := droppedConnections.Load(conn); dropped {
-			return "", nil, End{Cause: cause.(Cause)}, true
+		if end, dropped := droppedConnections.Load(conn); dropped {
+			return "", nil, end.(End), true
 		}
 		return "", nil, End{Cause: CauseClientClosed}, true
 	}
@@ -155,22 +156,35 @@ func ReadMessage(ctx context.Context, conn *websocket.Conn) (messageType string,
 
 // CloseMalformed closes conn because the client sent an invalid message.
 func CloseMalformed(conn *websocket.Conn) End {
-	_ = conn.Close(websocket.StatusInvalidFramePayloadData, "malformed message")
-	return End{Cause: CauseMalformedMessage}
+	return closeAs(conn, websocket.StatusInvalidFramePayloadData, "malformed message", End{Cause: CauseMalformedMessage})
+}
+
+// CloseInvalidGameData closes conn because the client relayed data its game
+// does not declare: a well-formed message whose content is the fault of the
+// game's frontend, not of the client. reason is what was wrong, for the log.
+func CloseInvalidGameData(conn *websocket.Conn, reason string) End {
+	return closeAs(conn, websocket.StatusInvalidFramePayloadData, "invalid_game_data", End{Cause: CauseInvalidGameData, Detail: reason})
 }
 
 // CloseUnknownType closes conn because the client sent a message type the
 // connection does not accept.
 func CloseUnknownType(conn *websocket.Conn, messageType string) End {
-	_ = conn.Close(websocket.StatusPolicyViolation, "unknown message type")
-	return End{Cause: CauseUnknownMessageType, Detail: messageType}
+	return closeAs(conn, websocket.StatusPolicyViolation, "unknown message type", End{Cause: CauseUnknownMessageType, Detail: messageType})
 }
 
 // CloseRateLimited closes conn because the client sent more than its limits
 // allow.
 func CloseRateLimited(conn *websocket.Conn) End {
-	_ = conn.Close(websocket.StatusPolicyViolation, "rate limited")
-	return End{Cause: CauseRateLimited}
+	return closeAs(conn, websocket.StatusPolicyViolation, "rate limited", End{Cause: CauseRateLimited})
+}
+
+// closeAs closes conn with status and reason as end. It is recorded first, so
+// the reader, which sees the client answer the close before the close returns
+// here, reports this end and not the client's.
+func closeAs(conn *websocket.Conn, status websocket.StatusCode, reason string, end End) End {
+	droppedConnections.Store(conn, end)
+	_ = conn.Close(status, reason)
+	return end
 }
 
 // CloseServerFailure closes conn because the server could not go on.
@@ -192,7 +206,7 @@ func WriteMessage(ctx context.Context, conn *websocket.Conn, message any) (End, 
 	var slow atomic.Bool
 	tooSlow := time.AfterFunc(writeTimeout, func() {
 		slow.Store(true)
-		droppedConnections.Store(conn, CauseSlowConsumer)
+		droppedConnections.Store(conn, End{Cause: CauseSlowConsumer})
 		_ = conn.CloseNow()
 	})
 	err = conn.Write(ctx, websocket.MessageText, data)
@@ -208,8 +222,8 @@ func WriteMessage(ctx context.Context, conn *websocket.Conn, message any) (End, 
 	return End{Cause: CauseWriteFailed}, true
 }
 
-// droppedConnections are the connections the server dropped, with why, until
-// served connections are done with them.
+// droppedConnections are the connections the server dropped or closed, with
+// how they ended, until served connections are done with them.
 var droppedConnections sync.Map
 
 // keepalive pings the client every pingInterval and ends the connection when

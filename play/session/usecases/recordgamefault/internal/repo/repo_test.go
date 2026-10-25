@@ -39,6 +39,7 @@ type faultRow struct {
 	GameVersionID   uint
 	UserUUID        string
 	ParticipantID   string
+	Source          string
 	Kind            string
 	Detail          string
 	Occurrences     int
@@ -50,7 +51,7 @@ func faultsOf(t *testing.T, db *gorm.DB, sessionID uint) []faultRow {
 	t.Helper()
 	var rows []faultRow
 	require.NoError(t, db.Raw(`
-		SELECT game_version_id, user_uuid, participant_id, kind, detail::text AS detail, occurrences, first_reported_at, last_reported_at
+		SELECT game_version_id, user_uuid, participant_id, source, kind, detail::text AS detail, occurrences, first_reported_at, last_reported_at
 		FROM play_game_faults WHERE session_id = ? ORDER BY kind
 	`, sessionID).Scan(&rows).Error)
 	return rows
@@ -75,7 +76,7 @@ func TestRecordFault(t *testing.T) {
 		session := seedSession(t, db, "RUNNING")
 
 		recorded, err := repo.RecordFault(ctx, session.uuid,
-			Fault{UserUUID: session.playerUUID, ParticipantID: "P1", Kind: "BRIDGE_ABUSE", Detail: []byte(`{"refused":{"sample":900}}`)}, first)
+			Fault{UserUUID: session.playerUUID, ParticipantID: "P1", Source: "CLIENT", Kind: "BRIDGE_ABUSE", Detail: []byte(`{"refused":{"sample":900}}`)}, first)
 
 		require.NoError(t, err)
 		require.True(t, recorded)
@@ -84,6 +85,7 @@ func TestRecordFault(t *testing.T) {
 		require.Equal(t, session.gameVersionID, rows[0].GameVersionID)
 		require.Equal(t, session.playerUUID, rows[0].UserUUID)
 		require.Equal(t, "P1", rows[0].ParticipantID)
+		require.Equal(t, "CLIENT", rows[0].Source)
 		require.Equal(t, "BRIDGE_ABUSE", rows[0].Kind)
 		require.Equal(t, 1, rows[0].Occurrences)
 		requireJSONEqual(t, `{"refused":{"sample":900}}`, rows[0].Detail)
@@ -92,7 +94,7 @@ func TestRecordFault(t *testing.T) {
 
 	t.Run("the_same_kind_again_counts_it_and_keeps_the_newer_detail", func(t *testing.T) {
 		session := seedSession(t, db, "RUNNING")
-		fault := Fault{UserUUID: session.playerUUID, ParticipantID: "P1", Kind: "CONTAINER_VIOLATION", Detail: []byte(`{"n":1}`)}
+		fault := Fault{UserUUID: session.playerUUID, ParticipantID: "P1", Source: "CLIENT", Kind: "CONTAINER_VIOLATION", Detail: []byte(`{"n":1}`)}
 		_, err := repo.RecordFault(ctx, session.uuid, fault, first)
 		require.NoError(t, err)
 		fault.Detail = []byte(`{"n":2}`)
@@ -109,10 +111,40 @@ func TestRecordFault(t *testing.T) {
 		require.True(t, rows[0].LastReportedAt.Equal(later))
 	})
 
+	t.Run("records_a_server_fault_as_the_server_s_next_to_the_client_s", func(t *testing.T) {
+		session := seedSession(t, db, "RUNNING")
+		_, err := repo.RecordFault(ctx, session.uuid,
+			Fault{UserUUID: session.playerUUID, ParticipantID: "P1", Source: "CLIENT", Kind: "BRIDGE_ABUSE", Detail: []byte(`{}`)}, first)
+		require.NoError(t, err)
+		invalid := Fault{UserUUID: session.playerUUID, ParticipantID: "P1", Source: "SERVER", Kind: "INVALID_COMMAND",
+			Detail: []byte(`{"command":"fly","reason":"undeclared command: fly"}`)}
+		_, err = repo.RecordFault(ctx, session.uuid, invalid, first)
+		require.NoError(t, err)
+		invalid.Detail = []byte(`{"command":"move_to","reason":"invalid input value: x must be at most 10"}`)
+
+		recorded, err := repo.RecordFault(ctx, session.uuid, invalid, later)
+
+		require.NoError(t, err)
+		require.True(t, recorded)
+		rows := faultsOf(t, db, session.id)
+		require.Len(t, rows, 2)
+		require.Equal(t, "CLIENT", rows[0].Source)
+		require.Equal(t, "BRIDGE_ABUSE", rows[0].Kind)
+		require.Equal(t, 1, rows[0].Occurrences)
+		require.Equal(t, "SERVER", rows[1].Source)
+		require.Equal(t, "INVALID_COMMAND", rows[1].Kind)
+		require.Equal(t, session.gameVersionID, rows[1].GameVersionID)
+		require.Equal(t, "P1", rows[1].ParticipantID)
+		require.Equal(t, 2, rows[1].Occurrences)
+		requireJSONEqual(t, `{"command":"move_to","reason":"invalid input value: x must be at most 10"}`, rows[1].Detail)
+		require.True(t, rows[1].FirstReportedAt.Equal(first))
+		require.True(t, rows[1].LastReportedAt.Equal(later))
+	})
+
 	t.Run("another_kind_is_another_record", func(t *testing.T) {
 		session := seedSession(t, db, "RUNNING")
 		for _, kind := range []string{"READY_TIMEOUT", "BRIDGE_ABUSE"} {
-			_, err := repo.RecordFault(ctx, session.uuid, Fault{UserUUID: session.playerUUID, ParticipantID: "P1", Kind: kind, Detail: []byte(`{}`)}, first)
+			_, err := repo.RecordFault(ctx, session.uuid, Fault{UserUUID: session.playerUUID, ParticipantID: "P1", Source: "CLIENT", Kind: kind, Detail: []byte(`{}`)}, first)
 			require.NoError(t, err)
 		}
 
@@ -123,7 +155,7 @@ func TestRecordFault(t *testing.T) {
 		session := seedSession(t, db, "FINISHED")
 
 		recorded, err := repo.RecordFault(ctx, session.uuid,
-			Fault{UserUUID: session.playerUUID, ParticipantID: "P1", Kind: "BRIDGE_ABUSE", Detail: []byte(`{}`)}, first)
+			Fault{UserUUID: session.playerUUID, ParticipantID: "P1", Source: "CLIENT", Kind: "BRIDGE_ABUSE", Detail: []byte(`{}`)}, first)
 
 		require.NoError(t, err)
 		require.False(t, recorded)
@@ -134,8 +166,8 @@ func TestRecordFault(t *testing.T) {
 		session := seedSession(t, db, "RUNNING")
 
 		for _, fault := range []Fault{
-			{UserUUID: uuid.NewString(), ParticipantID: "P1", Kind: "BRIDGE_ABUSE", Detail: []byte(`{}`)},
-			{UserUUID: session.playerUUID, ParticipantID: "P2", Kind: "BRIDGE_ABUSE", Detail: []byte(`{}`)},
+			{UserUUID: uuid.NewString(), ParticipantID: "P1", Source: "CLIENT", Kind: "BRIDGE_ABUSE", Detail: []byte(`{}`)},
+			{UserUUID: session.playerUUID, ParticipantID: "P2", Source: "CLIENT", Kind: "BRIDGE_ABUSE", Detail: []byte(`{}`)},
 		} {
 			recorded, err := repo.RecordFault(ctx, session.uuid, fault, first)
 			require.NoError(t, err)
@@ -146,7 +178,7 @@ func TestRecordFault(t *testing.T) {
 
 	t.Run("nothing_for_an_unknown_session", func(t *testing.T) {
 		recorded, err := repo.RecordFault(ctx, uuid.NewString(),
-			Fault{UserUUID: uuid.NewString(), ParticipantID: "P1", Kind: "BRIDGE_ABUSE", Detail: []byte(`{}`)}, first)
+			Fault{UserUUID: uuid.NewString(), ParticipantID: "P1", Source: "CLIENT", Kind: "BRIDGE_ABUSE", Detail: []byte(`{}`)}, first)
 
 		require.NoError(t, err)
 		require.False(t, recorded)

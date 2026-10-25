@@ -1,5 +1,5 @@
-// Package gamefault decides which game fault reports Session Runtime keeps:
-// the kinds it knows, with a detail small enough to store.
+// Package gamefault decides which game faults Session Runtime keeps: the
+// kinds each source may record, with a detail small enough to store.
 package gamefault
 
 import (
@@ -8,18 +8,26 @@ import (
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
 
-var kinds = map[sessionpkg.GameFaultKind]bool{
-	sessionpkg.GameFaultArtifactUnreachable:      true,
-	sessionpkg.GameFaultArtifactHashMismatch:     true,
-	sessionpkg.GameFaultReadyTimeout:             true,
-	sessionpkg.GameFaultUnsupportedBridgeVersion: true,
-	sessionpkg.GameFaultContainerViolation:       true,
-	sessionpkg.GameFaultBridgeAbuse:              true,
+// kinds are the kinds each source records. SERVER_LIMIT, also a SERVER kind,
+// is recorded apart, by recordlimithits.
+var kinds = map[sessionpkg.GameFaultSource]map[sessionpkg.GameFaultKind]bool{
+	sessionpkg.GameFaultFromClient: {
+		sessionpkg.GameFaultArtifactUnreachable:      true,
+		sessionpkg.GameFaultArtifactHashMismatch:     true,
+		sessionpkg.GameFaultReadyTimeout:             true,
+		sessionpkg.GameFaultUnsupportedBridgeVersion: true,
+		sessionpkg.GameFaultContainerViolation:       true,
+		sessionpkg.GameFaultBridgeAbuse:              true,
+	},
+	sessionpkg.GameFaultFromServer: {
+		sessionpkg.GameFaultInvalidSample:  true,
+		sessionpkg.GameFaultInvalidCommand: true,
+	},
 }
 
-// Known reports whether kind is one Session Runtime records.
-func Known(kind sessionpkg.GameFaultKind) bool {
-	return kinds[kind]
+// Known reports whether kind is one Session Runtime records from source.
+func Known(source sessionpkg.GameFaultSource, kind sessionpkg.GameFaultKind) bool {
+	return kinds[source][kind]
 }
 
 // ValidDetail reports whether detail is a JSON object within

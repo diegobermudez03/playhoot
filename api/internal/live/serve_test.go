@@ -140,6 +140,21 @@ func TestServe(t *testing.T) {
 				expectedCloseCause:  CauseMalformedMessage,
 			}
 		},
+		"a_loop_closing_for_invalid_game_data_is_its_end_not_the_client_s_answer": func(t *testing.T) test {
+			return test{
+				loops: func(conn *websocket.Conn) []Loop {
+					// The reader sees the client answer the close before the
+					// closing loop returns.
+					return []Loop{readUntilEnd(conn), func(context.Context) (End, bool) {
+						time.Sleep(20 * time.Millisecond)
+						return CloseInvalidGameData(conn, "jump is not a declared input"), true
+					}}
+				},
+				expectedCloseStatus: websocket.StatusInvalidFramePayloadData,
+				expectedCloseCause:  CauseInvalidGameData,
+				expectedCloseDetail: "jump is not a declared input",
+			}
+		},
 		"client_answering_pings_stays_connected": func(t *testing.T) test {
 			return test{
 				loops: func(conn *websocket.Conn) []Loop {

@@ -11,24 +11,50 @@ import (
 
 func TestKnown(t *testing.T) {
 	type test struct {
-		kind sessionpkg.GameFaultKind
+		source sessionpkg.GameFaultSource
+		kind   sessionpkg.GameFaultKind
 
 		expected bool
 	}
 
+	client, server := sessionpkg.GameFaultFromClient, sessionpkg.GameFaultFromServer
 	tests := map[string]func(t *testing.T) test{
-		"bridge_abuse":         func(t *testing.T) test { return test{kind: sessionpkg.GameFaultBridgeAbuse, expected: true} },
-		"container_violation":  func(t *testing.T) test { return test{kind: sessionpkg.GameFaultContainerViolation, expected: true} },
-		"artifact_unreachable": func(t *testing.T) test { return test{kind: sessionpkg.GameFaultArtifactUnreachable, expected: true} },
-		"unknown":              func(t *testing.T) test { return test{kind: sessionpkg.GameFaultKind("CHEATING")} },
-		"lowercase_wire_value": func(t *testing.T) test { return test{kind: sessionpkg.GameFaultKind("bridge_abuse")} },
+		"bridge_abuse_from_the_client": func(t *testing.T) test {
+			return test{source: client, kind: sessionpkg.GameFaultBridgeAbuse, expected: true}
+		},
+		"container_violation_from_the_client": func(t *testing.T) test {
+			return test{source: client, kind: sessionpkg.GameFaultContainerViolation, expected: true}
+		},
+		"artifact_unreachable_from_the_client": func(t *testing.T) test {
+			return test{source: client, kind: sessionpkg.GameFaultArtifactUnreachable, expected: true}
+		},
+		"invalid_sample_from_the_server": func(t *testing.T) test {
+			return test{source: server, kind: sessionpkg.GameFaultInvalidSample, expected: true}
+		},
+		"invalid_command_from_the_server": func(t *testing.T) test {
+			return test{source: server, kind: sessionpkg.GameFaultInvalidCommand, expected: true}
+		},
+		"a_server_kind_from_the_client": func(t *testing.T) test {
+			return test{source: client, kind: sessionpkg.GameFaultInvalidSample}
+		},
+		"a_client_kind_from_the_server": func(t *testing.T) test {
+			return test{source: server, kind: sessionpkg.GameFaultBridgeAbuse}
+		},
+		"server_limit_is_not_recorded_here": func(t *testing.T) test {
+			return test{source: server, kind: sessionpkg.GameFaultKind("SERVER_LIMIT")}
+		},
+		"unknown_source": func(t *testing.T) test {
+			return test{source: sessionpkg.GameFaultSource("ADMIN"), kind: sessionpkg.GameFaultBridgeAbuse}
+		},
+		"unknown":              func(t *testing.T) test { return test{source: client, kind: sessionpkg.GameFaultKind("CHEATING")} },
+		"lowercase_wire_value": func(t *testing.T) test { return test{source: client, kind: sessionpkg.GameFaultKind("bridge_abuse")} },
 	}
 
 	for name, setup := range tests {
 		t.Run(name, func(t *testing.T) {
 			tc := setup(t)
 
-			require.Equal(t, tc.expected, Known(tc.kind))
+			require.Equal(t, tc.expected, Known(tc.source, tc.kind))
 		})
 	}
 }

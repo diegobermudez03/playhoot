@@ -1,6 +1,7 @@
-// Package recordgamefault keeps the faults players' clients report about the
-// game frontend of their running Session, so a database audit can tell games
-// that misbehave from clients that lie.
+// Package recordgamefault keeps the faults of the game frontend of a running
+// Session: those players' clients report, and those the platform sees in what
+// a frontend sends, so a database audit can tell games that misbehave from
+// clients that lie.
 package recordgamefault
 
 import (
@@ -36,9 +37,10 @@ func New(db *gorm.DB) *Service {
 }
 
 // RecordGameFault stores fault for sessionUUID while the Session runs and the
-// reporter plays it. The same participant reporting the same kind again in
-// the Session is counted on the same record. A fault of an unknown kind or
-// with an invalid detail is an error: the caller should have refused it.
+// participant plays it. The same participant's fault of the same kind again in
+// the Session is counted on the same record. A fault of a kind its source does
+// not record, or with an invalid detail, is an error: the caller should have
+// refused it.
 func (s *Service) RecordGameFault(ctx context.Context, sessionUUID string, fault sessionpkg.GameFault) (sessionpkg.RecordGameFaultOutcome, error) {
 	if _, err := uuid.Parse(sessionUUID); err != nil {
 		return "", sessionpkg.ErrSessionNotFound
@@ -46,8 +48,8 @@ func (s *Service) RecordGameFault(ctx context.Context, sessionUUID string, fault
 	if _, err := uuid.Parse(fault.UserUUID); err != nil || fault.ParticipantID == "" {
 		return "", errors.New("game fault without a valid reporter")
 	}
-	if !gamefault.Known(fault.Kind) {
-		return "", fmt.Errorf("unknown game fault kind %q", fault.Kind)
+	if !gamefault.Known(fault.Source, fault.Kind) {
+		return "", fmt.Errorf("unknown game fault kind %q from %q", fault.Kind, fault.Source)
 	}
 	if !gamefault.ValidDetail(fault.Detail) {
 		return "", fmt.Errorf("game fault detail is not a JSON object within %d bytes", sessionpkg.MaxGameFaultDetailBytes)
@@ -55,6 +57,7 @@ func (s *Service) RecordGameFault(ctx context.Context, sessionUUID string, fault
 	recorded, err := s.faults.RecordFault(ctx, sessionUUID, internalrepo.Fault{
 		UserUUID:      fault.UserUUID,
 		ParticipantID: fault.ParticipantID,
+		Source:        string(fault.Source),
 		Kind:          string(fault.Kind),
 		Detail:        fault.Detail,
 	}, s.now().UTC().Truncate(time.Microsecond))

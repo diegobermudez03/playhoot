@@ -22,6 +22,7 @@ var (
 		string(CauseClientClosed),
 		string(CauseBinaryFrame),
 		string(CauseMalformedMessage),
+		string(CauseInvalidGameData),
 		string(CauseUnknownMessageType),
 		string(CauseRateLimited),
 		string(CauseEndedByOwner),
