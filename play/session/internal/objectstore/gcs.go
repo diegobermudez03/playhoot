@@ -116,12 +116,14 @@ func (g *GCS) Put(ctx context.Context, key string, content []byte, contentType s
 
 // PresignGet implements Store. It does not check that the object exists:
 // a signed URL for a missing object simply returns 404 when fetched.
-func (g *GCS) PresignGet(ctx context.Context, key string, ttl time.Duration) (SignedURL, error) {
-	expiresAt := time.Now().UTC().Add(ttl)
+func (g *GCS) PresignGet(ctx context.Context, key string, expiresAt time.Time) (string, error) {
 	options := &storage.SignedURLOptions{
-		Method:  "GET",
-		Scheme:  storage.SigningSchemeV4,
-		Expires: expiresAt,
+		Method: "GET",
+		Scheme: storage.SigningSchemeV4,
+		// A V4 URL lives whole seconds counted from the second it is signed
+		// in, rounded down, so asking for one more second keeps it working
+		// until expiresAt.
+		Expires: expiresAt.Add(time.Second),
 	}
 	if g.emulator != nil {
 		options.GoogleAccessID = emulatorAccessID
@@ -130,7 +132,7 @@ func (g *GCS) PresignGet(ctx context.Context, key string, ttl time.Duration) (Si
 	}
 	url, err := g.client.Bucket(g.bucket).SignedURL(key, options)
 	if err != nil {
-		return SignedURL{}, fmt.Errorf("signing gcs url: %w", err)
+		return "", fmt.Errorf("signing gcs url: %w", err)
 	}
-	return SignedURL{URL: url, ExpiresAt: expiresAt}, nil
+	return url, nil
 }

@@ -14,9 +14,10 @@ Naming: `SESSION-ADR-NNNN`, with a sequence independent of the global and other 
 | [SESSION-ADR-0031](SESSION-ADR-0031-game-time-is-handled-by-update-without-platform-timers.md) | Game Time Is Handled By update(), Without Platform Timers | ACCEPTED | 2026-10-18 | `play/CURRENT_STATE.md` |
 | [SESSION-ADR-0032](SESSION-ADR-0032-leaving-is-an-immediate-disconnection.md) | Leaving Is An Immediate Disconnection | ACCEPTED | 2026-10-18 | `play/CURRENT_STATE.md`, `play/docs/DATA_MODEL.md` |
 | [SESSION-ADR-0033](SESSION-ADR-0033-replay-recording-produces-immutable-chunks.md) | Replay Recording Produces Immutable, Self-Contained Chunks | ACCEPTED | 2026-10-18 | `play/CURRENT_STATE.md`, `play/docs/DATA_MODEL.md`, `play/docs/FLOWS.md`, `play/README.md` |
+| [SESSION-ADR-0034](SESSION-ADR-0034-game-assets-and-shared-signed-access.md) | Game Assets And Signed Access Shared Across Sessions | ACCEPTED | 2026-10-25 | `play/CURRENT_STATE.md`, `play/docs/DATA_MODEL.md`, `play/docs/FLOWS.md`, `api/README.md` |
 
 `SESSION-ADR-0001` through `SESSION-ADR-0027` record the previous, discrete-turn design. They are archived in `docs/archive/pre-realtime-pivot/session/docs/decisions/` and are history only (see `docs/archive/pre-realtime-pivot/README.md`). Their numbers are not reused.
 
-Next Session ADR: `SESSION-ADR-0034`.
+Next Session ADR: `SESSION-ADR-0035`.
 
 Whenever a Session ADR is created or its lifecycle status changes, update this index.

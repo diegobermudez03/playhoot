@@ -49,15 +49,15 @@ func TestGCSSignedURLServesTheObject(t *testing.T) {
 	locator, err := objectstore.PutContent(ctx, store, "frontend-packages", []byte("<!doctype html><p>game</p>"), "text/html")
 	require.NoError(t, err)
 
-	signed, err := store.PresignGet(ctx, locator.ObjectKey, time.Minute)
+	url, err := store.PresignGet(ctx, locator.ObjectKey, time.Now().Add(time.Minute))
 	require.NoError(t, err)
-	response, err := http.Get(signed.URL)
+	response, err := http.Get(url)
 	require.NoError(t, err)
 	defer response.Body.Close()
 	body, err := io.ReadAll(response.Body)
 	require.NoError(t, err)
 
-	require.Equal(t, http.StatusOK, response.StatusCode, "%s: %s", signed.URL, body)
+	require.Equal(t, http.StatusOK, response.StatusCode, "%s: %s", url, body)
 	require.Equal(t, "<!doctype html><p>game</p>", string(body))
 }
 

@@ -45,7 +45,7 @@ func TestJoiningARunningGameGetsFrontendAccessSignedNow(t *testing.T) {
 			controller.completeStart(participants, Game{GameVersionUUID: "game-version", ContextRevision: 1, State: []byte(`{}`)}, startedWith, map[string][]byte{"P1": []byte(`{}`)}, nil)
 			player.Disconnect()
 			signer := NewMockfrontendSigner(gomock.NewController(t))
-			signer.EXPECT().FrontendAccess(gomock.Any(), "game-version").Return(tc.signed, tc.signedErr).Times(2)
+			signer.EXPECT().FrontendAccess(gomock.Any(), "session-1").Return(tc.signed, tc.signedErr).Times(2)
 			controller.deps.frontends = signer
 
 			back, participant, err := controller.attachParticipant(ctx, runtime.Player{UserUUID: "user-a"})

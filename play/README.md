@@ -63,13 +63,14 @@ play/                         # a folder, not a Go package: each subpackage expo
     usecases/
       checkadminjoin/         # EligibleToJoinAsAdmin + internal/repo
       checklivesession/       # IsSessionLive (asked by the Runtime's ownership before claiming) + internal/repo
+      frontendaccess/         # FrontendAccess: a Session's signed URLs to its game frontend and assets, one batch per version shared by its Sessions + internal/repo
       storereplaychunk/       # StoreReplayChunk: writes a replay chunk object, then registers it in the manifest + internal/repo
     workflows/
       sessionlifecycle/       # Manager + one file per step (step_create_session.go) + internal/repo
     batches/
       reconcilesessions/      # background job: ends expired lobbies and ownerless running Sessions every minute + internal/repo
     internal/
-      business/<behavior>/    # business definitions and pure logic shared by steps (sessionstatus, gameversion, reconciliation)
+      business/<behavior>/    # business definitions and pure logic shared by steps (sessionstatus, sessionlifetime, gameversion with its aspect ratio and asset catalogs, reconciliation)
       migrations/             # schema migrations (play_* tables) and seed_* test-data migrations
       objectstore/            # object storage port (GCS, in-memory) and verifying cache; not wired, storetest does not build
       pgerrs/                 # PostgreSQL error classification helpers

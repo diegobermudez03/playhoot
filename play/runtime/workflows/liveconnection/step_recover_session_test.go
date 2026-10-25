@@ -84,7 +84,7 @@ func (m recoveryMocks) recovers(setup recoverySetup) []any {
 	return []any{
 		m.limits.EXPECT().LoadSessionLimits(anyCtx, setup.sessionUUID).Return(setup.limits, nil),
 		m.starts.EXPECT().LoadRunningSession(anyCtx, setup.sessionUUID).Return(setup.running, nil),
-		m.frontends.EXPECT().FrontendAccess(anyCtx, boundaryGameVersion).Return(setup.access, nil),
+		m.frontends.EXPECT().FrontendAccess(anyCtx, boundarySessionUUID).Return(setup.access, nil),
 		m.sandbox.EXPECT().CreateContext(anyCtx, setup.spec).Return("context-1", nil),
 		m.sandbox.EXPECT().Restore(anyCtx, "context-1", setup.snapshot).Return(sandbox.RestoreResult{Outcome: sandbox.ScriptSucceeded}, nil),
 		m.sandbox.EXPECT().Project(anyCtx, "context-1", "P1").Return(sandbox.ProjectResult{Outcome: sandbox.ScriptSucceeded, View: []byte(`{"me":1}`)}, nil),
@@ -149,7 +149,7 @@ func TestRecoverSession(t *testing.T) {
 			gomock.InOrder(
 				mocks.limits.EXPECT().LoadSessionLimits(anyCtx, setup.sessionUUID).Return(setup.limits, nil),
 				mocks.starts.EXPECT().LoadRunningSession(anyCtx, setup.sessionUUID).Return(setup.running, nil),
-				mocks.frontends.EXPECT().FrontendAccess(anyCtx, boundaryGameVersion).Return(setup.access, nil),
+				mocks.frontends.EXPECT().FrontendAccess(anyCtx, boundarySessionUUID).Return(setup.access, nil),
 				mocks.sandbox.EXPECT().CreateContext(anyCtx, setup.spec).Return("context-1", nil),
 				mocks.sandbox.EXPECT().Restore(anyCtx, "context-1", setup.snapshot).Return(sandbox.RestoreResult{}, errors.New("worker crashed")),
 				mocks.sandbox.EXPECT().DiscardContext(anyCtx, "context-1").Return(nil),
@@ -160,7 +160,7 @@ func TestRecoverSession(t *testing.T) {
 			gomock.InOrder(
 				mocks.limits.EXPECT().LoadSessionLimits(anyCtx, setup.sessionUUID).Return(setup.limits, nil),
 				mocks.starts.EXPECT().LoadRunningSession(anyCtx, setup.sessionUUID).Return(setup.running, nil),
-				mocks.frontends.EXPECT().FrontendAccess(anyCtx, boundaryGameVersion).Return(setup.access, nil),
+				mocks.frontends.EXPECT().FrontendAccess(anyCtx, boundarySessionUUID).Return(setup.access, nil),
 				mocks.sandbox.EXPECT().CreateContext(anyCtx, setup.spec).Return("", sandbox.ErrNoCapacity),
 			)
 			return test{expectedErr: true, expectedPhase: phaseLobby}
@@ -279,7 +279,7 @@ func TestConcurrentReconnectionsRecoverOnce(t *testing.T) {
 	manifests.EXPECT().LoadRuntimeManifest(anyCtx, setup.sessionUUID).Return(sessionpkg.RuntimeManifest{MinPlayers: 1, MaxPlayers: 4}, nil)
 	gomock.InOrder(mocks.recovers(setup)...)
 	// Each participant attaching to the recovered game is told access signed for them.
-	mocks.frontends.EXPECT().FrontendAccess(anyCtx, boundaryGameVersion).Return(freshAccess, nil).MinTimes(1).MaxTimes(2)
+	mocks.frontends.EXPECT().FrontendAccess(anyCtx, boundarySessionUUID).Return(freshAccess, nil).MinTimes(1).MaxTimes(2)
 	resolver := New(0, nil, players, manifests, mocks.limits, mocks.starts, mocks.ends, nil, heartbeatsRecorded(t, setup.sessionUUID), mocks.frontends, mocks.sandbox, mocks.replay, ownersReleasing(t, setup.sessionUUID, 1), nil, nil)
 	resolver.deps.now = func() time.Time { return setup.now }
 	t.Cleanup(resolver.Close)
@@ -323,7 +323,7 @@ func TestAdminReconnectionRecovers(t *testing.T) {
 		admins.EXPECT().EligibleToJoinAsAdmin(anyCtx, setup.sessionUUID, "creator").Return(sessionpkg.AdminJoinEligibleRunning, nil),
 		manifests.EXPECT().LoadRuntimeManifest(anyCtx, setup.sessionUUID).Return(sessionpkg.RuntimeManifest{MinPlayers: 1, MaxPlayers: 4}, nil),
 	}, mocks.recovers(setup)...)...)
-	mocks.frontends.EXPECT().FrontendAccess(anyCtx, boundaryGameVersion).Return(freshAccess, nil)
+	mocks.frontends.EXPECT().FrontendAccess(anyCtx, boundarySessionUUID).Return(freshAccess, nil)
 	resolver := New(0, admins, nil, manifests, mocks.limits, mocks.starts, mocks.ends, nil, heartbeatsRecorded(t, setup.sessionUUID), mocks.frontends, mocks.sandbox, mocks.replay, ownersReleasing(t, setup.sessionUUID, 1), nil, nil)
 	resolver.deps.now = func() time.Time { return setup.now }
 	t.Cleanup(resolver.Close)

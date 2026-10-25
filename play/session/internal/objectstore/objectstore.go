@@ -33,15 +33,14 @@ type Store interface {
 	// practice.
 	Put(ctx context.Context, key string, content []byte, contentType string) error
 	// PresignGet returns a read-only URL for exactly the object at key that
-	// stops working after ttl. It is a bearer credential until it expires.
-	PresignGet(ctx context.Context, key string, ttl time.Duration) (SignedURL, error)
+	// works until expiresAt, less than MaxPresignTTL from now, and stops within
+	// a second after it. It is a bearer credential until it expires.
+	PresignGet(ctx context.Context, key string, expiresAt time.Time) (string, error)
 }
 
-// SignedURL is a short-lived, read-only URL for one stored object.
-type SignedURL struct {
-	URL       string
-	ExpiresAt time.Time
-}
+// MaxPresignTTL is the longest a signed URL may work from when it is signed,
+// the limit of Cloud Storage's V4 signatures.
+const MaxPresignTTL = 7 * 24 * time.Hour
 
 // Locator identifies one immutable stored object and lets a reader verify it:
 // where it lives, the SHA-256 of its content (lowercase hex), and its size in

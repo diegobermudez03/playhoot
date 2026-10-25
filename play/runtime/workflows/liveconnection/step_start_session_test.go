@@ -62,10 +62,13 @@ func TestStartSession(t *testing.T) {
 	require.NoError(t, err)
 
 	expiresAt := time.Date(2026, 10, 17, 21, 0, 0, 0, time.UTC)
-	access := sessionpkg.FrontendAccess{URL: "https://storage.example/frontend?sig=abc", SHA256: "9f86d081", ExpiresAt: expiresAt}
+	access := sessionpkg.FrontendAccess{
+		URL: "https://storage.example/frontend?sig=abc", SHA256: "9f86d081", ExpiresAt: expiresAt,
+		Assets: []sessionpkg.FrontendAsset{{Key: "ship", Type: "image", MIMEType: "image/png", SHA256: "aa", Size: 175, URL: "https://storage.example/ship?sig=abc"}},
+	}
 	// eligible also signs the frontend, which follows every eligible check.
 	eligible := func(deps dependencies) *gomock.Call {
-		return deps.frontends.EXPECT().FrontendAccess(ctx, gameVersionUUID).Return(access, nil).
+		return deps.frontends.EXPECT().FrontendAccess(ctx, sessionUUID).Return(access, nil).
 			After(deps.starts.EXPECT().CheckStartEligibility(ctx, sessionUUID, creatorUUID, 2).
 				Return(sessionpkg.StartEligibility{Outcome: sessionpkg.StartEligible, GameVersionUUID: gameVersionUUID, Script: script}, nil))
 	}
@@ -167,7 +170,7 @@ func TestStartSession(t *testing.T) {
 			gomock.InOrder(append([]any{
 				deps.starts.EXPECT().CheckStartEligibility(ctx, sessionUUID, creatorUUID, 2).Return(sessionpkg.StartEligibility{Outcome: sessionpkg.StartAlreadyStarted}, nil),
 				deps.starts.EXPECT().LoadRunningSession(ctx, sessionUUID).Return(running, nil),
-				deps.frontends.EXPECT().FrontendAccess(ctx, gameVersionUUID).Return(access, nil),
+				deps.frontends.EXPECT().FrontendAccess(ctx, sessionUUID).Return(access, nil),
 				deps.sandbox.EXPECT().CreateContext(ctx, spec).Return("context-1", nil),
 				deps.sandbox.EXPECT().Restore(ctx, "context-1", snapshot).Return(sandbox.RestoreResult{Outcome: sandbox.ScriptSucceeded}, nil),
 			}, append(projects(deps, "context-1"), recordsStart(deps)...)...)...)
@@ -184,7 +187,7 @@ func TestStartSession(t *testing.T) {
 			gomock.InOrder(
 				deps.starts.EXPECT().CheckStartEligibility(ctx, sessionUUID, creatorUUID, 2).Return(sessionpkg.StartEligibility{Outcome: sessionpkg.StartAlreadyStarted}, nil),
 				deps.starts.EXPECT().LoadRunningSession(ctx, sessionUUID).Return(running, nil),
-				deps.frontends.EXPECT().FrontendAccess(ctx, gameVersionUUID).Return(access, nil),
+				deps.frontends.EXPECT().FrontendAccess(ctx, sessionUUID).Return(access, nil),
 				deps.sandbox.EXPECT().CreateContext(ctx, spec).Return("context-1", nil),
 				deps.sandbox.EXPECT().Restore(ctx, "context-1", snapshot).Return(sandbox.RestoreResult{}, errors.New("connection reset")),
 				deps.sandbox.EXPECT().DiscardContext(ctx, "context-1").Return(nil),
@@ -211,7 +214,7 @@ func TestStartSession(t *testing.T) {
 			gomock.InOrder(
 				deps.starts.EXPECT().CheckStartEligibility(ctx, sessionUUID, creatorUUID, 2).
 					Return(sessionpkg.StartEligibility{Outcome: sessionpkg.StartEligible, GameVersionUUID: gameVersionUUID, Script: script}, nil),
-				deps.frontends.EXPECT().FrontendAccess(ctx, gameVersionUUID).Return(sessionpkg.FrontendAccess{}, errors.New("signing key unavailable")),
+				deps.frontends.EXPECT().FrontendAccess(ctx, sessionUUID).Return(sessionpkg.FrontendAccess{}, errors.New("signing key unavailable")),
 			)
 			return test{expectedErr: true, expectedLobby: true}
 		},
@@ -289,7 +292,10 @@ func TestStartSession(t *testing.T) {
 							{ParticipantID: "P1", UserUUID: playerA},
 							{ParticipantID: "P2", UserUUID: playerB},
 						},
-						Frontend: runtime.GameFrontend{URL: access.URL, SHA256: access.SHA256, ExpiresAt: expiresAt},
+						Frontend: runtime.GameFrontend{
+							URL: access.URL, SHA256: access.SHA256, ExpiresAt: expiresAt,
+							Assets: []runtime.GameAsset{{Key: "ship", Type: "image", MIMEType: "image/png", SHA256: "aa", Size: 175, URL: "https://storage.example/ship?sig=abc"}},
+						},
 					},
 					ParticipantID: "P2",
 				}, start)

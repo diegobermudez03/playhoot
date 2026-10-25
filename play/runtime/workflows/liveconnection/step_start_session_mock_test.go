@@ -111,16 +111,16 @@ func (m *MockfrontendSigner) EXPECT() *MockfrontendSignerMockRecorder {
 }
 
 // FrontendAccess mocks base method.
-func (m *MockfrontendSigner) FrontendAccess(ctx context.Context, gameVersionUUID string) (session.FrontendAccess, error) {
+func (m *MockfrontendSigner) FrontendAccess(ctx context.Context, sessionUUID string) (session.FrontendAccess, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "FrontendAccess", ctx, gameVersionUUID)
+	ret := m.ctrl.Call(m, "FrontendAccess", ctx, sessionUUID)
 	ret0, _ := ret[0].(session.FrontendAccess)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // FrontendAccess indicates an expected call of FrontendAccess.
-func (mr *MockfrontendSignerMockRecorder) FrontendAccess(ctx, gameVersionUUID any) *gomock.Call {
+func (mr *MockfrontendSignerMockRecorder) FrontendAccess(ctx, sessionUUID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FrontendAccess", reflect.TypeOf((*MockfrontendSigner)(nil).FrontendAccess), ctx, gameVersionUUID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FrontendAccess", reflect.TypeOf((*MockfrontendSigner)(nil).FrontendAccess), ctx, sessionUUID)
 }

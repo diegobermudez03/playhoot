@@ -387,7 +387,7 @@ func TestRun(t *testing.T) {
 		gomock.InOrder(
 			starts.EXPECT().CheckStartEligibility(anyCtx, "session-1", "creator", 1).
 				Return(sessionpkg.StartEligibility{Outcome: sessionpkg.StartEligible, GameVersionUUID: "game-version", Script: script}, nil),
-			frontends.EXPECT().FrontendAccess(anyCtx, "game-version").Return(sessionpkg.FrontendAccess{}, nil),
+			frontends.EXPECT().FrontendAccess(anyCtx, "session-1").Return(sessionpkg.FrontendAccess{}, nil),
 			sandboxMock.EXPECT().CreateContext(anyCtx, sandbox.ContextSpec{GameVersionUUID: "game-version", Script: script}).Return("context-1", nil),
 			sandboxMock.EXPECT().Start(anyCtx, "context-1", sandbox.StartInput{Participants: []string{"P1"}, RandomSeed: 42}).
 				Return(sandbox.StartResult{Outcome: sandbox.ScriptSucceeded, State: []byte(`{}`), ContextRevision: 1}, nil),

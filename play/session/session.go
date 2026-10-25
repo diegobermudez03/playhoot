@@ -199,13 +199,30 @@ type StartEligibility struct {
 	Script []byte
 }
 
-// FrontendAccess is signed, expiring access to a game version's frontend
-// package. SHA256 is the package's content hash.
+// FrontendAccess is signed access to a game version's frontend package and
+// its assets, all expiring at ExpiresAt, after the Session it was granted for
+// ends. SHA256 is the package's content hash.
 type FrontendAccess struct {
 	URL       string
 	SHA256    string
 	ExpiresAt time.Time
 	Viewport  Viewport
+
+	// Assets are the version's assets the frontend may load; empty when it
+	// has none.
+	Assets []FrontendAsset
+}
+
+// FrontendAsset is signed access to one asset of a game version, by the
+// logical key its frontend knows it as. Type is image, audio or video; SHA256
+// and Size (bytes) describe its content.
+type FrontendAsset struct {
+	Key      string
+	Type     string
+	MIMEType string
+	SHA256   string
+	Size     int64
+	URL      string
 }
 
 // Viewport is the fixed shape a game version's frontend is shown in: one of

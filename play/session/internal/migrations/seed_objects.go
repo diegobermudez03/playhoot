@@ -69,23 +69,30 @@ var (
 	seedSpaceDriftFrontendPackageLocator = objectstore.LocatorFor(frontendPackagePrefix, seedSpaceDriftFrontendPackage)
 )
 
+// seedObject is content a seed game version references.
+type seedObject struct {
+	prefix      string
+	content     []byte
+	contentType string
+}
+
 // SeedObjects stores the content the seed game versions reference. Keys are
 // content-addressed, so running it again changes nothing.
 func SeedObjects(ctx context.Context, store objectstore.Store) error {
-	objects := []struct {
-		prefix      string
-		content     string
-		contentType string
-	}{
-		{prefix: backendScriptPrefix, content: seedBackendScript, contentType: "text/javascript"},
-		{prefix: backendScriptPrefix, content: seedSpaceDriftScript, contentType: "text/javascript"},
-		{prefix: frontendPackagePrefix, content: seedFrontendPackage, contentType: "text/html"},
-		{prefix: frontendPackagePrefix, content: string(seedSpaceDriftFrontendPackage), contentType: "text/html"},
-		{prefix: backendScriptPrefix, content: seedParquesScript, contentType: "text/javascript"},
-		{prefix: frontendPackagePrefix, content: string(seedParquesFrontendPackage), contentType: "text/html"},
+	objects := []seedObject{
+		{prefix: backendScriptPrefix, content: []byte(seedBackendScript), contentType: "text/javascript"},
+		{prefix: backendScriptPrefix, content: []byte(seedSpaceDriftScript), contentType: "text/javascript"},
+		{prefix: frontendPackagePrefix, content: []byte(seedFrontendPackage), contentType: "text/html"},
+		{prefix: frontendPackagePrefix, content: seedSpaceDriftFrontendPackage, contentType: "text/html"},
+		{prefix: backendScriptPrefix, content: []byte(seedParquesScript), contentType: "text/javascript"},
+		{prefix: frontendPackagePrefix, content: seedParquesFrontendPackage, contentType: "text/html"},
+		{prefix: frontendPackagePrefix, content: seedSpaceDriftAssetsFrontendPackage, contentType: "text/html"},
+	}
+	for _, asset := range seedSpaceDriftAssets {
+		objects = append(objects, seedObject{prefix: assetPrefix, content: asset.content, contentType: asset.mimeType})
 	}
 	for _, object := range objects {
-		if _, err := objectstore.PutContent(ctx, store, object.prefix, []byte(object.content), object.contentType); err != nil {
+		if _, err := objectstore.PutContent(ctx, store, object.prefix, object.content, object.contentType); err != nil {
 			return fmt.Errorf("storing seed object under %s: %w", object.prefix, err)
 		}
 	}

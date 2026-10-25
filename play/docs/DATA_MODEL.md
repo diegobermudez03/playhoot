@@ -29,6 +29,25 @@ erDiagram
         TIMESTAMPTZ executable_at "nullable; when it became executable"
         TIMESTAMPTZ created_at
     }
+    play_game_version_assets {
+        BIGSERIAL id PK
+        BIGINT game_version_id "play_game_versions.id; unique with key"
+        TEXT key "logical key the frontend uses; ^[A-Za-z][A-Za-z0-9_]{0,63}$"
+        TEXT type "image | audio | video"
+        TEXT mime_type "closed list per type"
+        TEXT object_key "nullable; NULL once the object is deleted, the row kept as a record"
+        TEXT sha256 "lowercase hex"
+        BIGINT size "bytes; at most 5 MiB image, 10 MiB audio, 50 MiB video"
+        TIMESTAMPTZ created_at
+    }
+    play_game_version_signed_urls {
+        BIGSERIAL id PK
+        BIGINT game_version_id "unique; play_game_versions.id"
+        TEXT frontend_url "signed URL to the frontend package"
+        JSONB asset_urls "signed URL of each asset with an object, by key"
+        TIMESTAMPTZ expires_at "shared by every URL of the batch"
+        TIMESTAMPTZ signed_at
+    }
     play_sessions {
         BIGSERIAL id PK
         UUID uuid "unique"
@@ -124,6 +143,8 @@ erDiagram
     play_games ||--o{ play_game_versions : "play_game_versions.game_id = play_games.id"
     play_games }o--o| play_game_versions : "play_games.current_version_id = play_game_versions.id"
     play_game_versions ||--o{ play_sessions : "play_sessions.game_version_id = play_game_versions.id"
+    play_game_versions ||--o{ play_game_version_assets : "play_game_version_assets.game_version_id = play_game_versions.id"
+    play_game_versions ||--o| play_game_version_signed_urls : "play_game_version_signed_urls.game_version_id = play_game_versions.id"
     play_sessions ||--o{ play_session_join_codes : "play_session_join_codes.session_id = play_sessions.id"
     play_sessions ||--o{ play_session_status_changes : "play_session_status_changes.session_id = play_sessions.id"
     play_sessions ||--o{ play_session_participants : "play_session_participants.session_id = play_sessions.id"
@@ -142,7 +163,9 @@ Notes:
 - `play_create_session_requests` rows are claimed and completed in the same transaction that creates the Session, so a committed row always has an `outcome`.
 - `play_game_versions.manifest` is the version's runtime manifest: the structural facts the live Runtime needs, as `{"schema_version":1,"players":{"min":N,"max":M},"inputs":{...}}` (1 <= min <= max). `inputs` is optional and declares each SAMPLE input by name: `{"type":"boolean"|"number"|"vector2"|"string"|"enum", "min"/"max" (number), "nullable" (string), "values" (enum), "default"}`; an omitted input takes its default, which is the type's natural zero (false, 0, [0,0], "" or null) unless declared, and an enum, or a number whose zero is out of range, must declare it. It grows by adding fields; a pinned (EXECUTABLE) version must hold a valid one, and an invalid one is treated as broken data.
 - A join code is active while `released_at` is NULL. An expired code is released lazily when a new Session needs that same code. A code is resolved by its most recent row, released or not (`play_session_join_codes_code_idx` on `(code, id)`), together with that Session's status (`play/docs/FLOWS.md`, Join Code Resolution); released rows are kept for this.
-- An EXECUTABLE version must have both locators (`script_*`, `frontend_*`: object key, SHA-256 as lowercase hex, size in bytes); this is checked by the application, and a missing one is treated as broken data. Keys are content-addressed under `game-versions/backend-scripts/` and `game-versions/frontend-packages/`. The frontend package is one self-contained HTML file (decided by the human 2026-10-17 for v1); a game's assets will be resolved separately by Playhoot.
+- An EXECUTABLE version must have both locators (`script_*`, `frontend_*`: object key, SHA-256 as lowercase hex, size in bytes); this is checked by the application, and a missing one is treated as broken data. Keys are content-addressed under `game-versions/backend-scripts/`, `game-versions/frontend-packages/` and `game-versions/assets/`. The frontend package is one self-contained HTML file (decided by the human 2026-10-17 for v1); its media are the version's assets.
+- `play_game_version_assets` are the media a version's frontend uses, by logical key (added 2026-10-25, decided by the human: `play/docs/decisions/SESSION-ADR-0034-game-assets-and-shared-signed-access.md`). Types and MIME types are a closed catalog (`image`: `image/png`, `image/webp`, `image/jpeg`, `image/svg+xml`; `audio`: `audio/mpeg`, `audio/ogg`, `audio/wav`; `video`: `video/mp4`, `video/webm`; `play/session/internal/business/gameversion`). The database enforces only one key per version (`docs/engineering/standards/database-constraints.md`); the application enforces the key pattern, the type, the MIME type and size for the type, lowercase hex hashes and the 100 MiB a version's assets may weigh together, counting the assets with an object; an EXECUTABLE version breaking any rule is treated as broken data. A row without `object_key` records an asset whose object was deleted (the future publishing flow deletes uploaded assets the frontend does not declare); it is not delivered. An EXECUTABLE version's assets never change.
+- `play_game_version_signed_urls` is each version's current batch of signed URLs, shared by every Session of the version on every instance (added 2026-10-25, SESSION-ADR-0034): the frontend package's and every asset with an object's, all expiring at `expires_at` (signed for 24 hours). There is no history: a new batch replaces the row as a whole, and only when it expires later than the stored one, so concurrent signers keep the longest-lived. The URLs are bearer credentials to the version's objects until they expire.
 - `aspect_ratio` is the fixed shape the version's frontend is shown in, one of the ratios Playhoot offers (decided by the human 2026-10-20: a game picks one, it cannot declare its own). The database accepts only the offered values (`play_game_versions_aspect_ratio_check`); each has a logical resolution, 1080 units on the short side (`play/session/internal/business/gameversion`), which is not stored. Like the locators it is nullable for a DRAFT, and an EXECUTABLE version without one is checked by the application and treated as broken data. Offering another ratio changes both the constraint and that catalog.
 - `play_game_faults` also keeps, as `source = 'SERVER'` and `kind = 'SERVER_LIMIT'`, the platform's rate and resource limits a live Session's users hit (added 2026-10-21 at the human's request: every limit hit within a Session is to be persisted, best effort). One record per Session and user; `detail.limits` counts each limit by name (`api.<message type or lane>.rate|queue`, `api.connection.messages|bytes`, `runtime.<limit>` such as `runtime.command_participant_rate` or `runtime.views_collapsed`) and `occurrences` their total. Hits are gathered in memory and written every 5 s (and once more on shutdown); a failed write is logged and dropped. Such a record is written for any status of an existing Session, an admin's without a participant id. A CLIENT record always has its participant (`play_game_faults_kind_check`).
 - `play_game_faults` keeps the faults players' clients report about the game frontend of their running Session (added 2026-10-20 at the human's request: the backend must be able to audit, from the database, games with problems and tell a misbehaving game from a lying client). A row is written only while the Session is RUNNING and only for its participant under their own participant id (checked in the same statement); one row per Session, reporter and kind, so reporting again counts `occurrences` and keeps the newer `detail`. A report is the client's claim, never verified and never acted on: no Session ends and nothing is flagged because of it. Reading it: a game version reported by many distinct `user_uuid` across many Sessions points at the game; one `user_uuid` reporting many versions points at the client, for example:

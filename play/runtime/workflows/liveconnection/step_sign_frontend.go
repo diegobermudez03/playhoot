@@ -14,23 +14,23 @@ var (
 
 	frontendsSigned = metrics.NewCounter(
 		"play_runtime_frontend_access_signed_total",
-		"Frontend access signed again for a connection joining a running game, by outcome; a failure falls back to the access signed at the start.",
+		"Frontend access granted again for a connection joining a running game, by outcome; a failure falls back to the access granted at the start.",
 		frontendSigningOutcomeLabel,
 	)
 )
 
-// signedStart is the running game's start with frontend access signed now,
-// since the access signed at the start expires. ok is false when the game is
-// not running or joins rejects the connection. A failed signing keeps the
-// access of the start, which a client with the frontend cached never needs.
+// signedStart is the running game's start with the frontend access its game
+// version has now. ok is false when the game is not running or joins rejects
+// the connection. A failure keeps the access of the start, which also
+// outlives the Session.
 func (c *sessionController) signedStart(ctx context.Context, joins func(s *liveState) bool) (start runtime.SessionStart, ok bool) {
 	s := c.lock()
-	start, gameVersionUUID, wanted := s.start, s.game.GameVersionUUID, s.phase == phaseRunning && joins(s)
+	start, wanted := s.start, s.phase == phaseRunning && joins(s)
 	c.unlock()
 	if !wanted {
 		return runtime.SessionStart{}, false
 	}
-	access, err := c.deps.frontends.FrontendAccess(ctx, gameVersionUUID)
+	access, err := c.deps.frontends.FrontendAccess(ctx, c.sessionUUID)
 	if err != nil {
 		logging.LogError(ctx, fmt.Errorf("signing frontend access for a joining connection: %w", err))
 		frontendsSigned.Inc(ctx, frontendSigningOutcomeLabel.Value("failed"))

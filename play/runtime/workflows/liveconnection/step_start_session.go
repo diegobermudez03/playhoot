@@ -25,9 +25,10 @@ type sessionStarter interface {
 	LoadRunningSession(ctx context.Context, sessionUUID string) (sessionpkg.RunningSession, error)
 }
 
-// frontendSigner grants clients access to a game version's frontend package.
+// frontendSigner grants a Session's clients access to its game version's
+// frontend package and assets.
 type frontendSigner interface {
-	FrontendAccess(ctx context.Context, gameVersionUUID string) (sessionpkg.FrontendAccess, error)
+	FrontendAccess(ctx context.Context, sessionUUID string) (sessionpkg.FrontendAccess, error)
 }
 
 // maxStartRuns is how many times a game's start runs before a script failure
@@ -141,7 +142,7 @@ func (c *sessionController) startFrozenLobby(ctx context.Context, userUUID strin
 		return "", fmt.Errorf("unexpected start eligibility %q", eligibility.Outcome)
 	}
 	// Signed before running the game, so failing to sign wastes no context.
-	access, err := c.deps.frontends.FrontendAccess(ctx, eligibility.GameVersionUUID)
+	access, err := c.deps.frontends.FrontendAccess(ctx, c.sessionUUID)
 	if err != nil {
 		return "", fmt.Errorf("signing frontend access: %w", err)
 	}
@@ -196,7 +197,7 @@ func (c *sessionController) adoptRunningSession(ctx context.Context) (runtime.St
 	if err != nil {
 		return "", err
 	}
-	access, err := c.deps.frontends.FrontendAccess(ctx, running.GameVersionUUID)
+	access, err := c.deps.frontends.FrontendAccess(ctx, c.sessionUUID)
 	if err != nil {
 		return "", fmt.Errorf("signing frontend access: %w", err)
 	}
@@ -237,11 +238,16 @@ func (c *sessionController) adoptRunningSession(ctx context.Context) (runtime.St
 }
 
 func frontendOf(access sessionpkg.FrontendAccess) runtime.GameFrontend {
+	assets := make([]runtime.GameAsset, len(access.Assets))
+	for i, asset := range access.Assets {
+		assets[i] = runtime.GameAsset{Key: asset.Key, Type: asset.Type, MIMEType: asset.MIMEType, SHA256: asset.SHA256, Size: asset.Size, URL: asset.URL}
+	}
 	return runtime.GameFrontend{
 		URL:       access.URL,
 		SHA256:    access.SHA256,
 		ExpiresAt: access.ExpiresAt,
 		Viewport:  runtime.GameViewport{AspectRatio: access.Viewport.AspectRatio, Width: access.Viewport.Width, Height: access.Viewport.Height},
+		Assets:    assets,
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/diegobermudez03/playhoot/play/session/internal/business/sessionlifetime"
 	"github.com/diegobermudez03/playhoot/play/session/internal/objectstore"
 	"github.com/diegobermudez03/playhoot/play/session/storage"
 	internalrepo "github.com/diegobermudez03/playhoot/play/session/workflows/sessionlifecycle/internal/repo"
@@ -17,9 +18,8 @@ import (
 // its join code stays valid, before it expires.
 const defaultLobbyTTL = 30 * time.Minute
 
-// defaultMaxLifetime is the most time a Session may live from its creation,
-// whatever its activity; a platform tuning value.
-const defaultMaxLifetime = 4 * time.Hour
+// defaultMaxLifetime is the most time a Session may live from its creation.
+const defaultMaxLifetime = sessionlifetime.Max
 
 // defaultOwnerLease is how long a running Session's owner lease lasts from
 // its last heartbeat: past it the Session has no live owner and nobody came

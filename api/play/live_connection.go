@@ -82,6 +82,16 @@ type frontendMessage struct {
 	SHA256    string          `json:"sha256"`
 	ExpiresAt time.Time       `json:"expires_at"`
 	Viewport  viewportMessage `json:"viewport"`
+	Assets    []assetMessage  `json:"assets"`
+}
+
+type assetMessage struct {
+	Key      string `json:"key"`
+	Type     string `json:"type"`
+	MIMEType string `json:"mime_type"`
+	SHA256   string `json:"sha256"`
+	Size     int64  `json:"size"`
+	URL      string `json:"url"`
 }
 
 type viewportMessage struct {
@@ -93,11 +103,16 @@ type viewportMessage struct {
 // frontendJSON is a started Session's game frontend, on the wire.
 func frontendJSON(start runtime.SessionStart) frontendMessage {
 	viewport := start.Frontend.Viewport
+	assets := make([]assetMessage, len(start.Frontend.Assets))
+	for i, asset := range start.Frontend.Assets {
+		assets[i] = assetMessage{Key: asset.Key, Type: asset.Type, MIMEType: asset.MIMEType, SHA256: asset.SHA256, Size: asset.Size, URL: asset.URL}
+	}
 	return frontendMessage{
 		URL:       start.Frontend.URL,
 		SHA256:    start.Frontend.SHA256,
 		ExpiresAt: start.Frontend.ExpiresAt,
 		Viewport:  viewportMessage{AspectRatio: viewport.AspectRatio, Width: viewport.Width, Height: viewport.Height},
+		Assets:    assets,
 	}
 }
 

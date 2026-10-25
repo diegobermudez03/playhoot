@@ -120,7 +120,17 @@ A pinned version that is not EXECUTABLE, has an invalid manifest or no backend s
 
 ### Frontend Access
 
-`frontendaccess.Service.FrontendAccess(gameVersionUUID)` reads the version's frontend package locator from `play_game_versions` and signs a read URL to it in object storage, valid for 15 minutes, returned with the package's SHA-256 and its viewport: the version's aspect ratio and that ratio's logical resolution. An unknown or non-EXECUTABLE version is an error; an EXECUTABLE one without a frontend package, or without an aspect ratio Playhoot offers, raises an alert and is an error.
+`frontendaccess.Service.FrontendAccess(sessionUUID)` grants a Session's clients signed URLs to its pinned version's frontend package and assets (SESSION-ADR-0034, decided by the human 2026-10-25). Called at the start (and when a start is adopted) and for every connection attaching to the running game (reattach, rejoin, device switch, admin).
+
+1. Read the Session's `expires_at` and its pinned version from `play_sessions` joined with `play_game_versions`: status, frontend package locator and aspect ratio. An unknown Session (or not a UUID) is `ErrSessionNotFound`. A missing or non-EXECUTABLE pinned version, an EXECUTABLE one without a frontend package or without an aspect ratio Playhoot offers raises an alert and is an error.
+2. Read the version's assets from `play_game_version_assets`. Only those with an object are delivered; together they must keep the asset rules (types, MIME types, per-type sizes, keys, 100 MiB in total), or the version is broken data (alert, error).
+3. Read the version's current batch from `play_game_version_signed_urls`. Reuse it when it has a URL for every delivered asset and expires more than 5 minutes (the clock-skew margin) after the Session's `expires_at`.
+4. Otherwise sign a new batch: the frontend package and every delivered asset, all with one expiry, 24 hours from now (longer than a Session's maximum lifetime plus the margin, within Cloud Storage's 7-day V4 limit; a test holds both). Store it, replacing the current one only if it expires later; failing to store it is logged and the batch is still granted. A signing failure is an error.
+5. Return the frontend URL, its SHA-256, the batch's expiry, the viewport (the aspect ratio and its logical resolution), and each delivered asset with its key, type, MIME type, SHA-256, size and URL, by key.
+
+The metric `play_session_frontend_access_total{outcome="reused"|"signed"|"sign_failed"}` counts grants. There is no refresh: a URL handed to a client always outlives its Session, and a reconnection gets `session_started` again with the current batch. A failed grant fails a start; a connection attaching to a running game keeps the start's access instead (`play_runtime_frontend_access_signed_total{outcome="failed"}`).
+
+Required of the future publishing flow (not built; versions come from seed migrations): when a version becomes EXECUTABLE, a static analysis of its frontend script confirms every asset it declares was uploaded; uploaded assets it does not declare are deleted from storage, keeping their row without `object_key`; an EXECUTABLE version, its assets included, never changes.
 
 ### Commit Start
 

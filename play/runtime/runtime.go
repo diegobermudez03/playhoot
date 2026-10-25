@@ -311,13 +311,30 @@ type SessionStart struct {
 	Frontend     GameFrontend
 }
 
-// GameFrontend is signed, expiring access to the frontend package of the
-// Session's game version; SHA256 lets the client verify what it downloads.
+// GameFrontend is signed access to the frontend package and assets of the
+// Session's game version, all expiring at ExpiresAt, after the Session ends;
+// SHA256 lets the client verify what it downloads.
 type GameFrontend struct {
 	URL       string
 	SHA256    string
 	ExpiresAt time.Time
 	Viewport  GameViewport
+
+	// Assets are the version's assets the frontend may load; empty when it
+	// has none.
+	Assets []GameAsset
+}
+
+// GameAsset is signed access to one asset of the game version, by the logical
+// key the game's frontend knows it as. Type is image, audio or video; SHA256
+// and Size (bytes) let the client verify what it downloads.
+type GameAsset struct {
+	Key      string
+	Type     string
+	MIMEType string
+	SHA256   string
+	Size     int64
+	URL      string
 }
 
 // GameViewport is the fixed shape the game's frontend is shown in: one of the

@@ -53,9 +53,8 @@ func (f *Fake) Put(ctx context.Context, key string, content []byte, contentType 
 
 // PresignGet implements Store. The returned URL is not fetchable; it only
 // encodes the key and expiry so a test can assert what was signed.
-func (f *Fake) PresignGet(ctx context.Context, key string, ttl time.Duration) (SignedURL, error) {
-	expiresAt := time.Now().UTC().Add(ttl)
-	return SignedURL{URL: fmt.Sprintf("fake://%s?expires=%d", key, expiresAt.Unix()), ExpiresAt: expiresAt}, nil
+func (f *Fake) PresignGet(ctx context.Context, key string, expiresAt time.Time) (string, error) {
+	return fmt.Sprintf("fake://%s?expires=%d", key, expiresAt.Unix()), nil
 }
 
 // GetCount reports how many times Get was called for key, letting a test

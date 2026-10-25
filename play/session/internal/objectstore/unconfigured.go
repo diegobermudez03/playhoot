@@ -24,6 +24,6 @@ func (Unconfigured) Put(context.Context, string, []byte, string) error {
 }
 
 // PresignGet implements Store.
-func (Unconfigured) PresignGet(context.Context, string, time.Duration) (SignedURL, error) {
-	return SignedURL{}, ErrNotConfigured
+func (Unconfigured) PresignGet(context.Context, string, time.Time) (string, error) {
+	return "", ErrNotConfigured
 }
