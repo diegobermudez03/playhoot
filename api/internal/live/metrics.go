@@ -60,4 +60,8 @@ var (
 		"Live connections refused before their upgrade, by reason: the instance or the caller had as many as allowed.",
 		refusedLabel,
 	)
+	refusalsUnreadable = metrics.NewCounter(
+		"api_live_refusals_unreadable_total",
+		"Live handshakes a limit refused that were answered before the upgrade, which browsers cannot read, because the instance or the caller was already being refused on as many upgraded connections as it may.",
+	)
 )

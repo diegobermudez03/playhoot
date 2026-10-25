@@ -267,10 +267,12 @@ func TestHandlePlayerJoin(t *testing.T) {
 				expectedDisconnects:   1,
 			}
 		},
-		"caller_with_as_many_connections_as_allowed_is_refused_before_the_upgrade": func(t *testing.T, deps dependencies) test {
+		"caller_with_as_many_connections_as_allowed_is_told_after_the_upgrade": func(t *testing.T, deps dependencies) test {
 			return test{
-				callerConnections: live.MaxConnectionsPerCaller,
-				expectedRefusal:   http.StatusTooManyRequests,
+				callerConnections:   live.MaxConnectionsPerCaller,
+				expectedReceived:    []string{`{"type":"rejected","reason":"too_many_connections"}`},
+				expectedCloseStatus: websocket.StatusPolicyViolation,
+				expectedCloseReason: "admission rejected",
 			}
 		},
 		"command_without_payload_or_response": func(t *testing.T, deps dependencies) test {

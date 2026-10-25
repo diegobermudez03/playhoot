@@ -15,6 +15,8 @@ import (
 	"github.com/diegobermudez03/playhoot/api/internal/auth"
 	"github.com/diegobermudez03/playhoot/api/internal/httpx"
 	"github.com/diegobermudez03/playhoot/api/internal/live"
+	"github.com/diegobermudez03/playhoot/api/internal/routing"
+	"github.com/diegobermudez03/playhoot/api/internal/throttle"
 	"github.com/diegobermudez03/playhoot/api/internal/wsx"
 	"github.com/diegobermudez03/playhoot/identity"
 	"github.com/diegobermudez03/playhoot/logging"
@@ -30,11 +32,10 @@ var connectionLimits = live.ConnectionLimits{
 	Bytes:    []ratelimit.Limit{{Count: 256 << 10, Per: time.Second}, {Count: 4 << 20, Per: time.Minute}},
 }
 
-// Error codes of a live connection refused before its upgrade.
-const (
-	codeServerBusy         = "server_busy"
-	codeTooManyConnections = "too_many_connections"
-)
+// refusalLinger bounds how long a connection upgraded only to be rejected
+// stays open, whatever its client does: enough to send the rejection and the
+// close, never enough for a flood of refused handshakes to pile up.
+var refusalLinger = 2 * time.Second
 
 // Wire messages every kind of live connection sends: every frame is a JSON
 // object whose "type" names it.
@@ -53,6 +54,9 @@ type rejectedMessage struct {
 
 	// Requirements is set only when the reason is device_not_supported.
 	Requirements *inputRequirementsMessage `json:"requirements,omitempty"`
+
+	// RetryAfterSeconds is set only when the reason is rate_limited.
+	RetryAfterSeconds int `json:"retry_after_seconds,omitempty"`
 
 	// Status and EndCause are how the Session ended, set only when the
 	// reason is session_ended.
@@ -224,13 +228,16 @@ func (h *Handler) upgrade(w http.ResponseWriter, r *http.Request, callerUUID str
 	ctx := r.Context()
 
 	release, err := h.live.Reserve(ctx, callerUUID)
-	switch {
-	case errors.Is(err, live.ErrCallerFull):
-		httpx.WriteCodedError(w, http.StatusTooManyRequests, codeTooManyConnections, "too many live connections open")
-		return nil, nil, false
-	case err != nil:
+	if err != nil {
 		logging.LogFields(ctx, logging.Field("live_connection_refused", err.Error()))
-		httpx.WriteCodedError(w, http.StatusServiceUnavailable, codeServerBusy, "server busy, try again later")
+		status, reason, message := http.StatusServiceUnavailable, routing.RefusedServerBusy, "server busy, try again later"
+		if errors.Is(err, live.ErrCallerFull) {
+			status, reason, message = http.StatusTooManyRequests, routing.RefusedTooManyConnections, "too many live connections open"
+		}
+		routing.NoteLimitRefusal(ctx, reason)
+		if !h.refuseLimit(w, r, routing.LimitRefusal{Reason: reason}) {
+			httpx.WriteCodedError(w, status, reason, message)
+		}
 		return nil, nil, false
 	}
 
@@ -242,6 +249,37 @@ func (h *Handler) upgrade(w http.ResponseWriter, r *http.Request, callerUUID str
 		return nil, nil, false
 	}
 	return conn, release, true
+}
+
+// refuseLimit tells an authorized live caller a limit refused it, as a
+// rejection on an upgraded connection it then closes, since browsers cannot
+// read why an upgrade was refused. It needs none of the room Reserve holds;
+// it reports false, answering nothing, when there is no room to refuse.
+func (h *Handler) refuseLimit(w http.ResponseWriter, r *http.Request, refusal routing.LimitRefusal) bool {
+	ctx := r.Context()
+
+	caller, ok := auth.Caller(ctx)
+	if !ok {
+		return false
+	}
+	release, ok := h.live.ReserveRefusal(ctx, caller.UUID)
+	if !ok {
+		logging.LogFields(ctx, logging.Field("readable_refusal", "no_room"))
+		return false
+	}
+	defer release()
+	conn, err := wsx.Accept(w, r, h.webSocketOriginPatterns)
+	if err != nil {
+		// Accept already answered the request.
+		logging.LogError(ctx, err)
+		return true
+	}
+	rejection := rejectedMessage{Reason: refusal.Reason}
+	if refusal.RetryAfter > 0 {
+		rejection.RetryAfterSeconds = throttle.RetryAfterSeconds(refusal.RetryAfter)
+	}
+	reject(ctx, conn, rejection)
+	return true
 }
 
 // admitted reports whether the Runtime accepted the connection. Otherwise it
@@ -261,11 +299,17 @@ func admitted(ctx context.Context, conn *websocket.Conn, outcome runtime.AttachO
 }
 
 // reject tells the client why it may not join, as rejection, and closes the
-// connection.
+// connection, within refusalLinger whether or not the client takes it.
 func reject(ctx context.Context, conn *websocket.Conn, rejection rejectedMessage) {
 	logging.LogFields(ctx, logging.Field("reject_reason", rejection.Reason))
 	rejection.Type = liveRejected
-	_, _ = live.WriteMessage(ctx, conn, rejection)
+	lingering, cancel := context.WithTimeout(ctx, refusalLinger)
+	defer cancel()
+	// Reading in the background until the deadline answers the client's
+	// close at once, and drops the socket at the deadline when the client
+	// never answers, which the close handshake alone would wait seconds for.
+	conn.CloseRead(lingering)
+	_, _ = live.WriteMessage(lingering, conn, rejection)
 	_ = conn.Close(websocket.StatusPolicyViolation, "admission rejected")
 }
 

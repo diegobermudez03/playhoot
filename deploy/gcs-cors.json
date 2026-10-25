@@ -1,0 +1,8 @@
+[
+  {
+    "origin": ["${PLATFORM_WEB_ORIGIN}"],
+    "method": ["GET", "HEAD"],
+    "responseHeader": ["Content-Type"],
+    "maxAgeSeconds": 3600
+  }
+]

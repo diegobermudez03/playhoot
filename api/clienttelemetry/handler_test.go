@@ -65,6 +65,15 @@ func TestRecord(t *testing.T) {
 		"unsupported_device_rejection": func(t *testing.T) test {
 			return test{event: `{"name":"error","origin":"backend_rejection","kind":"device_not_supported"}`, expectedRecorded: true, expectedKnown: true}
 		},
+		"backend_rejection_rate_limited": func(t *testing.T) test {
+			return test{event: `{"name":"error","origin":"backend_rejection","kind":"rate_limited"}`, expectedRecorded: true, expectedKnown: true}
+		},
+		"backend_rejection_too_many_connections": func(t *testing.T) test {
+			return test{event: `{"name":"error","origin":"backend_rejection","kind":"too_many_connections"}`, expectedRecorded: true, expectedKnown: true}
+		},
+		"backend_rejection_server_busy": func(t *testing.T) test {
+			return test{event: `{"name":"error","origin":"backend_rejection","kind":"server_busy"}`, expectedRecorded: true, expectedKnown: true}
+		},
 		"unsupported_device_of_another_origin": func(t *testing.T) test {
 			return test{event: `{"name":"error","origin":"bridge","kind":"device_not_supported"}`, expectedKnown: true}
 		},

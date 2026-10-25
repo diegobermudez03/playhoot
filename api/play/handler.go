@@ -51,11 +51,12 @@ type joinCodeResolver interface {
 	ResolveJoinCode(ctx context.Context, joinCode string) (sessionpkg.JoinCodeResolution, error)
 }
 
-// liveRunner bounds the live connections of this instance and serves
-// admitted ones in the background until they end or the server shuts down; it
-// refuses new ones once shutdown started.
+// liveRunner bounds the live connections of this instance, and those it
+// upgrades only to refuse, and serves admitted ones in the background until
+// they end or the server shuts down; it refuses new ones once shutdown started.
 type liveRunner interface {
 	Reserve(ctx context.Context, caller string) (release func(), err error)
+	ReserveRefusal(ctx context.Context, caller string) (release func(), ok bool)
 	Serve(ctx context.Context, conn *websocket.Conn, disconnect func(), loops ...live.Loop) bool
 }
 
@@ -99,13 +100,15 @@ func (h *Handler) RESTRoutes() []routing.Route {
 
 // WebSocketRoutes returns this group's live endpoints. Authorization and rate
 // limiting run before join code and owner routing, so an unauthorized or
-// limited caller never learns a Session nor makes one owned.
+// limited caller never learns a Session nor makes one owned; a limit's
+// refusal is told on the upgraded connection, like any other refusal.
 func (h *Handler) WebSocketRoutes() []routing.Route {
 	return []routing.Route{
 		{
 			Pattern:       "GET /v1/play/join/sessions/{sessionUUID}/admin",
 			Handler:       h.handleAdminJoin,
 			Authorization: auth.RequireWebSocket(h.authorizer, identity.OperationJoinSessionAsAdmin),
+			RefuseLimit:   h.refuseLimit,
 			Middlewares: []routing.Middleware{
 				requireOwner(h.owners, h.refuseUpgraded, "sessionUUID"),
 			},
@@ -114,6 +117,7 @@ func (h *Handler) WebSocketRoutes() []routing.Route {
 			Pattern:       "GET /v1/play/join/sessions/{sessionUUID}/player",
 			Handler:       h.handlePlayerJoin,
 			Authorization: auth.RequireWebSocket(h.authorizer, identity.OperationJoinSessionAsPlayer),
+			RefuseLimit:   h.refuseLimit,
 			Middlewares: []routing.Middleware{
 				requireOwner(h.owners, h.refuseUpgraded, "sessionUUID"),
 			},
@@ -122,6 +126,7 @@ func (h *Handler) WebSocketRoutes() []routing.Route {
 			Pattern:       "GET /v1/play/join/{joinCode}",
 			Handler:       h.handlePlayerJoin,
 			Authorization: auth.RequireWebSocket(h.authorizer, identity.OperationJoinSessionAsPlayer),
+			RefuseLimit:   h.refuseLimit,
 			Middlewares: []routing.Middleware{
 				resolveJoinCode(h.joinCodes, h.refuseUpgraded, "joinCode", "sessionUUID"),
 				requireOwner(h.owners, h.refuseUpgraded, "sessionUUID"),

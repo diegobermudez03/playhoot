@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/diegobermudez03/playhoot/api/internal/auth"
+	"github.com/diegobermudez03/playhoot/api/internal/cors"
 	"github.com/diegobermudez03/playhoot/api/internal/routing"
 	"github.com/diegobermudez03/playhoot/api/internal/throttle"
 	"github.com/diegobermudez03/playhoot/api/internal/wsx"
@@ -111,13 +112,13 @@ func TestWSObservability(t *testing.T) {
 		expectedMetrics   []map[string]any
 	}
 
-	handshakeMeasurements := func(status string, seconds float64) []map[string]any {
+	handshakeMeasurements := func(status string, limitRefusal string, seconds float64) []map[string]any {
 		return []map[string]any{
 			{
 				"metric":    "api_websocket_handshakes_total",
 				"operation": "add",
 				"value":     float64(1),
-				"labels":    map[string]any{"route": wsMetricsTestPattern, "status": status},
+				"labels":    map[string]any{"route": wsMetricsTestPattern, "status": status, "limit_refusal": limitRefusal},
 			},
 			{
 				"metric":    "api_websocket_handshake_duration_seconds",
@@ -138,7 +139,30 @@ func TestWSObservability(t *testing.T) {
 				},
 				handshakeDuration: 30 * time.Millisecond,
 				expectedUpgrade:   true,
-				expectedMetrics:   handshakeMeasurements("101", 0.03),
+				expectedMetrics:   handshakeMeasurements("101", "none", 0.03),
+			}
+		},
+		"limit_refusal_told_after_the_upgrade_is_counted_with_its_reason": func(t *testing.T) test {
+			return test{
+				handler: func(w http.ResponseWriter, r *http.Request) {
+					routing.NoteLimitRefusal(r.Context(), routing.RefusedRateLimited)
+					conn, err := wsx.Accept(w, r, nil)
+					require.NoError(t, err)
+					_ = conn.Close(websocket.StatusPolicyViolation, "admission rejected")
+				},
+				handshakeDuration: 2 * time.Millisecond,
+				expectedUpgrade:   true,
+				expectedMetrics:   handshakeMeasurements("101", "rate_limited", 0.002),
+			}
+		},
+		"limit_refusal_before_the_upgrade_is_counted_with_its_status_and_reason": func(t *testing.T) test {
+			return test{
+				handler: func(w http.ResponseWriter, r *http.Request) {
+					routing.NoteLimitRefusal(r.Context(), routing.RefusedServerBusy)
+					w.WriteHeader(http.StatusServiceUnavailable)
+				},
+				handshakeDuration: 3 * time.Millisecond,
+				expectedMetrics:   handshakeMeasurements("503", "server_busy", 0.003),
 			}
 		},
 		"refused_handshake_is_counted_with_its_status": func(t *testing.T) test {
@@ -147,7 +171,7 @@ func TestWSObservability(t *testing.T) {
 					w.WriteHeader(http.StatusUnauthorized)
 				},
 				handshakeDuration: 5 * time.Millisecond,
-				expectedMetrics:   handshakeMeasurements("401", 0.005),
+				expectedMetrics:   handshakeMeasurements("401", "none", 0.005),
 			}
 		},
 	}
@@ -274,7 +298,7 @@ func TestRouteMiddlewares(t *testing.T) {
 					next(w, r)
 				}
 			}
-			handler := chain(routeMiddlewares(tc.route, observability, throttle.ClientAddress{}), func(w http.ResponseWriter, r *http.Request) {
+			handler := chain(routeMiddlewares(tc.route, throttle.ClientAddress{}, observability), func(w http.ResponseWriter, r *http.Request) {
 				passed = append(passed, "handler")
 			})
 
@@ -286,6 +310,69 @@ func TestRouteMiddlewares(t *testing.T) {
 				require.Equal(t, tc.expectedStatuses[i], w.Code, "request %d", i)
 				require.Equal(t, tc.expectedPassed[i], passed, "request %d", i)
 			}
+		})
+	}
+}
+
+func TestPreflightRoutes(t *testing.T) {
+	noop := func(w http.ResponseWriter, r *http.Request) {}
+	routes := []routing.Route{
+		{Pattern: "POST /v1/sessions", Handler: noop},
+		{Pattern: "POST /v1/guests", Handler: noop},
+		{Pattern: "GET /v1/sessions", Handler: noop},
+	}
+
+	preflights := preflightRoutes(routes, cors.NewPolicy([]string{"https://play.example.com"}))
+
+	patterns := make([]string, len(preflights))
+	allowed := make(map[string]string, len(preflights))
+	for i, preflight := range preflights {
+		patterns[i] = preflight.Pattern
+		r := httptest.NewRequest(http.MethodOptions, "/", nil)
+		r.Header.Set("Origin", "https://play.example.com")
+		w := httptest.NewRecorder()
+		preflight.Handler(w, r)
+		require.Equal(t, http.StatusNoContent, w.Code)
+		allowed[preflight.Pattern] = w.Header().Get("Access-Control-Allow-Methods")
+	}
+	require.Equal(t, []string{"OPTIONS /v1/sessions", "OPTIONS /v1/guests"}, patterns)
+	require.Equal(t, map[string]string{"OPTIONS /v1/sessions": "POST, GET", "OPTIONS /v1/guests": "POST"}, allowed)
+}
+
+func TestRESTRefusalsAreReadableCrossOrigin(t *testing.T) {
+	type test struct {
+		origin string
+
+		expectedOrigin string
+	}
+
+	tests := map[string]func(t *testing.T) test{
+		"allowed_origin_reads_the_refusal": func(t *testing.T) test {
+			return test{origin: "https://play.example.com", expectedOrigin: "https://play.example.com"}
+		},
+		"disallowed_origin_is_refused_the_same_without_permission": func(t *testing.T) test {
+			return test{origin: "https://evil.example.com"}
+		},
+	}
+
+	for name, setup := range tests {
+		t.Run(name, func(t *testing.T) {
+			tc := setup(t)
+			route := routing.Route{Limits: &routing.RequestLimits{PerClient: []ratelimit.Limit{{Count: 1, Per: time.Hour}}}}
+			policy := cors.NewPolicy([]string{"https://play.example.com"})
+			handler := chain(routeMiddlewares(route, throttle.ClientAddress{}, policy.Responses()), func(w http.ResponseWriter, r *http.Request) {})
+
+			var w *httptest.ResponseRecorder
+			for range 2 {
+				r := httptest.NewRequest(http.MethodPost, "/v1/guests", nil)
+				r.Header.Set("Origin", tc.origin)
+				w = httptest.NewRecorder()
+				handler(w, r)
+			}
+
+			require.Equal(t, http.StatusTooManyRequests, w.Code, "REST keeps its HTTP refusal")
+			require.NotEmpty(t, w.Header().Get("Retry-After"))
+			require.Equal(t, tc.expectedOrigin, w.Header().Get("Access-Control-Allow-Origin"))
 		})
 	}
 }

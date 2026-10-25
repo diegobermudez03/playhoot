@@ -21,6 +21,20 @@ const MaxMessageBytes = 32 << 10
 
 var errSubprotocolNotOffered = errors.New("client did not offer the " + Subprotocol + " subprotocol")
 
+// OriginPatterns are the patterns Accept takes for origins, each an origin in
+// canonical form (scheme://host[:port]) or "*" for any origin.
+func OriginPatterns(origins []string) []string {
+	escape := strings.NewReplacer(`\`, `\\`, "[", `\[`, "]", `\]`, "*", `\*`, "?", `\?`)
+	patterns := make([]string, len(origins))
+	for i, origin := range origins {
+		patterns[i] = origin
+		if origin != "*" {
+			patterns[i] = escape.Replace(origin)
+		}
+	}
+	return patterns
+}
+
 // Accept upgrades the request to a WebSocket speaking Subprotocol, from the
 // server's own origin or one matching originPatterns. On error the request
 // has already been answered.

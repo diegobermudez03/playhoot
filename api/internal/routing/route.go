@@ -22,7 +22,10 @@ type Route struct {
 	// rate limiting, so an authorized caller is limited as a user.
 	Authorization Middleware
 	// Limits replaces Server's default request limits for this route.
-	Limits      *RequestLimits
+	Limits *RequestLimits
+	// RefuseLimit, when set, answers a request the edge's limits refuse
+	// instead of an HTTP error, such as on a live connection browsers can read.
+	RefuseLimit LimitRefuser
 	Middlewares []Middleware
 }
 

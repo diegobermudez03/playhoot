@@ -2,6 +2,7 @@ package live
 
 import (
 	"context"
+	"strconv"
 	"testing"
 	"time"
 
@@ -125,6 +126,72 @@ func TestReserve(t *testing.T) {
 					// Releasing twice gives back nothing more.
 					release()
 				}
+			}
+		})
+	}
+}
+
+func TestReserveRefusal(t *testing.T) {
+	type refusal struct {
+		caller string
+		// release gives the room back right after taking it.
+		release bool
+
+		expectedOK bool
+	}
+	type test struct {
+		// connections are reserved first, filling the instance.
+		connections []string
+		refusals    []refusal
+	}
+
+	tests := map[string]func(t *testing.T) test{
+		"a_caller_is_refused_on_at_most_its_own_share_of_connections": func(t *testing.T) test {
+			refusals := make([]refusal, 0, MaxRefusalsPerCaller+2)
+			for range MaxRefusalsPerCaller {
+				refusals = append(refusals, refusal{caller: "a", expectedOK: true})
+			}
+			return test{refusals: append(refusals, refusal{caller: "a"}, refusal{caller: "b", expectedOK: true})}
+		},
+		"the_instance_refuses_on_at_most_its_bound_of_connections": func(t *testing.T) test {
+			refusals := make([]refusal, 0, MaxRefusals+1)
+			for i := range MaxRefusals {
+				refusals = append(refusals, refusal{caller: strconv.Itoa(i), expectedOK: true})
+			}
+			return test{refusals: append(refusals, refusal{caller: "late"})}
+		},
+		"a_full_instance_still_has_room_to_refuse": func(t *testing.T) test {
+			return test{connections: []string{"a"}, refusals: []refusal{{caller: "b", expectedOK: true}}}
+		},
+		"released_room_is_taken_again": func(t *testing.T) test {
+			refusals := make([]refusal, 0, MaxRefusalsPerCaller+1)
+			for range MaxRefusalsPerCaller + 1 {
+				refusals = append(refusals, refusal{caller: "a", release: true, expectedOK: true})
+			}
+			return test{refusals: refusals}
+		},
+	}
+
+	for name, setup := range tests {
+		t.Run(name, func(t *testing.T) {
+			tc := setup(t)
+			controller := New(max(1, len(tc.connections)))
+			for _, caller := range tc.connections {
+				_, err := controller.Reserve(context.Background(), caller)
+				require.NoError(t, err)
+			}
+			for i, r := range tc.refusals {
+				release, ok := controller.ReserveRefusal(context.Background(), r.caller)
+				require.Equal(t, r.expectedOK, ok, "refusal %d", i)
+				if r.release {
+					release()
+					// Releasing twice gives back nothing more.
+					release()
+				}
+			}
+			if len(tc.connections) > 0 {
+				_, err := controller.Reserve(context.Background(), "other")
+				require.ErrorIs(t, err, ErrInstanceFull, "refusing takes none of the connections' room")
 			}
 		})
 	}

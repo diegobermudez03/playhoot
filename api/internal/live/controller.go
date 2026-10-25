@@ -18,6 +18,14 @@ const DefaultMaxConnections = 2000
 // instance: a few tabs and devices, never an unbounded number.
 const MaxConnectionsPerCaller = 10
 
+// MaxRefusals bounds the connections an instance upgrades at once only to
+// tell their caller a limit refused them, and MaxRefusalsPerCaller one
+// caller's; each lasts a moment, so only a flood of handshakes reaches them.
+const (
+	MaxRefusals          = 100
+	MaxRefusalsPerCaller = 2
+)
+
 var (
 	// ErrInstanceFull means this instance serves as many live connections as
 	// it may.
@@ -36,6 +44,11 @@ type Controller struct {
 	maxConnections int
 	reserved       int
 	reservedBy     map[string]int
+	// refusing counts the connections upgraded only to be refused, apart
+	// from the reserved ones so a refusal never needs room an admitted
+	// connection would take.
+	refusing   int
+	refusingBy map[string]int
 
 	shutdown       context.Context
 	signalShutdown context.CancelFunc
@@ -48,7 +61,13 @@ func New(maxConnections int) *Controller {
 		maxConnections = DefaultMaxConnections
 	}
 	shutdown, signalShutdown := context.WithCancel(context.Background())
-	return &Controller{maxConnections: maxConnections, reservedBy: make(map[string]int), shutdown: shutdown, signalShutdown: signalShutdown}
+	return &Controller{
+		maxConnections: maxConnections,
+		reservedBy:     make(map[string]int),
+		refusingBy:     make(map[string]int),
+		shutdown:       shutdown,
+		signalShutdown: signalShutdown,
+	}
 }
 
 // Reserve holds room for one more live connection of caller, to take before
@@ -78,6 +97,31 @@ func (c *Controller) Reserve(ctx context.Context, caller string) (release func()
 			}
 		})
 	}, nil
+}
+
+// ReserveRefusal holds room to upgrade one connection of caller only to tell
+// it why it was refused, apart from the room Reserve holds; release gives it
+// back and may be called more than once. It reports false when there is none.
+func (c *Controller) ReserveRefusal(ctx context.Context, caller string) (release func(), ok bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.refusing >= MaxRefusals || c.refusingBy[caller] >= MaxRefusalsPerCaller {
+		refusalsUnreadable.Inc(ctx)
+		return nil, false
+	}
+	c.refusing++
+	c.refusingBy[caller]++
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			c.mu.Lock()
+			defer c.mu.Unlock()
+			c.refusing--
+			if c.refusingBy[caller]--; c.refusingBy[caller] == 0 {
+				delete(c.refusingBy, caller)
+			}
+		})
+	}, true
 }
 
 // Serve runs conn's loops in the background until one ends the connection or

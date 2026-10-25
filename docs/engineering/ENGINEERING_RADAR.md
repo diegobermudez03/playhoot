@@ -74,26 +74,27 @@ Infrastructure / Web client integration
 **Current state / evidence**
 - `session_started` gives clients a signed GCS URL to the game's frontend package (`play/session/usecases/frontendaccess`).
 - The web frontend's GameHost downloads it with `fetch` (no credentials), checks its SHA-256 and caches it by hash before running it in a sandboxed iframe (frontend repository, `docs/decisions/architecture/ADR-0005-game-host-bridge-protocol-v1.md`, accepted 2026-10-20). A cross-origin `fetch` needs the bucket to answer CORS.
-- Local development works: fake-gcs answers `Access-Control-Allow-Origin: *` (checked 2026-10-20). No CORS configuration exists for a real bucket (no infrastructure code in this repository sets it).
+- Local development works: fake-gcs answers `Access-Control-Allow-Origin: *` (checked again 2026-10-25).
+- Since 2026-10-25 the rule is configured as code, decided by the human: `deploy/gcs-cors.json` (`GET`/`HEAD` from `${PLATFORM_WEB_ORIGIN}`, response header `Content-Type`, max age 3600 s), applied at deploy with `gcloud storage buckets update gs://<bucket> --cors-file=...` after replacing the placeholder from the environment (`deploy/README.md`). Nothing applies it automatically: no deployment pipeline exists yet.
 
 **Risk / opportunity**
-- In any real deployment, browsers refuse the download and no game ever loads, although every backend check passes.
+- In any real deployment where the rule was not applied, browsers refuse the download and no game ever loads, although every backend check passes.
 
 **Recommendation**
-- When the production (or any shared) bucket is provisioned, set a CORS rule on it: method `GET`, origin(s) = the web frontend's origin(s), response header `Content-Type`, a reasonable max age. Keep it limited to the frontend origins, not `*`.
-- Verify with a browser (or `curl -H "Origin: <web origin>"`) against a signed URL before the first deployment.
+- Apply `deploy/gcs-cors.json` to the production (or any shared) bucket when it is provisioned, with the web frontend's origin(s); keep it limited to them, not `*`. Make it a step of the deployment once one exists.
+- Verify with a browser (or `curl -H "Origin: <web origin>"`) against a signed URL before the first deployment (`deploy/README.md`).
 
 **Why this horizon**
-- Nothing is deployed yet; it must be done before the first deployment the web frontend uses, and it is easy to forget because local development hides it.
+- Nothing is deployed yet; it must be applied before the first deployment the web frontend uses, and it is easy to forget because local development hides it.
 
 **Reevaluate when**
 - The bucket is provisioned or the web frontend is first deployed against a non-emulated bucket.
 
 **Next process**
-- None (infrastructure configuration when deploying).
+- None (apply the versioned configuration when deploying).
 
 **Last reviewed**
-2026-10-20
+2026-10-25
 
 ### A metrics provider for server and client metrics
 

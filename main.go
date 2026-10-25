@@ -31,10 +31,10 @@ import (
 	"github.com/diegobermudez03/playhoot/play/session/usecases/checklivesession"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/checkplayerjoin"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/frontendaccess"
-	"github.com/diegobermudez03/playhoot/play/session/usecases/recordgamefault"
-	"github.com/diegobermudez03/playhoot/play/session/usecases/recordlimithits"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/loadruntimemanifest"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/loadsessionlimits"
+	"github.com/diegobermudez03/playhoot/play/session/usecases/recordgamefault"
+	"github.com/diegobermudez03/playhoot/play/session/usecases/recordlimithits"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/resolvejoincode"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/storereplaychunk"
 	"github.com/diegobermudez03/playhoot/play/session/workflows/sessionlifecycle"
@@ -53,8 +53,11 @@ type envVariables struct {
 	DatabaseSSLMode  string
 	HTTPPort         string
 
-	// WebSocketAllowedOrigins are extra origin hosts browser pages may open
-	// live connections from. Optional.
+	// CORSAllowedOrigins are the browser origins whose pages may call the
+	// REST routes, and WebSocketAllowedOrigins those that may open live
+	// connections besides the server's own: comma-separated origins such as
+	// https://play.example.com, or "*" for any. Optional: unset allows none.
+	CORSAllowedOrigins      []string
 	WebSocketAllowedOrigins []string
 
 	// TrustedProxyHops is how many proxies in front of the server append the
@@ -170,7 +173,8 @@ func run() error {
 		liveConnections,
 		resolvejoincode.New(db),
 		api.Config{
-			WebSocketOriginPatterns: envVars.WebSocketAllowedOrigins,
+			CORSAllowedOrigins:      envVars.CORSAllowedOrigins,
+			WebSocketAllowedOrigins: envVars.WebSocketAllowedOrigins,
 			TrustedProxyHops:        envVars.TrustedProxyHops,
 			MaxLiveConnections:      envVars.MaxLiveConnections,
 		},
@@ -257,8 +261,6 @@ func readEnvVariables() (*envVariables, error) {
 		DatabaseSSLMode:  strings.TrimSpace(os.Getenv("DATABASE_SSL_MODE")),
 		HTTPPort:         strings.TrimSpace(os.Getenv("HTTP_PORT")),
 
-		WebSocketAllowedOrigins: splitList(os.Getenv("WEBSOCKET_ALLOWED_ORIGINS")),
-
 		GCSProjectID: strings.TrimSpace(os.Getenv("GCS_PROJECT_ID")),
 		GCSBucket:    strings.TrimSpace(os.Getenv("GCS_BUCKET")),
 	}
@@ -292,6 +294,12 @@ func readEnvVariables() (*envVariables, error) {
 		return nil, fmt.Errorf("HTTP_PORT must be a valid TCP port")
 	}
 
+	if envVars.CORSAllowedOrigins, err = allowedOrigins("CORS_ALLOWED_ORIGINS"); err != nil {
+		return nil, err
+	}
+	if envVars.WebSocketAllowedOrigins, err = allowedOrigins("WEBSOCKET_ALLOWED_ORIGINS"); err != nil {
+		return nil, err
+	}
 	if envVars.TrustedProxyHops, err = optionalPositiveInt("TRUSTED_PROXY_HOPS"); err != nil {
 		return nil, err
 	}
@@ -320,6 +328,15 @@ func readEnvVariables() (*envVariables, error) {
 	return envVars, nil
 }
 
+// allowedOrigins reads name as a list of browser origins, or none when unset.
+func allowedOrigins(name string) ([]string, error) {
+	origins, err := api.ParseAllowedOrigins(os.Getenv(name))
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", name, err)
+	}
+	return origins, nil
+}
+
 // optionalPositiveInt reads name as a positive integer, or 0 when unset.
 func optionalPositiveInt(name string) (int, error) {
 	raw := strings.TrimSpace(os.Getenv(name))
@@ -345,17 +362,6 @@ func optionalPositiveDuration(name string) (time.Duration, error) {
 		return 0, fmt.Errorf("%s must be a positive duration such as 60s", name)
 	}
 	return value, nil
-}
-
-// splitList parses a comma-separated list, dropping empty entries.
-func splitList(value string) []string {
-	var items []string
-	for _, item := range strings.Split(value, ",") {
-		if item = strings.TrimSpace(item); item != "" {
-			items = append(items, item)
-		}
-	}
-	return items
 }
 
 func openPostgres(envVars *envVariables) (*gorm.DB, error) {

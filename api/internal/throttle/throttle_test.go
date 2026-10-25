@@ -96,7 +96,7 @@ func TestRequests(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			tc := setup(t)
 			now := time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)
-			handler := Requests(tc.limits, ClientAddress{}, func() time.Time { return now })(func(w http.ResponseWriter, r *http.Request) {
+			handler := Requests(tc.limits, ClientAddress{}, func() time.Time { return now }, nil)(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
 			})
 
@@ -118,7 +118,7 @@ func TestRequests(t *testing.T) {
 				if c.expectedStatus == http.StatusTooManyRequests {
 					var body httpx.ErrorResponse
 					require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
-					require.Equal(t, codeRateLimited, body.Code)
+					require.Equal(t, routing.RefusedRateLimited, body.Code)
 				}
 			}
 		})
@@ -206,6 +206,60 @@ func TestClientAddressOf(t *testing.T) {
 			}
 
 			require.Equal(t, tc.expected, ClientAddress{TrustedProxies: tc.trustedProxies}.Of(r))
+		})
+	}
+}
+
+func TestRequestsRefusedThroughTheRoute(t *testing.T) {
+	type test struct {
+		// refuserAnswers is whether the route's refuser answers the refusal.
+		refuserAnswers bool
+
+		expectedStatus     int
+		expectedRetryAfter string
+	}
+
+	tests := map[string]func(t *testing.T) test{
+		"a_refuser_that_answers_replaces_the_http_error": func(t *testing.T) test {
+			return test{refuserAnswers: true, expectedStatus: http.StatusAccepted}
+		},
+		"a_refuser_that_cannot_answer_leaves_the_http_error": func(t *testing.T) test {
+			return test{expectedStatus: http.StatusTooManyRequests, expectedRetryAfter: "60"}
+		},
+	}
+
+	for name, setup := range tests {
+		t.Run(name, func(t *testing.T) {
+			tc := setup(t)
+			now := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
+			var refusals []routing.LimitRefusal
+			refuse := func(w http.ResponseWriter, r *http.Request, refusal routing.LimitRefusal) bool {
+				refusals = append(refusals, refusal)
+				if tc.refuserAnswers {
+					w.WriteHeader(http.StatusAccepted)
+				}
+				return tc.refuserAnswers
+			}
+			limits := routing.RequestLimits{PerUser: []ratelimit.Limit{{Count: 1, Per: time.Minute}}}
+			handler := Requests(limits, ClientAddress{}, func() time.Time { return now }, refuse)(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			})
+
+			var statuses []int
+			var w *httptest.ResponseRecorder
+			var noted string
+			for range 2 {
+				ctx, limitRefusal := routing.WithLimitRefusalNote(auth.WithCaller(context.Background(), identity.User{UUID: "u1"}))
+				w = httptest.NewRecorder()
+				handler(w, httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx))
+				statuses = append(statuses, w.Code)
+				noted = limitRefusal()
+			}
+
+			require.Equal(t, []int{http.StatusOK, tc.expectedStatus}, statuses)
+			require.Equal(t, tc.expectedRetryAfter, w.Header().Get("Retry-After"))
+			require.Equal(t, []routing.LimitRefusal{{Reason: routing.RefusedRateLimited, RetryAfter: time.Minute}}, refusals)
+			require.Equal(t, routing.RefusedRateLimited, noted)
 		})
 	}
 }

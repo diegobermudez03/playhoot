@@ -27,10 +27,6 @@ var DefaultLimits = routing.RequestLimits{
 	PerClient: []ratelimit.Limit{{Count: 20, Per: time.Second}, {Count: 300, Per: time.Minute}},
 }
 
-// codeRateLimited is the error code of a refused request; Retry-After says
-// when to try again.
-const codeRateLimited = "rate_limited"
-
 var (
 	keyLabel = metrics.NewLabel("key", "user", "client")
 
@@ -84,10 +80,10 @@ func (a ClientAddress) Of(r *http.Request) string {
 	return host
 }
 
-// Requests refuses a caller's requests beyond limits with 429 and a
-// Retry-After. A caller the route authorized is limited by UserUUID, any
-// other by client address.
-func Requests(limits routing.RequestLimits, clients ClientAddress, now func() time.Time) routing.Middleware {
+// Requests refuses a caller's requests beyond limits through refuse, or with
+// 429 and a Retry-After when refuse is nil or does not answer. A caller the
+// route authorized is limited by UserUUID, any other by client address.
+func Requests(limits routing.RequestLimits, clients ClientAddress, now func() time.Time, refuse routing.LimitRefuser) routing.Middleware {
 	perUser := keyedOrNil(limits.PerUser)
 	perClient := keyedOrNil(limits.PerClient)
 	return func(next http.HandlerFunc) http.HandlerFunc {
@@ -106,14 +102,24 @@ func Requests(limits routing.RequestLimits, clients ClientAddress, now func() ti
 				if !allowed {
 					rateLimited.Inc(ctx, kind)
 					logging.LogFields(ctx, logging.Field("rate_limited", true))
-					w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(retryAfter.Seconds()))))
-					httpx.WriteCodedError(w, http.StatusTooManyRequests, codeRateLimited, "too many requests, try again later")
+					routing.NoteLimitRefusal(ctx, routing.RefusedRateLimited)
+					if refuse != nil && refuse(w, r, routing.LimitRefusal{Reason: routing.RefusedRateLimited, RetryAfter: retryAfter}) {
+						return
+					}
+					w.Header().Set("Retry-After", strconv.Itoa(RetryAfterSeconds(retryAfter)))
+					httpx.WriteCodedError(w, http.StatusTooManyRequests, routing.RefusedRateLimited, "too many requests, try again later")
 					return
 				}
 			}
 			next(w, r)
 		}
 	}
+}
+
+// RetryAfterSeconds is retryAfter in whole seconds, rounded up and at least
+// one, as clients are told to wait.
+func RetryAfterSeconds(retryAfter time.Duration) int {
+	return max(1, int(math.Ceil(retryAfter.Seconds())))
 }
 
 // keyedOrNil is a limiter for limits, or nil when there are none.

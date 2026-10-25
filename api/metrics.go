@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/diegobermudez03/playhoot/api/internal/routing"
 	"github.com/diegobermudez03/playhoot/monitoring/metrics"
 )
 
@@ -56,18 +57,52 @@ func newRESTMetrics(patterns []string) *requestMetrics {
 	}, patterns, trackedStatusCodes)
 }
 
-// newHandshakeMetrics declares the WebSocket handshake metrics for the given
-// route patterns.
-func newHandshakeMetrics(patterns []string) *requestMetrics {
-	return newRequestMetrics(requestMetricNames{
-		requests:     "api_websocket_handshakes_total",
-		requestsHelp: "Finished WebSocket handshakes, by matched route and status code (101 when upgraded).",
-		duration:     "api_websocket_handshake_duration_seconds",
-		durationHelp: "Time taken to answer WebSocket handshakes, by matched route.",
-	}, patterns, handshakeStatusCodes)
+// noLimitRefusal is the limit_refusal of a handshake no edge limit refused.
+const noLimitRefusal = "none"
+
+// handshakeMetrics are the request metrics of WebSocket handshakes, which
+// also tell which of the edge's limits refused one, since such a refusal may
+// be told on an upgraded connection and so be counted as 101.
+type handshakeMetrics struct {
+	*requestMetrics
+	limitRefusals  map[string]metrics.LabelValue
+	noLimitRefusal metrics.LabelValue
 }
 
-func newRequestMetrics(names requestMetricNames, patterns []string, statusCodes []int) *requestMetrics {
+// newHandshakeMetrics declares the WebSocket handshake metrics for the given
+// route patterns.
+func newHandshakeMetrics(patterns []string) *handshakeMetrics {
+	reasons := []string{routing.RefusedRateLimited, routing.RefusedTooManyConnections, routing.RefusedServerBusy}
+	refusalLabel := metrics.NewLabel("limit_refusal", append([]string{noLimitRefusal}, reasons...)...)
+	m := &handshakeMetrics{
+		requestMetrics: newRequestMetrics(requestMetricNames{
+			requests:     "api_websocket_handshakes_total",
+			requestsHelp: "Finished WebSocket handshakes, by matched route, status code (101 when upgraded) and which edge limit refused it, if one did, whether told before or after the upgrade.",
+			duration:     "api_websocket_handshake_duration_seconds",
+			durationHelp: "Time taken to answer WebSocket handshakes, by matched route.",
+		}, patterns, handshakeStatusCodes, refusalLabel),
+		limitRefusals:  make(map[string]metrics.LabelValue, len(reasons)),
+		noLimitRefusal: refusalLabel.Value(noLimitRefusal),
+	}
+	for _, reason := range reasons {
+		m.limitRefusals[reason] = refusalLabel.Value(reason)
+	}
+	return m
+}
+
+// record measures one finished handshake that took elapsed, answered with
+// status, refused by the edge limit limitRefusal (empty when none did).
+func (m *handshakeMetrics) record(ctx context.Context, pattern string, status int, limitRefusal string, elapsed time.Duration) {
+	refusal, known := m.limitRefusals[limitRefusal]
+	if !known {
+		refusal = m.noLimitRefusal
+	}
+	m.requestMetrics.record(ctx, pattern, status, elapsed, refusal)
+}
+
+// newRequestMetrics declares request metrics whose count is labeled by route,
+// status and, after them, extraLabels.
+func newRequestMetrics(names requestMetricNames, patterns []string, statusCodes []int, extraLabels ...metrics.Label) *requestMetrics {
 	routeLabel := metrics.NewLabel("route", patterns...)
 
 	statusValues := make([]string, 0, len(statusCodes)+1)
@@ -78,7 +113,7 @@ func newRequestMetrics(names requestMetricNames, patterns []string, statusCodes 
 	statusLabel := metrics.NewLabel("status", statusValues...)
 
 	m := &requestMetrics{
-		requests:    metrics.NewCounter(names.requests, names.requestsHelp, routeLabel, statusLabel),
+		requests:    metrics.NewCounter(names.requests, names.requestsHelp, append([]metrics.Label{routeLabel, statusLabel}, extraLabels...)...),
 		duration:    metrics.NewHistogram(names.duration, names.durationHelp, metrics.LatencyBuckets(), routeLabel),
 		routes:      make(map[string]metrics.LabelValue, len(patterns)),
 		statuses:    make(map[int]metrics.LabelValue, len(statusCodes)),
@@ -95,14 +130,15 @@ func newRequestMetrics(names requestMetricNames, patterns []string, statusCodes 
 }
 
 // record measures one finished request that took elapsed and answered with
-// status. pattern must be one of the patterns the metrics were declared with.
-func (m *requestMetrics) record(ctx context.Context, pattern string, status int, elapsed time.Duration) {
+// status, with the values of the extra labels the metrics were declared with.
+// pattern must be one of the patterns the metrics were declared with.
+func (m *requestMetrics) record(ctx context.Context, pattern string, status int, elapsed time.Duration, extra ...metrics.LabelValue) {
 	statusValue, tracked := m.statuses[status]
 	if !tracked {
 		statusValue = m.otherStatus
 	}
 	route := m.routes[pattern]
-	m.requests.Inc(ctx, route, statusValue)
+	m.requests.Inc(ctx, append([]metrics.LabelValue{route, statusValue}, extra...)...)
 	m.duration.ObserveDuration(ctx, elapsed, route)
 }
 

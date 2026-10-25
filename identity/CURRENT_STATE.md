@@ -21,6 +21,8 @@ Status: CURRENT IMPLEMENTATION
 
 ## Current Gaps
 
+- Real authentication (access and refresh tokens) is not built. Its accepted direction is `identity/docs/decisions/IDENTITY-ADR-0002-token-renewal-with-rotating-refresh-tokens.md` (2026-10-25): short access tokens, rotating refresh tokens renewed on demand, accounts that expire by inactivity and an absolute maximum, guests that never expire; built by the authentication project after the Session lifecycle and the SDK built-ins.
+
 - `Identity.User` and `UserUUID` are accepted canonical concepts but are not implemented.
 - Guest-to-registered continuity is accepted domain behavior but is not implemented.
 - Public create/resolve capabilities for `Identity.User` are not implemented.

@@ -82,7 +82,7 @@ var errorKinds = map[string][]string{
 	"transport":    {"unreachable", "connection_lost", "protocol_error", "network"},
 	"backend_rejection": {
 		"lobby_full", "device_not_supported", "session_started", "invalid_join_code", "join_code_expired", "invalid_session", "session_ended", "session_unavailable", "participant_disconnected", "rejoin_rejected",
-		"server_busy", "owner_changed", "not_creator", "too_many_admins", "rejected_unknown", "token_invalid", "rate_limited", "operation_forbidden", "http_error",
+		"server_busy", "too_many_connections", "owner_changed", "not_creator", "too_many_admins", "rejected_unknown", "token_invalid", "rate_limited", "operation_forbidden", "http_error",
 	},
 	"artifact": {"artifact_unreachable", "artifact_hash_mismatch", "ready_timeout", "unsupported_bridge_version"},
 }

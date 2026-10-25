@@ -143,16 +143,18 @@ func TestRefuseUpgraded(t *testing.T) {
 
 		// expectedRefusal is the status refusing the upgrade, if refused.
 		expectedRefusal int
+		// expectedReason is the rejection the client reads, when upgraded.
+		expectedReason string
 	}
 
 	const callerUUID = "0f8fad5b-d9cb-469f-a165-70867728950e"
 
 	tests := map[string]func(t *testing.T) test{
 		"client_reads_the_reason_and_the_connection_closes": func(t *testing.T) test {
-			return test{}
+			return test{expectedReason: "join_code_expired"}
 		},
-		"caller_without_room_is_refused_before_the_upgrade": func(t *testing.T) test {
-			return test{callerConnections: live.MaxConnectionsPerCaller, expectedRefusal: http.StatusTooManyRequests}
+		"caller_without_room_reads_that_it_has_too_many_connections": func(t *testing.T) test {
+			return test{callerConnections: live.MaxConnectionsPerCaller, expectedReason: "too_many_connections"}
 		},
 		"route_without_authorization_is_a_failure": func(t *testing.T) test {
 			return test{withoutCaller: true, expectedRefusal: http.StatusInternalServerError}
@@ -192,7 +194,7 @@ func TestRefuseUpgraded(t *testing.T) {
 			require.NoError(t, err)
 			_, data, err := conn.Read(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"type":"rejected","reason":"join_code_expired"}`, string(data))
+			require.JSONEq(t, `{"type":"rejected","reason":"`+tc.expectedReason+`"}`, string(data))
 			_, _, err = conn.Read(ctx)
 			var closed websocket.CloseError
 			require.ErrorAs(t, err, &closed)
@@ -204,7 +206,7 @@ func TestRefuseUpgraded(t *testing.T) {
 			case <-ctx.Done():
 				t.Fatal("handler did not return")
 			}
-			for range live.MaxConnectionsPerCaller {
+			for range live.MaxConnectionsPerCaller - tc.callerConnections {
 				_, err := connections.Reserve(context.Background(), callerUUID)
 				require.NoError(t, err, "the refused connection holds no room")
 			}

@@ -11,8 +11,9 @@ This index is the Identity decision family under the repository-wide routing mod
 | ID | Title | Status | Created | Legacy ID | Canonical Impact |
 | --- | --- | --- | --- | --- | --- |
 | [IDENTITY-ADR-0001](IDENTITY-ADR-0001-identity-user-public-identity-boundary.md) | Identity User Public Identity Boundary | ACCEPTED | 2026-09-06 | ADR-0006 | `ARCHITECTURE.md`, `identity/README.md`, `identity/CURRENT_STATE.md`, `game/README.md`, `docs/ai/KNOWLEDGE_MAP.md`, `docs/engineering/standards/cross-domain-reference-naming.md` |
+| [IDENTITY-ADR-0002](IDENTITY-ADR-0002-token-renewal-with-rotating-refresh-tokens.md) | Token Renewal With Short Access Tokens and Rotating Refresh Tokens | ACCEPTED | 2026-10-25 | None | `identity/CURRENT_STATE.md` |
 
-Next Identity ADR: `IDENTITY-ADR-0002`.
+Next Identity ADR: `IDENTITY-ADR-0003`.
 
 This ID was migrated from the previously centralized global architecture family (`docs/decisions/architecture/`) on 2026-09-07. Historical status, rationale, alternatives, consequences, and created date were preserved unchanged; only the identifier/location/cross-reference wiring changed. See `docs/decisions/LEGACY_ADR_ID_MAP.md` for the full old-ID -> new-ID mapping.
 
