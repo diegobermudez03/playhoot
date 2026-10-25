@@ -70,6 +70,10 @@ func TestResolveJoinCode(t *testing.T) {
 			deps.joinCodes.EXPECT().FindLatestJoinCode(ctx, "K7QX2M").Return(latest("ABORTED", now.Add(time.Minute)), nil)
 			return test{joinCode: "K7QX2M", expectedResolution: sessionpkg.JoinCodeResolution{Outcome: sessionpkg.JoinCodeInvalid}}
 		},
+		"session_with_an_unknown_status_is_broken_data": func(t *testing.T, deps dependencies) test {
+			deps.joinCodes.EXPECT().FindLatestJoinCode(ctx, "K7QX2M").Return(latest("PAUSED", now.Add(time.Minute)), nil)
+			return test{joinCode: "K7QX2M", expectedErr: true}
+		},
 		"code_never_given_out": func(t *testing.T, deps dependencies) test {
 			deps.joinCodes.EXPECT().FindLatestJoinCode(ctx, "K7QX2M").Return(nil, nil)
 			return test{joinCode: "K7QX2M", expectedResolution: sessionpkg.JoinCodeResolution{Outcome: sessionpkg.JoinCodeInvalid}}

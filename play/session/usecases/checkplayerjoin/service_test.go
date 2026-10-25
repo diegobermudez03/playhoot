@@ -48,6 +48,10 @@ func TestEligibleToJoinAsPlayer(t *testing.T) {
 			deps.sessions.EXPECT().FindSession(ctx, sessionUUID).Return(session("CANCELLED", now.Add(time.Minute)), nil)
 			return test{sessionUUID: sessionUUID, expectedEligibility: sessionpkg.PlayerJoinSessionNotJoinable}
 		},
+		"session_with_an_unknown_status_is_broken_data": func(t *testing.T, deps dependencies) test {
+			deps.sessions.EXPECT().FindSession(ctx, sessionUUID).Return(session("PAUSED", now.Add(time.Minute)), nil)
+			return test{sessionUUID: sessionUUID, expectedErr: true}
+		},
 		"session_not_found": func(t *testing.T, deps dependencies) test {
 			deps.sessions.EXPECT().FindSession(ctx, sessionUUID).Return(nil, nil)
 			return test{sessionUUID: sessionUUID, expectedEligibility: sessionpkg.PlayerJoinSessionNotFound}

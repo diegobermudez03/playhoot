@@ -3,11 +3,13 @@ package checkplayerjoin
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"github.com/diegobermudez03/playhoot/monitoring"
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 	"github.com/diegobermudez03/playhoot/play/session/internal/business/sessionstatus"
 	internalrepo "github.com/diegobermudez03/playhoot/play/session/usecases/checkplayerjoin/internal/repo"
@@ -54,7 +56,10 @@ func (s *Service) EligibleToJoinAsPlayer(ctx context.Context, sessionUUID string
 		return sessionpkg.PlayerJoinEligible, nil
 	case sessionstatus.Running:
 		return sessionpkg.PlayerJoinSessionStarted, nil
-	default:
+	case sessionstatus.Finished, sessionstatus.Cancelled, sessionstatus.Expired, sessionstatus.Aborted:
 		return sessionpkg.PlayerJoinSessionNotJoinable, nil
+	default:
+		monitoring.Alert(ctx, "play session has an unknown status")
+		return "", fmt.Errorf("session %s has unknown status %q", sessionUUID, session.Status)
 	}
 }

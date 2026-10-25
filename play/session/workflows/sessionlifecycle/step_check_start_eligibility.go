@@ -55,8 +55,11 @@ func (m *Manager) CheckStartEligibility(ctx context.Context, sessionUUID string,
 		}
 	case sessionstatus.Running:
 		return sessionpkg.StartEligibility{Outcome: sessionpkg.StartAlreadyStarted}, nil
-	default:
+	case sessionstatus.Finished, sessionstatus.Cancelled, sessionstatus.Expired, sessionstatus.Aborted:
 		return sessionpkg.StartEligibility{Outcome: sessionpkg.StartNotInLobby}, nil
+	default:
+		monitoring.Alert(ctx, "play session has an unknown status")
+		return sessionpkg.StartEligibility{}, fmt.Errorf("session %s has unknown status %q", sessionUUID, candidate.Status)
 	}
 
 	// Only an EXECUTABLE version, with a valid manifest and its script, can

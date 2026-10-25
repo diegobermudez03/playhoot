@@ -126,16 +126,4 @@ func TestRecordHits(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, limitRowsOf(t, db, session.id), 2)
 	})
-
-	t.Run("the_database_refuses_a_client_record_without_a_participant", func(t *testing.T) {
-		session := seedSession(t, db)
-
-		err := db.Exec(`
-			INSERT INTO play_game_faults (session_id, game_version_id, user_uuid, participant_id, source, kind, detail,
-				occurrences, first_reported_at, last_reported_at)
-			VALUES (?, ?, ?, NULL, 'CLIENT', 'BRIDGE_ABUSE', '{}', 1, NOW(), NOW())
-		`, session.id, session.gameVersionID, uuid.NewString()).Error
-
-		require.ErrorContains(t, err, "play_game_faults_kind_check")
-	})
 }

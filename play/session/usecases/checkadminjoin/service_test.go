@@ -58,6 +58,10 @@ func TestEligibleToJoinAsAdmin(t *testing.T) {
 			deps.sessions.EXPECT().FindSession(ctx, sessionUUID).Return(session("FINISHED", now.Add(time.Minute)), nil)
 			return test{sessionUUID: sessionUUID, userUUID: creatorUUID, expectedEligibility: sessionpkg.AdminJoinSessionNotJoinable}
 		},
+		"session_with_an_unknown_status_is_broken_data": func(t *testing.T, deps dependencies) test {
+			deps.sessions.EXPECT().FindSession(ctx, sessionUUID).Return(session("PAUSED", now.Add(time.Minute)), nil)
+			return test{sessionUUID: sessionUUID, userUUID: creatorUUID, expectedErr: true}
+		},
 		"not_the_creator": func(t *testing.T, deps dependencies) test {
 			deps.sessions.EXPECT().FindSession(ctx, sessionUUID).Return(session("LOBBY", now.Add(time.Minute)), nil)
 			return test{sessionUUID: sessionUUID, userUUID: otherUUID, expectedEligibility: sessionpkg.AdminJoinNotCreator}

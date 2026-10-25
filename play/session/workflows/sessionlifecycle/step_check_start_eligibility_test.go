@@ -89,6 +89,12 @@ func TestCheckStartEligibility(t *testing.T) {
 			finds(deps, aborted)
 			return test{playerCount: 2, expected: sessionpkg.StartEligibility{Outcome: sessionpkg.StartNotInLobby}}
 		},
+		"session_with_an_unknown_status_is_broken_data": func(t *testing.T, deps dependencies) test {
+			unknown := candidate()
+			unknown.Status = "PAUSED"
+			finds(deps, unknown)
+			return test{playerCount: 2, expectErr: true}
+		},
 		"overdue_lobby_has_expired": func(t *testing.T, deps dependencies) test {
 			overdue := candidate()
 			overdue.LobbyExpiresAt = startNow

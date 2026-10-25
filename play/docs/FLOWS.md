@@ -64,6 +64,7 @@ Implemented behavior:
 | LOBBY with `lobby_expires_at` still in the future | `eligible` |
 | LOBBY past `lobby_expires_at` | `session_not_joinable`; the expiry is not recorded here |
 | FINISHED, CANCELLED, EXPIRED, ABORTED | `session_not_joinable` |
+| Any other status (broken data) | alert and error |
 
 ## Join Code Resolution
 
@@ -77,6 +78,7 @@ The code is decided by its most recent assignment (its newest row, released or n
 | Session in `LOBBY`, past `expires_at` | `expired` (it no longer accepts players); the code is not released here |
 | Session `RUNNING` (left its lobby, not ended) | `session_started` |
 | Session FINISHED, CANCELLED, EXPIRED or ABORTED | `invalid`: a finished Session's code is treated as deleted |
+| Session in any other status (broken data) | alert and error |
 | No row | `invalid` |
 
 Only `found` carries the Session's UUID. Metric `play_session_join_codes_resolved_total{outcome}`.
@@ -92,6 +94,7 @@ Only `found` carries the Session's UUID. Metric `play_session_join_codes_resolve
 | LOBBY past `lobby_expires_at` | `session_not_joinable`; the expiry is not recorded here |
 | RUNNING | `session_started` |
 | FINISHED, CANCELLED, EXPIRED, ABORTED | `session_not_joinable` |
+| Any other status (broken data) | alert and error |
 
 The lobby's capacity is not checked here: the live controller checks it against the manifest's maximum while admitting.
 
@@ -113,6 +116,7 @@ Called by the live Runtime while it starts a Session's game (the Session's contr
 | Created by another user | `not_creator` |
 | RUNNING | `already_started` |
 | FINISHED, CANCELLED, EXPIRED, ABORTED, or LOBBY past `lobby_expires_at` | `not_in_lobby`; the expiry is not recorded here |
+| Any other status (broken data) | alert and error |
 | `playerCount` outside the manifest's `players.min..max` | `invalid_player_count` |
 | Otherwise | `eligible`, with the version's UUID and script |
 

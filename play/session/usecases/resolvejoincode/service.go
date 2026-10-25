@@ -3,11 +3,13 @@ package resolvejoincode
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
 	"gorm.io/gorm"
 
+	"github.com/diegobermudez03/playhoot/monitoring"
 	"github.com/diegobermudez03/playhoot/monitoring/metrics"
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 	"github.com/diegobermudez03/playhoot/play/session/internal/business/sessionstatus"
@@ -55,26 +57,32 @@ func (s *Service) ResolveJoinCode(ctx context.Context, joinCode string) (session
 	if err != nil {
 		return sessionpkg.JoinCodeResolution{}, err
 	}
-	resolution := s.resolve(found)
+	resolution, err := s.resolve(ctx, found)
+	if err != nil {
+		return sessionpkg.JoinCodeResolution{}, err
+	}
 	joinCodesResolved.Inc(ctx, resolveOutcomeLabel.Value(string(resolution.Outcome)))
 	return resolution, nil
 }
 
-func (s *Service) resolve(found *internalrepo.JoinCode) sessionpkg.JoinCodeResolution {
+func (s *Service) resolve(ctx context.Context, found *internalrepo.JoinCode) (sessionpkg.JoinCodeResolution, error) {
 	if found == nil {
-		return sessionpkg.JoinCodeResolution{Outcome: sessionpkg.JoinCodeInvalid}
+		return sessionpkg.JoinCodeResolution{Outcome: sessionpkg.JoinCodeInvalid}, nil
 	}
 	switch sessionstatus.Status(found.SessionStatus) {
 	case sessionstatus.Lobby:
 		// Only the lobby is decided by the code's expiry: a code can expire
 		// while its Session is still being played.
 		if !s.now().Before(found.ExpiresAt) {
-			return sessionpkg.JoinCodeResolution{Outcome: sessionpkg.JoinCodeExpired}
+			return sessionpkg.JoinCodeResolution{Outcome: sessionpkg.JoinCodeExpired}, nil
 		}
-		return sessionpkg.JoinCodeResolution{Outcome: sessionpkg.JoinCodeFound, SessionUUID: found.SessionUUID}
+		return sessionpkg.JoinCodeResolution{Outcome: sessionpkg.JoinCodeFound, SessionUUID: found.SessionUUID}, nil
+	case sessionstatus.Running:
+		return sessionpkg.JoinCodeResolution{Outcome: sessionpkg.JoinCodeSessionStarted}, nil
 	case sessionstatus.Finished, sessionstatus.Cancelled, sessionstatus.Expired, sessionstatus.Aborted:
-		return sessionpkg.JoinCodeResolution{Outcome: sessionpkg.JoinCodeInvalid}
+		return sessionpkg.JoinCodeResolution{Outcome: sessionpkg.JoinCodeInvalid}, nil
 	default:
-		return sessionpkg.JoinCodeResolution{Outcome: sessionpkg.JoinCodeSessionStarted}
+		monitoring.Alert(ctx, "play session has an unknown status")
+		return sessionpkg.JoinCodeResolution{}, fmt.Errorf("session %s of a join code has unknown status %q", found.SessionUUID, found.SessionStatus)
 	}
 }

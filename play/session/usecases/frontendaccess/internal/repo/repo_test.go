@@ -98,19 +98,6 @@ func TestFindFrontend(t *testing.T) {
 	}
 }
 
-func TestAspectRatioIsOneOfTheOffered(t *testing.T) {
-	db := testdb.OpenSessionDB(t)
-	var gameID uint
-	require.NoError(t, db.Raw(`INSERT INTO play_games (game_uuid) VALUES (?) RETURNING id`, uuid.NewString()).Scan(&gameID).Error)
-
-	err := db.Exec(`
-		INSERT INTO play_game_versions (uuid, game_id, status, manifest, aspect_ratio)
-		VALUES (?, ?, 'DRAFT', '{"schema_version":1,"players":{"min":1,"max":8}}', '21:9')
-	`, uuid.NewString(), gameID).Error
-
-	require.ErrorContains(t, err, "play_game_versions_aspect_ratio_check")
-}
-
 // insertAsset stores an asset of versionID.
 func insertAsset(db *gorm.DB, versionID int64, key, assetType, mimeType string, objectKey *string, hash string, size int64) error {
 	return db.Exec(`

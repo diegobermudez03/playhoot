@@ -186,7 +186,7 @@ Three distinct questions must not collapse into one owner. This taxonomy is more
 
 **Business/lifecycle policy** — "What should happen?" Examples: may this participant be admitted; is a time-bound window expired; what result should a repeated command produce; is a transition currently allowed; what does capacity/admission require. Owner: the workflow/use-case/domain layer.
 
-**Data integrity** — "What persisted shapes must never be invalid?" Examples: a child row must always belong to its parent; a uniqueness constraint over a tuple of columns; an idempotency-identity uniqueness constraint. Owner: repository/schema/database constraints, as appropriate.
+**Data integrity** — "What persisted shapes must never be invalid?" Examples: a child row must always belong to its parent; a uniqueness constraint over a tuple of columns; an idempotency-identity uniqueness constraint. Owner: the schema design and the application (`database-constraints.md`, clarified by the human 2026-10-25). The schema gives a reference its column, its indexes and, when the rule needs it, a unique constraint; what makes that column a reference to another table is the application, which writes only existing parents and treats a missing one as a data integrity failure when reading. To the database it is only a column, whatever its name.
 
 **Persistence mechanics** — "How is an already-decided, valid intent/state represented in storage?" Example: creating an aggregate with a mandatory child relationship may require multiple inserts/updates in one transaction. Owner: repository, per `repositories.md`'s Multi-Table Persistence Encapsulation.
 

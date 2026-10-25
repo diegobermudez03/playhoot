@@ -4,11 +4,13 @@ package checkadminjoin
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"github.com/diegobermudez03/playhoot/monitoring"
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 	"github.com/diegobermudez03/playhoot/play/session/internal/business/sessionstatus"
 	internalrepo "github.com/diegobermudez03/playhoot/play/session/usecases/checkadminjoin/internal/repo"
@@ -59,8 +61,11 @@ func (s *Service) EligibleToJoinAsAdmin(ctx context.Context, sessionUUID string,
 			return sessionpkg.AdminJoinSessionNotJoinable, nil
 		}
 		return sessionpkg.AdminJoinEligible, nil
-	default:
+	case sessionstatus.Finished, sessionstatus.Cancelled, sessionstatus.Expired, sessionstatus.Aborted:
 		return sessionpkg.AdminJoinSessionNotJoinable, nil
+	default:
+		monitoring.Alert(ctx, "play session has an unknown status")
+		return "", fmt.Errorf("session %s has unknown status %q", sessionUUID, session.Status)
 	}
 }
 

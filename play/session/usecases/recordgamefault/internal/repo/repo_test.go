@@ -151,13 +151,4 @@ func TestRecordFault(t *testing.T) {
 		require.NoError(t, err)
 		require.False(t, recorded)
 	})
-
-	t.Run("the_database_refuses_an_unknown_kind", func(t *testing.T) {
-		session := seedSession(t, db, "RUNNING")
-
-		_, err := repo.RecordFault(ctx, session.uuid,
-			Fault{UserUUID: session.playerUUID, ParticipantID: "P1", Kind: "CHEATING", Detail: []byte(`{}`)}, first)
-
-		require.Error(t, err)
-	})
 }
