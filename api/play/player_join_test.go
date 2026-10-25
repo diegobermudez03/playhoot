@@ -164,6 +164,9 @@ func TestHandlePlayerJoin(t *testing.T) {
 	type test struct {
 		player      *fakePlayer
 		clientSends []string
+		// receivedBeforeSending is how many of expectedReceived the client
+		// reads before it sends clientSends, as a client acting on them would.
+		receivedBeforeSending int
 		// clientCloses ends the connection from the client once it received
 		// expectedReceived; otherwise it reads until the server ends it.
 		clientCloses bool
@@ -252,10 +255,12 @@ func TestHandlePlayerJoin(t *testing.T) {
 					`{"type":"game_fault","kind":"bridge_abuse","detail":{}}`,
 					`{"type":"leave"}`,
 				},
-				expectedReceived:    []string{playerStartedJSON, `{"type":"leave_result","outcome":"left"}`},
-				expectedCloseStatus: websocket.StatusNormalClosure,
-				expectedFaults:      []runtime.GameFault{{Kind: runtime.GameFaultBridgeAbuse, Detail: []byte(`{}`)}},
-				expectedDisconnects: 1,
+				// The player reports and leaves the game they were told started.
+				receivedBeforeSending: 1,
+				expectedReceived:      []string{playerStartedJSON, `{"type":"leave_result","outcome":"left"}`},
+				expectedCloseStatus:   websocket.StatusNormalClosure,
+				expectedFaults:        []runtime.GameFault{{Kind: runtime.GameFaultBridgeAbuse, Detail: []byte(`{}`)}},
+				expectedDisconnects:   1,
 			}
 		},
 		"caller_with_as_many_connections_as_allowed_is_refused_before_the_upgrade": func(t *testing.T, deps dependencies) test {
@@ -600,13 +605,18 @@ func TestHandlePlayerJoin(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
+			var received []string
+			for range tc.receivedBeforeSending {
+				_, data, err := conn.Read(ctx)
+				require.NoError(t, err)
+				received = append(received, string(data))
+			}
 			for _, message := range tc.clientSends {
 				require.NoError(t, conn.Write(ctx, websocket.MessageText, []byte(message)))
 			}
 
-			var received []string
 			if tc.clientCloses {
-				for range tc.expectedReceived {
+				for range tc.expectedReceived[len(received):] {
 					_, data, err := conn.Read(ctx)
 					require.NoError(t, err)
 					received = append(received, string(data))
