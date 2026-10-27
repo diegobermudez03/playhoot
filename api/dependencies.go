@@ -13,6 +13,12 @@ type guestCreator interface {
 	CreateGuest(ctx context.Context, displayName string, idempotencyKey string) (identity.CreateGuestResult, error)
 }
 
+// operationLister is Identity's catalog of operations and the minimum
+// authentication level each requires.
+type operationLister interface {
+	ListOperations(ctx context.Context) []identity.OperationLevel
+}
+
 // authorizer is Identity's coarse authorization.
 type authorizer interface {
 	Authorize(ctx context.Context, token string, operation identity.Operation) (identity.User, identity.AccessDecision, error)

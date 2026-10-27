@@ -1,12 +1,16 @@
 Process: Project execution (identity-v1), WORK per plan stage
 Topic: Basic identity (real guests, Google accounts, own access/refresh credentials) per plans/identity/05_Playhoot_Plan_de_Identidad_Basica.docx
-Current stage: WORK-0056 DONE (2026-10-27, review APPROVED on re-review). Decided 2026-10-27 by the human: no browser-binding cookie for login attempts; ADR-0003 point 8 clarified; keeping the one-time code inside the browser is required in WORK-0060 and frontend WORK-0004. Next: WORK-0062 and WORK-0057 PLANNED -> DRAFT; frontend WORK-0001
+Current stage: WORK-0056 DONE (2026-10-27, review APPROVED on re-review). Decided 2026-10-27 by the human: no browser-binding cookie for login attempts; ADR-0003 point 8 clarified; keeping the one-time code inside the browser is required in WORK-0060 and frontend WORK-0004. WORK-0062 DONE (2026-10-27, uncommitted). Next: frontend WORK-0006 (asked to the human) or WORK-0057
 Current execution surface: CODEBASE AGENT
 Related durable artifacts: docs/projects/active/identity-v1/PROJECT.md, plans/identity/05_Playhoot_Plan_de_Identidad_Basica.docx, identity/docs/decisions/IDENTITY-ADR-0001..0002, frontend Project identity-web-v1 (../playhoot_frontend/docs/projects/active/identity-web-v1/)
 Blocked by: nothing (one-time code login completion accepted 2026-10-27; host experience pulled into frontend session-play-v1 P, with backend item in session-runtime-v1 CHECKLIST E: min/max players in the admin's lobby_update)
 Next action: design WORK-0056 (DRAFT): new IDENTITY-ADR-0003, IDENTITY-ADR-0002 amendment, endpoint/DTO contract; then the frontend's WORK-0001
 Last durable checkpoint: Project, WORK files, plan copied to plans/identity/, cross-references in session-runtime-v1 PROJECT.md and identity/CURRENT_STATE.md (2026-10-25)
 Last updated: 2026-10-25
+
+## Working agreement (the human, 2026-10-27)
+
+Decisions are made in conversation; the agent writes code and the human reviews the code itself; code the human does not ask to change is approved. WORK files, ADRs, PROJECT.md and reviews are the agent's own memory, kept current silently: never ask the human to read or approve them, never present DRAFT/READY gates or HUMAN_REVIEW files. A decision in chat is the human approval the repository process needs (record it in the WORK/ADR yourself).
 
 ## Human decisions (2026-10-25)
 

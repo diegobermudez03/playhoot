@@ -26,7 +26,34 @@ const (
 	// telemetry (load times, reconnections, classified errors). Guests may
 	// perform it.
 	OperationReportClientTelemetry Operation = "REPORT_CLIENT_TELEMETRY"
+
+	// OperationViewOwnIdentity is reading who the caller's credential stands
+	// for. Guests may perform it.
+	OperationViewOwnIdentity Operation = "VIEW_OWN_IDENTITY"
 )
+
+// Level is how strongly a caller is authenticated, on the ordered scale
+// anonymous < guest < account.
+type Level string
+
+const (
+	// LevelAnonymous is a caller presenting no valid identity.
+	LevelAnonymous Level = "anonymous"
+
+	// LevelGuest is a User whose only proof is a credential the client keeps.
+	LevelGuest Level = "guest"
+
+	// LevelAccount is a User with a registered account.
+	LevelAccount Level = "account"
+)
+
+// OperationLevel is the minimum Level an Operation requires. It states
+// authentication only: role capabilities and each domain's object-level
+// permissions are decided elsewhere.
+type OperationLevel struct {
+	Operation     Operation
+	RequiredLevel Level
+}
 
 // User is who a credential stands for, as Identity resolves it.
 type User struct {

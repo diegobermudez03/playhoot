@@ -55,6 +55,30 @@ func TestAuthorize(t *testing.T) {
 				expectedUser: identity.User{UUID: "aaaaaaaa-aaaa-4aaa-8aaa-0000000000ff", DisplayName: "Guest"}, expectedDecision: identity.AccessAllowed,
 			}
 		},
+		"guest_can_report_client_telemetry": func(t *testing.T) test {
+			return test{
+				token: "test-guest", operation: identity.OperationReportClientTelemetry,
+				expectedUser: identity.User{UUID: "aaaaaaaa-aaaa-4aaa-8aaa-0000000000ff", DisplayName: "Guest"}, expectedDecision: identity.AccessAllowed,
+			}
+		},
+		"guest_can_view_own_identity": func(t *testing.T) test {
+			return test{
+				token: "test-guest", operation: identity.OperationViewOwnIdentity,
+				expectedUser: identity.User{UUID: "aaaaaaaa-aaaa-4aaa-8aaa-0000000000ff", DisplayName: "Guest"}, expectedDecision: identity.AccessAllowed,
+			}
+		},
+		"account_can_join_sessions_as_player": func(t *testing.T) test {
+			return test{
+				token: "test-user-2", operation: identity.OperationJoinSessionAsPlayer,
+				expectedUser: identity.User{UUID: "aaaaaaaa-aaaa-4aaa-8aaa-000000000002", DisplayName: "Test user 2"}, expectedDecision: identity.AccessAllowed,
+			}
+		},
+		"operation_outside_the_catalog_is_forbidden": func(t *testing.T) test {
+			return test{
+				token: "test-user-1", operation: "DELETE_EVERYTHING",
+				expectedUser: identity.User{UUID: "aaaaaaaa-aaaa-4aaa-8aaa-000000000001", DisplayName: "Test user 1"}, expectedDecision: identity.AccessForbidden,
+			}
+		},
 		"unknown_token_is_unauthenticated": func(t *testing.T) test {
 			return test{token: "anything-else", operation: identity.OperationCreateSession, expectedDecision: identity.AccessUnauthenticated}
 		},

@@ -19,6 +19,7 @@ import (
 	"github.com/diegobermudez03/playhoot/game/usecases/checkplayability"
 	"github.com/diegobermudez03/playhoot/identity/usecases/authorize"
 	"github.com/diegobermudez03/playhoot/identity/usecases/createguest"
+	"github.com/diegobermudez03/playhoot/identity/usecases/listoperations"
 	"github.com/diegobermudez03/playhoot/orchestrator/playlifecycle"
 	"github.com/diegobermudez03/playhoot/play/runtime/sandbox"
 	"github.com/diegobermudez03/playhoot/play/runtime/usecases/ownership"
@@ -167,6 +168,7 @@ func run() error {
 	server := api.NewServer(
 		authorize.New(),
 		createguest.New(),
+		listoperations.New(),
 		playLifecycle,
 		owners,
 		liveConnections,
