@@ -22,7 +22,7 @@ Human decisions 2026-10-27:
 - This is the authentication level per operation, distinct from role capabilities (a future, separate answer listing what a role may do) and from Play's object-level permissions (creator, participation), which stay where they are.
 - Contract: a public, cacheable `GET /v1/identity/operations` with every operation and its required level; the caller's own level comes with the credential (refresh and `me` responses), not from this endpoint.
 
-Known starting values from the current matrix (§8): `CREATE_SESSION` and `JOIN_SESSION_AS_ADMIN` account, `JOIN_SESSION_AS_PLAYER` and `REPORT_CLIENT_TELEMETRY` guest, guest creation and starting a login anonymous. An operation missing from the catalog is refused by `Authorize` (the placeholder allows anything not on its deny list). The levels and operation names are backend contract values: clients must tolerate unknown ones.
+The endpoint shape, the starting values and which operations are listed are fixed by WORK-0056's approved contract ("Operation catalog"), not restated here. An operation missing from the catalog is refused by `Authorize` (the placeholder allows anything not on its deny list).
 
 ## Scope
 

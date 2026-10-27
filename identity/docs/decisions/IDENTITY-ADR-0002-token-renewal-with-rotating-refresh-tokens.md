@@ -2,7 +2,7 @@
 
 Status: ACCEPTED
 Created: 2026-10-25
-Last status change: 2026-10-25
+Last status change: 2026-10-25 (amended 2026-10-27 by IDENTITY-ADR-0003)
 Supersedes: None
 Superseded by: None
 
@@ -20,6 +20,8 @@ Accepted by the human on 2026-10-25, from the frontend agent's proposal, as the 
 4. **Accounts expire.** An account's refresh token has an inactivity window (starting value: 30 days without use) and an absolute maximum (starting value: 90 days). Past either, the person signs in again.
 5. **Guests do not expire.** A guest's refresh token has no expiry: the guest lives in that browser or device as long as its storage is kept. Upgrading a guest to an account (future product flow) starts the account's expiry rules.
 6. **Open for the authentication project:** where the client keeps the refresh token (an `httpOnly` cookie is safer against script access than browser storage, but changes CORS with credentials and how the mobile app sends it), the exact durations, and the sign-in screen and flows.
+
+**Amended 2026-10-27 (decided by the human, `IDENTITY-ADR-0003-basic-identity-google-accounts-opaque-access-client-held-refresh.md`).** Point 6 is decided: the refresh token is held by the client and travels in the request and response body (no cookie); the durations are 15 minutes for access, 30 days of inactivity and 90 days absolute for accounts, none for guests; sign-in is Google only, completed with a one-time code. Point 2 is made precise: the same operation (same `request_id`) presented again with the predecessor within 30 seconds, while its successor is still current, gets the same result without another rotation; a recognized duplicate already superseded is answered without secrets and without revoking; every other presentation of a used refresh token still revokes the family. The first rationale below no longer holds as written: access tokens are opaque and checked against the database on every request, so revocation is immediate; the short lifetime now bounds what a copied token is worth.
 
 ## Rationale
 

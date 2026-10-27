@@ -14,14 +14,17 @@ Identity maintains a stable Playhoot identity for a person so other domains may 
 - Resolution of public `UserUUID` to the current internal representation once implemented.
 - Creating guest Users and their bearer credentials, including the display name a guest is created with (decided by the human on 2026-10-17: a client without an account creates a guest, naming it, before joining a Session as a player).
 - Each User's display name, with whatever identity attributes are added later: `Authorize` resolves a credential to an `identity.User` (UserUUID and display name), which the API's authorization middleware passes on. Other domains never read a User structure of Identity's: their callers build each domain's own type from it (decided by the human on 2026-10-20).
+- Registered accounts and their external identities (Google only in this phase: normalized issuer plus verified subject; email and name are observed data, never keys), and the sign-in flow that resolves or creates them (accepted 2026-10-27, `identity/docs/decisions/IDENTITY-ADR-0003-basic-identity-google-accounts-opaque-access-client-held-refresh.md`).
+- Playhoot's own credentials: families per browser or device, opaque access tokens, client-held rotating refresh tokens, their expiry, revocation, retry recovery and persistence (IDENTITY-ADR-0002, amended by IDENTITY-ADR-0003).
+- The catalog of operations with their minimum authentication level (`anonymous < guest < account`), which `Authorize` applies and clients read (IDENTITY-ADR-0003).
 
 ## Does Not Own
 
 - Session-local participation state.
 - Session display-name snapshots.
 - Game/session behavior.
-- Authentication/account/provider details beyond what is later accepted as necessary.
-- Authorization policy beyond what is later accepted as necessary.
+- Authentication methods and providers beyond Google, which are not accepted yet (passwords, magic links, other providers, MFA).
+- Authorization beyond each operation's minimum authentication level: role capabilities are a future, separate concern, and each domain decides its own object-level permissions (for example, Play's creator check).
 - Mutable global display/profile ownership beyond a guest's creation name; whether the rest belongs to Identity or a future Profile responsibility remains unresolved.
 - Public discovery/search experience.
 

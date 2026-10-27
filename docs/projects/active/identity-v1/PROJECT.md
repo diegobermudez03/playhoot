@@ -2,7 +2,7 @@
 
 Status: ACTIVE
 Created: 2026-10-25
-Last updated: 2026-10-25
+Last updated: 2026-10-27
 
 ## Goal
 
@@ -20,13 +20,13 @@ Decided by the human on 2026-10-25: this project goes before the SDK built-ins a
 
 ## Current Work
 
-Created 2026-10-25 from the plan. The human accepted the plan's decisions as a whole with one change: the refresh token is kept by the client (web `localStorage`, mobile secure storage) and travels in the request body, not in an `HttpOnly` cookie, because one body-based contract then serves the web and the future mobile app. The consequences of that change on the plan (§4 Google handoff, §6 retry recovery, §7 transport) are designed in WORK-0056, the next step.
+Created 2026-10-25 from the plan. The human accepted the plan's decisions as a whole with one change: the refresh token is kept by the client (web `localStorage`, mobile secure storage) and travels in the request body, not in an `HttpOnly` cookie, because one body-based contract then serves the web and the future mobile app. The consequences of that change on the plan (§4 Google handoff, §6 retry recovery, §7 transport) are designed in WORK-0056, the next step. 2026-10-27: the human approved WORK-0056 (READY) with the full client-facing contract; IDENTITY-ADR-0003 is ACCEPTED and IDENTITY-ADR-0002 amended; WORK-0056 DONE the same day after an independent review (approved on re-review). Next: WORK-0062 and WORK-0057 to DRAFT; in the frontend, WORK-0001.
 
 ## Work
 
 | Order | Work | Status |
 |------:|------|--------|
-| 0 | [WORK-0056](works/WORK-0056-identity-contracts-and-decisions.md) — Identity contracts and decisions | PLANNED |
+| 0 | [WORK-0056](works/WORK-0056-identity-contracts-and-decisions.md) — Identity contracts and decisions | DONE |
 | 0b | [WORK-0062](works/WORK-0062-operation-authentication-levels-catalog.md) — Operation authentication levels catalog | PLANNED |
 | 1 | [WORK-0057](works/WORK-0057-persisted-identity-core.md) — Persisted identity core | PLANNED |
 | 2 | [WORK-0058](works/WORK-0058-real-guests-and-credential-endpoints.md) — Real guests and credential endpoints | PLANNED |
@@ -54,7 +54,7 @@ Added to the scope by the human on 2026-10-27: the operation catalog (WORK-0062)
 ## Material Decisions Needing Human Input
 
 1. **Design derived from keeping the refresh token on the client**: ACCEPTED by the human on 2026-10-27, recorded in WORK-0056: the Google callback cannot leave a session in a cookie, so it redirects to the web with a one-time code (about 60 s) that the client exchanges, together with a verifier it generated when starting the login, for access and refresh in the response body (the native-app pattern of RFC 8252, reusable by the mobile app); same-origin deployment is no longer required and the existing REST CORS without credentials stays; the plan's "Set-Cookie applied but body lost" recovery case disappears.
-2. **Rationale of IDENTITY-ADR-0002**: it justifies short access tokens by avoiding a revocation check on every request, while the plan's opaque access token reads the database on every request. The decision stands; its rationale has to be restated when WORK-0056 records the opaque format.
+2. **Rationale of IDENTITY-ADR-0002**: resolved 2026-10-27: restated by IDENTITY-ADR-0003 and the amendment note in IDENTITY-ADR-0002.
 
 ## Completion Criteria
 

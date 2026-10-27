@@ -19,7 +19,7 @@ Identity's domain capabilities on real persistence: stable Users (guest and regi
 
 ## Context
 
-The plan's starting model (§3 "Modelo de partida") lists the responsibilities: users, accounts, external identities, auth sessions (families), access tokens, refresh tokens, OIDC attempts and browser context, temporary results. Names describe responsibilities; tables may be adjusted keeping uniqueness, atomicity and contracts. Per the repository standard, the database holds only keys, unique constraints, indexes and types; every other rule lives in the application and its transactions.
+The plan's starting model (§3 "Modelo de partida") lists the responsibilities: users, accounts, external identities, auth sessions (families), access tokens, refresh tokens, OIDC attempts and browser context, temporary results. Under IDENTITY-ADR-0003 the browser-context binding (a cookie) no longer exists: a login attempt is bound to the client by its verifier, and completes through a one-time code (WORK-0056). Names describe responsibilities; tables may be adjusted keeping uniqueness, atomicity and contracts. Per the repository standard, the database holds only keys, unique constraints, indexes and types; every other rule lives in the application and its transactions.
 
 Authorization keeps the existing operation matrix (§8), but an unknown operation must be refused (the placeholder allows anything not on its deny list), and a database failure is a transient service error, never an invalid credential.
 

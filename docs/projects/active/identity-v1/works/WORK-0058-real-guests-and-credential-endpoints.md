@@ -25,7 +25,7 @@ Not yet designed.
 
 ## Acceptance Criteria
 
-Not yet designed. Owns at least the plan's "Dos invitados", "Alta repetida", "Persistencia", "Rotación", "Respuesta perdida" and "Logout" criteria (§11) on the backend side.
+Not yet designed. The plan's "Respuesta perdida" case of a `Set-Cookie` applied with the body lost no longer exists under the body-based contract (WORK-0056). Owns at least the plan's "Dos invitados", "Alta repetida", "Persistencia", "Rotación", "Respuesta perdida" and "Logout" criteria (§11) on the backend side.
 
 ## Blockers
 

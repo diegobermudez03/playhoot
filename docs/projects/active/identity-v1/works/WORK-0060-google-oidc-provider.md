@@ -20,7 +20,9 @@ Google is identified by its normalized issuer and verified `sub`; email and name
 
 ## Scope
 
-Not yet designed. How the login completes towards the client depends on WORK-0056 (one-time code exchange instead of a cookie).
+Not yet designed. The login completes towards the client with WORK-0056's one-time code exchange.
+
+Required (decided by the human 2026-10-27, IDENTITY-ADR-0003 point 8 clarification: no browser-binding cookie; the one-time code must never leave the victim's browser). Background from the WORK-0056 independent review: without the plan's browser-binding cookie, an attacker can start a login with their own verifier and send the victim the authorization URL; if Google lets the victim through without interaction and the returned one-time code then leaks within its ~60 s (`Referer`, logs of the web host or a CDN, history, extensions), the attacker can exchange it. Mitigations (the backend's part: no-referrer header on the redirect, no logging of the callback or completion query strings; the client's part is frontend WORK-0004): deliver or strip the code before the completion page loads anything (or use the URL fragment), `Referrer-Policy: no-referrer` on the completion route, keep that route's query strings out of logs, consider `prompt=select_account`.
 
 ## Acceptance Criteria
 
