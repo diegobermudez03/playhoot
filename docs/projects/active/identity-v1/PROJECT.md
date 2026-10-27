@@ -27,6 +27,7 @@ Created 2026-10-25 from the plan. The human accepted the plan's decisions as a w
 | Order | Work | Status |
 |------:|------|--------|
 | 0 | [WORK-0056](works/WORK-0056-identity-contracts-and-decisions.md) — Identity contracts and decisions | PLANNED |
+| 0b | [WORK-0062](works/WORK-0062-operation-authentication-levels-catalog.md) — Operation authentication levels catalog | PLANNED |
 | 1 | [WORK-0057](works/WORK-0057-persisted-identity-core.md) — Persisted identity core | PLANNED |
 | 2 | [WORK-0058](works/WORK-0058-real-guests-and-credential-endpoints.md) — Real guests and credential endpoints | PLANNED |
 | 3 | [WORK-0059](works/WORK-0059-accounts-with-local-simulated-provider.md) — Accounts with a local simulated provider | PLANNED |
@@ -38,7 +39,8 @@ Created 2026-10-25 from the plan. The human accepted the plan's decisions as a w
 The plan's delivery order (§10):
 
 - WORK-0056 first: every later WORK implements the contracts and decisions it records (ADRs and DTOs), and the frontend's WORK depend on the same contracts.
-- WORK-0057 (persistence, issuance, refresh, revocation as domain capabilities) before any endpoint.
+- WORK-0062 (operation catalog with each operation's minimum authentication level, added by the human on 2026-10-27) right after WORK-0056: it needs no persistence, so the frontend's redirection pattern can start against the placeholders; `Authorize` applies the same catalog.
+- WORK-0057 (persistence, issuance, refresh, revocation as domain capabilities) before any other endpoint.
 - WORK-0058 (guests) and WORK-0059 (accounts with the simulated provider) together close the local goal: an account creates and administers a Session, two real guests play it. Each needs its frontend counterpart in `identity-web-v1` to be usable.
 - WORK-0060 (real Google) needs WORK-0059's provider port; it can run in parallel with the frontend's local work.
 - WORK-0061 last: network and concurrency cases, WebSocket, limits, documents and contracts synchronized, independent review against the plan's acceptance criteria (§11).
@@ -47,9 +49,11 @@ The plan's delivery order (§10):
 
 The plan's acceptance criteria (§11 "Evidencia requerida") are the coverage list; each WORK names the criteria it owns once it moves to DRAFT. Already-known overlaps with `session-runtime-v1`: its CHECKLIST section A4 (identity integration) and its Identity placeholders (guest creation, authorization) are owned by this project.
 
+Added to the scope by the human on 2026-10-27: the operation catalog (WORK-0062) behind the frontend's global sign-in pattern (its `identity-web-v1` WORK-0006: corner sign-in/profile button, definitive `/sign-in` route, guest page offering the account option, return to the intended path, a minimal "Create Session" requiring an account).
+
 ## Material Decisions Needing Human Input
 
-1. **Design derived from keeping the refresh token on the client** (agent proposal, to confirm in WORK-0056): the Google callback cannot leave a session in a cookie, so it redirects to the web with a one-time code (about 60 s) that the client exchanges, together with a verifier it generated when starting the login, for access and refresh in the response body (the native-app pattern of RFC 8252, reusable by the mobile app); same-origin deployment is no longer required and the existing REST CORS without credentials stays; the plan's "Set-Cookie applied but body lost" recovery case disappears.
+1. **Design derived from keeping the refresh token on the client**: ACCEPTED by the human on 2026-10-27, recorded in WORK-0056: the Google callback cannot leave a session in a cookie, so it redirects to the web with a one-time code (about 60 s) that the client exchanges, together with a verifier it generated when starting the login, for access and refresh in the response body (the native-app pattern of RFC 8252, reusable by the mobile app); same-origin deployment is no longer required and the existing REST CORS without credentials stays; the plan's "Set-Cookie applied but body lost" recovery case disappears.
 2. **Rationale of IDENTITY-ADR-0002**: it justifies short access tokens by avoiding a revocation check on every request, while the plan's opaque access token reads the database on every request. The decision stands; its rationale has to be restated when WORK-0056 records the opaque format.
 
 ## Completion Criteria

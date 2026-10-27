@@ -21,7 +21,11 @@ The plan's decisions, accepted by the human on 2026-10-25, recorded in their own
 
 The plan's own status note: its new choices are design recommendations to adopt when preparing the repository work, and the idempotent-retry exception must amend the rotation ADR explicitly, never silently.
 
-Human decision 2026-10-25: accept the plan as a whole, except that the refresh token is kept by the client (web `localStorage`, mobile secure storage) and sent in the request body instead of an `HttpOnly` cookie, so web and mobile share one contract. Consequences to design here (agent proposal, see PROJECT.md decision 1): Google login completes with a one-time code exchanged by the client with a verifier; no same-origin requirement; the "Set-Cookie applied but body lost" recovery case disappears; the XSS exposure of a non-expiring guest refresh token is accepted and mitigated by rotation with reuse detection.
+Human decision 2026-10-25: accept the plan as a whole, except that the refresh token is kept by the client (web `localStorage`, mobile secure storage) and sent in the request body instead of an `HttpOnly` cookie, so web and mobile share one contract. Consequences: no same-origin requirement; the "Set-Cookie applied but body lost" recovery case disappears; the XSS exposure of a non-expiring guest refresh token is accepted and mitigated by rotation with reuse detection.
+
+Accepted by the human on 2026-10-27 (agent proposal): Google login completes with a one-time code. Starting the login, the client generates a random verifier, keeps it with the intended path in `sessionStorage` and sends only its hash; the callback never carries tokens and redirects to the web with a single-use code of about 60 s; the client exchanges code and verifier in a `POST` for access and refresh in the body. A code stolen from the URL is useless without the verifier, and it prevents login CSRF. The mobile app reuses it with a deep link (RFC 8252).
+
+Also in this contract (added by the human on 2026-10-27, WORK-0062): the public operation catalog with each operation's minimum authentication level, and the caller's level in the refresh and `me` responses.
 
 ## Scope
 
@@ -41,4 +45,4 @@ Not yet designed. Known: `identity/CURRENT_STATE.md` mentions validating a JWT; 
 
 ## Blockers
 
-- The human's confirmation of the design derived from the client-held refresh token (PROJECT.md decision 1).
+- None known; ready to move to DRAFT.

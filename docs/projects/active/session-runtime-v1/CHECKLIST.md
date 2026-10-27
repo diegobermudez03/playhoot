@@ -147,6 +147,7 @@ Left for future steps, on purpose:
 - [x] Admin selects a player perspective; receives exactly projection(P), FULL, with a new baseline per selection (2026-10-19: FULL from the projection cache with the connection's next revision, every selection a new baseline; then each boundary sends the admin a patch against what that admin connection last received, never the player's patch; the admin gets the watched participant's logical events but not their errors nor their SAMPLE acknowledgement (decided by the human); `resync` on the admin connection sends the watched view FULL again; selecting before the game runs or after it stopped answers `session_not_running` (decided by the human); `TestSelectPerspective`, `TestWatchedViews`, `TestAdminResync`, API tests)
 - [x] No omniscient admin projection (2026-10-19: an admin only ever receives the projection of the participant it selected)
 - [x] Admin reconnect = just another admin WebSocket (no game-level admin rejoin)
+- [ ] The admin's `lobby_update` carries the game version's `min_players` and `max_players` (decided by the human 2026-10-27, for the frontend's host screen, frontend `session-play-v1` Z13): the frontend enables Start and tells how many players are missing; `start_session` keeps refusing a wrong count with `invalid_player_count`
 - [x] Admin connections do not receive participant SAMPLE acknowledgements (2026-10-18: acknowledgements only travel in player views; admin views, when built, must keep it that way)
 
 ---
