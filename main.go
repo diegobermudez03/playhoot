@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"log"
@@ -19,7 +20,9 @@ import (
 	"github.com/diegobermudez03/playhoot/game/usecases/checkplayability"
 	"github.com/diegobermudez03/playhoot/identity/usecases/authorize"
 	"github.com/diegobermudez03/playhoot/identity/usecases/createguest"
+	"github.com/diegobermudez03/playhoot/identity/usecases/endsession"
 	"github.com/diegobermudez03/playhoot/identity/usecases/listoperations"
+	"github.com/diegobermudez03/playhoot/identity/usecases/refreshcredentials"
 	"github.com/diegobermudez03/playhoot/orchestrator/playlifecycle"
 	"github.com/diegobermudez03/playhoot/play/runtime/sandbox"
 	"github.com/diegobermudez03/playhoot/play/runtime/usecases/ownership"
@@ -70,6 +73,15 @@ type envVariables struct {
 	// MaxLiveSessions its live Sessions. Optional, zero takes the defaults.
 	MaxLiveConnections int
 	MaxLiveSessions    int
+
+	// IdentityAccessTokenKey signs access tokens (at least 32 bytes). Required
+	// in production; elsewhere a random key is generated when unset, so access
+	// tokens do not survive a restart (refresh tokens do).
+	IdentityAccessTokenKey []byte
+
+	// IdentityDevTestUsers accepts the fixed test account tokens (test-user-1,
+	// test-user-2) until accounts can sign in locally. Never in production.
+	IdentityDevTestUsers bool
 
 	// GCSProjectID and GCSBucket name the object storage of game version
 	// content. Optional: without them every storage call fails. An emulator
@@ -165,10 +177,24 @@ func run() error {
 	// Closed before the sandbox, deferred later: controllers stop first, so
 	// shutting down never fails a running game.
 	defer liveConnections.Close()
+	authorizer, err := authorize.New(envVars.IdentityAccessTokenKey, envVars.IdentityDevTestUsers)
+	if err != nil {
+		return fmt.Errorf("creating authorizer: %w", err)
+	}
+	guests, err := createguest.New(db, envVars.IdentityAccessTokenKey)
+	if err != nil {
+		return fmt.Errorf("creating guest creation: %w", err)
+	}
+	refreshes, err := refreshcredentials.New(db, envVars.IdentityAccessTokenKey)
+	if err != nil {
+		return fmt.Errorf("creating credential refresh: %w", err)
+	}
 	server := api.NewServer(
-		authorize.New(),
-		createguest.New(),
+		authorizer,
+		guests,
 		listoperations.New(),
+		refreshes,
+		endsession.New(db),
 		playLifecycle,
 		owners,
 		liveConnections,
@@ -326,6 +352,9 @@ func readEnvVariables() (*envVariables, error) {
 	if envVars.Replay.MaxPendingChunks, err = optionalPositiveInt("REPLAY_MAX_PENDING_CHUNKS"); err != nil {
 		return nil, err
 	}
+	if err := readIdentityVariables(envVars); err != nil {
+		return nil, err
+	}
 
 	return envVars, nil
 }
@@ -391,4 +420,40 @@ func openPostgres(envVars *envVariables) (*gorm.DB, error) {
 	}
 
 	return db, nil
+}
+
+// readIdentityVariables reads Identity's key and its development bypass,
+// refusing the bypass in production.
+func readIdentityVariables(envVars *envVariables) error {
+	production := strings.EqualFold(envVars.Environment, "production")
+	key := os.Getenv("IDENTITY_ACCESS_TOKEN_KEY")
+	switch {
+	case key != "":
+		envVars.IdentityAccessTokenKey = []byte(key)
+	case production:
+		return fmt.Errorf("IDENTITY_ACCESS_TOKEN_KEY is required in production")
+	default:
+		generated := make([]byte, 32)
+		if _, err := rand.Read(generated); err != nil {
+			return fmt.Errorf("generating an access token key: %w", err)
+		}
+		envVars.IdentityAccessTokenKey = generated
+		log.Printf("IDENTITY_ACCESS_TOKEN_KEY unset: using a random key, access tokens end with this process")
+	}
+	if len(envVars.IdentityAccessTokenKey) < 32 {
+		return fmt.Errorf("IDENTITY_ACCESS_TOKEN_KEY must have at least 32 bytes")
+	}
+
+	devTestUsers := strings.TrimSpace(os.Getenv("IDENTITY_DEV_TEST_USERS"))
+	if devTestUsers != "" {
+		enabled, err := strconv.ParseBool(devTestUsers)
+		if err != nil {
+			return fmt.Errorf("IDENTITY_DEV_TEST_USERS must be true or false")
+		}
+		if enabled && production {
+			return fmt.Errorf("IDENTITY_DEV_TEST_USERS cannot be enabled in production")
+		}
+		envVars.IdentityDevTestUsers = enabled
+	}
+	return nil
 }

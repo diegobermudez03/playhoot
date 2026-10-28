@@ -28,6 +28,15 @@ The plan `plans/identity/05_Playhoot_Plan_de_Identidad_Basica.docx` ("plan") pro
 10. **Operation authentication levels.** Every operation a client calls through `Authorize` has a minimum level on the ordered scale `anonymous < guest < account`, kept in one catalog. `Authorize` decides with it (an operation outside the catalog is refused), and the same catalog is published to clients so they can show operations above the caller's level and redirect to the most flexible authentication the operation allows. It states authentication only: role capabilities (a future, separate answer) and each domain's object-level permissions (for example, Play's creator check) are unchanged. Clients treat it as guidance, never as authorization.
 11. **Failures are not invalid credentials.** A database or provider failure while authorizing or renewing is a transient service error, never `token_invalid` or a revocation.
 
+**Amended 2026-10-27 (decided by the human): credentials redesigned.** This replaces points 3 and 6, the token storage of points 4 and 7, and the reuse rule of IDENTITY-ADR-0002 point 2:
+
+- **Refresh tokens are stored as they are** (random, not an encrypted payload) in `identity_sessions`, one row per token with its expiry; a row is active until it is deactivated.
+- **Renewing does not rotate the refresh token.** A refresh request presents only the refresh token; while its row is active and unexpired it gets a new access token and keeps its refresh token. Only when the active refresh token is more than 5 hours old is it rotated: a new row is created and the old one is deactivated (never updated in place), so a session writes at most one row every 5 hours. An account's inactivity window therefore moves forward only when its refresh token rotates.
+- **The previous token keeps working for 5 minutes.** A refresh token that is not active but is the one just replaced, deactivated less than 5 minutes ago, gets a new access token and the active refresh token. Any other inactive, expired or unknown refresh token is refused, without closing the session.
+- **Access tokens are signed JWTs**, never stored: the user's identifier, level and display name, and the expiry (15 minutes). Every authorized request verifies the signature with the server's key and reads nothing else, so all of them are valid until their expiry; signing out deactivates the session (no further renewal) but an access token already issued keeps working until it expires.
+- **No retry-recovery mechanism**: a lost renewal answer is harmless while nothing rotated, and the 5-minute window covers a lost rotation; guest creation replays the same session's active refresh token for the same key and name within 5 minutes.
+- With rotations this rare and the previous token accepted, browser tabs renewing at the same time cannot revoke each other: the clients need no cross-tab lock, only to read the latest stored refresh token before renewing.
+
 ## Rationale
 
 - One stable `User` with accounts and external identities attached keeps every `UserUUID` other domains stored valid, and leaves room for a later guest upgrade without changing it.

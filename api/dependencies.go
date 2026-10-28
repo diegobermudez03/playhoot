@@ -19,6 +19,16 @@ type operationLister interface {
 	ListOperations(ctx context.Context) []identity.OperationLevel
 }
 
+// credentialRefresher is Identity's credential renewal.
+type credentialRefresher interface {
+	Refresh(ctx context.Context, refreshToken string) (identity.RefreshResult, error)
+}
+
+// sessionEnder is Identity's sign-out.
+type sessionEnder interface {
+	EndSession(ctx context.Context, refreshToken string) error
+}
+
 // authorizer is Identity's coarse authorization.
 type authorizer interface {
 	Authorize(ctx context.Context, token string, operation identity.Operation) (identity.User, identity.AccessDecision, error)

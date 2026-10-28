@@ -18,11 +18,6 @@ type createGuestRequest struct {
 	IdempotencyKey string `json:"idempotency_key"`
 }
 
-type createGuestResponse struct {
-	UserUUID string `json:"user_uuid"`
-	Token    string `json:"token"`
-}
-
 const (
 	maxCreateGuestBodyBytes = 4 << 10
 	// maxDisplayNameLength only bounds what reaches Identity, which owns the
@@ -30,9 +25,17 @@ const (
 	maxDisplayNameLength = 64
 )
 
-// handleCreateGuest creates a guest User and returns their credential. The
+// Error codes of guest creation clients branch on.
+const (
+	codeInvalidDisplayName  = "invalid_display_name"
+	codeIdempotencyConflict = "idempotency_conflict"
+	codeIdempotencyKeySpent = "idempotency_key_spent"
+)
+
+// handleCreateGuest creates a guest User and returns their credentials. The
 // idempotency key must be a UUID: with no caller to scope it, it must be
-// unguessable, since replaying it returns the guest's token.
+// unguessable, since replaying it returns the guest's credentials; for the
+// same reason it is never logged.
 func (h *Handler) handleCreateGuest(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -52,13 +55,11 @@ func (h *Handler) handleCreateGuest(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusBadRequest, "display_name is required and must be at most 64 characters")
 		return
 	}
-	logging.LogFields(ctx, logging.Field("idempotency_key", idempotencyKey.String()))
-
 	created, err := h.guests.CreateGuest(ctx, req.DisplayName, idempotencyKey.String())
 	if err != nil {
 		logging.LogError(ctx, err)
 		if errors.Is(err, identitypkg.ErrIdempotencyConflict) {
-			httpx.WriteError(w, http.StatusConflict, "idempotency key reused with a conflicting request")
+			httpx.WriteCodedError(w, http.StatusConflict, codeIdempotencyConflict, "idempotency key reused with a conflicting request")
 			return
 		}
 		httpx.WriteError(w, http.StatusInternalServerError, "creating guest failed")
@@ -67,15 +68,17 @@ func (h *Handler) handleCreateGuest(w http.ResponseWriter, r *http.Request) {
 
 	switch created.Outcome {
 	case identitypkg.GuestCreated:
-		if created.UserUUID == "" || created.Token == "" {
-			logging.LogFields(ctx, logging.Field("create_guest_error", "created without user or token"))
+		if !complete(created.Credentials) {
+			logging.LogFields(ctx, logging.Field("create_guest_error", "created without complete credentials"))
 			httpx.WriteError(w, http.StatusInternalServerError, "creating guest failed")
 			return
 		}
-		logging.LogFields(ctx, logging.Field("user_uuid", created.UserUUID))
-		httpx.WriteJSON(w, http.StatusCreated, createGuestResponse{UserUUID: created.UserUUID, Token: created.Token})
+		logging.LogFields(ctx, logging.Field("user_uuid", created.Credentials.User.UUID))
+		writeCredentials(w, http.StatusCreated, created.Credentials)
 	case identitypkg.GuestInvalidDisplayName:
-		httpx.WriteError(w, http.StatusBadRequest, "display_name is not allowed")
+		httpx.WriteCodedError(w, http.StatusBadRequest, codeInvalidDisplayName, "display_name is not allowed")
+	case identitypkg.GuestIdempotencyKeySpent:
+		httpx.WriteCodedError(w, http.StatusConflict, codeIdempotencyKeySpent, "idempotency key already used; start a new attempt")
 	default:
 		logging.LogFields(ctx, logging.Field("create_guest_outcome", string(created.Outcome)))
 		httpx.WriteError(w, http.StatusInternalServerError, "creating guest failed")

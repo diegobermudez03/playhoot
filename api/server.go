@@ -58,11 +58,11 @@ func ParseAllowedOrigins(raw string) ([]string, error) {
 }
 
 // NewServer constructs a Server exposing every route group's endpoints.
-func NewServer(authorizer authorizer, guests guestCreator, operations operationLister, sessionCreator sessionCreator, owners ownerLocator, admins adminAttacher, players playerAttacher, joinCodes joinCodeResolver, config Config) *Server {
+func NewServer(authorizer authorizer, guests guestCreator, operations operationLister, refreshes credentialRefresher, sessionEnder sessionEnder, sessionCreator sessionCreator, owners ownerLocator, admins adminAttacher, players playerAttacher, joinCodes joinCodeResolver, config Config) *Server {
 	mux := http.NewServeMux()
 	liveConnections := live.New(config.MaxLiveConnections)
 	groups := []routeGroup{
-		apiidentity.NewHandler(guests, operations),
+		apiidentity.NewHandler(guests, operations, refreshes, sessionEnder, authorizer),
 		apiclienttelemetry.NewHandler(authorizer),
 		apiplay.NewHandler(authorizer, sessionCreator, owners, admins, players, joinCodes, liveConnections, wsx.OriginPatterns(config.WebSocketAllowedOrigins)),
 	}

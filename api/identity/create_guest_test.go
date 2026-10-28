@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -30,24 +31,33 @@ func TestHandleCreateGuest(t *testing.T) {
 	)
 	ctx := context.Background()
 	validBody := `{"display_name":"Ana","idempotency_key":"` + key + `"}`
+	credentials := identitypkg.Credentials{
+		User:            identitypkg.User{UUID: userUUID, DisplayName: "Ana", Level: identitypkg.LevelGuest},
+		AccessToken:     "access-jwt",
+		AccessIssuedAt:  time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC),
+		AccessExpiresAt: time.Date(2026, 10, 27, 12, 15, 0, 0, time.UTC),
+		RefreshToken:    "phr_refresh",
+	}
+	credentialsJSON := `{"user":{"user_uuid":"` + userUUID + `","display_name":"Ana","level":"guest"},` +
+		`"access_token":"access-jwt","access_expires_at":"2026-10-27T12:15:00Z","access_expires_in":900,"refresh_token":"phr_refresh"}`
 
 	tests := map[string]func(t *testing.T, deps dependencies) test{
 		"guest_created": func(t *testing.T, deps dependencies) test {
 			deps.guests.EXPECT().CreateGuest(ctx, "Ana", key).
-				Return(identitypkg.CreateGuestResult{Outcome: identitypkg.GuestCreated, UserUUID: userUUID, Token: "guest-token"}, nil)
+				Return(identitypkg.CreateGuestResult{Outcome: identitypkg.GuestCreated, Credentials: credentials}, nil)
 			return test{
 				body:         validBody,
 				expectedCode: http.StatusCreated,
-				expectedBody: `{"user_uuid":"` + userUUID + `","token":"guest-token"}`,
+				expectedBody: credentialsJSON,
 			}
 		},
 		"idempotency_key_is_normalized": func(t *testing.T, deps dependencies) test {
 			deps.guests.EXPECT().CreateGuest(ctx, "Ana", key).
-				Return(identitypkg.CreateGuestResult{Outcome: identitypkg.GuestCreated, UserUUID: userUUID, Token: "guest-token"}, nil)
+				Return(identitypkg.CreateGuestResult{Outcome: identitypkg.GuestCreated, Credentials: credentials}, nil)
 			return test{
 				body:         `{"display_name":"Ana","idempotency_key":"` + strings.ToUpper(key) + `"}`,
 				expectedCode: http.StatusCreated,
-				expectedBody: `{"user_uuid":"` + userUUID + `","token":"guest-token"}`,
+				expectedBody: credentialsJSON,
 			}
 		},
 		"display_name_rejected_by_identity": func(t *testing.T, deps dependencies) test {
@@ -56,7 +66,7 @@ func TestHandleCreateGuest(t *testing.T) {
 			return test{
 				body:         validBody,
 				expectedCode: http.StatusBadRequest,
-				expectedBody: `{"message":"display_name is not allowed"}`,
+				expectedBody: `{"code":"invalid_display_name","message":"display_name is not allowed"}`,
 			}
 		},
 		"idempotency_conflict": func(t *testing.T, deps dependencies) test {
@@ -65,7 +75,7 @@ func TestHandleCreateGuest(t *testing.T) {
 			return test{
 				body:         validBody,
 				expectedCode: http.StatusConflict,
-				expectedBody: `{"message":"idempotency key reused with a conflicting request"}`,
+				expectedBody: `{"code":"idempotency_conflict","message":"idempotency key reused with a conflicting request"}`,
 			}
 		},
 		"identity_fails": func(t *testing.T, deps dependencies) test {
@@ -77,9 +87,20 @@ func TestHandleCreateGuest(t *testing.T) {
 				expectedBody: `{"message":"creating guest failed"}`,
 			}
 		},
-		"created_without_a_token": func(t *testing.T, deps dependencies) test {
+		"key_spent": func(t *testing.T, deps dependencies) test {
 			deps.guests.EXPECT().CreateGuest(ctx, "Ana", key).
-				Return(identitypkg.CreateGuestResult{Outcome: identitypkg.GuestCreated, UserUUID: userUUID}, nil)
+				Return(identitypkg.CreateGuestResult{Outcome: identitypkg.GuestIdempotencyKeySpent}, nil)
+			return test{
+				body:         validBody,
+				expectedCode: http.StatusConflict,
+				expectedBody: `{"code":"idempotency_key_spent","message":"idempotency key already used; start a new attempt"}`,
+			}
+		},
+		"created_without_a_refresh_token": func(t *testing.T, deps dependencies) test {
+			incomplete := credentials
+			incomplete.RefreshToken = ""
+			deps.guests.EXPECT().CreateGuest(ctx, "Ana", key).
+				Return(identitypkg.CreateGuestResult{Outcome: identitypkg.GuestCreated, Credentials: incomplete}, nil)
 			return test{
 				body:         validBody,
 				expectedCode: http.StatusInternalServerError,
@@ -134,10 +155,13 @@ func TestHandleCreateGuest(t *testing.T) {
 			request := httptest.NewRequest(http.MethodPost, "/v1/guests", strings.NewReader(tc.body)).WithContext(ctx)
 			recorder := httptest.NewRecorder()
 
-			NewHandler(deps.guests, nil).handleCreateGuest(recorder, request)
+			NewHandler(deps.guests, nil, nil, nil, nil).handleCreateGuest(recorder, request)
 
 			require.Equal(t, tc.expectedCode, recorder.Code)
 			require.JSONEq(t, tc.expectedBody, recorder.Body.String())
+			if tc.expectedCode == http.StatusCreated {
+				require.Equal(t, "no-store", recorder.Header().Get("Cache-Control"))
+			}
 		})
 	}
 }

@@ -2,7 +2,10 @@
 // library and grows as Identity's capabilities are accepted.
 package identity
 
-import "errors"
+import (
+	"errors"
+	"time"
+)
 
 // Operation names a coarse operation Identity decides whether a caller may
 // perform at all. Object-level permissions (for example, whether a caller
@@ -61,6 +64,10 @@ type User struct {
 
 	// DisplayName is how other people see the User; Identity decides it.
 	DisplayName string
+
+	// Level is how strongly the User is authenticated: LevelGuest or
+	// LevelAccount.
+	Level Level
 }
 
 // AccessDecision is Identity's answer to whether a caller may perform an
@@ -81,28 +88,60 @@ const (
 	AccessForbidden AccessDecision = "forbidden"
 )
 
+// Credentials are what a client authenticates with: a short access token sent
+// with every request, and the refresh token it renews the access token with.
+type Credentials struct {
+	User User
+
+	AccessToken     string
+	AccessIssuedAt  time.Time
+	AccessExpiresAt time.Time
+
+	// RefreshToken stays the same across renewals until it is rotated.
+	RefreshToken string
+}
+
 // CreateGuestOutcome is the decision a CreateGuest call reached.
 type CreateGuestOutcome string
 
 const (
 	// GuestCreated means a guest User exists for the request. A retry with
-	// the same idempotency key reports this same outcome and User.
+	// the same idempotency key and name soon after gets the same User.
 	GuestCreated CreateGuestOutcome = "created"
 
 	// GuestInvalidDisplayName means the display name breaks Identity's rules.
 	GuestInvalidDisplayName CreateGuestOutcome = "invalid_display_name"
+
+	// GuestIdempotencyKeySpent means the idempotency key created a guest too
+	// long ago, or that guest's session ended: it creates nothing new.
+	GuestIdempotencyKeySpent CreateGuestOutcome = "idempotency_key_spent"
 )
 
-// CreateGuestResult is what a CreateGuest call decided. UserUUID and Token are
-// set only when Outcome is GuestCreated.
+// CreateGuestResult is what a CreateGuest call decided. Credentials are set
+// only when Outcome is GuestCreated.
 type CreateGuestResult struct {
-	Outcome CreateGuestOutcome
+	Outcome     CreateGuestOutcome
+	Credentials Credentials
+}
 
-	UserUUID string
+// RefreshOutcome is the decision a refresh reached.
+type RefreshOutcome string
 
-	// Token is the guest's bearer credential, which the client keeps and
-	// sends like any other token.
-	Token string
+const (
+	// RefreshRenewed means the refresh token was accepted and new credentials
+	// were issued.
+	RefreshRenewed RefreshOutcome = "renewed"
+
+	// RefreshInvalid means the refresh token is unknown, expired, or no longer
+	// active: the client must authenticate again.
+	RefreshInvalid RefreshOutcome = "invalid"
+)
+
+// RefreshResult is what a refresh decided. Credentials are set only when
+// Outcome is RefreshRenewed.
+type RefreshResult struct {
+	Outcome     RefreshOutcome
+	Credentials Credentials
 }
 
 // ErrIdempotencyConflict is returned when an idempotency key is reused for a

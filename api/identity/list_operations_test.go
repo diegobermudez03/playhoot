@@ -45,7 +45,7 @@ func TestHandleListOperations(t *testing.T) {
 			// No Authorization header: the catalog is public.
 			req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/identity/operations", nil)
 			rec := httptest.NewRecorder()
-			NewHandler(NewMockguestCreator(ctrl), deps.operations).handleListOperations(rec, req)
+			NewHandler(NewMockguestCreator(ctrl), deps.operations, nil, nil, nil).handleListOperations(rec, req)
 
 			require.Equal(t, http.StatusOK, rec.Code)
 			require.Equal(t, "public, max-age=300", rec.Header().Get("Cache-Control"))
