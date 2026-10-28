@@ -164,7 +164,7 @@ func TestAdminConnection(t *testing.T) {
 	deps.starts, deps.ends, deps.owners = starts, ends, ownersReleasing(t, "session-1", 1)
 	root, stop := context.WithCancel(context.Background())
 	defer stop()
-	controller := withManifest(newSessionController(root, "session-1", 1, deps), Manifest{MaxPlayers: 8})
+	controller := withManifest(newSessionController(root, "session-1", 1, deps), Manifest{MinPlayers: 2, MaxPlayers: 8})
 	go controller.run()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -177,7 +177,7 @@ func TestAdminConnection(t *testing.T) {
 
 	update, more := first.NextLobbyUpdate(ctx)
 	require.True(t, more)
-	require.Equal(t, runtime.LobbyUpdate{Members: []runtime.LobbyMember{{UserUUID: "player-1"}}}, update, "the first update is the lobby as it is")
+	require.Equal(t, runtime.LobbyUpdate{Members: []runtime.LobbyMember{{UserUUID: "player-1"}}, MinPlayers: 2, MaxPlayers: 8}, update, "the first update is the lobby as it is, with the game's player limits")
 
 	selected, err := first.SelectPerspective(ctx, "P1")
 	require.NoError(t, err)

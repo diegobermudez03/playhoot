@@ -327,7 +327,7 @@ func TestHandleAdminJoin(t *testing.T) {
 		},
 		"start_follows_the_lobby_and_precedes_the_views": func(t *testing.T, deps dependencies) test {
 			admin := newFakeAdmin(runtime.WatchedView{PlayerView: runtime.PlayerView{ParticipantID: "P1", Full: true, Revision: 1, State: []byte(`{"round":1}`)}})
-			admin.lobby <- runtime.LobbyUpdate{Members: []runtime.LobbyMember{{UserUUID: "u1", DisplayName: "Ana"}, {UserUUID: "u2", DisplayName: "Bruno"}}}
+			admin.lobby <- runtime.LobbyUpdate{Members: []runtime.LobbyMember{{UserUUID: "u1", DisplayName: "Ana"}, {UserUUID: "u2", DisplayName: "Bruno"}}, MinPlayers: 1, MaxPlayers: 8}
 			admin.start(roster)
 			accept(deps, admin)
 			return test{
@@ -335,7 +335,7 @@ func TestHandleAdminJoin(t *testing.T) {
 				admin:        admin,
 				clientCloses: true,
 				expectedReceived: []string{
-					`{"type":"lobby_update",` + sessionUUIDJSON + `,"members":[{"user_uuid":"u1","display_name":"Ana"},{"user_uuid":"u2","display_name":"Bruno"}]}`,
+					`{"type":"lobby_update",` + sessionUUIDJSON + `,"members":[{"user_uuid":"u1","display_name":"Ana"},{"user_uuid":"u2","display_name":"Bruno"}],"min_players":1,"max_players":8}`,
 					`{"type":"session_started",` + rosterJSON + `}`,
 					`{"type":"player_view","participant_id":"P1","full":true,"revision":1,"state":{"round":1}}`,
 				},
@@ -356,14 +356,14 @@ func TestHandleAdminJoin(t *testing.T) {
 		},
 		"lobby_updates_are_delivered_until_the_lobby_closes": func(t *testing.T, deps dependencies) test {
 			admin := newFakeAdmin()
-			admin.lobby <- runtime.LobbyUpdate{Members: []runtime.LobbyMember{{UserUUID: "u1", DisplayName: "Ana"}, {UserUUID: "u2", DisplayName: "Bruno"}}}
+			admin.lobby <- runtime.LobbyUpdate{Members: []runtime.LobbyMember{{UserUUID: "u1", DisplayName: "Ana"}, {UserUUID: "u2", DisplayName: "Bruno"}}, MinPlayers: 1, MaxPlayers: 8}
 			admin.endWith(runtime.ConnectionEnd{Reason: runtime.EndSessionEnded, SessionStatus: "EXPIRED", EndCause: "LOBBY_EXPIRED"})
 			accept(deps, admin)
 			return test{
 				protocols: []string{"playhoot.v1"},
 				admin:     admin,
 				expectedReceived: []string{
-					`{"type":"lobby_update",` + sessionUUIDJSON + `,"members":[{"user_uuid":"u1","display_name":"Ana"},{"user_uuid":"u2","display_name":"Bruno"}]}`,
+					`{"type":"lobby_update",` + sessionUUIDJSON + `,"members":[{"user_uuid":"u1","display_name":"Ana"},{"user_uuid":"u2","display_name":"Bruno"}],"min_players":1,"max_players":8}`,
 					`{"type":"lobby_closed","status":"EXPIRED","end_cause":"LOBBY_EXPIRED"}`,
 				},
 				expectedCloseStatus: websocket.StatusNormalClosure,

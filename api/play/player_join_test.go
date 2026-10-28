@@ -407,7 +407,7 @@ func TestHandlePlayerJoin(t *testing.T) {
 		},
 		"start_follows_the_lobby_and_precedes_the_views": func(t *testing.T, deps dependencies) test {
 			player := newFakePlayer()
-			player.lobby <- runtime.LobbyUpdate{Members: []runtime.LobbyMember{{UserUUID: "u1", DisplayName: "Ana"}, {UserUUID: "u2", DisplayName: "Bruno"}}}
+			player.lobby <- runtime.LobbyUpdate{Members: []runtime.LobbyMember{{UserUUID: "u1", DisplayName: "Ana"}, {UserUUID: "u2", DisplayName: "Bruno"}}, MinPlayers: 1, MaxPlayers: 8}
 			player.views <- runtime.OwnView{PlayerView: runtime.PlayerView{ParticipantID: "P2", Full: true, Revision: 1, State: []byte(`{"round":1}`)}}
 			player.start(runtime.PlayerStart{SessionStart: roster, ParticipantID: "P2"})
 			accept(deps, player)
@@ -415,7 +415,7 @@ func TestHandlePlayerJoin(t *testing.T) {
 				player:       player,
 				clientCloses: true,
 				expectedReceived: []string{
-					`{"type":"lobby_update",` + sessionUUIDJSON + `,"members":[{"user_uuid":"u1","display_name":"Ana"},{"user_uuid":"u2","display_name":"Bruno"}]}`,
+					`{"type":"lobby_update",` + sessionUUIDJSON + `,"members":[{"user_uuid":"u1","display_name":"Ana"},{"user_uuid":"u2","display_name":"Bruno"}],"min_players":1,"max_players":8}`,
 					playerStartedJSON,
 					`{"type":"player_view","participant_id":"P2","full":true,"revision":1,"state":{"round":1},"consumed_through_sample_sequence":0}`,
 				},
@@ -424,13 +424,13 @@ func TestHandlePlayerJoin(t *testing.T) {
 		},
 		"lobby_closed_without_starting_tells_how": func(t *testing.T, deps dependencies) test {
 			player := newFakePlayer()
-			player.lobby <- runtime.LobbyUpdate{Members: []runtime.LobbyMember{{UserUUID: callerUUID, DisplayName: callerName}}}
+			player.lobby <- runtime.LobbyUpdate{Members: []runtime.LobbyMember{{UserUUID: callerUUID, DisplayName: callerName}}, MinPlayers: 1, MaxPlayers: 8}
 			player.endWith(hostCancelled)
 			accept(deps, player)
 			return test{
 				player: player,
 				expectedReceived: []string{
-					`{"type":"lobby_update",` + sessionUUIDJSON + `,"members":[{"user_uuid":"` + callerUUID + `","display_name":"` + callerName + `"}]}`,
+					`{"type":"lobby_update",` + sessionUUIDJSON + `,"members":[{"user_uuid":"` + callerUUID + `","display_name":"` + callerName + `"}],"min_players":1,"max_players":8}`,
 					`{"type":"lobby_closed","status":"CANCELLED","end_cause":"HOST_CANCELLED"}`,
 				},
 				expectedCloseStatus: websocket.StatusNormalClosure,
@@ -466,12 +466,12 @@ func TestHandlePlayerJoin(t *testing.T) {
 		},
 		"lobby_updates_are_delivered": func(t *testing.T, deps dependencies) test {
 			player := newFakePlayer()
-			player.lobby <- runtime.LobbyUpdate{Members: []runtime.LobbyMember{{UserUUID: callerUUID, DisplayName: callerName}}}
+			player.lobby <- runtime.LobbyUpdate{Members: []runtime.LobbyMember{{UserUUID: callerUUID, DisplayName: callerName}}, MinPlayers: 1, MaxPlayers: 8}
 			accept(deps, player)
 			return test{
 				player:              player,
 				clientCloses:        true,
-				expectedReceived:    []string{`{"type":"lobby_update",` + sessionUUIDJSON + `,"members":[{"user_uuid":"` + callerUUID + `","display_name":"` + callerName + `"}]}`},
+				expectedReceived:    []string{`{"type":"lobby_update",` + sessionUUIDJSON + `,"members":[{"user_uuid":"` + callerUUID + `","display_name":"` + callerName + `"}],"min_players":1,"max_players":8}`},
 				expectedDisconnects: 1,
 			}
 		},

@@ -77,6 +77,10 @@ type lobbyUpdateMessage struct {
 	Type        string               `json:"type"`
 	SessionUUID string               `json:"session_uuid"`
 	Members     []lobbyMemberMessage `json:"members"`
+	// MinPlayers and MaxPlayers bound how many players the game can start
+	// with, so a host knows when starting is possible.
+	MinPlayers int `json:"min_players"`
+	MaxPlayers int `json:"max_players"`
 }
 
 type lobbyMemberMessage struct {
@@ -507,7 +511,7 @@ func lobbyMessage(sessionUUID string, update runtime.LobbyUpdate) any {
 	for _, member := range update.Members {
 		members = append(members, lobbyMemberMessage{UserUUID: member.UserUUID, DisplayName: member.DisplayName})
 	}
-	return lobbyUpdateMessage{Type: liveLobbyUpdate, SessionUUID: sessionUUID, Members: members}
+	return lobbyUpdateMessage{Type: liveLobbyUpdate, SessionUUID: sessionUUID, Members: members, MinPlayers: update.MinPlayers, MaxPlayers: update.MaxPlayers}
 }
 
 // closeOnRuntimeEnd closes the connection once the Runtime ends it, after every

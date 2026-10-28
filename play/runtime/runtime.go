@@ -337,10 +337,13 @@ type StartSessionResult struct {
 	Outcome StartSessionOutcome
 }
 
-// LobbyUpdate is the lobby's members after a change. A lobby that closes
-// without starting ends its connections, telling them how the Session ended.
+// LobbyUpdate is the lobby's members after a change, with how many players
+// the game can start with. A lobby that closes without starting ends its
+// connections, telling them how the Session ended.
 type LobbyUpdate struct {
-	Members []LobbyMember
+	Members    []LobbyMember
+	MinPlayers int
+	MaxPlayers int
 }
 
 // LobbyMember is a player waiting in the lobby.

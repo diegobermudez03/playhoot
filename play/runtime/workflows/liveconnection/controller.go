@@ -36,6 +36,7 @@ var errStopped = errors.New("session controller stopped")
 
 // Manifest is what a controller knows about its Session's game version.
 type Manifest struct {
+	MinPlayers int
 	MaxPlayers int
 
 	// Inputs are what the game's SAMPLEs carry; empty means it takes none.
@@ -278,7 +279,7 @@ func (c *sessionController) loadManifest(ctx context.Context) error {
 		Devices:          inputrequirements.Devices(loaded.InputRequirements.Devices),
 	}
 	s := c.lock()
-	s.manifest = Manifest{MaxPlayers: loaded.MaxPlayers, Inputs: schema, Commands: catalog, Update: loaded.Update, Rejoin: loaded.Rejoin, Requirements: requirements}
+	s.manifest = Manifest{MinPlayers: loaded.MinPlayers, MaxPlayers: loaded.MaxPlayers, Inputs: schema, Commands: catalog, Update: loaded.Update, Rejoin: loaded.Rejoin, Requirements: requirements}
 	c.unlock()
 	c.manifestLoaded = true
 	return nil
@@ -603,7 +604,7 @@ func (s *liveState) lobbyUpdate() runtime.LobbyUpdate {
 	for i, userUUID := range s.lobby {
 		members[i] = runtime.LobbyMember{UserUUID: userUUID, DisplayName: s.players[userUUID].displayName}
 	}
-	return runtime.LobbyUpdate{Members: members}
+	return runtime.LobbyUpdate{Members: members, MinPlayers: s.manifest.MinPlayers, MaxPlayers: s.manifest.MaxPlayers}
 }
 
 // broadcastLobby tells every connection the lobby changed.
