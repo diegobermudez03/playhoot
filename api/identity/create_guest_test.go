@@ -155,7 +155,7 @@ func TestHandleCreateGuest(t *testing.T) {
 			request := httptest.NewRequest(http.MethodPost, "/v1/guests", strings.NewReader(tc.body)).WithContext(ctx)
 			recorder := httptest.NewRecorder()
 
-			NewHandler(deps.guests, nil, nil, nil, nil).handleCreateGuest(recorder, request)
+			NewHandler(deps.guests, nil, nil, nil, nil, nil, Logins{}).handleCreateGuest(recorder, request)
 
 			require.Equal(t, tc.expectedCode, recorder.Code)
 			require.JSONEq(t, tc.expectedBody, recorder.Body.String())

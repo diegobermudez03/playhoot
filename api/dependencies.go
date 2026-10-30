@@ -29,6 +29,42 @@ type sessionEnder interface {
 	EndSession(ctx context.Context, refreshToken string) error
 }
 
+// loginStarter is Identity's start of an account sign-in.
+type loginStarter interface {
+	StartLogin(ctx context.Context, provider string, codeChallenge string) (identity.StartLoginResult, error)
+}
+
+// loginCallbackHandler is Identity's handling of a provider's answer.
+type loginCallbackHandler interface {
+	HandleCallback(ctx context.Context, provider string, state string, code string, providerError string) (identity.LoginCallbackResult, error)
+}
+
+// loginCompleter is Identity's completion of a sign-in.
+type loginCompleter interface {
+	CompleteLogin(ctx context.Context, code string, codeVerifier string, replacesRefreshToken string) (identity.CompleteLoginResult, error)
+}
+
+// localPages is Identity's local provider page, when enabled.
+type localPages interface {
+	LocalAuthorizePage(state string) (string, bool)
+}
+
+// Logins is what account sign-in needs.
+type Logins struct {
+	Starter    loginStarter
+	Callbacks  loginCallbackHandler
+	Completer  loginCompleter
+	LocalPages localPages
+	// CompleteURL is the client's sign-in completion route every provider
+	// callback redirects to.
+	CompleteURL string
+}
+
+// displayNameSetter is Identity's naming of a User.
+type displayNameSetter interface {
+	SetDisplayName(ctx context.Context, userUUID string, displayName string) (identity.SetDisplayNameResult, error)
+}
+
 // authorizer is Identity's coarse authorization.
 type authorizer interface {
 	Authorize(ctx context.Context, token string, operation identity.Operation) (identity.User, identity.AccessDecision, error)

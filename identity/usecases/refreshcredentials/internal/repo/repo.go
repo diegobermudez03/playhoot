@@ -46,7 +46,7 @@ type Session struct {
 const sessionColumns = `
 	session.id, session.session_uuid, session.refresh_token, session.issued_at, session.started_at,
 	session.expires_at, session.deactivated_at, session.replaced_by_id,
-	session.user_id, users.user_uuid, users.display_name, account.id IS NOT NULL AS has_account`
+	session.user_id, users.user_uuid, COALESCE(users.display_name, '') AS display_name, account.id IS NOT NULL AS has_account`
 
 const sessionJoins = `
 	FROM identity_sessions session

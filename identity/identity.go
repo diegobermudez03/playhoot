@@ -33,6 +33,10 @@ const (
 	// OperationViewOwnIdentity is reading who the caller's credential stands
 	// for. Guests may perform it.
 	OperationViewOwnIdentity Operation = "VIEW_OWN_IDENTITY"
+
+	// OperationSetOwnDisplayName is choosing the name other people see for
+	// the caller. An account has none until its person chooses one.
+	OperationSetOwnDisplayName Operation = "SET_OWN_DISPLAY_NAME"
 )
 
 // Level is how strongly a caller is authenticated, on the ordered scale
@@ -143,6 +147,105 @@ type RefreshResult struct {
 	Outcome     RefreshOutcome
 	Credentials Credentials
 }
+
+// Provider names an external identity provider an account signs in with.
+type Provider string
+
+const (
+	// ProviderGoogle is Google, through OpenID Connect.
+	ProviderGoogle Provider = "google"
+
+	// ProviderLocal is a fictitious provider for local development and tests,
+	// never enabled in production.
+	ProviderLocal Provider = "local"
+)
+
+// StartLoginOutcome is the decision a StartLogin call reached.
+type StartLoginOutcome string
+
+const (
+	// LoginStarted means the client may send the person to AuthorizationURL.
+	LoginStarted StartLoginOutcome = "started"
+
+	// LoginProviderUnavailable means the provider is unknown or not enabled.
+	LoginProviderUnavailable StartLoginOutcome = "provider_unavailable"
+
+	// LoginInvalidCodeChallenge means the code challenge is not an S256 hash.
+	LoginInvalidCodeChallenge StartLoginOutcome = "invalid_code_challenge"
+)
+
+// StartLoginResult is what a StartLogin call decided. AuthorizationURL is set
+// only when Outcome is LoginStarted.
+type StartLoginResult struct {
+	Outcome          StartLoginOutcome
+	AuthorizationURL string
+}
+
+// LoginCallbackOutcome is how the provider's answer to a login ended.
+type LoginCallbackOutcome string
+
+const (
+	// LoginCodeIssued means the person proved their identity: LoginCode
+	// completes the login once, with the client's verifier, shortly after.
+	LoginCodeIssued LoginCallbackOutcome = "code_issued"
+
+	// LoginCancelled means the person declined at the provider.
+	LoginCancelled LoginCallbackOutcome = "cancelled"
+
+	// LoginFailed means the attempt is unknown, expired or already answered,
+	// or the provider's answer was not valid.
+	LoginFailed LoginCallbackOutcome = "failed"
+
+	// LoginUnavailable means the provider could not be reached.
+	LoginUnavailable LoginCallbackOutcome = "unavailable"
+)
+
+// LoginCallbackResult is what the provider's answer led to. LoginCode is set
+// only when Outcome is LoginCodeIssued.
+type LoginCallbackResult struct {
+	Outcome   LoginCallbackOutcome
+	LoginCode string
+}
+
+// CompleteLoginOutcome is the decision a CompleteLogin call reached.
+type CompleteLoginOutcome string
+
+const (
+	// LoginCompleted means the account is signed in with new credentials.
+	LoginCompleted CompleteLoginOutcome = "completed"
+
+	// LoginCodeInvalid means the code is unknown, used, expired, or does not
+	// match the verifier: the login must start again.
+	LoginCodeInvalid CompleteLoginOutcome = "login_code_invalid"
+)
+
+// CompleteLoginResult is what a CompleteLogin call decided. Credentials are
+// set only when Outcome is LoginCompleted.
+type CompleteLoginResult struct {
+	Outcome     CompleteLoginOutcome
+	Credentials Credentials
+}
+
+// SetDisplayNameOutcome is the decision a SetDisplayName call reached.
+type SetDisplayNameOutcome string
+
+const (
+	// DisplayNameSet means the User is now named as asked.
+	DisplayNameSet SetDisplayNameOutcome = "set"
+
+	// DisplayNameInvalid means the name breaks Identity's rules.
+	DisplayNameInvalid SetDisplayNameOutcome = "invalid_display_name"
+)
+
+// SetDisplayNameResult is what a SetDisplayName call decided. User is set
+// only when Outcome is DisplayNameSet.
+type SetDisplayNameResult struct {
+	Outcome SetDisplayNameOutcome
+	User    User
+}
+
+// ErrUserNotFound is returned when a User an operation names does not exist.
+var ErrUserNotFound = errors.New("user not found")
 
 // ErrIdempotencyConflict is returned when an idempotency key is reused for a
 // request that differs from the one it was first used with.

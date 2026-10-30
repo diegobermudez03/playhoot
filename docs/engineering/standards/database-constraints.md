@@ -20,6 +20,8 @@ This standard applies to every schema migration and to every piece of code that 
    - A reader that only cares whether a value is X checks only for X and does not validate the other values.
    - A reader that handles every possible value (for example a `switch` or map over every status, outcome, kind or catalog entry) is implicitly validating, so it has an explicit path for a value outside the known ones: it emits an alert through the monitoring abstraction and returns an explicit error, as a data integrity failure (`data-integrity.md`). It never treats an unexpected value as impossible, and never lets a `default` branch stand for a known value.
 
+How every change to a row stays visible afterwards (write-once columns, history tables) is `data-history.md`.
+
 ## Scope
 
 Future migrations follow this standard. The existing migrations that predated it and had `CHECK` constraints were migrated on 2026-10-25, at the human's direction, by `20261027000000_play_drop_check_constraints`; no migration had foreign keys. The record is in `docs/projects/active/session-runtime-v1/PROJECT.md`.

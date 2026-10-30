@@ -18,11 +18,14 @@ import (
 
 	"github.com/diegobermudez03/playhoot/api"
 	"github.com/diegobermudez03/playhoot/game/usecases/checkplayability"
+	"github.com/diegobermudez03/playhoot/identity/loginproviders"
 	"github.com/diegobermudez03/playhoot/identity/usecases/authorize"
 	"github.com/diegobermudez03/playhoot/identity/usecases/createguest"
 	"github.com/diegobermudez03/playhoot/identity/usecases/endsession"
 	"github.com/diegobermudez03/playhoot/identity/usecases/listoperations"
 	"github.com/diegobermudez03/playhoot/identity/usecases/refreshcredentials"
+	"github.com/diegobermudez03/playhoot/identity/usecases/setdisplayname"
+	"github.com/diegobermudez03/playhoot/identity/workflows/accountlogin"
 	"github.com/diegobermudez03/playhoot/orchestrator/playlifecycle"
 	"github.com/diegobermudez03/playhoot/play/runtime/sandbox"
 	"github.com/diegobermudez03/playhoot/play/runtime/usecases/ownership"
@@ -79,9 +82,15 @@ type envVariables struct {
 	// tokens do not survive a restart (refresh tokens do).
 	IdentityAccessTokenKey []byte
 
-	// IdentityDevTestUsers accepts the fixed test account tokens (test-user-1,
-	// test-user-2) until accounts can sign in locally. Never in production.
-	IdentityDevTestUsers bool
+	// IdentityLocalProvider enables the fictitious local sign-in provider, for
+	// development and tests. Never in production.
+	IdentityLocalProvider bool
+
+	// WebSignInCompleteURL is the web client's sign-in completion route, where
+	// every provider callback sends the browser. Required in production;
+	// elsewhere it defaults to /sign-in/complete on the server's own origin
+	// (the web's development server proxies the API).
+	WebSignInCompleteURL string
 
 	// GCSProjectID and GCSBucket name the object storage of game version
 	// content. Optional: without them every storage call fails. An emulator
@@ -177,7 +186,7 @@ func run() error {
 	// Closed before the sandbox, deferred later: controllers stop first, so
 	// shutting down never fails a running game.
 	defer liveConnections.Close()
-	authorizer, err := authorize.New(envVars.IdentityAccessTokenKey, envVars.IdentityDevTestUsers)
+	authorizer, err := authorize.New(envVars.IdentityAccessTokenKey)
 	if err != nil {
 		return fmt.Errorf("creating authorizer: %w", err)
 	}
@@ -189,12 +198,32 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("creating credential refresh: %w", err)
 	}
+	var providerConfig loginproviders.Config
+	if envVars.IdentityLocalProvider {
+		providerConfig.Local = &loginproviders.LocalConfig{
+			AuthorizeURL: "/v1/identity/login/local/authorize",
+			CallbackURL:  "/v1/identity/login/local/callback",
+		}
+	}
+	loginProviders := loginproviders.New(providerConfig)
+	accountLogins, err := accountlogin.New(db, loginProviders, envVars.IdentityAccessTokenKey)
+	if err != nil {
+		return fmt.Errorf("creating account login: %w", err)
+	}
 	server := api.NewServer(
 		authorizer,
 		guests,
 		listoperations.New(),
 		refreshes,
 		endsession.New(db),
+		setdisplayname.New(db),
+		api.Logins{
+			Starter:     accountLogins,
+			Callbacks:   accountLogins,
+			Completer:   accountLogins,
+			LocalPages:  loginProviders,
+			CompleteURL: envVars.WebSignInCompleteURL,
+		},
 		playLifecycle,
 		owners,
 		liveConnections,
@@ -422,8 +451,12 @@ func openPostgres(envVars *envVariables) (*gorm.DB, error) {
 	return db, nil
 }
 
-// readIdentityVariables reads Identity's key and its development bypass,
-// refusing the bypass in production.
+// localProviderEnvironments are the only environments the fictitious local
+// sign-in provider may run in: anyone can sign in as anybody with it.
+var localProviderEnvironments = map[string]bool{"development": true, "local": true, "test": true}
+
+// readIdentityVariables reads Identity's key, its local provider (refused in
+// production) and where sign-ins complete.
 func readIdentityVariables(envVars *envVariables) error {
 	production := strings.EqualFold(envVars.Environment, "production")
 	key := os.Getenv("IDENTITY_ACCESS_TOKEN_KEY")
@@ -444,16 +477,24 @@ func readIdentityVariables(envVars *envVariables) error {
 		return fmt.Errorf("IDENTITY_ACCESS_TOKEN_KEY must have at least 32 bytes")
 	}
 
-	devTestUsers := strings.TrimSpace(os.Getenv("IDENTITY_DEV_TEST_USERS"))
-	if devTestUsers != "" {
-		enabled, err := strconv.ParseBool(devTestUsers)
+	localProvider := strings.TrimSpace(os.Getenv("IDENTITY_LOCAL_PROVIDER"))
+	if localProvider != "" {
+		enabled, err := strconv.ParseBool(localProvider)
 		if err != nil {
-			return fmt.Errorf("IDENTITY_DEV_TEST_USERS must be true or false")
+			return fmt.Errorf("IDENTITY_LOCAL_PROVIDER must be true or false")
 		}
-		if enabled && production {
-			return fmt.Errorf("IDENTITY_DEV_TEST_USERS cannot be enabled in production")
+		if enabled && !localProviderEnvironments[strings.ToLower(envVars.Environment)] {
+			return fmt.Errorf("IDENTITY_LOCAL_PROVIDER can only be enabled in development, local or test environments, not %q", envVars.Environment)
 		}
-		envVars.IdentityDevTestUsers = enabled
+		envVars.IdentityLocalProvider = enabled
+	}
+
+	envVars.WebSignInCompleteURL = strings.TrimSpace(os.Getenv("WEB_SIGN_IN_COMPLETE_URL"))
+	if envVars.WebSignInCompleteURL == "" {
+		if production {
+			return fmt.Errorf("WEB_SIGN_IN_COMPLETE_URL is required in production")
+		}
+		envVars.WebSignInCompleteURL = "/sign-in/complete"
 	}
 	return nil
 }

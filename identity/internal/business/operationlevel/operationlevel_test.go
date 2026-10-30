@@ -62,6 +62,7 @@ func TestCatalog(t *testing.T) {
 		{Operation: identity.OperationJoinSessionAsAdmin, RequiredLevel: identity.LevelAccount},
 		{Operation: identity.OperationJoinSessionAsPlayer, RequiredLevel: identity.LevelGuest},
 		{Operation: identity.OperationReportClientTelemetry, RequiredLevel: identity.LevelGuest},
+		{Operation: identity.OperationSetOwnDisplayName, RequiredLevel: identity.LevelGuest},
 		{Operation: identity.OperationViewOwnIdentity, RequiredLevel: identity.LevelGuest},
 	}, Catalog())
 }

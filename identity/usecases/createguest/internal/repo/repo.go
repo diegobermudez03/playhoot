@@ -63,8 +63,8 @@ func (r *Repo) ClaimGuestRequest(ctx context.Context, tx *gorm.DB, guest NewGues
 	return 0, existing, nil
 }
 
-// CreateGuestUser creates, within tx, the guest User and their first, never
-// expiring session.
+// CreateGuestUser creates, within tx, the guest User, the display name they
+// start with in its history, and their first, never expiring session.
 func (r *Repo) CreateGuestUser(ctx context.Context, tx *gorm.DB, guest NewGuest) error {
 	var userID int64
 	err := tx.WithContext(ctx).Raw(`
@@ -73,6 +73,14 @@ func (r *Repo) CreateGuestUser(ctx context.Context, tx *gorm.DB, guest NewGuest)
 	).Scan(&userID).Error
 	if err != nil {
 		return fmt.Errorf("creating guest user: %s", err)
+	}
+	err = tx.WithContext(ctx).Exec(`
+		INSERT INTO identity_display_name_changes (user_id, from_name, to_name, changed_at)
+		VALUES (?, NULL, ?, ?)`,
+		userID, guest.DisplayName, guest.RequestedAt,
+	).Error
+	if err != nil {
+		return fmt.Errorf("recording guest display name: %s", err)
 	}
 	err = tx.WithContext(ctx).Exec(`
 		INSERT INTO identity_sessions (session_uuid, user_id, refresh_token, issued_at, started_at)

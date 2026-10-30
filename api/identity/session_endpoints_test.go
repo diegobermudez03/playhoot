@@ -73,7 +73,7 @@ func TestHandleRefresh(t *testing.T) {
 
 			request := httptest.NewRequest(http.MethodPost, "/v1/identity/refresh", strings.NewReader(tc.body)).WithContext(ctx)
 			recorder := httptest.NewRecorder()
-			NewHandler(nil, nil, refreshes, nil, nil).handleRefresh(recorder, request)
+			NewHandler(nil, nil, refreshes, nil, nil, nil, Logins{}).handleRefresh(recorder, request)
 
 			require.Equal(t, tc.expectedCode, recorder.Code)
 			require.JSONEq(t, tc.expectedBody, recorder.Body.String())
@@ -90,7 +90,7 @@ func TestHandleLogout(t *testing.T) {
 
 		request := httptest.NewRequest(http.MethodPost, "/v1/identity/logout", strings.NewReader(`{"refresh_token":"phr_refresh"}`)).WithContext(ctx)
 		recorder := httptest.NewRecorder()
-		NewHandler(nil, nil, nil, sessions, nil).handleLogout(recorder, request)
+		NewHandler(nil, nil, nil, sessions, nil, nil, Logins{}).handleLogout(recorder, request)
 
 		require.Equal(t, http.StatusNoContent, recorder.Code)
 	})
@@ -98,7 +98,7 @@ func TestHandleLogout(t *testing.T) {
 	t.Run("missing_refresh_token", func(t *testing.T) {
 		request := httptest.NewRequest(http.MethodPost, "/v1/identity/logout", strings.NewReader(`{}`)).WithContext(ctx)
 		recorder := httptest.NewRecorder()
-		NewHandler(nil, nil, nil, nil, nil).handleLogout(recorder, request)
+		NewHandler(nil, nil, nil, nil, nil, nil, Logins{}).handleLogout(recorder, request)
 
 		require.Equal(t, http.StatusBadRequest, recorder.Code)
 	})
@@ -109,7 +109,7 @@ func TestHandleMe(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/v1/identity/me", nil).WithContext(ctx)
 	recorder := httptest.NewRecorder()
 
-	NewHandler(nil, nil, nil, nil, nil).handleMe(recorder, request)
+	NewHandler(nil, nil, nil, nil, nil, nil, Logins{}).handleMe(recorder, request)
 
 	require.Equal(t, http.StatusOK, recorder.Code)
 	require.JSONEq(t, `{"user":{"user_uuid":"0f8fad5b-d9cb-469f-a165-70867728950e","display_name":"Ana","level":"guest"}}`, recorder.Body.String())

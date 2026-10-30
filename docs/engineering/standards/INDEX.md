@@ -16,6 +16,7 @@ This index routes engineers and AI agents to accepted reusable engineering stand
 | Error propagation and error logging boundaries; expected business outcome vs. error classification | `error-handling.md` |
 | Unexpected data/state integrity failures, alerts, and panic semantics | `data-integrity.md` |
 | What the database enforces (keys, unique constraints, indexes, data types) vs. the application (every other rule: no CHECK constraints, no foreign keys); writers validate what they write, readers that handle every value alert and fail on an unexpected one | `database-constraints.md` |
+| Keeping the history of every database change: write-once columns vs. history tables, when a cause is recorded, the only exception (live Session data) | `data-history.md` |
 | Unit/service/repository testing | `testing.md` |
 | Domain logic placement, package organization, type ownership, workflow vs. use case, behavior locality, workflow controller shape, business/lifecycle-policy vs. data-integrity vs. persistence-mechanics responsibility split | `domain-logic-placement.md` |
 | Persisted cross-domain entity-reference naming | `cross-domain-reference-naming.md` |
