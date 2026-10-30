@@ -275,18 +275,18 @@ func (m *MockloginStarter) EXPECT() *MockloginStarterMockRecorder {
 }
 
 // StartLogin mocks base method.
-func (m *MockloginStarter) StartLogin(ctx context.Context, provider, codeChallenge string) (identity.StartLoginResult, error) {
+func (m *MockloginStarter) StartLogin(ctx context.Context, provider, codeChallenge, guestUserUUID string) (identity.StartLoginResult, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "StartLogin", ctx, provider, codeChallenge)
+	ret := m.ctrl.Call(m, "StartLogin", ctx, provider, codeChallenge, guestUserUUID)
 	ret0, _ := ret[0].(identity.StartLoginResult)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // StartLogin indicates an expected call of StartLogin.
-func (mr *MockloginStarterMockRecorder) StartLogin(ctx, provider, codeChallenge any) *gomock.Call {
+func (mr *MockloginStarterMockRecorder) StartLogin(ctx, provider, codeChallenge, guestUserUUID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StartLogin", reflect.TypeOf((*MockloginStarter)(nil).StartLogin), ctx, provider, codeChallenge)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StartLogin", reflect.TypeOf((*MockloginStarter)(nil).StartLogin), ctx, provider, codeChallenge, guestUserUUID)
 }
 
 // MockloginCallbackHandler is a mock of loginCallbackHandler interface.

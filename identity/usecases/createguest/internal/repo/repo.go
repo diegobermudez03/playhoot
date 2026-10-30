@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Repo is guest creation's persistence.
@@ -39,19 +40,19 @@ type NewGuest struct {
 // ClaimGuestRequest claims guest.IdempotencyKey within tx. It returns the new
 // request's ID, or the request that claimed the key before (ID 0).
 func (r *Repo) ClaimGuestRequest(ctx context.Context, tx *gorm.DB, guest NewGuest) (int64, *GuestRequest, error) {
-	var claimed []int64
-	err := tx.WithContext(ctx).Raw(`
-		INSERT INTO identity_guest_requests (idempotency_key, display_name, user_uuid, session_uuid, requested_at)
-		VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT (idempotency_key) DO NOTHING
-		RETURNING id`,
-		guest.IdempotencyKey, guest.DisplayName, guest.UserUUID, guest.SessionUUID, guest.RequestedAt,
-	).Scan(&claimed).Error
-	if err != nil {
-		return 0, nil, fmt.Errorf("claiming guest request: %s", err)
+	request := guestRequest{
+		IdempotencyKey: guest.IdempotencyKey,
+		DisplayName:    guest.DisplayName,
+		UserUUID:       guest.UserUUID,
+		SessionUUID:    guest.SessionUUID,
+		RequestedAt:    guest.RequestedAt,
 	}
-	if len(claimed) > 0 {
-		return claimed[0], nil, nil
+	claimed := tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&request)
+	if claimed.Error != nil {
+		return 0, nil, fmt.Errorf("claiming guest request: %s", claimed.Error)
+	}
+	if claimed.RowsAffected > 0 {
+		return request.ID, nil, nil
 	}
 	existing, err := findGuestRequest(ctx, tx, guest.IdempotencyKey)
 	if err != nil {
@@ -66,32 +67,66 @@ func (r *Repo) ClaimGuestRequest(ctx context.Context, tx *gorm.DB, guest NewGues
 // CreateGuestUser creates, within tx, the guest User, the display name they
 // start with in its history, and their first, never expiring session.
 func (r *Repo) CreateGuestUser(ctx context.Context, tx *gorm.DB, guest NewGuest) error {
-	var userID int64
-	err := tx.WithContext(ctx).Raw(`
-		INSERT INTO identity_users (user_uuid, display_name) VALUES (?, ?) RETURNING id`,
-		guest.UserUUID, guest.DisplayName,
-	).Scan(&userID).Error
-	if err != nil {
+	created := user{UserUUID: guest.UserUUID, DisplayName: guest.DisplayName}
+	if err := tx.WithContext(ctx).Create(&created).Error; err != nil {
 		return fmt.Errorf("creating guest user: %s", err)
 	}
-	err = tx.WithContext(ctx).Exec(`
-		INSERT INTO identity_display_name_changes (user_id, from_name, to_name, changed_at)
-		VALUES (?, NULL, ?, ?)`,
-		userID, guest.DisplayName, guest.RequestedAt,
-	).Error
-	if err != nil {
+	named := displayNameChange{UserID: created.ID, ToName: guest.DisplayName, ChangedAt: guest.RequestedAt}
+	if err := tx.WithContext(ctx).Create(&named).Error; err != nil {
 		return fmt.Errorf("recording guest display name: %s", err)
 	}
-	err = tx.WithContext(ctx).Exec(`
-		INSERT INTO identity_sessions (session_uuid, user_id, refresh_token, issued_at, started_at)
-		VALUES (?, ?, ?, ?, ?)`,
-		guest.SessionUUID, userID, guest.RefreshToken, guest.RequestedAt, guest.RequestedAt,
-	).Error
-	if err != nil {
+	opened := session{
+		SessionUUID:  guest.SessionUUID,
+		UserID:       created.ID,
+		RefreshToken: guest.RefreshToken,
+		IssuedAt:     guest.RequestedAt,
+		StartedAt:    guest.RequestedAt,
+	}
+	if err := tx.WithContext(ctx).Create(&opened).Error; err != nil {
 		return fmt.Errorf("creating guest session: %s", err)
 	}
 	return nil
 }
+
+type guestRequest struct {
+	ID             int64
+	IdempotencyKey string
+	DisplayName    string
+	UserUUID       string
+	SessionUUID    string
+	RequestedAt    time.Time
+}
+
+func (guestRequest) TableName() string { return "identity_guest_requests" }
+
+type user struct {
+	ID          int64
+	UserUUID    string
+	DisplayName string
+}
+
+func (user) TableName() string { return "identity_users" }
+
+type displayNameChange struct {
+	ID        int64
+	UserID    int64
+	FromName  *string
+	ToName    string
+	ChangedAt time.Time
+}
+
+func (displayNameChange) TableName() string { return "identity_display_name_changes" }
+
+type session struct {
+	ID           int64
+	SessionUUID  string
+	UserID       int64
+	RefreshToken string
+	IssuedAt     time.Time
+	StartedAt    time.Time
+}
+
+func (session) TableName() string { return "identity_sessions" }
 
 // GuestRequest is a claimed guest creation and where its session stands.
 type GuestRequest struct {

@@ -25,12 +25,13 @@ type callbackRepo interface {
 	RecordAttemptEvent(ctx context.Context, tx *gorm.DB, attemptID int64, event internalrepo.AttemptEvent) error
 	FindBoundUser(ctx context.Context, tx *gorm.DB, issuer string, subject string) (int64, error)
 	CreateAccount(ctx context.Context, tx *gorm.DB, userUUID string, identity internalrepo.ExternalIdentity, createdAt time.Time) (int64, bool, error)
+	LinkAccount(ctx context.Context, tx *gorm.DB, guestUserID int64, identity internalrepo.ExternalIdentity, linkedAt time.Time) (bool, bool, error)
 	IssueCode(ctx context.Context, tx *gorm.DB, attemptID int64, code string, expiresAt time.Time, issued internalrepo.AttemptEvent) error
 }
 
 var (
 	callbackOutcomeLabel = metrics.NewLabel("outcome", "code_issued", "cancelled", "failed", "unavailable")
-	callbackAccountLabel = metrics.NewLabel("account", "created", "existing", "none")
+	callbackAccountLabel = metrics.NewLabel("account", "created", "linked_guest", "existing", "none")
 
 	callbacksTotal = metrics.NewCounter(
 		"identity_login_callbacks_total",
@@ -99,54 +100,84 @@ func (m *Manager) HandleCallback(ctx context.Context, provider string, state str
 		return identity.LoginCallbackResult{}, err
 	}
 	bound := internalrepo.ExternalIdentity{Issuer: external.Issuer, Subject: external.Subject, Email: external.Email, Name: external.Name}
-	created, err := m.issueCode(ctx, attempt.ID, bound, loginCode, now)
+	account, err := m.issueCode(ctx, *attempt, bound, loginCode, now)
 	if err != nil {
 		return identity.LoginCallbackResult{}, err
 	}
-	account := "existing"
-	if created {
-		account = "created"
-	}
-	issued := result(identity.LoginCodeIssued, account)
+	issued := result(identity.LoginCodeIssued, string(account))
 	issued.LoginCode = loginCode
 	return issued, nil
 }
 
-// issueCode resolves the external identity to its User, creating the User,
-// their account and the binding on the first sign-in, and gives the attempt
-// its code, all together. A concurrent first sign-in that binds the identity
-// first wins; this one rolls back and then finds that User.
-func (m *Manager) issueCode(ctx context.Context, attemptID int64, external internalrepo.ExternalIdentity, code string, now time.Time) (bool, error) {
+// accountResolution is how a login's external identity found its User.
+type accountResolution string
+
+const (
+	// resolvedExisting: the identity was already bound to an account.
+	resolvedExisting accountResolution = "existing"
+	// resolvedLinkedGuest: the guest who started the login became the account.
+	resolvedLinkedGuest accountResolution = "linked_guest"
+	// resolvedCreated: a new User was created for the account.
+	resolvedCreated accountResolution = "created"
+)
+
+// issueCode resolves the external identity to its User and gives the attempt
+// its code, all together. An identity bound to nobody becomes an account: of
+// the guest who started the login, keeping their User, or of a new User. A
+// concurrent first sign-in that binds the identity first wins; this one rolls
+// back and then finds that User.
+func (m *Manager) issueCode(ctx context.Context, attempt internalrepo.AnsweredAttempt, external internalrepo.ExternalIdentity, code string, now time.Time) (accountResolution, error) {
 	for {
-		created, err := utils.RunInDBTransaction(ctx, m.dbServicer, func(ctx context.Context, tx *gorm.DB) (bool, error) {
-			return m.issueCodeInTx(ctx, tx, attemptID, external, code, now)
+		resolution, err := utils.RunInDBTransaction(ctx, m.dbServicer, func(ctx context.Context, tx *gorm.DB) (accountResolution, error) {
+			return m.issueCodeInTx(ctx, tx, attempt, external, code, now)
 		})
 		if errors.Is(err, errBoundMeanwhile) {
 			continue
 		}
-		return created, err
+		return resolution, err
 	}
 }
 
-func (m *Manager) issueCodeInTx(ctx context.Context, tx *gorm.DB, attemptID int64, external internalrepo.ExternalIdentity, code string, now time.Time) (bool, error) {
-	userID, err := m.callbackRepo.FindBoundUser(ctx, tx, external.Issuer, external.Subject)
+func (m *Manager) issueCodeInTx(ctx context.Context, tx *gorm.DB, attempt internalrepo.AnsweredAttempt, external internalrepo.ExternalIdentity, code string, now time.Time) (accountResolution, error) {
+	userID, resolution, err := m.resolveAccount(ctx, tx, attempt, external, now)
 	if err != nil {
-		return false, err
+		return "", err
 	}
-	created := false
-	if userID == 0 {
-		var bound bool
-		userID, bound, err = m.callbackRepo.CreateAccount(ctx, tx, uuid.NewString(), external, now)
-		if err != nil {
-			return false, err
-		}
-		if !bound {
-			return false, errBoundMeanwhile
-		}
-		created = true
+	issued := internalrepo.AttemptEvent{
+		Reason: string(resolution), UserID: userID,
+		ObservedEmail: external.Email, ObservedName: external.Name, OccurredAt: now,
 	}
-	issued := internalrepo.AttemptEvent{UserID: userID, ObservedEmail: external.Email, ObservedName: external.Name, OccurredAt: now}
-	return created, m.callbackRepo.IssueCode(ctx, tx, attemptID, code, now.Add(login.CodeLifetime), issued)
+	return resolution, m.callbackRepo.IssueCode(ctx, tx, attempt.ID, code, now.Add(login.CodeLifetime), issued)
+}
+
+func (m *Manager) resolveAccount(ctx context.Context, tx *gorm.DB, attempt internalrepo.AnsweredAttempt, external internalrepo.ExternalIdentity, now time.Time) (int64, accountResolution, error) {
+	userID, err := m.callbackRepo.FindBoundUser(ctx, tx, external.Issuer, external.Subject)
+	if err != nil || userID != 0 {
+		return userID, resolvedExisting, err
+	}
+
+	// if no user existed, this is a new account registration, not login
+	if attempt.GuestUserID != nil {
+		linked, bound, err := m.callbackRepo.LinkAccount(ctx, tx, *attempt.GuestUserID, external, now)
+		switch {
+		case err != nil:
+			return 0, "", err
+		case linked && !bound:
+			return 0, "", errBoundMeanwhile
+		case linked:
+			return *attempt.GuestUserID, resolvedLinkedGuest, nil
+		}
+		// That guest is an account already (another login linked it first):
+		// a new User, as without a guest.
+	}
+	userID, bound, err := m.callbackRepo.CreateAccount(ctx, tx, uuid.NewString(), external, now)
+	if err != nil {
+		return 0, "", err
+	}
+	if !bound {
+		return 0, "", errBoundMeanwhile
+	}
+	return userID, resolvedCreated, nil
 }
 
 func (m *Manager) recordEvent(ctx context.Context, attemptID int64, event internalrepo.AttemptEvent) error {

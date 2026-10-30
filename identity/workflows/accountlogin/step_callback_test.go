@@ -37,33 +37,61 @@ func TestHandleCallbackWithoutProviderOrState(t *testing.T) {
 
 func TestIssueCodeInTx(t *testing.T) {
 	type test struct {
-		expectedCreated bool
-		expectErr       error
+		attempt            internalrepo.AnsweredAttempt
+		expectedResolution accountResolution
+		expectErr          error
 	}
 
 	ctx := context.Background()
 	now := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
 	external := internalrepo.ExternalIdentity{Issuer: "issuer", Subject: "sub-ana", Email: "ana@example.com", Name: "Ana"}
-	issued := func(userID int64) internalrepo.AttemptEvent {
-		return internalrepo.AttemptEvent{UserID: userID, ObservedEmail: "ana@example.com", ObservedName: "Ana", OccurredAt: now}
+	guestID := int64(9)
+	issued := func(userID int64, resolution accountResolution) internalrepo.AttemptEvent {
+		return internalrepo.AttemptEvent{Reason: string(resolution), UserID: userID, ObservedEmail: "ana@example.com", ObservedName: "Ana", OccurredAt: now}
 	}
+	plain := internalrepo.AnsweredAttempt{ID: 7}
+	fromGuest := internalrepo.AnsweredAttempt{ID: 7, GuestUserID: &guestID}
+	expires := now.Add(60 * time.Second)
 
 	tests := map[string]func(t *testing.T, repo *MockcallbackRepo) test{
 		"bound_identity_resolves_to_its_user": func(t *testing.T, repo *MockcallbackRepo) test {
 			repo.EXPECT().FindBoundUser(ctx, nil, "issuer", "sub-ana").Return(int64(3), nil)
-			repo.EXPECT().IssueCode(ctx, nil, int64(7), "phl_code", now.Add(60*time.Second), issued(3)).Return(nil)
-			return test{}
+			repo.EXPECT().IssueCode(ctx, nil, int64(7), "phl_code", expires, issued(3, resolvedExisting)).Return(nil)
+			return test{attempt: plain, expectedResolution: resolvedExisting}
 		},
-		"first_sign_in_creates_the_account_without_a_display_name": func(t *testing.T, repo *MockcallbackRepo) test {
+		"bound_identity_wins_over_the_guest": func(t *testing.T, repo *MockcallbackRepo) test {
+			repo.EXPECT().FindBoundUser(ctx, nil, "issuer", "sub-ana").Return(int64(3), nil)
+			repo.EXPECT().IssueCode(ctx, nil, int64(7), "phl_code", expires, issued(3, resolvedExisting)).Return(nil)
+			return test{attempt: fromGuest, expectedResolution: resolvedExisting}
+		},
+		"a_new_account_is_the_guest_who_started_the_login": func(t *testing.T, repo *MockcallbackRepo) test {
+			repo.EXPECT().FindBoundUser(ctx, nil, "issuer", "sub-ana").Return(int64(0), nil)
+			repo.EXPECT().LinkAccount(ctx, nil, guestID, external, now).Return(true, true, nil)
+			repo.EXPECT().IssueCode(ctx, nil, int64(7), "phl_code", expires, issued(guestID, resolvedLinkedGuest)).Return(nil)
+			return test{attempt: fromGuest, expectedResolution: resolvedLinkedGuest}
+		},
+		"a_guest_already_an_account_gets_a_new_user": func(t *testing.T, repo *MockcallbackRepo) test {
+			repo.EXPECT().FindBoundUser(ctx, nil, "issuer", "sub-ana").Return(int64(0), nil)
+			repo.EXPECT().LinkAccount(ctx, nil, guestID, external, now).Return(false, true, nil)
+			repo.EXPECT().CreateAccount(ctx, nil, gomock.Any(), external, now).Return(int64(4), true, nil)
+			repo.EXPECT().IssueCode(ctx, nil, int64(7), "phl_code", expires, issued(4, resolvedCreated)).Return(nil)
+			return test{attempt: fromGuest, expectedResolution: resolvedCreated}
+		},
+		"linking_an_identity_bound_meanwhile_rolls_back": func(t *testing.T, repo *MockcallbackRepo) test {
+			repo.EXPECT().FindBoundUser(ctx, nil, "issuer", "sub-ana").Return(int64(0), nil)
+			repo.EXPECT().LinkAccount(ctx, nil, guestID, external, now).Return(true, false, nil)
+			return test{attempt: fromGuest, expectErr: errBoundMeanwhile}
+		},
+		"without_a_guest_a_new_account_without_a_display_name": func(t *testing.T, repo *MockcallbackRepo) test {
 			repo.EXPECT().FindBoundUser(ctx, nil, "issuer", "sub-ana").Return(int64(0), nil)
 			repo.EXPECT().CreateAccount(ctx, nil, gomock.Any(), external, now).Return(int64(4), true, nil)
-			repo.EXPECT().IssueCode(ctx, nil, int64(7), "phl_code", now.Add(60*time.Second), issued(4)).Return(nil)
-			return test{expectedCreated: true}
+			repo.EXPECT().IssueCode(ctx, nil, int64(7), "phl_code", expires, issued(4, resolvedCreated)).Return(nil)
+			return test{attempt: plain, expectedResolution: resolvedCreated}
 		},
-		"bound_by_a_concurrent_sign_in_rolls_back": func(t *testing.T, repo *MockcallbackRepo) test {
+		"creating_an_identity_bound_meanwhile_rolls_back": func(t *testing.T, repo *MockcallbackRepo) test {
 			repo.EXPECT().FindBoundUser(ctx, nil, "issuer", "sub-ana").Return(int64(0), nil)
 			repo.EXPECT().CreateAccount(ctx, nil, gomock.Any(), external, now).Return(int64(5), false, nil)
-			return test{expectErr: errBoundMeanwhile}
+			return test{attempt: plain, expectErr: errBoundMeanwhile}
 		},
 	}
 
@@ -73,14 +101,14 @@ func TestIssueCodeInTx(t *testing.T) {
 			tc := setup(t, repo)
 			manager := &Manager{callbackRepo: repo, now: func() time.Time { return now }}
 
-			created, err := manager.issueCodeInTx(ctx, nil, 7, external, "phl_code", now)
+			resolution, err := manager.issueCodeInTx(ctx, nil, tc.attempt, external, "phl_code", now)
 
 			if tc.expectErr != nil {
 				require.ErrorIs(t, err, tc.expectErr)
 				return
 			}
 			require.NoError(t, err)
-			require.Equal(t, tc.expectedCreated, created)
+			require.Equal(t, tc.expectedResolution, resolution)
 		})
 	}
 }

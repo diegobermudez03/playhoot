@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/diegobermudez03/playhoot/api/internal/auth"
 	"github.com/diegobermudez03/playhoot/api/internal/httpx"
 	identitypkg "github.com/diegobermudez03/playhoot/identity"
 	"github.com/diegobermudez03/playhoot/logging"
@@ -35,7 +36,9 @@ const (
 )
 
 // handleStartLogin starts an account's sign-in; the client sends the person
-// to the authorization URL and keeps the verifier of its code challenge.
+// to the authorization URL and keeps the verifier of its code challenge. A
+// guest calling it (with their access token) becomes the account if the
+// login creates one.
 func (h *Handler) handleStartLogin(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -44,7 +47,11 @@ func (h *Handler) handleStartLogin(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	result, err := h.logins.Starter.StartLogin(ctx, req.Provider, req.CodeChallenge)
+	guestUserUUID := ""
+	if caller, ok := auth.Caller(ctx); ok && caller.Level == identitypkg.LevelGuest {
+		guestUserUUID = caller.UUID
+	}
+	result, err := h.logins.Starter.StartLogin(ctx, req.Provider, req.CodeChallenge, guestUserUUID)
 	if err != nil {
 		logging.LogError(ctx, err)
 		httpx.WriteError(w, http.StatusServiceUnavailable, "starting the sign-in failed")

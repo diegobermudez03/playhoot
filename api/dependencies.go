@@ -31,7 +31,7 @@ type sessionEnder interface {
 
 // loginStarter is Identity's start of an account sign-in.
 type loginStarter interface {
-	StartLogin(ctx context.Context, provider string, codeChallenge string) (identity.StartLoginResult, error)
+	StartLogin(ctx context.Context, provider string, codeChallenge string, guestUserUUID string) (identity.StartLoginResult, error)
 }
 
 // loginCallbackHandler is Identity's handling of a provider's answer.

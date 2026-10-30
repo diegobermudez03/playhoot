@@ -49,7 +49,7 @@ type authorizer interface {
 
 // loginStarter starts account sign-ins.
 type loginStarter interface {
-	StartLogin(ctx context.Context, provider string, codeChallenge string) (identitypkg.StartLoginResult, error)
+	StartLogin(ctx context.Context, provider string, codeChallenge string, guestUserUUID string) (identitypkg.StartLoginResult, error)
 }
 
 // loginCallbackHandler takes providers' answers to sign-ins.
@@ -104,7 +104,12 @@ func (h *Handler) RESTRoutes() []routing.Route {
 		{Pattern: "GET /v1/identity/operations", Handler: h.handleListOperations},
 		{Pattern: "POST /v1/identity/refresh", Handler: h.handleRefresh},
 		{Pattern: "POST /v1/identity/logout", Handler: h.handleLogout},
-		{Pattern: "POST /v1/identity/login/start", Handler: h.handleStartLogin},
+		{
+			Pattern: "POST /v1/identity/login/start",
+			Handler: h.handleStartLogin,
+			// A guest sends their access token, so a new account is theirs.
+			Authorization: auth.Optional(h.authorizer, identitypkg.OperationViewOwnIdentity),
+		},
 		{Pattern: "GET /v1/identity/login/{provider}/callback", Handler: h.handleLoginCallback},
 		{Pattern: "POST /v1/identity/login/complete", Handler: h.handleCompleteLogin},
 		// this is for the local provider, only for local testing

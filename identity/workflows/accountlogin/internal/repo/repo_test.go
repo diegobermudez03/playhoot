@@ -156,3 +156,48 @@ func TestOpenSessionAndEndSessionOf(t *testing.T) {
 	require.EqualValues(t, 1, activeOf(account.RefreshToken))
 	require.Zero(t, activeOf(guest.RefreshToken))
 }
+
+func TestLinkAccount(t *testing.T) {
+	db := testdb.OpenIdentityDB(t)
+	repo := New(db)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	guestUUID := uuid.NewString()
+	var guestID int64
+	require.NoError(t, db.Raw(`INSERT INTO identity_users (user_uuid, display_name) VALUES (?, 'Gus') RETURNING id`, guestUUID).Scan(&guestID).Error)
+	require.NoError(t, repo.OpenSession(ctx, db, NewSession{SessionUUID: uuid.NewString(), UserID: guestID, RefreshToken: "phr_" + uuid.NewString(), IssuedAt: now}))
+
+	state := uuid.NewString()
+	require.NoError(t, repo.CreateAttempt(ctx, db, NewAttempt{State: state, Provider: "local", CodeChallenge: "c", Nonce: "n", GuestUserUUID: guestUUID, StartedAt: now}))
+	answered, err := repo.AnswerAttempt(ctx, db, "local", state, now, now.Add(-time.Minute))
+	require.NoError(t, err)
+	require.Equal(t, guestID, *answered.GuestUserID, "the attempt knows the guest who started it")
+
+	identity := ExternalIdentity{Issuer: "issuer", Subject: uuid.NewString()}
+	linked, bound, err := repo.LinkAccount(ctx, db, guestID, identity, now)
+	require.NoError(t, err)
+	require.True(t, linked)
+	require.True(t, bound)
+	found, err := repo.FindBoundUser(ctx, db, identity.Issuer, identity.Subject)
+	require.NoError(t, err)
+	require.Equal(t, guestID, found)
+	var active int64
+	require.NoError(t, db.Raw(`SELECT count(*) FROM identity_sessions WHERE user_id = ? AND deactivated_at IS NULL`, guestID).Scan(&active).Error)
+	require.Zero(t, active, "the guest's sessions ended")
+
+	again, _, err := repo.LinkAccount(ctx, db, guestID, ExternalIdentity{Issuer: "issuer", Subject: uuid.NewString()}, now)
+	require.NoError(t, err)
+	require.False(t, again, "a User is an account once")
+}
+
+func TestAttemptWithoutAGuest(t *testing.T) {
+	db := testdb.OpenIdentityDB(t)
+	repo := New(db)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	state := startedAttempt(t, repo, db, now)
+
+	answered, err := repo.AnswerAttempt(ctx, db, "local", state, now, now.Add(-time.Minute))
+	require.NoError(t, err)
+	require.Nil(t, answered.GuestUserID)
+}

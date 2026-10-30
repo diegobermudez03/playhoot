@@ -41,8 +41,14 @@ func newFlow(t *testing.T) flow {
 // started starts a local login, returning its state and verifier.
 func (f flow) started(t *testing.T) (string, string) {
 	t.Helper()
+	return f.startedBy(t, "")
+}
+
+// startedBy starts a local login by guestUserUUID ("" for nobody).
+func (f flow) startedBy(t *testing.T, guestUserUUID string) (string, string) {
+	t.Helper()
 	verifier := uuid.NewString() + uuid.NewString()
-	started, err := f.manager.StartLogin(context.Background(), "local", challengeOf(verifier))
+	started, err := f.manager.StartLogin(context.Background(), "local", challengeOf(verifier), guestUserUUID)
 	require.NoError(t, err)
 	require.Equal(t, identity.LoginStarted, started.Outcome)
 	authorization, err := url.Parse(started.AuthorizationURL)
@@ -52,8 +58,16 @@ func (f flow) started(t *testing.T) (string, string) {
 
 func (f flow) signIn(t *testing.T, name string, replaces string) identity.Credentials {
 	t.Helper()
+	return f.signInAs(t, name, identity.Credentials{RefreshToken: replaces})
+}
+
+// signInAs signs in as name from guest (its User and refresh token; empty for
+// nobody), as a client holding that guest does.
+func (f flow) signInAs(t *testing.T, name string, guest identity.Credentials) identity.Credentials {
+	t.Helper()
 	ctx := context.Background()
-	state, verifier := f.started(t)
+	replaces := guest.RefreshToken
+	state, verifier := f.startedBy(t, guest.User.UUID)
 	answer, err := f.manager.HandleCallback(ctx, "local", state, name, "")
 	require.NoError(t, err)
 	require.Equal(t, identity.LoginCodeIssued, answer.Outcome)
@@ -111,7 +125,7 @@ func TestAttemptHistory(t *testing.T) {
 	retried, err := f.manager.CompleteLogin(ctx, answer.LoginCode, verifier, "")
 	require.NoError(t, err)
 	require.Equal(t, identity.LoginCodeInvalid, retried.Outcome, "a wrong verifier used the code up")
-	require.Equal(t, []string{"started", "answered", "code_issued", "rejected:verifier_mismatch", "rejected:used"}, f.historyOf(t, state))
+	require.Equal(t, []string{"started", "answered", "code_issued:created", "rejected:verifier_mismatch", "rejected:used"}, f.historyOf(t, state))
 
 	cancelled, _ := f.started(t)
 	_, err = f.manager.HandleCallback(ctx, "local", cancelled, "", "access_denied")
@@ -201,4 +215,48 @@ func TestRepeatedCallbackFails(t *testing.T) {
 
 	require.Equal(t, identity.LoginCodeIssued, first.Outcome)
 	require.Equal(t, identity.LoginCallbackResult{Outcome: identity.LoginFailed}, repeated)
+}
+
+func (f flow) newGuest(t *testing.T, name string) identity.Credentials {
+	t.Helper()
+	guests, err := createguest.New(f.db, accessKey)
+	require.NoError(t, err)
+	created, err := guests.CreateGuest(context.Background(), name, uuid.NewString())
+	require.NoError(t, err)
+	return created.Credentials
+}
+
+func TestAGuestSigningUpKeepsTheirUser(t *testing.T) {
+	f := newFlow(t)
+	guest := f.newGuest(t, "Gus")
+
+	account := f.signInAs(t, "Gus "+uuid.NewString()[:8], guest)
+
+	require.Equal(t, guest.User.UUID, account.User.UUID, "the guest became the account")
+	require.Equal(t, identity.LevelAccount, account.User.Level)
+	require.Equal(t, "Gus", account.User.DisplayName, "the guest's name is kept")
+	var active int64
+	require.NoError(t, f.db.Raw(`SELECT count(*) FROM identity_sessions WHERE refresh_token = ? AND deactivated_at IS NULL`, guest.RefreshToken).Scan(&active).Error)
+	require.Zero(t, active, "the guest's session, which never expires, ended")
+	var reason string
+	require.NoError(t, f.db.Raw(`
+		SELECT event.reason FROM identity_login_attempt_events event
+		WHERE event.event = 'code_issued' AND event.user_id = (SELECT id FROM identity_users WHERE user_uuid = ?)`, guest.User.UUID).Scan(&reason).Error)
+	require.Equal(t, "linked_guest", reason)
+}
+
+func TestAGuestSigningInToAnExistingAccountSwitches(t *testing.T) {
+	f := newFlow(t)
+	name := "Hugo " + uuid.NewString()[:8]
+	existing := f.signIn(t, name, "")
+	guest := f.newGuest(t, "Hugo")
+
+	account := f.signInAs(t, name, guest)
+
+	require.Equal(t, existing.User.UUID, account.User.UUID, "the existing account wins")
+	require.NotEqual(t, guest.User.UUID, account.User.UUID)
+	var guestAccounts int64
+	require.NoError(t, f.db.Raw(`
+		SELECT count(*) FROM identity_accounts WHERE user_id = (SELECT id FROM identity_users WHERE user_uuid = ?)`, guest.User.UUID).Scan(&guestAccounts).Error)
+	require.Zero(t, guestAccounts, "the guest stays a guest")
 }

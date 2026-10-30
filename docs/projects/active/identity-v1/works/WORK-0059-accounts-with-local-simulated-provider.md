@@ -38,6 +38,10 @@ None.
 - Migration `20261029020000_identity_trails`.
 - Verification: workflow unit, repository and Postgres integration tests (attempt histories for completion, verifier mismatch, reuse, cancellation, invalid answers; observed data kept per login); the display name use case and endpoint tests; headless Edge: a new account asked its name (still asked after a reload), host flow 28/28, guest flow 11/11.
 
+## Amendment 2 (2026-10-29, decided by the human in conversation): a guest signing up keeps their User
+
+Implicit, without asking: `login/start` takes the guest's access token (`auth.Optional`), the attempt stores `guest_user_id` (migration `20261029030000_identity_guest_link`), and the callback attaches a new account to that guest (`LinkAccount`: account row, binding, the guest's sessions ended) instead of a new User; the `code_issued` event says `existing`, `linked_guest` or `created`. An identity already bound to an account keeps the switch. IDENTITY-ADR-0003 amended. Verified: unit cases for every resolution, repository and Postgres integration tests (a guest signing up keeps UserUUID and name, its session ended; a guest signing in to an existing account switches and stays a guest), headless Edge (the guest becomes the account with its name, no name screen; a brand-new account is asked its name; host 28/28, guests 11/11).
+
 ## Completion Record
 
 - Implementation: `identity/identity.go` (provider and login types), migration `20261029010000_identity_logins`, `identity/internal/business/login`, `identity/loginproviders`, `identity/usecases/{startlogin,logincallback,completelogin}`, `authorize` without the bypass, `api/identity/login.go` (four routes), `api.Logins` through `api.NewServer`, `main.go` (`IDENTITY_LOCAL_PROVIDER`, `WEB_SIGN_IN_COMPLETE_URL`).

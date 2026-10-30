@@ -13,7 +13,7 @@ Decided by the human on 2026-10-25: this project goes before the SDK built-ins a
 ## Explicitly Out Of Scope
 
 - Passwords, magic links, providers other than Google, MFA (plan §2).
-- Guest-to-account upgrade and identity reconciliation/merge (plan §3 "Conversión futura"): the schema must allow them later keeping the UserUUID, but no flow is built.
+- Identity reconciliation/merge (plan §3 "Conversión futura"): a guest signing in to an account that already exists still switches to it. (The upgrade of a guest who creates a new account was brought into scope by the human on 2026-10-29: IDENTITY-ADR-0003 amendment, WORK-0059.)
 - Full profiles, editable avatar, device/session management screens, guest recovery (plan intro, §5).
 - Configurable roles, organization permissions, permissions of the future game editor, delegated authorization for agents (plan §1).
 - Remote eviction of already open WebSockets on revocation (plan §5 "Revocación").

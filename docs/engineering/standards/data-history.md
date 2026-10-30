@@ -22,6 +22,10 @@ The database must show how every row got to its current state. A previous state 
 - The live Session's high-frequency data (samples, commands, views, ticks) is not kept change by change: keeping all of it would be far too heavy. It is approximated by checkpoints and replay chunks. That data is not database row changes; every row the platform writes about a Session follows the rules above.
 - `play_sessions.owner_lease_expires_at`, overwritten by every owner heartbeat (`play/session/workflows/sessionlifecycle/internal/repo/owner_lease.go`), has no history (accepted by the human 2026-10-29): it is purely infrastructure and periodic, and logging covers it. Infrastructure data is otherwise not exempt; only this periodic heartbeat is. A history of heartbeats would still help debug infrastructure: the human wants it revisited later.
 
+## Current Deviations
+
+- `play_game_faults` (`play/session/usecases/recordgamefault`, `recordlimithits`): an upsert overwrites `occurrences`, `detail`, `last_reported_at` and `participant_id` on every report, with no history. Found 2026-10-30; to be redone (also breaks the insert rule of `repositories.md`).
+
 ## Review
 
-Reviewed 2026-10-29: every other in-place update in the backend is either a write-once column (rule 1: `play_session_join_codes.released_at`, `play_create_session_requests.outcome/session_id`, `play_replays.final_session_time_ms/finalized_at`, `identity_sessions.deactivated_at/replaced_by_id`, `identity_login_attempts` timestamps) or already has a history table (`play_sessions.status`, login attempts, display names). The seed migrations that set `play_games.current_version_id` are test data, not application writes.
+Reviewed 2026-10-29 (`UPDATE` statements; upserts found 2026-10-30, above): every other in-place update in the backend is either a write-once column (rule 1: `play_session_join_codes.released_at`, `play_create_session_requests.outcome/session_id`, `play_replays.final_session_time_ms/finalized_at`, `identity_sessions.deactivated_at/replaced_by_id`, `identity_login_attempts` timestamps) or already has a history table (`play_sessions.status`, login attempts, display names). The seed migrations that set `play_games.current_version_id` are test data, not application writes.

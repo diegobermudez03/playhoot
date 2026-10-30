@@ -96,17 +96,24 @@ type tokenSource func(r *http.Request) (string, error)
 // Require lets a request through only when Identity allows its bearer token
 // (Authorization header) to perform operation.
 func Require(authorizer authorizer, operation identity.Operation) routing.Middleware {
-	return requireToken(authorizer, operation, headerToken)
+	return requireToken(authorizer, operation, headerToken, false)
+}
+
+// Optional is Require for a route anyone may call: a request without a token
+// goes through with no caller, but a token it sends must be valid, so the
+// client renews an expired one instead of being taken for nobody.
+func Optional(authorizer authorizer, operation identity.Operation) routing.Middleware {
+	return requireToken(authorizer, operation, headerToken, true)
 }
 
 // RequireWebSocket is Require for a WebSocket handshake: the token comes from
 // the Authorization header or, for browsers, the bearer token subprotocol
 // "base64url.bearer.authorization.playhoot.<base64url token>".
 func RequireWebSocket(authorizer authorizer, operation identity.Operation) routing.Middleware {
-	return requireToken(authorizer, operation, webSocketToken)
+	return requireToken(authorizer, operation, webSocketToken, false)
 }
 
-func requireToken(authorizer authorizer, operation identity.Operation, tokenFrom tokenSource) routing.Middleware {
+func requireToken(authorizer authorizer, operation identity.Operation, tokenFrom tokenSource, optional bool) routing.Middleware {
 	return func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
@@ -116,6 +123,10 @@ func requireToken(authorizer authorizer, operation identity.Operation, tokenFrom
 			if errors.Is(err, errMalformedToken) {
 				authorizationTotal.Inc(ctx, decisionMalformedToken)
 				writeUnauthenticated(w, codeTokenMalformed, "malformed bearer token")
+				return
+			}
+			if err != nil && optional {
+				next(w, r)
 				return
 			}
 			if err != nil {

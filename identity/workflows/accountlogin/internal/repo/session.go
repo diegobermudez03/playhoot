@@ -18,13 +18,16 @@ type NewSession struct {
 }
 
 // OpenSession creates the session within tx.
-func (r *Repo) OpenSession(ctx context.Context, tx *gorm.DB, session NewSession) error {
-	err := tx.WithContext(ctx).Exec(`
-		INSERT INTO identity_sessions (session_uuid, user_id, refresh_token, issued_at, started_at, expires_at)
-		VALUES (?, ?, ?, ?, ?, ?)`,
-		session.SessionUUID, session.UserID, session.RefreshToken, session.IssuedAt, session.IssuedAt, session.ExpiresAt,
-	).Error
-	if err != nil {
+func (r *Repo) OpenSession(ctx context.Context, tx *gorm.DB, opening NewSession) error {
+	opened := session{
+		SessionUUID:  opening.SessionUUID,
+		UserID:       opening.UserID,
+		RefreshToken: opening.RefreshToken,
+		IssuedAt:     opening.IssuedAt,
+		StartedAt:    opening.IssuedAt,
+		ExpiresAt:    opening.ExpiresAt,
+	}
+	if err := tx.WithContext(ctx).Create(&opened).Error; err != nil {
 		return fmt.Errorf("opening account session: %s", err)
 	}
 	return nil

@@ -36,7 +36,7 @@ func TestStartLoginRefusals(t *testing.T) {
 			}
 			manager := &Manager{providers: providers, now: time.Now}
 
-			result, err := manager.StartLogin(context.Background(), tc.provider, tc.challenge)
+			result, err := manager.StartLogin(context.Background(), tc.provider, tc.challenge, "")
 
 			require.NoError(t, err)
 			require.Equal(t, identity.StartLoginResult{Outcome: tc.expected}, result)

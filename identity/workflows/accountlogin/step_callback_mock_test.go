@@ -103,6 +103,22 @@ func (mr *MockcallbackRepoMockRecorder) IssueCode(ctx, tx, attemptID, code, expi
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IssueCode", reflect.TypeOf((*MockcallbackRepo)(nil).IssueCode), ctx, tx, attemptID, code, expiresAt, issued)
 }
 
+// LinkAccount mocks base method.
+func (m *MockcallbackRepo) LinkAccount(ctx context.Context, tx *gorm.DB, guestUserID int64, identity repo.ExternalIdentity, linkedAt time.Time) (bool, bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LinkAccount", ctx, tx, guestUserID, identity, linkedAt)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(bool)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// LinkAccount indicates an expected call of LinkAccount.
+func (mr *MockcallbackRepoMockRecorder) LinkAccount(ctx, tx, guestUserID, identity, linkedAt any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LinkAccount", reflect.TypeOf((*MockcallbackRepo)(nil).LinkAccount), ctx, tx, guestUserID, identity, linkedAt)
+}
+
 // RecordAttemptEvent mocks base method.
 func (m *MockcallbackRepo) RecordAttemptEvent(ctx context.Context, tx *gorm.DB, attemptID int64, event repo.AttemptEvent) error {
 	m.ctrl.T.Helper()

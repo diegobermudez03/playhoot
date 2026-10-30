@@ -53,18 +53,24 @@ func (r *Repo) LockUser(ctx context.Context, tx *gorm.DB, userUUID string) (*Use
 	return &users[0], nil
 }
 
+type displayNameChange struct {
+	ID        int64
+	UserID    int64
+	FromName  *string
+	ToName    string
+	ChangedAt time.Time
+}
+
+func (displayNameChange) TableName() string { return "identity_display_name_changes" }
+
 // ChangeDisplayName names the User displayName within tx, keeping the change
 // in their history.
 func (r *Repo) ChangeDisplayName(ctx context.Context, tx *gorm.DB, userID int64, fromName *string, displayName string, changedAt time.Time) error {
 	if err := tx.WithContext(ctx).Exec(`UPDATE identity_users SET display_name = ? WHERE id = ?`, displayName, userID).Error; err != nil {
 		return fmt.Errorf("changing display name: %s", err)
 	}
-	err := tx.WithContext(ctx).Exec(`
-		INSERT INTO identity_display_name_changes (user_id, from_name, to_name, changed_at)
-		VALUES (?, ?, ?, ?)`,
-		userID, fromName, displayName, changedAt,
-	).Error
-	if err != nil {
+	change := displayNameChange{UserID: userID, FromName: fromName, ToName: displayName, ChangedAt: changedAt}
+	if err := tx.WithContext(ctx).Create(&change).Error; err != nil {
 		return fmt.Errorf("recording display name change: %s", err)
 	}
 	return nil

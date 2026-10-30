@@ -37,6 +37,8 @@ The plan `plans/identity/05_Playhoot_Plan_de_Identidad_Basica.docx` ("plan") pro
 - **No retry-recovery mechanism**: a lost renewal answer is harmless while nothing rotated, and the 5-minute window covers a lost rotation; guest creation replays the same session's active refresh token for the same key and name within 5 minutes.
 - With rotations this rare and the previous token accepted, browser tabs renewing at the same time cannot revoke each other: the clients need no cross-tab lock, only to read the latest stored refresh token before renewing.
 
+**Amended 2026-10-29 (decided by the human): a guest signing up keeps their User.** This replaces the conversion part of point 9. A guest who starts a login sends their access token to `login/start`, and the attempt records them. If the login creates an account (the provider identity is bound to nobody), the account is attached to that guest's User: same `UserUUID`, display name and history, and their guest sessions (which never expire) end in the same transaction. It is implicit: the person is not asked. If the provider identity already belongs to an account, the person enters that account and point 9's switch applies (the guest stays a guest; merging two Users remains reconciliation, still deferred). An account starts without a display name only when it is not a linked guest; the person then chooses one (also decided 2026-10-29).
+
 ## Rationale
 
 - One stable `User` with accounts and external identities attached keeps every `UserUUID` other domains stored valid, and leaves room for a later guest upgrade without changing it.

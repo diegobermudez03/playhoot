@@ -9,7 +9,10 @@ This standard owns concrete repository *implementation* conventions. For reposit
 - For GORM raw-query reads into structs, prefer `Scan(&value)` and verify `RowsAffected` instead of scanning every selected column manually.
 - SQL column aliases should match destination struct fields through GORM's normal mapping rules.
 - For repository implementation and repository test setup, prefer raw SQL for reads, updates, and deletes.
-- Inserts are the exception: prefer GORM `Create()` for inserts so field mapping is explicit and does not depend on fragile positional argument ordering.
+- Inserts are the exception (restated by the human on 2026-10-30): an insert uses GORM `Create()` with a row struct (an unexported struct with `TableName()`), so field mapping is explicit and does not depend on positional argument ordering. A conflict that inserts nothing uses `Clauses(clause.OnConflict{DoNothing: true})` and reads `RowsAffected`; the generated ID is read back from the struct.
+- A hand-written `INSERT` is allowed only when it is straightforward: a column list and bound values, at most `ON CONFLICT ... DO NOTHING` and `RETURNING`. Never a subquery or `INSERT ... SELECT`, never SQL functions, casts or expressions on the values (`COALESCE`, `NULLIF`, `::type`, `jsonb_build_object`, ...), never `ON CONFLICT ... DO UPDATE`. A value that comes from another row is read first with its own query; an optional value is a pointer field (nil is NULL), not `NULLIF`.
+
+Current deviations from the insert rule (2026-10-30): `play/session/usecases/recordgamefault` and `play/session/usecases/recordlimithits` insert with `INSERT ... SELECT` and `ON CONFLICT ... DO UPDATE` (functions and casts in the second); their upsert also overwrites counters and details in place, against `data-history.md`. To be redone; the human decides when.
 
 This standard does not define transaction, locking, pagination, isolation-level, or broader ORM-vs-SQL policy.
 

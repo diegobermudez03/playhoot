@@ -25,6 +25,19 @@ func (r *Repo) GetDB() *gorm.DB {
 	return r.db
 }
 
+// sessionRow is a new refresh token of a session, as inserted.
+type sessionRow struct {
+	ID           int64
+	SessionUUID  string
+	UserID       int64
+	RefreshToken string
+	IssuedAt     time.Time
+	StartedAt    time.Time
+	ExpiresAt    *time.Time
+}
+
+func (sessionRow) TableName() string { return "identity_sessions" }
+
 // Session is one refresh token of a session, with its User.
 type Session struct {
 	ID            int64
@@ -86,16 +99,18 @@ func (r *Repo) RotateSession(ctx context.Context, tx *gorm.DB, current Session, 
 	if err := tx.WithContext(ctx).Exec(`UPDATE identity_sessions SET deactivated_at = ? WHERE id = ?`, issuedAt, current.ID).Error; err != nil {
 		return fmt.Errorf("deactivating rotated session row: %s", err)
 	}
-	var newID int64
-	err := tx.WithContext(ctx).Raw(`
-		INSERT INTO identity_sessions (session_uuid, user_id, refresh_token, issued_at, started_at, expires_at)
-		VALUES (?, ?, ?, ?, ?, ?) RETURNING id`,
-		current.SessionUUID, current.UserID, refreshToken, issuedAt, current.StartedAt, expiresAt,
-	).Scan(&newID).Error
-	if err != nil {
+	successor := sessionRow{
+		SessionUUID:  current.SessionUUID,
+		UserID:       current.UserID,
+		RefreshToken: refreshToken,
+		IssuedAt:     issuedAt,
+		StartedAt:    current.StartedAt,
+		ExpiresAt:    expiresAt,
+	}
+	if err := tx.WithContext(ctx).Create(&successor).Error; err != nil {
 		return fmt.Errorf("creating rotated session row: %s", err)
 	}
-	if err := tx.WithContext(ctx).Exec(`UPDATE identity_sessions SET replaced_by_id = ? WHERE id = ?`, newID, current.ID).Error; err != nil {
+	if err := tx.WithContext(ctx).Exec(`UPDATE identity_sessions SET replaced_by_id = ? WHERE id = ?`, successor.ID, current.ID).Error; err != nil {
 		return fmt.Errorf("linking rotated session row: %s", err)
 	}
 	return nil

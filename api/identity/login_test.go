@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	"github.com/diegobermudez03/playhoot/api/internal/auth"
 	identitypkg "github.com/diegobermudez03/playhoot/identity"
 )
 
@@ -26,22 +27,22 @@ func TestHandleStartLogin(t *testing.T) {
 
 	tests := map[string]func(t *testing.T, starter *MockloginStarter) test{
 		"started": func(t *testing.T, starter *MockloginStarter) test {
-			starter.EXPECT().StartLogin(ctx, "local", "challenge").
+			starter.EXPECT().StartLogin(ctx, "local", "challenge", "").
 				Return(identitypkg.StartLoginResult{Outcome: identitypkg.LoginStarted, AuthorizationURL: "/authorize?state=s"}, nil)
 			return test{body: body, expectedCode: http.StatusOK, expectedBody: `{"authorization_url":"/authorize?state=s"}`}
 		},
 		"provider_unavailable": func(t *testing.T, starter *MockloginStarter) test {
-			starter.EXPECT().StartLogin(ctx, "local", "challenge").
+			starter.EXPECT().StartLogin(ctx, "local", "challenge", "").
 				Return(identitypkg.StartLoginResult{Outcome: identitypkg.LoginProviderUnavailable}, nil)
 			return test{body: body, expectedCode: http.StatusBadRequest, expectedBody: `{"code":"provider_unavailable","message":"this sign-in provider is not available"}`}
 		},
 		"invalid_code_challenge": func(t *testing.T, starter *MockloginStarter) test {
-			starter.EXPECT().StartLogin(ctx, "local", "challenge").
+			starter.EXPECT().StartLogin(ctx, "local", "challenge", "").
 				Return(identitypkg.StartLoginResult{Outcome: identitypkg.LoginInvalidCodeChallenge}, nil)
 			return test{body: body, expectedCode: http.StatusBadRequest, expectedBody: `{"code":"invalid_code_challenge","message":"code_challenge must be an S256 hash"}`}
 		},
 		"identity_failure_is_transient": func(t *testing.T, starter *MockloginStarter) test {
-			starter.EXPECT().StartLogin(ctx, "local", "challenge").Return(identitypkg.StartLoginResult{}, errors.New("db down"))
+			starter.EXPECT().StartLogin(ctx, "local", "challenge", "").Return(identitypkg.StartLoginResult{}, errors.New("db down"))
 			return test{body: body, expectedCode: http.StatusServiceUnavailable, expectedBody: `{"message":"starting the sign-in failed"}`}
 		},
 		"invalid_body": func(t *testing.T, starter *MockloginStarter) test {
@@ -60,6 +61,32 @@ func TestHandleStartLogin(t *testing.T) {
 
 			require.Equal(t, tc.expectedCode, recorder.Code)
 			require.JSONEq(t, tc.expectedBody, recorder.Body.String())
+		})
+	}
+}
+
+func TestHandleStartLoginAsAGuest(t *testing.T) {
+	guest := identitypkg.User{UUID: "0f8fad5b-d9cb-469f-a165-70867728950e", Level: identitypkg.LevelGuest}
+	account := identitypkg.User{UUID: "7c9e6679-7425-40de-944b-e07fc1f90ae7", Level: identitypkg.LevelAccount}
+	started := identitypkg.StartLoginResult{Outcome: identitypkg.LoginStarted, AuthorizationURL: "/authorize?state=s"}
+
+	for name, tc := range map[string]struct {
+		caller        identitypkg.User
+		expectedGuest string
+	}{
+		"a_guest_is_named_so_a_new_account_is_theirs": {caller: guest, expectedGuest: guest.UUID},
+		"an_account_links_nothing":                    {caller: account, expectedGuest: ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx := auth.WithCaller(context.Background(), tc.caller)
+			starter := NewMockloginStarter(gomock.NewController(t))
+			starter.EXPECT().StartLogin(ctx, "local", "challenge", tc.expectedGuest).Return(started, nil)
+
+			request := httptest.NewRequest(http.MethodPost, "/v1/identity/login/start", strings.NewReader(`{"provider":"local","code_challenge":"challenge"}`)).WithContext(ctx)
+			recorder := httptest.NewRecorder()
+			NewHandler(nil, nil, nil, nil, nil, nil, Logins{Starter: starter}).handleStartLogin(recorder, request)
+
+			require.Equal(t, http.StatusOK, recorder.Code)
 		})
 	}
 }

@@ -185,6 +185,54 @@ func TestRequire(t *testing.T) {
 	}
 }
 
+func TestOptional(t *testing.T) {
+	const operation = identity.OperationViewOwnIdentity
+	guest := identity.User{UUID: "0f8fad5b-d9cb-469f-a165-70867728950e", Level: identity.LevelGuest}
+
+	run := func(t *testing.T, authorizer *Mockauthorizer, authorization string) (*httptest.ResponseRecorder, bool, identity.User, bool) {
+		t.Helper()
+		var nextCalled, identified bool
+		var caller identity.User
+		next := func(w http.ResponseWriter, r *http.Request) {
+			nextCalled = true
+			caller, identified = Caller(r.Context())
+			w.WriteHeader(http.StatusNoContent)
+		}
+		request := httptest.NewRequest(http.MethodPost, "/v1/identity/login/start", nil)
+		if authorization != "" {
+			request.Header.Set("Authorization", authorization)
+		}
+		recorder := httptest.NewRecorder()
+		Optional(authorizer, operation)(next)(recorder, request)
+		return recorder, nextCalled, caller, identified
+	}
+
+	t.Run("without_a_token_goes_through_as_nobody", func(t *testing.T) {
+		recorder, nextCalled, _, identified := run(t, NewMockauthorizer(gomock.NewController(t)), "")
+		require.Equal(t, http.StatusNoContent, recorder.Code)
+		require.True(t, nextCalled)
+		require.False(t, identified)
+	})
+
+	t.Run("a_valid_token_names_the_caller", func(t *testing.T) {
+		authorizer := NewMockauthorizer(gomock.NewController(t))
+		authorizer.EXPECT().Authorize(gomock.Any(), "guest-jwt", operation).Return(guest, identity.AccessAllowed, nil)
+		_, nextCalled, caller, identified := run(t, authorizer, "Bearer guest-jwt")
+		require.True(t, nextCalled)
+		require.True(t, identified)
+		require.Equal(t, guest, caller)
+	})
+
+	t.Run("an_expired_token_is_refused_so_the_client_renews_it", func(t *testing.T) {
+		authorizer := NewMockauthorizer(gomock.NewController(t))
+		authorizer.EXPECT().Authorize(gomock.Any(), "expired-jwt", operation).Return(identity.User{}, identity.AccessUnauthenticated, nil)
+		recorder, nextCalled, _, _ := run(t, authorizer, "Bearer expired-jwt")
+		require.Equal(t, http.StatusUnauthorized, recorder.Code)
+		require.False(t, nextCalled)
+		require.JSONEq(t, `{"code":"token_invalid","message":"invalid or expired token"}`, recorder.Body.String())
+	})
+}
+
 func TestRequireWebSocket(t *testing.T) {
 	type dependencies struct {
 		authorizer *Mockauthorizer

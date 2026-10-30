@@ -33,34 +33,50 @@ type AttemptEvent struct {
 	OccurredAt    time.Time
 }
 
-// NewAttempt is a started login.
+// NewAttempt is a started login. GuestUserUUID, when set, is the guest who
+// started it.
 type NewAttempt struct {
 	State         string
 	Provider      string
 	CodeChallenge string
 	Nonce         string
+	GuestUserUUID string
 	StartedAt     time.Time
 }
 
-// CreateAttempt records, within tx, a started login with its first event.
+// CreateAttempt records, within tx, a started login with its first event. A
+// guest that no longer exists is recorded as no guest.
 func (r *Repo) CreateAttempt(ctx context.Context, tx *gorm.DB, attempt NewAttempt) error {
-	var attemptID int64
-	err := tx.WithContext(ctx).Raw(`
-		INSERT INTO identity_login_attempts (state, provider, code_challenge, nonce, started_at)
-		VALUES (?, ?, ?, ?, ?)
-		RETURNING id`,
-		attempt.State, attempt.Provider, attempt.CodeChallenge, attempt.Nonce, attempt.StartedAt,
-	).Scan(&attemptID).Error
-	if err != nil {
+	created := loginAttempt{
+		State:         attempt.State,
+		Provider:      attempt.Provider,
+		CodeChallenge: attempt.CodeChallenge,
+		Nonce:         attempt.Nonce,
+		StartedAt:     attempt.StartedAt,
+	}
+	if attempt.GuestUserUUID != "" {
+		var guestIDs []int64
+		err := tx.WithContext(ctx).Raw(`SELECT id FROM identity_users WHERE user_uuid = ?`, attempt.GuestUserUUID).
+			Scan(&guestIDs).Error
+		if err != nil {
+			return fmt.Errorf("finding the guest of a login attempt: %s", err)
+		}
+		if len(guestIDs) > 0 {
+			created.GuestUserID = &guestIDs[0]
+		}
+	}
+	if err := tx.WithContext(ctx).Create(&created).Error; err != nil {
 		return fmt.Errorf("recording login attempt: %s", err)
 	}
-	return r.RecordAttemptEvent(ctx, tx, attemptID, AttemptEvent{Event: EventStarted, OccurredAt: attempt.StartedAt})
+	return r.RecordAttemptEvent(ctx, tx, created.ID, AttemptEvent{Event: EventStarted, OccurredAt: attempt.StartedAt})
 }
 
-// AnsweredAttempt is a login attempt that was just answered.
+// AnsweredAttempt is a login attempt that was just answered, with the guest
+// who started it, if any.
 type AnsweredAttempt struct {
-	ID    int64
-	Nonce string
+	ID          int64
+	Nonce       string
+	GuestUserID *int64
 }
 
 // AnswerAttempt marks answered within tx, at answeredAt, the attempt of
@@ -71,7 +87,7 @@ func (r *Repo) AnswerAttempt(ctx context.Context, tx *gorm.DB, provider string, 
 	err := tx.WithContext(ctx).Raw(`
 		UPDATE identity_login_attempts SET answered_at = ?
 		WHERE state = ? AND provider = ? AND answered_at IS NULL AND started_at > ?
-		RETURNING id, nonce`,
+		RETURNING id, nonce, guest_user_id`,
 		answeredAt, state, provider, startedAfter,
 	).Scan(&attempts).Error
 	if err != nil {
@@ -149,12 +165,16 @@ func (r *Repo) CloseAttempt(ctx context.Context, tx *gorm.DB, attemptID int64, c
 
 // RecordAttemptEvent appends event to the attempt's history within tx.
 func (r *Repo) RecordAttemptEvent(ctx context.Context, tx *gorm.DB, attemptID int64, event AttemptEvent) error {
-	err := tx.WithContext(ctx).Exec(`
-		INSERT INTO identity_login_attempt_events (attempt_id, event, reason, user_id, observed_email, observed_name, occurred_at)
-		VALUES (?, ?, NULLIF(?, ''), NULLIF(?, 0), NULLIF(?, ''), NULLIF(?, ''), ?)`,
-		attemptID, string(event.Event), event.Reason, event.UserID, event.ObservedEmail, event.ObservedName, event.OccurredAt,
-	).Error
-	if err != nil {
+	recorded := loginAttemptEvent{
+		AttemptID:     attemptID,
+		Event:         string(event.Event),
+		Reason:        optional(event.Reason),
+		UserID:        optional(event.UserID),
+		ObservedEmail: optional(event.ObservedEmail),
+		ObservedName:  optional(event.ObservedName),
+		OccurredAt:    event.OccurredAt,
+	}
+	if err := tx.WithContext(ctx).Create(&recorded).Error; err != nil {
 		return fmt.Errorf("recording login attempt event: %s", err)
 	}
 	return nil

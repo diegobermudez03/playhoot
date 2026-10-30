@@ -33,8 +33,9 @@ var (
 
 // StartLogin starts a sign-in with provider for a client that keeps the
 // verifier codeChallenge (S256) was made from, and answers where the person
-// proves their identity.
-func (m *Manager) StartLogin(ctx context.Context, provider string, codeChallenge string) (identity.StartLoginResult, error) {
+// proves their identity. guestUserUUID, when set, is the guest the client is:
+// if the login creates an account, it is that guest's.
+func (m *Manager) StartLogin(ctx context.Context, provider string, codeChallenge string, guestUserUUID string) (identity.StartLoginResult, error) {
 	defer logging.Step(ctx, "accountlogin.start_login").Close()
 
 	chosen, ok := m.providers.Get(identity.Provider(provider))
@@ -59,6 +60,7 @@ func (m *Manager) StartLogin(ctx context.Context, provider string, codeChallenge
 		Provider:      provider,
 		CodeChallenge: codeChallenge,
 		Nonce:         nonce,
+		GuestUserUUID: guestUserUUID,
 		StartedAt:     m.now().UTC().Truncate(time.Microsecond),
 	}
 	_, err = utils.RunInDBTransaction(ctx, m.dbServicer, func(ctx context.Context, tx *gorm.DB) (struct{}, error) {
