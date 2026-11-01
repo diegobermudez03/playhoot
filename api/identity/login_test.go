@@ -212,3 +212,15 @@ func TestHandleLocalAuthorize(t *testing.T) {
 		require.Equal(t, http.StatusNotFound, recorder.Code)
 	})
 }
+
+func TestHandleListProviders(t *testing.T) {
+	providers := NewMockproviderLister(gomock.NewController(t))
+	providers.EXPECT().Enabled().Return([]identitypkg.Provider{identitypkg.ProviderGoogle, identitypkg.ProviderLocal})
+
+	recorder := httptest.NewRecorder()
+	NewHandler(nil, nil, nil, nil, nil, nil, Logins{Providers: providers}).
+		handleListProviders(recorder, httptest.NewRequest(http.MethodGet, "/v1/identity/login/providers", nil))
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.JSONEq(t, `{"providers":["google","local"]}`, recorder.Body.String())
+}

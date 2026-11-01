@@ -23,18 +23,27 @@ type ExternalIdentity struct {
 // code it does not recognize, a token that fails verification.
 var ErrInvalidAnswer = errors.New("invalid provider answer")
 
+// ErrMisconfigured is returned when the provider refuses Playhoot itself (an
+// unknown client, a wrong secret, a redirect it does not have registered):
+// nobody can sign in with it until the configuration is fixed.
+var ErrMisconfigured = errors.New("provider refuses this server's configuration")
+
 // Provider is one external identity provider.
 type Provider interface {
 	// AuthorizationURL is where the person proves their identity; the
-	// provider answers the callback with a code, state and nonce bound to it.
-	AuthorizationURL(state string, nonce string) string
-	// Exchange turns the provider's code into the identity it proves, or
-	// ErrInvalidAnswer; any other error means the provider is unreachable.
-	Exchange(ctx context.Context, code string, nonce string) (ExternalIdentity, error)
+	// provider answers the callback with a code bound to state, nonce and
+	// codeChallenge (the S256 of a verifier only the server keeps).
+	AuthorizationURL(state string, nonce string, codeChallenge string) string
+	// Exchange turns the provider's code into the identity it proves, given
+	// the login's nonce and verifier, or ErrInvalidAnswer; any other error
+	// means the provider is unreachable.
+	Exchange(ctx context.Context, code string, nonce string, codeVerifier string) (ExternalIdentity, error)
 }
 
 // Config chooses the enabled providers.
 type Config struct {
+	// Google enables signing in with Google.
+	Google *GoogleConfig
 	// Local enables the fictitious local provider; never in production.
 	Local *LocalConfig
 }
@@ -48,6 +57,9 @@ type Registry struct {
 // New returns the providers config enables.
 func New(config Config) *Registry {
 	registry := &Registry{providers: map[identity.Provider]Provider{}}
+	if config.Google != nil {
+		registry.providers[identity.ProviderGoogle] = NewGoogle(*config.Google)
+	}
 	if config.Local != nil {
 		registry.local = NewLocal(*config.Local)
 		registry.providers[identity.ProviderLocal] = registry.local
@@ -59,6 +71,17 @@ func New(config Config) *Registry {
 func (r *Registry) Get(name identity.Provider) (Provider, bool) {
 	provider, ok := r.providers[name]
 	return provider, ok
+}
+
+// Enabled lists the enabled providers, in a stable order.
+func (r *Registry) Enabled() []identity.Provider {
+	enabled := make([]identity.Provider, 0, len(r.providers))
+	for _, name := range []identity.Provider{identity.ProviderGoogle, identity.ProviderLocal} {
+		if _, ok := r.providers[name]; ok {
+			enabled = append(enabled, name)
+		}
+	}
+	return enabled
 }
 
 // LocalAuthorizePage returns the local provider's sign-in page for an attempt,

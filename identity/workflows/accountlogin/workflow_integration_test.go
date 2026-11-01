@@ -260,3 +260,28 @@ func TestAGuestSigningInToAnExistingAccountSwitches(t *testing.T) {
 		SELECT count(*) FROM identity_accounts WHERE user_id = (SELECT id FROM identity_users WHERE user_uuid = ?)`, guest.User.UUID).Scan(&guestAccounts).Error)
 	require.Zero(t, guestAccounts, "the guest stays a guest")
 }
+
+func TestStartSendsTheProviderAChallengeOfTheKeptVerifier(t *testing.T) {
+	f := newFlow(t)
+	google := loginproviders.NewGoogle(loginproviders.GoogleConfig{ClientID: "client-1", RedirectURL: "https://play.example/cb"})
+	f.manager.providers = staticProviders{identity.ProviderGoogle: google}
+
+	started, err := f.manager.StartLogin(context.Background(), "google", challengeOf("client-verifier"), "")
+	require.NoError(t, err)
+
+	authorization, err := url.Parse(started.AuthorizationURL)
+	require.NoError(t, err)
+	var kept string
+	require.NoError(t, f.db.Raw(`SELECT provider_code_verifier FROM identity_login_attempts WHERE state = ?`, authorization.Query().Get("state")).Scan(&kept).Error)
+	require.NotEmpty(t, kept)
+	require.Equal(t, challengeOf(kept), authorization.Query().Get("code_challenge"), "Google gets the S256 of the verifier only the server keeps")
+	require.NotEqual(t, challengeOf("client-verifier"), authorization.Query().Get("code_challenge"))
+}
+
+// staticProviders is a fixed set of providers.
+type staticProviders map[identity.Provider]loginproviders.Provider
+
+func (p staticProviders) Get(name identity.Provider) (loginproviders.Provider, bool) {
+	provider, ok := p[name]
+	return provider, ok
+}

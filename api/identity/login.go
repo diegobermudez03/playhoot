@@ -131,6 +131,22 @@ func (h *Handler) handleCompleteLogin(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+type providersResponse struct {
+	Providers []string `json:"providers"`
+}
+
+// handleListProviders answers which login providers this server offers, so a
+// client shows only those.
+func (h *Handler) handleListProviders(w http.ResponseWriter, r *http.Request) {
+	enabled := h.logins.Providers.Enabled()
+	providers := make([]string, 0, len(enabled))
+	for _, provider := range enabled {
+		providers = append(providers, string(provider))
+	}
+	w.Header().Set("Cache-Control", "public, max-age=300")
+	httpx.WriteJSON(w, http.StatusOK, providersResponse{Providers: providers})
+}
+
 // handleLocalAuthorize serves the local provider's sign-in page, only where
 // the local provider is enabled.
 func (h *Handler) handleLocalAuthorize(w http.ResponseWriter, r *http.Request) {

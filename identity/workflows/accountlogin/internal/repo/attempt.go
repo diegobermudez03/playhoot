@@ -40,19 +40,22 @@ type NewAttempt struct {
 	Provider      string
 	CodeChallenge string
 	Nonce         string
-	GuestUserUUID string
-	StartedAt     time.Time
+	// ProviderCodeVerifier is the PKCE verifier toward the provider.
+	ProviderCodeVerifier string
+	GuestUserUUID        string
+	StartedAt            time.Time
 }
 
 // CreateAttempt records, within tx, a started login with its first event. A
 // guest that no longer exists is recorded as no guest.
 func (r *Repo) CreateAttempt(ctx context.Context, tx *gorm.DB, attempt NewAttempt) error {
 	created := loginAttempt{
-		State:         attempt.State,
-		Provider:      attempt.Provider,
-		CodeChallenge: attempt.CodeChallenge,
-		Nonce:         attempt.Nonce,
-		StartedAt:     attempt.StartedAt,
+		State:                attempt.State,
+		Provider:             attempt.Provider,
+		CodeChallenge:        attempt.CodeChallenge,
+		Nonce:                attempt.Nonce,
+		ProviderCodeVerifier: attempt.ProviderCodeVerifier,
+		StartedAt:            attempt.StartedAt,
 	}
 	if attempt.GuestUserUUID != "" {
 		var guestIDs []int64
@@ -74,9 +77,10 @@ func (r *Repo) CreateAttempt(ctx context.Context, tx *gorm.DB, attempt NewAttemp
 // AnsweredAttempt is a login attempt that was just answered, with the guest
 // who started it, if any.
 type AnsweredAttempt struct {
-	ID          int64
-	Nonce       string
-	GuestUserID *int64
+	ID                   int64
+	Nonce                string
+	ProviderCodeVerifier string
+	GuestUserID          *int64
 }
 
 // AnswerAttempt marks answered within tx, at answeredAt, the attempt of
@@ -87,7 +91,7 @@ func (r *Repo) AnswerAttempt(ctx context.Context, tx *gorm.DB, provider string, 
 	err := tx.WithContext(ctx).Raw(`
 		UPDATE identity_login_attempts SET answered_at = ?
 		WHERE state = ? AND provider = ? AND answered_at IS NULL AND started_at > ?
-		RETURNING id, nonce, guest_user_id`,
+		RETURNING id, nonce, provider_code_verifier, guest_user_id`,
 		answeredAt, state, provider, startedAfter,
 	).Scan(&attempts).Error
 	if err != nil {

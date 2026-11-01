@@ -55,13 +55,18 @@ func (m *Manager) StartLogin(ctx context.Context, provider string, codeChallenge
 	if err != nil {
 		return identity.StartLoginResult{}, err
 	}
+	providerVerifier, err := login.NewProviderVerifier()
+	if err != nil {
+		return identity.StartLoginResult{}, err
+	}
 	attempt := internalrepo.NewAttempt{
-		State:         state,
-		Provider:      provider,
-		CodeChallenge: codeChallenge,
-		Nonce:         nonce,
-		GuestUserUUID: guestUserUUID,
-		StartedAt:     m.now().UTC().Truncate(time.Microsecond),
+		State:                state,
+		Provider:             provider,
+		CodeChallenge:        codeChallenge,
+		Nonce:                nonce,
+		ProviderCodeVerifier: providerVerifier,
+		GuestUserUUID:        guestUserUUID,
+		StartedAt:            m.now().UTC().Truncate(time.Microsecond),
 	}
 	_, err = utils.RunInDBTransaction(ctx, m.dbServicer, func(ctx context.Context, tx *gorm.DB) (struct{}, error) {
 		return struct{}{}, m.startRepo.CreateAttempt(ctx, tx, attempt)
@@ -70,5 +75,5 @@ func (m *Manager) StartLogin(ctx context.Context, provider string, codeChallenge
 		return identity.StartLoginResult{}, err
 	}
 	startsTotal.Inc(ctx, startOutcomeLabel.Value("started"))
-	return identity.StartLoginResult{Outcome: identity.LoginStarted, AuthorizationURL: chosen.AuthorizationURL(state, nonce)}, nil
+	return identity.StartLoginResult{Outcome: identity.LoginStarted, AuthorizationURL: chosen.AuthorizationURL(state, nonce, login.ChallengeOf(providerVerifier))}, nil
 }

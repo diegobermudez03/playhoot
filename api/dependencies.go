@@ -44,6 +44,11 @@ type loginCompleter interface {
 	CompleteLogin(ctx context.Context, code string, codeVerifier string, replacesRefreshToken string) (identity.CompleteLoginResult, error)
 }
 
+// providerLister is Identity's list of enabled login providers.
+type providerLister interface {
+	Enabled() []identity.Provider
+}
+
 // localPages is Identity's local provider page, when enabled.
 type localPages interface {
 	LocalAuthorizePage(state string) (string, bool)
@@ -54,6 +59,7 @@ type Logins struct {
 	Starter    loginStarter
 	Callbacks  loginCallbackHandler
 	Completer  loginCompleter
+	Providers  providerLister
 	LocalPages localPages
 	// CompleteURL is the client's sign-in completion route every provider
 	// callback redirects to.

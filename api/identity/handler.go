@@ -12,7 +12,7 @@ import (
 	identitypkg "github.com/diegobermudez03/playhoot/identity"
 )
 
-//go:generate mockgen -package=identity -destination=handler_mock_test.go . guestCreator,operationLister,credentialRefresher,sessionEnder,displayNameSetter,authorizer,loginStarter,loginCallbackHandler,loginCompleter,localPages
+//go:generate mockgen -package=identity -destination=handler_mock_test.go . guestCreator,operationLister,credentialRefresher,sessionEnder,displayNameSetter,authorizer,loginStarter,loginCallbackHandler,loginCompleter,providerLister,localPages
 
 // guestCreator creates guest Users idempotently per key. A decline is
 // reported through the result's Outcome; a reused key with another request
@@ -62,6 +62,11 @@ type loginCompleter interface {
 	CompleteLogin(ctx context.Context, code string, codeVerifier string, replacesRefreshToken string) (identitypkg.CompleteLoginResult, error)
 }
 
+// providerLister lists the enabled login providers.
+type providerLister interface {
+	Enabled() []identitypkg.Provider
+}
+
 // localPages serves the local provider's sign-in page, when it is enabled.
 type localPages interface {
 	LocalAuthorizePage(state string) (string, bool)
@@ -72,6 +77,7 @@ type Logins struct {
 	Starter    loginStarter
 	Callbacks  loginCallbackHandler
 	Completer  loginCompleter
+	Providers  providerLister
 	LocalPages localPages
 	// CompleteURL is the client's sign-in completion route, which every
 	// callback redirects to: chosen by configuration, never by a request.
@@ -113,6 +119,7 @@ func (h *Handler) RESTRoutes() []routing.Route {
 		{Pattern: "GET /v1/identity/login/{provider}/callback", Handler: h.handleLoginCallback},
 		{Pattern: "POST /v1/identity/login/complete", Handler: h.handleCompleteLogin},
 		// this is for the local provider, only for local testing
+		{Pattern: "GET /v1/identity/login/providers", Handler: h.handleListProviders},
 		{Pattern: "GET /v1/identity/login/local/authorize", Handler: h.handleLocalAuthorize},
 		{
 			Pattern:       "GET /v1/identity/me",

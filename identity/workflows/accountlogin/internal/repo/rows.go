@@ -10,8 +10,11 @@ type loginAttempt struct {
 	Provider      string
 	CodeChallenge string
 	Nonce         string
-	GuestUserID   *int64
-	StartedAt     time.Time
+	// ProviderCodeVerifier is the PKCE verifier toward the provider, which
+	// only the server knows.
+	ProviderCodeVerifier string
+	GuestUserID          *int64
+	StartedAt            time.Time
 }
 
 func (loginAttempt) TableName() string { return "identity_login_attempts" }

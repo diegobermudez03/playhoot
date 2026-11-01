@@ -13,6 +13,7 @@ import (
 	"github.com/diegobermudez03/playhoot/identity/loginproviders"
 	internalrepo "github.com/diegobermudez03/playhoot/identity/workflows/accountlogin/internal/repo"
 	"github.com/diegobermudez03/playhoot/logging"
+	"github.com/diegobermudez03/playhoot/monitoring"
 	"github.com/diegobermudez03/playhoot/monitoring/metrics"
 	"github.com/diegobermudez03/playhoot/utils"
 )
@@ -86,9 +87,17 @@ func (m *Manager) HandleCallback(ctx context.Context, provider string, state str
 		return ended(identity.LoginFailed, internalrepo.EventFailed, "provider_error")
 	}
 
-	external, err := chosen.Exchange(ctx, code, attempt.Nonce)
+	external, err := chosen.Exchange(ctx, code, attempt.Nonce, attempt.ProviderCodeVerifier)
 	if errors.Is(err, loginproviders.ErrInvalidAnswer) {
+		// Why it proves nothing (a claim, an issuer, a refused code) carries no
+		// secret, and tells a broken configuration from a forged answer.
+		logging.LogFields(ctx, logging.Field("provider_answer_refused", err.Error()))
 		return ended(identity.LoginFailed, internalrepo.EventFailed, "invalid_answer")
+	}
+	if errors.Is(err, loginproviders.ErrMisconfigured) {
+		logging.LogError(ctx, err)
+		monitoring.Alert(ctx, "accountlogin: the login provider refuses this server's configuration")
+		return ended(identity.LoginUnavailable, internalrepo.EventUnavailable, "provider_misconfigured")
 	}
 	if err != nil {
 		logging.LogError(ctx, err)

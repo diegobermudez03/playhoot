@@ -37,12 +37,12 @@ func NewLocal(config LocalConfig) *Local {
 }
 
 // AuthorizationURL implements Provider.
-func (l *Local) AuthorizationURL(state string, _ string) string {
+func (l *Local) AuthorizationURL(state string, _ string, _ string) string {
 	return l.config.AuthorizeURL + "?" + url.Values{"state": {state}}.Encode()
 }
 
 // Exchange implements Provider: the code is the name the person picked.
-func (l *Local) Exchange(_ context.Context, code string, _ string) (ExternalIdentity, error) {
+func (l *Local) Exchange(_ context.Context, code string, _ string, _ string) (ExternalIdentity, error) {
 	name, ok := displayname.Normalize(code)
 	if !ok {
 		return ExternalIdentity{}, ErrInvalidAnswer

@@ -37,6 +37,18 @@ func NewCode() (string, error) {
 	return random("phl_")
 }
 
+// NewProviderVerifier returns the PKCE verifier the server keeps toward the
+// provider (43 characters, base64url).
+func NewProviderVerifier() (string, error) {
+	return random("")
+}
+
+// ChallengeOf is verifier's S256 code challenge.
+func ChallengeOf(verifier string) string {
+	sum := sha256.Sum256([]byte(verifier))
+	return base64.RawURLEncoding.EncodeToString(sum[:])
+}
+
 // ValidChallenge reports whether challenge has the shape of an S256 code
 // challenge: 32 bytes, base64url without padding.
 func ValidChallenge(challenge string) bool {
@@ -50,9 +62,7 @@ func VerifierMatches(challenge string, verifier string) bool {
 	if verifier == "" {
 		return false
 	}
-	sum := sha256.Sum256([]byte(verifier))
-	expected := base64.RawURLEncoding.EncodeToString(sum[:])
-	return subtle.ConstantTimeCompare([]byte(expected), []byte(challenge)) == 1
+	return subtle.ConstantTimeCompare([]byte(ChallengeOf(verifier)), []byte(challenge)) == 1
 }
 
 func random(prefix string) (string, error) {

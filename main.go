@@ -86,6 +86,12 @@ type envVariables struct {
 	// development and tests. Never in production.
 	IdentityLocalProvider bool
 
+	// Google is the OAuth client Playhoot is registered as in Google, nil
+	// when Google sign-in is not configured: GOOGLE_OAUTH_CLIENT_ID,
+	// GOOGLE_OAUTH_CLIENT_SECRET and GOOGLE_OAUTH_REDIRECT_URL (the callback
+	// exactly as registered in Google), all three or none.
+	Google *loginproviders.GoogleConfig
+
 	// WebSignInCompleteURL is the web client's sign-in completion route, where
 	// every provider callback sends the browser. Required in production;
 	// elsewhere it defaults to /sign-in/complete on the server's own origin
@@ -198,7 +204,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("creating credential refresh: %w", err)
 	}
-	var providerConfig loginproviders.Config
+	providerConfig := loginproviders.Config{Google: envVars.Google}
 	if envVars.IdentityLocalProvider {
 		providerConfig.Local = &loginproviders.LocalConfig{
 			AuthorizeURL: "/v1/identity/login/local/authorize",
@@ -221,6 +227,7 @@ func run() error {
 			Starter:     accountLogins,
 			Callbacks:   accountLogins,
 			Completer:   accountLogins,
+			Providers:   loginProviders,
 			LocalPages:  loginProviders,
 			CompleteURL: envVars.WebSignInCompleteURL,
 		},
@@ -489,6 +496,22 @@ func readIdentityVariables(envVars *envVariables) error {
 		envVars.IdentityLocalProvider = enabled
 	}
 
+	google := loginproviders.GoogleConfig{
+		ClientID:     strings.TrimSpace(os.Getenv("GOOGLE_OAUTH_CLIENT_ID")),
+		ClientSecret: strings.TrimSpace(os.Getenv("GOOGLE_OAUTH_CLIENT_SECRET")),
+		RedirectURL:  strings.TrimSpace(os.Getenv("GOOGLE_OAUTH_REDIRECT_URL")),
+	}
+	switch set := btoi(google.ClientID != "") + btoi(google.ClientSecret != "") + btoi(google.RedirectURL != ""); set {
+	case 0:
+	case 3:
+		if !strings.HasSuffix(google.RedirectURL, "/v1/identity/login/google/callback") {
+			return fmt.Errorf("GOOGLE_OAUTH_REDIRECT_URL must end with /v1/identity/login/google/callback")
+		}
+		envVars.Google = &google
+	default:
+		return fmt.Errorf("GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET and GOOGLE_OAUTH_REDIRECT_URL go together")
+	}
+
 	envVars.WebSignInCompleteURL = strings.TrimSpace(os.Getenv("WEB_SIGN_IN_COMPLETE_URL"))
 	if envVars.WebSignInCompleteURL == "" {
 		if production {
@@ -497,4 +520,11 @@ func readIdentityVariables(envVars *envVariables) error {
 		envVars.WebSignInCompleteURL = "/sign-in/complete"
 	}
 	return nil
+}
+
+func btoi(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
 }

@@ -64,7 +64,7 @@ func NewServer(authorizer authorizer, guests guestCreator, operations operationL
 	groups := []routeGroup{
 		apiidentity.NewHandler(guests, operations, refreshes, sessionEnder, displayNames, authorizer, apiidentity.Logins{
 			Starter: logins.Starter, Callbacks: logins.Callbacks, Completer: logins.Completer,
-			LocalPages: logins.LocalPages, CompleteURL: logins.CompleteURL,
+			Providers: logins.Providers, LocalPages: logins.LocalPages, CompleteURL: logins.CompleteURL,
 		}),
 		apiclienttelemetry.NewHandler(authorizer),
 		apiplay.NewHandler(authorizer, sessionCreator, owners, admins, players, joinCodes, liveConnections, wsx.OriginPatterns(config.WebSocketAllowedOrigins)),
