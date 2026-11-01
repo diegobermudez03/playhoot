@@ -1,8 +1,8 @@
 # Project: Identity v1 (basic identity)
 
-Status: ACTIVE
+Status: COMPLETED
 Created: 2026-10-25
-Last updated: 2026-10-27
+Last updated: 2026-10-31
 
 ## Goal
 
@@ -22,6 +22,14 @@ Decided by the human on 2026-10-25: this project goes before the SDK built-ins a
 
 Created 2026-10-25 from the plan. The human accepted the plan's decisions as a whole with one change: the refresh token is kept by the client (web `localStorage`, mobile secure storage) and travels in the request body, not in an `HttpOnly` cookie, because one body-based contract then serves the web and the future mobile app. The consequences of that change on the plan (§4 Google handoff, §6 retry recovery, §7 transport) are designed in WORK-0056, the next step. 2026-10-27: the human approved WORK-0056 (READY) with the full client-facing contract; IDENTITY-ADR-0003 is ACCEPTED and IDENTITY-ADR-0002 amended; WORK-0056 DONE the same day after an independent review (approved on re-review). WORK-0062 (operation catalog, `GET /v1/identity/operations`) DONE the same day. Frontend WORK-0006 done against the test tokens. Then, the same day, the human redesigned the credentials in conversation (JWT access tokens, refresh tokens stored as-is with 5 h rotation and a 5 min predecessor grace; see IDENTITY-ADR-0003's amendment) and WORK-0057 and WORK-0058 were done as one vertical slice with the frontend's WORK-0001/0002: real guests end to end, accounts only through the development bypass. WORK-0059 done the same day with the frontend's WORK-0003 (accounts through the local provider; the test-token bypass removed): the local closure is reached. Next: WORK-0060 (Google).
 
+## Completion
+
+Completed 2026-10-31 by the human's decision: every WORK DONE, the local closure demonstrated, the Google closure kept as the planned follow-up below, and the rest of Identity planned as phase 2 after the game creation flow (`identity/CURRENT_STATE.md`).
+
+## Planned Follow-Up
+
+- Deferred by the human on 2026-10-31 (planned, accepted): the real Google integration (an OAuth client from Google Cloud Console in `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REDIRECT_URL`, and the manual check against Google: new login, recurring login, cancellation, refused wrong verifier) is done at the end, before Google sign-in is declared available to people. Until then the code is complete and verified with a fake Google, and production simply does not offer Google. Tracked here and in WORK-0060.
+
 ## Work
 
 | Order | Work | Status |
@@ -31,8 +39,8 @@ Created 2026-10-25 from the plan. The human accepted the plan's decisions as a w
 | 1 | [WORK-0057](works/WORK-0057-persisted-identity-core.md) — Persisted identity core | DONE |
 | 2 | [WORK-0058](works/WORK-0058-real-guests-and-credential-endpoints.md) — Real guests and credential endpoints | DONE |
 | 3 | [WORK-0059](works/WORK-0059-accounts-with-local-simulated-provider.md) — Accounts with a local simulated provider | DONE |
-| 4 | [WORK-0060](works/WORK-0060-google-oidc-provider.md) — Google OIDC provider | PLANNED |
-| 5 | [WORK-0061](works/WORK-0061-identity-integration-and-closure.md) — Integration and closure | PLANNED |
+| 4 | [WORK-0060](works/WORK-0060-google-oidc-provider.md) — Google OIDC provider | DONE (real Google integration deferred) |
+| 5 | [WORK-0061](works/WORK-0061-identity-integration-and-closure.md) — Integration and closure | DONE |
 
 ## Ordering / Dependencies
 

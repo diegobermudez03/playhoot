@@ -6,10 +6,14 @@ package identity
 
 import (
 	"context"
+	"slices"
+	"time"
 
 	"github.com/diegobermudez03/playhoot/api/internal/auth"
 	"github.com/diegobermudez03/playhoot/api/internal/routing"
+	"github.com/diegobermudez03/playhoot/api/internal/throttle"
 	identitypkg "github.com/diegobermudez03/playhoot/identity"
+	"github.com/diegobermudez03/playhoot/utils/ratelimit"
 )
 
 //go:generate mockgen -package=identity -destination=handler_mock_test.go . guestCreator,operationLister,credentialRefresher,sessionEnder,displayNameSetter,authorizer,loginStarter,loginCallbackHandler,loginCompleter,providerLister,localPages
@@ -84,6 +88,15 @@ type Logins struct {
 	CompleteURL string
 }
 
+// guestCreationLimits add to the default per-address limits a cap on guest
+// creation requests from one address in an hour: generous for a classroom
+// behind one public address, since every guest stays. It counts requests
+// (replays and refusals too), per instance.
+var guestCreationLimits = routing.RequestLimits{
+	PerUser:   throttle.DefaultLimits.PerUser,
+	PerClient: append(slices.Clone(throttle.DefaultLimits.PerClient), ratelimit.Limit{Count: 200, Per: time.Hour}),
+}
+
 // Handler exposes the identity domain's endpoints.
 type Handler struct {
 	guests       guestCreator
@@ -106,7 +119,7 @@ func NewHandler(guests guestCreator, operations operationLister, refreshes crede
 // provider's page answers only where that provider is enabled.
 func (h *Handler) RESTRoutes() []routing.Route {
 	return []routing.Route{
-		{Pattern: "POST /v1/guests", Handler: h.handleCreateGuest},
+		{Pattern: "POST /v1/guests", Handler: h.handleCreateGuest, Limits: &guestCreationLimits},
 		{Pattern: "GET /v1/identity/operations", Handler: h.handleListOperations},
 		{Pattern: "POST /v1/identity/refresh", Handler: h.handleRefresh},
 		{Pattern: "POST /v1/identity/logout", Handler: h.handleLogout},

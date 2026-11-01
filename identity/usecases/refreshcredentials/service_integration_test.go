@@ -112,3 +112,51 @@ func TestRefreshWithPostgres(t *testing.T) {
 		require.Equal(t, identity.RefreshInvalid, unknown.Outcome)
 	})
 }
+
+func TestSessionLifetimesWithPostgres(t *testing.T) {
+	db := testdb.OpenIdentityDB(t)
+	service, err := New(db, testKey)
+	require.NoError(t, err)
+	ctx := context.Background()
+
+	seedAccountSession := func(t *testing.T, issuedAt time.Time, startedAt time.Time) string {
+		t.Helper()
+		var userID int64
+		require.NoError(t, db.Raw(`INSERT INTO identity_users (user_uuid, display_name) VALUES (?, 'Bea') RETURNING id`, uuid.NewString()).Scan(&userID).Error)
+		require.NoError(t, db.Exec(`INSERT INTO identity_accounts (user_id) VALUES (?)`, userID).Error)
+		token := "phr_" + uuid.NewString()
+		require.NoError(t, db.Exec(`
+			INSERT INTO identity_sessions (session_uuid, user_id, refresh_token, issued_at, started_at, expires_at)
+			VALUES (?, ?, ?, ?, ?, ?)`, uuid.NewString(), userID, token, issuedAt, startedAt,
+			refreshtoken.ExpiresAt(identity.LevelAccount, issuedAt, startedAt)).Error)
+		return token
+	}
+
+	t.Run("an_account_unused_for_30_days_must_sign_in_again", func(t *testing.T) {
+		token := seedAccountSession(t, time.Now().Add(-31*24*time.Hour), time.Now().Add(-31*24*time.Hour))
+		result, err := service.Refresh(ctx, token)
+		require.NoError(t, err)
+		require.Equal(t, identity.RefreshInvalid, result.Outcome)
+	})
+
+	t.Run("an_account_used_recently_renews_and_rotates_as_an_account", func(t *testing.T) {
+		// 70 days in: 30 more days of use would pass the 90 days since sign-in.
+		started := time.Now().Add(-70 * 24 * time.Hour)
+		token := seedAccountSession(t, time.Now().Add(-6*time.Hour), started)
+		result, err := service.Refresh(ctx, token)
+		require.NoError(t, err)
+		require.Equal(t, identity.RefreshRenewed, result.Outcome)
+		require.Equal(t, identity.LevelAccount, result.Credentials.User.Level)
+		var expiresAt time.Time
+		require.NoError(t, db.Raw(`SELECT expires_at FROM identity_sessions WHERE refresh_token = ?`, result.Credentials.RefreshToken).Scan(&expiresAt).Error)
+		require.WithinDuration(t, started.Add(refreshtoken.AccountMaxLifetime), expiresAt, time.Second,
+			"rotating never extends an account past 90 days from its sign-in")
+	})
+
+	t.Run("a_guest_never_expires", func(t *testing.T) {
+		token := seedGuestSession(t, db, time.Now().Add(-400*24*time.Hour))
+		result, err := service.Refresh(ctx, token)
+		require.NoError(t, err)
+		require.Equal(t, identity.RefreshRenewed, result.Outcome)
+	})
+}

@@ -1,8 +1,8 @@
 # WORK-0060: Google OIDC provider
 
-Status: IMPLEMENTING
+Status: DONE
 Created: 2026-10-25
-Last status change: 2026-10-31 (the human asked for it in conversation; built and verified with a fake Google; the real Google verification waits for the human's OAuth client)
+Last status change: 2026-10-31 (DONE by the human's decision in conversation, with the real Google integration deferred to the end as planned follow-up)
 
 Related decisions:
 - The decisions recorded by WORK-0056
@@ -30,7 +30,9 @@ Met with a fake Google (`google_test.go`): the identity of a valid token; refuse
 
 - Independent review (2026-10-31): CHANGES_REQUIRED for one medium finding (every refusal from Google's token endpoint was an invalid answer and nothing was logged, so a misconfigured client would fail silently) and three low ones (the providers list was never retried, both provider buttons could start at once, a refetch failure discarded cached keys); all fixed: only `invalid_grant` is an invalid answer, 5xx/429 are unavailable, any other 4xx is `ErrMisconfigured` (logged, alerted, ended unavailable with reason `provider_misconfigured`), refused answers are logged without secrets, the web retries the providers list with backoff, the Google button is disabled while any sign-in starts, cached keys under 24 hours verify while Google's keys cannot be fetched, and RS256-only is locked by tests. Re-review APPROVED.
 
-Remaining before DONE (plan §9 "Google real"): against a real Web client from the human's Google Cloud Console, a new login, a recurring login (same User), cancellation, and a refused wrong verifier.
+Deferred by the human on 2026-10-31 (planned, accepted): the real Google integration (an OAuth client from Google Cloud Console in `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REDIRECT_URL`, and the manual check against Google: new login, recurring login, cancellation, refused wrong verifier) is done at the end, before Google sign-in is declared available to people. Until then the code is complete and verified with a fake Google, and production simply does not offer Google.
+
+The deferred check (plan §9 "Google real"): against a real Web client from the human's Google Cloud Console, a new login, a recurring login (same User), cancellation, and a refused wrong verifier.
 
 ## Blockers
 
