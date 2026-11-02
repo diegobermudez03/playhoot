@@ -18,7 +18,7 @@ erDiagram
         UUID uuid "unique"
         BIGINT game_id "play_games.id"
         TEXT status "DRAFT | EXECUTABLE"
-        JSONB manifest "versioned runtime manifest"
+        JSONB manifest "nullable for a DRAFT; versioned runtime manifest"
         TEXT script_object_key "nullable; backend script in object storage"
         TEXT script_sha256 "nullable"
         BIGINT script_size "nullable"
@@ -27,7 +27,35 @@ erDiagram
         BIGINT frontend_size "nullable"
         TEXT aspect_ratio "nullable; 16:9 | 9:16 | 4:3 | 3:4 | 1:1"
         TEXT script_profile "handwritten | sdk-v1"
+        BIGINT current_revision "nullable; the authored sources' current revision"
         TIMESTAMPTZ executable_at "nullable; when it became executable"
+        TIMESTAMPTZ created_at
+    }
+    play_game_version_revisions {
+        BIGSERIAL id PK
+        BIGINT game_version_id "play_game_versions.id; unique with number"
+        BIGINT number "1, 2, ... per version"
+        JSONB files "path to sha256 and size"
+        TEXT source "template | web | api | mcp | restore"
+        TIMESTAMPTZ created_at
+    }
+    play_source_files {
+        BIGSERIAL id PK
+        TEXT sha256 "unique; lowercase hex of content"
+        TEXT content "UTF-8 source text"
+        BIGINT size "bytes"
+        TIMESTAMPTZ created_at
+    }
+    play_game_version_change_attempts {
+        BIGSERIAL id PK
+        BIGINT game_version_id "play_game_versions.id; unique with idempotency_key"
+        TEXT idempotency_key
+        TEXT request_sha256 "fingerprint of the request"
+        BIGINT base_revision
+        TEXT origin "web | api | mcp"
+        TEXT outcome "nullable until completed; applied | conflict | invalid | not_editable"
+        BIGINT revision "nullable until completed; the new revision, or the current one"
+        JSONB diagnostics "nullable; why it was refused"
         TIMESTAMPTZ created_at
     }
     play_game_version_assets {
@@ -177,6 +205,7 @@ Notes:
 - `play_game_version_assets` are the media a version's frontend uses, by logical key (added 2026-10-25, decided by the human: `play/docs/decisions/SESSION-ADR-0034-game-assets-and-shared-signed-access.md`). Types and MIME types are a closed catalog (`image`: `image/png`, `image/webp`, `image/jpeg`, `image/svg+xml`; `audio`: `audio/mpeg`, `audio/ogg`, `audio/wav`; `video`: `video/mp4`, `video/webm`; `play/session/internal/business/gameversion`). The database enforces only one key per version (`docs/engineering/standards/database-constraints.md`); the application enforces the key pattern, the type, the MIME type and size for the type, lowercase hex hashes and the 100 MiB a version's assets may weigh together, counting the assets with an object; an EXECUTABLE version breaking any rule is treated as broken data. A row without `object_key` records an asset whose object was deleted (the future publishing flow deletes uploaded assets the frontend does not declare); it is not delivered. An EXECUTABLE version's assets never change.
 - `play_game_version_signed_urls` is each version's current batch of signed URLs, shared by every Session of the version on every instance (added 2026-10-25, SESSION-ADR-0034): the frontend package's and every asset with an object's, all expiring at `expires_at` (signed for 24 hours). There is no history: a new batch replaces the row as a whole, and only when it expires later than the stored one, so concurrent signers keep the longest-lived. The URLs are bearer credentials to the version's objects until they expire.
 - `play_game_version_input_requirements` holds, one row per version, the interactions its game uses and the device classes that can play it (added 2026-10-25, decided by the human: `play/docs/decisions/SESSION-ADR-0035-game-input-requirements-and-player-device-check.md`). They are columns, not manifest JSON, so a future game directory can filter on them; `play_game_version_input_requirements_devices_idx` on `(devices, game_version_id)` serves that filter. `devices` is computed by the writer from the booleans (`play/internal/business/inputrequirements`): `both` when the game uses no keyboard and at most one of hover or press, `desktop` otherwise; `mobile` is valid and reserved, never produced yet. The database enforces only one row per version; an EXECUTABLE version without a row, or with `devices` outside the three values, is treated as broken data. Seeded versions are pressed/dragged only, on `both`.
+- A DRAFT version's authored sources (added 2026-11-01, game creation project, `play/session/workflows/versiondrafting`): a DRAFT is changed in place, and each change is a new revision of the same version. `current_revision` is NULL for a version without authored sources (the handwritten seeds) and moves one by one through a conditional update over the base the change was made over, so two changes over the same base never both apply; `play_game_version_revisions` is its write-once history, one row per number. A revision lists its files as `{path: {sha256, size}}`; each content is stored once in `play_source_files`, by hash, and shared by every revision and version holding it. `play_game_version_change_attempts` keeps every change sent, applied or refused, under its idempotency key (unique per version): claimed and completed in the same transaction, so a committed row always has `outcome` and `revision` (written once); `revision` is the new one when applied, otherwise the version's current one when decided. `play_game_versions_one_draft_idx` lets a game hold at most one DRAFT. A DRAFT has no `manifest` until it is built.
 - `script_profile` is the profile the backend script is checked and run under (`play/runtime/sandbox/scriptcheck.Profile`, 2026-11-01): `handwritten` or `sdk-v1` (built by the frontend's game tools). Not null; its default `handwritten` only fills the versions and seed rows written before it. A reader that finds another value treats the version as broken data.
 - `aspect_ratio` is the fixed shape the version's frontend is shown in, one of the ratios Playhoot offers (decided by the human 2026-10-20: a game picks one, it cannot declare its own). Only the offered values are valid, kept by the application (the database enforces none); each has a logical resolution, 1080 units on the short side (`play/session/internal/business/gameversion`), which is not stored. Like the locators it is nullable for a DRAFT, and an EXECUTABLE version without one, or with one not offered, is checked by the application and treated as broken data. Offering another ratio changes that catalog only.
 - `play_game_fault_reports` also keeps, as `source = 'SERVER'` and `kind = 'SERVER_LIMIT'`, the platform's rate and resource limits a live Session's users hit (added 2026-10-21 at the human's request: every limit hit within a Session is to be persisted, best effort). One row per limit, user and audit flush: `detail.limit` names the limit (`api.<message type or lane>.rate|queue`, `api.connection.messages|bytes`, `runtime.<limit>` such as `runtime.command_participant_rate` or `runtime.views_collapsed`) and `occurrences` how many times it refused since the previous flush. Hits are gathered in memory and written every 5 s (and once more on shutdown), each flush in one transaction; a failed write is logged and dropped. Such a record is written for any status of an existing Session, an admin's without a participant id. A CLIENT record always has its participant and one of the client kinds, a SERVER record one of the server kinds (`SERVER_LIMIT` from `recordlimithits`; `INVALID_SAMPLE` and `INVALID_COMMAND` from `recordgamefault`, always with their participant), and `occurrences` is always positive: kept by the two writers (`recordgamefault`, checking each kind against its source in `play/session/internal/business/gamefault`, and `recordlimithits`), not by the database.

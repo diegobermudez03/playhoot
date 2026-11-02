@@ -17,7 +17,10 @@ import (
 	"time"
 
 	"github.com/diegobermudez03/playhoot/api"
+	composergameauthoring "github.com/diegobermudez03/playhoot/composer/gameauthoring"
 	"github.com/diegobermudez03/playhoot/game/usecases/checkplayability"
+	"github.com/diegobermudez03/playhoot/game/usecases/findeditableversion"
+	"github.com/diegobermudez03/playhoot/game/workflows/gamelifecycle"
 	"github.com/diegobermudez03/playhoot/identity/loginproviders"
 	"github.com/diegobermudez03/playhoot/identity/usecases/authorize"
 	"github.com/diegobermudez03/playhoot/identity/usecases/createguest"
@@ -26,6 +29,7 @@ import (
 	"github.com/diegobermudez03/playhoot/identity/usecases/refreshcredentials"
 	"github.com/diegobermudez03/playhoot/identity/usecases/setdisplayname"
 	"github.com/diegobermudez03/playhoot/identity/workflows/accountlogin"
+	"github.com/diegobermudez03/playhoot/orchestrator/gameauthoring"
 	"github.com/diegobermudez03/playhoot/orchestrator/playlifecycle"
 	"github.com/diegobermudez03/playhoot/play/runtime/sandbox"
 	"github.com/diegobermudez03/playhoot/play/runtime/usecases/ownership"
@@ -45,6 +49,7 @@ import (
 	"github.com/diegobermudez03/playhoot/play/session/usecases/resolvejoincode"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/storereplaychunk"
 	"github.com/diegobermudez03/playhoot/play/session/workflows/sessionlifecycle"
+	"github.com/diegobermudez03/playhoot/play/session/workflows/versiondrafting"
 	"github.com/joho/godotenv"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -188,6 +193,10 @@ func run() error {
 
 	sessionLifecycle := sessionlifecycle.New(db, store, envVars.MaxActiveSessionsPerCreator)
 	playLifecycle := playlifecycle.New(checkplayability.New(), sessionLifecycle)
+	editableVersions := findeditableversion.New(db)
+	versionDrafting := versiondrafting.New(db)
+	gameAuthoring := gameauthoring.New(gamelifecycle.New(db), editableVersions, versionDrafting)
+	gameAuthoringReads := composergameauthoring.New(editableVersions, versionDrafting)
 	owners := ownership.New(checklivesession.New(db))
 	replayRecorder := replayrecording.New(storereplaychunk.New(db, store), envVars.Replay)
 	// Closed after the controllers, deferred earlier: each stops its
@@ -241,6 +250,7 @@ func run() error {
 		liveConnections,
 		liveConnections,
 		resolvejoincode.New(db),
+		api.Games{Creator: gameAuthoring, Editor: gameAuthoring, Reader: gameAuthoringReads},
 		api.Config{
 			CORSAllowedOrigins:      envVars.CORSAllowedOrigins,
 			WebSocketAllowedOrigins: envVars.WebSocketAllowedOrigins,

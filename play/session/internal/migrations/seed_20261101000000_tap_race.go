@@ -2,11 +2,14 @@ package migrations
 
 import (
 	_ "embed"
+	"time"
 
 	"github.com/go-gormigrate/gormigrate/v2"
 	"gorm.io/gorm"
 
 	"github.com/diegobermudez03/playhoot/play/internal/business/inputrequirements"
+	"github.com/diegobermudez03/playhoot/play/runtime/sandbox/scriptcheck"
+	"github.com/diegobermudez03/playhoot/play/session/internal/business/gameversion"
 	"github.com/diegobermudez03/playhoot/play/session/internal/objectstore"
 )
 
@@ -37,6 +40,46 @@ var (
 	seedTapRaceFrontendPackageLocator = objectstore.LocatorFor(frontendPackagePrefix, seedTapRaceFrontendPackage)
 )
 
+// Rows the Tap Race seed inserts, mapped explicitly.
+type seedTapRaceGameRow struct {
+	ID       uint
+	GameUUID string
+}
+
+func (seedTapRaceGameRow) TableName() string { return "play_games" }
+
+type seedTapRaceVersionRow struct {
+	ID                uint
+	UUID              string
+	GameID            uint
+	Status            string
+	Manifest          *string `gorm:"type:jsonb"`
+	ScriptObjectKey   *string
+	ScriptSHA256      *string `gorm:"column:script_sha256"`
+	ScriptSize        *int64
+	ScriptProfile     string
+	FrontendObjectKey *string
+	FrontendSHA256    *string `gorm:"column:frontend_sha256"`
+	FrontendSize      *int64
+	AspectRatio       *string
+	ExecutableAt      *time.Time
+}
+
+func (seedTapRaceVersionRow) TableName() string { return "play_game_versions" }
+
+type seedTapRaceInputRequirementsRow struct {
+	ID               uint
+	GameVersionID    uint
+	UsesKeyboard     bool
+	UsesPointerHover bool
+	UsesPointerPress bool
+	Devices          string
+}
+
+func (seedTapRaceInputRequirementsRow) TableName() string {
+	return "play_game_version_input_requirements"
+}
+
 // seed20261101000000TapRace adds the Tap Race Game and its EXECUTABLE
 // version, to play an SDK-built game end to end (game creation project,
 // CHECKLIST B).
@@ -51,44 +94,41 @@ func seed20261101000000TapRace() *gormigrate.Migration {
 			if err := pressOnly.Validate(); err != nil {
 				return err
 			}
-			statements := []struct {
-				sql  string
-				args []any
-			}{
-				{sql: `INSERT INTO play_games (game_uuid) VALUES (?)`, args: []any{seedTapRaceGameUUID}},
-				{
-					sql: `INSERT INTO play_game_versions (uuid, game_id, status, manifest,
-							script_object_key, script_sha256, script_size, script_profile,
-							frontend_object_key, frontend_sha256, frontend_size, aspect_ratio, executable_at)
-						SELECT ?, id, 'EXECUTABLE', ?, ?, ?, ?, 'sdk-v1', ?, ?, ?, '16:9', CURRENT_TIMESTAMP FROM play_games WHERE game_uuid = ?`,
-					args: []any{
-						seedTapRaceVersionUUID, seedTapRaceManifest,
-						seedTapRaceScriptLocator.ObjectKey, seedTapRaceScriptLocator.SHA256, seedTapRaceScriptLocator.Size,
-						seedTapRaceFrontendPackageLocator.ObjectKey, seedTapRaceFrontendPackageLocator.SHA256, seedTapRaceFrontendPackageLocator.Size,
-						seedTapRaceGameUUID,
-					},
-				},
-				{
-					sql: `INSERT INTO play_game_version_input_requirements
-							(game_version_id, uses_keyboard, uses_pointer_hover, uses_pointer_press, devices)
-						SELECT id, ?, ?, ?, ? FROM play_game_versions WHERE uuid = ?`,
-					args: []any{
-						pressOnly.UsesKeyboard, pressOnly.UsesPointerHover, pressOnly.UsesPointerPress, string(pressOnly.Devices),
-						seedTapRaceVersionUUID,
-					},
-				},
-				{
-					sql: `UPDATE play_games SET current_version_id = (SELECT id FROM play_game_versions WHERE uuid = ?)
-						WHERE game_uuid = ?`,
-					args: []any{seedTapRaceVersionUUID, seedTapRaceGameUUID},
-				},
+			game := seedTapRaceGameRow{GameUUID: seedTapRaceGameUUID}
+			if err := tx.Create(&game).Error; err != nil {
+				return err
 			}
-			for _, statement := range statements {
-				if err := tx.Exec(statement.sql, statement.args...).Error; err != nil {
-					return err
-				}
+			manifest, profile, ratio := seedTapRaceManifest, string(scriptcheck.ProfileSDKV1), string(gameversion.AspectRatio16x9)
+			now := time.Now()
+			version := seedTapRaceVersionRow{
+				UUID:              seedTapRaceVersionUUID,
+				GameID:            game.ID,
+				Status:            string(gameversion.Executable),
+				Manifest:          &manifest,
+				ScriptObjectKey:   &seedTapRaceScriptLocator.ObjectKey,
+				ScriptSHA256:      &seedTapRaceScriptLocator.SHA256,
+				ScriptSize:        &seedTapRaceScriptLocator.Size,
+				ScriptProfile:     profile,
+				FrontendObjectKey: &seedTapRaceFrontendPackageLocator.ObjectKey,
+				FrontendSHA256:    &seedTapRaceFrontendPackageLocator.SHA256,
+				FrontendSize:      &seedTapRaceFrontendPackageLocator.Size,
+				AspectRatio:       &ratio,
+				ExecutableAt:      &now,
 			}
-			return nil
+			if err := tx.Create(&version).Error; err != nil {
+				return err
+			}
+			requirements := seedTapRaceInputRequirementsRow{
+				GameVersionID:    version.ID,
+				UsesKeyboard:     pressOnly.UsesKeyboard,
+				UsesPointerHover: pressOnly.UsesPointerHover,
+				UsesPointerPress: pressOnly.UsesPointerPress,
+				Devices:          string(pressOnly.Devices),
+			}
+			if err := tx.Create(&requirements).Error; err != nil {
+				return err
+			}
+			return tx.Exec(`UPDATE play_games SET current_version_id = ? WHERE id = ?`, version.ID, game.ID).Error
 		},
 		Rollback: func(tx *gorm.DB) error {
 			if err := tx.Exec(`

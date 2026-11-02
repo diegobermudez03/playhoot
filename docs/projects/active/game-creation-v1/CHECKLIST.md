@@ -14,7 +14,7 @@ Order decided by the human on 2026-11-01. Frontend items live in the frontend's 
 
 ## Drafts (plan delivery 1)
 
-- [ ] C. Authoring project: projects, atomic revisions over `baseRevision`, change envelope, conflicts, rejected attempts recorded.
+- [x] C. Authoring project (2026-11-01): Game Management `CreateGame` (unpublished game + first edition) and `FindEditableVersion`; Play `versiondrafting` (DRAFT version with revisions, starter template, optimistic lock on the base revision, required idempotency key, every attempt recorded, restore); `orchestrator/gameauthoring` and `composer/gameauthoring`; `api/games` (`POST /v1/games`, `GET /draft`, `POST /draft/changes`, `GET /draft/revisions`, `POST /draft/restore`); Identity `CREATE_GAME` and `EDIT_GAME`. The change envelope's fields are snake_case (`base_revision`, `idempotency_key`). Smoke-tested against a running backend. 2026-11-02, from the human's review: no literal values in SQL (constants bound as parameters, inserts through GORM `Create()`); a version Play does not have yet (creation stopped between the domains) is created on demand by the orchestrator on the next edit or read, Game Management unaware, no background job; a change that changes nothing answers `unchanged` without a revision.
 - [ ] D. Draft assets: catalog, reserve / signed upload / finalize, local storage provider.
 - [ ] E. Build jobs: in-process queue, Go runs the Node toolchain, pinned inputs, structured diagnostics.
 - [ ] F. AI access by project link and the creation API; context page readable by an AI.

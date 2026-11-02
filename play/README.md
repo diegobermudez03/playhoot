@@ -67,10 +67,11 @@ play/                         # a folder, not a Go package: each subpackage expo
       storereplaychunk/       # StoreReplayChunk: writes a replay chunk object, then registers it in the manifest + internal/repo
     workflows/
       sessionlifecycle/       # Manager + one file per step (step_create_session.go) + internal/repo
+      versiondrafting/        # a DRAFT version's authored sources: create with the starter template, apply changes, restore, read, list revisions + internal/repo, internal/changeattempt
     batches/
       reconcilesessions/      # background job: ends expired lobbies and ownerless running Sessions every minute + internal/repo
     internal/
-      business/<behavior>/    # business definitions and pure logic shared by steps (sessionstatus, sessionlifetime, gameversion with its aspect ratio and asset catalogs, reconciliation)
+      business/<behavior>/    # business definitions and pure logic shared by steps (sessionstatus, sessionlifetime, gameversion with its aspect ratio and asset catalogs, reconciliation, draftsources with the source rules and the starter template)
       migrations/             # schema migrations (play_* tables) and seed_* test-data migrations
       objectstore/            # object storage port (GCS, in-memory) and verifying cache; not wired, storetest does not build
       pgerrs/                 # PostgreSQL error classification helpers

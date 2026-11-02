@@ -11,6 +11,7 @@ import (
 	"time"
 
 	apiclienttelemetry "github.com/diegobermudez03/playhoot/api/clienttelemetry"
+	apigames "github.com/diegobermudez03/playhoot/api/games"
 	apiidentity "github.com/diegobermudez03/playhoot/api/identity"
 	"github.com/diegobermudez03/playhoot/api/internal/cors"
 	"github.com/diegobermudez03/playhoot/api/internal/live"
@@ -58,7 +59,7 @@ func ParseAllowedOrigins(raw string) ([]string, error) {
 }
 
 // NewServer constructs a Server exposing every route group's endpoints.
-func NewServer(authorizer authorizer, guests guestCreator, operations operationLister, refreshes credentialRefresher, sessionEnder sessionEnder, displayNames displayNameSetter, logins Logins, sessionCreator sessionCreator, owners ownerLocator, admins adminAttacher, players playerAttacher, joinCodes joinCodeResolver, config Config) *Server {
+func NewServer(authorizer authorizer, guests guestCreator, operations operationLister, refreshes credentialRefresher, sessionEnder sessionEnder, displayNames displayNameSetter, logins Logins, sessionCreator sessionCreator, owners ownerLocator, admins adminAttacher, players playerAttacher, joinCodes joinCodeResolver, games Games, config Config) *Server {
 	mux := http.NewServeMux()
 	liveConnections := live.New(config.MaxLiveConnections)
 	groups := []routeGroup{
@@ -68,6 +69,7 @@ func NewServer(authorizer authorizer, guests guestCreator, operations operationL
 		}),
 		apiclienttelemetry.NewHandler(authorizer),
 		apiplay.NewHandler(authorizer, sessionCreator, owners, admins, players, joinCodes, liveConnections, wsx.OriginPatterns(config.WebSocketAllowedOrigins)),
+		apigames.NewHandler(authorizer, games.Creator, games.Editor, games.Reader),
 	}
 	clients := throttle.ClientAddress{TrustedProxies: config.TrustedProxyHops}
 	crossOrigin := cors.NewPolicy(config.CORSAllowedOrigins)

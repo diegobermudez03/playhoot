@@ -37,6 +37,15 @@ const (
 	// OperationSetOwnDisplayName is choosing the name other people see for
 	// the caller. An account has none until its person chooses one.
 	OperationSetOwnDisplayName Operation = "SET_OWN_DISPLAY_NAME"
+
+	// OperationCreateGame is creating a new game to author. It requires a
+	// real account.
+	OperationCreateGame Operation = "CREATE_GAME"
+
+	// OperationEditGame is reading and changing a game's version being
+	// built. It requires a real account; whether the caller may edit that
+	// game is Game Management's decision.
+	OperationEditGame Operation = "EDIT_GAME"
 )
 
 // Level is how strongly a caller is authenticated, on the ordered scale

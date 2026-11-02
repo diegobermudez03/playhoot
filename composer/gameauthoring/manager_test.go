@@ -1,0 +1,133 @@
+package gameauthoring
+
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
+
+	"github.com/diegobermudez03/playhoot/game"
+	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
+)
+
+const (
+	testUserUUID    = "0f8fad5b-d9cb-469f-a165-70867728950e"
+	testGameUUID    = "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+	testVersionUUID = "16fd2706-8baf-433b-82eb-8c7fada847da"
+)
+
+type dependencies struct {
+	editions *MockeditableVersionFinder
+	drafts   *MockdraftReader
+}
+
+func newTestManager(t *testing.T) (*Manager, dependencies) {
+	ctrl := gomock.NewController(t)
+	deps := dependencies{editions: NewMockeditableVersionFinder(ctrl), drafts: NewMockdraftReader(ctrl)}
+	return New(deps.editions, deps.drafts), deps
+}
+
+func TestReadDraft(t *testing.T) {
+	type test struct {
+		expected        DraftRead
+		expectErr       bool
+		expectedErrorIs error
+	}
+
+	ctx := context.Background()
+	found := game.EditableVersion{Outcome: game.EditableVersionFound, VersionUUID: testVersionUUID}
+	snapshot := sessionpkg.DraftSnapshot{VersionUUID: testVersionUUID, GameUUID: testGameUUID, Status: "DRAFT", CurrentRevision: 2, Revision: 2}
+
+	tests := map[string]func(t *testing.T, deps dependencies) test{
+		"the_owner_reads_the_version_being_built": func(t *testing.T, deps dependencies) test {
+			deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(found, nil)
+			deps.drafts.EXPECT().ReadDraft(ctx, testVersionUUID, int64(0), true).Return(snapshot, nil)
+			return test{expected: DraftRead{Access: game.EditableVersionFound, Snapshot: snapshot}}
+		},
+		"not_found_never_reaches_play": func(t *testing.T, deps dependencies) test {
+			deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(game.EditableVersion{Outcome: game.EditableVersionNotFound}, nil)
+			return test{expected: DraftRead{Access: game.EditableVersionNotFound}}
+		},
+		"not_editable_never_reaches_play": func(t *testing.T, deps dependencies) test {
+			deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(game.EditableVersion{Outcome: game.EditableVersionNotEditable}, nil)
+			return test{expected: DraftRead{Access: game.EditableVersionNotEditable}}
+		},
+		"a_revision_past_the_current_one_keeps_its_error": func(t *testing.T, deps dependencies) test {
+			deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(found, nil)
+			deps.drafts.EXPECT().ReadDraft(ctx, testVersionUUID, int64(0), true).Return(sessionpkg.DraftSnapshot{}, sessionpkg.ErrDraftRevisionNotFound)
+			return test{expectErr: true, expectedErrorIs: sessionpkg.ErrDraftRevisionNotFound}
+		},
+		"a_version_play_does_not_have_yet_is_reported_missing": func(t *testing.T, deps dependencies) test {
+			deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(found, nil)
+			deps.drafts.EXPECT().ReadDraft(ctx, testVersionUUID, int64(0), true).Return(sessionpkg.DraftSnapshot{}, sessionpkg.ErrDraftNotFound)
+			return test{expected: DraftRead{Access: game.EditableVersionFound, Missing: true}}
+		},
+		"unknown_access_outcome_is_broken_data": func(t *testing.T, deps dependencies) test {
+			deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(game.EditableVersion{Outcome: "maybe"}, nil)
+			return test{expectErr: true}
+		},
+		"authorization_fails": func(t *testing.T, deps dependencies) test {
+			deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(game.EditableVersion{}, errors.New("database down"))
+			return test{expectErr: true}
+		},
+	}
+
+	for name, setup := range tests {
+		t.Run(name, func(t *testing.T) {
+			manager, deps := newTestManager(t)
+			tc := setup(t, deps)
+
+			result, err := manager.ReadDraft(ctx, testUserUUID, testGameUUID, 0, true)
+
+			if tc.expectErr {
+				require.Error(t, err)
+				if tc.expectedErrorIs != nil {
+					require.ErrorIs(t, err, tc.expectedErrorIs)
+				}
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, result)
+		})
+	}
+}
+
+func TestListDraftRevisions(t *testing.T) {
+	ctx := context.Background()
+	revisions := []sessionpkg.DraftRevision{{Number: 1, Source: "template", Files: 5, CreatedAt: time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)}}
+
+	t.Run("the_owner_lists_the_revisions", func(t *testing.T) {
+		manager, deps := newTestManager(t)
+		deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(game.EditableVersion{Outcome: game.EditableVersionFound, VersionUUID: testVersionUUID}, nil)
+		deps.drafts.EXPECT().ListRevisions(ctx, testVersionUUID).Return(revisions, nil)
+
+		result, err := manager.ListDraftRevisions(ctx, testUserUUID, testGameUUID)
+
+		require.NoError(t, err)
+		require.Equal(t, DraftRevisions{Access: game.EditableVersionFound, Revisions: revisions}, result)
+	})
+
+	t.Run("a_version_play_does_not_have_yet_is_reported_missing", func(t *testing.T) {
+		manager, deps := newTestManager(t)
+		deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(game.EditableVersion{Outcome: game.EditableVersionFound, VersionUUID: testVersionUUID}, nil)
+		deps.drafts.EXPECT().ListRevisions(ctx, testVersionUUID).Return(nil, sessionpkg.ErrDraftNotFound)
+
+		result, err := manager.ListDraftRevisions(ctx, testUserUUID, testGameUUID)
+
+		require.NoError(t, err)
+		require.Equal(t, DraftRevisions{Access: game.EditableVersionFound, Missing: true}, result)
+	})
+
+	t.Run("not_found_never_reaches_play", func(t *testing.T) {
+		manager, deps := newTestManager(t)
+		deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(game.EditableVersion{Outcome: game.EditableVersionNotFound}, nil)
+
+		result, err := manager.ListDraftRevisions(ctx, testUserUUID, testGameUUID)
+
+		require.NoError(t, err)
+		require.Equal(t, DraftRevisions{Access: game.EditableVersionNotFound}, result)
+	})
+}

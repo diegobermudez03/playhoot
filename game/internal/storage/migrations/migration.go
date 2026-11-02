@@ -23,6 +23,8 @@ func MigrateTables(db *gorm.DB) error {
 		// Runtime owns its own executable-artifact table independently of
 		// Game Management now.
 		migration20260929000000DropGameDefinitions(),
+
+		migration20261101000000GameEditions(),
 	})
 
 	return migrator.Migrate()

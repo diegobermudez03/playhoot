@@ -3,7 +3,10 @@ package api
 import (
 	"context"
 
+	composergameauthoring "github.com/diegobermudez03/playhoot/composer/gameauthoring"
+	"github.com/diegobermudez03/playhoot/game"
 	"github.com/diegobermudez03/playhoot/identity"
+	"github.com/diegobermudez03/playhoot/orchestrator/gameauthoring"
 	"github.com/diegobermudez03/playhoot/play/runtime"
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
@@ -99,4 +102,30 @@ type playerAttacher interface {
 // joinCodeResolver is the durable Session's join code lookup.
 type joinCodeResolver interface {
 	ResolveJoinCode(ctx context.Context, joinCode string) (sessionpkg.JoinCodeResolution, error)
+}
+
+// gameCreator is game authoring's creation of a game with its version being
+// built.
+type gameCreator interface {
+	CreateGame(ctx context.Context, userUUID string, idempotencyKey string) (gameauthoring.CreatedGame, error)
+}
+
+// draftEditor is game authoring's changes to a game's version being built.
+type draftEditor interface {
+	ApplyDraftChanges(ctx context.Context, userUUID string, gameUUID string, change sessionpkg.DraftChange) (gameauthoring.DraftEdit, error)
+	RestoreDraftRevision(ctx context.Context, userUUID string, gameUUID string, revision int64, baseRevision int64, idempotencyKey string, origin string) (gameauthoring.DraftEdit, error)
+	EnsureDraft(ctx context.Context, userUUID string, gameUUID string) (game.EditableVersionOutcome, error)
+}
+
+// draftReader is game authoring's reads of a game's version being built.
+type draftReader interface {
+	ReadDraft(ctx context.Context, userUUID string, gameUUID string, revision int64, withContent bool) (composergameauthoring.DraftRead, error)
+	ListDraftRevisions(ctx context.Context, userUUID string, gameUUID string) (composergameauthoring.DraftRevisions, error)
+}
+
+// Games is what game authoring needs.
+type Games struct {
+	Creator gameCreator
+	Editor  draftEditor
+	Reader  draftReader
 }

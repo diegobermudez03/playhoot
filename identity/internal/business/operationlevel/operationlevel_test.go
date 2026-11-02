@@ -58,7 +58,9 @@ func TestSatisfies(t *testing.T) {
 
 func TestCatalog(t *testing.T) {
 	require.Equal(t, []identity.OperationLevel{
+		{Operation: identity.OperationCreateGame, RequiredLevel: identity.LevelAccount},
 		{Operation: identity.OperationCreateSession, RequiredLevel: identity.LevelAccount},
+		{Operation: identity.OperationEditGame, RequiredLevel: identity.LevelAccount},
 		{Operation: identity.OperationJoinSessionAsAdmin, RequiredLevel: identity.LevelAccount},
 		{Operation: identity.OperationJoinSessionAsPlayer, RequiredLevel: identity.LevelGuest},
 		{Operation: identity.OperationReportClientTelemetry, RequiredLevel: identity.LevelGuest},
