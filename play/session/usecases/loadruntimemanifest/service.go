@@ -12,7 +12,6 @@ import (
 
 	"github.com/diegobermudez03/playhoot/monitoring"
 	"github.com/diegobermudez03/playhoot/play/internal/business/inputrequirements"
-	"github.com/diegobermudez03/playhoot/play/internal/business/inputs"
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 	"github.com/diegobermudez03/playhoot/play/session/internal/business/manifest"
 	internalrepo "github.com/diegobermudez03/playhoot/play/session/usecases/loadruntimemanifest/internal/repo"
@@ -64,20 +63,9 @@ func (s *Service) LoadRuntimeManifest(ctx context.Context, sessionUUID string) (
 	if err != nil {
 		return sessionpkg.RuntimeManifest{}, err
 	}
-	var declaredCommands []sessionpkg.RuntimeCommand
-	for _, command := range parsed.Commands {
-		declaredCommands = append(declaredCommands, sessionpkg.RuntimeCommand{Name: command.Name, Payload: runtimeInputs(command.Payload)})
-	}
-	return sessionpkg.RuntimeManifest{
-		MinPlayers: parsed.MinPlayers,
-		MaxPlayers: parsed.MaxPlayers,
-		Inputs:     runtimeInputs(parsed.Inputs),
-		Commands:   declaredCommands,
-		Update:     parsed.Update,
-		Rejoin:     parsed.Rejoin,
-
-		InputRequirements: requirements,
-	}, nil
+	loaded := parsed.Runtime()
+	loaded.InputRequirements = requirements
+	return loaded, nil
 }
 
 // runtimeInputRequirements returns the pinned version's stored requirements.
@@ -100,15 +88,4 @@ func runtimeInputRequirements(ctx context.Context, stored *internalrepo.InputReq
 		UsesPointerHover: stored.UsesPointerHover,
 		UsesPointerPress: stored.UsesPointerPress,
 	}, nil
-}
-
-func runtimeInputs(declarations []inputs.Declaration) []sessionpkg.RuntimeInput {
-	var declared []sessionpkg.RuntimeInput
-	for _, input := range declarations {
-		declared = append(declared, sessionpkg.RuntimeInput{
-			Name: input.Name, Type: string(input.Type), Nullable: input.Nullable,
-			Min: input.Min, Max: input.Max, Values: input.Values, Default: input.Default,
-		})
-	}
-	return declared
 }

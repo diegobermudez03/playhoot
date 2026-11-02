@@ -1,6 +1,9 @@
 package liveconnection
 
-import "github.com/diegobermudez03/playhoot/monitoring/metrics"
+import (
+	"github.com/diegobermudez03/playhoot/monitoring/metrics"
+	"github.com/diegobermudez03/playhoot/play/runtime/internal/business/livelimits"
+)
 
 var (
 	controllersCreated = metrics.NewCounter(
@@ -23,12 +26,12 @@ var (
 
 // Limits a live Session's requests can exceed, as metric label values.
 const (
-	limitSampleRate          = "sample_rate"
-	limitTimelineParticipant = "timeline_participant"
-	limitTimelineSession     = "timeline_session"
-	limitCommandPending      = "command_pending"
-	limitCommandParticipant  = "command_participant_rate"
-	limitCommandSession      = "command_session_rate"
+	limitSampleRate          = livelimits.SampleRate
+	limitTimelineParticipant = livelimits.TimelineParticipant
+	limitTimelineSession     = livelimits.TimelineSession
+	limitCommandPending      = livelimits.CommandPending
+	limitCommandParticipant  = livelimits.CommandParticipant
+	limitCommandSession      = livelimits.CommandSession
 	limitAdminConnections    = "admin_connections"
 	limitLiveSessions        = "live_sessions"
 	// limitViewsCollapsed is no refusal but is audited like one: a

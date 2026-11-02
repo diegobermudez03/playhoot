@@ -12,6 +12,7 @@ import (
 	"github.com/diegobermudez03/playhoot/monitoring"
 	"github.com/diegobermudez03/playhoot/monitoring/metrics"
 	"github.com/diegobermudez03/playhoot/play/runtime"
+	"github.com/diegobermudez03/playhoot/play/runtime/internal/business/boundaryplan"
 	"github.com/diegobermudez03/playhoot/play/runtime/internal/business/viewpatch"
 	"github.com/diegobermudez03/playhoot/play/runtime/replay"
 	"github.com/diegobermudez03/playhoot/play/runtime/sandbox"
@@ -347,18 +348,11 @@ func (c *sessionController) attempt(ctx context.Context, work boundary) (executi
 // timeline operation up to the last one it ran was executed. An index the
 // batch does not have means the context drifted.
 func finishedAt(work boundary, batch sandbox.Batch, orders []uint64, index int) (finishPoint, error) {
-	if index < 0 || index >= len(batch.Operations) {
+	executed, sessionTimeMs, ok := boundaryplan.FinishedAt(planned(work.operations), batch, orders, index)
+	if !ok {
 		return finishPoint{}, fmt.Errorf("%w: finished at operation %d of a batch of %d", errOutOfSync, index, len(batch.Operations))
 	}
-	executed := len(work.operations)
-	// update() runs after every timeline operation; its order is 0.
-	if through := orders[index]; through != 0 {
-		executed = 0
-		for executed < len(work.operations) && work.operations[executed].Order <= through {
-			executed++
-		}
-	}
-	return finishPoint{operations: executed, sessionTimeMs: batch.Operations[index].SessionTimeMs}, nil
+	return finishPoint{operations: executed, sessionTimeMs: sessionTimeMs}, nil
 }
 
 // timeline places what a batch's calls returned at the time and order of the
@@ -421,55 +415,29 @@ func placeEvents(t timeline, emitted []sandbox.GameEvent) ([]gameEvent, error) {
 }
 
 // batchOf turns work's operations into one sandbox batch, with the order of
-// the last timeline operation each call runs (0 for update). Adjacent
-// transitions share a samples() call, each command, disconnection or rejoin
-// runs alone, update() ends it; each runs at its own time, never before the
-// confirmed state's.
+// the last timeline operation each call runs (0 for update), as
+// boundaryplan.Batch decides.
 func batchOf(work boundary) (sandbox.Batch, []uint64) {
-	var batch sandbox.Batch
-	var orders []uint64
-	for _, operation := range work.operations {
-		if operation.runsAlone() {
-			alone := sandbox.Operation{SessionTimeMs: operation.SessionTimeMs}
-			switch {
-			case operation.Command != nil:
-				alone.Command = &sandbox.Command{ParticipantID: operation.ParticipantID, Name: operation.Command.name, Payload: operation.Command.payload}
-			case operation.Rejoin != nil:
-				alone.Rejoined = operation.ParticipantID
-			default:
-				alone.Disconnected = operation.ParticipantID
-			}
-			batch.Operations = append(batch.Operations, alone)
-			orders = append(orders, operation.Order)
-			continue
+	return boundaryplan.Batch(planned(work.operations), boundaryplan.Boundary{Taken: len(work.operations), SessionTimeMs: work.sessionTimeMs, Update: work.update}, work.game.ExecutedThroughSessionTimeMs)
+}
+
+// planned is operations as the boundary planning sees them.
+func planned(operations []Operation) []boundaryplan.Operation {
+	result := make([]boundaryplan.Operation, len(operations))
+	for i, operation := range operations {
+		result[i] = boundaryplan.Operation{
+			ParticipantID: operation.ParticipantID,
+			SessionTimeMs: operation.SessionTimeMs,
+			Order:         operation.Order,
+			Inputs:        []byte(operation.Inputs),
+			Disconnected:  operation.Disconnected,
+			Rejoin:        operation.Rejoin != nil,
 		}
-		transition := sandbox.Transition{ParticipantID: operation.ParticipantID, Inputs: []byte(operation.Inputs), SessionTimeMs: operation.SessionTimeMs}
-		if n := len(batch.Operations); n > 0 && len(batch.Operations[n-1].Transitions) > 0 {
-			batch.Operations[n-1].Transitions = append(batch.Operations[n-1].Transitions, transition)
-			orders[n-1] = operation.Order
-			continue
+		if operation.Command != nil {
+			result[i].Command = &boundaryplan.Command{Name: operation.Command.name, Payload: operation.Command.payload}
 		}
-		batch.Operations = append(batch.Operations, sandbox.Operation{Transitions: []sandbox.Transition{transition}})
-		orders = append(orders, operation.Order)
 	}
-	if work.update {
-		batch.Operations = append(batch.Operations, sandbox.Operation{SessionTimeMs: work.sessionTimeMs, Update: true})
-		orders = append(orders, 0)
-	}
-	at := work.game.ExecutedThroughSessionTimeMs
-	for i := range batch.Operations {
-		operation := &batch.Operations[i]
-		switch {
-		case operation.Command != nil, operation.Update, operation.Disconnected != "", operation.Rejoined != "":
-		case i+1 < len(batch.Operations):
-			operation.SessionTimeMs = operation.Transitions[len(operation.Transitions)-1].SessionTimeMs
-		default:
-			operation.SessionTimeMs = work.sessionTimeMs
-		}
-		operation.SessionTimeMs = max(operation.SessionTimeMs, at)
-		at = operation.SessionTimeMs
-	}
-	return batch, orders
+	return result
 }
 
 func countRejoins(operations []Operation) int {
@@ -549,23 +517,17 @@ func (c *sessionController) takeBoundary() (boundary, bool) {
 		return boundary{}, false
 	}
 	s.expireGraces(c.root)
+	plan := boundaryplan.Plan(planned(s.timeline), s.sessionTime(), s.game.ExecutedThroughSessionTimeMs, s.manifest.Update, s.limits.boundaryOperations)
 	taken, rest := s.timeline, []Operation(nil)
-	if limit := s.limits.boundaryOperations; limit > 0 && len(taken) > limit {
-		taken, rest = s.timeline[:limit:limit], slices.Clone(s.timeline[limit:])
+	if plan.Taken < len(s.timeline) {
+		taken, rest = s.timeline[:plan.Taken:plan.Taken], slices.Clone(s.timeline[plan.Taken:])
 	}
 	work := boundary{
 		operations:    taken,
-		sessionTimeMs: max(s.sessionTime(), s.game.ExecutedThroughSessionTimeMs),
+		sessionTimeMs: plan.SessionTimeMs,
 		game:          s.game,
 		acks:          make(map[string]sampleAck, len(s.inputs)),
-		update:        s.manifest.Update && rest == nil,
-	}
-	if n := len(taken); n > 0 {
-		last := taken[n-1]
-		work.sessionTimeMs = max(work.sessionTimeMs, last.SessionTimeMs)
-		if (last.runsAlone() && !work.update) || rest != nil {
-			work.sessionTimeMs = max(last.SessionTimeMs, s.game.ExecutedThroughSessionTimeMs)
-		}
+		update:        plan.Update,
 	}
 	s.timeline = rest
 	s.recount()

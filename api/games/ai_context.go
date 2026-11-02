@@ -32,12 +32,13 @@ const codeFileNotFound = "file_not_found"
 
 // aiURLs are the addresses an AI uses through its link.
 type aiURLs struct {
-	Self    string `json:"self"`
-	Changes string `json:"changes"`
-	Restore string `json:"restore"`
-	Build   string `json:"build"`
-	Files   string `json:"files"`
-	Assets  string `json:"assets"`
+	Self        string `json:"self"`
+	Changes     string `json:"changes"`
+	Restore     string `json:"restore"`
+	Build       string `json:"build"`
+	Files       string `json:"files"`
+	Assets      string `json:"assets"`
+	Simulations string `json:"simulations"`
 }
 
 type aiContextResponse struct {
@@ -125,7 +126,7 @@ func aiAddresses(base string, token string) aiURLs {
 	self := base + aiPathPrefix + token
 	return aiURLs{
 		Self: self, Changes: self + "/changes", Restore: self + "/restore",
-		Build: self + "/build", Files: self + "/files", Assets: self + "/assets",
+		Build: self + "/build", Files: self + "/files", Assets: self + "/assets", Simulations: self + "/simulations",
 	}
 }
 
@@ -177,6 +178,7 @@ func aiContextMarkdown(snapshot sessionpkg.DraftSnapshot, urls aiURLs, observedA
 	line("- To go back to an earlier revision, POST `{\"revision\": N, \"base_revision\": %d, \"idempotency_key\": \"...\"}` to %s .", snapshot.Revision, urls.Restore)
 	line("- Assets (images, audio, video) are declared in `game.project.json` under `\"assets\"`. The person uploads them in the section **Recursos**, or you PUT the raw file to %s/<key> with an `Idempotency-Key` header.", urls.Assets)
 	line("- Every new revision is built automatically. Wait for its result with GET %s?revision=N&wait=20 .", urls.Build)
+	line("- To check what the game does, simulate it: POST a scenario `{\"format\": \"playhoot.scenario.v1\", \"revision\": N, \"players\": 2, \"seed\": 1, \"duration_ms\": 30000, \"steps\": [{\"at_ms\": 100, \"player\": \"P1\", \"command\": {\"name\": \"...\", \"payload\": {}}}, {\"at_ms\": 200, \"player\": \"P2\", \"inputs\": {...}}], \"observe_at_ms\": [1000]}` to %s ; the answer has the whole state and every player's view at each observation and at the end, each command's response, refused steps, events and errors. A revision can be simulated once its build SUCCEEDED. If you cannot send HTTP requests, give the scenario to the person: they paste it in the section **Escenarios** and send you the result.", urls.Simulations)
 	line("- SDK documentation: %s", sdkDocsURL)
 	line("")
 

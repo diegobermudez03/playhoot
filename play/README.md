@@ -48,15 +48,17 @@ play/                         # a folder, not a Go package: each subpackage expo
   docs/                       # DATA_MODEL.md, FLOWS.md, decisions/
   runtime/
     runtime.go                # live Runtime public contract (owner placement, attach results, admin and player connection operations and types)
+    simulation.go             # the simulation's contract: Scenario and SimulationResult
     replay/                   # what a running game offers to its replay history
     sandbox/                  # QuickJS-on-WebAssembly execution contexts, one isolated worker process each; scriptcheck/ validates scripts for publication
     usecases/
       ownership/              # LocateOrClaimOwner (placeholder: single instance, no registry)
+      simulategame/           # Simulate: plays a scenario on a build's script in its own sandbox context, on a virtual clock, with the live admission, limits and boundary planning
     workflows/
       liveconnection/         # the live Session: the ControllerResolver finds or creates each Session's controller; the controller runs everything else, one file per operation
       replayrecording/        # the Replay Recorder: one recording per controller run, its chunking policy, a bounded queue storing chunks in the background; internal/chunk builds and encodes chunks
     internal/
-      business/               # pure logic shared by the Runtime's workflows (checkpoint encoding, view patches, JSON Patch)
+      business/               # pure logic shared by the Runtime's workflows and use cases (checkpoint encoding, view patches, JSON Patch; boundaryplan, gamemanifest and livelimits, which the live controller and the simulation share)
   session/
     session.go                # durable Session public contract (CreateSession types, ErrIdempotencyConflict, AdminJoinEligibility)
     migration/                # exposes Migrate(db) and Seed(db) (test data) to the application's migrations.go

@@ -11,6 +11,7 @@ import (
 
 	"github.com/diegobermudez03/playhoot/game"
 	"github.com/diegobermudez03/playhoot/identity"
+	"github.com/diegobermudez03/playhoot/play/runtime"
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
 
@@ -21,15 +22,16 @@ const (
 )
 
 type dependencies struct {
-	editions *MockeditableVersionFinder
-	drafts   *MockdraftReader
-	links    *MockresourceLinkReader
+	editions  *MockeditableVersionFinder
+	drafts    *MockdraftReader
+	links     *MockresourceLinkReader
+	simulator *MockgameSimulator
 }
 
 func newTestManager(t *testing.T) (*Manager, dependencies) {
 	ctrl := gomock.NewController(t)
-	deps := dependencies{editions: NewMockeditableVersionFinder(ctrl), drafts: NewMockdraftReader(ctrl), links: NewMockresourceLinkReader(ctrl)}
-	return New(deps.editions, deps.drafts, deps.links), deps
+	deps := dependencies{editions: NewMockeditableVersionFinder(ctrl), drafts: NewMockdraftReader(ctrl), links: NewMockresourceLinkReader(ctrl), simulator: NewMockgameSimulator(ctrl)}
+	return New(deps.editions, deps.drafts, deps.links, deps.simulator), deps
 }
 
 func TestReadDraft(t *testing.T) {
@@ -193,4 +195,72 @@ func TestAILinkStatus(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, AILinkStatusRead{Access: game.EditableVersionNotFound}, read)
 	})
+}
+
+func TestSimulateDraft(t *testing.T) {
+	type test struct {
+		expected        DraftSimulation
+		expectErr       bool
+		expectedErrorIs error
+	}
+
+	ctx := context.Background()
+	found := game.EditableVersion{Outcome: game.EditableVersionFound, VersionUUID: testVersionUUID}
+	scenario := runtime.Scenario{Players: 1, Seed: 1, DurationMs: 100}
+	manifest := sessionpkg.RuntimeManifest{MinPlayers: 1, MaxPlayers: 2}
+	ready := sessionpkg.BuiltRevision{Revision: 3, BuildStatus: sessionpkg.DraftBuildSucceeded, Ready: true, Script: []byte("script"), ScriptProfile: "sdk-v1", Manifest: manifest}
+	ran := runtime.SimulationResult{Outcome: runtime.SimulationRan, Stopped: runtime.SimulationStoppedDuration}
+
+	tests := map[string]func(t *testing.T, deps dependencies) test{
+		"the_owner_simulates_a_succeeded_build": func(t *testing.T, deps dependencies) test {
+			deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(found, nil)
+			deps.drafts.EXPECT().LoadBuiltRevision(ctx, testVersionUUID, int64(0)).Return(ready, nil)
+			deps.simulator.EXPECT().Simulate(ctx, []byte("script"), "sdk-v1", manifest, scenario).Return(ran, nil)
+			return test{expected: DraftSimulation{Access: game.EditableVersionFound, Revision: 3, BuildStatus: sessionpkg.DraftBuildSucceeded, Ready: true, Result: ran}}
+		},
+		"a_build_that_did_not_succeed_is_never_simulated": func(t *testing.T, deps dependencies) test {
+			deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(found, nil)
+			deps.drafts.EXPECT().LoadBuiltRevision(ctx, testVersionUUID, int64(0)).Return(sessionpkg.BuiltRevision{Revision: 3, BuildStatus: sessionpkg.DraftBuildRunning}, nil)
+			return test{expected: DraftSimulation{Access: game.EditableVersionFound, Revision: 3, BuildStatus: sessionpkg.DraftBuildRunning}}
+		},
+		"not_found_never_reaches_play": func(t *testing.T, deps dependencies) test {
+			deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(game.EditableVersion{Outcome: game.EditableVersionNotFound}, nil)
+			return test{expected: DraftSimulation{Access: game.EditableVersionNotFound}}
+		},
+		"a_version_play_does_not_have_yet_is_reported_missing": func(t *testing.T, deps dependencies) test {
+			deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(found, nil)
+			deps.drafts.EXPECT().LoadBuiltRevision(ctx, testVersionUUID, int64(0)).Return(sessionpkg.BuiltRevision{}, sessionpkg.ErrDraftNotFound)
+			return test{expected: DraftSimulation{Access: game.EditableVersionFound, Missing: true}}
+		},
+		"a_revision_without_build_keeps_its_error": func(t *testing.T, deps dependencies) test {
+			deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(found, nil)
+			deps.drafts.EXPECT().LoadBuiltRevision(ctx, testVersionUUID, int64(0)).Return(sessionpkg.BuiltRevision{}, sessionpkg.ErrDraftBuildNotFound)
+			return test{expectErr: true, expectedErrorIs: sessionpkg.ErrDraftBuildNotFound}
+		},
+		"busy_keeps_its_error": func(t *testing.T, deps dependencies) test {
+			deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(found, nil)
+			deps.drafts.EXPECT().LoadBuiltRevision(ctx, testVersionUUID, int64(0)).Return(ready, nil)
+			deps.simulator.EXPECT().Simulate(ctx, gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(runtime.SimulationResult{}, runtime.ErrSimulationsBusy)
+			return test{expectErr: true, expectedErrorIs: runtime.ErrSimulationsBusy}
+		},
+	}
+
+	for name, setup := range tests {
+		t.Run(name, func(t *testing.T) {
+			m, deps := newTestManager(t)
+			tc := setup(t, deps)
+
+			simulated, err := m.SimulateDraft(ctx, testUserUUID, testGameUUID, 0, scenario)
+
+			if tc.expectErr {
+				require.Error(t, err)
+				if tc.expectedErrorIs != nil {
+					require.ErrorIs(t, err, tc.expectedErrorIs)
+				}
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, simulated)
+		})
+	}
 }

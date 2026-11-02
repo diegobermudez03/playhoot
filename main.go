@@ -35,6 +35,7 @@ import (
 	"github.com/diegobermudez03/playhoot/orchestrator/playlifecycle"
 	"github.com/diegobermudez03/playhoot/play/runtime/sandbox"
 	"github.com/diegobermudez03/playhoot/play/runtime/usecases/ownership"
+	"github.com/diegobermudez03/playhoot/play/runtime/usecases/simulategame"
 	"github.com/diegobermudez03/playhoot/play/runtime/workflows/liveconnection"
 	"github.com/diegobermudez03/playhoot/play/runtime/workflows/replayrecording"
 	"github.com/diegobermudez03/playhoot/play/session/batches/reconcilesessions"
@@ -214,7 +215,7 @@ func run() error {
 	versionBuilding := versionbuilding.New(db, store, gametoolchain.Open(envVars.GameToolchainDir), buildWakeUps, versionbuilding.DefaultWorkers)
 	resourceLinks := resourcelinks.New(db)
 	gameAuthoring := gameauthoring.New(gamelifecycle.New(db), editableVersions, versionDrafting, resourceLinks)
-	gameAuthoringReads := composergameauthoring.New(editableVersions, versionDrafting, resourceLinks)
+	gameAuthoringReads := composergameauthoring.New(editableVersions, versionDrafting, resourceLinks, simulategame.New(sandboxHost))
 	owners := ownership.New(checklivesession.New(db))
 	replayRecorder := replayrecording.New(storereplaychunk.New(db, store), envVars.Replay)
 	// Closed after the controllers, deferred earlier: each stops its

@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/diegobermudez03/playhoot/play/session/buildsignal"
+	"github.com/diegobermudez03/playhoot/play/session/internal/objectstore"
 	"github.com/diegobermudez03/playhoot/play/session/storage"
 	internalrepo "github.com/diegobermudez03/playhoot/play/session/workflows/versiondrafting/internal/repo"
 	"github.com/diegobermudez03/playhoot/utils"
@@ -38,9 +39,13 @@ type Manager struct {
 	uploadAssetRepo        uploadAssetRepo
 	removeAssetRepo        removeAssetRepo
 	readBuildRepo          readBuildRepo
+	loadBuiltRevisionRepo  loadBuiltRevisionRepo
 
 	assetLinks   assetLinkSigner
 	assetStorage assetStorage
+
+	// scripts reads builds' backend scripts from object storage.
+	scripts scriptLoader
 
 	// buildSignal wakes the build worker when a revision's build is queued.
 	buildSignal *buildsignal.Signal
@@ -69,6 +74,8 @@ func New(db *gorm.DB, store storage.Store, signal *buildsignal.Signal) *Manager 
 		uploadAssetRepo:        repo,
 		removeAssetRepo:        repo,
 		readBuildRepo:          repo,
+		loadBuiltRevisionRepo:  repo,
+		scripts:                objectstore.NewLoader(store, objectstore.DefaultLoaderEntries),
 		buildSignal:            signal,
 		assetLinks:             store,
 		assetStorage:           store,

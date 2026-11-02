@@ -9,6 +9,7 @@ import (
 
 	"github.com/diegobermudez03/playhoot/play/internal/business/commands"
 	"github.com/diegobermudez03/playhoot/play/internal/business/inputs"
+	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
 
 // SchemaVersion is the only manifest schema this domain reads.
@@ -123,4 +124,32 @@ func inputDeclarations(documents map[string]inputDocument) []inputs.Declaration 
 		})
 	}
 	return declarations
+}
+
+// Runtime is m as the Runtime's contract carries it. Input requirements are
+// not part of a manifest: the caller adds them.
+func (m Manifest) Runtime() sessionpkg.RuntimeManifest {
+	var declaredCommands []sessionpkg.RuntimeCommand
+	for _, command := range m.Commands {
+		declaredCommands = append(declaredCommands, sessionpkg.RuntimeCommand{Name: command.Name, Payload: runtimeInputs(command.Payload)})
+	}
+	return sessionpkg.RuntimeManifest{
+		MinPlayers: m.MinPlayers,
+		MaxPlayers: m.MaxPlayers,
+		Inputs:     runtimeInputs(m.Inputs),
+		Commands:   declaredCommands,
+		Update:     m.Update,
+		Rejoin:     m.Rejoin,
+	}
+}
+
+func runtimeInputs(declarations []inputs.Declaration) []sessionpkg.RuntimeInput {
+	var declared []sessionpkg.RuntimeInput
+	for _, input := range declarations {
+		declared = append(declared, sessionpkg.RuntimeInput{
+			Name: input.Name, Type: string(input.Type), Nullable: input.Nullable,
+			Min: input.Min, Max: input.Max, Values: input.Values, Default: input.Default,
+		})
+	}
+	return declared
 }

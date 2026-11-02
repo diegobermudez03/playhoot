@@ -22,7 +22,7 @@ Order decided by the human on 2026-11-01. Frontend items live in the frontend's 
 ## Test (plan delivery 2)
 
 - [ ] G. Human preview: test sessions with synthetic participants and perspective switching.
-- [ ] H. Automated scenarios with a virtual clock reusing the real scheduling.
+- [x] H. Simulation for the AI (2026-11-02): `POST /v1/games/{id}/draft/simulations` and `POST /ai/v1/{token}/simulations` play a `playhoot.scenario.v1` on a succeeded build in a separate virtual-clock loop sharing the live controller's boundary planning, admission and limits (`play/runtime/internal/business/boundaryplan`, `gamemanifest`, `livelimits`); synchronous and bounded, nothing persisted; expectations deferred by the human.
 
 ## Publish (plan delivery 3)
 

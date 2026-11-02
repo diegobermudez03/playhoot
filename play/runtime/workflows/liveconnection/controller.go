@@ -14,6 +14,7 @@ import (
 	"github.com/diegobermudez03/playhoot/play/internal/business/inputrequirements"
 	"github.com/diegobermudez03/playhoot/play/internal/business/inputs"
 	"github.com/diegobermudez03/playhoot/play/runtime"
+	"github.com/diegobermudez03/playhoot/play/runtime/internal/business/gamemanifest"
 	"github.com/diegobermudez03/playhoot/play/runtime/sandbox/scriptcheck"
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 	"github.com/diegobermudez03/playhoot/utils/ratelimit"
@@ -263,18 +264,9 @@ func (c *sessionController) loadManifest(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("loading runtime manifest: %w", err)
 	}
-	declarations := inputDeclarations(loaded.Inputs)
-	schema, err := inputs.NewSchema(declarations)
+	rules, err := gamemanifest.Compile(loaded)
 	if err != nil {
-		return fmt.Errorf("reading the manifest's inputs: %w", err)
-	}
-	declaredCommands := make([]commands.Declaration, len(loaded.Commands))
-	for i, command := range loaded.Commands {
-		declaredCommands[i] = commands.Declaration{Name: command.Name, Payload: inputDeclarations(command.Payload)}
-	}
-	catalog, err := commands.NewCatalog(declaredCommands)
-	if err != nil {
-		return fmt.Errorf("reading the manifest's commands: %w", err)
+		return err
 	}
 	requirements := inputrequirements.Requirements{
 		UsesKeyboard:     loaded.InputRequirements.UsesKeyboard,
@@ -283,21 +275,10 @@ func (c *sessionController) loadManifest(ctx context.Context) error {
 		Devices:          inputrequirements.Devices(loaded.InputRequirements.Devices),
 	}
 	s := c.lock()
-	s.manifest = Manifest{MinPlayers: loaded.MinPlayers, MaxPlayers: loaded.MaxPlayers, Inputs: schema, Commands: catalog, Update: loaded.Update, Rejoin: loaded.Rejoin, Requirements: requirements}
+	s.manifest = Manifest{MinPlayers: rules.MinPlayers, MaxPlayers: rules.MaxPlayers, Inputs: rules.Inputs, Commands: rules.Commands, Update: rules.Update, Rejoin: rules.Rejoin, Requirements: requirements}
 	c.unlock()
 	c.manifestLoaded = true
 	return nil
-}
-
-func inputDeclarations(declared []sessionpkg.RuntimeInput) []inputs.Declaration {
-	declarations := make([]inputs.Declaration, len(declared))
-	for i, input := range declared {
-		declarations[i] = inputs.Declaration{
-			Name: input.Name, Type: inputs.Type(input.Type), Nullable: input.Nullable,
-			Min: input.Min, Max: input.Max, Values: input.Values, Default: input.Default,
-		}
-	}
-	return declarations
 }
 
 // lock takes the controller's state until unlock.
@@ -586,12 +567,6 @@ type Operation struct {
 	// transition came from; empty for the platform's own transitions.
 	sampleStream   string
 	sampleSequence int64
-}
-
-// runsAlone reports whether the operation is its own call, at its own time,
-// rather than a transition sharing a samples() call.
-func (o Operation) runsAlone() bool {
-	return o.Command != nil || o.Disconnected || o.Rejoin != nil
 }
 
 // enqueue appends operation to the timeline at the current Session time.

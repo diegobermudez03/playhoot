@@ -21,4 +21,6 @@ Groups are organized like `orchestrator`'s: one subpackage per behavior, a `Mana
 
 `gameauthoring.ReadDraftBuild` (2026-11-02): the same authorization, then Play's `ReadBuild` of one revision's build, waiting up to 20 s for it to end; a version Play lacks is reported `Missing` for the API to repair, like the other reads.
 
+`gameauthoring.SimulateDraft` (2026-11-02): the same authorization, then Play's `LoadBuiltRevision` (the revision's build with its script, profile and manifest; not ready unless it `SUCCEEDED`) and the Runtime's `simulategame.Simulate` of the scenario; a version Play lacks is reported `Missing` for the API to repair. It writes nothing.
+
 `gameauthoring.AILinkStatus` (2026-11-02): the same Game Management decision as the AI link writes (the owner, found or `not_editable`), then Identity's `ResourceLinkStatus` for the game: whether a live link exists, never the link itself.

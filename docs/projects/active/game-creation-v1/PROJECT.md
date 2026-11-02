@@ -31,6 +31,7 @@ The frontend counterpart is the frontend repository's Project `game-creation-web
 - Builds (the human, 2026-11-02): every applied revision is built automatically in the background (a revision sent is one its author wants built), coalesced so only a version's newest waiting revision is built; the answer never waits for the build, and a person or an AI reads its result on the draft or through a long poll. A simulation or a preview requires a succeeded build. The build runs behind a port (`gamebuild.Builder`) so it can become its own service.
 
 - AI links (the human, 2026-11-02): the link is a credential Identity keeps, scoped to one game; its token goes in the path for reads and writes; one active link per game, valid 7 days; renewing creates a new link and revokes the old one; the context page is Markdown served by the backend, with the sources inline when they weigh under 150 KiB, otherwise linked per file pinned to the observed revision.
+- Simulation for the AI (the human, 2026-11-02), done before the human preview: a separate loop on a virtual clock that reuses the sandbox and the live admission, limits and boundary planning (extracted from the live controller, which uses the same code), advancing 100 ms ticks; a command runs its own boundary at its arrival, with the samples before it and update(), as a live COMMAND flush. The scenario is an input the AI writes (or the person pastes in the section "Escenarios"); the result comes back at once and nothing is persisted. Platform-checked expectations are deferred.
 
 ## Completion Criteria
 

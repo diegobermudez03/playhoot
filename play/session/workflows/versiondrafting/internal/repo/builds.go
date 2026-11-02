@@ -111,3 +111,35 @@ func (r *Repo) FindLastBuildInStatus(ctx context.Context, tx *gorm.DB, versionUU
 	}
 	return &build, nil
 }
+
+// BuiltArtifacts is what running a revision's build needs: its status, its
+// backend script's locator and manifest when it succeeded, and the profile
+// its version's script runs under.
+type BuiltArtifacts struct {
+	Revision        int64
+	Status          string
+	ServerObjectKey *string
+	ServerSHA256    *string
+	ServerSize      *int64
+	Manifest        []byte
+	ScriptProfile   string
+}
+
+// FindBuiltArtifacts returns the build of revision of versionUUID with what
+// running it needs, or nil when the revision has no build.
+func (r *Repo) FindBuiltArtifacts(ctx context.Context, tx *gorm.DB, versionUUID string, revision int64) (*BuiltArtifacts, error) {
+	var built BuiltArtifacts
+	result := tx.WithContext(ctx).Raw(`
+		SELECT b.revision, b.status, b.server_object_key, b.server_sha256, b.server_size, b.manifest, v.script_profile
+		FROM play_game_version_builds b
+		JOIN play_game_versions v ON v.id = b.game_version_id
+		WHERE v.uuid = ? AND b.revision = ?
+	`, versionUUID, revision).Scan(&built)
+	if result.Error != nil {
+		return nil, fmt.Errorf("finding built artifacts: %s", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return nil, nil
+	}
+	return &built, nil
+}

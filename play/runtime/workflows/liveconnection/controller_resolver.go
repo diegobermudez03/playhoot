@@ -13,13 +13,14 @@ import (
 	"time"
 
 	"github.com/diegobermudez03/playhoot/play/runtime"
+	"github.com/diegobermudez03/playhoot/play/runtime/internal/business/livelimits"
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 	"github.com/diegobermudez03/playhoot/utils/ratelimit"
 )
 
 // defaultTickInterval is how often a running game's accepted input is
 // executed, a platform tuning value games must not rely on.
-const defaultTickInterval = 100 * time.Millisecond
+const defaultTickInterval = livelimits.TickInterval
 
 // defaultTransportGrace is how long a player who lost their transport may
 // reattach before the game is told they disconnected; platform time.
@@ -89,15 +90,15 @@ type liveLimits struct {
 // above for the boundaries COMMANDs ask for.
 func defaultLiveLimits() liveLimits {
 	return liveLimits{
-		sampleTransitions:     []ratelimit.Limit{{Count: 120, Per: time.Second}, {Count: 3600, Per: time.Minute}},
-		participantCommands:   []ratelimit.Limit{{Count: 10, Per: time.Second}, {Count: 120, Per: time.Minute}},
-		sessionCommands:       []ratelimit.Limit{{Count: 60, Per: time.Second}, {Count: 600, Per: time.Minute}},
-		pendingCommands:       4,
+		sampleTransitions:     livelimits.SampleTransitions(),
+		participantCommands:   livelimits.ParticipantCommands(),
+		sessionCommands:       livelimits.SessionCommands(),
+		pendingCommands:       livelimits.PendingCommands,
 		processedTokens:       1000,
-		pendingPerParticipant: 128,
-		pendingPerSession:     2048,
-		boundaryOperations:    256,
-		boundaries:            []ratelimit.Limit{{Count: 25, Per: time.Second}, {Count: 1200, Per: time.Minute}},
+		pendingPerParticipant: livelimits.PendingPerParticipant,
+		pendingPerSession:     livelimits.PendingPerSession,
+		boundaryOperations:    livelimits.BoundaryOperations,
+		boundaries:            livelimits.Boundaries(),
 		admins:                8,
 		pendingViews:          8,
 	}

@@ -19,6 +19,7 @@ import (
 	game "github.com/diegobermudez03/playhoot/game"
 	identity "github.com/diegobermudez03/playhoot/identity"
 	gameauthoring0 "github.com/diegobermudez03/playhoot/orchestrator/gameauthoring"
+	runtime "github.com/diegobermudez03/playhoot/play/runtime"
 	session "github.com/diegobermudez03/playhoot/play/session"
 	gomock "go.uber.org/mock/gomock"
 )
@@ -228,6 +229,21 @@ func (m *MockdraftReader) ReadDraftBuild(ctx context.Context, userUUID, gameUUID
 func (mr *MockdraftReaderMockRecorder) ReadDraftBuild(ctx, userUUID, gameUUID, revision, wait any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReadDraftBuild", reflect.TypeOf((*MockdraftReader)(nil).ReadDraftBuild), ctx, userUUID, gameUUID, revision, wait)
+}
+
+// SimulateDraft mocks base method.
+func (m *MockdraftReader) SimulateDraft(ctx context.Context, userUUID, gameUUID string, revision int64, scenario runtime.Scenario) (gameauthoring.DraftSimulation, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SimulateDraft", ctx, userUUID, gameUUID, revision, scenario)
+	ret0, _ := ret[0].(gameauthoring.DraftSimulation)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SimulateDraft indicates an expected call of SimulateDraft.
+func (mr *MockdraftReaderMockRecorder) SimulateDraft(ctx, userUUID, gameUUID, revision, scenario any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SimulateDraft", reflect.TypeOf((*MockdraftReader)(nil).SimulateDraft), ctx, userUUID, gameUUID, revision, scenario)
 }
 
 // MockaiLinkOwner is a mock of aiLinkOwner interface.

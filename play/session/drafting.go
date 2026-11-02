@@ -298,3 +298,15 @@ type DraftBuild struct {
 	StartedAt   *time.Time
 	FinishedAt  *time.Time
 }
+
+// BuiltRevision is a revision's build as running it needs: Ready only when
+// the build SUCCEEDED, and then with its backend script, the profile the
+// script runs under and its manifest.
+type BuiltRevision struct {
+	Revision      int64
+	BuildStatus   DraftBuildStatus
+	Ready         bool
+	Script        []byte
+	ScriptProfile string
+	Manifest      RuntimeManifest
+}
