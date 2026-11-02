@@ -45,9 +45,10 @@ type assetResponse struct {
 }
 
 type assetEditResponse struct {
-	Outcome  string         `json:"outcome"`
-	Revision int64          `json:"revision"`
-	Asset    *assetResponse `json:"asset,omitempty"`
+	Outcome  string               `json:"outcome"`
+	Revision int64                `json:"revision"`
+	Asset    *assetResponse       `json:"asset,omitempty"`
+	Build    *buildStatusResponse `json:"build,omitempty"`
 }
 
 // handleUploadAsset receives the bytes of a declared asset of the game's
@@ -141,7 +142,7 @@ func writeAssetEdit(ctx context.Context, w http.ResponseWriter, edit gameauthori
 	logging.LogFields(ctx, logging.Field("asset_outcome", string(result.Outcome)), logging.Field("replayed", result.Replayed))
 	switch result.Outcome {
 	case sessionpkg.DraftAssetAttached, sessionpkg.DraftAssetRemoved, sessionpkg.DraftAssetUnchanged:
-		response := assetEditResponse{Outcome: string(result.Outcome), Revision: result.Revision}
+		response := assetEditResponse{Outcome: string(result.Outcome), Revision: result.Revision, Build: buildStatus(result.Build)}
 		if result.Asset != nil {
 			asset := assetBody(*result.Asset)
 			response.Asset = &asset

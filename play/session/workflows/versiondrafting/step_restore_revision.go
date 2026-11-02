@@ -27,6 +27,7 @@ type restoreRevisionRepo interface {
 	FindRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64) (draftsources.Revision, bool, error)
 	AdvanceRevision(ctx context.Context, tx *gorm.DB, versionID uint, status string, base int64) (bool, error)
 	CreateRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64, revision draftsources.Revision, source string) error
+	QueueBuild(ctx context.Context, tx *gorm.DB, versionID uint, revision int64, buildUUID string, queued string, superseded string) (int, error)
 	CompleteChangeAttempt(ctx context.Context, tx *gorm.DB, attemptID uint, outcome string, revision *int64, diagnostics []draftsources.Diagnostic) error
 }
 
@@ -88,6 +89,11 @@ func (m *Manager) RestoreRevision(ctx context.Context, versionUUID string, revis
 		outcome = "replayed"
 	}
 	draftRestoresTotal.Inc(ctx, restoreOutcomeLabel.Value(outcome))
+	if result.Outcome == sessionpkg.DraftChangeApplied {
+		if result.Build, err = m.builtRevision(ctx, parsed.String(), result.Revision, result.Replayed); err != nil {
+			return sessionpkg.DraftChangeResult{}, err
+		}
+	}
 	logging.LogFields(ctx, logging.Field("restore_outcome", string(result.Outcome)), logging.Field("revision", result.Revision))
 	return result, nil
 }
@@ -165,6 +171,9 @@ func (m *Manager) decideRestore(ctx context.Context, tx *gorm.DB, version *inter
 	// The restored revision's contents and assets are already stored:
 	// nothing is new but the revision.
 	if err := m.restoreRevisionRepo.CreateRevision(ctx, tx, version.ID, next, restored, restoreSource); err != nil {
+		return sessionpkg.DraftChangeResult{}, nil, err
+	}
+	if err := m.queueBuild(ctx, tx, m.restoreRevisionRepo, version.ID, next); err != nil {
 		return sessionpkg.DraftChangeResult{}, nil, err
 	}
 	return sessionpkg.DraftChangeResult{Outcome: sessionpkg.DraftChangeApplied, Revision: next}, nil, nil

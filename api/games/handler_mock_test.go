@@ -13,6 +13,7 @@ import (
 	context "context"
 	io "io"
 	reflect "reflect"
+	time "time"
 
 	gameauthoring "github.com/diegobermudez03/playhoot/composer/gameauthoring"
 	game "github.com/diegobermudez03/playhoot/game"
@@ -211,4 +212,19 @@ func (m *MockdraftReader) ReadDraft(ctx context.Context, userUUID, gameUUID stri
 func (mr *MockdraftReaderMockRecorder) ReadDraft(ctx, userUUID, gameUUID, revision, withContent any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReadDraft", reflect.TypeOf((*MockdraftReader)(nil).ReadDraft), ctx, userUUID, gameUUID, revision, withContent)
+}
+
+// ReadDraftBuild mocks base method.
+func (m *MockdraftReader) ReadDraftBuild(ctx context.Context, userUUID, gameUUID string, revision int64, wait time.Duration) (gameauthoring.DraftBuildRead, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ReadDraftBuild", ctx, userUUID, gameUUID, revision, wait)
+	ret0, _ := ret[0].(gameauthoring.DraftBuildRead)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ReadDraftBuild indicates an expected call of ReadDraftBuild.
+func (mr *MockdraftReaderMockRecorder) ReadDraftBuild(ctx, userUUID, gameUUID, revision, wait any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReadDraftBuild", reflect.TypeOf((*MockdraftReader)(nil).ReadDraftBuild), ctx, userUUID, gameUUID, revision, wait)
 }

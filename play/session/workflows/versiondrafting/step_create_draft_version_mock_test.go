@@ -117,6 +117,21 @@ func (mr *MockcreateDraftVersionRepoMockRecorder) LockGame(ctx, tx, gameUUID any
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LockGame", reflect.TypeOf((*MockcreateDraftVersionRepo)(nil).LockGame), ctx, tx, gameUUID)
 }
 
+// QueueBuild mocks base method.
+func (m *MockcreateDraftVersionRepo) QueueBuild(ctx context.Context, tx *gorm.DB, versionID uint, revision int64, buildUUID, queued, superseded string) (int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "QueueBuild", ctx, tx, versionID, revision, buildUUID, queued, superseded)
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// QueueBuild indicates an expected call of QueueBuild.
+func (mr *MockcreateDraftVersionRepoMockRecorder) QueueBuild(ctx, tx, versionID, revision, buildUUID, queued, superseded any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "QueueBuild", reflect.TypeOf((*MockcreateDraftVersionRepo)(nil).QueueBuild), ctx, tx, versionID, revision, buildUUID, queued, superseded)
+}
+
 // StoreSourceContents mocks base method.
 func (m *MockcreateDraftVersionRepo) StoreSourceContents(ctx context.Context, tx *gorm.DB, contents map[string]string) error {
 	m.ctrl.T.Helper()

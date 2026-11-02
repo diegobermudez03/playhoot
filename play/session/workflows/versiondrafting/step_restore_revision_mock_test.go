@@ -132,3 +132,18 @@ func (mr *MockrestoreRevisionRepoMockRecorder) FindVersion(ctx, tx, versionUUID 
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindVersion", reflect.TypeOf((*MockrestoreRevisionRepo)(nil).FindVersion), ctx, tx, versionUUID)
 }
+
+// QueueBuild mocks base method.
+func (m *MockrestoreRevisionRepo) QueueBuild(ctx context.Context, tx *gorm.DB, versionID uint, revision int64, buildUUID, queued, superseded string) (int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "QueueBuild", ctx, tx, versionID, revision, buildUUID, queued, superseded)
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// QueueBuild indicates an expected call of QueueBuild.
+func (mr *MockrestoreRevisionRepoMockRecorder) QueueBuild(ctx, tx, versionID, revision, buildUUID, queued, superseded any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "QueueBuild", reflect.TypeOf((*MockrestoreRevisionRepo)(nil).QueueBuild), ctx, tx, versionID, revision, buildUUID, queued, superseded)
+}

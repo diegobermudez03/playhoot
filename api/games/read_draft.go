@@ -47,6 +47,10 @@ type draftResponse struct {
 	// cannot be read.
 	AssetDiagnostics []diagnosticResponse `json:"asset_diagnostics"`
 	Attempts         []attemptResponse    `json:"attempts"`
+	// Build is the build of Revision; LastSuccessfulBuild the version's
+	// newest succeeded build, of Revision or an older one.
+	Build               *buildResponse `json:"build"`
+	LastSuccessfulBuild *buildResponse `json:"last_successful_build"`
 }
 
 type revisionResponse struct {
@@ -144,6 +148,9 @@ func (h *Handler) handleReadDraft(w http.ResponseWriter, r *http.Request) {
 		Assets:           assets,
 		AssetDiagnostics: diagnostics(snapshot.AssetDiagnostics),
 		Attempts:         attempts,
+
+		Build:               buildBody(snapshot.Build),
+		LastSuccessfulBuild: buildBody(snapshot.LastSuccessfulBuild),
 	})
 }
 

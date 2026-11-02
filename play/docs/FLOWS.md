@@ -300,3 +300,18 @@ Added 2026-11-02, redesigned the same day so the bytes pass through the backend 
 5. One transaction claims the attempt and decides on the current revision: `not_editable`, `not_declared` (the declaration changed meanwhile), `invalid` content, `unchanged` when the key already holds that content, `invalid` past 100 MiB in all; otherwise it binds the content in a new revision on the current one, retrying on top of a source change that committed meanwhile.
 
 `RemoveAsset` unbinds a key the same way. A change of the sources keeps the bindings; a restore brings back the revision's bindings too.
+
+### Draft builds
+
+`play/session/workflows/versiondrafting` and `play/session/workflows/versionbuilding` (2026-11-02). Decided by the human: every revision a person or an AI sends is meant to be built, so each one is, in the background; the answer never waits for it.
+
+1. The transaction that makes a revision (a change, a restore, an asset upload or removal, a new draft's revision 1) queues its build and moves the version's builds still `QUEUED` to `SUPERSEDED`: only the newest is worth building. After it commits, the build worker is woken.
+2. Each instance runs one worker (`versionbuilding.DefaultWorkers`). On start it puts back in the queue the builds left `RUNNING` (only possible after a stop: one instance until launch). It takes the oldest `QUEUED` build (`FOR UPDATE SKIP LOCKED`), marks it `RUNNING`, and then, outside any transaction:
+   - computes the inputs hash; a succeeded build of the same version with the same inputs is reused, its artifacts recorded for this one;
+   - otherwise writes the revision's sources into a directory of their own and builds them through the `gamebuild.Builder` port (the Node implementation runs `packages/game-tools/src/cli.ts build <dir> --json` of the frontend checkout `GAME_TOOLCHAIN_DIR`, with a 60 s timeout, a 512 MiB heap and only the environment Node needs);
+   - checks what the toolchain produced as the runtime would: `server.js` against scriptcheck profile `sdk-v1`, the manifest with the runtime's parser, the aspect ratio against the offered ones;
+   - registers both artifacts, then stores them content-addressed.
+3. It records the end: `SUCCEEDED` with the artifacts, or `FAILED` with diagnostics. The game's mistakes carry their file and line; the platform failing (no toolchain, a timeout, the toolchain crashing, storage, any unexpected error) is stage `infrastructure`, never blamed on the game, and never left `RUNNING`.
+4. Reads: `ReadDraft` carries the read revision's build and the newest succeeded one; `ReadBuild` answers one revision's build, waiting up to 20 s for it to end (polling every 250 ms), for the API's long poll.
+
+A simulation or a preview (items G and H) only runs a succeeded build. Metrics: `play_draft_builds_total{outcome=succeeded|reused|failed|infrastructure}`, `play_draft_build_duration_seconds`, `play_draft_build_queue_wait_seconds`, `play_draft_builds_superseded_total`.

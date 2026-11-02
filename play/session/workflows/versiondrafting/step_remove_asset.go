@@ -26,6 +26,7 @@ type removeAssetRepo interface {
 	FindRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64) (draftsources.Revision, bool, error)
 	AdvanceRevision(ctx context.Context, tx *gorm.DB, versionID uint, status string, base int64) (bool, error)
 	CreateRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64, revision draftsources.Revision, source string) error
+	QueueBuild(ctx context.Context, tx *gorm.DB, versionID uint, revision int64, buildUUID string, queued string, superseded string) (int, error)
 	CompleteChangeAttempt(ctx context.Context, tx *gorm.DB, attemptID uint, outcome string, revision *int64, diagnostics []draftsources.Diagnostic) error
 }
 
@@ -63,6 +64,11 @@ func (m *Manager) RemoveAsset(ctx context.Context, versionUUID string, key strin
 		return sessionpkg.DraftAssetResult{}, err
 	}
 	countAssetEdit(ctx, result)
+	if result.Outcome == sessionpkg.DraftAssetAttached || result.Outcome == sessionpkg.DraftAssetRemoved {
+		if result.Build, err = m.builtRevision(ctx, parsed.String(), result.Revision, result.Replayed); err != nil {
+			return sessionpkg.DraftAssetResult{}, err
+		}
+	}
 	return result, nil
 }
 
@@ -140,6 +146,9 @@ func (m *Manager) decideRemove(ctx context.Context, tx *gorm.DB, version *intern
 		}
 		next := current + 1
 		if err := m.removeAssetRepo.CreateRevision(ctx, tx, version.ID, next, draftsources.Revision{Files: revision.Files, Assets: assets}, assetRevisionSource); err != nil {
+			return sessionpkg.DraftAssetResult{}, err
+		}
+		if err := m.queueBuild(ctx, tx, m.removeAssetRepo, version.ID, next); err != nil {
 			return sessionpkg.DraftAssetResult{}, err
 		}
 		return sessionpkg.DraftAssetResult{Outcome: sessionpkg.DraftAssetRemoved, Revision: next}, nil

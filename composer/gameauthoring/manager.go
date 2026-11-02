@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/diegobermudez03/playhoot/game"
 	"github.com/diegobermudez03/playhoot/logging"
@@ -26,6 +27,7 @@ type editableVersionFinder interface {
 type draftReader interface {
 	ReadDraft(ctx context.Context, versionUUID string, revision int64, withContent bool) (sessionpkg.DraftSnapshot, error)
 	ListRevisions(ctx context.Context, versionUUID string) ([]sessionpkg.DraftRevision, error)
+	ReadBuild(ctx context.Context, versionUUID string, revision int64, wait time.Duration) (sessionpkg.DraftBuild, error)
 }
 
 // Manager composes the game-authoring reads. It owns no business entity.
@@ -100,6 +102,38 @@ func (m *Manager) ListDraftRevisions(ctx context.Context, userUUID string, gameU
 		return DraftRevisions{}, fmt.Errorf("listing the revisions of the version being built: %s", err)
 	}
 	return DraftRevisions{Access: editable.Outcome, Revisions: revisions}, nil
+}
+
+// DraftBuildRead is a read of one revision's build of a game's version being
+// built, set only when Access is found and the version is not Missing.
+type DraftBuildRead struct {
+	Access  game.EditableVersionOutcome
+	Missing bool
+	Build   sessionpkg.DraftBuild
+}
+
+// ReadDraftBuild reads the build of revision (0: the current one) of the
+// version of gameUUID being built, waiting up to wait for it to end. A
+// revision without a build returns sessionpkg.ErrDraftBuildNotFound.
+func (m *Manager) ReadDraftBuild(ctx context.Context, userUUID string, gameUUID string, revision int64, wait time.Duration) (DraftBuildRead, error) {
+	defer logging.Step(ctx, "composer.read_draft_build").Close()
+
+	editable, err := m.editableVersion(ctx, gameUUID, userUUID)
+	if err != nil || editable.Outcome != game.EditableVersionFound {
+		return DraftBuildRead{Access: editable.Outcome}, err
+	}
+	read, err := m.drafts.ReadBuild(ctx, editable.VersionUUID, revision, wait)
+	if errors.Is(err, sessionpkg.ErrDraftNotFound) {
+		logging.LogFields(ctx, logging.Field("draft_missing", true))
+		return DraftBuildRead{Access: editable.Outcome, Missing: true}, nil
+	}
+	if err != nil {
+		if errors.Is(err, sessionpkg.ErrDraftBuildNotFound) {
+			return DraftBuildRead{}, err
+		}
+		return DraftBuildRead{}, fmt.Errorf("reading the build of the version being built: %s", err)
+	}
+	return DraftBuildRead{Access: editable.Outcome, Build: read}, nil
 }
 
 // editableVersion asks Game Management for the version userUUID may read. A

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"io"
+	"time"
 
 	composergameauthoring "github.com/diegobermudez03/playhoot/composer/gameauthoring"
 	"github.com/diegobermudez03/playhoot/game"
@@ -124,6 +125,7 @@ type draftEditor interface {
 type draftReader interface {
 	ReadDraft(ctx context.Context, userUUID string, gameUUID string, revision int64, withContent bool) (composergameauthoring.DraftRead, error)
 	ListDraftRevisions(ctx context.Context, userUUID string, gameUUID string) (composergameauthoring.DraftRevisions, error)
+	ReadDraftBuild(ctx context.Context, userUUID string, gameUUID string, revision int64, wait time.Duration) (composergameauthoring.DraftBuildRead, error)
 }
 
 // Games is what game authoring needs.

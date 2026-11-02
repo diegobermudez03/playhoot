@@ -163,6 +163,21 @@ func (mr *MockuploadAssetRepoMockRecorder) FindVersion(ctx, tx, versionUUID any)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindVersion", reflect.TypeOf((*MockuploadAssetRepo)(nil).FindVersion), ctx, tx, versionUUID)
 }
 
+// QueueBuild mocks base method.
+func (m *MockuploadAssetRepo) QueueBuild(ctx context.Context, tx *gorm.DB, versionID uint, revision int64, buildUUID, queued, superseded string) (int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "QueueBuild", ctx, tx, versionID, revision, buildUUID, queued, superseded)
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// QueueBuild indicates an expected call of QueueBuild.
+func (mr *MockuploadAssetRepoMockRecorder) QueueBuild(ctx, tx, versionID, revision, buildUUID, queued, superseded any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "QueueBuild", reflect.TypeOf((*MockuploadAssetRepo)(nil).QueueBuild), ctx, tx, versionID, revision, buildUUID, queued, superseded)
+}
+
 // RegisterAssetObject mocks base method.
 func (m *MockuploadAssetRepo) RegisterAssetObject(ctx context.Context, tx *gorm.DB, sha256 string, size int64, mimeType, objectKey string) error {
 	m.ctrl.T.Helper()

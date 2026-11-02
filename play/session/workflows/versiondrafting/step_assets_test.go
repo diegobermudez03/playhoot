@@ -5,8 +5,8 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 	"testing/iotest"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -153,10 +153,11 @@ func TestRemoveAssetInTx(t *testing.T) {
 		repo.EXPECT().FindRevision(ctx, tx, assetVersionID, int64(2)).Return(bound, true, nil)
 		repo.EXPECT().AdvanceRevision(ctx, tx, assetVersionID, "DRAFT", int64(2)).Return(true, nil)
 		repo.EXPECT().CreateRevision(ctx, tx, assetVersionID, int64(3), draftsources.Revision{Assets: map[string]draftsources.AssetBinding{}}, "asset").Return(nil)
+		repo.EXPECT().QueueBuild(ctx, tx, assetVersionID, int64(3), "build-uuid", "QUEUED", "SUPERSEDED").Return(0, nil)
 		three := int64(3)
 		repo.EXPECT().CompleteChangeAttempt(ctx, tx, uint(7), "removed", &three, nil).Return(nil)
 
-		got, err := (&Manager{removeAssetRepo: repo}).removeAssetInTx(ctx, tx, assetVersionUUID, "cardBack", "key", fingerprint, "web")
+		got, err := (&Manager{removeAssetRepo: repo, newUUID: func() string { return "build-uuid" }}).removeAssetInTx(ctx, tx, assetVersionUUID, "cardBack", "key", fingerprint, "web")
 
 		require.NoError(t, err)
 		require.Equal(t, sessionpkg.DraftAssetResult{Outcome: sessionpkg.DraftAssetRemoved, Revision: 3}, got)
@@ -169,7 +170,7 @@ func TestRemoveAssetInTx(t *testing.T) {
 		repo.EXPECT().ClaimChangeAttempt(ctx, tx, assetVersionID, "asset_removal", "key", fingerprint, int64(3), "web").
 			Return(uint(0), &internalrepo.ChangeAttempt{ID: 7, RequestSHA256: fingerprint, Outcome: &applied, Revision: &two}, nil)
 
-		got, err := (&Manager{removeAssetRepo: repo}).removeAssetInTx(ctx, tx, assetVersionUUID, "cardBack", "key", fingerprint, "web")
+		got, err := (&Manager{removeAssetRepo: repo, newUUID: func() string { return "build-uuid" }}).removeAssetInTx(ctx, tx, assetVersionUUID, "cardBack", "key", fingerprint, "web")
 
 		require.NoError(t, err)
 		require.Equal(t, sessionpkg.DraftAssetResult{Outcome: sessionpkg.DraftAssetRemoved, Revision: 2, Replayed: true}, got)
@@ -182,7 +183,7 @@ func TestRemoveAssetInTx(t *testing.T) {
 		repo.EXPECT().ClaimChangeAttempt(ctx, tx, assetVersionID, "asset_removal", "key", fingerprint, int64(2), "web").Return(uint(7), nil, nil)
 		repo.EXPECT().CompleteChangeAttempt(ctx, tx, uint(7), "not_editable", &two, nil).Return(nil)
 
-		got, err := (&Manager{removeAssetRepo: repo}).removeAssetInTx(ctx, tx, assetVersionUUID, "cardBack", "key", fingerprint, "web")
+		got, err := (&Manager{removeAssetRepo: repo, newUUID: func() string { return "build-uuid" }}).removeAssetInTx(ctx, tx, assetVersionUUID, "cardBack", "key", fingerprint, "web")
 
 		require.NoError(t, err)
 		require.Equal(t, sessionpkg.DraftAssetNotEditable, got.Outcome)

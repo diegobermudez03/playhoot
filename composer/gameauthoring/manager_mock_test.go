@@ -12,6 +12,7 @@ package gameauthoring
 import (
 	context "context"
 	reflect "reflect"
+	time "time"
 
 	game "github.com/diegobermudez03/playhoot/game"
 	session "github.com/diegobermudez03/playhoot/play/session"
@@ -94,6 +95,21 @@ func (m *MockdraftReader) ListRevisions(ctx context.Context, versionUUID string)
 func (mr *MockdraftReaderMockRecorder) ListRevisions(ctx, versionUUID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListRevisions", reflect.TypeOf((*MockdraftReader)(nil).ListRevisions), ctx, versionUUID)
+}
+
+// ReadBuild mocks base method.
+func (m *MockdraftReader) ReadBuild(ctx context.Context, versionUUID string, revision int64, wait time.Duration) (session.DraftBuild, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ReadBuild", ctx, versionUUID, revision, wait)
+	ret0, _ := ret[0].(session.DraftBuild)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ReadBuild indicates an expected call of ReadBuild.
+func (mr *MockdraftReaderMockRecorder) ReadBuild(ctx, versionUUID, revision, wait any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReadBuild", reflect.TypeOf((*MockdraftReader)(nil).ReadBuild), ctx, versionUUID, revision, wait)
 }
 
 // ReadDraft mocks base method.

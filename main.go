@@ -36,6 +36,8 @@ import (
 	"github.com/diegobermudez03/playhoot/play/runtime/workflows/liveconnection"
 	"github.com/diegobermudez03/playhoot/play/runtime/workflows/replayrecording"
 	"github.com/diegobermudez03/playhoot/play/session/batches/reconcilesessions"
+	"github.com/diegobermudez03/playhoot/play/session/buildsignal"
+	"github.com/diegobermudez03/playhoot/play/session/gametoolchain"
 	sessionmigration "github.com/diegobermudez03/playhoot/play/session/migration"
 	"github.com/diegobermudez03/playhoot/play/session/storage"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/checkadminjoin"
@@ -49,6 +51,7 @@ import (
 	"github.com/diegobermudez03/playhoot/play/session/usecases/resolvejoincode"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/storereplaychunk"
 	"github.com/diegobermudez03/playhoot/play/session/workflows/sessionlifecycle"
+	"github.com/diegobermudez03/playhoot/play/session/workflows/versionbuilding"
 	"github.com/diegobermudez03/playhoot/play/session/workflows/versiondrafting"
 	"github.com/joho/godotenv"
 	"gorm.io/driver/postgres"
@@ -113,6 +116,11 @@ type envVariables struct {
 	// is selected with STORAGE_EMULATOR_HOST.
 	GCSProjectID string
 	GCSBucket    string
+
+	// GameToolchainDir is the frontend repository checkout whose game tools
+	// build DRAFT revisions. Optional: without it every build fails as the
+	// platform's.
+	GameToolchainDir string
 
 	// Sandbox limits for this instance; optional, zero takes the defaults.
 	SandboxLimits sandbox.HostLimits
@@ -194,7 +202,9 @@ func run() error {
 	sessionLifecycle := sessionlifecycle.New(db, store, envVars.MaxActiveSessionsPerCreator)
 	playLifecycle := playlifecycle.New(checkplayability.New(), sessionLifecycle)
 	editableVersions := findeditableversion.New(db)
-	versionDrafting := versiondrafting.New(db, store)
+	buildWakeUps := buildsignal.New()
+	versionDrafting := versiondrafting.New(db, store, buildWakeUps)
+	versionBuilding := versionbuilding.New(db, store, gametoolchain.Open(envVars.GameToolchainDir), buildWakeUps, versionbuilding.DefaultWorkers)
 	gameAuthoring := gameauthoring.New(gamelifecycle.New(db), editableVersions, versionDrafting)
 	gameAuthoringReads := composergameauthoring.New(editableVersions, versionDrafting)
 	owners := ownership.New(checklivesession.New(db))
@@ -286,6 +296,19 @@ func run() error {
 		<-reconciling
 	}()
 
+	// Every instance runs its build worker: DRAFT revisions are built in the
+	// background.
+	buildCtx, stopBuilding := context.WithCancel(context.Background())
+	building := make(chan struct{})
+	go func() {
+		defer close(building)
+		versionBuilding.Run(buildCtx)
+	}()
+	defer func() {
+		stopBuilding()
+		<-building
+	}()
+
 	serveErr := make(chan error, 1)
 	go func() {
 		log.Printf("listening on %s", httpServer.Addr)
@@ -342,6 +365,8 @@ func readEnvVariables() (*envVariables, error) {
 
 		GCSProjectID: strings.TrimSpace(os.Getenv("GCS_PROJECT_ID")),
 		GCSBucket:    strings.TrimSpace(os.Getenv("GCS_BUCKET")),
+
+		GameToolchainDir: strings.TrimSpace(os.Getenv("GAME_TOOLCHAIN_DIR")),
 	}
 
 	required := []struct {

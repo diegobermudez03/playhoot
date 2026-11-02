@@ -26,7 +26,7 @@ const declaringProject = `{"format":"playhoot.project.v1","name":"Memory","aspec
 func TestDraftAssetsIntegration(t *testing.T) {
 	db := testdb.OpenSessionDB(t)
 	store := objectstore.NewFake()
-	m := New(db, store)
+	m := New(db, store, nil)
 	ctx := context.Background()
 
 	declaringDraft := func(t *testing.T) string {
@@ -99,6 +99,9 @@ func TestDraftAssetsIntegration(t *testing.T) {
 
 		removed, err := m.RemoveAsset(ctx, versionUUID, "cardBack", "remove", sessionpkg.DraftOriginWeb)
 		require.NoError(t, err)
+		require.NotNil(t, removed.Build, "the new revision's build is queued with it")
+		require.Equal(t, sessionpkg.DraftBuildQueued, removed.Build.Status)
+		removed.Build = nil
 		require.Equal(t, sessionpkg.DraftAssetResult{Outcome: sessionpkg.DraftAssetRemoved, Revision: 5}, removed)
 		notBound, err := m.RemoveAsset(ctx, versionUUID, "cardBack", "remove-again", sessionpkg.DraftOriginWeb)
 		require.NoError(t, err)

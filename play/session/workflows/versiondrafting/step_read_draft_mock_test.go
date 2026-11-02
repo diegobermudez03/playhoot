@@ -59,6 +59,36 @@ func (mr *MockreadDraftRepoMockRecorder) FindAssetObjectKeys(ctx, tx, hashes any
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindAssetObjectKeys", reflect.TypeOf((*MockreadDraftRepo)(nil).FindAssetObjectKeys), ctx, tx, hashes)
 }
 
+// FindBuild mocks base method.
+func (m *MockreadDraftRepo) FindBuild(ctx context.Context, tx *gorm.DB, versionUUID string, revision int64, running string) (*repo.Build, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "FindBuild", ctx, tx, versionUUID, revision, running)
+	ret0, _ := ret[0].(*repo.Build)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// FindBuild indicates an expected call of FindBuild.
+func (mr *MockreadDraftRepoMockRecorder) FindBuild(ctx, tx, versionUUID, revision, running any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindBuild", reflect.TypeOf((*MockreadDraftRepo)(nil).FindBuild), ctx, tx, versionUUID, revision, running)
+}
+
+// FindLastBuildInStatus mocks base method.
+func (m *MockreadDraftRepo) FindLastBuildInStatus(ctx context.Context, tx *gorm.DB, versionUUID, status, running string) (*repo.Build, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "FindLastBuildInStatus", ctx, tx, versionUUID, status, running)
+	ret0, _ := ret[0].(*repo.Build)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// FindLastBuildInStatus indicates an expected call of FindLastBuildInStatus.
+func (mr *MockreadDraftRepoMockRecorder) FindLastBuildInStatus(ctx, tx, versionUUID, status, running any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindLastBuildInStatus", reflect.TypeOf((*MockreadDraftRepo)(nil).FindLastBuildInStatus), ctx, tx, versionUUID, status, running)
+}
+
 // FindRevision mocks base method.
 func (m *MockreadDraftRepo) FindRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64) (draftsources.Revision, bool, error) {
 	m.ctrl.T.Helper()

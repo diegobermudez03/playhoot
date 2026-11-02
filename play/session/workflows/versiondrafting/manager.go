@@ -9,6 +9,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/diegobermudez03/playhoot/play/session/buildsignal"
 	"github.com/diegobermudez03/playhoot/play/session/storage"
 	internalrepo "github.com/diegobermudez03/playhoot/play/session/workflows/versiondrafting/internal/repo"
 	"github.com/diegobermudez03/playhoot/utils"
@@ -36,9 +37,13 @@ type Manager struct {
 	listRevisionsRepo      listRevisionsRepo
 	uploadAssetRepo        uploadAssetRepo
 	removeAssetRepo        removeAssetRepo
+	readBuildRepo          readBuildRepo
 
 	assetLinks   assetLinkSigner
 	assetStorage assetStorage
+
+	// buildSignal wakes the build worker when a revision's build is queued.
+	buildSignal *buildsignal.Signal
 
 	// uploadSlots bounds the asset uploads held in memory at once.
 	uploadSlots chan struct{}
@@ -51,9 +56,9 @@ type Manager struct {
 	newUUID func() string
 }
 
-// New constructs a Manager persisting to db and keeping asset content in
-// store.
-func New(db *gorm.DB, store storage.Store) *Manager {
+// New constructs a Manager persisting to db, keeping asset content in store
+// and waking the build worker through signal.
+func New(db *gorm.DB, store storage.Store, signal *buildsignal.Signal) *Manager {
 	repo := internalrepo.New(db)
 	return &Manager{
 		createDraftVersionRepo: repo,
@@ -63,6 +68,8 @@ func New(db *gorm.DB, store storage.Store) *Manager {
 		listRevisionsRepo:      repo,
 		uploadAssetRepo:        repo,
 		removeAssetRepo:        repo,
+		readBuildRepo:          repo,
+		buildSignal:            signal,
 		assetLinks:             store,
 		assetStorage:           store,
 		uploadSlots:            make(chan struct{}, maxConcurrentUploads),

@@ -7,6 +7,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -52,6 +53,7 @@ type draftEditor interface {
 type draftReader interface {
 	ReadDraft(ctx context.Context, userUUID string, gameUUID string, revision int64, withContent bool) (composergameauthoring.DraftRead, error)
 	ListDraftRevisions(ctx context.Context, userUUID string, gameUUID string) (composergameauthoring.DraftRevisions, error)
+	ReadDraftBuild(ctx context.Context, userUUID string, gameUUID string, revision int64, wait time.Duration) (composergameauthoring.DraftBuildRead, error)
 }
 
 // Handler exposes the game authoring endpoints.
@@ -75,6 +77,7 @@ func (h *Handler) RESTRoutes() []routing.Route {
 		{Pattern: "GET /v1/games/{gameUUID}/draft", Handler: h.handleReadDraft, Authorization: edit},
 		{Pattern: "POST /v1/games/{gameUUID}/draft/changes", Handler: h.handleApplyDraftChanges, Authorization: edit},
 		{Pattern: "GET /v1/games/{gameUUID}/draft/revisions", Handler: h.handleListDraftRevisions, Authorization: edit},
+		{Pattern: "GET /v1/games/{gameUUID}/draft/build", Handler: h.handleReadDraftBuild, Authorization: edit},
 		{Pattern: "POST /v1/games/{gameUUID}/draft/restore", Handler: h.handleRestoreDraftRevision, Authorization: edit},
 		{Pattern: "PUT /v1/games/{gameUUID}/draft/assets/{key}", Handler: h.handleUploadAsset, Authorization: edit},
 		{Pattern: "POST /v1/games/{gameUUID}/draft/assets/{key}/remove", Handler: h.handleRemoveAsset, Authorization: edit},

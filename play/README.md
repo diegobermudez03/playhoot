@@ -67,9 +67,12 @@ play/                         # a folder, not a Go package: each subpackage expo
       storereplaychunk/       # StoreReplayChunk: writes a replay chunk object, then registers it in the manifest + internal/repo
     workflows/
       sessionlifecycle/       # Manager + one file per step (step_create_session.go) + internal/repo
-      versiondrafting/        # a DRAFT version's authored sources: create with the starter template, apply changes, restore, read, list revisions + internal/repo, internal/changeattempt
+      versiondrafting/        # a DRAFT version's authored sources: create with the starter template, apply changes, restore, read, list revisions, assets; queues every revision's build and reads builds + internal/repo, internal/changeattempt
+      versionbuilding/        # the build worker: runs queued DRAFT builds one at a time through the game toolchain, checks (scriptcheck sdk-v1, manifest) and stores the artifacts + internal/repo
     batches/
       reconcilesessions/      # background job: ends expired lobbies and ownerless running Sessions every minute + internal/repo
+    buildsignal/              # wakes the build worker when a build is queued
+    gametoolchain/            # opens the game toolchain (Open(GAME_TOOLCHAIN_DIR)); the port and its Node implementation live in internal/gamebuild
     internal/
       business/<behavior>/    # business definitions and pure logic shared by steps (sessionstatus, sessionlifetime, gameversion with its aspect ratio and asset catalogs, reconciliation, draftsources with the source rules and the starter template)
       migrations/             # schema migrations (play_* tables) and seed_* test-data migrations

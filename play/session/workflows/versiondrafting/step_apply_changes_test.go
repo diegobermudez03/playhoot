@@ -53,6 +53,7 @@ func TestApplyChangesInTx(t *testing.T) {
 				deps.repo.EXPECT().AdvanceRevision(ctx, tx, versionID, "DRAFT", int64(3)).Return(true, nil),
 				deps.repo.EXPECT().StoreSourceContents(ctx, tx, map[string]string{draftsources.SHA256Hex("x"): "x"}).Return(nil),
 				deps.repo.EXPECT().CreateRevision(ctx, tx, versionID, int64(4), revisionWithFiles(len(starter)+1), "api").Return(nil),
+				deps.repo.EXPECT().QueueBuild(ctx, tx, versionID, int64(4), "build-uuid", "QUEUED", "SUPERSEDED").Return(1, nil),
 				deps.repo.EXPECT().CompleteChangeAttempt(ctx, tx, attemptID, "applied", revision(4), nil).Return(nil),
 			)
 			return test{
@@ -136,7 +137,7 @@ func TestApplyChangesInTx(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			deps := dependencies{repo: NewMockapplyChangesRepo(ctrl)}
 			tc := setup(t, deps)
-			m := &Manager{applyChangesRepo: deps.repo}
+			m := &Manager{applyChangesRepo: deps.repo, newUUID: func() string { return "build-uuid" }}
 
 			got, err := m.applyChangesInTx(ctx, tx, versionUUID, tc.change, fingerprint)
 

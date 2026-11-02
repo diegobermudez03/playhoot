@@ -29,6 +29,7 @@ type createDraftVersionRepo interface {
 	CreateVersion(ctx context.Context, tx *gorm.DB, gameID uint, versionUUID string, status string, scriptProfile string, revision int64) (uint, error)
 	StoreSourceContents(ctx context.Context, tx *gorm.DB, contents map[string]string) error
 	CreateRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64, revision draftsources.Revision, source string) error
+	QueueBuild(ctx context.Context, tx *gorm.DB, versionID uint, revision int64, buildUUID string, queued string, superseded string) (int, error)
 }
 
 // templateSource is the revision source of a DRAFT's starter revision.
@@ -66,6 +67,9 @@ func (m *Manager) CreateDraftVersion(ctx context.Context, gameUUID string, versi
 		return sessionpkg.DraftVersion{}, err
 	}
 	draftVersionsCreatedTotal.Inc(ctx, createDraftOutcomeLabel.Value(string(created.Outcome)))
+	if created.Outcome == sessionpkg.DraftCreated {
+		m.buildSignal.Notify()
+	}
 	logging.LogFields(ctx, logging.Field("draft_outcome", string(created.Outcome)))
 	return created, nil
 }
@@ -118,6 +122,9 @@ func (m *Manager) createDraftVersionInTx(ctx context.Context, tx *gorm.DB, gameU
 		return sessionpkg.DraftVersion{}, err
 	}
 	if err := m.createDraftVersionRepo.CreateRevision(ctx, tx, versionID, 1, draftsources.Revision{Files: starter.Files}, templateSource); err != nil {
+		return sessionpkg.DraftVersion{}, err
+	}
+	if err := m.queueBuild(ctx, tx, m.createDraftVersionRepo, versionID, 1); err != nil {
 		return sessionpkg.DraftVersion{}, err
 	}
 	return sessionpkg.DraftVersion{Outcome: sessionpkg.DraftCreated, GameUUID: gameUUID, VersionUUID: versionUUID, Revision: 1}, nil

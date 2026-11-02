@@ -23,6 +23,7 @@ func MigrateTables(db *gorm.DB) error {
 		migration20261101100000PlayDraftVersions(),
 		migration20261102000000PlayDraftAssets(),
 		migration20261102100000PlayDropAssetUploads(),
+		migration20261102200000PlayDraftBuilds(),
 	}
 
 	// gormigrate refuses to run with an empty list.

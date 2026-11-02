@@ -44,6 +44,7 @@ func TestCreateDraftVersionInTx(t *testing.T) {
 				deps.repo.EXPECT().CreateVersion(ctx, tx, gameID, versionUUID, "DRAFT", "sdk-v1", int64(1)).Return(versionID, nil),
 				deps.repo.EXPECT().StoreSourceContents(ctx, tx, gomock.Len(5)).Return(nil),
 				deps.repo.EXPECT().CreateRevision(ctx, tx, versionID, int64(1), revisionWithFiles(5), "template").Return(nil),
+				deps.repo.EXPECT().QueueBuild(ctx, tx, versionID, int64(1), "build-uuid", "QUEUED", "SUPERSEDED").Return(0, nil),
 			)
 			return test{expected: sessionpkg.DraftVersion{Outcome: sessionpkg.DraftCreated, GameUUID: gameUUID, VersionUUID: versionUUID, Revision: 1}}
 		},
@@ -93,7 +94,7 @@ func TestCreateDraftVersionInTx(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			deps := dependencies{repo: NewMockcreateDraftVersionRepo(ctrl)}
 			tc := setup(t, deps)
-			m := &Manager{createDraftVersionRepo: deps.repo}
+			m := &Manager{createDraftVersionRepo: deps.repo, newUUID: func() string { return "build-uuid" }}
 
 			got, err := m.createDraftVersionInTx(ctx, tx, gameUUID, versionUUID)
 

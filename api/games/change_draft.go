@@ -41,8 +41,9 @@ type restoreRequest struct {
 }
 
 type changeResponse struct {
-	Outcome  string `json:"outcome"`
-	Revision int64  `json:"revision"`
+	Outcome  string               `json:"outcome"`
+	Revision int64                `json:"revision"`
+	Build    *buildStatusResponse `json:"build,omitempty"`
 }
 
 type conflictResponse struct {
@@ -149,7 +150,7 @@ func writeEdit(ctx context.Context, w http.ResponseWriter, edit gameauthoring.Dr
 	logging.LogFields(ctx, logging.Field("draft_outcome", string(result.Outcome)), logging.Field("replayed", result.Replayed))
 	switch result.Outcome {
 	case sessionpkg.DraftChangeApplied, sessionpkg.DraftChangeUnchanged:
-		httpx.WriteJSON(w, http.StatusOK, changeResponse{Outcome: string(result.Outcome), Revision: result.Revision})
+		httpx.WriteJSON(w, http.StatusOK, changeResponse{Outcome: string(result.Outcome), Revision: result.Revision, Build: buildStatus(result.Build)})
 	case sessionpkg.DraftChangeConflict:
 		httpx.WriteJSON(w, http.StatusConflict, conflictResponse{
 			ErrorResponse:   httpx.ErrorResponse{Code: codeRevisionConflict, Message: "the draft changed since base_revision; read it again and redo the change on the current revision"},

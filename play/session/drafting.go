@@ -102,6 +102,8 @@ type DraftChangeResult struct {
 	Revision    int64
 	Diagnostics []DraftDiagnostic
 	Replayed    bool
+	// Build is the build of Revision when the change made it, nil otherwise.
+	Build *DraftBuild
 }
 
 // DraftFile is one source file of a revision. Content is set only when the
@@ -152,6 +154,11 @@ type DraftSnapshot struct {
 	Assets           []DraftAsset
 	AssetDiagnostics []DraftDiagnostic
 	Attempts         []DraftChangeAttempt
+	// Build is the build of Revision, nil when it has none.
+	Build *DraftBuild
+	// LastSuccessfulBuild is the version's newest succeeded build, of
+	// Revision or an older one; nil when none succeeded yet.
+	LastSuccessfulBuild *DraftBuild
 }
 
 // DraftAssetStatus is where a revision stands with one asset.
@@ -227,6 +234,9 @@ type DraftAssetResult struct {
 	Asset       *DraftAsset
 	Diagnostics []DraftDiagnostic
 	Replayed    bool
+	// Build is the build of Revision when the attachment or removal made it,
+	// nil otherwise.
+	Build *DraftBuild
 }
 
 // DraftRevision is one revision in a version's history. Source is who made
@@ -236,4 +246,55 @@ type DraftRevision struct {
 	Source    string
 	Files     int
 	CreatedAt time.Time
+}
+
+// ErrDraftBuildNotFound is returned when a revision has no build: it was
+// made before builds existed.
+var ErrDraftBuildNotFound = errors.New("draft build not found")
+
+// DraftBuildStatus is where a revision's build is: QUEUED, RUNNING, then
+// SUCCEEDED, FAILED or SUPERSEDED (a newer revision was queued before it
+// ran). Unknown values may appear.
+type DraftBuildStatus string
+
+const (
+	DraftBuildQueued     DraftBuildStatus = "QUEUED"
+	DraftBuildRunning    DraftBuildStatus = "RUNNING"
+	DraftBuildSucceeded  DraftBuildStatus = "SUCCEEDED"
+	DraftBuildFailed     DraftBuildStatus = "FAILED"
+	DraftBuildSuperseded DraftBuildStatus = "SUPERSEDED"
+)
+
+// DraftBuildDiagnostic is one problem a build found: Stage infrastructure is
+// the platform failing, never the game.
+type DraftBuildDiagnostic struct {
+	Stage   string
+	Code    string
+	File    string
+	Line    int
+	Column  int
+	Message string
+}
+
+// DraftBuildArtifact identifies one built file.
+type DraftBuildArtifact struct {
+	SHA256 string
+	Size   int64
+}
+
+// DraftBuild is one revision's build. Server, Client and Manifest are set
+// only when it succeeded; Reused means it took the artifacts of an earlier
+// build with the same inputs instead of building again.
+type DraftBuild struct {
+	Revision    int64
+	Status      DraftBuildStatus
+	Diagnostics []DraftBuildDiagnostic
+	Server      *DraftBuildArtifact
+	Client      *DraftBuildArtifact
+	Manifest    []byte
+	AspectRatio string
+	Reused      bool
+	QueuedAt    time.Time
+	StartedAt   *time.Time
+	FinishedAt  *time.Time
 }

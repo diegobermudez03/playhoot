@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -20,7 +21,7 @@ import (
 
 func TestDraftingIntegration(t *testing.T) {
 	db := testdb.OpenSessionDB(t)
-	m := New(db, objectstore.NewFake())
+	m := New(db, objectstore.NewFake(), nil)
 	ctx := context.Background()
 
 	newDraft := func(t *testing.T) (string, string) {
@@ -34,6 +35,37 @@ func TestDraftingIntegration(t *testing.T) {
 	write := func(base int64, key string, path string, content string) sessionpkg.DraftChange {
 		return sessionpkg.DraftChange{BaseRevision: base, Files: []sessionpkg.DraftFileContent{{Path: path, Content: content}}, IdempotencyKey: key, Origin: sessionpkg.DraftOriginWeb}
 	}
+
+	t.Run("every_revision_is_queued_and_only_the_newest_waits", func(t *testing.T) {
+		_, versionUUID := newDraft(t)
+		first, err := m.ReadBuild(ctx, versionUUID, 1, 0)
+		require.NoError(t, err)
+		require.Equal(t, sessionpkg.DraftBuildQueued, first.Status, "the starter revision is queued with the draft")
+
+		for i, content := range []string{"a", "b", "c"} {
+			applied, err := m.ApplyChanges(ctx, versionUUID, write(int64(i+1), "coalesce-"+content, "notes.md", content))
+			require.NoError(t, err)
+			withQueuedBuild(t, applied)
+		}
+		for revision, status := range map[int64]sessionpkg.DraftBuildStatus{1: sessionpkg.DraftBuildSuperseded, 2: sessionpkg.DraftBuildSuperseded, 3: sessionpkg.DraftBuildSuperseded, 4: sessionpkg.DraftBuildQueued} {
+			build, err := m.ReadBuild(ctx, versionUUID, revision, 0)
+			require.NoError(t, err)
+			require.Equal(t, status, build.Status, "revision %d", revision)
+		}
+		snapshot, err := m.ReadDraft(ctx, versionUUID, 0, false)
+		require.NoError(t, err)
+		require.Equal(t, sessionpkg.DraftBuildQueued, snapshot.Build.Status)
+		require.Nil(t, snapshot.LastSuccessfulBuild)
+
+		began := time.Now()
+		waited, err := m.ReadBuild(ctx, versionUUID, 0, time.Second)
+		require.NoError(t, err)
+		require.Equal(t, int64(4), waited.Revision)
+		require.GreaterOrEqual(t, time.Since(began), time.Second, "a build that does not end is waited for until the wait passes")
+
+		_, err = m.ReadBuild(ctx, versionUUID, 9, 0)
+		require.ErrorIs(t, err, sessionpkg.ErrDraftBuildNotFound)
+	})
 
 	t.Run("a_new_draft_holds_the_starter_template", func(t *testing.T) {
 		gameUUID, versionUUID := newDraft(t)
@@ -75,11 +107,11 @@ func TestDraftingIntegration(t *testing.T) {
 
 		applied, err := m.ApplyChanges(ctx, versionUUID, write(1, "k1", "shared/rules.ts", "export const rounds = 5;\n"))
 		require.NoError(t, err)
-		require.Equal(t, sessionpkg.DraftChangeResult{Outcome: sessionpkg.DraftChangeApplied, Revision: 2}, applied)
+		require.Equal(t, sessionpkg.DraftChangeResult{Outcome: sessionpkg.DraftChangeApplied, Revision: 2}, withQueuedBuild(t, applied))
 
 		replayed, err := m.ApplyChanges(ctx, versionUUID, write(1, "k1", "shared/rules.ts", "export const rounds = 5;\n"))
 		require.NoError(t, err)
-		require.Equal(t, sessionpkg.DraftChangeResult{Outcome: sessionpkg.DraftChangeApplied, Revision: 2, Replayed: true}, replayed)
+		require.Equal(t, sessionpkg.DraftChangeResult{Outcome: sessionpkg.DraftChangeApplied, Revision: 2, Replayed: true}, withQueuedBuild(t, replayed))
 
 		_, err = m.ApplyChanges(ctx, versionUUID, write(1, "k1", "shared/rules.ts", "other"))
 		require.ErrorIs(t, err, sessionpkg.ErrIdempotencyConflict)
@@ -165,7 +197,7 @@ func TestDraftingIntegration(t *testing.T) {
 
 		restored, err := m.RestoreRevision(ctx, versionUUID, 1, 2, "r1", sessionpkg.DraftOriginAPI)
 		require.NoError(t, err)
-		require.Equal(t, sessionpkg.DraftChangeResult{Outcome: sessionpkg.DraftChangeApplied, Revision: 3}, restored)
+		require.Equal(t, sessionpkg.DraftChangeResult{Outcome: sessionpkg.DraftChangeApplied, Revision: 3}, withQueuedBuild(t, restored))
 
 		missing, err := m.RestoreRevision(ctx, versionUUID, 9, 3, "r2", sessionpkg.DraftOriginAPI)
 		require.NoError(t, err)
@@ -205,4 +237,15 @@ func TestDraftingIntegration(t *testing.T) {
 		_, err = m.ApplyChanges(ctx, uuid.NewString(), write(1, "k", "notes.md", "x"))
 		require.ErrorIs(t, err, sessionpkg.ErrDraftNotFound)
 	})
+}
+
+// withQueuedBuild checks a change that made a revision carries its build,
+// still queued since no worker runs here, and returns it without the build.
+func withQueuedBuild(t *testing.T, result sessionpkg.DraftChangeResult) sessionpkg.DraftChangeResult {
+	t.Helper()
+	require.NotNil(t, result.Build)
+	require.Equal(t, sessionpkg.DraftBuildQueued, result.Build.Status)
+	require.Equal(t, result.Revision, result.Build.Revision)
+	result.Build = nil
+	return result
 }

@@ -131,3 +131,40 @@ func TestListDraftRevisions(t *testing.T) {
 		require.Equal(t, DraftRevisions{Access: game.EditableVersionNotFound}, result)
 	})
 }
+
+func TestReadDraftBuild(t *testing.T) {
+	ctx := context.Background()
+	found := game.EditableVersion{Outcome: game.EditableVersionFound, VersionUUID: testVersionUUID}
+	built := sessionpkg.DraftBuild{Revision: 2, Status: sessionpkg.DraftBuildSucceeded}
+
+	t.Run("the_owner_reads_and_waits_for_the_build", func(t *testing.T) {
+		m, deps := newTestManager(t)
+		deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(found, nil)
+		deps.drafts.EXPECT().ReadBuild(ctx, testVersionUUID, int64(2), 5*time.Second).Return(built, nil)
+		read, err := m.ReadDraftBuild(ctx, testUserUUID, testGameUUID, 2, 5*time.Second)
+		require.NoError(t, err)
+		require.Equal(t, DraftBuildRead{Access: game.EditableVersionFound, Build: built}, read)
+	})
+	t.Run("a_non_owner_never_reaches_play", func(t *testing.T) {
+		m, deps := newTestManager(t)
+		deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(game.EditableVersion{Outcome: game.EditableVersionNotFound}, nil)
+		read, err := m.ReadDraftBuild(ctx, testUserUUID, testGameUUID, 0, 0)
+		require.NoError(t, err)
+		require.Equal(t, DraftBuildRead{Access: game.EditableVersionNotFound}, read)
+	})
+	t.Run("a_version_play_lacks_is_missing", func(t *testing.T) {
+		m, deps := newTestManager(t)
+		deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(found, nil)
+		deps.drafts.EXPECT().ReadBuild(ctx, testVersionUUID, int64(0), time.Duration(0)).Return(sessionpkg.DraftBuild{}, sessionpkg.ErrDraftNotFound)
+		read, err := m.ReadDraftBuild(ctx, testUserUUID, testGameUUID, 0, 0)
+		require.NoError(t, err)
+		require.True(t, read.Missing)
+	})
+	t.Run("a_revision_without_build_is_its_error", func(t *testing.T) {
+		m, deps := newTestManager(t)
+		deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(found, nil)
+		deps.drafts.EXPECT().ReadBuild(ctx, testVersionUUID, int64(9), time.Duration(0)).Return(sessionpkg.DraftBuild{}, sessionpkg.ErrDraftBuildNotFound)
+		_, err := m.ReadDraftBuild(ctx, testUserUUID, testGameUUID, 9, 0)
+		require.True(t, errors.Is(err, sessionpkg.ErrDraftBuildNotFound))
+	})
+}

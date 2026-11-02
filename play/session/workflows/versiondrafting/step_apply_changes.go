@@ -28,6 +28,7 @@ type applyChangesRepo interface {
 	StoreSourceContents(ctx context.Context, tx *gorm.DB, contents map[string]string) error
 	AdvanceRevision(ctx context.Context, tx *gorm.DB, versionID uint, status string, base int64) (bool, error)
 	CreateRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64, revision draftsources.Revision, source string) error
+	QueueBuild(ctx context.Context, tx *gorm.DB, versionID uint, revision int64, buildUUID string, queued string, superseded string) (int, error)
 	CompleteChangeAttempt(ctx context.Context, tx *gorm.DB, attemptID uint, outcome string, revision *int64, diagnostics []draftsources.Diagnostic) error
 }
 
@@ -86,6 +87,11 @@ func (m *Manager) ApplyChanges(ctx context.Context, versionUUID string, change s
 		outcome = "replayed"
 	}
 	draftChangesTotal.Inc(ctx, changeOutcomeLabel.Value(outcome))
+	if result.Outcome == sessionpkg.DraftChangeApplied {
+		if result.Build, err = m.builtRevision(ctx, parsed.String(), result.Revision, result.Replayed); err != nil {
+			return sessionpkg.DraftChangeResult{}, err
+		}
+	}
 	logging.LogFields(ctx, logging.Field("change_outcome", string(result.Outcome)), logging.Field("revision", result.Revision))
 	return result, nil
 }
@@ -167,6 +173,9 @@ func (m *Manager) decideChange(ctx context.Context, tx *gorm.DB, version *intern
 	// Asset bindings are kept: a change of the sources never touches them.
 	nextRevision := draftsources.Revision{Files: applied.Files, Assets: revision.Assets}
 	if err := m.applyChangesRepo.CreateRevision(ctx, tx, version.ID, next, nextRevision, change.Origin); err != nil {
+		return sessionpkg.DraftChangeResult{}, nil, err
+	}
+	if err := m.queueBuild(ctx, tx, m.applyChangesRepo, version.ID, next); err != nil {
 		return sessionpkg.DraftChangeResult{}, nil, err
 	}
 	return sessionpkg.DraftChangeResult{Outcome: sessionpkg.DraftChangeApplied, Revision: next}, nil, nil

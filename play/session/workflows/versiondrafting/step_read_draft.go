@@ -27,6 +27,8 @@ type readDraftRepo interface {
 	FindSourceContents(ctx context.Context, tx *gorm.DB, hashes []string) (map[string]string, error)
 	FindAssetObjectKeys(ctx context.Context, tx *gorm.DB, hashes []string) (map[string]string, error)
 	RecentChangeAttempts(ctx context.Context, tx *gorm.DB, versionID uint, limit int) ([]internalrepo.ChangeAttempt, error)
+	FindBuild(ctx context.Context, tx *gorm.DB, versionUUID string, revision int64, running string) (*internalrepo.Build, error)
+	FindLastBuildInStatus(ctx context.Context, tx *gorm.DB, versionUUID string, status string, running string) (*internalrepo.Build, error)
 }
 
 // assetLinkSigner signs the short-lived links a read gives to asset content.
@@ -134,6 +136,9 @@ func (m *Manager) readDraftInTx(ctx context.Context, tx *gorm.DB, versionUUID st
 	}
 	for _, attempt := range attempts {
 		read.snapshot.Attempts = append(read.snapshot.Attempts, publicAttempt(attempt))
+	}
+	if err := m.readBuildsInTx(ctx, tx, m.readDraftRepo, &read.snapshot); err != nil {
+		return draftRead{}, err
 	}
 	return read, nil
 }

@@ -10,10 +10,13 @@ This list gathers what was deferred that way. Each item's history stays where it
 
 - Real Google sign-in: an OAuth client from Google Cloud Console (`GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REDIRECT_URL`) and the manual check against Google (new login, recurring login, cancellation, refused wrong verifier). `docs/projects/completed/identity-v1/PROJECT.md`.
 - Metrics provider for server and client metrics (`monitoring/metrics`), with alerts and dashboards defined on it. `docs/engineering/ENGINEERING_RADAR.md`.
+- Draft asset uploads lost before a decision (`play_draft_asset_uploads_interrupted_total{cause=busy|read_timeout|client_gone|read_failed}`, with `play_draft_asset_upload_slot_wait_seconds` and `play_draft_asset_upload_read_seconds`): a dashboard and an alert on its rate, to size the 4 upload slots per instance and the 5-minute read deadline with real traffic (the human, 2026-11-02).
 
 ## Infrastructure
 
 - Object storage for deployed environments, and the bucket CORS (`deploy/gcs-cors.json`). `deploy/README.md`.
+- The game toolchain for deployed environments: package the frontend repository's game tools (`packages/game-tools` and the SDK packages it bundles, with Node) for the deployed image and set `GAME_TOOLCHAIN_DIR`; isolate the build worker (its own process or service with no application credentials, CPU and memory limits, a concurrency that never degrades running games), which `play/session/internal/gamebuild.Builder` already abstracts. Until then a build runs as a Node child process of the backend with a 60 s timeout and a 512 MiB heap (the human, 2026-11-02).
+- Build dashboards and alerts: `play_draft_builds_total{outcome}` (alert on `infrastructure`), `play_draft_build_duration_seconds`, `play_draft_build_queue_wait_seconds`, to size the workers per instance.
 
 ## From Session Runtime v1
 

@@ -129,6 +129,10 @@ func TestHandleReadDraft(t *testing.T) {
 			{Key: "cardBack", Type: "image", Description: "Card back", Status: sessionpkg.DraftAssetReady, SHA256: "p", Size: 3, MIMEType: "image/png", URL: "https://asset", URLExpiresAt: created},
 			{Key: "flip", Type: "audio", Description: "Flip", Optional: true, Status: sessionpkg.DraftAssetMissing},
 		},
+		Build: &sessionpkg.DraftBuild{Revision: 2, Status: sessionpkg.DraftBuildFailed, QueuedAt: created, FinishedAt: &created,
+			Diagnostics: []sessionpkg.DraftBuildDiagnostic{{Stage: "types", File: "server/game.ts", Line: 3, Column: 5, Message: "no"}}},
+		LastSuccessfulBuild: &sessionpkg.DraftBuild{Revision: 1, Status: sessionpkg.DraftBuildSucceeded, QueuedAt: created, AspectRatio: "16:9",
+			Server: &sessionpkg.DraftBuildArtifact{SHA256: "s", Size: 7}, Client: &sessionpkg.DraftBuildArtifact{SHA256: "c", Size: 9}},
 	}
 	get := func(target string) test {
 		return test{method: http.MethodGet, target: target, gameUUID: gameUUID, noStore: true}
@@ -145,7 +149,11 @@ func TestHandleReadDraft(t *testing.T) {
 					{"key":"flip","type":"audio","description":"Flip","optional":true,"status":"missing"}],
 				"asset_diagnostics":[],
 				"attempts":[{"kind":"asset_upload","outcome":"attached","base_revision":1,"revision":2,"origin":"web","diagnostics":[],"created_at":"2026-11-01T12:00:00Z"},
-					{"kind":"change","outcome":"invalid","base_revision":1,"origin":"web","diagnostics":[{"path":"/x","code":"invalid_path","message":"bad"}],"created_at":"2026-11-01T12:00:00Z"}]}`
+					{"kind":"change","outcome":"invalid","base_revision":1,"origin":"web","diagnostics":[{"path":"/x","code":"invalid_path","message":"bad"}],"created_at":"2026-11-01T12:00:00Z"}],
+				"build":{"revision":2,"status":"FAILED","diagnostics":[{"stage":"types","file":"server/game.ts","line":3,"column":5,"message":"no"}],"reused":false,
+					"queued_at":"2026-11-01T12:00:00Z","finished_at":"2026-11-01T12:00:00Z"},
+				"last_successful_build":{"revision":1,"status":"SUCCEEDED","diagnostics":[],"server":{"sha256":"s","size":7},"client":{"sha256":"c","size":9},
+					"aspect_ratio":"16:9","reused":false,"queued_at":"2026-11-01T12:00:00Z"}}`
 			return tc
 		},
 		"a_given_revision_without_content": func(t *testing.T, deps dependencies) test {
