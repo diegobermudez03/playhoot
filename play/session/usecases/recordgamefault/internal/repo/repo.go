@@ -1,5 +1,5 @@
-// Package repo is recordgamefault's persistence: it stores game faults and
-// decides nothing itself.
+// Package repo is recordgamefault's persistence: it reads who reports and
+// stores fault reports, and decides nothing itself.
 package repo
 
 import (
@@ -20,34 +20,55 @@ func New(db *gorm.DB) *Repo {
 	return &Repo{db: db}
 }
 
-// Fault is one game fault of a participant, seen by Source.
-type Fault struct {
-	UserUUID      string
-	ParticipantID string
-	Source        string
-	Kind          string
-	Detail        []byte
+// Reporter is the Session a report is about, and the reporting user's
+// participant id in it (nil when they are not its participant).
+type Reporter struct {
+	SessionID     int64
+	GameVersionID int64
+	Status        string
+	ParticipantID *string
 }
 
-// RecordFault stores fault for sessionUUID only while that Session is
-// RUNNING and the user is its participant under that participant id; a fault
-// of a kind the participant already has in the Session counts it again and
-// keeps the newer detail. recorded is false when nothing was stored.
-func (r *Repo) RecordFault(ctx context.Context, sessionUUID string, fault Fault, reportedAt time.Time) (recorded bool, err error) {
-	result := r.db.WithContext(ctx).Exec(`
-		INSERT INTO play_game_faults (session_id, game_version_id, user_uuid, participant_id, source, kind, detail,
-			occurrences, first_reported_at, last_reported_at)
-		SELECT s.id, s.game_version_id, p.user_uuid, p.participant_id, ?, ?, ?, 1, ?, ?
+// FindReporter returns the Session with sessionUUID and userUUID's place in
+// it, or nil when there is no such Session.
+func (r *Repo) FindReporter(ctx context.Context, sessionUUID string, userUUID string) (*Reporter, error) {
+	var reporters []Reporter
+	err := r.db.WithContext(ctx).Raw(`
+		SELECT s.id AS session_id, s.game_version_id, s.status, p.participant_id
 		FROM play_sessions s
-		JOIN play_session_participants p ON p.session_id = s.id
-		WHERE s.uuid = ? AND s.status = 'RUNNING' AND p.user_uuid = ? AND p.participant_id = ?
-		ON CONFLICT (session_id, user_uuid, kind) DO UPDATE SET
-			occurrences = play_game_faults.occurrences + 1,
-			detail = EXCLUDED.detail,
-			last_reported_at = EXCLUDED.last_reported_at
-	`, fault.Source, fault.Kind, string(fault.Detail), reportedAt, reportedAt, sessionUUID, fault.UserUUID, fault.ParticipantID)
-	if result.Error != nil {
-		return false, fmt.Errorf("recording game fault: %w", result.Error)
+		LEFT JOIN play_session_participants p ON p.session_id = s.id AND p.user_uuid = ?
+		WHERE s.uuid = ?`,
+		userUUID, sessionUUID,
+	).Scan(&reporters).Error
+	if err != nil {
+		return nil, fmt.Errorf("finding the reporter of a game fault: %w", err)
 	}
-	return result.RowsAffected > 0, nil
+	if len(reporters) == 0 {
+		return nil, nil
+	}
+	return &reporters[0], nil
+}
+
+// Report is one game fault report, as stored.
+type Report struct {
+	ID            int64
+	SessionID     int64
+	GameVersionID int64
+	UserUUID      string
+	ParticipantID *string
+	Source        string
+	Kind          string
+	Detail        string
+	Occurrences   int
+	ReportedAt    time.Time
+}
+
+func (Report) TableName() string { return "play_game_fault_reports" }
+
+// CreateReport stores report.
+func (r *Repo) CreateReport(ctx context.Context, report Report) error {
+	if err := r.db.WithContext(ctx).Create(&report).Error; err != nil {
+		return fmt.Errorf("recording game fault: %w", err)
+	}
+	return nil
 }

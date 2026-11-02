@@ -34,7 +34,12 @@ func TestRecordGameFault(t *testing.T) {
 		Kind:          sessionpkg.GameFaultBridgeAbuse,
 		Detail:        []byte(`{"refused":{"sample":900}}`),
 	}
-	stored := internalrepo.Fault{UserUUID: userUUID, ParticipantID: "P2", Source: "CLIENT", Kind: "BRIDGE_ABUSE", Detail: abuse.Detail}
+	p2 := "P2"
+	running := &internalrepo.Reporter{SessionID: 7, GameVersionID: 3, Status: "RUNNING", ParticipantID: &p2}
+	stored := internalrepo.Report{
+		SessionID: 7, GameVersionID: 3, UserUUID: userUUID, ParticipantID: &p2,
+		Source: "CLIENT", Kind: "BRIDGE_ABUSE", Detail: string(abuse.Detail), Occurrences: 1, ReportedAt: reportedAt,
+	}
 	invalidSample := sessionpkg.GameFault{
 		UserUUID:      userUUID,
 		ParticipantID: "P2",
@@ -45,13 +50,15 @@ func TestRecordGameFault(t *testing.T) {
 
 	tests := map[string]func(t *testing.T, faults *MockfaultStore) test{
 		"recorded": func(t *testing.T, faults *MockfaultStore) test {
-			faults.EXPECT().RecordFault(ctx, sessionUUID, stored, reportedAt).Return(true, nil)
+			faults.EXPECT().FindReporter(ctx, sessionUUID, userUUID).Return(running, nil)
+			faults.EXPECT().CreateReport(ctx, stored).Return(nil)
 			return test{sessionUUID: sessionUUID, fault: abuse, expected: sessionpkg.GameFaultRecorded}
 		},
 		"a_server_fault_is_recorded_as_the_server_s": func(t *testing.T, faults *MockfaultStore) test {
-			faults.EXPECT().RecordFault(ctx, sessionUUID, internalrepo.Fault{
-				UserUUID: userUUID, ParticipantID: "P2", Source: "SERVER", Kind: "INVALID_SAMPLE", Detail: invalidSample.Detail,
-			}, reportedAt).Return(true, nil)
+			faults.EXPECT().FindReporter(ctx, sessionUUID, userUUID).Return(running, nil)
+			server := stored
+			server.Source, server.Kind, server.Detail = "SERVER", "INVALID_SAMPLE", string(invalidSample.Detail)
+			faults.EXPECT().CreateReport(ctx, server).Return(nil)
 			return test{sessionUUID: sessionUUID, fault: invalidSample, expected: sessionpkg.GameFaultRecorded}
 		},
 		"a_server_kind_from_the_client": func(t *testing.T, faults *MockfaultStore) test {
@@ -69,8 +76,27 @@ func TestRecordGameFault(t *testing.T) {
 			fault.Source = ""
 			return test{sessionUUID: sessionUUID, fault: fault, expectErr: true}
 		},
-		"session_not_running_or_not_a_participant": func(t *testing.T, faults *MockfaultStore) test {
-			faults.EXPECT().RecordFault(ctx, sessionUUID, stored, reportedAt).Return(false, nil)
+		"session_not_running": func(t *testing.T, faults *MockfaultStore) test {
+			finished := *running
+			finished.Status = "FINISHED"
+			faults.EXPECT().FindReporter(ctx, sessionUUID, userUUID).Return(&finished, nil)
+			return test{sessionUUID: sessionUUID, fault: abuse, expected: sessionpkg.GameFaultNotRecorded}
+		},
+		"not_a_participant": func(t *testing.T, faults *MockfaultStore) test {
+			stranger := *running
+			stranger.ParticipantID = nil
+			faults.EXPECT().FindReporter(ctx, sessionUUID, userUUID).Return(&stranger, nil)
+			return test{sessionUUID: sessionUUID, fault: abuse, expected: sessionpkg.GameFaultNotRecorded}
+		},
+		"another_participant_id": func(t *testing.T, faults *MockfaultStore) test {
+			p1 := "P1"
+			other := *running
+			other.ParticipantID = &p1
+			faults.EXPECT().FindReporter(ctx, sessionUUID, userUUID).Return(&other, nil)
+			return test{sessionUUID: sessionUUID, fault: abuse, expected: sessionpkg.GameFaultNotRecorded}
+		},
+		"unknown_session": func(t *testing.T, faults *MockfaultStore) test {
+			faults.EXPECT().FindReporter(ctx, sessionUUID, userUUID).Return(nil, nil)
 			return test{sessionUUID: sessionUUID, fault: abuse, expected: sessionpkg.GameFaultNotRecorded}
 		},
 		"invalid_session_uuid": func(t *testing.T, faults *MockfaultStore) test {
@@ -92,7 +118,8 @@ func TestRecordGameFault(t *testing.T) {
 			return test{sessionUUID: sessionUUID, fault: fault, expectErr: true}
 		},
 		"storing_fails": func(t *testing.T, faults *MockfaultStore) test {
-			faults.EXPECT().RecordFault(ctx, sessionUUID, stored, reportedAt).Return(false, errors.New("database down"))
+			faults.EXPECT().FindReporter(ctx, sessionUUID, userUUID).Return(running, nil)
+			faults.EXPECT().CreateReport(ctx, stored).Return(errors.New("database down"))
 			return test{sessionUUID: sessionUUID, fault: abuse, expectErr: true}
 		},
 	}

@@ -15,14 +15,16 @@ import (
 
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 	"github.com/diegobermudez03/playhoot/play/session/internal/business/gamefault"
+	"github.com/diegobermudez03/playhoot/play/session/internal/business/sessionstatus"
 	internalrepo "github.com/diegobermudez03/playhoot/play/session/usecases/recordgamefault/internal/repo"
 )
 
 //go:generate mockgen -package=recordgamefault -destination=service_mock_test.go . faultStore
 
-// faultStore stores game fault reports.
+// faultStore reads who reports and stores game fault reports.
 type faultStore interface {
-	RecordFault(ctx context.Context, sessionUUID string, fault internalrepo.Fault, reportedAt time.Time) (bool, error)
+	FindReporter(ctx context.Context, sessionUUID string, userUUID string) (*internalrepo.Reporter, error)
+	CreateReport(ctx context.Context, report internalrepo.Report) error
 }
 
 // Service is the game fault recording use case.
@@ -37,8 +39,7 @@ func New(db *gorm.DB) *Service {
 }
 
 // RecordGameFault stores fault for sessionUUID while the Session runs and the
-// participant plays it. The same participant's fault of the same kind again in
-// the Session is counted on the same record. A fault of a kind its source does
+// participant plays it, each report on its own. A fault of a kind its source does
 // not record, or with an invalid detail, is an error: the caller should have
 // refused it.
 func (s *Service) RecordGameFault(ctx context.Context, sessionUUID string, fault sessionpkg.GameFault) (sessionpkg.RecordGameFaultOutcome, error) {
@@ -54,18 +55,28 @@ func (s *Service) RecordGameFault(ctx context.Context, sessionUUID string, fault
 	if !gamefault.ValidDetail(fault.Detail) {
 		return "", fmt.Errorf("game fault detail is not a JSON object within %d bytes", sessionpkg.MaxGameFaultDetailBytes)
 	}
-	recorded, err := s.faults.RecordFault(ctx, sessionUUID, internalrepo.Fault{
-		UserUUID:      fault.UserUUID,
-		ParticipantID: fault.ParticipantID,
-		Source:        string(fault.Source),
-		Kind:          string(fault.Kind),
-		Detail:        fault.Detail,
-	}, s.now().UTC().Truncate(time.Microsecond))
+	reporter, err := s.faults.FindReporter(ctx, sessionUUID, fault.UserUUID)
 	if err != nil {
 		return "", err
 	}
-	if !recorded {
+	// Only a running Session's participant, under their own participant id.
+	if reporter == nil || reporter.Status != string(sessionstatus.Running) ||
+		reporter.ParticipantID == nil || *reporter.ParticipantID != fault.ParticipantID {
 		return sessionpkg.GameFaultNotRecorded, nil
+	}
+	err = s.faults.CreateReport(ctx, internalrepo.Report{
+		SessionID:     reporter.SessionID,
+		GameVersionID: reporter.GameVersionID,
+		UserUUID:      fault.UserUUID,
+		ParticipantID: reporter.ParticipantID,
+		Source:        string(fault.Source),
+		Kind:          string(fault.Kind),
+		Detail:        string(fault.Detail),
+		Occurrences:   1,
+		ReportedAt:    s.now().UTC().Truncate(time.Microsecond),
+	})
+	if err != nil {
+		return "", err
 	}
 	return sessionpkg.GameFaultRecorded, nil
 }

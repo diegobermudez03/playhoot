@@ -12,10 +12,10 @@ package recordlimithits
 import (
 	context "context"
 	reflect "reflect"
-	time "time"
 
 	repo "github.com/diegobermudez03/playhoot/play/session/usecases/recordlimithits/internal/repo"
 	gomock "go.uber.org/mock/gomock"
+	gorm "gorm.io/gorm"
 )
 
 // MockhitStore is a mock of hitStore interface.
@@ -42,17 +42,31 @@ func (m *MockhitStore) EXPECT() *MockhitStoreMockRecorder {
 	return m.recorder
 }
 
-// RecordHits mocks base method.
-func (m *MockhitStore) RecordHits(ctx context.Context, hits []repo.Hit, recordedAt time.Time) (int, error) {
+// CreateReport mocks base method.
+func (m *MockhitStore) CreateReport(ctx context.Context, tx *gorm.DB, report repo.Report) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RecordHits", ctx, hits, recordedAt)
-	ret0, _ := ret[0].(int)
+	ret := m.ctrl.Call(m, "CreateReport", ctx, tx, report)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateReport indicates an expected call of CreateReport.
+func (mr *MockhitStoreMockRecorder) CreateReport(ctx, tx, report any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateReport", reflect.TypeOf((*MockhitStore)(nil).CreateReport), ctx, tx, report)
+}
+
+// FindTarget mocks base method.
+func (m *MockhitStore) FindTarget(ctx context.Context, tx *gorm.DB, sessionUUID, userUUID string) (*repo.Target, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "FindTarget", ctx, tx, sessionUUID, userUUID)
+	ret0, _ := ret[0].(*repo.Target)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// RecordHits indicates an expected call of RecordHits.
-func (mr *MockhitStoreMockRecorder) RecordHits(ctx, hits, recordedAt any) *gomock.Call {
+// FindTarget indicates an expected call of FindTarget.
+func (mr *MockhitStoreMockRecorder) FindTarget(ctx, tx, sessionUUID, userUUID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RecordHits", reflect.TypeOf((*MockhitStore)(nil).RecordHits), ctx, hits, recordedAt)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindTarget", reflect.TypeOf((*MockhitStore)(nil).FindTarget), ctx, tx, sessionUUID, userUUID)
 }

@@ -1,5 +1,5 @@
-// Package repo is recordlimithits's persistence: it adds limit hits to the
-// Sessions' audit records and decides nothing itself.
+// Package repo is recordlimithits's persistence: it reads the Sessions limit
+// hits belong to and stores their reports, and decides nothing itself.
 package repo
 
 import (
@@ -20,45 +20,59 @@ func New(db *gorm.DB) *Repo {
 	return &Repo{db: db}
 }
 
-// Hit is count refusals of limit for userUUID in sessionUUID.
-type Hit struct {
-	SessionUUID string
-	UserUUID    string
-	Limit       string
-	Count       int
+// GetDB returns the database, for transactions.
+func (r *Repo) GetDB() *gorm.DB {
+	return r.db
 }
 
-// RecordHits adds every hit to its Session and user's SERVER_LIMIT record,
-// creating it with the Session's version and the user's participant id when
-// they have one; each limit keeps its own count in the record's detail. A hit
-// of a Session that does not exist is skipped. recorded is how many were
-// stored.
-func (r *Repo) RecordHits(ctx context.Context, hits []Hit, recordedAt time.Time) (recorded int, err error) {
-	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		recorded = 0
-		for _, hit := range hits {
-			result := tx.Exec(`
-				INSERT INTO play_game_faults (session_id, game_version_id, user_uuid, participant_id, source, kind, detail,
-					occurrences, first_reported_at, last_reported_at)
-				SELECT s.id, s.game_version_id, ?, p.participant_id, 'SERVER', 'SERVER_LIMIT',
-					jsonb_build_object('limits', jsonb_build_object(?::text, ?::bigint)), ?, ?, ?
-				FROM play_sessions s
-				LEFT JOIN play_session_participants p ON p.session_id = s.id AND p.user_uuid = ?
-				WHERE s.uuid = ?
-				ON CONFLICT (session_id, user_uuid, kind) DO UPDATE SET
-					occurrences = play_game_faults.occurrences + EXCLUDED.occurrences,
-					participant_id = COALESCE(play_game_faults.participant_id, EXCLUDED.participant_id),
-					detail = jsonb_set(play_game_faults.detail, ARRAY['limits', ?::text],
-						to_jsonb(COALESCE((play_game_faults.detail->'limits'->>?::text)::bigint, 0) + ?::bigint)),
-					last_reported_at = EXCLUDED.last_reported_at
-			`, hit.UserUUID, hit.Limit, hit.Count, hit.Count, recordedAt, recordedAt, hit.UserUUID, hit.SessionUUID,
-				hit.Limit, hit.Limit, hit.Count)
-			if result.Error != nil {
-				return fmt.Errorf("recording limit hits: %w", result.Error)
-			}
-			recorded += int(result.RowsAffected)
-		}
-		return nil
-	})
-	return recorded, err
+// Target is the Session a hit belongs to, and the user's participant id in it
+// (nil when they are not its participant).
+type Target struct {
+	SessionID     int64
+	GameVersionID int64
+	ParticipantID *string
+}
+
+// FindTarget returns, within tx, the Session with sessionUUID and userUUID's
+// place in it, or nil when there is no such Session.
+func (r *Repo) FindTarget(ctx context.Context, tx *gorm.DB, sessionUUID string, userUUID string) (*Target, error) {
+	var targets []Target
+	err := tx.WithContext(ctx).Raw(`
+		SELECT s.id AS session_id, s.game_version_id, p.participant_id
+		FROM play_sessions s
+		LEFT JOIN play_session_participants p ON p.session_id = s.id AND p.user_uuid = ?
+		WHERE s.uuid = ?`,
+		userUUID, sessionUUID,
+	).Scan(&targets).Error
+	if err != nil {
+		return nil, fmt.Errorf("finding the Session of a limit hit: %w", err)
+	}
+	if len(targets) == 0 {
+		return nil, nil
+	}
+	return &targets[0], nil
+}
+
+// Report is one limit's hits in one audit flush, as stored.
+type Report struct {
+	ID            int64
+	SessionID     int64
+	GameVersionID int64
+	UserUUID      string
+	ParticipantID *string
+	Source        string
+	Kind          string
+	Detail        string
+	Occurrences   int
+	ReportedAt    time.Time
+}
+
+func (Report) TableName() string { return "play_game_fault_reports" }
+
+// CreateReport stores report within tx.
+func (r *Repo) CreateReport(ctx context.Context, tx *gorm.DB, report Report) error {
+	if err := tx.WithContext(ctx).Create(&report).Error; err != nil {
+		return fmt.Errorf("recording limit hits: %w", err)
+	}
+	return nil
 }

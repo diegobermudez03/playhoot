@@ -135,7 +135,7 @@ A LATER item should have a meaningful reevaluation trigger where possible.
 Security / Game quality
 
 **Current state / evidence**
-- Players' clients report game frontend faults (unreachable, hash mismatch, no READY, bridge version, container violation, bridge abuse) on their live connection; they are stored in `play_game_faults`, one row per Session, reporter and kind (`play/docs/DATA_MODEL.md`, `play/docs/FLOWS.md` Game Fault Reports; 2026-10-20).
+- Players' clients report game frontend faults (unreachable, hash mismatch, no READY, bridge version, container violation, bridge abuse) on their live connection; they are stored in `play_game_fault_reports`, one row per report (`play/docs/DATA_MODEL.md`, `play/docs/FLOWS.md` Game Fault Reports; 2026-10-20).
 - A report is the client's claim. Nothing reads the table automatically; no game is flagged and no Session ends because of it, by the human's decision (a false report must cost nothing to the accused game).
 
 **Risk / opportunity**

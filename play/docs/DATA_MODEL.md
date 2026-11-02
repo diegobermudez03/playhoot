@@ -126,18 +126,17 @@ erDiagram
         BIGINT size "compressed bytes"
         TIMESTAMPTZ created_at
     }
-    play_game_faults {
+    play_game_fault_reports {
         BIGSERIAL id PK
-        BIGINT session_id "play_sessions.id; unique with user_uuid and kind"
+        BIGINT session_id "play_sessions.id"
         BIGINT game_version_id "play_game_versions.id, copied from the Session"
         UUID user_uuid "the reporter, or the user who hit a limit; Identity User"
         TEXT participant_id "nullable; their participant (a SERVER record of an admin has none)"
         TEXT source "CLIENT (a client's report) | SERVER (what the platform enforced or refused)"
         TEXT kind "CLIENT: ARTIFACT_UNREACHABLE | ARTIFACT_HASH_MISMATCH | READY_TIMEOUT | UNSUPPORTED_BRIDGE_VERSION | CONTAINER_VIOLATION | BRIDGE_ABUSE; SERVER: SERVER_LIMIT | INVALID_SAMPLE | INVALID_COMMAND"
-        JSONB detail "CLIENT: the client's latest evidence, at most 2 KiB; SERVER_LIMIT: limits by name with their counts; INVALID_*: the latest refusal's reason (and command)"
-        INTEGER occurrences "times reported"
-        TIMESTAMPTZ first_reported_at
-        TIMESTAMPTZ last_reported_at
+        JSONB detail "CLIENT: the client's evidence, at most 2 KiB; SERVER_LIMIT: the limit's name; INVALID_*: the refusal's reason (and command)"
+        INTEGER occurrences "1 for a report; for SERVER_LIMIT, the refusals since the previous audit flush"
+        TIMESTAMPTZ reported_at
     }
     play_create_session_requests {
         BIGSERIAL id PK
@@ -162,8 +161,8 @@ erDiagram
     play_sessions ||--o| play_replays : "play_replays.session_id = play_sessions.id"
     play_game_versions ||--o{ play_replays : "play_replays.game_version_id = play_game_versions.id"
     play_sessions ||--o{ play_replay_chunks : "play_replay_chunks.session_id = play_sessions.id"
-    play_sessions ||--o{ play_game_faults : "play_game_faults.session_id = play_sessions.id"
-    play_game_versions ||--o{ play_game_faults : "play_game_faults.game_version_id = play_game_versions.id"
+    play_sessions ||--o{ play_game_fault_reports : "play_game_fault_reports.session_id = play_sessions.id"
+    play_game_versions ||--o{ play_game_fault_reports : "play_game_fault_reports.game_version_id = play_game_versions.id"
     play_sessions |o--o{ play_create_session_requests : "play_create_session_requests.session_id = play_sessions.id"
 ```
 
@@ -178,20 +177,20 @@ Notes:
 - `play_game_version_signed_urls` is each version's current batch of signed URLs, shared by every Session of the version on every instance (added 2026-10-25, SESSION-ADR-0034): the frontend package's and every asset with an object's, all expiring at `expires_at` (signed for 24 hours). There is no history: a new batch replaces the row as a whole, and only when it expires later than the stored one, so concurrent signers keep the longest-lived. The URLs are bearer credentials to the version's objects until they expire.
 - `play_game_version_input_requirements` holds, one row per version, the interactions its game uses and the device classes that can play it (added 2026-10-25, decided by the human: `play/docs/decisions/SESSION-ADR-0035-game-input-requirements-and-player-device-check.md`). They are columns, not manifest JSON, so a future game directory can filter on them; `play_game_version_input_requirements_devices_idx` on `(devices, game_version_id)` serves that filter. `devices` is computed by the writer from the booleans (`play/internal/business/inputrequirements`): `both` when the game uses no keyboard and at most one of hover or press, `desktop` otherwise; `mobile` is valid and reserved, never produced yet. The database enforces only one row per version; an EXECUTABLE version without a row, or with `devices` outside the three values, is treated as broken data. Seeded versions are pressed/dragged only, on `both`.
 - `aspect_ratio` is the fixed shape the version's frontend is shown in, one of the ratios Playhoot offers (decided by the human 2026-10-20: a game picks one, it cannot declare its own). Only the offered values are valid, kept by the application (the database enforces none); each has a logical resolution, 1080 units on the short side (`play/session/internal/business/gameversion`), which is not stored. Like the locators it is nullable for a DRAFT, and an EXECUTABLE version without one, or with one not offered, is checked by the application and treated as broken data. Offering another ratio changes that catalog only.
-- `play_game_faults` also keeps, as `source = 'SERVER'` and `kind = 'SERVER_LIMIT'`, the platform's rate and resource limits a live Session's users hit (added 2026-10-21 at the human's request: every limit hit within a Session is to be persisted, best effort). One record per Session and user; `detail.limits` counts each limit by name (`api.<message type or lane>.rate|queue`, `api.connection.messages|bytes`, `runtime.<limit>` such as `runtime.command_participant_rate` or `runtime.views_collapsed`) and `occurrences` their total. Hits are gathered in memory and written every 5 s (and once more on shutdown); a failed write is logged and dropped. Such a record is written for any status of an existing Session, an admin's without a participant id. A CLIENT record always has its participant and one of the client kinds, a SERVER record one of the server kinds (`SERVER_LIMIT` from `recordlimithits`; `INVALID_SAMPLE` and `INVALID_COMMAND` from `recordgamefault`, always with their participant), and `occurrences` is always positive: kept by the two writers (`recordgamefault`, checking each kind against its source in `play/session/internal/business/gamefault`, and `recordlimithits`), not by the database.
-- `play_game_faults` also keeps, as `source = 'SERVER'` and `kind = 'INVALID_SAMPLE'` or `'INVALID_COMMAND'`, the SAMPLEs and COMMANDs a participant's game frontend sent that do not match the game's declared inputs and commands (decided by the human 2026-10-25: data the game declares nothing for is an error of the game's frontend script; the platform ends that player's connection, `play/docs/FLOWS.md`, Invalid Game Data). Written like a client's report, only while the Session is RUNNING and for that participant, one row per Session, participant and kind, counting `occurrences` and keeping the newer `detail`: `{"reason":...}` for a SAMPLE (which input and why, such as `invalid input value: jump is not a declared input`), `{"command":...,"reason":...}` for a COMMAND (its name and why, such as `undeclared command: fly` or `invalid input value: x is out of range`); the reason is cut to 200 bytes and the name to 64. Unlike a client's report, it is what the platform saw: it points at the game version's frontend, or at a client sending data itself.
-- `play_game_faults` keeps the faults players' clients report about the game frontend of their running Session (added 2026-10-20 at the human's request: the backend must be able to audit, from the database, games with problems and tell a misbehaving game from a lying client). A row is written only while the Session is RUNNING and only for its participant under their own participant id (checked in the same statement); one row per Session, reporter and kind, so reporting again counts `occurrences` and keeps the newer `detail`. A report is the client's claim, never verified and never acted on: no Session ends and nothing is flagged because of it. Reading it: a game version reported by many distinct `user_uuid` across many Sessions points at the game; one `user_uuid` reporting many versions points at the client, for example:
+- `play_game_fault_reports` also keeps, as `source = 'SERVER'` and `kind = 'SERVER_LIMIT'`, the platform's rate and resource limits a live Session's users hit (added 2026-10-21 at the human's request: every limit hit within a Session is to be persisted, best effort). One row per limit, user and audit flush: `detail.limit` names the limit (`api.<message type or lane>.rate|queue`, `api.connection.messages|bytes`, `runtime.<limit>` such as `runtime.command_participant_rate` or `runtime.views_collapsed`) and `occurrences` how many times it refused since the previous flush. Hits are gathered in memory and written every 5 s (and once more on shutdown), each flush in one transaction; a failed write is logged and dropped. Such a record is written for any status of an existing Session, an admin's without a participant id. A CLIENT record always has its participant and one of the client kinds, a SERVER record one of the server kinds (`SERVER_LIMIT` from `recordlimithits`; `INVALID_SAMPLE` and `INVALID_COMMAND` from `recordgamefault`, always with their participant), and `occurrences` is always positive: kept by the two writers (`recordgamefault`, checking each kind against its source in `play/session/internal/business/gamefault`, and `recordlimithits`), not by the database.
+- `play_game_fault_reports` also keeps, as `source = 'SERVER'` and `kind = 'INVALID_SAMPLE'` or `'INVALID_COMMAND'`, the SAMPLEs and COMMANDs a participant's game frontend sent that do not match the game's declared inputs and commands (decided by the human 2026-10-25: data the game declares nothing for is an error of the game's frontend script; the platform ends that player's connection, `play/docs/FLOWS.md`, Invalid Game Data). Written like a client's report, only while the Session is RUNNING and for that participant, one row per refusal: `{"reason":...}` for a SAMPLE (which input and why, such as `invalid input value: jump is not a declared input`), `{"command":...,"reason":...}` for a COMMAND (its name and why, such as `undeclared command: fly` or `invalid input value: x is out of range`); the reason is cut to 200 bytes and the name to 64. Unlike a client's report, it is what the platform saw: it points at the game version's frontend, or at a client sending data itself.
+- `play_game_fault_reports` keeps the faults players' clients report about the game frontend of their running Session (added 2026-10-20 at the human's request: the backend must be able to audit, from the database, games with problems and tell a misbehaving game from a lying client). A row is written only while the Session is RUNNING and only for its participant under their own participant id (`recordgamefault` checks it before writing); every report is its own row, never updated (`docs/engineering/standards/data-history.md`), so the history of what was reported, and when, stays. A report is the client's claim, never verified and never acted on: no Session ends and nothing is flagged because of it. Reading it: a game version reported by many distinct `user_uuid` across many Sessions points at the game; one `user_uuid` reporting many versions points at the client, for example:
 
   ```sql
   SELECT game_version_id, kind, COUNT(DISTINCT user_uuid) AS reporters, COUNT(DISTINCT session_id) AS sessions, SUM(occurrences) AS reports
-  FROM play_game_faults GROUP BY game_version_id, kind ORDER BY reporters DESC;
+  FROM play_game_fault_reports GROUP BY game_version_id, kind ORDER BY reporters DESC;
 
   SELECT user_uuid, COUNT(DISTINCT game_version_id) AS versions, COUNT(DISTINCT session_id) AS sessions, SUM(occurrences) AS reports
-  FROM play_game_faults GROUP BY user_uuid ORDER BY versions DESC;
+  FROM play_game_fault_reports GROUP BY user_uuid ORDER BY versions DESC;
 
   -- What the platform refused, per user, next to what their client reported, in one Session
-  SELECT user_uuid, source, kind, occurrences, detail
-  FROM play_game_faults WHERE session_id = 42 ORDER BY user_uuid, source;
+  SELECT user_uuid, source, kind, occurrences, detail, reported_at
+  FROM play_game_fault_reports WHERE session_id = 42 ORDER BY reported_at;
   ```
 
   A SERVER record next to a CLIENT report of the same user and Session is the strongest sign: the client said the game abused it, and the platform saw the traffic. A SERVER record alone, from a client that never reported, points at a client sending traffic itself.

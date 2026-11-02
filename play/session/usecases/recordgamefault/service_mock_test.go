@@ -12,7 +12,6 @@ package recordgamefault
 import (
 	context "context"
 	reflect "reflect"
-	time "time"
 
 	repo "github.com/diegobermudez03/playhoot/play/session/usecases/recordgamefault/internal/repo"
 	gomock "go.uber.org/mock/gomock"
@@ -42,17 +41,31 @@ func (m *MockfaultStore) EXPECT() *MockfaultStoreMockRecorder {
 	return m.recorder
 }
 
-// RecordFault mocks base method.
-func (m *MockfaultStore) RecordFault(ctx context.Context, sessionUUID string, fault repo.Fault, reportedAt time.Time) (bool, error) {
+// CreateReport mocks base method.
+func (m *MockfaultStore) CreateReport(ctx context.Context, report repo.Report) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RecordFault", ctx, sessionUUID, fault, reportedAt)
-	ret0, _ := ret[0].(bool)
+	ret := m.ctrl.Call(m, "CreateReport", ctx, report)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateReport indicates an expected call of CreateReport.
+func (mr *MockfaultStoreMockRecorder) CreateReport(ctx, report any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateReport", reflect.TypeOf((*MockfaultStore)(nil).CreateReport), ctx, report)
+}
+
+// FindReporter mocks base method.
+func (m *MockfaultStore) FindReporter(ctx context.Context, sessionUUID, userUUID string) (*repo.Reporter, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "FindReporter", ctx, sessionUUID, userUUID)
+	ret0, _ := ret[0].(*repo.Reporter)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// RecordFault indicates an expected call of RecordFault.
-func (mr *MockfaultStoreMockRecorder) RecordFault(ctx, sessionUUID, fault, reportedAt any) *gomock.Call {
+// FindReporter indicates an expected call of FindReporter.
+func (mr *MockfaultStoreMockRecorder) FindReporter(ctx, sessionUUID, userUUID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RecordFault", reflect.TypeOf((*MockfaultStore)(nil).RecordFault), ctx, sessionUUID, fault, reportedAt)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindReporter", reflect.TypeOf((*MockfaultStore)(nil).FindReporter), ctx, sessionUUID, userUUID)
 }
