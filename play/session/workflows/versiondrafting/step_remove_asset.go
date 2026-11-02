@@ -57,12 +57,14 @@ func (m *Manager) RemoveAsset(ctx context.Context, versionUUID string, key strin
 		return sessionpkg.DraftAssetResult{}, err
 	}
 
-	result, err := utils.RunInDBTransaction(ctx, m.dbServicer, func(ctx context.Context, tx *gorm.DB) (sessionpkg.DraftAssetResult, error) {
+	done, err := utils.RunInDBTransaction(ctx, m.dbServicer, func(ctx context.Context, tx *gorm.DB) (committed[sessionpkg.DraftAssetResult], error) {
 		return m.removeAssetInTx(ctx, tx, parsed.String(), key, idempotencyKey, fingerprint, origin)
 	})
 	if err != nil {
 		return sessionpkg.DraftAssetResult{}, err
 	}
+	countSuperseded(ctx, done.superseded)
+	result := done.result
 	countAssetEdit(ctx, result)
 	if result.Outcome == sessionpkg.DraftAssetAttached || result.Outcome == sessionpkg.DraftAssetRemoved {
 		if result.Build, err = m.builtRevision(ctx, parsed.String(), result.Revision, result.Replayed); err != nil {
@@ -73,13 +75,13 @@ func (m *Manager) RemoveAsset(ctx context.Context, versionUUID string, key strin
 }
 
 // removeAssetInTx is RemoveAsset's work inside its transaction.
-func (m *Manager) removeAssetInTx(ctx context.Context, tx *gorm.DB, versionUUID string, key string, idempotencyKey string, fingerprint string, origin string) (sessionpkg.DraftAssetResult, error) {
+func (m *Manager) removeAssetInTx(ctx context.Context, tx *gorm.DB, versionUUID string, key string, idempotencyKey string, fingerprint string, origin string) (committed[sessionpkg.DraftAssetResult], error) {
 	version, err := m.removeAssetRepo.FindVersion(ctx, tx, versionUUID)
 	if err != nil {
-		return sessionpkg.DraftAssetResult{}, err
+		return committed[sessionpkg.DraftAssetResult]{}, err
 	}
 	if version == nil {
-		return sessionpkg.DraftAssetResult{}, fmt.Errorf("version %s: %w", versionUUID, sessionpkg.ErrDraftNotFound)
+		return committed[sessionpkg.DraftAssetResult]{}, fmt.Errorf("version %s: %w", versionUUID, sessionpkg.ErrDraftNotFound)
 	}
 	var current int64
 	if version.CurrentRevision != nil {
@@ -87,21 +89,28 @@ func (m *Manager) removeAssetInTx(ctx context.Context, tx *gorm.DB, versionUUID 
 	}
 	attemptID, existing, err := m.removeAssetRepo.ClaimChangeAttempt(ctx, tx, version.ID, string(sessionpkg.DraftAttemptAssetRemoval), idempotencyKey, fingerprint, current, origin)
 	if err != nil {
-		return sessionpkg.DraftAssetResult{}, err
+		return committed[sessionpkg.DraftAssetResult]{}, err
 	}
 	if existing != nil {
-		return changeattempt.ReplayAsset(ctx, existing, fingerprint)
+		replayed, err := changeattempt.ReplayAsset(ctx, existing, fingerprint)
+		return committed[sessionpkg.DraftAssetResult]{result: replayed}, err
 	}
 
 	decided, err := m.decideRemove(ctx, tx, version, key)
 	if err != nil {
-		return sessionpkg.DraftAssetResult{}, err
+		return committed[sessionpkg.DraftAssetResult]{}, err
+	}
+	var superseded int
+	if decided.Outcome == sessionpkg.DraftAssetRemoved {
+		if superseded, err = m.queueBuild(ctx, tx, m.removeAssetRepo, version.ID, decided.Revision); err != nil {
+			return committed[sessionpkg.DraftAssetResult]{}, err
+		}
 	}
 	revision := decided.Revision
 	if err := m.removeAssetRepo.CompleteChangeAttempt(ctx, tx, attemptID, string(decided.Outcome), &revision, nil); err != nil {
-		return sessionpkg.DraftAssetResult{}, err
+		return committed[sessionpkg.DraftAssetResult]{}, err
 	}
-	return decided, nil
+	return committed[sessionpkg.DraftAssetResult]{result: decided, superseded: superseded}, nil
 }
 
 // decideRemove decides the removal against the version's current revision
@@ -146,9 +155,6 @@ func (m *Manager) decideRemove(ctx context.Context, tx *gorm.DB, version *intern
 		}
 		next := current + 1
 		if err := m.removeAssetRepo.CreateRevision(ctx, tx, version.ID, next, draftsources.Revision{Files: revision.Files, Assets: assets}, assetRevisionSource); err != nil {
-			return sessionpkg.DraftAssetResult{}, err
-		}
-		if err := m.queueBuild(ctx, tx, m.removeAssetRepo, version.ID, next); err != nil {
 			return sessionpkg.DraftAssetResult{}, err
 		}
 		return sessionpkg.DraftAssetResult{Outcome: sessionpkg.DraftAssetRemoved, Revision: next}, nil

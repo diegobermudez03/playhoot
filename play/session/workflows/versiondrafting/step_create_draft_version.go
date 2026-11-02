@@ -60,12 +60,14 @@ func (m *Manager) CreateDraftVersion(ctx context.Context, gameUUID string, versi
 	if err != nil {
 		return sessionpkg.DraftVersion{}, fmt.Errorf("version uuid is not a valid UUID")
 	}
-	created, err := utils.RunInDBTransaction(ctx, m.dbServicer, func(ctx context.Context, tx *gorm.DB) (sessionpkg.DraftVersion, error) {
+	done, err := utils.RunInDBTransaction(ctx, m.dbServicer, func(ctx context.Context, tx *gorm.DB) (committed[sessionpkg.DraftVersion], error) {
 		return m.createDraftVersionInTx(ctx, tx, parsedGame.String(), parsedVersion.String())
 	})
 	if err != nil {
 		return sessionpkg.DraftVersion{}, err
 	}
+	countSuperseded(ctx, done.superseded)
+	created := done.result
 	draftVersionsCreatedTotal.Inc(ctx, createDraftOutcomeLabel.Value(string(created.Outcome)))
 	if created.Outcome == sessionpkg.DraftCreated {
 		m.buildSignal.Notify()
@@ -76,29 +78,29 @@ func (m *Manager) CreateDraftVersion(ctx context.Context, gameUUID string, versi
 
 // createDraftVersionInTx is CreateDraftVersion's work inside its
 // transaction, with normalized UUIDs.
-func (m *Manager) createDraftVersionInTx(ctx context.Context, tx *gorm.DB, gameUUID string, versionUUID string) (sessionpkg.DraftVersion, error) {
+func (m *Manager) createDraftVersionInTx(ctx context.Context, tx *gorm.DB, gameUUID string, versionUUID string) (committed[sessionpkg.DraftVersion], error) {
 	gameID, err := m.createDraftVersionRepo.LockGame(ctx, tx, gameUUID)
 	if err != nil {
-		return sessionpkg.DraftVersion{}, err
+		return committed[sessionpkg.DraftVersion]{}, err
 	}
 	existing, err := m.createDraftVersionRepo.FindVersion(ctx, tx, versionUUID)
 	if err != nil {
-		return sessionpkg.DraftVersion{}, err
+		return committed[sessionpkg.DraftVersion]{}, err
 	}
 	if existing != nil {
 		if existing.GameUUID != gameUUID || gameversion.Status(existing.Status) != gameversion.Draft {
-			return sessionpkg.DraftVersion{}, fmt.Errorf("version %s: %w", versionUUID, sessionpkg.ErrDraftVersionConflict)
+			return committed[sessionpkg.DraftVersion]{}, fmt.Errorf("version %s: %w", versionUUID, sessionpkg.ErrDraftVersionConflict)
 		}
 		revision, err := draftRevision(ctx, existing)
 		if err != nil {
-			return sessionpkg.DraftVersion{}, err
+			return committed[sessionpkg.DraftVersion]{}, err
 		}
-		return sessionpkg.DraftVersion{Outcome: sessionpkg.DraftAlreadyCreated, GameUUID: gameUUID, VersionUUID: versionUUID, Revision: revision}, nil
+		return committed[sessionpkg.DraftVersion]{result: sessionpkg.DraftVersion{Outcome: sessionpkg.DraftAlreadyCreated, GameUUID: gameUUID, VersionUUID: versionUUID, Revision: revision}}, nil
 	}
 
 	open, err := m.createDraftVersionRepo.FindVersionOfGameInStatus(ctx, tx, gameID, string(gameversion.Draft))
 	if err != nil {
-		return sessionpkg.DraftVersion{}, err
+		return committed[sessionpkg.DraftVersion]{}, err
 	}
 	if open != nil {
 		// A DRAFT written by hand rather than by this workflow has no
@@ -107,27 +109,28 @@ func (m *Manager) createDraftVersionInTx(ctx context.Context, tx *gorm.DB, gameU
 		if open.CurrentRevision != nil {
 			revision = *open.CurrentRevision
 		}
-		return sessionpkg.DraftVersion{Outcome: sessionpkg.DraftAnotherOpen, GameUUID: gameUUID, VersionUUID: open.UUID, Revision: revision}, nil
+		return committed[sessionpkg.DraftVersion]{result: sessionpkg.DraftVersion{Outcome: sessionpkg.DraftAnotherOpen, GameUUID: gameUUID, VersionUUID: open.UUID, Revision: revision}}, nil
 	}
 
 	starter := draftsources.Apply(nil, draftsources.Template(), nil)
 	if len(starter.Diagnostics) > 0 {
-		return sessionpkg.DraftVersion{}, fmt.Errorf("the starter template breaks the source rules: %v", starter.Diagnostics)
+		return committed[sessionpkg.DraftVersion]{}, fmt.Errorf("the starter template breaks the source rules: %v", starter.Diagnostics)
 	}
 	versionID, err := m.createDraftVersionRepo.CreateVersion(ctx, tx, gameID, versionUUID, string(gameversion.Draft), string(scriptcheck.ProfileSDKV1), 1)
 	if err != nil {
-		return sessionpkg.DraftVersion{}, err
+		return committed[sessionpkg.DraftVersion]{}, err
 	}
 	if err := m.createDraftVersionRepo.StoreSourceContents(ctx, tx, starter.Contents); err != nil {
-		return sessionpkg.DraftVersion{}, err
+		return committed[sessionpkg.DraftVersion]{}, err
 	}
 	if err := m.createDraftVersionRepo.CreateRevision(ctx, tx, versionID, 1, draftsources.Revision{Files: starter.Files}, templateSource); err != nil {
-		return sessionpkg.DraftVersion{}, err
+		return committed[sessionpkg.DraftVersion]{}, err
 	}
-	if err := m.queueBuild(ctx, tx, m.createDraftVersionRepo, versionID, 1); err != nil {
-		return sessionpkg.DraftVersion{}, err
+	superseded, err := m.queueBuild(ctx, tx, m.createDraftVersionRepo, versionID, 1)
+	if err != nil {
+		return committed[sessionpkg.DraftVersion]{}, err
 	}
-	return sessionpkg.DraftVersion{Outcome: sessionpkg.DraftCreated, GameUUID: gameUUID, VersionUUID: versionUUID, Revision: 1}, nil
+	return committed[sessionpkg.DraftVersion]{result: sessionpkg.DraftVersion{Outcome: sessionpkg.DraftCreated, GameUUID: gameUUID, VersionUUID: versionUUID, Revision: 1}, superseded: superseded}, nil
 }
 
 // draftRevision is a DRAFT's current revision; every DRAFT this workflow

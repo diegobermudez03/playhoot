@@ -160,7 +160,7 @@ func TestRemoveAssetInTx(t *testing.T) {
 		got, err := (&Manager{removeAssetRepo: repo, newUUID: func() string { return "build-uuid" }}).removeAssetInTx(ctx, tx, assetVersionUUID, "cardBack", "key", fingerprint, "web")
 
 		require.NoError(t, err)
-		require.Equal(t, sessionpkg.DraftAssetResult{Outcome: sessionpkg.DraftAssetRemoved, Revision: 3}, got)
+		require.Equal(t, sessionpkg.DraftAssetResult{Outcome: sessionpkg.DraftAssetRemoved, Revision: 3}, got.result)
 	})
 
 	t.Run("a_retry_answers_the_first_decision", func(t *testing.T) {
@@ -173,7 +173,8 @@ func TestRemoveAssetInTx(t *testing.T) {
 		got, err := (&Manager{removeAssetRepo: repo, newUUID: func() string { return "build-uuid" }}).removeAssetInTx(ctx, tx, assetVersionUUID, "cardBack", "key", fingerprint, "web")
 
 		require.NoError(t, err)
-		require.Equal(t, sessionpkg.DraftAssetResult{Outcome: sessionpkg.DraftAssetRemoved, Revision: 2, Replayed: true}, got)
+		require.Equal(t, sessionpkg.DraftAssetResult{Outcome: sessionpkg.DraftAssetRemoved, Revision: 2, Replayed: true}, got.result)
+		require.Zero(t, got.superseded, "a replay queues nothing")
 	})
 
 	t.Run("not_a_draft", func(t *testing.T) {
@@ -186,6 +187,6 @@ func TestRemoveAssetInTx(t *testing.T) {
 		got, err := (&Manager{removeAssetRepo: repo, newUUID: func() string { return "build-uuid" }}).removeAssetInTx(ctx, tx, assetVersionUUID, "cardBack", "key", fingerprint, "web")
 
 		require.NoError(t, err)
-		require.Equal(t, sessionpkg.DraftAssetNotEditable, got.Outcome)
+		require.Equal(t, sessionpkg.DraftAssetNotEditable, got.result.Outcome)
 	})
 }

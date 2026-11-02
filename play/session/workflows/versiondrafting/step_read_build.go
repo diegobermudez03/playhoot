@@ -48,17 +48,25 @@ var draftBuildsSupersededTotal = metrics.NewCounter(
 	"Queued DRAFT builds a newer revision's build replaced before they ran.",
 )
 
+// committed is what a transaction that may queue a build decided, with how
+// many waiting builds the queued one superseded, counted once it commits.
+type committed[T any] struct {
+	result     T
+	superseded int
+}
+
 // queueBuild queues the build of revision, superseding the version's builds
-// still waiting: only the newest revision is worth building.
-func (m *Manager) queueBuild(ctx context.Context, tx *gorm.DB, queuer buildQueuer, versionID uint, revision int64) error {
-	superseded, err := queuer.QueueBuild(ctx, tx, versionID, revision, m.newUUID(), string(build.Queued), string(build.Superseded))
-	if err != nil {
-		return err
+// still waiting, and returns how many it superseded: only the newest
+// revision is worth building.
+func (m *Manager) queueBuild(ctx context.Context, tx *gorm.DB, queuer buildQueuer, versionID uint, revision int64) (int, error) {
+	return queuer.QueueBuild(ctx, tx, versionID, revision, m.newUUID(), string(build.Queued), string(build.Superseded))
+}
+
+// countSuperseded counts the builds a committed transaction superseded.
+func countSuperseded(ctx context.Context, superseded int) {
+	if superseded > 0 {
+		draftBuildsSupersededTotal.Add(ctx, float64(superseded))
 	}
-	// Counted inside the transaction: a rolled-back one is rare enough not
-	// to matter to this trend.
-	draftBuildsSupersededTotal.Add(ctx, float64(superseded))
-	return nil
 }
 
 // builtRevision wakes the build worker and adds the build of revision to an

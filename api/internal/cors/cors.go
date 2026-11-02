@@ -23,7 +23,7 @@ const AnyOrigin = "*"
 const maxAge = time.Hour
 
 const (
-	allowedHeaders = "Authorization, Content-Type"
+	allowedHeaders = "Authorization, Content-Type, Idempotency-Key"
 	// exposedHeaders are the response headers beyond the CORS-safelisted
 	// ones a page may read.
 	exposedHeaders = "Retry-After"

@@ -106,7 +106,7 @@ func TestCreateDraftVersionInTx(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			require.Equal(t, tc.expected, got)
+			require.Equal(t, tc.expected, got.result)
 		})
 	}
 }

@@ -20,6 +20,7 @@ func TestApplyChangesInTx(t *testing.T) {
 	type test struct {
 		change          sessionpkg.DraftChange
 		expected        sessionpkg.DraftChangeResult
+		superseded      int
 		expectErr       bool
 		expectedErrorIs error
 	}
@@ -57,8 +58,9 @@ func TestApplyChangesInTx(t *testing.T) {
 				deps.repo.EXPECT().CompleteChangeAttempt(ctx, tx, attemptID, "applied", revision(4), nil).Return(nil),
 			)
 			return test{
-				change:   change(3, sessionpkg.DraftFileContent{Path: "shared/x.ts", Content: "x"}),
-				expected: sessionpkg.DraftChangeResult{Outcome: sessionpkg.DraftChangeApplied, Revision: 4},
+				change:     change(3, sessionpkg.DraftFileContent{Path: "shared/x.ts", Content: "x"}),
+				expected:   sessionpkg.DraftChangeResult{Outcome: sessionpkg.DraftChangeApplied, Revision: 4},
+				superseded: 1,
 			}
 		},
 		"stale_base_is_a_conflict": func(t *testing.T, deps dependencies) test {
@@ -149,7 +151,8 @@ func TestApplyChangesInTx(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			require.Equal(t, tc.expected, got)
+			require.Equal(t, tc.expected, got.result)
+			require.Equal(t, tc.superseded, got.superseded, "superseded builds are counted by the caller once it commits")
 		})
 	}
 }

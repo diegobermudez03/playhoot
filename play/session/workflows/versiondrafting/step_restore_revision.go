@@ -78,12 +78,14 @@ func (m *Manager) RestoreRevision(ctx context.Context, versionUUID string, revis
 		return sessionpkg.DraftChangeResult{}, err
 	}
 
-	result, err := utils.RunInDBTransaction(ctx, m.dbServicer, func(ctx context.Context, tx *gorm.DB) (sessionpkg.DraftChangeResult, error) {
+	done, err := utils.RunInDBTransaction(ctx, m.dbServicer, func(ctx context.Context, tx *gorm.DB) (committed[sessionpkg.DraftChangeResult], error) {
 		return m.restoreRevisionInTx(ctx, tx, parsed.String(), revision, baseRevision, idempotencyKey, origin, fingerprint)
 	})
 	if err != nil {
 		return sessionpkg.DraftChangeResult{}, err
 	}
+	countSuperseded(ctx, done.superseded)
+	result := done.result
 	outcome := string(result.Outcome)
 	if result.Replayed {
 		outcome = "replayed"
@@ -99,31 +101,38 @@ func (m *Manager) RestoreRevision(ctx context.Context, versionUUID string, revis
 }
 
 // restoreRevisionInTx is RestoreRevision's work inside its transaction.
-func (m *Manager) restoreRevisionInTx(ctx context.Context, tx *gorm.DB, versionUUID string, revision int64, baseRevision int64, idempotencyKey string, origin string, fingerprint string) (sessionpkg.DraftChangeResult, error) {
+func (m *Manager) restoreRevisionInTx(ctx context.Context, tx *gorm.DB, versionUUID string, revision int64, baseRevision int64, idempotencyKey string, origin string, fingerprint string) (committed[sessionpkg.DraftChangeResult], error) {
 	version, err := m.restoreRevisionRepo.FindVersion(ctx, tx, versionUUID)
 	if err != nil {
-		return sessionpkg.DraftChangeResult{}, err
+		return committed[sessionpkg.DraftChangeResult]{}, err
 	}
 	if version == nil {
-		return sessionpkg.DraftChangeResult{}, fmt.Errorf("version %s: %w", versionUUID, sessionpkg.ErrDraftNotFound)
+		return committed[sessionpkg.DraftChangeResult]{}, fmt.Errorf("version %s: %w", versionUUID, sessionpkg.ErrDraftNotFound)
 	}
 	attemptID, existing, err := m.restoreRevisionRepo.ClaimChangeAttempt(ctx, tx, version.ID, string(sessionpkg.DraftAttemptRestore), idempotencyKey, fingerprint, baseRevision, origin)
 	if err != nil {
-		return sessionpkg.DraftChangeResult{}, err
+		return committed[sessionpkg.DraftChangeResult]{}, err
 	}
 	if existing != nil {
-		return changeattempt.Replay(ctx, existing, fingerprint)
+		replayed, err := changeattempt.Replay(ctx, existing, fingerprint)
+		return committed[sessionpkg.DraftChangeResult]{result: replayed}, err
 	}
 
 	decided, diagnostics, err := m.decideRestore(ctx, tx, version, revision, baseRevision)
 	if err != nil {
-		return sessionpkg.DraftChangeResult{}, err
+		return committed[sessionpkg.DraftChangeResult]{}, err
+	}
+	var superseded int
+	if decided.Outcome == sessionpkg.DraftChangeApplied {
+		if superseded, err = m.queueBuild(ctx, tx, m.restoreRevisionRepo, version.ID, decided.Revision); err != nil {
+			return committed[sessionpkg.DraftChangeResult]{}, err
+		}
 	}
 	completed := decided.Revision
 	if err := m.restoreRevisionRepo.CompleteChangeAttempt(ctx, tx, attemptID, string(decided.Outcome), &completed, diagnostics); err != nil {
-		return sessionpkg.DraftChangeResult{}, err
+		return committed[sessionpkg.DraftChangeResult]{}, err
 	}
-	return decided, nil
+	return committed[sessionpkg.DraftChangeResult]{result: decided, superseded: superseded}, nil
 }
 
 // decideRestore decides the restore against the version's current revision
@@ -171,9 +180,6 @@ func (m *Manager) decideRestore(ctx context.Context, tx *gorm.DB, version *inter
 	// The restored revision's contents and assets are already stored:
 	// nothing is new but the revision.
 	if err := m.restoreRevisionRepo.CreateRevision(ctx, tx, version.ID, next, restored, restoreSource); err != nil {
-		return sessionpkg.DraftChangeResult{}, nil, err
-	}
-	if err := m.queueBuild(ctx, tx, m.restoreRevisionRepo, version.ID, next); err != nil {
 		return sessionpkg.DraftChangeResult{}, nil, err
 	}
 	return sessionpkg.DraftChangeResult{Outcome: sessionpkg.DraftChangeApplied, Revision: next}, nil, nil

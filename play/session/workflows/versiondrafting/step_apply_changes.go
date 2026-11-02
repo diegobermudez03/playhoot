@@ -76,12 +76,14 @@ func (m *Manager) ApplyChanges(ctx context.Context, versionUUID string, change s
 		return sessionpkg.DraftChangeResult{}, err
 	}
 
-	result, err := utils.RunInDBTransaction(ctx, m.dbServicer, func(ctx context.Context, tx *gorm.DB) (sessionpkg.DraftChangeResult, error) {
+	done, err := utils.RunInDBTransaction(ctx, m.dbServicer, func(ctx context.Context, tx *gorm.DB) (committed[sessionpkg.DraftChangeResult], error) {
 		return m.applyChangesInTx(ctx, tx, parsed.String(), change, fingerprint)
 	})
 	if err != nil {
 		return sessionpkg.DraftChangeResult{}, err
 	}
+	countSuperseded(ctx, done.superseded)
+	result := done.result
 	outcome := string(result.Outcome)
 	if result.Replayed {
 		outcome = "replayed"
@@ -97,31 +99,38 @@ func (m *Manager) ApplyChanges(ctx context.Context, versionUUID string, change s
 }
 
 // applyChangesInTx is ApplyChanges' work inside its transaction.
-func (m *Manager) applyChangesInTx(ctx context.Context, tx *gorm.DB, versionUUID string, change sessionpkg.DraftChange, fingerprint string) (sessionpkg.DraftChangeResult, error) {
+func (m *Manager) applyChangesInTx(ctx context.Context, tx *gorm.DB, versionUUID string, change sessionpkg.DraftChange, fingerprint string) (committed[sessionpkg.DraftChangeResult], error) {
 	version, err := m.applyChangesRepo.FindVersion(ctx, tx, versionUUID)
 	if err != nil {
-		return sessionpkg.DraftChangeResult{}, err
+		return committed[sessionpkg.DraftChangeResult]{}, err
 	}
 	if version == nil {
-		return sessionpkg.DraftChangeResult{}, fmt.Errorf("version %s: %w", versionUUID, sessionpkg.ErrDraftNotFound)
+		return committed[sessionpkg.DraftChangeResult]{}, fmt.Errorf("version %s: %w", versionUUID, sessionpkg.ErrDraftNotFound)
 	}
 	attemptID, existing, err := m.applyChangesRepo.ClaimChangeAttempt(ctx, tx, version.ID, string(sessionpkg.DraftAttemptChange), change.IdempotencyKey, fingerprint, change.BaseRevision, change.Origin)
 	if err != nil {
-		return sessionpkg.DraftChangeResult{}, err
+		return committed[sessionpkg.DraftChangeResult]{}, err
 	}
 	if existing != nil {
-		return changeattempt.Replay(ctx, existing, fingerprint)
+		replayed, err := changeattempt.Replay(ctx, existing, fingerprint)
+		return committed[sessionpkg.DraftChangeResult]{result: replayed}, err
 	}
 
 	decided, diagnostics, err := m.decideChange(ctx, tx, version, change)
 	if err != nil {
-		return sessionpkg.DraftChangeResult{}, err
+		return committed[sessionpkg.DraftChangeResult]{}, err
+	}
+	var superseded int
+	if decided.Outcome == sessionpkg.DraftChangeApplied {
+		if superseded, err = m.queueBuild(ctx, tx, m.applyChangesRepo, version.ID, decided.Revision); err != nil {
+			return committed[sessionpkg.DraftChangeResult]{}, err
+		}
 	}
 	revision := decided.Revision
 	if err := m.applyChangesRepo.CompleteChangeAttempt(ctx, tx, attemptID, string(decided.Outcome), &revision, diagnostics); err != nil {
-		return sessionpkg.DraftChangeResult{}, err
+		return committed[sessionpkg.DraftChangeResult]{}, err
 	}
-	return decided, nil
+	return committed[sessionpkg.DraftChangeResult]{result: decided, superseded: superseded}, nil
 }
 
 // decideChange decides the change against the version's current revision
@@ -173,9 +182,6 @@ func (m *Manager) decideChange(ctx context.Context, tx *gorm.DB, version *intern
 	// Asset bindings are kept: a change of the sources never touches them.
 	nextRevision := draftsources.Revision{Files: applied.Files, Assets: revision.Assets}
 	if err := m.applyChangesRepo.CreateRevision(ctx, tx, version.ID, next, nextRevision, change.Origin); err != nil {
-		return sessionpkg.DraftChangeResult{}, nil, err
-	}
-	if err := m.queueBuild(ctx, tx, m.applyChangesRepo, version.ID, next); err != nil {
 		return sessionpkg.DraftChangeResult{}, nil, err
 	}
 	return sessionpkg.DraftChangeResult{Outcome: sessionpkg.DraftChangeApplied, Revision: next}, nil, nil

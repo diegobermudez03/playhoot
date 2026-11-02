@@ -138,7 +138,7 @@ func TestPolicy(t *testing.T) {
 				require.Empty(t, w.Header().Get("Access-Control-Allow-Credentials"))
 				if allowed {
 					require.Equal(t, "POST", w.Header().Get("Access-Control-Allow-Methods"))
-					require.Equal(t, "Authorization, Content-Type", w.Header().Get("Access-Control-Allow-Headers"))
+					require.Equal(t, "Authorization, Content-Type, Idempotency-Key", w.Header().Get("Access-Control-Allow-Headers"))
 					require.Equal(t, "3600", w.Header().Get("Access-Control-Max-Age"))
 				} else {
 					require.Empty(t, w.Header().Get("Access-Control-Allow-Methods"))

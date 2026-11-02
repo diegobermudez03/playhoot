@@ -212,9 +212,14 @@ func (m *Manager) upload(ctx context.Context, found uploadLookup, key string, co
 			return sessionpkg.DraftAssetResult{}, err
 		}
 	}
-	return utils.RunInDBTransaction(ctx, m.dbServicer, func(ctx context.Context, tx *gorm.DB) (sessionpkg.DraftAssetResult, error) {
+	done, err := utils.RunInDBTransaction(ctx, m.dbServicer, func(ctx context.Context, tx *gorm.DB) (committed[sessionpkg.DraftAssetResult], error) {
 		return m.attachInTx(ctx, tx, found.version.UUID, received, idempotencyKey, fingerprint, origin)
 	})
+	if err != nil {
+		return sessionpkg.DraftAssetResult{}, err
+	}
+	countSuperseded(ctx, done.superseded)
+	return done.result, nil
 }
 
 // lookUpUpload finds the version, an attempt already holding the key, and
@@ -391,13 +396,13 @@ func (m *Manager) replayAttempt(ctx context.Context, tx *gorm.DB, versionID uint
 
 // attachInTx records the attempt and, when the content may be bound, binds
 // it in a new revision.
-func (m *Manager) attachInTx(ctx context.Context, tx *gorm.DB, versionUUID string, received receivedUpload, idempotencyKey string, fingerprint string, origin string) (sessionpkg.DraftAssetResult, error) {
+func (m *Manager) attachInTx(ctx context.Context, tx *gorm.DB, versionUUID string, received receivedUpload, idempotencyKey string, fingerprint string, origin string) (committed[sessionpkg.DraftAssetResult], error) {
 	version, err := m.uploadAssetRepo.FindVersion(ctx, tx, versionUUID)
 	if err != nil {
-		return sessionpkg.DraftAssetResult{}, err
+		return committed[sessionpkg.DraftAssetResult]{}, err
 	}
 	if version == nil {
-		return sessionpkg.DraftAssetResult{}, fmt.Errorf("version %s: %w", versionUUID, sessionpkg.ErrDraftNotFound)
+		return committed[sessionpkg.DraftAssetResult]{}, fmt.Errorf("version %s: %w", versionUUID, sessionpkg.ErrDraftNotFound)
 	}
 	var current int64
 	if version.CurrentRevision != nil {
@@ -405,21 +410,28 @@ func (m *Manager) attachInTx(ctx context.Context, tx *gorm.DB, versionUUID strin
 	}
 	attemptID, existing, err := m.uploadAssetRepo.ClaimChangeAttempt(ctx, tx, version.ID, string(sessionpkg.DraftAttemptAssetUpload), idempotencyKey, fingerprint, current, origin)
 	if err != nil {
-		return sessionpkg.DraftAssetResult{}, err
+		return committed[sessionpkg.DraftAssetResult]{}, err
 	}
 	if existing != nil {
-		return m.replayAttempt(ctx, tx, version.ID, existing, fingerprint, received.key)
+		replayed, err := m.replayAttempt(ctx, tx, version.ID, existing, fingerprint, received.key)
+		return committed[sessionpkg.DraftAssetResult]{result: replayed}, err
 	}
 
 	decided, diagnostics, err := m.decideAttach(ctx, tx, version, received)
 	if err != nil {
-		return sessionpkg.DraftAssetResult{}, err
+		return committed[sessionpkg.DraftAssetResult]{}, err
+	}
+	var superseded int
+	if decided.Outcome == sessionpkg.DraftAssetAttached {
+		if superseded, err = m.queueBuild(ctx, tx, m.uploadAssetRepo, version.ID, decided.Revision); err != nil {
+			return committed[sessionpkg.DraftAssetResult]{}, err
+		}
 	}
 	revision := decided.Revision
 	if err := m.uploadAssetRepo.CompleteChangeAttempt(ctx, tx, attemptID, string(decided.Outcome), &revision, diagnostics); err != nil {
-		return sessionpkg.DraftAssetResult{}, err
+		return committed[sessionpkg.DraftAssetResult]{}, err
 	}
-	return decided, nil
+	return committed[sessionpkg.DraftAssetResult]{result: decided, superseded: superseded}, nil
 }
 
 // decideAttach decides the upload against the version's current revision
@@ -490,9 +502,6 @@ func (m *Manager) decideAttach(ctx context.Context, tx *gorm.DB, version *intern
 		assets[key] = received.binding
 		next := current + 1
 		if err := m.uploadAssetRepo.CreateRevision(ctx, tx, version.ID, next, draftsources.Revision{Files: revision.Files, Assets: assets}, assetRevisionSource); err != nil {
-			return sessionpkg.DraftAssetResult{}, nil, err
-		}
-		if err := m.queueBuild(ctx, tx, m.uploadAssetRepo, version.ID, next); err != nil {
 			return sessionpkg.DraftAssetResult{}, nil, err
 		}
 		binding := received.binding
