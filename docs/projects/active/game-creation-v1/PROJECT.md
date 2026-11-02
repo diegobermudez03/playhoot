@@ -18,7 +18,7 @@ The frontend counterpart is the frontend repository's Project `game-creation-web
 
 ## Decisions Taken In Conversation (2026-11-01)
 
-- Assets use the final flow from the start (reserve, signed upload URL, finalize with server-side validation) behind a storage provider; a real local provider (disk + signed URLs served by the backend) is used until the GCS one at launch. No code is written that integration would have to replace.
+- Assets use the final flow from the start behind the storage port; the existing GCS adapter runs against the local emulator until launch. No code is written that integration would have to replace. Redesigned by the human on 2026-11-02: asset bytes are uploaded through the backend, which validates them anyway; a signed URL is issued only when the backend never touches the bytes (`docs/engineering/standards/object-storage.md`).
 - MCP is implemented for real in this binary. Its authorization is per user account (OAuth); the project travels in each call. Identity reuses the normal sign-in but keeps AI authorization attempts and AI sessions in their own tables.
 - One MCP operation = one API endpoint = one creation service method. Services know nothing about actors: authorization lives in the upper layers (API, MCP, Identity), sharing one authorization component. MCP calls the service method directly; if split out later it calls the endpoint.
 - The project link given to an AI grants read and write; an AI that cannot write tells the user what to paste. A GET never mutates.

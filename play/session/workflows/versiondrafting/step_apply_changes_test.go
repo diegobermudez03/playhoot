@@ -42,17 +42,17 @@ func TestApplyChangesInTx(t *testing.T) {
 	}
 	claims := func(deps dependencies, version *internalrepo.Version, base int64) {
 		deps.repo.EXPECT().FindVersion(ctx, tx, versionUUID).Return(version, nil)
-		deps.repo.EXPECT().ClaimChangeAttempt(ctx, tx, versionID, "key", fingerprint, base, "api").Return(attemptID, nil, nil)
+		deps.repo.EXPECT().ClaimChangeAttempt(ctx, tx, versionID, "change", "key", fingerprint, base, "api").Return(attemptID, nil, nil)
 	}
 
 	tests := map[string]func(t *testing.T, deps dependencies) test{
 		"applied_as_the_next_revision": func(t *testing.T, deps dependencies) test {
 			claims(deps, draft(3), 3)
 			gomock.InOrder(
-				deps.repo.EXPECT().FindRevisionFiles(ctx, tx, versionID, int64(3)).Return(starter, true, nil),
+				deps.repo.EXPECT().FindRevision(ctx, tx, versionID, int64(3)).Return(draftsources.Revision{Files: starter}, true, nil),
 				deps.repo.EXPECT().AdvanceRevision(ctx, tx, versionID, "DRAFT", int64(3)).Return(true, nil),
 				deps.repo.EXPECT().StoreSourceContents(ctx, tx, map[string]string{draftsources.SHA256Hex("x"): "x"}).Return(nil),
-				deps.repo.EXPECT().CreateRevision(ctx, tx, versionID, int64(4), gomock.Len(len(starter)+1), "api").Return(nil),
+				deps.repo.EXPECT().CreateRevision(ctx, tx, versionID, int64(4), revisionWithFiles(len(starter)+1), "api").Return(nil),
 				deps.repo.EXPECT().CompleteChangeAttempt(ctx, tx, attemptID, "applied", revision(4), nil).Return(nil),
 			)
 			return test{
@@ -71,7 +71,7 @@ func TestApplyChangesInTx(t *testing.T) {
 		"a_concurrent_change_won_the_base": func(t *testing.T, deps dependencies) test {
 			claims(deps, draft(3), 3)
 			gomock.InOrder(
-				deps.repo.EXPECT().FindRevisionFiles(ctx, tx, versionID, int64(3)).Return(starter, true, nil),
+				deps.repo.EXPECT().FindRevision(ctx, tx, versionID, int64(3)).Return(draftsources.Revision{Files: starter}, true, nil),
 				deps.repo.EXPECT().AdvanceRevision(ctx, tx, versionID, "DRAFT", int64(3)).Return(false, nil),
 				deps.repo.EXPECT().CompleteChangeAttempt(ctx, tx, attemptID, "conflict", revision(3), nil).Return(nil),
 			)
@@ -84,7 +84,7 @@ func TestApplyChangesInTx(t *testing.T) {
 			claims(deps, draft(2), 2)
 			diagnostics := draftsources.Apply(starter, []draftsources.Write{{Path: "dist/x.js"}}, nil).Diagnostics
 			gomock.InOrder(
-				deps.repo.EXPECT().FindRevisionFiles(ctx, tx, versionID, int64(2)).Return(starter, true, nil),
+				deps.repo.EXPECT().FindRevision(ctx, tx, versionID, int64(2)).Return(draftsources.Revision{Files: starter}, true, nil),
 				deps.repo.EXPECT().CompleteChangeAttempt(ctx, tx, attemptID, "invalid", revision(2), diagnostics).Return(nil),
 			)
 			return test{
@@ -107,7 +107,7 @@ func TestApplyChangesInTx(t *testing.T) {
 		"retry_replays_the_first_decision": func(t *testing.T, deps dependencies) test {
 			outcome := "conflict"
 			deps.repo.EXPECT().FindVersion(ctx, tx, versionUUID).Return(draft(5), nil)
-			deps.repo.EXPECT().ClaimChangeAttempt(ctx, tx, versionID, "key", fingerprint, int64(3), "api").
+			deps.repo.EXPECT().ClaimChangeAttempt(ctx, tx, versionID, "change", "key", fingerprint, int64(3), "api").
 				Return(uint(0), &internalrepo.ChangeAttempt{ID: attemptID, RequestSHA256: fingerprint, Outcome: &outcome, Revision: revision(4)}, nil)
 			return test{
 				change:   change(3, sessionpkg.DraftFileContent{Path: "shared/x.ts", Content: "x"}),
@@ -117,7 +117,7 @@ func TestApplyChangesInTx(t *testing.T) {
 		"same_key_with_another_change_is_an_idempotency_conflict": func(t *testing.T, deps dependencies) test {
 			outcome := "applied"
 			deps.repo.EXPECT().FindVersion(ctx, tx, versionUUID).Return(draft(5), nil)
-			deps.repo.EXPECT().ClaimChangeAttempt(ctx, tx, versionID, "key", fingerprint, int64(3), "api").
+			deps.repo.EXPECT().ClaimChangeAttempt(ctx, tx, versionID, "change", "key", fingerprint, int64(3), "api").
 				Return(uint(0), &internalrepo.ChangeAttempt{ID: attemptID, RequestSHA256: "other", Outcome: &outcome, Revision: revision(4)}, nil)
 			return test{change: change(3), expectErr: true, expectedErrorIs: sessionpkg.ErrIdempotencyConflict}
 		},
@@ -127,7 +127,7 @@ func TestApplyChangesInTx(t *testing.T) {
 		},
 		"missing_current_revision_is_broken_data": func(t *testing.T, deps dependencies) test {
 			claims(deps, draft(2), 2)
-			deps.repo.EXPECT().FindRevisionFiles(ctx, tx, versionID, int64(2)).Return(nil, false, nil)
+			deps.repo.EXPECT().FindRevision(ctx, tx, versionID, int64(2)).Return(draftsources.Revision{}, false, nil)
 			return test{change: change(2, sessionpkg.DraftFileContent{Path: "shared/x.ts", Content: "x"}), expectErr: true}
 		},
 	}

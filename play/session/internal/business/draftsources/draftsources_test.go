@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/diegobermudez03/playhoot/play/session/internal/business/gameversion"
 )
 
 func TestApply(t *testing.T) {
@@ -124,4 +126,58 @@ func TestTemplate(t *testing.T) {
 	require.Equal(t, []string{"client/Game.tsx", "game.project.json", "notes.md", "server/game.ts", "shared/actions.ts"}, paths)
 	applied := Apply(nil, writes, nil)
 	require.Empty(t, applied.Diagnostics, "the template must be a valid project")
+}
+
+func TestDeclaredAssets(t *testing.T) {
+	t.Run("reads the declared assets and an absent declaration as none", func(t *testing.T) {
+		declared, diagnostics := DeclaredAssets(`{"format":"playhoot.project.v1","assets":{"cardBack":{"type":"image","description":"Card back, 512x768"},"flip":{"type":"audio","description":"Flip sound","optional":true}}}`)
+		require.Empty(t, diagnostics)
+		require.Equal(t, map[string]AssetDeclaration{
+			"cardBack": {Type: gameversion.AssetImage, Description: "Card back, 512x768"},
+			"flip":     {Type: gameversion.AssetAudio, Description: "Flip sound", Optional: true},
+		}, declared)
+
+		none, diagnostics := DeclaredAssets(`{"name":"Tap Race"}`)
+		require.Empty(t, diagnostics)
+		require.Empty(t, none)
+	})
+
+	t.Run("names every invalid declaration", func(t *testing.T) {
+		_, diagnostics := DeclaredAssets(`{"assets":{"1bad":{"type":"image","description":"x"},"noType":{"type":"model","description":"x"},"noDescription":{"type":"image","description":" "},"notObject":"image"}}`)
+		require.Len(t, diagnostics, 4)
+		for _, diagnostic := range diagnostics {
+			require.Equal(t, ProjectFile, diagnostic.Path)
+			require.Equal(t, CodeInvalidAsset, diagnostic.Code)
+		}
+		_, diagnostics = DeclaredAssets(`not json`)
+		require.Equal(t, CodeInvalidProjectFile, diagnostics[0].Code)
+	})
+
+	t.Run("a change writing an invalid project file is refused", func(t *testing.T) {
+		applied := Apply(map[string]File{}, []Write{{Path: ProjectFile, Content: `{"assets":{"x":{"type":"image"}}}`}}, nil)
+		require.Equal(t, CodeInvalidAsset, applied.Diagnostics[0].Code)
+	})
+}
+
+func TestSameRevision(t *testing.T) {
+	files := map[string]File{"a.ts": {SHA256: "1", Size: 1}}
+	with := Revision{Files: files, Assets: map[string]AssetBinding{"cardBack": {SHA256: "p", Size: 3, MIMEType: "image/png"}}}
+	require.True(t, SameRevision(with, Revision{Files: files, Assets: map[string]AssetBinding{"cardBack": {SHA256: "p", Size: 3, MIMEType: "image/png"}}}))
+	require.False(t, SameRevision(with, Revision{Files: files}))
+	require.False(t, SameRevision(with, Revision{Files: files, Assets: map[string]AssetBinding{"cardBack": {SHA256: "q"}}}))
+}
+
+func TestAssetStates(t *testing.T) {
+	declared := map[string]AssetDeclaration{
+		"cardBack": {Type: gameversion.AssetImage, Description: "back"},
+		"flip":     {Type: gameversion.AssetAudio, Description: "flip", Optional: true},
+	}
+	bindings := map[string]AssetBinding{"cardBack": {SHA256: "p"}, "old": {SHA256: "o"}}
+	states := AssetStates(declared, bindings)
+	require.Len(t, states, 3)
+	require.Equal(t, "cardBack", states[0].Key)
+	require.Equal(t, AssetReady, states[0].Status)
+	require.Equal(t, AssetMissing, states[1].Status)
+	require.Equal(t, "old", states[2].Key)
+	require.Equal(t, AssetUndeclared, states[2].Status)
 }

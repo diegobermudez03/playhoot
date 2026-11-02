@@ -11,6 +11,7 @@ import (
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 	"github.com/diegobermudez03/playhoot/play/session/internal/business/draftsources"
 	"github.com/diegobermudez03/playhoot/play/session/internal/business/gameversion"
+	"github.com/diegobermudez03/playhoot/play/session/internal/objectstore"
 	"github.com/diegobermudez03/playhoot/play/session/internal/testdb"
 )
 
@@ -19,7 +20,7 @@ import (
 
 func TestDraftingIntegration(t *testing.T) {
 	db := testdb.OpenSessionDB(t)
-	m := New(db)
+	m := New(db, objectstore.NewFake())
 	ctx := context.Background()
 
 	newDraft := func(t *testing.T) (string, string) {
@@ -96,11 +97,12 @@ func TestDraftingIntegration(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, int64(2), snapshot.CurrentRevision)
 		require.Nil(t, snapshot.Files[0].Content)
-		outcomes := make([]sessionpkg.DraftChangeOutcome, len(snapshot.Attempts))
+		outcomes := make([]string, len(snapshot.Attempts))
 		for i, attempt := range snapshot.Attempts {
 			outcomes[i] = attempt.Outcome
+			require.Equal(t, sessionpkg.DraftAttemptChange, attempt.Kind)
 		}
-		require.Equal(t, []sessionpkg.DraftChangeOutcome{sessionpkg.DraftChangeInvalid, sessionpkg.DraftChangeConflict, sessionpkg.DraftChangeApplied}, outcomes)
+		require.Equal(t, []string{string(sessionpkg.DraftChangeInvalid), string(sessionpkg.DraftChangeConflict), string(sessionpkg.DraftChangeApplied)}, outcomes)
 		require.Equal(t, sessionpkg.DraftOriginMCP, snapshot.Attempts[0].Origin)
 		require.Nil(t, snapshot.Attempts[1].Revision, "a conflict shows no revision")
 		require.Equal(t, int64(2), *snapshot.Attempts[2].Revision)
@@ -135,7 +137,7 @@ func TestDraftingIntegration(t *testing.T) {
 		require.Len(t, revisions, 2)
 		snapshot, err := m.ReadDraft(ctx, versionUUID, 0, false)
 		require.NoError(t, err)
-		require.Equal(t, sessionpkg.DraftChangeUnchanged, snapshot.Attempts[0].Outcome)
+		require.Equal(t, string(sessionpkg.DraftChangeUnchanged), snapshot.Attempts[0].Outcome)
 	})
 
 	t.Run("only_one_of_two_changes_over_the_same_base_applies", func(t *testing.T) {

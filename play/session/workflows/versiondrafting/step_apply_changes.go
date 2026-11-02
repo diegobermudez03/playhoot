@@ -23,11 +23,11 @@ import (
 // applyChangesRepo is ApplyChanges' own narrow persistence contract.
 type applyChangesRepo interface {
 	FindVersion(ctx context.Context, tx *gorm.DB, versionUUID string) (*internalrepo.Version, error)
-	ClaimChangeAttempt(ctx context.Context, tx *gorm.DB, versionID uint, idempotencyKey string, requestSHA256 string, baseRevision int64, origin string) (uint, *internalrepo.ChangeAttempt, error)
-	FindRevisionFiles(ctx context.Context, tx *gorm.DB, versionID uint, number int64) (map[string]draftsources.File, bool, error)
+	ClaimChangeAttempt(ctx context.Context, tx *gorm.DB, versionID uint, kind string, idempotencyKey string, requestSHA256 string, baseRevision int64, origin string) (uint, *internalrepo.ChangeAttempt, error)
+	FindRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64) (draftsources.Revision, bool, error)
 	StoreSourceContents(ctx context.Context, tx *gorm.DB, contents map[string]string) error
 	AdvanceRevision(ctx context.Context, tx *gorm.DB, versionID uint, status string, base int64) (bool, error)
-	CreateRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64, files map[string]draftsources.File, source string) error
+	CreateRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64, revision draftsources.Revision, source string) error
 	CompleteChangeAttempt(ctx context.Context, tx *gorm.DB, attemptID uint, outcome string, revision *int64, diagnostics []draftsources.Diagnostic) error
 }
 
@@ -99,7 +99,7 @@ func (m *Manager) applyChangesInTx(ctx context.Context, tx *gorm.DB, versionUUID
 	if version == nil {
 		return sessionpkg.DraftChangeResult{}, fmt.Errorf("version %s: %w", versionUUID, sessionpkg.ErrDraftNotFound)
 	}
-	attemptID, existing, err := m.applyChangesRepo.ClaimChangeAttempt(ctx, tx, version.ID, change.IdempotencyKey, fingerprint, change.BaseRevision, change.Origin)
+	attemptID, existing, err := m.applyChangesRepo.ClaimChangeAttempt(ctx, tx, version.ID, string(sessionpkg.DraftAttemptChange), change.IdempotencyKey, fingerprint, change.BaseRevision, change.Origin)
 	if err != nil {
 		return sessionpkg.DraftChangeResult{}, err
 	}
@@ -131,7 +131,7 @@ func (m *Manager) decideChange(ctx context.Context, tx *gorm.DB, version *intern
 	if change.BaseRevision != current {
 		return sessionpkg.DraftChangeResult{Outcome: sessionpkg.DraftChangeConflict, Revision: current}, nil, nil
 	}
-	files, found, err := m.applyChangesRepo.FindRevisionFiles(ctx, tx, version.ID, current)
+	revision, found, err := m.applyChangesRepo.FindRevision(ctx, tx, version.ID, current)
 	if err != nil {
 		return sessionpkg.DraftChangeResult{}, nil, err
 	}
@@ -144,11 +144,11 @@ func (m *Manager) decideChange(ctx context.Context, tx *gorm.DB, version *intern
 	for i, file := range change.Files {
 		writes[i] = draftsources.Write{Path: file.Path, Content: file.Content}
 	}
-	applied := draftsources.Apply(files, writes, change.Delete)
+	applied := draftsources.Apply(revision.Files, writes, change.Delete)
 	if len(applied.Diagnostics) > 0 {
 		return sessionpkg.DraftChangeResult{Outcome: sessionpkg.DraftChangeInvalid, Revision: current, Diagnostics: changeattempt.Public(applied.Diagnostics)}, applied.Diagnostics, nil
 	}
-	if draftsources.SameFiles(files, applied.Files) {
+	if draftsources.SameFiles(revision.Files, applied.Files) {
 		return sessionpkg.DraftChangeResult{Outcome: sessionpkg.DraftChangeUnchanged, Revision: current}, nil, nil
 	}
 
@@ -164,7 +164,9 @@ func (m *Manager) decideChange(ctx context.Context, tx *gorm.DB, version *intern
 		return sessionpkg.DraftChangeResult{}, nil, err
 	}
 	next := current + 1
-	if err := m.applyChangesRepo.CreateRevision(ctx, tx, version.ID, next, applied.Files, change.Origin); err != nil {
+	// Asset bindings are kept: a change of the sources never touches them.
+	nextRevision := draftsources.Revision{Files: applied.Files, Assets: revision.Assets}
+	if err := m.applyChangesRepo.CreateRevision(ctx, tx, version.ID, next, nextRevision, change.Origin); err != nil {
 		return sessionpkg.DraftChangeResult{}, nil, err
 	}
 	return sessionpkg.DraftChangeResult{Outcome: sessionpkg.DraftChangeApplied, Revision: next}, nil, nil

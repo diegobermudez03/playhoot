@@ -40,28 +40,40 @@ func (m *Manager) RestoreDraftRevision(ctx context.Context, userUUID string, gam
 // editDraft runs edit on the version Game Management lets userUUID edit. A
 // version Play does not have yet is created, and edit runs once more.
 func (m *Manager) editDraft(ctx context.Context, userUUID string, gameUUID string, edit func(versionUUID string) (sessionpkg.DraftChangeResult, error)) (DraftEdit, error) {
+	access, result, err := editVersion(ctx, m, userUUID, gameUUID, edit)
+	if err != nil || access != game.EditableVersionFound {
+		return DraftEdit{Access: access}, err
+	}
+	logging.LogFields(ctx, logging.Field("draft_outcome", string(result.Outcome)), logging.Field("revision", result.Revision))
+	return DraftEdit{Access: access, Result: result}, nil
+}
+
+// editVersion runs edit on the version Game Management lets userUUID edit,
+// answering Game Management's decision and, when found, edit's result. A
+// version Play does not have yet is created, and edit runs once more.
+func editVersion[T any](ctx context.Context, m *Manager, userUUID string, gameUUID string, edit func(versionUUID string) (T, error)) (game.EditableVersionOutcome, T, error) {
+	var none T
 	editable, err := m.editableVersion(ctx, gameUUID, userUUID)
 	if err != nil {
-		return DraftEdit{}, err
+		return "", none, err
 	}
 	logging.LogFields(ctx, logging.Field("edit_access", string(editable.Outcome)))
 	if editable.Outcome != game.EditableVersionFound {
-		return DraftEdit{Access: editable.Outcome}, nil
+		return editable.Outcome, none, nil
 	}
 
 	result, err := edit(editable.VersionUUID)
 	if errors.Is(err, sessionpkg.ErrDraftNotFound) {
 		if err := m.repairDraft(ctx, gameUUID, editable.VersionUUID); err != nil {
-			return DraftEdit{}, err
+			return "", none, err
 		}
 		result, err = edit(editable.VersionUUID)
 	}
 	if err != nil {
-		if errors.Is(err, sessionpkg.ErrIdempotencyConflict) {
-			return DraftEdit{}, err
+		if errors.Is(err, sessionpkg.ErrIdempotencyConflict) || errors.Is(err, sessionpkg.ErrUploadsBusy) {
+			return "", none, err
 		}
-		return DraftEdit{}, fmt.Errorf("changing the version being built: %s", err)
+		return "", none, fmt.Errorf("changing the version being built: %s", err)
 	}
-	logging.LogFields(ctx, logging.Field("draft_outcome", string(result.Outcome)), logging.Field("revision", result.Revision))
-	return DraftEdit{Access: editable.Outcome, Result: result}, nil
+	return editable.Outcome, result, nil
 }

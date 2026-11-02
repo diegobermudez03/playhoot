@@ -26,6 +26,7 @@ type revisionRow struct {
 	GameVersionID uint
 	Number        int64
 	Files         string `gorm:"type:jsonb"`
+	Assets        string `gorm:"type:jsonb"`
 	Source        string
 	CreatedAt     time.Time
 }
@@ -42,36 +43,51 @@ type sourceFileRow struct {
 
 func (sourceFileRow) TableName() string { return "play_source_files" }
 
-// CreateRevision records revision number of versionID with its files.
-func (r *Repo) CreateRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64, files map[string]draftsources.File, source string) error {
-	encoded, err := json.Marshal(files)
+// CreateRevision records revision number of versionID with its files and
+// asset bindings.
+func (r *Repo) CreateRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64, revision draftsources.Revision, source string) error {
+	files, err := json.Marshal(revision.Files)
 	if err != nil {
 		return fmt.Errorf("encoding revision files: %s", err)
 	}
-	row := revisionRow{GameVersionID: versionID, Number: number, Files: string(encoded), Source: source}
+	assets := revision.Assets
+	if assets == nil {
+		assets = map[string]draftsources.AssetBinding{}
+	}
+	bindings, err := json.Marshal(assets)
+	if err != nil {
+		return fmt.Errorf("encoding revision assets: %s", err)
+	}
+	row := revisionRow{GameVersionID: versionID, Number: number, Files: string(files), Assets: string(bindings), Source: source}
 	if err := tx.WithContext(ctx).Create(&row).Error; err != nil {
 		return fmt.Errorf("creating revision: %s", err)
 	}
 	return nil
 }
 
-// FindRevisionFiles returns the files of revision number of versionID, or
-// false when it has no such revision.
-func (r *Repo) FindRevisionFiles(ctx context.Context, tx *gorm.DB, versionID uint, number int64) (map[string]draftsources.File, bool, error) {
-	var rows []struct{ Files []byte }
+// FindRevision returns the files and asset bindings of revision number of
+// versionID, or false when it has no such revision.
+func (r *Repo) FindRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64) (draftsources.Revision, bool, error) {
+	var rows []struct {
+		Files  []byte
+		Assets []byte
+	}
 	if err := tx.WithContext(ctx).Raw(`
-		SELECT files FROM play_game_version_revisions WHERE game_version_id = ? AND number = ?
+		SELECT files, assets FROM play_game_version_revisions WHERE game_version_id = ? AND number = ?
 	`, versionID, number).Scan(&rows).Error; err != nil {
-		return nil, false, fmt.Errorf("finding revision: %s", err)
+		return draftsources.Revision{}, false, fmt.Errorf("finding revision: %s", err)
 	}
 	if len(rows) == 0 {
-		return nil, false, nil
+		return draftsources.Revision{}, false, nil
 	}
-	files := make(map[string]draftsources.File)
-	if err := json.Unmarshal(rows[0].Files, &files); err != nil {
-		return nil, false, fmt.Errorf("decoding revision files: %s", err)
+	revision := draftsources.Revision{Files: map[string]draftsources.File{}, Assets: map[string]draftsources.AssetBinding{}}
+	if err := json.Unmarshal(rows[0].Files, &revision.Files); err != nil {
+		return draftsources.Revision{}, false, fmt.Errorf("decoding revision files: %s", err)
 	}
-	return files, true, nil
+	if err := json.Unmarshal(rows[0].Assets, &revision.Assets); err != nil {
+		return draftsources.Revision{}, false, fmt.Errorf("decoding revision assets: %s", err)
+	}
+	return revision, true, nil
 }
 
 // ListRevisions returns versionID's revisions, oldest first.

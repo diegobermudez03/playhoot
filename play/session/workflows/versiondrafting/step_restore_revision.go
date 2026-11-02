@@ -23,10 +23,10 @@ import (
 // restoreRevisionRepo is RestoreRevision's own narrow persistence contract.
 type restoreRevisionRepo interface {
 	FindVersion(ctx context.Context, tx *gorm.DB, versionUUID string) (*internalrepo.Version, error)
-	ClaimChangeAttempt(ctx context.Context, tx *gorm.DB, versionID uint, idempotencyKey string, requestSHA256 string, baseRevision int64, origin string) (uint, *internalrepo.ChangeAttempt, error)
-	FindRevisionFiles(ctx context.Context, tx *gorm.DB, versionID uint, number int64) (map[string]draftsources.File, bool, error)
+	ClaimChangeAttempt(ctx context.Context, tx *gorm.DB, versionID uint, kind string, idempotencyKey string, requestSHA256 string, baseRevision int64, origin string) (uint, *internalrepo.ChangeAttempt, error)
+	FindRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64) (draftsources.Revision, bool, error)
 	AdvanceRevision(ctx context.Context, tx *gorm.DB, versionID uint, status string, base int64) (bool, error)
-	CreateRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64, files map[string]draftsources.File, source string) error
+	CreateRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64, revision draftsources.Revision, source string) error
 	CompleteChangeAttempt(ctx context.Context, tx *gorm.DB, attemptID uint, outcome string, revision *int64, diagnostics []draftsources.Diagnostic) error
 }
 
@@ -101,7 +101,7 @@ func (m *Manager) restoreRevisionInTx(ctx context.Context, tx *gorm.DB, versionU
 	if version == nil {
 		return sessionpkg.DraftChangeResult{}, fmt.Errorf("version %s: %w", versionUUID, sessionpkg.ErrDraftNotFound)
 	}
-	attemptID, existing, err := m.restoreRevisionRepo.ClaimChangeAttempt(ctx, tx, version.ID, idempotencyKey, fingerprint, baseRevision, origin)
+	attemptID, existing, err := m.restoreRevisionRepo.ClaimChangeAttempt(ctx, tx, version.ID, string(sessionpkg.DraftAttemptRestore), idempotencyKey, fingerprint, baseRevision, origin)
 	if err != nil {
 		return sessionpkg.DraftChangeResult{}, err
 	}
@@ -133,7 +133,7 @@ func (m *Manager) decideRestore(ctx context.Context, tx *gorm.DB, version *inter
 	if baseRevision != current {
 		return sessionpkg.DraftChangeResult{Outcome: sessionpkg.DraftChangeConflict, Revision: current}, nil, nil
 	}
-	files, found, err := m.restoreRevisionRepo.FindRevisionFiles(ctx, tx, version.ID, revision)
+	restored, found, err := m.restoreRevisionRepo.FindRevision(ctx, tx, version.ID, revision)
 	if err != nil {
 		return sessionpkg.DraftChangeResult{}, nil, err
 	}
@@ -141,7 +141,7 @@ func (m *Manager) decideRestore(ctx context.Context, tx *gorm.DB, version *inter
 		diagnostics := []draftsources.Diagnostic{{Code: codeRevisionNotFound, Message: fmt.Sprintf("the version has no revision %d", revision)}}
 		return sessionpkg.DraftChangeResult{Outcome: sessionpkg.DraftChangeInvalid, Revision: current, Diagnostics: changeattempt.Public(diagnostics)}, diagnostics, nil
 	}
-	currentFiles, found, err := m.restoreRevisionRepo.FindRevisionFiles(ctx, tx, version.ID, current)
+	currentRevision, found, err := m.restoreRevisionRepo.FindRevision(ctx, tx, version.ID, current)
 	if err != nil {
 		return sessionpkg.DraftChangeResult{}, nil, err
 	}
@@ -149,7 +149,7 @@ func (m *Manager) decideRestore(ctx context.Context, tx *gorm.DB, version *inter
 		monitoring.Alert(ctx, "play draft version is missing its current revision")
 		return sessionpkg.DraftChangeResult{}, nil, fmt.Errorf("version %s has no revision %d", version.UUID, current)
 	}
-	if draftsources.SameFiles(currentFiles, files) {
+	if draftsources.SameRevision(currentRevision, restored) {
 		return sessionpkg.DraftChangeResult{Outcome: sessionpkg.DraftChangeUnchanged, Revision: current}, nil, nil
 	}
 
@@ -162,8 +162,9 @@ func (m *Manager) decideRestore(ctx context.Context, tx *gorm.DB, version *inter
 		return sessionpkg.DraftChangeResult{Outcome: sessionpkg.DraftChangeConflict, Revision: current}, nil, nil
 	}
 	next := current + 1
-	// The restored revision's contents are already stored: no file is new.
-	if err := m.restoreRevisionRepo.CreateRevision(ctx, tx, version.ID, next, files, restoreSource); err != nil {
+	// The restored revision's contents and assets are already stored:
+	// nothing is new but the revision.
+	if err := m.restoreRevisionRepo.CreateRevision(ctx, tx, version.ID, next, restored, restoreSource); err != nil {
 		return sessionpkg.DraftChangeResult{}, nil, err
 	}
 	return sessionpkg.DraftChangeResult{Outcome: sessionpkg.DraftChangeApplied, Revision: next}, nil, nil

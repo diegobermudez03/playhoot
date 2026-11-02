@@ -11,6 +11,7 @@ package gameauthoring
 
 import (
 	context "context"
+	io "io"
 	reflect "reflect"
 
 	game "github.com/diegobermudez03/playhoot/game"
@@ -150,6 +151,21 @@ func (mr *MockdraftWriterMockRecorder) CreateDraftVersion(ctx, gameUUID, version
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateDraftVersion", reflect.TypeOf((*MockdraftWriter)(nil).CreateDraftVersion), ctx, gameUUID, versionUUID)
 }
 
+// RemoveAsset mocks base method.
+func (m *MockdraftWriter) RemoveAsset(ctx context.Context, versionUUID, key, idempotencyKey, origin string) (session.DraftAssetResult, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RemoveAsset", ctx, versionUUID, key, idempotencyKey, origin)
+	ret0, _ := ret[0].(session.DraftAssetResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RemoveAsset indicates an expected call of RemoveAsset.
+func (mr *MockdraftWriterMockRecorder) RemoveAsset(ctx, versionUUID, key, idempotencyKey, origin any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveAsset", reflect.TypeOf((*MockdraftWriter)(nil).RemoveAsset), ctx, versionUUID, key, idempotencyKey, origin)
+}
+
 // RestoreRevision mocks base method.
 func (m *MockdraftWriter) RestoreRevision(ctx context.Context, versionUUID string, revision, baseRevision int64, idempotencyKey, origin string) (session.DraftChangeResult, error) {
 	m.ctrl.T.Helper()
@@ -163,4 +179,19 @@ func (m *MockdraftWriter) RestoreRevision(ctx context.Context, versionUUID strin
 func (mr *MockdraftWriterMockRecorder) RestoreRevision(ctx, versionUUID, revision, baseRevision, idempotencyKey, origin any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RestoreRevision", reflect.TypeOf((*MockdraftWriter)(nil).RestoreRevision), ctx, versionUUID, revision, baseRevision, idempotencyKey, origin)
+}
+
+// UploadAsset mocks base method.
+func (m *MockdraftWriter) UploadAsset(ctx context.Context, versionUUID, key string, content io.Reader, idempotencyKey, origin string) (session.DraftAssetResult, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UploadAsset", ctx, versionUUID, key, content, idempotencyKey, origin)
+	ret0, _ := ret[0].(session.DraftAssetResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UploadAsset indicates an expected call of UploadAsset.
+func (mr *MockdraftWriterMockRecorder) UploadAsset(ctx, versionUUID, key, content, idempotencyKey, origin any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UploadAsset", reflect.TypeOf((*MockdraftWriter)(nil).UploadAsset), ctx, versionUUID, key, content, idempotencyKey, origin)
 }

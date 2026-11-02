@@ -3,6 +3,7 @@ package gameauthoring
 import (
 	"context"
 	"fmt"
+	"io"
 
 	"github.com/diegobermudez03/playhoot/game"
 	"github.com/diegobermudez03/playhoot/logging"
@@ -23,6 +24,8 @@ type draftWriter interface {
 	CreateDraftVersion(ctx context.Context, gameUUID string, versionUUID string) (sessionpkg.DraftVersion, error)
 	ApplyChanges(ctx context.Context, versionUUID string, change sessionpkg.DraftChange) (sessionpkg.DraftChangeResult, error)
 	RestoreRevision(ctx context.Context, versionUUID string, revision int64, baseRevision int64, idempotencyKey string, origin string) (sessionpkg.DraftChangeResult, error)
+	UploadAsset(ctx context.Context, versionUUID string, key string, content io.Reader, idempotencyKey string, origin string) (sessionpkg.DraftAssetResult, error)
+	RemoveAsset(ctx context.Context, versionUUID string, key string, idempotencyKey string, origin string) (sessionpkg.DraftAssetResult, error)
 }
 
 // CreatedGame is a new game with its version being built, at its first

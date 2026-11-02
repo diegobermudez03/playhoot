@@ -194,7 +194,7 @@ func run() error {
 	sessionLifecycle := sessionlifecycle.New(db, store, envVars.MaxActiveSessionsPerCreator)
 	playLifecycle := playlifecycle.New(checkplayability.New(), sessionLifecycle)
 	editableVersions := findeditableversion.New(db)
-	versionDrafting := versiondrafting.New(db)
+	versionDrafting := versiondrafting.New(db, store)
 	gameAuthoring := gameauthoring.New(gamelifecycle.New(db), editableVersions, versionDrafting)
 	gameAuthoringReads := composergameauthoring.New(editableVersions, versionDrafting)
 	owners := ownership.New(checklivesession.New(db))

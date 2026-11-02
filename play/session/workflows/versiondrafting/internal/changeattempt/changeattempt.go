@@ -62,3 +62,22 @@ func Public(diagnostics []draftsources.Diagnostic) []sessionpkg.DraftDiagnostic 
 func ValidOrigin(origin string) bool {
 	return origin == sessionpkg.DraftOriginWeb || origin == sessionpkg.DraftOriginAPI || origin == sessionpkg.DraftOriginMCP
 }
+
+// ReplayAsset answers a retried asset attempt with what the attempt that
+// holds its idempotency key decided, or reports that the key was used for
+// another request. The caller adds the bound asset.
+func ReplayAsset(ctx context.Context, existing *internalrepo.ChangeAttempt, requestSHA256 string) (sessionpkg.DraftAssetResult, error) {
+	if existing.RequestSHA256 != requestSHA256 {
+		return sessionpkg.DraftAssetResult{}, fmt.Errorf("asset attempt: %w", sessionpkg.ErrIdempotencyConflict)
+	}
+	if existing.Outcome == nil || existing.Revision == nil {
+		monitoring.Alert(ctx, "play draft asset attempt is claimed without an outcome")
+		return sessionpkg.DraftAssetResult{}, fmt.Errorf("asset attempt %d has no outcome", existing.ID)
+	}
+	return sessionpkg.DraftAssetResult{
+		Outcome:     sessionpkg.DraftAssetOutcome(*existing.Outcome),
+		Revision:    *existing.Revision,
+		Diagnostics: Public(existing.Diagnostics),
+		Replayed:    true,
+	}, nil
+}

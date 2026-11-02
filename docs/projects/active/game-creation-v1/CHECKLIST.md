@@ -15,7 +15,7 @@ Order decided by the human on 2026-11-01. Frontend items live in the frontend's 
 ## Drafts (plan delivery 1)
 
 - [x] C. Authoring project (2026-11-01): Game Management `CreateGame` (unpublished game + first edition) and `FindEditableVersion`; Play `versiondrafting` (DRAFT version with revisions, starter template, optimistic lock on the base revision, required idempotency key, every attempt recorded, restore); `orchestrator/gameauthoring` and `composer/gameauthoring`; `api/games` (`POST /v1/games`, `GET /draft`, `POST /draft/changes`, `GET /draft/revisions`, `POST /draft/restore`); Identity `CREATE_GAME` and `EDIT_GAME`. The change envelope's fields are snake_case (`base_revision`, `idempotency_key`). Smoke-tested against a running backend. 2026-11-02, from the human's review: no literal values in SQL (constants bound as parameters, inserts through GORM `Create()`); a version Play does not have yet (creation stopped between the domains) is created on demand by the orchestrator on the next edit or read, Game Management unaware, no background job; a change that changes nothing answers `unchanged` without a revision.
-- [ ] D. Draft assets: catalog, reserve / signed upload / finalize, local storage provider.
+- [x] D. Draft assets (2026-11-02): declared in `game.project.json` (`assets`: type, description, optional); upload through the backend (`PUT /draft/assets/{key}`, redesigned by the human the same day from a reserve/signed-PUT/finalize flow, standard `docs/engineering/standards/object-storage.md`: streamed and cut at the type's limit, hashed while read, real type sniffed from the bytes, registered before being stored content-addressed, bound to the key in a new revision on the current one, no base revision; at most 4 uploads in memory per instance), remove; reads list each asset's status with a signed preview link; attempts record their kind. `api/games` endpoints under `/draft/assets`. Decided by the human 2026-11-02: publishing deletes uploaded objects no published version uses, keeping their record (`play_asset_objects.deleted_at`); a new edition keeps everything until its own publication; a retention limit for unpublished drafts is post-launch. That cleanup belongs to J.
 - [ ] E. Build jobs: in-process queue, Go runs the Node toolchain, pinned inputs, structured diagnostics.
 - [ ] F. AI access by project link and the creation API; context page readable by an AI.
 
@@ -27,5 +27,5 @@ Order decided by the human on 2026-11-01. Frontend items live in the frontend's 
 ## Publish (plan delivery 3)
 
 - [ ] I. MCP server and OAuth for AIs (separate AI attempt/session tables in Identity).
-- [ ] J. Publication: release, register and activate in play, catalog, real playability check, sessions pinned to the authorized version.
+- [ ] J. Publication: release, register and activate in play, catalog, real playability check, sessions pinned to the authorized version; required assets present; delete the uploaded asset objects no published version uses (record kept in play_asset_objects.deleted_at).
 - [ ] K. Templates and remix.

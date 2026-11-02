@@ -59,9 +59,9 @@ func (mr *MockapplyChangesRepoMockRecorder) AdvanceRevision(ctx, tx, versionID, 
 }
 
 // ClaimChangeAttempt mocks base method.
-func (m *MockapplyChangesRepo) ClaimChangeAttempt(ctx context.Context, tx *gorm.DB, versionID uint, idempotencyKey, requestSHA256 string, baseRevision int64, origin string) (uint, *repo.ChangeAttempt, error) {
+func (m *MockapplyChangesRepo) ClaimChangeAttempt(ctx context.Context, tx *gorm.DB, versionID uint, kind, idempotencyKey, requestSHA256 string, baseRevision int64, origin string) (uint, *repo.ChangeAttempt, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ClaimChangeAttempt", ctx, tx, versionID, idempotencyKey, requestSHA256, baseRevision, origin)
+	ret := m.ctrl.Call(m, "ClaimChangeAttempt", ctx, tx, versionID, kind, idempotencyKey, requestSHA256, baseRevision, origin)
 	ret0, _ := ret[0].(uint)
 	ret1, _ := ret[1].(*repo.ChangeAttempt)
 	ret2, _ := ret[2].(error)
@@ -69,9 +69,9 @@ func (m *MockapplyChangesRepo) ClaimChangeAttempt(ctx context.Context, tx *gorm.
 }
 
 // ClaimChangeAttempt indicates an expected call of ClaimChangeAttempt.
-func (mr *MockapplyChangesRepoMockRecorder) ClaimChangeAttempt(ctx, tx, versionID, idempotencyKey, requestSHA256, baseRevision, origin any) *gomock.Call {
+func (mr *MockapplyChangesRepoMockRecorder) ClaimChangeAttempt(ctx, tx, versionID, kind, idempotencyKey, requestSHA256, baseRevision, origin any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClaimChangeAttempt", reflect.TypeOf((*MockapplyChangesRepo)(nil).ClaimChangeAttempt), ctx, tx, versionID, idempotencyKey, requestSHA256, baseRevision, origin)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClaimChangeAttempt", reflect.TypeOf((*MockapplyChangesRepo)(nil).ClaimChangeAttempt), ctx, tx, versionID, kind, idempotencyKey, requestSHA256, baseRevision, origin)
 }
 
 // CompleteChangeAttempt mocks base method.
@@ -89,33 +89,33 @@ func (mr *MockapplyChangesRepoMockRecorder) CompleteChangeAttempt(ctx, tx, attem
 }
 
 // CreateRevision mocks base method.
-func (m *MockapplyChangesRepo) CreateRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64, files map[string]draftsources.File, source string) error {
+func (m *MockapplyChangesRepo) CreateRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64, revision draftsources.Revision, source string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateRevision", ctx, tx, versionID, number, files, source)
+	ret := m.ctrl.Call(m, "CreateRevision", ctx, tx, versionID, number, revision, source)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // CreateRevision indicates an expected call of CreateRevision.
-func (mr *MockapplyChangesRepoMockRecorder) CreateRevision(ctx, tx, versionID, number, files, source any) *gomock.Call {
+func (mr *MockapplyChangesRepoMockRecorder) CreateRevision(ctx, tx, versionID, number, revision, source any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateRevision", reflect.TypeOf((*MockapplyChangesRepo)(nil).CreateRevision), ctx, tx, versionID, number, files, source)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateRevision", reflect.TypeOf((*MockapplyChangesRepo)(nil).CreateRevision), ctx, tx, versionID, number, revision, source)
 }
 
-// FindRevisionFiles mocks base method.
-func (m *MockapplyChangesRepo) FindRevisionFiles(ctx context.Context, tx *gorm.DB, versionID uint, number int64) (map[string]draftsources.File, bool, error) {
+// FindRevision mocks base method.
+func (m *MockapplyChangesRepo) FindRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64) (draftsources.Revision, bool, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "FindRevisionFiles", ctx, tx, versionID, number)
-	ret0, _ := ret[0].(map[string]draftsources.File)
+	ret := m.ctrl.Call(m, "FindRevision", ctx, tx, versionID, number)
+	ret0, _ := ret[0].(draftsources.Revision)
 	ret1, _ := ret[1].(bool)
 	ret2, _ := ret[2].(error)
 	return ret0, ret1, ret2
 }
 
-// FindRevisionFiles indicates an expected call of FindRevisionFiles.
-func (mr *MockapplyChangesRepoMockRecorder) FindRevisionFiles(ctx, tx, versionID, number any) *gomock.Call {
+// FindRevision indicates an expected call of FindRevision.
+func (mr *MockapplyChangesRepoMockRecorder) FindRevision(ctx, tx, versionID, number any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindRevisionFiles", reflect.TypeOf((*MockapplyChangesRepo)(nil).FindRevisionFiles), ctx, tx, versionID, number)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindRevision", reflect.TypeOf((*MockapplyChangesRepo)(nil).FindRevision), ctx, tx, versionID, number)
 }
 
 // FindVersion mocks base method.

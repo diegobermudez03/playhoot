@@ -5,6 +5,7 @@ package games
 
 import (
 	"context"
+	"io"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -39,6 +40,8 @@ type gameCreator interface {
 type draftEditor interface {
 	ApplyDraftChanges(ctx context.Context, userUUID string, gameUUID string, change sessionpkg.DraftChange) (gameauthoring.DraftEdit, error)
 	RestoreDraftRevision(ctx context.Context, userUUID string, gameUUID string, revision int64, baseRevision int64, idempotencyKey string, origin string) (gameauthoring.DraftEdit, error)
+	UploadDraftAsset(ctx context.Context, userUUID string, gameUUID string, key string, content io.Reader, idempotencyKey string, origin string) (gameauthoring.DraftAssetEdit, error)
+	RemoveDraftAsset(ctx context.Context, userUUID string, gameUUID string, key string, idempotencyKey string, origin string) (gameauthoring.DraftAssetEdit, error)
 	// EnsureDraft creates in Play the version being built that a read found
 	// missing there, answering Game Management's edit decision.
 	EnsureDraft(ctx context.Context, userUUID string, gameUUID string) (game.EditableVersionOutcome, error)
@@ -73,6 +76,8 @@ func (h *Handler) RESTRoutes() []routing.Route {
 		{Pattern: "POST /v1/games/{gameUUID}/draft/changes", Handler: h.handleApplyDraftChanges, Authorization: edit},
 		{Pattern: "GET /v1/games/{gameUUID}/draft/revisions", Handler: h.handleListDraftRevisions, Authorization: edit},
 		{Pattern: "POST /v1/games/{gameUUID}/draft/restore", Handler: h.handleRestoreDraftRevision, Authorization: edit},
+		{Pattern: "PUT /v1/games/{gameUUID}/draft/assets/{key}", Handler: h.handleUploadAsset, Authorization: edit},
+		{Pattern: "POST /v1/games/{gameUUID}/draft/assets/{key}/remove", Handler: h.handleRemoveAsset, Authorization: edit},
 	}
 }
 

@@ -80,12 +80,13 @@ func TestRevisionsAndContents(t *testing.T) {
 	_, versionID := seedDraft(t, repo, db)
 
 	files := map[string]draftsources.File{"notes.md": {SHA256: draftsources.SHA256Hex("hi"), Size: 2}}
-	require.NoError(t, repo.CreateRevision(ctx, db, versionID, 1, files, "template"))
-	found, ok, err := repo.FindRevisionFiles(ctx, db, versionID, 1)
+	assets := map[string]draftsources.AssetBinding{"cardBack": {SHA256: draftsources.SHA256Hex("png"), Size: 3, MIMEType: "image/png"}}
+	require.NoError(t, repo.CreateRevision(ctx, db, versionID, 1, draftsources.Revision{Files: files, Assets: assets}, "template"))
+	found, ok, err := repo.FindRevision(ctx, db, versionID, 1)
 	require.NoError(t, err)
 	require.True(t, ok)
-	require.Equal(t, files, found)
-	_, ok, err = repo.FindRevisionFiles(ctx, db, versionID, 2)
+	require.Equal(t, draftsources.Revision{Files: files, Assets: assets}, found)
+	_, ok, err = repo.FindRevision(ctx, db, versionID, 2)
 	require.NoError(t, err)
 	require.False(t, ok)
 
@@ -108,7 +109,7 @@ func TestChangeAttempts(t *testing.T) {
 	ctx := context.Background()
 	_, versionID := seedDraft(t, repo, db)
 
-	claimedID, existing, err := repo.ClaimChangeAttempt(ctx, db, versionID, "key", "sha", 1, "web")
+	claimedID, existing, err := repo.ClaimChangeAttempt(ctx, db, versionID, "asset_upload", "key", "sha", 1, "web")
 	require.NoError(t, err)
 	require.NotZero(t, claimedID)
 	require.Nil(t, existing)
@@ -118,18 +119,39 @@ func TestChangeAttempts(t *testing.T) {
 	require.NoError(t, repo.CompleteChangeAttempt(ctx, db, claimedID, "invalid", &revision, diagnostics))
 	require.Error(t, repo.CompleteChangeAttempt(ctx, db, claimedID, "applied", &revision, nil), "an attempt is completed once")
 
-	againID, again, err := repo.ClaimChangeAttempt(ctx, db, versionID, "key", "other", 1, "api")
+	againID, again, err := repo.ClaimChangeAttempt(ctx, db, versionID, "change", "key", "other", 1, "api")
 	require.NoError(t, err)
 	require.Zero(t, againID)
 	require.Equal(t, "sha", again.RequestSHA256)
+	require.Equal(t, "asset_upload", again.Kind, "the claim keeps the kind it was made with")
 	require.Equal(t, "invalid", *again.Outcome)
 	require.Equal(t, diagnostics, again.Diagnostics)
 
-	open, _, err := repo.ClaimChangeAttempt(ctx, db, versionID, "open", "sha", 1, "web")
+	open, _, err := repo.ClaimChangeAttempt(ctx, db, versionID, "change", "open", "sha", 1, "web")
 	require.NoError(t, err)
 	recent, err := repo.RecentChangeAttempts(ctx, db, versionID, 10)
 	require.NoError(t, err)
 	require.Len(t, recent, 1, "an attempt still open is not listed")
 	require.Equal(t, claimedID, recent[0].ID)
 	require.NotZero(t, open)
+
+	found, err := repo.FindChangeAttempt(ctx, db, versionID, "key")
+	require.NoError(t, err)
+	require.Equal(t, claimedID, found.ID)
+	missing, err := repo.FindChangeAttempt(ctx, db, versionID, "never")
+	require.NoError(t, err)
+	require.Nil(t, missing)
+}
+
+func TestAssetObjects(t *testing.T) {
+	db := testdb.OpenSessionDB(t)
+	repo := New(db)
+	ctx := context.Background()
+
+	hash := draftsources.SHA256Hex("png-" + uuid.NewString())
+	require.NoError(t, repo.RegisterAssetObject(ctx, db, hash, 3, "image/png", "game-versions/assets/"+hash))
+	require.NoError(t, repo.RegisterAssetObject(ctx, db, hash, 3, "image/png", "game-versions/assets/"+hash), "registering the same content again changes nothing")
+	keys, err := repo.FindAssetObjectKeys(ctx, db, []string{hash, "absent"})
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{hash: "game-versions/assets/" + hash}, keys)
 }

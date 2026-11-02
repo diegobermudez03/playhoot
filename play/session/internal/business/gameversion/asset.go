@@ -69,6 +69,28 @@ func ValidateAsset(asset Asset) error {
 	return nil
 }
 
+// ValidAssetKey reports whether key may name an asset.
+func ValidAssetKey(key string) bool {
+	return assetKeyPattern.MatchString(key)
+}
+
+// ValidAssetType reports whether assetType is in the catalog.
+func ValidAssetType(assetType AssetType) bool {
+	_, ok := assetRules[assetType]
+	return ok
+}
+
+// AcceptsMIMEType reports whether an asset of assetType may have mimeType.
+func AcceptsMIMEType(assetType AssetType, mimeType string) bool {
+	return assetRules[assetType].mimeTypes[mimeType]
+}
+
+// MaxAssetBytes is the most one asset of assetType may weigh; 0 for a type
+// outside the catalog.
+func MaxAssetBytes(assetType AssetType) int64 {
+	return assetRules[assetType].maxBytes
+}
+
 // ValidateAssets reports why assets, a version's set, break Playhoot's asset
 // rules: each asset's, unique keys and the total weight; nil when none.
 func ValidateAssets(assets []Asset) error {

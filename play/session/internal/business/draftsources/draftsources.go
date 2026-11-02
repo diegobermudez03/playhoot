@@ -128,6 +128,12 @@ func Apply(current map[string]File, writes []Write, deletes []string) Applied {
 			refuse(write.Path, CodeFileTooLarge, fmt.Sprintf("the file has %d bytes; the limit is %d", len(write.Content), MaxFileBytes))
 			continue
 		}
+		if write.Path == ProjectFile {
+			if _, invalid := DeclaredAssets(write.Content); len(invalid) > 0 {
+				diagnostics = append(diagnostics, invalid...)
+				continue
+			}
+		}
 		hash := SHA256Hex(write.Content)
 		next[write.Path] = File{SHA256: hash, Size: int64(len(write.Content))}
 		contents[hash] = write.Content

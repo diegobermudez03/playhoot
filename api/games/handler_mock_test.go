@@ -11,6 +11,7 @@ package games
 
 import (
 	context "context"
+	io "io"
 	reflect "reflect"
 
 	gameauthoring "github.com/diegobermudez03/playhoot/composer/gameauthoring"
@@ -113,6 +114,21 @@ func (mr *MockdraftEditorMockRecorder) EnsureDraft(ctx, userUUID, gameUUID any) 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EnsureDraft", reflect.TypeOf((*MockdraftEditor)(nil).EnsureDraft), ctx, userUUID, gameUUID)
 }
 
+// RemoveDraftAsset mocks base method.
+func (m *MockdraftEditor) RemoveDraftAsset(ctx context.Context, userUUID, gameUUID, key, idempotencyKey, origin string) (gameauthoring0.DraftAssetEdit, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RemoveDraftAsset", ctx, userUUID, gameUUID, key, idempotencyKey, origin)
+	ret0, _ := ret[0].(gameauthoring0.DraftAssetEdit)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RemoveDraftAsset indicates an expected call of RemoveDraftAsset.
+func (mr *MockdraftEditorMockRecorder) RemoveDraftAsset(ctx, userUUID, gameUUID, key, idempotencyKey, origin any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveDraftAsset", reflect.TypeOf((*MockdraftEditor)(nil).RemoveDraftAsset), ctx, userUUID, gameUUID, key, idempotencyKey, origin)
+}
+
 // RestoreDraftRevision mocks base method.
 func (m *MockdraftEditor) RestoreDraftRevision(ctx context.Context, userUUID, gameUUID string, revision, baseRevision int64, idempotencyKey, origin string) (gameauthoring0.DraftEdit, error) {
 	m.ctrl.T.Helper()
@@ -126,6 +142,21 @@ func (m *MockdraftEditor) RestoreDraftRevision(ctx context.Context, userUUID, ga
 func (mr *MockdraftEditorMockRecorder) RestoreDraftRevision(ctx, userUUID, gameUUID, revision, baseRevision, idempotencyKey, origin any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RestoreDraftRevision", reflect.TypeOf((*MockdraftEditor)(nil).RestoreDraftRevision), ctx, userUUID, gameUUID, revision, baseRevision, idempotencyKey, origin)
+}
+
+// UploadDraftAsset mocks base method.
+func (m *MockdraftEditor) UploadDraftAsset(ctx context.Context, userUUID, gameUUID, key string, content io.Reader, idempotencyKey, origin string) (gameauthoring0.DraftAssetEdit, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UploadDraftAsset", ctx, userUUID, gameUUID, key, content, idempotencyKey, origin)
+	ret0, _ := ret[0].(gameauthoring0.DraftAssetEdit)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UploadDraftAsset indicates an expected call of UploadDraftAsset.
+func (mr *MockdraftEditorMockRecorder) UploadDraftAsset(ctx, userUUID, gameUUID, key, content, idempotencyKey, origin any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UploadDraftAsset", reflect.TypeOf((*MockdraftEditor)(nil).UploadDraftAsset), ctx, userUUID, gameUUID, key, content, idempotencyKey, origin)
 }
 
 // MockdraftReader is a mock of draftReader interface.

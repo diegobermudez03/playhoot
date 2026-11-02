@@ -24,6 +24,7 @@ This index routes engineers and AI agents to accepted reusable engineering stand
 | Natural vs. request/command idempotency, required tokens, replay/conflict semantics, replayed-outcome-vs-error distinction, claim mechanism contract, idempotency responsibility ownership | `idempotency.md` |
 | Source-code comment purpose and style: what comments should/should not explain, length limit, placeholders, exported comments naming unexported identifiers, per-symbol-kind guidance, task/history comments, comment-only refactors | `code-comments.md` |
 | Operational metrics: who owns/declares a metric (domain owner of the logic vs. entry point), closed label values and cardinality, central HTTP request metrics, context + request-log correlation, naming | `metrics.md` |
+| Object storage: when a signed URL is issued (only when the backend never touches the bytes), receiving uploads (streamed, cut at the limit, hashed, checked before storing), writing an object and its reference (bytes first, content-addressed keys, intent registry) | `object-storage.md` |
 | Where the per-request log (`logging.Start`/`Step`/`LogFields`/`FinishRequestLog`) is started and flushed; entry-point vs. domain responsibility; per-message logging on a long-lived connection | `logging.md` |
 
 This initial set was extracted from the previously canonical `AGENTS.md -> Project Patterns`.

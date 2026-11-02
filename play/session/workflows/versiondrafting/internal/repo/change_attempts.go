@@ -16,6 +16,7 @@ import (
 // Outcome, Revision and Diagnostics are nil until it is completed.
 type ChangeAttempt struct {
 	ID            uint
+	Kind          string
 	RequestSHA256 string
 	BaseRevision  int64
 	Origin        string
@@ -27,6 +28,7 @@ type ChangeAttempt struct {
 
 type changeAttemptRow struct {
 	ID            uint
+	Kind          string
 	RequestSHA256 string `gorm:"column:request_sha256"`
 	BaseRevision  int64
 	Origin        string
@@ -40,6 +42,7 @@ type changeAttemptRow struct {
 type changeAttemptClaimRow struct {
 	ID             uint
 	GameVersionID  uint
+	Kind           string
 	IdempotencyKey string
 	RequestSHA256  string `gorm:"column:request_sha256"`
 	BaseRevision   int64
@@ -51,7 +54,7 @@ func (changeAttemptClaimRow) TableName() string { return "play_game_version_chan
 
 func (row changeAttemptRow) attempt() (ChangeAttempt, error) {
 	attempt := ChangeAttempt{
-		ID: row.ID, RequestSHA256: row.RequestSHA256, BaseRevision: row.BaseRevision, Origin: row.Origin,
+		ID: row.ID, Kind: row.Kind, RequestSHA256: row.RequestSHA256, BaseRevision: row.BaseRevision, Origin: row.Origin,
 		Outcome: row.Outcome, Revision: row.Revision, CreatedAt: row.CreatedAt,
 	}
 	if len(row.Diagnostics) > 0 {
@@ -63,15 +66,15 @@ func (row changeAttemptRow) attempt() (ChangeAttempt, error) {
 }
 
 const selectChangeAttempt = `
-	SELECT id, request_sha256, base_revision, origin, outcome, revision, diagnostics, created_at
+	SELECT id, kind, request_sha256, base_revision, origin, outcome, revision, diagnostics, created_at
 	FROM play_game_version_change_attempts
 `
 
-// ClaimChangeAttempt claims (versionID, idempotencyKey), or returns the
-// attempt that already holds it. A concurrent claim of the same key waits for
-// the first transaction and then sees its attempt.
-func (r *Repo) ClaimChangeAttempt(ctx context.Context, tx *gorm.DB, versionID uint, idempotencyKey string, requestSHA256 string, baseRevision int64, origin string) (uint, *ChangeAttempt, error) {
-	claimRow := changeAttemptClaimRow{GameVersionID: versionID, IdempotencyKey: idempotencyKey, RequestSHA256: requestSHA256, BaseRevision: baseRevision, Origin: origin}
+// ClaimChangeAttempt claims (versionID, idempotencyKey) for an attempt of
+// kind, or returns the attempt that already holds it. A concurrent claim of
+// the same key waits for the first transaction and then sees its attempt.
+func (r *Repo) ClaimChangeAttempt(ctx context.Context, tx *gorm.DB, versionID uint, kind string, idempotencyKey string, requestSHA256 string, baseRevision int64, origin string) (uint, *ChangeAttempt, error) {
+	claimRow := changeAttemptClaimRow{GameVersionID: versionID, Kind: kind, IdempotencyKey: idempotencyKey, RequestSHA256: requestSHA256, BaseRevision: baseRevision, Origin: origin}
 	claim := tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&claimRow)
 	if claim.Error != nil {
 		return 0, nil, fmt.Errorf("claiming change attempt: %s", claim.Error)
@@ -132,4 +135,22 @@ func (r *Repo) RecentChangeAttempts(ctx context.Context, tx *gorm.DB, versionID 
 		attempts = append(attempts, attempt)
 	}
 	return attempts, nil
+}
+
+// FindChangeAttempt returns the attempt holding (versionID, idempotencyKey),
+// or nil.
+func (r *Repo) FindChangeAttempt(ctx context.Context, tx *gorm.DB, versionID uint, idempotencyKey string) (*ChangeAttempt, error) {
+	var rows []changeAttemptRow
+	if err := tx.WithContext(ctx).Raw(selectChangeAttempt+`WHERE game_version_id = ? AND idempotency_key = ?`,
+		versionID, idempotencyKey).Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("finding change attempt: %s", err)
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	attempt, err := rows[0].attempt()
+	if err != nil {
+		return nil, err
+	}
+	return &attempt, nil
 }

@@ -36,7 +36,9 @@ type test struct {
 	method       string
 	target       string
 	gameUUID     string
+	pathValues   map[string]string
 	body         string
+	headers      map[string]string
 	expectedCode int
 	expectedBody string
 	noStore      bool
@@ -58,6 +60,12 @@ func run(t *testing.T, tests map[string]func(t *testing.T, deps dependencies) te
 			request := httptest.NewRequest(tc.method, tc.target, strings.NewReader(tc.body)).WithContext(callerCtx())
 			if tc.gameUUID != "" {
 				request.SetPathValue("gameUUID", tc.gameUUID)
+			}
+			for name, value := range tc.pathValues {
+				request.SetPathValue(name, value)
+			}
+			for name, value := range tc.headers {
+				request.Header.Set(name, value)
 			}
 			recorder := httptest.NewRecorder()
 			handle(h)(recorder, request)
@@ -114,8 +122,12 @@ func TestHandleReadDraft(t *testing.T) {
 		VersionUUID: versionUUID, GameUUID: gameUUID, Status: "DRAFT", CurrentRevision: 2, Revision: 2,
 		Files: []sessionpkg.DraftFile{{Path: "server/game.ts", SHA256: "abc", Size: 11, Content: &content}},
 		Attempts: []sessionpkg.DraftChangeAttempt{
-			{Outcome: sessionpkg.DraftChangeApplied, BaseRevision: 1, Revision: &revision, Origin: "web", CreatedAt: created},
-			{Outcome: sessionpkg.DraftChangeInvalid, BaseRevision: 1, Origin: "web", Diagnostics: []sessionpkg.DraftDiagnostic{{Path: "/x", Code: "invalid_path", Message: "bad"}}, CreatedAt: created},
+			{Kind: sessionpkg.DraftAttemptAssetUpload, Outcome: string(sessionpkg.DraftAssetAttached), BaseRevision: 1, Revision: &revision, Origin: "web", CreatedAt: created},
+			{Kind: sessionpkg.DraftAttemptChange, Outcome: string(sessionpkg.DraftChangeInvalid), BaseRevision: 1, Origin: "web", Diagnostics: []sessionpkg.DraftDiagnostic{{Path: "/x", Code: "invalid_path", Message: "bad"}}, CreatedAt: created},
+		},
+		Assets: []sessionpkg.DraftAsset{
+			{Key: "cardBack", Type: "image", Description: "Card back", Status: sessionpkg.DraftAssetReady, SHA256: "p", Size: 3, MIMEType: "image/png", URL: "https://asset", URLExpiresAt: created},
+			{Key: "flip", Type: "audio", Description: "Flip", Optional: true, Status: sessionpkg.DraftAssetMissing},
 		},
 	}
 	get := func(target string) test {
@@ -129,8 +141,11 @@ func TestHandleReadDraft(t *testing.T) {
 			tc.expectedCode = http.StatusOK
 			tc.expectedBody = `{"game_uuid":"` + gameUUID + `","version_uuid":"` + versionUUID + `","status":"DRAFT","current_revision":2,"revision":2,
 				"files":[{"path":"server/game.ts","sha256":"abc","size":11,"content":"export {};\n"}],
-				"attempts":[{"outcome":"applied","base_revision":1,"revision":2,"origin":"web","diagnostics":[],"created_at":"2026-11-01T12:00:00Z"},
-					{"outcome":"invalid","base_revision":1,"origin":"web","diagnostics":[{"path":"/x","code":"invalid_path","message":"bad"}],"created_at":"2026-11-01T12:00:00Z"}]}`
+				"assets":[{"key":"cardBack","type":"image","description":"Card back","optional":false,"status":"ready","sha256":"p","size":3,"mime_type":"image/png","url":"https://asset","url_expires_at":"2026-11-01T12:00:00Z"},
+					{"key":"flip","type":"audio","description":"Flip","optional":true,"status":"missing"}],
+				"asset_diagnostics":[],
+				"attempts":[{"kind":"asset_upload","outcome":"attached","base_revision":1,"revision":2,"origin":"web","diagnostics":[],"created_at":"2026-11-01T12:00:00Z"},
+					{"kind":"change","outcome":"invalid","base_revision":1,"origin":"web","diagnostics":[{"path":"/x","code":"invalid_path","message":"bad"}],"created_at":"2026-11-01T12:00:00Z"}]}`
 			return tc
 		},
 		"a_given_revision_without_content": func(t *testing.T, deps dependencies) test {

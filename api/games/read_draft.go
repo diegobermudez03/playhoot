@@ -26,6 +26,7 @@ type diagnosticResponse struct {
 }
 
 type attemptResponse struct {
+	Kind         string               `json:"kind"`
 	Outcome      string               `json:"outcome"`
 	BaseRevision int64                `json:"base_revision"`
 	Revision     *int64               `json:"revision,omitempty"`
@@ -41,7 +42,11 @@ type draftResponse struct {
 	CurrentRevision int64               `json:"current_revision"`
 	Revision        int64               `json:"revision"`
 	Files           []draftFileResponse `json:"files"`
-	Attempts        []attemptResponse   `json:"attempts"`
+	Assets          []assetResponse     `json:"assets"`
+	// AssetDiagnostics say why no asset is declared when game.project.json
+	// cannot be read.
+	AssetDiagnostics []diagnosticResponse `json:"asset_diagnostics"`
+	Attempts         []attemptResponse    `json:"attempts"`
 }
 
 type revisionResponse struct {
@@ -116,7 +121,8 @@ func (h *Handler) handleReadDraft(w http.ResponseWriter, r *http.Request) {
 	attempts := make([]attemptResponse, len(snapshot.Attempts))
 	for i, attempt := range snapshot.Attempts {
 		attempts[i] = attemptResponse{
-			Outcome:      string(attempt.Outcome),
+			Kind:         string(attempt.Kind),
+			Outcome:      attempt.Outcome,
 			BaseRevision: attempt.BaseRevision,
 			Revision:     attempt.Revision,
 			Origin:       attempt.Origin,
@@ -124,14 +130,20 @@ func (h *Handler) handleReadDraft(w http.ResponseWriter, r *http.Request) {
 			CreatedAt:    attempt.CreatedAt,
 		}
 	}
+	assets := make([]assetResponse, len(snapshot.Assets))
+	for i, asset := range snapshot.Assets {
+		assets[i] = assetBody(asset)
+	}
 	httpx.WriteJSON(w, http.StatusOK, draftResponse{
-		GameUUID:        snapshot.GameUUID,
-		VersionUUID:     snapshot.VersionUUID,
-		Status:          snapshot.Status,
-		CurrentRevision: snapshot.CurrentRevision,
-		Revision:        snapshot.Revision,
-		Files:           files,
-		Attempts:        attempts,
+		GameUUID:         snapshot.GameUUID,
+		VersionUUID:      snapshot.VersionUUID,
+		Status:           snapshot.Status,
+		CurrentRevision:  snapshot.CurrentRevision,
+		Revision:         snapshot.Revision,
+		Files:            files,
+		Assets:           assets,
+		AssetDiagnostics: diagnostics(snapshot.AssetDiagnostics),
+		Attempts:         attempts,
 	})
 }
 

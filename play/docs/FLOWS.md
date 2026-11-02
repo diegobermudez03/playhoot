@@ -288,3 +288,15 @@ Decided by the human 2026-10-25: a SAMPLE or COMMAND that the game does not decl
 2. **Change** (`ApplyChanges(versionUUID, change)`), one transaction: find the version (`ErrDraftNotFound`); claim the idempotency key (`ON CONFLICT DO NOTHING`; a claimed key replays its decision, or is `ErrIdempotencyConflict` for another request); decide `not_editable` (not a DRAFT), `conflict` (base is not current), `invalid` (source rules over the current revision's files), `unchanged` (every file would stay as the current revision has it: no revision is created); otherwise advance `current_revision` from the base with a conditional update (no row: `conflict`, a concurrent change won), store the new contents by hash and write the revision with the change's origin as source; complete the attempt with the outcome, the revision and the diagnostics.
 3. **Restore** (`RestoreRevision`): the same, deciding `invalid` when the revision does not exist, `unchanged` when its files equal the current ones, and writing the next revision with that revision's files (`restore`).
 4. **Read** (`ReadDraft`, `ListRevisions`): one transaction each; a revision past the current one is `ErrDraftRevisionNotFound`; a revision or content missing up to the current revision is broken data (an alert and an error).
+
+### Draft assets
+
+Added 2026-11-02, redesigned the same day so the bytes pass through the backend (`docs/engineering/standards/object-storage.md`). `UploadAsset(versionUUID, key, content, idempotencyKey, origin)`:
+
+1. One transaction reads before any byte: the version (`ErrDraftNotFound`, so the orchestrator can create it and send the unread content again), the attempt already holding the key, and the key's declaration in the current revision. Without an attempt, `not_editable` or `not_declared` is answered at once and recorded under a generated key, leaving the caller's free.
+2. A slot of the instance's 4 for uploads held in memory, waited for at most 2 s (`ErrUploadsBusy`).
+3. The content is read up to the declared type's limit plus one byte, hashed while read; past the limit it is `too_large` (recorded like step 1). Empty content or a real type the declaration does not accept is `invalid`. A retry is answered from its attempt when it sent the same content, and is `ErrIdempotencyConflict` otherwise.
+4. Valid content is registered in `play_asset_objects` (one transaction, idempotent by hash) and then stored content-addressed.
+5. One transaction claims the attempt and decides on the current revision: `not_editable`, `not_declared` (the declaration changed meanwhile), `invalid` content, `unchanged` when the key already holds that content, `invalid` past 100 MiB in all; otherwise it binds the content in a new revision on the current one, retrying on top of a source change that committed meanwhile.
+
+`RemoveAsset` unbinds a key the same way. A change of the sources keeps the bindings; a restore brings back the revision's bindings too.
