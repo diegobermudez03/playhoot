@@ -77,6 +77,11 @@ type envVariables struct {
 	MaxLiveConnections int
 	MaxLiveSessions    int
 
+	// MaxActiveSessionsPerCreator is how many active Sessions one creator may
+	// have at once (PLAY_MAX_ACTIVE_SESSIONS_PER_CREATOR). Optional, zero
+	// takes the default: one.
+	MaxActiveSessionsPerCreator int
+
 	// IdentityAccessTokenKey signs access tokens (at least 32 bytes). Required
 	// in production; elsewhere a random key is generated when unset, so access
 	// tokens do not survive a restart (refresh tokens do).
@@ -181,7 +186,7 @@ func run() error {
 		}
 	}()
 
-	sessionLifecycle := sessionlifecycle.New(db, store)
+	sessionLifecycle := sessionlifecycle.New(db, store, envVars.MaxActiveSessionsPerCreator)
 	playLifecycle := playlifecycle.New(checkplayability.New(), sessionLifecycle)
 	owners := ownership.New(checklivesession.New(db))
 	replayRecorder := replayrecording.New(storereplaychunk.New(db, store), envVars.Replay)
@@ -368,6 +373,9 @@ func readEnvVariables() (*envVariables, error) {
 		return nil, err
 	}
 	if envVars.MaxLiveConnections, err = optionalPositiveInt("LIVE_MAX_CONNECTIONS"); err != nil {
+		return nil, err
+	}
+	if envVars.MaxActiveSessionsPerCreator, err = optionalPositiveInt("PLAY_MAX_ACTIVE_SESSIONS_PER_CREATOR"); err != nil {
 		return nil, err
 	}
 	if envVars.MaxLiveSessions, err = optionalPositiveInt("RUNTIME_MAX_LIVE_SESSIONS"); err != nil {

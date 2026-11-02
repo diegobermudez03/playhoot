@@ -27,6 +27,8 @@ func TestAttachAdmin(t *testing.T) {
 		expectedRejection   runtime.RejectReason
 		expectedErr         bool
 		expectedAdminsAfter int
+		// noController: the attach must not bring a controller to life.
+		noController bool
 	}
 
 	const (
@@ -91,6 +93,7 @@ func TestAttachAdmin(t *testing.T) {
 				ownerEpoch:        1,
 				expectedOutcome:   runtime.AttachRejected,
 				expectedRejection: runtime.RejectNotCreator,
+				noController:      true,
 			}
 		},
 		"session_not_found": func(t *testing.T, deps dependencies) test {
@@ -116,7 +119,7 @@ func TestAttachAdmin(t *testing.T) {
 		},
 		"eligibility_check_fails": func(t *testing.T, deps dependencies) test {
 			deps.sessions.EXPECT().EligibleToJoinAsAdmin(ctx, sessionUUID, creatorUUID).Return(sessionpkg.AdminJoinEligibility(""), errors.New("database down"))
-			return test{ownerEpoch: 1, expectedErr: true}
+			return test{ownerEpoch: 1, expectedErr: true, noController: true}
 		},
 		"unknown_eligibility": func(t *testing.T, deps dependencies) test {
 			deps.sessions.EXPECT().EligibleToJoinAsAdmin(ctx, sessionUUID, creatorUUID).Return(sessionpkg.AdminJoinEligibility("something_new"), nil)
@@ -137,7 +140,11 @@ func TestAttachAdmin(t *testing.T) {
 
 			result, err := resolver.AttachAdmin(ctx, sessionUUID, creatorUUID, tc.ownerEpoch)
 
-			require.Contains(t, resolver.controllers, sessionUUID, "the controller exists whatever the answer")
+			if tc.noController {
+				require.NotContains(t, resolver.controllers, sessionUUID, "no controller for someone who cannot be its admin")
+			} else {
+				require.Contains(t, resolver.controllers, sessionUUID)
+			}
 
 			if tc.expectedErr {
 				require.Error(t, err)

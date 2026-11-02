@@ -57,7 +57,7 @@ Allows different retention and permissions. Deferred: the same bucket with a `re
 ## Canonical Knowledge Impact
 
 - `play/CURRENT_STATE.md`, `play/docs/DATA_MODEL.md`, `play/docs/FLOWS.md`, `play/README.md`.
-- `docs/projects/active/session-runtime-v1/CHECKLIST.md` section R.
+- `docs/projects/completed/session-runtime-v1/CHECKLIST.md` section R.
 
 ## Implementation Impact
 

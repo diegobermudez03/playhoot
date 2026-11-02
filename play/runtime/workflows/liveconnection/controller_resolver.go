@@ -183,6 +183,14 @@ func randomSeed() uint64 {
 	return binary.LittleEndian.Uint64(seed[:])
 }
 
+// hasController reports whether sessionUUID has a controller on this instance.
+func (r *ControllerResolver) hasController(sessionUUID string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	_, found := r.controllers[sessionUUID]
+	return found
+}
+
 // controllerFor returns sessionUUID's controller under epoch, creating it
 // when there is none, whatever the connection asking for it turns out to be.
 // A controller from an older epoch is retired and replaced. Without a

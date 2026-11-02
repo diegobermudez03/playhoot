@@ -36,7 +36,7 @@ func TestRecordOwnerHeartbeatIntegration(t *testing.T) {
 		},
 		"ended_session_tells_how_it_ended": func(t *testing.T) test {
 			session := seedStartableSession(t, db, store, "RUNNING", now.Add(time.Hour))
-			_, err := New(db, store).EndSession(context.Background(), session.UUID, sessionpkg.SessionEnd{Cause: sessionpkg.EndOwnerLost})
+			_, err := New(db, store, 0).EndSession(context.Background(), session.UUID, sessionpkg.SessionEnd{Cause: sessionpkg.EndOwnerLost})
 			require.NoError(t, err)
 			return test{
 				session:  session,
@@ -49,7 +49,7 @@ func TestRecordOwnerHeartbeatIntegration(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			tc := setup(t)
 
-			result, err := New(db, store).RecordOwnerHeartbeat(context.Background(), tc.session.UUID)
+			result, err := New(db, store, 0).RecordOwnerHeartbeat(context.Background(), tc.session.UUID)
 
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, result)

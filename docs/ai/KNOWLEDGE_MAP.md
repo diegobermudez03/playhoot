@@ -32,7 +32,7 @@ This is a machine-facing routing document. It does not explain Playhoot. It tell
 | Decision-family routing (which ADR family owns a question) | `docs/decisions/INDEX.md` | AVAILABLE | |
 | Global/cross-domain architecture decision rationale | `docs/decisions/architecture/INDEX.md` and referenced ADRs | AVAILABLE | |
 | Game Management architecture decision rationale/history | `game/docs/decisions/INDEX.md` and referenced GAME-ADRs | AVAILABLE | |
-| Session Runtime architecture decision rationale/history | `session/docs/decisions/INDEX.md` and referenced SESSION-ADRs | AVAILABLE | |
+| Session Runtime architecture decision rationale/history | `play/docs/decisions/INDEX.md` and referenced SESSION-ADRs | AVAILABLE | |
 | Identity architecture decision rationale/history | `identity/docs/decisions/INDEX.md` and referenced IDENTITY-ADRs | AVAILABLE | |
 | Legacy pre-migration ADR identifier lookup | `docs/archive/pre-realtime-pivot/docs/decisions/LEGACY_ADR_ID_MAP.md` | ARCHIVED / HISTORICAL (history requests only) | |
 | Product decision rationale | `docs/decisions/product/INDEX.md` and referenced PDRs | AVAILABLE | |
@@ -65,7 +65,7 @@ DOMAIN-DEPENDENT entries apply only to accepted domains. They do not mean every 
 | Domain | Model | Current State | Data Model | Flows |
 | --- | --- | --- | --- | --- |
 | Game Management | `game/README.md` | `game/CURRENT_STATE.md` | `game/docs/DATA_MODEL.md` | `game/docs/FLOWS.md` |
-| Session Runtime (under redesign) | `session/README.md` | `session/CURRENT_STATE.md` | `play/docs/DATA_MODEL.md` | `play/docs/FLOWS.md` |
+| Session Runtime | `play/README.md` | `play/CURRENT_STATE.md` | `play/docs/DATA_MODEL.md` | `play/docs/FLOWS.md` |
 | Identity | `identity/README.md` | `identity/CURRENT_STATE.md` |  |  |
 
 ## Specialized Documentation

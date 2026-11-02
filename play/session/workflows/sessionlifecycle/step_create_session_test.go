@@ -59,6 +59,8 @@ func TestCreateSessionInTx(t *testing.T) {
 		"session_created": func(t *testing.T, deps dependencies) test {
 			gomock.InOrder(
 				deps.repo.EXPECT().ClaimCreateSessionRequest(ctx, tx, userUUID, key, gameUUID).Return(requestID, nil, nil),
+				deps.repo.EXPECT().LockCreator(ctx, tx, userUUID).Return(nil),
+				deps.repo.EXPECT().CountActiveSessions(ctx, tx, userUUID, nowInDB).Return(0, nil),
 				deps.repo.EXPECT().FindCurrentGameVersion(ctx, tx, gameUUID).Return(executable, nil),
 				deps.repo.EXPECT().CreateSession(ctx, tx, versionID, userUUID, "LOBBY", lobbyExpiresAt, expiresAt, nowInDB).Return(createdSession, nil),
 				deps.repo.EXPECT().CreateJoinCode(ctx, tx, sessionID, "ABC234", lobbyExpiresAt).Return(true, nil),
@@ -69,6 +71,8 @@ func TestCreateSessionInTx(t *testing.T) {
 		"join_code_in_use_is_skipped_for_a_new_one": func(t *testing.T, deps dependencies) test {
 			gomock.InOrder(
 				deps.repo.EXPECT().ClaimCreateSessionRequest(ctx, tx, userUUID, key, gameUUID).Return(requestID, nil, nil),
+				deps.repo.EXPECT().LockCreator(ctx, tx, userUUID).Return(nil),
+				deps.repo.EXPECT().CountActiveSessions(ctx, tx, userUUID, nowInDB).Return(0, nil),
 				deps.repo.EXPECT().FindCurrentGameVersion(ctx, tx, gameUUID).Return(executable, nil),
 				deps.repo.EXPECT().CreateSession(ctx, tx, versionID, userUUID, "LOBBY", lobbyExpiresAt, expiresAt, nowInDB).Return(createdSession, nil),
 				deps.repo.EXPECT().CreateJoinCode(ctx, tx, sessionID, "TAKEN1", lobbyExpiresAt).Return(false, nil),
@@ -81,6 +85,8 @@ func TestCreateSessionInTx(t *testing.T) {
 		"expired_join_code_is_released_and_reused": func(t *testing.T, deps dependencies) test {
 			gomock.InOrder(
 				deps.repo.EXPECT().ClaimCreateSessionRequest(ctx, tx, userUUID, key, gameUUID).Return(requestID, nil, nil),
+				deps.repo.EXPECT().LockCreator(ctx, tx, userUUID).Return(nil),
+				deps.repo.EXPECT().CountActiveSessions(ctx, tx, userUUID, nowInDB).Return(0, nil),
 				deps.repo.EXPECT().FindCurrentGameVersion(ctx, tx, gameUUID).Return(executable, nil),
 				deps.repo.EXPECT().CreateSession(ctx, tx, versionID, userUUID, "LOBBY", lobbyExpiresAt, expiresAt, nowInDB).Return(createdSession, nil),
 				deps.repo.EXPECT().CreateJoinCode(ctx, tx, sessionID, "OLD333", lobbyExpiresAt).Return(false, nil),
@@ -93,6 +99,8 @@ func TestCreateSessionInTx(t *testing.T) {
 		"released_join_code_taken_again_concurrently_moves_on": func(t *testing.T, deps dependencies) test {
 			gomock.InOrder(
 				deps.repo.EXPECT().ClaimCreateSessionRequest(ctx, tx, userUUID, key, gameUUID).Return(requestID, nil, nil),
+				deps.repo.EXPECT().LockCreator(ctx, tx, userUUID).Return(nil),
+				deps.repo.EXPECT().CountActiveSessions(ctx, tx, userUUID, nowInDB).Return(0, nil),
 				deps.repo.EXPECT().FindCurrentGameVersion(ctx, tx, gameUUID).Return(executable, nil),
 				deps.repo.EXPECT().CreateSession(ctx, tx, versionID, userUUID, "LOBBY", lobbyExpiresAt, expiresAt, nowInDB).Return(createdSession, nil),
 				deps.repo.EXPECT().CreateJoinCode(ctx, tx, sessionID, "RACE44", lobbyExpiresAt).Return(false, nil),
@@ -105,6 +113,8 @@ func TestCreateSessionInTx(t *testing.T) {
 		},
 		"no_free_join_code_after_max_attempts": func(t *testing.T, deps dependencies) test {
 			deps.repo.EXPECT().ClaimCreateSessionRequest(ctx, tx, userUUID, key, gameUUID).Return(requestID, nil, nil)
+			deps.repo.EXPECT().LockCreator(ctx, tx, userUUID).Return(nil)
+			deps.repo.EXPECT().CountActiveSessions(ctx, tx, userUUID, nowInDB).Return(0, nil)
 			deps.repo.EXPECT().FindCurrentGameVersion(ctx, tx, gameUUID).Return(executable, nil)
 			deps.repo.EXPECT().CreateSession(ctx, tx, versionID, userUUID, "LOBBY", lobbyExpiresAt, expiresAt, nowInDB).Return(createdSession, nil)
 			deps.repo.EXPECT().CreateJoinCode(ctx, tx, sessionID, "BUSY66", lobbyExpiresAt).Return(false, nil).Times(maxJoinCodeAttempts)
@@ -115,9 +125,27 @@ func TestCreateSessionInTx(t *testing.T) {
 			}
 			return test{joinCodes: codes, expectErr: true}
 		},
+		"creator_at_the_active_session_limit": func(t *testing.T, deps dependencies) test {
+			gomock.InOrder(
+				deps.repo.EXPECT().ClaimCreateSessionRequest(ctx, tx, userUUID, key, gameUUID).Return(requestID, nil, nil),
+				deps.repo.EXPECT().LockCreator(ctx, tx, userUUID).Return(nil),
+				deps.repo.EXPECT().CountActiveSessions(ctx, tx, userUUID, nowInDB).Return(1, nil),
+				deps.repo.EXPECT().CompleteCreateSessionRequest(ctx, tx, requestID, "active_session_limit", nil).Return(nil),
+			)
+			return test{expectedAttempt: createSessionAttempt{result: sessionpkg.CreateSessionResult{Outcome: sessionpkg.CreateSessionActiveLimit}}}
+		},
+		"locking_the_creator_fails": func(t *testing.T, deps dependencies) test {
+			gomock.InOrder(
+				deps.repo.EXPECT().ClaimCreateSessionRequest(ctx, tx, userUUID, key, gameUUID).Return(requestID, nil, nil),
+				deps.repo.EXPECT().LockCreator(ctx, tx, userUUID).Return(errors.New("db down")),
+			)
+			return test{expectErr: true}
+		},
 		"game_without_current_version_is_unavailable": func(t *testing.T, deps dependencies) test {
 			gomock.InOrder(
 				deps.repo.EXPECT().ClaimCreateSessionRequest(ctx, tx, userUUID, key, gameUUID).Return(requestID, nil, nil),
+				deps.repo.EXPECT().LockCreator(ctx, tx, userUUID).Return(nil),
+				deps.repo.EXPECT().CountActiveSessions(ctx, tx, userUUID, nowInDB).Return(0, nil),
 				deps.repo.EXPECT().FindCurrentGameVersion(ctx, tx, gameUUID).Return(nil, nil),
 				deps.repo.EXPECT().CompleteCreateSessionRequest(ctx, tx, requestID, "game_unavailable", nil).Return(nil),
 			)
@@ -126,6 +154,8 @@ func TestCreateSessionInTx(t *testing.T) {
 		"current_version_not_executable_is_broken_data": func(t *testing.T, deps dependencies) test {
 			gomock.InOrder(
 				deps.repo.EXPECT().ClaimCreateSessionRequest(ctx, tx, userUUID, key, gameUUID).Return(requestID, nil, nil),
+				deps.repo.EXPECT().LockCreator(ctx, tx, userUUID).Return(nil),
+				deps.repo.EXPECT().CountActiveSessions(ctx, tx, userUUID, nowInDB).Return(0, nil),
 				deps.repo.EXPECT().FindCurrentGameVersion(ctx, tx, gameUUID).Return(&internalrepo.GameVersion{ID: versionID, Status: "DRAFT"}, nil),
 			)
 			return test{expectErr: true}
@@ -193,6 +223,8 @@ func TestCreateSessionInTx(t *testing.T) {
 		"finding_current_version_fails": func(t *testing.T, deps dependencies) test {
 			gomock.InOrder(
 				deps.repo.EXPECT().ClaimCreateSessionRequest(ctx, tx, userUUID, key, gameUUID).Return(requestID, nil, nil),
+				deps.repo.EXPECT().LockCreator(ctx, tx, userUUID).Return(nil),
+				deps.repo.EXPECT().CountActiveSessions(ctx, tx, userUUID, nowInDB).Return(0, nil),
 				deps.repo.EXPECT().FindCurrentGameVersion(ctx, tx, gameUUID).Return(nil, errors.New("db down")),
 			)
 			return test{expectErr: true}
@@ -200,6 +232,8 @@ func TestCreateSessionInTx(t *testing.T) {
 		"creating_session_fails": func(t *testing.T, deps dependencies) test {
 			gomock.InOrder(
 				deps.repo.EXPECT().ClaimCreateSessionRequest(ctx, tx, userUUID, key, gameUUID).Return(requestID, nil, nil),
+				deps.repo.EXPECT().LockCreator(ctx, tx, userUUID).Return(nil),
+				deps.repo.EXPECT().CountActiveSessions(ctx, tx, userUUID, nowInDB).Return(0, nil),
 				deps.repo.EXPECT().FindCurrentGameVersion(ctx, tx, gameUUID).Return(executable, nil),
 				deps.repo.EXPECT().CreateSession(ctx, tx, versionID, userUUID, "LOBBY", lobbyExpiresAt, expiresAt, nowInDB).Return(internalrepo.CreatedSession{}, errors.New("db down")),
 			)
@@ -208,6 +242,8 @@ func TestCreateSessionInTx(t *testing.T) {
 		"creating_join_code_fails": func(t *testing.T, deps dependencies) test {
 			gomock.InOrder(
 				deps.repo.EXPECT().ClaimCreateSessionRequest(ctx, tx, userUUID, key, gameUUID).Return(requestID, nil, nil),
+				deps.repo.EXPECT().LockCreator(ctx, tx, userUUID).Return(nil),
+				deps.repo.EXPECT().CountActiveSessions(ctx, tx, userUUID, nowInDB).Return(0, nil),
 				deps.repo.EXPECT().FindCurrentGameVersion(ctx, tx, gameUUID).Return(executable, nil),
 				deps.repo.EXPECT().CreateSession(ctx, tx, versionID, userUUID, "LOBBY", lobbyExpiresAt, expiresAt, nowInDB).Return(createdSession, nil),
 				deps.repo.EXPECT().CreateJoinCode(ctx, tx, sessionID, "ABC234", lobbyExpiresAt).Return(false, errors.New("db down")),
@@ -217,6 +253,8 @@ func TestCreateSessionInTx(t *testing.T) {
 		"completing_request_fails": func(t *testing.T, deps dependencies) test {
 			gomock.InOrder(
 				deps.repo.EXPECT().ClaimCreateSessionRequest(ctx, tx, userUUID, key, gameUUID).Return(requestID, nil, nil),
+				deps.repo.EXPECT().LockCreator(ctx, tx, userUUID).Return(nil),
+				deps.repo.EXPECT().CountActiveSessions(ctx, tx, userUUID, nowInDB).Return(0, nil),
 				deps.repo.EXPECT().FindCurrentGameVersion(ctx, tx, gameUUID).Return(executable, nil),
 				deps.repo.EXPECT().CreateSession(ctx, tx, versionID, userUUID, "LOBBY", lobbyExpiresAt, expiresAt, nowInDB).Return(createdSession, nil),
 				deps.repo.EXPECT().CreateJoinCode(ctx, tx, sessionID, "ABC234", lobbyExpiresAt).Return(true, nil),
@@ -244,6 +282,8 @@ func TestCreateSessionInTx(t *testing.T) {
 				},
 				lobbyTTL:    defaultLobbyTTL,
 				maxLifetime: defaultMaxLifetime,
+
+				maxActiveSessionsPerCreator: DefaultMaxActiveSessionsPerCreator,
 			}
 
 			attempt, err := manager.createSessionInTx(ctx, tx, userUUID, gameUUID, key)

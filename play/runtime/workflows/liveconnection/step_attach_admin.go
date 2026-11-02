@@ -39,20 +39,40 @@ var (
 // under ownerEpoch, creating the controller if it has none. An error means
 // admission could not be decided.
 func (r *ControllerResolver) AttachAdmin(ctx context.Context, sessionUUID string, userUUID string, ownerEpoch int64) (runtime.AttachAdminResult, error) {
+	// Someone who is not the creator never brings a Session's controller to
+	// life: it would stay, idle, until the lobby expired. The answer is
+	// handed to the controller, which does not ask again.
+	var known *sessionpkg.AdminJoinEligibility
+	if !r.hasController(sessionUUID) {
+		eligibility, err := r.deps.adminJoins.EligibleToJoinAsAdmin(ctx, sessionUUID, userUUID)
+		if err != nil {
+			return runtime.AttachAdminResult{}, fmt.Errorf("checking admin eligibility: %w", err)
+		}
+		if eligibility == sessionpkg.AdminJoinNotCreator {
+			return rejectAdmin(ctx, runtime.RejectNotCreator), nil
+		}
+		known = &eligibility
+	}
 	sessionController, rejection := r.controllerFor(ctx, sessionUUID, ownerEpoch)
 	if sessionController == nil {
 		return rejectAdmin(ctx, rejection), nil
 	}
-	return sessionController.attachAdmin(ctx, userUUID)
+	return sessionController.attachAdmin(ctx, userUUID, known)
 }
 
 // attachAdmin admits userUUID's admin connection if the durable Session
 // accepts them as its admin, recovering a game the database runs and this
-// instance does not.
-func (c *sessionController) attachAdmin(ctx context.Context, userUUID string) (runtime.AttachAdminResult, error) {
-	eligibility, err := c.deps.adminJoins.EligibleToJoinAsAdmin(ctx, c.sessionUUID, userUUID)
-	if err != nil {
-		return runtime.AttachAdminResult{}, fmt.Errorf("checking admin eligibility: %w", err)
+// instance does not. known, when set, is that eligibility already read.
+func (c *sessionController) attachAdmin(ctx context.Context, userUUID string, known *sessionpkg.AdminJoinEligibility) (runtime.AttachAdminResult, error) {
+	var eligibility sessionpkg.AdminJoinEligibility
+	if known != nil {
+		eligibility = *known
+	} else {
+		read, err := c.deps.adminJoins.EligibleToJoinAsAdmin(ctx, c.sessionUUID, userUUID)
+		if err != nil {
+			return runtime.AttachAdminResult{}, fmt.Errorf("checking admin eligibility: %w", err)
+		}
+		eligibility = read
 	}
 	switch eligibility {
 	case sessionpkg.AdminJoinEligible, sessionpkg.AdminJoinEligibleRunning:

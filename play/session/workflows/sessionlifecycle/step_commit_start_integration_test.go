@@ -193,7 +193,7 @@ func TestCommitStartIntegration(t *testing.T) {
 	for name, setup := range tests {
 		t.Run(name, func(t *testing.T) {
 			tc := setup(t)
-			manager := New(db, store)
+			manager := New(db, store, 0)
 
 			outcome, err := manager.CommitStart(context.Background(), tc.session.UUID, tc.session.CreatorUUID, tc.commit)
 

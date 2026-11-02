@@ -46,7 +46,7 @@ func TestCheckStartEligibilityIntegration(t *testing.T) {
 	for name, setup := range tests {
 		t.Run(name, func(t *testing.T) {
 			tc := setup(t)
-			manager := New(db, store)
+			manager := New(db, store, 0)
 
 			eligibility, err := manager.CheckStartEligibility(context.Background(), tc.sessionUUID, tc.userUUID, tc.playerCount)
 

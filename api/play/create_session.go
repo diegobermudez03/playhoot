@@ -32,6 +32,10 @@ const (
 )
 
 // handleCreateSession creates a Session for the authorized caller.
+// codeActiveSessionLimit answers a creator who already has as many active
+// Sessions as they may have.
+const codeActiveSessionLimit = "active_session_limit"
+
 func (h *Handler) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -89,6 +93,8 @@ func (h *Handler) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 		})
 	case sessionpkg.CreateSessionGameUnavailable:
 		httpx.WriteError(w, http.StatusNotFound, "game not found or not currently playable")
+	case sessionpkg.CreateSessionActiveLimit:
+		httpx.WriteCodedError(w, http.StatusConflict, codeActiveSessionLimit, "you already have as many active games as you may have; end one first")
 	default:
 		logging.LogFields(ctx, logging.Field("create_session_outcome", string(created.Outcome)))
 		httpx.WriteError(w, http.StatusInternalServerError, "creating session failed")

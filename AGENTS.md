@@ -37,10 +37,10 @@ Before performing non-trivial work:
 
 ## Project Status And History
 
-Playhoot's Session Runtime is being redesigned as a real-time runtime that
-supports discrete and continuous games (`session/docs/decisions/SESSION-ADR-0028-real-time-session-runtime-supersedes-discrete-turn-architecture.md`).
-The previous implementation and its documentation were removed or archived.
-Treat `session/` as structure plus helpers, not as a working Session Runtime.
+Playhoot's Session Runtime is a real-time runtime that supports discrete and
+continuous games (`play/docs/decisions/SESSION-ADR-0028-real-time-session-runtime-supersedes-discrete-turn-architecture.md`),
+implemented under `play/` (`play/CURRENT_STATE.md`). The previous
+implementation and its documentation were removed or archived.
 
 `docs/archive/pre-realtime-pivot/` holds the history of the previous design
 (cancelled projects, old WORK, superseded decisions, old package contracts).

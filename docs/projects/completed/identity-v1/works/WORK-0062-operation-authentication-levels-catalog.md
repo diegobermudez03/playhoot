@@ -75,7 +75,7 @@ Package and file names, the business package's API shape, test layout (following
 
 - `api/README.md` - the identity route group's new endpoint and its contract.
 - `identity/CURRENT_STATE.md` - the catalog and the listing implemented; the `Authorize` placeholder now decides by level (still fixed test tokens).
-- `docs/projects/active/session-runtime-v1/CHECKLIST.md` - the Identity authorization placeholder line (decides by level now).
+- `docs/projects/completed/session-runtime-v1/CHECKLIST.md` - the Identity authorization placeholder line (decides by level now).
 - Frontend repository, through its own workflow: `docs/architecture/BACKEND_CONTRACT.md` gets the endpoint once it exists.
 
 ## Blockers

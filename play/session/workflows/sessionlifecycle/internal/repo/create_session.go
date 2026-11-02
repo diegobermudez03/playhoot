@@ -195,3 +195,28 @@ func (r *Repo) FindSessionWithJoinCode(ctx context.Context, tx *gorm.DB, session
 	}
 	return &found, nil
 }
+
+// LockCreator holds, until tx ends, a lock only one transaction per creator
+// can hold, so the creator's Session creations happen one at a time.
+func (r *Repo) LockCreator(ctx context.Context, tx *gorm.DB, userUUID string) error {
+	if err := tx.WithContext(ctx).Exec(`SELECT pg_advisory_xact_lock(hashtextextended(?, 0))`, "create_session:"+userUUID).Error; err != nil {
+		return fmt.Errorf("locking the creator's session creation: %w", err)
+	}
+	return nil
+}
+
+// CountActiveSessions counts userUUID's Sessions still active at now: in a
+// lobby that has not expired, or running.
+func (r *Repo) CountActiveSessions(ctx context.Context, tx *gorm.DB, userUUID string, now time.Time) (int, error) {
+	var active int
+	err := tx.WithContext(ctx).Raw(`
+		SELECT count(*) FROM play_sessions
+		WHERE created_by_user_uuid = ?
+			AND ((status = 'LOBBY' AND lobby_expires_at > ?) OR status = 'RUNNING')`,
+		userUUID, now,
+	).Scan(&active).Error
+	if err != nil {
+		return 0, fmt.Errorf("counting the creator's active sessions: %w", err)
+	}
+	return active, nil
+}

@@ -73,6 +73,21 @@ func (mr *MockcreateSessionRepoMockRecorder) CompleteCreateSessionRequest(ctx, t
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CompleteCreateSessionRequest", reflect.TypeOf((*MockcreateSessionRepo)(nil).CompleteCreateSessionRequest), ctx, tx, requestID, outcome, sessionID)
 }
 
+// CountActiveSessions mocks base method.
+func (m *MockcreateSessionRepo) CountActiveSessions(ctx context.Context, tx *gorm.DB, userUUID string, now time.Time) (int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CountActiveSessions", ctx, tx, userUUID, now)
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CountActiveSessions indicates an expected call of CountActiveSessions.
+func (mr *MockcreateSessionRepoMockRecorder) CountActiveSessions(ctx, tx, userUUID, now any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CountActiveSessions", reflect.TypeOf((*MockcreateSessionRepo)(nil).CountActiveSessions), ctx, tx, userUUID, now)
+}
+
 // CreateJoinCode mocks base method.
 func (m *MockcreateSessionRepo) CreateJoinCode(ctx context.Context, tx *gorm.DB, sessionID uint, code string, expiresAt time.Time) (bool, error) {
 	m.ctrl.T.Helper()
@@ -131,6 +146,20 @@ func (m *MockcreateSessionRepo) FindSessionWithJoinCode(ctx context.Context, tx 
 func (mr *MockcreateSessionRepoMockRecorder) FindSessionWithJoinCode(ctx, tx, sessionID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindSessionWithJoinCode", reflect.TypeOf((*MockcreateSessionRepo)(nil).FindSessionWithJoinCode), ctx, tx, sessionID)
+}
+
+// LockCreator mocks base method.
+func (m *MockcreateSessionRepo) LockCreator(ctx context.Context, tx *gorm.DB, userUUID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LockCreator", ctx, tx, userUUID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// LockCreator indicates an expected call of LockCreator.
+func (mr *MockcreateSessionRepoMockRecorder) LockCreator(ctx, tx, userUUID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LockCreator", reflect.TypeOf((*MockcreateSessionRepo)(nil).LockCreator), ctx, tx, userUUID)
 }
 
 // ReleaseExpiredJoinCode mocks base method.

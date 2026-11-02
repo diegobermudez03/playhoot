@@ -46,7 +46,7 @@ Each mutating call would return the next Session time at which the game needs `u
 ## Canonical Knowledge Impact
 
 - `play/CURRENT_STATE.md`: the running game has no platform timers by decision.
-- `docs/projects/active/session-runtime-v1/CHECKLIST.md`: the plan's timer items are out of scope.
+- `docs/projects/completed/session-runtime-v1/CHECKLIST.md`: the plan's timer items are out of scope.
 
 ## Implementation Impact
 

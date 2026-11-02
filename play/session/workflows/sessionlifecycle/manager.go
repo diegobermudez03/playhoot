@@ -21,6 +21,10 @@ const defaultLobbyTTL = 30 * time.Minute
 // defaultMaxLifetime is the most time a Session may live from its creation.
 const defaultMaxLifetime = sessionlifetime.Max
 
+// DefaultMaxActiveSessionsPerCreator is how many active Sessions (an open
+// lobby, or running) one creator may have at once unless configured: one.
+const DefaultMaxActiveSessionsPerCreator = 1
+
 // defaultOwnerLease is how long a running Session's owner lease lasts from
 // its last heartbeat: past it the Session has no live owner and nobody came
 // to recover it, so reconciliation aborts it as OWNER_LOST.
@@ -52,11 +56,17 @@ type Manager struct {
 	lobbyTTL    time.Duration
 	maxLifetime time.Duration
 	ownerLease  time.Duration
+
+	maxActiveSessionsPerCreator int
 }
 
 // New constructs a Manager persisting to db and reading game version content
-// from store.
-func New(db *gorm.DB, store storage.Store) *Manager {
+// from store. maxActiveSessionsPerCreator zero takes
+// DefaultMaxActiveSessionsPerCreator.
+func New(db *gorm.DB, store storage.Store, maxActiveSessionsPerCreator int) *Manager {
+	if maxActiveSessionsPerCreator <= 0 {
+		maxActiveSessionsPerCreator = DefaultMaxActiveSessionsPerCreator
+	}
 	repo := internalrepo.New(db)
 	return &Manager{
 		createSessionRepo:      repo,
@@ -74,5 +84,7 @@ func New(db *gorm.DB, store storage.Store) *Manager {
 		lobbyTTL:                 defaultLobbyTTL,
 		maxLifetime:              defaultMaxLifetime,
 		ownerLease:               defaultOwnerLease,
+
+		maxActiveSessionsPerCreator: maxActiveSessionsPerCreator,
 	}
 }

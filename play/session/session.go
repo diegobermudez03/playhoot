@@ -19,6 +19,10 @@ const (
 	// currently playable for the caller. The two cases are deliberately not
 	// distinguished.
 	CreateSessionGameUnavailable CreateSessionOutcome = "game_unavailable"
+
+	// CreateSessionActiveLimit means the creator already has as many active
+	// Sessions (in a lobby still open, or running) as they may have.
+	CreateSessionActiveLimit CreateSessionOutcome = "active_session_limit"
 )
 
 // CreateSessionResult is what a CreateSession call decided. SessionUUID,

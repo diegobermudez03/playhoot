@@ -16,7 +16,7 @@ import (
 func TestLoadRunningSessionIntegration(t *testing.T) {
 	db := testdb.OpenSessionDB(t)
 	store := objectstore.NewFake()
-	manager := New(db, store)
+	manager := New(db, store, 0)
 	ctx := context.Background()
 
 	t.Run("committed_start_is_read_back", func(t *testing.T) {

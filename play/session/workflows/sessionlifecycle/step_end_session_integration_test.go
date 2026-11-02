@@ -122,7 +122,7 @@ func TestEndSessionIntegration(t *testing.T) {
 		},
 		"ended_session_reports_how_it_ended": func(t *testing.T) test {
 			session := seedStartableSession(t, db, store, "RUNNING", now.Add(time.Hour))
-			_, err := New(db, store).EndSession(context.Background(), session.UUID, sessionpkg.SessionEnd{Cause: sessionpkg.EndMaxLifetime})
+			_, err := New(db, store, 0).EndSession(context.Background(), session.UUID, sessionpkg.SessionEnd{Cause: sessionpkg.EndMaxLifetime})
 			require.NoError(t, err)
 			return test{
 				session: session,
@@ -141,7 +141,7 @@ func TestEndSessionIntegration(t *testing.T) {
 	for name, setup := range tests {
 		t.Run(name, func(t *testing.T) {
 			tc := setup(t)
-			manager := New(db, store)
+			manager := New(db, store, 0)
 
 			result, err := manager.EndSession(context.Background(), tc.session.UUID, tc.end(tc.session))
 

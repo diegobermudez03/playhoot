@@ -32,6 +32,8 @@ type createSessionRepo interface {
 	CreateJoinCode(ctx context.Context, tx *gorm.DB, sessionID uint, code string, expiresAt time.Time) (bool, error)
 	ReleaseExpiredJoinCode(ctx context.Context, tx *gorm.DB, code string, releasedAt time.Time) (bool, error)
 	FindSessionWithJoinCode(ctx context.Context, tx *gorm.DB, sessionID uint) (*internalrepo.SessionWithJoinCode, error)
+	LockCreator(ctx context.Context, tx *gorm.DB, userUUID string) error
+	CountActiveSessions(ctx context.Context, tx *gorm.DB, userUUID string, now time.Time) (int, error)
 }
 
 const (
@@ -47,10 +49,11 @@ const (
 )
 
 var (
-	createOutcomeLabel = metrics.NewLabel("outcome", "created", "game_unavailable", "replayed")
+	createOutcomeLabel = metrics.NewLabel("outcome", "created", "game_unavailable", "active_session_limit", "replayed")
 
 	createOutcomeCreated         = createOutcomeLabel.Value("created")
 	createOutcomeGameUnavailable = createOutcomeLabel.Value("game_unavailable")
+	createOutcomeActiveLimit     = createOutcomeLabel.Value("active_session_limit")
 	createOutcomeReplayed        = createOutcomeLabel.Value("replayed")
 
 	sessionCreateTotal = metrics.NewCounter(
@@ -101,6 +104,8 @@ func (m *Manager) CreateSession(ctx context.Context, userUUID string, gameUUID s
 		sessionCreateTotal.Inc(ctx, createOutcomeReplayed)
 	case attempt.result.Outcome == sessionpkg.CreateSessionCreated:
 		sessionCreateTotal.Inc(ctx, createOutcomeCreated)
+	case attempt.result.Outcome == sessionpkg.CreateSessionActiveLimit:
+		sessionCreateTotal.Inc(ctx, createOutcomeActiveLimit)
 	default:
 		sessionCreateTotal.Inc(ctx, createOutcomeGameUnavailable)
 	}
@@ -123,6 +128,23 @@ func (m *Manager) createSessionInTx(ctx context.Context, tx *gorm.DB, userUUID s
 		return createSessionAttempt{result: result, replayed: true}, nil
 	}
 
+	// Serializes this creator's creations, so two at once cannot both find
+	// room under the limit.
+	if err := m.createSessionRepo.LockCreator(ctx, tx, userUUID); err != nil {
+		return createSessionAttempt{}, err
+	}
+	now := m.now().UTC().Truncate(time.Microsecond)
+	active, err := m.createSessionRepo.CountActiveSessions(ctx, tx, userUUID, now)
+	if err != nil {
+		return createSessionAttempt{}, err
+	}
+	if active >= m.maxActiveSessionsPerCreator {
+		if err := m.createSessionRepo.CompleteCreateSessionRequest(ctx, tx, requestID, string(sessionpkg.CreateSessionActiveLimit), nil); err != nil {
+			return createSessionAttempt{}, err
+		}
+		return createSessionAttempt{result: sessionpkg.CreateSessionResult{Outcome: sessionpkg.CreateSessionActiveLimit}}, nil
+	}
+
 	version, err := m.createSessionRepo.FindCurrentGameVersion(ctx, tx, gameUUID)
 	if err != nil {
 		return createSessionAttempt{}, err
@@ -141,9 +163,8 @@ func (m *Manager) createSessionInTx(ctx context.Context, tx *gorm.DB, userUUID s
 		return createSessionAttempt{}, fmt.Errorf("current version %d of game %s is %s, not executable", version.ID, gameUUID, version.Status)
 	}
 
-	// Postgres keeps microseconds; truncating keeps the first answer equal
-	// to what a replay reads back.
-	now := m.now().UTC().Truncate(time.Microsecond)
+	// Postgres keeps microseconds (now is truncated): the first answer
+	// equals what a replay reads back.
 	lobbyExpiresAt := now.Add(m.lobbyTTL)
 
 	created, err := m.createSessionRepo.CreateSession(ctx, tx, version.ID, userUUID, string(sessionstatus.Lobby), lobbyExpiresAt, now.Add(m.maxLifetime), now)
@@ -184,6 +205,8 @@ func (m *Manager) replayCreateSession(ctx context.Context, tx *gorm.DB, existing
 	switch sessionpkg.CreateSessionOutcome(*existing.Outcome) {
 	case sessionpkg.CreateSessionGameUnavailable:
 		return sessionpkg.CreateSessionResult{Outcome: sessionpkg.CreateSessionGameUnavailable}, nil
+	case sessionpkg.CreateSessionActiveLimit:
+		return sessionpkg.CreateSessionResult{Outcome: sessionpkg.CreateSessionActiveLimit}, nil
 	case sessionpkg.CreateSessionCreated:
 		if existing.SessionID == nil {
 			monitoring.Alert(ctx, "play create session request is created but references no session")

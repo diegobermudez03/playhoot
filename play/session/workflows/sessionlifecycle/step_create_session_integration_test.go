@@ -2,6 +2,7 @@ package sessionlifecycle
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -244,6 +245,7 @@ func TestCreateSessionIntegration(t *testing.T) {
 			}
 		},
 		"same_user_with_new_key_creates_another_session": func(t *testing.T, db *gorm.DB, manager *Manager) test {
+			manager.maxActiveSessionsPerCreator = 2
 			userUUID, firstCode, secondCode := uuid.NewString(), integrationCode(), integrationCode()
 			gameUUID, versionID := seedIntegrationGame(t, db, "EXECUTABLE")
 			manager.newJoinCode = func() (string, error) { return firstCode, nil }
@@ -356,7 +358,7 @@ func TestCreateSessionIntegration(t *testing.T) {
 
 	for name, setup := range tests {
 		t.Run(name, func(t *testing.T) {
-			manager := New(db, objectstore.NewFake())
+			manager := New(db, objectstore.NewFake(), 0)
 			manager.now = func() time.Time { return now }
 			tc := setup(t, db, manager)
 			if tc.joinCodes != nil {
@@ -394,7 +396,7 @@ func TestCreateSessionIntegrationConcurrentRetries(t *testing.T) {
 	const calls = 10
 
 	db := testdb.OpenSessionDB(t)
-	manager := New(db, objectstore.NewFake())
+	manager := New(db, objectstore.NewFake(), 0)
 	userUUID := uuid.NewString()
 	gameUUID, _ := seedIntegrationGame(t, db, "EXECUTABLE")
 
@@ -420,4 +422,102 @@ func TestCreateSessionIntegrationConcurrentRetries(t *testing.T) {
 	require.Equal(t, sessions[0].UUID, results[0].SessionUUID)
 	require.Len(t, requestsOf(t, db, userUUID), 1)
 	require.Len(t, joinCodesOf(t, db, sessions[0].ID), 1)
+}
+
+// TestCreateSessionIntegrationActiveLimit keeps a creator within their limit
+// of active Sessions: one by default.
+func TestCreateSessionIntegrationActiveLimit(t *testing.T) {
+	db := testdb.OpenSessionDB(t)
+	ctx := context.Background()
+
+	t.Run("a_second_active_session_is_refused_and_the_refusal_replays", func(t *testing.T) {
+		manager := New(db, objectstore.NewFake(), 0)
+		userUUID := uuid.NewString()
+		gameUUID, _ := seedIntegrationGame(t, db, "EXECUTABLE")
+		first, err := manager.CreateSession(ctx, userUUID, gameUUID, "key-1")
+		require.NoError(t, err)
+		require.Equal(t, sessionpkg.CreateSessionCreated, first.Outcome)
+
+		refused, err := manager.CreateSession(ctx, userUUID, gameUUID, "key-2")
+		require.NoError(t, err)
+		replayed, err := manager.CreateSession(ctx, userUUID, gameUUID, "key-2")
+		require.NoError(t, err)
+
+		require.Equal(t, sessionpkg.CreateSessionResult{Outcome: sessionpkg.CreateSessionActiveLimit}, refused)
+		require.Equal(t, refused, replayed, "the same key answers the same refusal")
+		require.Len(t, sessionsCreatedBy(t, db, userUUID), 1)
+	})
+
+	t.Run("an_expired_lobby_or_an_ended_session_does_not_count", func(t *testing.T) {
+		manager := New(db, objectstore.NewFake(), 0)
+		userUUID := uuid.NewString()
+		gameUUID, _ := seedIntegrationGame(t, db, "EXECUTABLE")
+		_, err := manager.CreateSession(ctx, userUUID, gameUUID, "key-1")
+		require.NoError(t, err)
+		require.NoError(t, db.Exec(`UPDATE play_sessions SET lobby_expires_at = now() - interval '1 minute' WHERE created_by_user_uuid = ?`, userUUID).Error)
+		second, err := manager.CreateSession(ctx, userUUID, gameUUID, "key-2")
+		require.NoError(t, err)
+		require.Equal(t, sessionpkg.CreateSessionCreated, second.Outcome)
+
+		require.NoError(t, db.Exec(`UPDATE play_sessions SET status = 'FINISHED' WHERE uuid = ?`, second.SessionUUID).Error)
+		third, err := manager.CreateSession(ctx, userUUID, gameUUID, "key-3")
+		require.NoError(t, err)
+		require.Equal(t, sessionpkg.CreateSessionCreated, third.Outcome)
+	})
+
+	t.Run("a_running_session_counts", func(t *testing.T) {
+		manager := New(db, objectstore.NewFake(), 0)
+		userUUID := uuid.NewString()
+		gameUUID, _ := seedIntegrationGame(t, db, "EXECUTABLE")
+		first, err := manager.CreateSession(ctx, userUUID, gameUUID, "key-1")
+		require.NoError(t, err)
+		require.NoError(t, db.Exec(`UPDATE play_sessions SET status = 'RUNNING', lobby_expires_at = now() - interval '1 minute' WHERE uuid = ?`, first.SessionUUID).Error)
+
+		refused, err := manager.CreateSession(ctx, userUUID, gameUUID, "key-2")
+		require.NoError(t, err)
+		require.Equal(t, sessionpkg.CreateSessionActiveLimit, refused.Outcome)
+	})
+
+	t.Run("concurrent_creations_with_different_keys_create_one", func(t *testing.T) {
+		manager := New(db, objectstore.NewFake(), 0)
+		userUUID := uuid.NewString()
+		gameUUID, _ := seedIntegrationGame(t, db, "EXECUTABLE")
+		const calls = 6
+		outcomes := make([]sessionpkg.CreateSessionOutcome, calls)
+		errs := make([]error, calls)
+		var wg sync.WaitGroup
+		for i := range calls {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				result, err := manager.CreateSession(ctx, userUUID, gameUUID, fmt.Sprintf("key-%d", i))
+				outcomes[i], errs[i] = result.Outcome, err
+			}()
+		}
+		wg.Wait()
+
+		created := 0
+		for i := range calls {
+			require.NoError(t, errs[i])
+			if outcomes[i] == sessionpkg.CreateSessionCreated {
+				created++
+			}
+		}
+		require.Equal(t, 1, created)
+		require.Len(t, sessionsCreatedBy(t, db, userUUID), 1)
+	})
+
+	t.Run("the_limit_is_configurable", func(t *testing.T) {
+		manager := New(db, objectstore.NewFake(), 3)
+		userUUID := uuid.NewString()
+		gameUUID, _ := seedIntegrationGame(t, db, "EXECUTABLE")
+		for i := range 3 {
+			result, err := manager.CreateSession(ctx, userUUID, gameUUID, fmt.Sprintf("key-%d", i))
+			require.NoError(t, err)
+			require.Equal(t, sessionpkg.CreateSessionCreated, result.Outcome)
+		}
+		fourth, err := manager.CreateSession(ctx, userUUID, gameUUID, "key-3")
+		require.NoError(t, err)
+		require.Equal(t, sessionpkg.CreateSessionActiveLimit, fourth.Outcome)
+	})
 }
