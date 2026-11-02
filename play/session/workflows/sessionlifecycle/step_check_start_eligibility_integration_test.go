@@ -30,7 +30,7 @@ func TestCheckStartEligibilityIntegration(t *testing.T) {
 			session := seedStartableSession(t, db, store, "LOBBY", now.Add(time.Hour))
 			return test{
 				sessionUUID: session.UUID, userUUID: session.CreatorUUID, playerCount: 2,
-				expected: sessionpkg.StartEligibility{Outcome: sessionpkg.StartEligible, GameVersionUUID: session.VersionUUID, Script: []byte(startableScript)},
+				expected: sessionpkg.StartEligibility{Outcome: sessionpkg.StartEligible, GameVersionUUID: session.VersionUUID, Script: []byte(startableScript), ScriptProfile: "handwritten"},
 			}
 		},
 		"expired_lobby": func(t *testing.T) test {

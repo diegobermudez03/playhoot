@@ -8,6 +8,7 @@ import (
 
 	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/monitoring"
+	"github.com/diegobermudez03/playhoot/play/runtime/sandbox/scriptcheck"
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 	"github.com/diegobermudez03/playhoot/play/session/internal/business/sessionstatus"
 	"github.com/diegobermudez03/playhoot/play/session/internal/objectstore"
@@ -62,6 +63,10 @@ func (m *Manager) LoadRunningSession(ctx context.Context, sessionUUID string) (s
 		monitoring.Alert(ctx, "play session is pinned to a game version without a backend script")
 		return sessionpkg.RunningSession{}, fmt.Errorf("game version %s has no backend script", record.GameVersionUUID)
 	}
+	if !scriptcheck.Profile(record.ScriptProfile).Valid() {
+		monitoring.Alert(ctx, "play session is pinned to a game version with an unknown script profile")
+		return sessionpkg.RunningSession{}, fmt.Errorf("game version %s has unknown script profile %q", record.GameVersionUUID, record.ScriptProfile)
+	}
 	script, err := m.scripts.Load(ctx, objectstore.Locator{ObjectKey: *record.ScriptObjectKey, SHA256: *record.ScriptSHA256, Size: *record.ScriptSize})
 	if err != nil {
 		return sessionpkg.RunningSession{}, fmt.Errorf("loading backend script: %w", err)
@@ -74,6 +79,7 @@ func (m *Manager) LoadRunningSession(ctx context.Context, sessionUUID string) (s
 	return sessionpkg.RunningSession{
 		GameVersionUUID: record.GameVersionUUID,
 		Script:          script,
+		ScriptProfile:   record.ScriptProfile,
 		Participants:    roster,
 		Checkpoint:      sessionpkg.Checkpoint{ContextRevision: *record.CheckpointRevision, Content: record.CheckpointContent},
 	}, nil

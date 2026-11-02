@@ -14,6 +14,7 @@ import (
 	"github.com/diegobermudez03/playhoot/play/internal/business/inputrequirements"
 	"github.com/diegobermudez03/playhoot/play/internal/business/inputs"
 	"github.com/diegobermudez03/playhoot/play/runtime"
+	"github.com/diegobermudez03/playhoot/play/runtime/sandbox/scriptcheck"
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 	"github.com/diegobermudez03/playhoot/utils/ratelimit"
 )
@@ -64,6 +65,9 @@ type Game struct {
 
 	// Script is the game version's JavaScript source.
 	Script []byte
+
+	// ScriptProfile is the profile the script runs under.
+	ScriptProfile scriptcheck.Profile
 
 	ContextRevision int64
 
@@ -226,17 +230,17 @@ func newSessionController(root context.Context, sessionUUID string, epoch int64,
 			limitHit: func(ctx context.Context, userUUID, limit string) {
 				deps.auditor().Hit(ctx, sessionUUID, userUUID, runtimeLimitPrefix+limit)
 			},
-			queued: make(map[string]int),
-			commandRate:    ratelimit.New(deps.liveLimits.sessionCommands...),
-			phase:          phaseLobby,
-			admins:         make(map[string]*connection),
-			players:        make(map[string]*connection),
-			inputs:         make(map[string]*participantInputs),
-			commands:       make(map[string]*participantCommands),
-			presence:       make(map[string]*participantPresence),
-			rejoins:        make(map[string]*pendingRejoin),
-			views:          make(map[string][]byte),
-			playedBy:       make(map[string]bool),
+			queued:      make(map[string]int),
+			commandRate: ratelimit.New(deps.liveLimits.sessionCommands...),
+			phase:       phaseLobby,
+			admins:      make(map[string]*connection),
+			players:     make(map[string]*connection),
+			inputs:      make(map[string]*participantInputs),
+			commands:    make(map[string]*participantCommands),
+			presence:    make(map[string]*participantPresence),
+			rejoins:     make(map[string]*pendingRejoin),
+			views:       make(map[string][]byte),
+			playedBy:    make(map[string]bool),
 		},
 		checkpointWriter: newCheckpointWriter(),
 		boundaryRate:     ratelimit.New(deps.liveLimits.boundaries...),

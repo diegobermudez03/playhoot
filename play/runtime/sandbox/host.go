@@ -108,7 +108,7 @@ func (h *Host) CreateContext(ctx context.Context, spec ContextSpec) (string, err
 	if err != nil {
 		return "", err
 	}
-	resp, err := h.call(ctx, process, workerRequest{Operation: workerOperationLoad, Script: string(spec.Script)})
+	resp, err := h.call(ctx, process, workerRequest{Operation: workerOperationLoad, Script: string(spec.Script), Profile: string(spec.Profile)})
 	switch {
 	case errors.Is(err, errBudgetExceeded):
 		process.loadError = "loading script: " + err.Error()

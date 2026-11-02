@@ -19,3 +19,8 @@ Test content embedded by the seed migrations (never used in production).
   ADR-0008). The same rule applies: to change an asset or the HTML, add the new files and a
   NEW seed migration with a new Space Drift version, never edit a seeded one. Asset files are stored
   content-addressed under `game-versions/assets/`.
+- `tap_race_server.js` and `tap_race_frontend.html`: Tap Race's backend script (script profile `sdk-v1`) and
+  frontend package, the first game built with the Playhoot SDK, from the frontend repository's
+  `fixtures/sdk-games/tap-race` (`npm run game -- build fixtures/sdk-games/tap-race`, outputs `dist/server.js`
+  and `dist/client.html`; the manifest in `seed_20261101000000_tap_race` is the build's `dist/manifest.json`).
+  The same rule applies: to change them, add a NEW seed migration with a new Tap Race version.

@@ -243,6 +243,10 @@ type StartEligibility struct {
 
 	// Script is the pinned game version's verified JavaScript source.
 	Script []byte
+
+	// ScriptProfile is the profile the script is run under, a known
+	// scriptcheck.Profile (play/runtime/sandbox/scriptcheck).
+	ScriptProfile string
 }
 
 // FrontendAccess is signed access to a game version's frontend package and
@@ -327,6 +331,10 @@ type RunningSession struct {
 
 	// Script is the pinned game version's verified JavaScript source.
 	Script []byte
+
+	// ScriptProfile is the profile the script is run under, a known
+	// scriptcheck.Profile (play/runtime/sandbox/scriptcheck).
+	ScriptProfile string
 
 	Participants []StartParticipant
 	Checkpoint   Checkpoint

@@ -8,6 +8,7 @@ import (
 
 	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/monitoring"
+	"github.com/diegobermudez03/playhoot/play/runtime/sandbox/scriptcheck"
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 	"github.com/diegobermudez03/playhoot/play/session/internal/business/gameversion"
 	"github.com/diegobermudez03/playhoot/play/session/internal/business/manifest"
@@ -80,6 +81,10 @@ func (m *Manager) CheckStartEligibility(ctx context.Context, sessionUUID string,
 		monitoring.Alert(ctx, "play session is pinned to a game version without a backend script")
 		return sessionpkg.StartEligibility{}, fmt.Errorf("game version %s has no backend script", candidate.GameVersionUUID)
 	}
+	if !scriptcheck.Profile(candidate.ScriptProfile).Valid() {
+		monitoring.Alert(ctx, "play session is pinned to a game version with an unknown script profile")
+		return sessionpkg.StartEligibility{}, fmt.Errorf("game version %s has unknown script profile %q", candidate.GameVersionUUID, candidate.ScriptProfile)
+	}
 	script, err := m.scripts.Load(ctx, objectstore.Locator{
 		ObjectKey: *candidate.ScriptObjectKey,
 		SHA256:    *candidate.ScriptSHA256,
@@ -92,6 +97,7 @@ func (m *Manager) CheckStartEligibility(ctx context.Context, sessionUUID string,
 		Outcome:         sessionpkg.StartEligible,
 		GameVersionUUID: candidate.GameVersionUUID,
 		Script:          script,
+		ScriptProfile:   candidate.ScriptProfile,
 	}, nil
 }
 

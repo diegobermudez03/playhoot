@@ -40,7 +40,7 @@ func (c *sessionController) createContext(ctx context.Context, spec sandbox.Cont
 // restoreContext gives the game a new sandbox context at game's confirmed
 // state; none is left when it fails.
 func (c *sessionController) restoreContext(ctx context.Context, game Game) error {
-	if err := c.createContext(ctx, sandbox.ContextSpec{GameVersionUUID: game.GameVersionUUID, Script: game.Script}); err != nil {
+	if err := c.createContext(ctx, sandbox.ContextSpec{GameVersionUUID: game.GameVersionUUID, Script: game.Script, Profile: game.ScriptProfile}); err != nil {
 		return err
 	}
 	restored, err := c.deps.sandbox.Restore(ctx, c.contextID, sandbox.Snapshot{

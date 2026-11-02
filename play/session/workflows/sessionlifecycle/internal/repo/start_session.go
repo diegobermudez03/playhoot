@@ -21,6 +21,7 @@ type StartCandidate struct {
 	ScriptObjectKey   *string
 	ScriptSHA256      *string
 	ScriptSize        *int64
+	ScriptProfile     string
 }
 
 // LockedSession is a Session row locked for the rest of the transaction.
@@ -47,7 +48,7 @@ func (r *Repo) FindStartCandidate(ctx context.Context, sessionUUID string) (*Sta
 	result := r.db.WithContext(ctx).Raw(`
 		SELECT s.status, s.created_by_user_uuid, s.lobby_expires_at,
 			v.uuid AS game_version_uuid, v.status AS version_status, v.manifest,
-			v.script_object_key, v.script_sha256, v.script_size
+			v.script_object_key, v.script_sha256, v.script_size, v.script_profile
 		FROM play_sessions s
 		JOIN play_game_versions v ON v.id = s.game_version_id
 		WHERE s.uuid = ?

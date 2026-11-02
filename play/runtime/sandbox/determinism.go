@@ -46,6 +46,7 @@ const determinismPrelude = `(function() {
 	var ownKeys = Reflect.ownKeys;
 	var describe = Object.getOwnPropertyDescriptor;
 	var prototypeOf = Object.getPrototypeOf;
+	var isArray = Array.isArray;
 
 	// deepFreeze freezes value and everything reachable from it, without
 	// running getters.
@@ -71,6 +72,15 @@ const determinismPrelude = `(function() {
 		allowRandom: function(allowed) { randomAllowed = allowed; },
 		// freezeValue makes an argument read-only before authored code gets it.
 		freezeValue: function(value) { return deepFreeze(value, new Set()); },
+		// freezeModuleValues freezes the top-level constants an sdk-v1 script
+		// lists through __playhoot_module_values().
+		freezeModuleValues: function() {
+			var list = globalThis.__playhoot_module_values;
+			if (typeof list !== "function") { throw new Error("the script does not declare __playhoot_module_values"); }
+			var values = list();
+			if (!isArray(values)) { throw new Error("__playhoot_module_values() must return an array"); }
+			deepFreeze(values, new Set());
+		},
 		// lockdown freezes every global and builtin once the script is loaded,
 		// so no state can live outside what executions return.
 		lockdown: function() { deepFreeze(globalThis, new Set()); }

@@ -33,7 +33,7 @@ func TestLoadRunningSession(t *testing.T) {
 	record := func() *internalrepo.RunningSessionRecord {
 		return &internalrepo.RunningSessionRecord{
 			ID: sessionID, Status: "RUNNING", GameVersionUUID: startVersionUUID,
-			ScriptObjectKey: &key, ScriptSHA256: &sha, ScriptSize: &size,
+			ScriptObjectKey: &key, ScriptSHA256: &sha, ScriptSize: &size, ScriptProfile: "handwritten",
 			CheckpointRevision: &revision, CheckpointContent: []byte(`{"schema_version":1}`),
 		}
 	}
@@ -49,6 +49,7 @@ func TestLoadRunningSession(t *testing.T) {
 			return test{expected: sessionpkg.RunningSession{
 				GameVersionUUID: startVersionUUID,
 				Script:          []byte(`function start() {}`),
+				ScriptProfile:   "handwritten",
 				Participants:    []sessionpkg.StartParticipant{{UserUUID: startPlayerA, ParticipantID: "P1"}, {UserUUID: startPlayerB, ParticipantID: "P2"}},
 				Checkpoint:      sessionpkg.Checkpoint{ContextRevision: 1, Content: []byte(`{"schema_version":1}`)},
 			}}
@@ -76,6 +77,15 @@ func TestLoadRunningSession(t *testing.T) {
 			gomock.InOrder(
 				deps.repo.EXPECT().FindRunningSession(ctx, startSessionUUID).Return(record(), nil),
 				deps.repo.EXPECT().FindParticipants(ctx, sessionID).Return(nil, nil),
+			)
+			return test{expectErr: true}
+		},
+		"version_with_an_unknown_script_profile_is_broken_data": func(t *testing.T, deps dependencies) test {
+			unknown := record()
+			unknown.ScriptProfile = ""
+			gomock.InOrder(
+				deps.repo.EXPECT().FindRunningSession(ctx, startSessionUUID).Return(unknown, nil),
+				deps.repo.EXPECT().FindParticipants(ctx, sessionID).Return(roster, nil),
 			)
 			return test{expectErr: true}
 		},

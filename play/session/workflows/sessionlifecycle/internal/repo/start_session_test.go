@@ -62,7 +62,7 @@ func TestFindStartCandidate(t *testing.T) {
 		"session_with_its_version_and_script": func(t *testing.T, db *gorm.DB) test {
 			created := seedSession(t, db, expiresAt)
 			key, sha, size := "game-versions/backend-scripts/abc", "abc", int64(42)
-			require.NoError(t, db.Exec(`UPDATE play_game_versions SET script_object_key = ?, script_sha256 = ?, script_size = ? WHERE id = ?`, key, sha, size, created.GameVersionID).Error)
+			require.NoError(t, db.Exec(`UPDATE play_game_versions SET script_object_key = ?, script_sha256 = ?, script_size = ?, script_profile = 'sdk-v1' WHERE id = ?`, key, sha, size, created.GameVersionID).Error)
 			var versionUUID string
 			require.NoError(t, db.Raw(`SELECT uuid FROM play_game_versions WHERE id = ?`, created.GameVersionID).Scan(&versionUUID).Error)
 			return test{
@@ -77,6 +77,7 @@ func TestFindStartCandidate(t *testing.T) {
 					ScriptObjectKey:   &key,
 					ScriptSHA256:      &sha,
 					ScriptSize:        &size,
+					ScriptProfile:     "sdk-v1",
 				},
 			}
 		},
@@ -93,6 +94,7 @@ func TestFindStartCandidate(t *testing.T) {
 					GameVersionUUID:   versionUUID,
 					VersionStatus:     "EXECUTABLE",
 					Manifest:          []byte(`{"players": {"max": 8, "min": 1}, "schema_version": 1}`),
+					ScriptProfile:     "handwritten",
 				},
 			}
 		},

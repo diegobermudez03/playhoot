@@ -142,7 +142,7 @@ func TestValidate(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			tc := setup(t)
 
-			violations := Validate([]byte(tc.script))
+			violations := Validate(ProfileHandwritten, []byte(tc.script))
 
 			rules := []string{}
 			for _, violation := range violations {
@@ -158,7 +158,7 @@ func TestValidate(t *testing.T) {
 }
 
 func TestValidateReportsPositions(t *testing.T) {
-	violations := Validate([]byte("function start() { return { state: {} }; }\nfunction project(state) {\n  state.x = 1;\n  return {};\n}"))
+	violations := Validate(ProfileHandwritten, []byte("function start() { return { state: {} }; }\nfunction project(state) {\n  state.x = 1;\n  return {};\n}"))
 
 	require.Equal(t, []Violation{{Line: 3, Column: 3, Rule: RuleMutation, Message: "assignment changes state, which is an input or reaches one; return a new value instead"}}, violations)
 }

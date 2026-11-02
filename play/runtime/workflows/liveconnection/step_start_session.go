@@ -13,6 +13,7 @@ import (
 	"github.com/diegobermudez03/playhoot/play/runtime"
 	"github.com/diegobermudez03/playhoot/play/runtime/internal/business/checkpoint"
 	"github.com/diegobermudez03/playhoot/play/runtime/sandbox"
+	"github.com/diegobermudez03/playhoot/play/runtime/sandbox/scriptcheck"
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
 
@@ -151,7 +152,7 @@ func (c *sessionController) startFrozenLobby(ctx context.Context, userUUID strin
 	for i, participant := range participants {
 		participantIDs[i] = participant.ParticipantID
 	}
-	spec := sandbox.ContextSpec{GameVersionUUID: eligibility.GameVersionUUID, Script: eligibility.Script}
+	spec := sandbox.ContextSpec{GameVersionUUID: eligibility.GameVersionUUID, Script: eligibility.Script, Profile: scriptcheck.Profile(eligibility.ScriptProfile)}
 	game, views, started, err := c.startGame(ctx, spec, sandbox.StartInput{Participants: participantIDs, RandomSeed: c.deps.seeds()})
 	if errors.Is(err, sandbox.ErrNoCapacity) {
 		return runtime.StartSandboxUnavailable, nil
@@ -211,6 +212,7 @@ func (c *sessionController) adoptRunningSession(ctx context.Context) (runtime.St
 	game := Game{
 		GameVersionUUID: running.GameVersionUUID,
 		Script:          running.Script,
+		ScriptProfile:   scriptcheck.Profile(running.ScriptProfile),
 		ContextRevision: saved.ContextRevision,
 		State:           saved.State,
 		PRNGState:       saved.PRNGState,
@@ -345,6 +347,7 @@ func (c *sessionController) startInContext(ctx context.Context, spec sandbox.Con
 	return Game{
 		GameVersionUUID: spec.GameVersionUUID,
 		Script:          spec.Script,
+		ScriptProfile:   spec.Profile,
 		ContextRevision: result.ContextRevision,
 		State:           result.State,
 		PRNGState:       result.PRNGState,

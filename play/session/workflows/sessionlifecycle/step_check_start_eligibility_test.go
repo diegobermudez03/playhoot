@@ -42,6 +42,7 @@ func TestCheckStartEligibility(t *testing.T) {
 			ScriptObjectKey:   &key,
 			ScriptSHA256:      &sha,
 			ScriptSize:        &size,
+			ScriptProfile:     "sdk-v1",
 		}
 	}
 	finds := func(deps dependencies, found *internalrepo.StartCandidate) {
@@ -54,7 +55,7 @@ func TestCheckStartEligibility(t *testing.T) {
 			deps.scripts.EXPECT().Load(ctx, locator).Return([]byte(`function start() {}`), nil)
 			return test{
 				playerCount: 2,
-				expected:    sessionpkg.StartEligibility{Outcome: sessionpkg.StartEligible, GameVersionUUID: startVersionUUID, Script: []byte(`function start() {}`)},
+				expected:    sessionpkg.StartEligibility{Outcome: sessionpkg.StartEligible, GameVersionUUID: startVersionUUID, Script: []byte(`function start() {}`), ScriptProfile: "sdk-v1"},
 			}
 		},
 		"creator_uuid_in_another_textual_form_is_the_creator": func(t *testing.T, deps dependencies) test {
@@ -63,7 +64,7 @@ func TestCheckStartEligibility(t *testing.T) {
 			return test{
 				userUUID:    "0F8FAD5B-D9CB-469F-A165-70867728950E",
 				playerCount: 4,
-				expected:    sessionpkg.StartEligibility{Outcome: sessionpkg.StartEligible, GameVersionUUID: startVersionUUID, Script: []byte(`function start() {}`)},
+				expected:    sessionpkg.StartEligibility{Outcome: sessionpkg.StartEligible, GameVersionUUID: startVersionUUID, Script: []byte(`function start() {}`), ScriptProfile: "sdk-v1"},
 			}
 		},
 		"invalid_session_uuid_is_not_found": func(t *testing.T, deps dependencies) test {
@@ -125,6 +126,12 @@ func TestCheckStartEligibility(t *testing.T) {
 			scriptless := candidate()
 			scriptless.ScriptObjectKey = nil
 			finds(deps, scriptless)
+			return test{playerCount: 2, expectErr: true}
+		},
+		"version_with_an_unknown_script_profile_is_broken_data": func(t *testing.T, deps dependencies) test {
+			unknown := candidate()
+			unknown.ScriptProfile = "sdk-v9"
+			finds(deps, unknown)
 			return test{playerCount: 2, expectErr: true}
 		},
 		"loading_the_script_fails": func(t *testing.T, deps dependencies) test {

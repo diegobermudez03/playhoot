@@ -1,11 +1,19 @@
 package sandbox
 
+import "github.com/diegobermudez03/playhoot/play/runtime/sandbox/scriptcheck"
+
 // ContextSpec is the game a new execution context runs.
 type ContextSpec struct {
 	GameVersionUUID string
 
 	// Script is the game version's JavaScript source.
 	Script []byte
+
+	// Profile is the script profile the version records; empty means
+	// scriptcheck.ProfileHandwritten. A handwritten script's arguments are
+	// frozen before every call; an sdk-v1 script's arguments are fresh JSON it
+	// may change, and its top-level constants are frozen once it loads.
+	Profile scriptcheck.Profile
 }
 
 // StartInput is what a game's start() receives: who plays, by ParticipantID

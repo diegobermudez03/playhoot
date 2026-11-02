@@ -1,8 +1,7 @@
-// Package scriptcheck statically validates a game's backend script before its
-// version is published: all persistent gameplay state must live in what the
-// entrypoints return, never in module or global state, and authored code must
-// never mutate the values it is given. It is conservative: code it cannot
-// prove harmless is rejected.
+// Package scriptcheck statically validates a game's backend script, under its
+// version's Profile, before the version is published: all persistent gameplay
+// state must live in what the entrypoints return, never in module or global
+// state. It is conservative: code it cannot prove harmless is rejected.
 package scriptcheck
 
 import (
@@ -16,14 +15,14 @@ import (
 
 // Rules a Violation can break.
 const (
-	RuleSyntax         = "syntax"
-	RuleEntrypoint     = "entrypoint"
-	RuleModuleState    = "module_state"
-	RuleGlobalAccess   = "global_access"
-	RuleMutation       = "mutation"
-	RuleAsync          = "async"
-	RuleThis           = "this"
-	RuleUnsupported    = "unsupported_syntax"
+	RuleSyntax       = "syntax"
+	RuleEntrypoint   = "entrypoint"
+	RuleModuleState  = "module_state"
+	RuleGlobalAccess = "global_access"
+	RuleMutation     = "mutation"
+	RuleAsync        = "async"
+	RuleThis         = "this"
+	RuleUnsupported  = "unsupported_syntax"
 )
 
 // Violation is one place a script breaks a rule.
@@ -34,8 +33,36 @@ type Violation struct {
 	Message string
 }
 
+// Profile is the set of rules a game version's script is checked under; the
+// version records it and the sandbox runs the script accordingly.
+type Profile string
+
+const (
+	// ProfileHandwritten is a script written directly against the sandbox
+	// ABI, which must not mutate its inputs.
+	ProfileHandwritten Profile = "handwritten"
+	// ProfileSDKV1 is a script built by the frontend's game tools from an SDK
+	// project: it may change the fresh JSON each call gets, and its top-level
+	// constants may be literal objects and SDK definitions, frozen at load.
+	ProfileSDKV1 Profile = "sdk-v1"
+)
+
+// Valid reports whether p is a known profile.
+func (p Profile) Valid() bool {
+	return p == ProfileHandwritten || p == ProfileSDKV1
+}
+
+// ModuleValuesFunction is the top-level function an sdk-v1 script declares
+// to list its non-primitive top-level constants, which the sandbox freezes
+// once the script loads.
+const ModuleValuesFunction = "__playhoot_module_values"
+
 // entrypoints must be top-level function declarations.
 var entrypoints = []string{"start", "project"}
+
+// definitionFunctions are the SDK calls an sdk-v1 top-level constant may
+// hold, all pure: they return their argument or build a plain object of it.
+var definitionFunctions = map[string]bool{"defineGame": true, "defineCommands": true, "defineInputs": true}
 
 // forbiddenGlobals reach the global object or build code at runtime.
 var forbiddenGlobals = map[string]bool{
@@ -60,14 +87,17 @@ var mutatingObjectFunctions = map[string]bool{
 	"assign": true, "defineProperty": true, "defineProperties": true, "setPrototypeOf": true,
 }
 
-// Validate returns every violation in source, sorted by position; none means
-// it may be published.
-func Validate(source []byte) []Violation {
+// Validate returns every violation in source under profile, sorted by
+// position; none means it may be published.
+func Validate(profile Profile, source []byte) []Violation {
+	if !profile.Valid() {
+		return []Violation{{Line: 1, Column: 1, Rule: RuleUnsupported, Message: fmt.Sprintf("unknown script profile %q", profile)}}
+	}
 	program, err := parser.ParseFile(nil, "script.js", string(source), 0)
 	if err != nil {
 		return []Violation{{Line: 1, Column: 1, Rule: RuleSyntax, Message: err.Error()}}
 	}
-	c := &checker{program: program, scopes: make(map[ast.Node]*scope)}
+	c := &checker{program: program, profile: profile, scopes: make(map[ast.Node]*scope)}
 	c.run()
 	sort.SliceStable(c.violations, func(i, j int) bool {
 		if c.violations[i].Line != c.violations[j].Line {
@@ -111,6 +141,7 @@ func (s *scope) resolve(name string) *binding {
 
 type checker struct {
 	program    *ast.Program
+	profile    Profile
 	scopes     map[ast.Node]*scope
 	checking   bool
 	changed    bool
@@ -139,6 +170,8 @@ func (c *checker) run() {
 // functions and constants of immutable values live there.
 func (c *checker) checkTopLevel(top *scope) {
 	declared := make(map[string]bool)
+	// frozen are the sdk-v1 constants the sandbox must freeze at load.
+	var frozen []string
 	for _, statement := range c.program.Body {
 		switch s := statement.(type) {
 		case *ast.FunctionDeclaration:
@@ -157,7 +190,13 @@ func (c *checker) checkTopLevel(top *scope) {
 					continue
 				}
 				top.declare(string(identifier.Name), &binding{topLevel: true})
-				if !immutableValue(b.Initializer) {
+				switch {
+				case primitiveValue(b.Initializer):
+				case c.profile == ProfileSDKV1 && sdkConstant(b.Initializer):
+					frozen = append(frozen, string(identifier.Name))
+				case c.profile == ProfileSDKV1:
+					c.report(b.Initializer, RuleModuleState, fmt.Sprintf("top-level const %s must hold a literal, an object or array of them, a function or an SDK definition; computed values are module state", identifier.Name))
+				case !immutableValue(b.Initializer):
 					c.report(b.Initializer, RuleModuleState, fmt.Sprintf("top-level const %s must hold a primitive or a function; objects, arrays and computed values are mutable module state", identifier.Name))
 				}
 			}
@@ -175,15 +214,87 @@ func (c *checker) checkTopLevel(top *scope) {
 			c.report(statement, RuleModuleState, "top-level code may only declare functions and constants")
 		}
 	}
-	for _, name := range entrypoints {
+	required := entrypoints
+	if c.profile == ProfileSDKV1 {
+		required = append(append([]string(nil), entrypoints...), ModuleValuesFunction)
+	}
+	for _, name := range required {
 		if !declared[name] {
 			c.violations = append(c.violations, Violation{Line: 1, Column: 1, Rule: RuleEntrypoint, Message: fmt.Sprintf("the script must declare a top-level function %s", name)})
 		}
 	}
+	if c.profile == ProfileSDKV1 && declared[ModuleValuesFunction] {
+		c.checkModuleValues(frozen)
+	}
 }
 
-// immutableValue reports whether a top-level const may hold expression.
+// checkModuleValues enforces that __playhoot_module_values returns exactly
+// the sdk-v1 constants that are not primitives, so the sandbox freezes them
+// all.
+func (c *checker) checkModuleValues(frozen []string) {
+	for _, statement := range c.program.Body {
+		declaration, ok := statement.(*ast.FunctionDeclaration)
+		if !ok || declaration.Function.Name == nil || string(declaration.Function.Name.Name) != ModuleValuesFunction {
+			continue
+		}
+		listed, ok := moduleValuesList(declaration.Function)
+		expected := make(map[string]bool, len(frozen))
+		for _, name := range frozen {
+			expected[name] = true
+		}
+		if ok && len(listed) == len(expected) {
+			for _, name := range listed {
+				ok = ok && expected[name]
+				delete(expected, name)
+			}
+		} else {
+			ok = false
+		}
+		if !ok {
+			c.report(declaration, RuleModuleState, fmt.Sprintf("%s must only return an array of exactly the top-level constants that are not primitives: %v", ModuleValuesFunction, frozen))
+		}
+		return
+	}
+}
+
+// moduleValuesList is the names __playhoot_module_values returns, when its
+// body is only `return [name, ...]`.
+func moduleValuesList(function *ast.FunctionLiteral) ([]string, bool) {
+	if function.Body == nil || len(function.Body.List) != 1 {
+		return nil, false
+	}
+	returned, ok := function.Body.List[0].(*ast.ReturnStatement)
+	if !ok {
+		return nil, false
+	}
+	array, ok := returned.Argument.(*ast.ArrayLiteral)
+	if !ok {
+		return nil, false
+	}
+	names := make([]string, 0, len(array.Value))
+	for _, value := range array.Value {
+		identifier, ok := value.(*ast.Identifier)
+		if !ok {
+			return nil, false
+		}
+		names = append(names, string(identifier.Name))
+	}
+	return names, true
+}
+
+// immutableValue reports whether a handwritten top-level const may hold
+// expression.
 func immutableValue(expression ast.Expression) bool {
+	switch expression.(type) {
+	case *ast.FunctionLiteral, *ast.ArrowFunctionLiteral:
+		return true
+	default:
+		return primitiveValue(expression)
+	}
+}
+
+// primitiveValue reports whether expression is a primitive literal.
+func primitiveValue(expression ast.Expression) bool {
 	switch e := expression.(type) {
 	case *ast.StringLiteral, *ast.NumberLiteral, *ast.BooleanLiteral, *ast.NullLiteral:
 		return true
@@ -192,12 +303,60 @@ func immutableValue(expression ast.Expression) bool {
 	case *ast.UnaryExpression:
 		_, number := e.Operand.(*ast.NumberLiteral)
 		return number && (e.Operator == token.MINUS || e.Operator == token.PLUS)
-	case *ast.FunctionLiteral:
-		return true
-	case *ast.ArrowFunctionLiteral:
-		return true
 	default:
 		return false
+	}
+}
+
+// sdkConstant reports whether an sdk-v1 top-level const may hold expression,
+// which is evaluated once at load: it can create no hidden state, since it
+// calls nothing but the SDK's pure definition functions.
+func sdkConstant(expression ast.Expression) bool {
+	switch e := expression.(type) {
+	case *ast.FunctionLiteral, *ast.ArrowFunctionLiteral, *ast.Identifier:
+		return true
+	case *ast.ArrayLiteral:
+		for _, value := range e.Value {
+			if !sdkConstant(value) {
+				return false
+			}
+		}
+		return true
+	case *ast.ObjectLiteral:
+		for _, property := range e.Value {
+			switch p := property.(type) {
+			case *ast.PropertyKeyed:
+				if p.Computed || !sdkConstant(p.Value) {
+					return false
+				}
+			case *ast.PropertyShort:
+				if p.Initializer != nil {
+					return false
+				}
+			case *ast.SpreadElement:
+				if !sdkConstant(p.Expression) {
+					return false
+				}
+			default:
+				return false
+			}
+		}
+		return true
+	case *ast.SpreadElement:
+		return sdkConstant(e.Expression)
+	case *ast.CallExpression:
+		callee, ok := e.Callee.(*ast.Identifier)
+		if !ok || !definitionFunctions[string(callee.Name)] {
+			return false
+		}
+		for _, argument := range e.ArgumentList {
+			if !sdkConstant(argument) {
+				return false
+			}
+		}
+		return true
+	default:
+		return primitiveValue(expression)
 	}
 }
 
@@ -253,19 +412,21 @@ func (c *checker) reaches(value ast.Expression, s *scope) bool {
 }
 
 // functionScope returns the scope of a function, created once: its
-// parameters are tainted, and its declarations are hoisted.
+// parameters are tainted, except in sdk-v1 scripts, whose inputs are fresh
+// on every call and may change; and its declarations are hoisted.
 func (c *checker) functionScope(node ast.Node, parent *scope, parameters *ast.ParameterList, body []ast.Statement) *scope {
 	if existing, found := c.scopes[node]; found {
 		return existing
 	}
 	s := &scope{parent: parent, names: make(map[string]*binding)}
 	c.scopes[node] = s
+	tainted := c.profile == ProfileHandwritten
 	if parameters != nil {
 		for _, parameter := range parameters.List {
-			declareTarget(s, parameter.Target, true)
+			declareTarget(s, parameter.Target, tainted)
 		}
 		if parameters.Rest != nil {
-			declareTarget(s, parameters.Rest, true)
+			declareTarget(s, parameters.Rest, tainted)
 		}
 	}
 	hoist(s, body)
@@ -608,7 +769,11 @@ func (c *checker) expression(expression ast.Expression, s *scope) {
 			c.violate(e, RuleGlobalAccess, fmt.Sprintf("%s is not allowed", e.Name))
 		}
 	case *ast.ThisExpression:
-		c.violate(e, RuleThis, "this is not allowed: state lives in what entrypoints return")
+		// In sdk-v1 scripts this only reaches objects a call created: top-level
+		// classes are refused and every global is frozen.
+		if c.profile == ProfileHandwritten {
+			c.violate(e, RuleThis, "this is not allowed: state lives in what entrypoints return")
+		}
 	case *ast.MetaProperty:
 		c.violate(e, RuleUnsupported, "meta properties are not allowed")
 	case *ast.AwaitExpression:

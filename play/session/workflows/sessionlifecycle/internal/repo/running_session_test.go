@@ -28,14 +28,14 @@ func TestFindRunningSession(t *testing.T) {
 			revision := int64(3)
 			return test{
 				sessionUUID: created.UUID,
-				expected:    &RunningSessionRecord{ID: created.ID, Status: "LOBBY", GameVersionUUID: versionUUID, CheckpointRevision: &revision, CheckpointContent: []byte(`{"round":2}`)},
+				expected:    &RunningSessionRecord{ID: created.ID, Status: "LOBBY", GameVersionUUID: versionUUID, ScriptProfile: "handwritten", CheckpointRevision: &revision, CheckpointContent: []byte(`{"round":2}`)},
 			}
 		},
 		"session_without_checkpoint": func(t *testing.T, db *gorm.DB) test {
 			created := seedSession(t, db, time.Now().Add(time.Hour))
 			var versionUUID string
 			require.NoError(t, db.Raw(`SELECT uuid FROM play_game_versions WHERE id = ?`, created.GameVersionID).Scan(&versionUUID).Error)
-			return test{sessionUUID: created.UUID, expected: &RunningSessionRecord{ID: created.ID, Status: "LOBBY", GameVersionUUID: versionUUID}}
+			return test{sessionUUID: created.UUID, expected: &RunningSessionRecord{ID: created.ID, Status: "LOBBY", GameVersionUUID: versionUUID, ScriptProfile: "handwritten"}}
 		},
 		"unknown_session": func(t *testing.T, db *gorm.DB) test {
 			return test{sessionUUID: uuid.NewString()}

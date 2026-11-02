@@ -35,6 +35,7 @@ func TestLoadRunningSessionIntegration(t *testing.T) {
 		require.Equal(t, sessionpkg.RunningSession{
 			GameVersionUUID: session.VersionUUID,
 			Script:          []byte(startableScript),
+			ScriptProfile:   "handwritten",
 			Participants:    commit.Participants,
 			Checkpoint:      commit.Checkpoint,
 		}, running)

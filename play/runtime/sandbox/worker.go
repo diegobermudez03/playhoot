@@ -11,6 +11,8 @@ import (
 	"slices"
 
 	"github.com/fastschema/qjs"
+
+	"github.com/diegobermudez03/playhoot/play/runtime/sandbox/scriptcheck"
 )
 
 // RunAsWorkerIfRequested serves one context until its host is gone when the
@@ -87,6 +89,9 @@ type worker struct {
 	sessionTimeMs int64
 	// broken is set when a failure may have left the runtime unusable.
 	broken bool
+	// freezeArguments is false for sdk-v1 scripts, which may change the fresh
+	// JSON each call receives.
+	freezeArguments bool
 }
 
 func (w *worker) close() {
@@ -135,6 +140,14 @@ func (w *worker) load(req workerRequest) workerResponse {
 	if w.runtime != nil {
 		return fatal("context already loaded")
 	}
+	profile := scriptcheck.Profile(req.Profile)
+	if profile == "" {
+		profile = scriptcheck.ProfileHandwritten
+	}
+	if !profile.Valid() {
+		return fatal(fmt.Sprintf("unknown script profile %q", req.Profile))
+	}
+	w.freezeArguments = profile == scriptcheck.ProfileHandwritten
 	// The patched runtime mounts no directory and gives no real clock: the
 	// script has no host capability even through the qjs:std or qjs:os
 	// modules.
@@ -156,6 +169,17 @@ func (w *worker) load(req workerRequest) workerResponse {
 	if _, err := runtime.Context().Eval("script.js", qjs.Code(req.Script), qjs.FlagStrict()); err != nil {
 		w.broken = true
 		return scriptFailure("loading script: " + err.Error())
+	}
+	// An sdk-v1 script's top-level constants are reachable only from its
+	// closures, which lockdown does not reach: the script lists them, and
+	// changing one later fails instead of keeping state between calls.
+	if profile == scriptcheck.ProfileSDKV1 {
+		if result, err := w.control.InvokeJS("freezeModuleValues"); err != nil {
+			w.broken = true
+			return scriptFailure("freezing the script's top-level values: " + err.Error())
+		} else {
+			result.Free()
+		}
 	}
 	// Once loaded, nothing global can change: all game state lives in what
 	// executions return, which the Runtime mirrors.
@@ -497,8 +521,8 @@ func (w *worker) project(req workerRequest) workerResponse {
 }
 
 // invoke calls the script's global function name with JSON arguments, each
-// deep-frozen so authored code cannot change them, and returns its result as
-// JSON, or the response the failure answers with.
+// deep-frozen for handwritten scripts so authored code cannot change them,
+// and returns its result as JSON, or the response the failure answers with.
 func (w *worker) invoke(name string, argumentsJSON ...string) (string, *workerResponse) {
 	ctx := w.runtime.Context()
 	global := ctx.Global()
@@ -510,6 +534,9 @@ func (w *worker) invoke(name string, argumentsJSON ...string) (string, *workerRe
 	for i, argument := range argumentsJSON {
 		arguments[i] = ctx.ParseJSON(argument)
 		defer arguments[i].Free()
+		if !w.freezeArguments {
+			continue
+		}
 		frozen, err := w.control.InvokeJS("freezeValue", arguments[i])
 		if err != nil {
 			failure := fatal("freezing an argument: " + err.Error())

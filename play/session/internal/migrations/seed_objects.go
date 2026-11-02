@@ -87,6 +87,8 @@ func SeedObjects(ctx context.Context, store objectstore.Store) error {
 		{prefix: backendScriptPrefix, content: []byte(seedParquesScript), contentType: "text/javascript"},
 		{prefix: frontendPackagePrefix, content: seedParquesFrontendPackage, contentType: "text/html"},
 		{prefix: frontendPackagePrefix, content: seedSpaceDriftAssetsFrontendPackage, contentType: "text/html"},
+		{prefix: backendScriptPrefix, content: seedTapRaceScript, contentType: "text/javascript"},
+		{prefix: frontendPackagePrefix, content: seedTapRaceFrontendPackage, contentType: "text/html"},
 	}
 	for _, asset := range seedSpaceDriftAssets {
 		objects = append(objects, seedObject{prefix: assetPrefix, content: asset.content, contentType: asset.mimeType})

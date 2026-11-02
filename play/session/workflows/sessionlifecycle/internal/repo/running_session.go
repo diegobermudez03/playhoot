@@ -15,6 +15,7 @@ type RunningSessionRecord struct {
 	ScriptObjectKey    *string
 	ScriptSHA256       *string
 	ScriptSize         *int64
+	ScriptProfile      string
 	CheckpointRevision *int64
 	CheckpointContent  []byte
 }
@@ -25,7 +26,7 @@ func (r *Repo) FindRunningSession(ctx context.Context, sessionUUID string) (*Run
 	var record RunningSessionRecord
 	result := r.db.WithContext(ctx).Raw(`
 		SELECT s.id, s.status, v.uuid AS game_version_uuid,
-			v.script_object_key, v.script_sha256, v.script_size,
+			v.script_object_key, v.script_sha256, v.script_size, v.script_profile,
 			c.context_revision AS checkpoint_revision, c.content AS checkpoint_content
 		FROM play_sessions s
 		JOIN play_game_versions v ON v.id = s.game_version_id

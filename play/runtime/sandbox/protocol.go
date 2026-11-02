@@ -44,8 +44,9 @@ const (
 type workerRequest struct {
 	Operation workerOperation `json:"operation"`
 
-	// Script is set only for workerOperationLoad.
-	Script string `json:"script,omitempty"`
+	// Script and Profile are set only for workerOperationLoad.
+	Script  string `json:"script,omitempty"`
+	Profile string `json:"profile,omitempty"`
 
 	// Participants and RandomSeed are set only for workerOperationStart.
 	Participants []string `json:"participants,omitempty"`
