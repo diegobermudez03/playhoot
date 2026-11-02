@@ -10,6 +10,7 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/diegobermudez03/playhoot/game"
+	"github.com/diegobermudez03/playhoot/identity"
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
 
@@ -22,12 +23,13 @@ const (
 type dependencies struct {
 	editions *MockeditableVersionFinder
 	drafts   *MockdraftReader
+	links    *MockresourceLinkReader
 }
 
 func newTestManager(t *testing.T) (*Manager, dependencies) {
 	ctrl := gomock.NewController(t)
-	deps := dependencies{editions: NewMockeditableVersionFinder(ctrl), drafts: NewMockdraftReader(ctrl)}
-	return New(deps.editions, deps.drafts), deps
+	deps := dependencies{editions: NewMockeditableVersionFinder(ctrl), drafts: NewMockdraftReader(ctrl), links: NewMockresourceLinkReader(ctrl)}
+	return New(deps.editions, deps.drafts, deps.links), deps
 }
 
 func TestReadDraft(t *testing.T) {
@@ -166,5 +168,29 @@ func TestReadDraftBuild(t *testing.T) {
 		deps.drafts.EXPECT().ReadBuild(ctx, testVersionUUID, int64(9), time.Duration(0)).Return(sessionpkg.DraftBuild{}, sessionpkg.ErrDraftBuildNotFound)
 		_, err := m.ReadDraftBuild(ctx, testUserUUID, testGameUUID, 9, 0)
 		require.True(t, errors.Is(err, sessionpkg.ErrDraftBuildNotFound))
+	})
+}
+
+func TestAILinkStatus(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("the owner sees the link even without an open edition", func(t *testing.T) {
+		m, deps := newTestManager(t)
+		status := identity.ResourceLinkStatus{Active: true, CreatedAt: time.Unix(1, 0), ExpiresAt: time.Unix(2, 0)}
+		deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(game.EditableVersion{Outcome: game.EditableVersionNotEditable}, nil)
+		deps.links.EXPECT().ResourceLinkStatus(ctx, testUserUUID, game.ResourceKind, testGameUUID).Return(status, nil)
+
+		read, err := m.AILinkStatus(ctx, testUserUUID, testGameUUID)
+		require.NoError(t, err)
+		require.Equal(t, AILinkStatusRead{Access: game.EditableVersionNotEditable, Status: status}, read)
+	})
+
+	t.Run("anyone else learns nothing", func(t *testing.T) {
+		m, deps := newTestManager(t)
+		deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(game.EditableVersion{Outcome: game.EditableVersionNotFound}, nil)
+
+		read, err := m.AILinkStatus(ctx, testUserUUID, testGameUUID)
+		require.NoError(t, err)
+		require.Equal(t, AILinkStatusRead{Access: game.EditableVersionNotFound}, read)
 	})
 }

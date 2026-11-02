@@ -57,6 +57,22 @@ func newRESTMetrics(patterns []string) *requestMetrics {
 	}, patterns, trackedStatusCodes)
 }
 
+// preflightStatusCodes are the codes a CORS preflight answers: always 204,
+// with or without the allowance, so anything else is "other".
+var preflightStatusCodes = []int{204}
+
+// newPreflightMetrics declares the request metrics of CORS preflights, apart
+// from the REST routes they guard: one status each keeps them from crowding
+// the REST metric's series.
+func newPreflightMetrics(patterns []string) *requestMetrics {
+	return newRequestMetrics(requestMetricNames{
+		requests:     "api_http_preflights_total",
+		requestsHelp: "Finished CORS preflight requests, by matched route and response status code.",
+		duration:     "api_http_preflight_duration_seconds",
+		durationHelp: "Time taken to answer CORS preflights, by matched route.",
+	}, patterns, preflightStatusCodes)
+}
+
 // noLimitRefusal is the limit_refusal of a handshake no edge limit refused.
 const noLimitRefusal = "none"
 

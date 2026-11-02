@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/diegobermudez03/playhoot/api"
+	apigames "github.com/diegobermudez03/playhoot/api/games"
 	composergameauthoring "github.com/diegobermudez03/playhoot/composer/gameauthoring"
 	"github.com/diegobermudez03/playhoot/game/usecases/checkplayability"
 	"github.com/diegobermudez03/playhoot/game/usecases/findeditableversion"
@@ -27,6 +28,7 @@ import (
 	"github.com/diegobermudez03/playhoot/identity/usecases/endsession"
 	"github.com/diegobermudez03/playhoot/identity/usecases/listoperations"
 	"github.com/diegobermudez03/playhoot/identity/usecases/refreshcredentials"
+	"github.com/diegobermudez03/playhoot/identity/usecases/resourcelinks"
 	"github.com/diegobermudez03/playhoot/identity/usecases/setdisplayname"
 	"github.com/diegobermudez03/playhoot/identity/workflows/accountlogin"
 	"github.com/diegobermudez03/playhoot/orchestrator/gameauthoring"
@@ -117,6 +119,11 @@ type envVariables struct {
 	GCSProjectID string
 	GCSBucket    string
 
+	// PublicAPIBaseURL is the address the API is reached at from outside,
+	// used to write the links an AI gets for a game. Required in production;
+	// elsewhere it defaults to http://localhost:<HTTP_PORT>.
+	PublicAPIBaseURL string
+
 	// GameToolchainDir is the frontend repository checkout whose game tools
 	// build DRAFT revisions. Optional: without it every build fails as the
 	// platform's.
@@ -205,8 +212,9 @@ func run() error {
 	buildWakeUps := buildsignal.New()
 	versionDrafting := versiondrafting.New(db, store, buildWakeUps)
 	versionBuilding := versionbuilding.New(db, store, gametoolchain.Open(envVars.GameToolchainDir), buildWakeUps, versionbuilding.DefaultWorkers)
-	gameAuthoring := gameauthoring.New(gamelifecycle.New(db), editableVersions, versionDrafting)
-	gameAuthoringReads := composergameauthoring.New(editableVersions, versionDrafting)
+	resourceLinks := resourcelinks.New(db)
+	gameAuthoring := gameauthoring.New(gamelifecycle.New(db), editableVersions, versionDrafting, resourceLinks)
+	gameAuthoringReads := composergameauthoring.New(editableVersions, versionDrafting, resourceLinks)
 	owners := ownership.New(checklivesession.New(db))
 	replayRecorder := replayrecording.New(storereplaychunk.New(db, store), envVars.Replay)
 	// Closed after the controllers, deferred earlier: each stops its
@@ -260,7 +268,9 @@ func run() error {
 		liveConnections,
 		liveConnections,
 		resolvejoincode.New(db),
-		api.Games{Creator: gameAuthoring, Editor: gameAuthoring, Reader: gameAuthoringReads},
+		api.Games{Creator: gameAuthoring, Editor: gameAuthoring, Reader: gameAuthoringReads, AILinks: apigames.AILinks{
+			Owner: gameAuthoring, Status: gameAuthoringReads, Resolver: resourceLinks, PublicBaseURL: envVars.PublicAPIBaseURL,
+		}},
 		api.Config{
 			CORSAllowedOrigins:      envVars.CORSAllowedOrigins,
 			WebSocketAllowedOrigins: envVars.WebSocketAllowedOrigins,
@@ -367,6 +377,7 @@ func readEnvVariables() (*envVariables, error) {
 		GCSBucket:    strings.TrimSpace(os.Getenv("GCS_BUCKET")),
 
 		GameToolchainDir: strings.TrimSpace(os.Getenv("GAME_TOOLCHAIN_DIR")),
+		PublicAPIBaseURL: strings.TrimSpace(os.Getenv("PUBLIC_API_BASE_URL")),
 	}
 
 	required := []struct {
@@ -433,6 +444,12 @@ func readEnvVariables() (*envVariables, error) {
 	}
 	if err := readIdentityVariables(envVars); err != nil {
 		return nil, err
+	}
+	if envVars.PublicAPIBaseURL == "" {
+		if strings.EqualFold(envVars.Environment, "production") {
+			return nil, fmt.Errorf("PUBLIC_API_BASE_URL is required in production")
+		}
+		envVars.PublicAPIBaseURL = "http://localhost:" + envVars.HTTPPort
 	}
 
 	return envVars, nil

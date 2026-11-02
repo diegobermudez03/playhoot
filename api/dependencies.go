@@ -5,6 +5,7 @@ import (
 	"io"
 	"time"
 
+	apigames "github.com/diegobermudez03/playhoot/api/games"
 	composergameauthoring "github.com/diegobermudez03/playhoot/composer/gameauthoring"
 	"github.com/diegobermudez03/playhoot/game"
 	"github.com/diegobermudez03/playhoot/identity"
@@ -128,9 +129,11 @@ type draftReader interface {
 	ReadDraftBuild(ctx context.Context, userUUID string, gameUUID string, revision int64, wait time.Duration) (composergameauthoring.DraftBuildRead, error)
 }
 
-// Games is what game authoring needs.
+// Games is what game authoring needs, AILinks included: the links an AI uses
+// to read and change one game.
 type Games struct {
 	Creator gameCreator
 	Editor  draftEditor
 	Reader  draftReader
+	AILinks apigames.AILinks
 }

@@ -30,6 +30,8 @@ The frontend counterpart is the frontend repository's Project `game-creation-web
 - The change envelope (`playhoot.project-change.v1`) uses snake_case field names (`base_revision`, `files`, `delete`, `idempotency_key`), like every API body; the plan's `baseRevision` example is superseded. The idempotency key is required on every draft write.
 - Builds (the human, 2026-11-02): every applied revision is built automatically in the background (a revision sent is one its author wants built), coalesced so only a version's newest waiting revision is built; the answer never waits for the build, and a person or an AI reads its result on the draft or through a long poll. A simulation or a preview requires a succeeded build. The build runs behind a port (`gamebuild.Builder`) so it can become its own service.
 
+- AI links (the human, 2026-11-02): the link is a credential Identity keeps, scoped to one game; its token goes in the path for reads and writes; one active link per game, valid 7 days; renewing creates a new link and revokes the old one; the context page is Markdown served by the backend, with the sources inline when they weigh under 150 KiB, otherwise linked per file pinned to the observed revision.
+
 ## Completion Criteria
 
 Every CHECKLIST item done or explicitly moved out by the human, and the plan's delivery 3 closure (§13) demonstrated: the same kind of game created by a read-only chat and by an agent with tools, both built and tested, published by the owner and played by another person.

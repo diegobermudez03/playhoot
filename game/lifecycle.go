@@ -31,3 +31,7 @@ type EditableVersion struct {
 	Outcome     EditableVersionOutcome
 	VersionUUID string
 }
+
+// ResourceKind is how a game is named among other kinds of resources when
+// another domain refers to it by kind, as an Identity resource link does.
+const ResourceKind = "game"

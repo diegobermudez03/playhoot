@@ -7,6 +7,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -22,7 +23,7 @@ import (
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
 
-//go:generate mockgen -package=games -destination=handler_mock_test.go . gameCreator,draftEditor,draftReader
+//go:generate mockgen -package=games -destination=handler_mock_test.go . gameCreator,draftEditor,draftReader,aiLinkOwner,aiLinkStatusReader,linkResolver
 
 // authorizer is Identity's coarse authorization.
 type authorizer interface {
@@ -56,17 +57,48 @@ type draftReader interface {
 	ReadDraftBuild(ctx context.Context, userUUID string, gameUUID string, revision int64, wait time.Duration) (composergameauthoring.DraftBuildRead, error)
 }
 
+// aiLinkOwner creates and revokes the link an AI uses for a game, for its
+// owner only.
+type aiLinkOwner interface {
+	CreateAILink(ctx context.Context, userUUID string, gameUUID string) (gameauthoring.AILinkCreation, error)
+	RevokeAILink(ctx context.Context, userUUID string, gameUUID string) (game.EditableVersionOutcome, error)
+}
+
+// aiLinkStatusReader says whether a game has a live AI link, for its owner
+// only.
+type aiLinkStatusReader interface {
+	AILinkStatus(ctx context.Context, userUUID string, gameUUID string) (composergameauthoring.AILinkStatusRead, error)
+}
+
+// linkResolver is Identity's answer to whom a link token acts for and on
+// what resource.
+type linkResolver interface {
+	ResolveResourceLink(ctx context.Context, token string) (identity.ResolvedResourceLink, error)
+}
+
+// AILinks is what the links an AI uses for a game need. PublicBaseURL is the
+// address the API is reached at from outside, with no trailing slash.
+type AILinks struct {
+	Owner         aiLinkOwner
+	Status        aiLinkStatusReader
+	Resolver      linkResolver
+	PublicBaseURL string
+}
+
 // Handler exposes the game authoring endpoints.
 type Handler struct {
 	authorizer authorizer
 	creator    gameCreator
 	editor     draftEditor
 	reader     draftReader
+	links      AILinks
+	now        func() time.Time
 }
 
 // NewHandler constructs a Handler.
-func NewHandler(authorizer authorizer, creator gameCreator, editor draftEditor, reader draftReader) *Handler {
-	return &Handler{authorizer: authorizer, creator: creator, editor: editor, reader: reader}
+func NewHandler(authorizer authorizer, creator gameCreator, editor draftEditor, reader draftReader, links AILinks) *Handler {
+	links.PublicBaseURL = strings.TrimRight(links.PublicBaseURL, "/")
+	return &Handler{authorizer: authorizer, creator: creator, editor: editor, reader: reader, links: links, now: time.Now}
 }
 
 // RESTRoutes returns this group's request/response endpoints.
@@ -81,6 +113,19 @@ func (h *Handler) RESTRoutes() []routing.Route {
 		{Pattern: "POST /v1/games/{gameUUID}/draft/restore", Handler: h.handleRestoreDraftRevision, Authorization: edit},
 		{Pattern: "PUT /v1/games/{gameUUID}/draft/assets/{key}", Handler: h.handleUploadAsset, Authorization: edit},
 		{Pattern: "POST /v1/games/{gameUUID}/draft/assets/{key}/remove", Handler: h.handleRemoveAsset, Authorization: edit},
+		{Pattern: "POST /v1/games/{gameUUID}/ai-link", Handler: h.handleCreateAILink, Authorization: edit},
+		{Pattern: "GET /v1/games/{gameUUID}/ai-link", Handler: h.handleAILinkStatus, Authorization: edit},
+		{Pattern: "POST /v1/games/{gameUUID}/ai-link/revoke", Handler: h.handleRevokeAILink, Authorization: edit},
+
+		// An AI reaches its game through the link token in the path, acting
+		// as the game's owner on that game only.
+		{Pattern: "GET /ai/v1/{token}", Handler: h.handleAIContext, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},
+		{Pattern: "GET /ai/v1/{token}/files/{path...}", Handler: h.handleAIFile, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},
+		{Pattern: "GET /ai/v1/{token}/build", Handler: h.handleReadDraftBuild, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},
+		{Pattern: "POST /ai/v1/{token}/changes", Handler: h.handleApplyDraftChanges, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},
+		{Pattern: "POST /ai/v1/{token}/restore", Handler: h.handleRestoreDraftRevision, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},
+		{Pattern: "PUT /ai/v1/{token}/assets/{key}", Handler: h.handleUploadAsset, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},
+		{Pattern: "POST /ai/v1/{token}/assets/{key}/remove", Handler: h.handleRemoveAsset, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},
 	}
 }
 
@@ -124,7 +169,9 @@ func caller(w http.ResponseWriter, r *http.Request, what string) (userUUID strin
 }
 
 // noStore marks a response that must not be kept by any cache: a game's
-// sources are private.
+// sources are private. A stricter policy already set (an AI link's) stays.
 func noStore(w http.ResponseWriter) {
-	w.Header().Set("Cache-Control", "no-store")
+	if w.Header().Get("Cache-Control") == "" {
+		w.Header().Set("Cache-Control", "no-store")
+	}
 }

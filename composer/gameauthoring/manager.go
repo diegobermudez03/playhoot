@@ -10,12 +10,13 @@ import (
 	"time"
 
 	"github.com/diegobermudez03/playhoot/game"
+	"github.com/diegobermudez03/playhoot/identity"
 	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/monitoring"
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
 
-//go:generate mockgen -package=gameauthoring -destination=manager_mock_test.go . editableVersionFinder,draftReader
+//go:generate mockgen -package=gameauthoring -destination=manager_mock_test.go . editableVersionFinder,draftReader,resourceLinkReader
 
 // editableVersionFinder is Game Management's decision of whether a user may
 // edit, and so read, a game's version being built.
@@ -30,16 +31,44 @@ type draftReader interface {
 	ReadBuild(ctx context.Context, versionUUID string, revision int64, wait time.Duration) (sessionpkg.DraftBuild, error)
 }
 
+// resourceLinkReader is Identity's view of the links to one resource.
+type resourceLinkReader interface {
+	ResourceLinkStatus(ctx context.Context, userUUID string, kind string, resourceID string) (identity.ResourceLinkStatus, error)
+}
+
 // Manager composes the game-authoring reads. It owns no business entity.
 type Manager struct {
 	editions editableVersionFinder
 	drafts   draftReader
+	links    resourceLinkReader
 }
 
-// New constructs a Manager from Game Management's edit authorization and
-// Play's version being built.
-func New(editions editableVersionFinder, drafts draftReader) *Manager {
-	return &Manager{editions: editions, drafts: drafts}
+// New constructs a Manager from Game Management's edit authorization, Play's
+// version being built and Identity's links an AI uses for a game.
+func New(editions editableVersionFinder, drafts draftReader, links resourceLinkReader) *Manager {
+	return &Manager{editions: editions, drafts: drafts, links: links}
+}
+
+// AILinkStatusRead is whether a game has a live link for an AI, set only
+// when Access says the user owns the game (found or not_editable).
+type AILinkStatusRead struct {
+	Access game.EditableVersionOutcome
+	Status identity.ResourceLinkStatus
+}
+
+// AILinkStatus says whether userUUID's game gameUUID has a live AI link.
+func (m *Manager) AILinkStatus(ctx context.Context, userUUID string, gameUUID string) (AILinkStatusRead, error) {
+	defer logging.Step(ctx, "composer.ai_link_status").Close()
+
+	editable, err := m.editableVersion(ctx, gameUUID, userUUID)
+	if err != nil || editable.Outcome == game.EditableVersionNotFound {
+		return AILinkStatusRead{Access: editable.Outcome}, err
+	}
+	status, err := m.links.ResourceLinkStatus(ctx, userUUID, game.ResourceKind, gameUUID)
+	if err != nil {
+		return AILinkStatusRead{}, fmt.Errorf("reading the AI link: %s", err)
+	}
+	return AILinkStatusRead{Access: editable.Outcome, Status: status}, nil
 }
 
 // DraftRead is a read of a game's version being built: whether Game

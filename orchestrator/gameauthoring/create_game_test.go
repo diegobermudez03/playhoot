@@ -24,12 +24,13 @@ type dependencies struct {
 	games    *MockgameCreator
 	editions *MockeditableVersionFinder
 	drafts   *MockdraftWriter
+	links    *MockresourceLinkWriter
 }
 
 func newTestManager(t *testing.T) (*Manager, dependencies) {
 	ctrl := gomock.NewController(t)
-	deps := dependencies{games: NewMockgameCreator(ctrl), editions: NewMockeditableVersionFinder(ctrl), drafts: NewMockdraftWriter(ctrl)}
-	return New(deps.games, deps.editions, deps.drafts), deps
+	deps := dependencies{games: NewMockgameCreator(ctrl), editions: NewMockeditableVersionFinder(ctrl), drafts: NewMockdraftWriter(ctrl), links: NewMockresourceLinkWriter(ctrl)}
+	return New(deps.games, deps.editions, deps.drafts, deps.links), deps
 }
 
 func TestCreateGame(t *testing.T) {

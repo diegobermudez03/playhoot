@@ -75,7 +75,7 @@ func (h *Handler) handleUploadAsset(w http.ResponseWriter, r *http.Request) {
 	// large from one exactly at the limit.
 	body := http.MaxBytesReader(w, r.Body, sessionpkg.MaxDraftAssetBytes+1)
 
-	edit, err := h.editor.UploadDraftAsset(ctx, userUUID, gameUUID, key, body, idempotencyKey, sessionpkg.DraftOriginWeb)
+	edit, err := h.editor.UploadDraftAsset(ctx, userUUID, gameUUID, key, body, idempotencyKey, originOf(ctx))
 	if errors.Is(err, sessionpkg.ErrUploadsBusy) {
 		logging.LogError(ctx, err)
 		w.Header().Set("Retry-After", "5")
@@ -101,7 +101,7 @@ func (h *Handler) handleRemoveAsset(w http.ResponseWriter, r *http.Request) {
 	}
 	logging.LogFields(ctx, logging.Field("asset_key", key))
 
-	edit, err := h.editor.RemoveDraftAsset(ctx, userUUID, gameUUID, key, idempotencyKey, sessionpkg.DraftOriginWeb)
+	edit, err := h.editor.RemoveDraftAsset(ctx, userUUID, gameUUID, key, idempotencyKey, originOf(ctx))
 	writeAssetEdit(ctx, w, edit, err, "removing asset")
 }
 

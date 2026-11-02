@@ -89,7 +89,7 @@ func (h *Handler) handleApplyDraftChanges(w http.ResponseWriter, r *http.Request
 		BaseRevision:   *req.BaseRevision,
 		Delete:         req.Delete,
 		IdempotencyKey: req.IdempotencyKey,
-		Origin:         sessionpkg.DraftOriginWeb,
+		Origin:         originOf(ctx),
 	}
 	for _, file := range req.Files {
 		change.Files = append(change.Files, sessionpkg.DraftFileContent{Path: file.Path, Content: file.Content})
@@ -127,7 +127,7 @@ func (h *Handler) handleRestoreDraftRevision(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	edit, err := h.editor.RestoreDraftRevision(ctx, userUUID, gameUUID, req.Revision, *req.BaseRevision, req.IdempotencyKey, sessionpkg.DraftOriginWeb)
+	edit, err := h.editor.RestoreDraftRevision(ctx, userUUID, gameUUID, req.Revision, *req.BaseRevision, req.IdempotencyKey, originOf(ctx))
 	writeEdit(ctx, w, edit, err, "restoring draft revision")
 }
 

@@ -259,3 +259,49 @@ var ErrUserNotFound = errors.New("user not found")
 // ErrIdempotencyConflict is returned when an idempotency key is reused for a
 // request that differs from the one it was first used with.
 var ErrIdempotencyConflict = errors.New("idempotency key reused with a conflicting request")
+
+// ResolveResourceLinkOutcome is what a resource link token turned out to be.
+type ResolveResourceLinkOutcome string
+
+const (
+	// ResourceLinkValid means the token is a live link: its holder may act
+	// for UserUUID on the one resource it names.
+	ResourceLinkValid ResolveResourceLinkOutcome = "valid"
+
+	// ResourceLinkUnknown means no link has this token.
+	ResourceLinkUnknown ResolveResourceLinkOutcome = "unknown"
+
+	// ResourceLinkExpired means the link outlived its lifetime.
+	ResourceLinkExpired ResolveResourceLinkOutcome = "expired"
+
+	// ResourceLinkRevoked means the link was revoked or replaced by a newer
+	// one for the same resource.
+	ResourceLinkRevoked ResolveResourceLinkOutcome = "revoked"
+)
+
+// CreatedResourceLink is a new secret link to one resource. Token is shown
+// only here: Identity keeps its hash.
+type CreatedResourceLink struct {
+	Token     string
+	CreatedAt time.Time
+	ExpiresAt time.Time
+}
+
+// ResourceLinkStatus is whether a User has a live link to a resource.
+// CreatedAt and ExpiresAt are set only when Active.
+type ResourceLinkStatus struct {
+	Active    bool
+	CreatedAt time.Time
+	ExpiresAt time.Time
+}
+
+// ResolvedResourceLink is who a link token acts for and on what. UserUUID,
+// Kind, ResourceID and ExpiresAt are set only when Outcome is
+// ResourceLinkValid. Identity never knows what the resource is.
+type ResolvedResourceLink struct {
+	Outcome    ResolveResourceLinkOutcome
+	UserUUID   string
+	Kind       string
+	ResourceID string
+	ExpiresAt  time.Time
+}

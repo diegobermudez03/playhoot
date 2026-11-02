@@ -69,7 +69,7 @@ func NewServer(authorizer authorizer, guests guestCreator, operations operationL
 		}),
 		apiclienttelemetry.NewHandler(authorizer),
 		apiplay.NewHandler(authorizer, sessionCreator, owners, admins, players, joinCodes, liveConnections, wsx.OriginPatterns(config.WebSocketAllowedOrigins)),
-		apigames.NewHandler(authorizer, games.Creator, games.Editor, games.Reader),
+		apigames.NewHandler(authorizer, games.Creator, games.Editor, games.Reader, games.AILinks),
 	}
 	clients := throttle.ClientAddress{TrustedProxies: config.TrustedProxyHops}
 	crossOrigin := cors.NewPolicy(config.CORSAllowedOrigins)
@@ -80,14 +80,19 @@ func NewServer(authorizer authorizer, guests guestCreator, operations operationL
 	}
 	preflights := preflightRoutes(restRoutes, crossOrigin)
 
-	var restRequestMetrics *requestMetrics
+	var restRequestMetrics, preflightMetrics *requestMetrics
 	var handshakeMetrics *handshakeMetrics
 	if len(restRoutes) > 0 {
-		var patterns []string
-		for _, route := range append(restRoutes, preflights...) {
-			patterns = append(patterns, route.Pattern)
+		patterns := make([]string, len(restRoutes))
+		for i, route := range restRoutes {
+			patterns[i] = route.Pattern
 		}
 		restRequestMetrics = newRESTMetrics(patterns)
+		preflightPatterns := make([]string, len(preflights))
+		for i, route := range preflights {
+			preflightPatterns[i] = route.Pattern
+		}
+		preflightMetrics = newPreflightMetrics(preflightPatterns)
 	}
 	if len(wsRoutes) > 0 {
 		patterns := make([]string, len(wsRoutes))
@@ -107,7 +112,7 @@ func NewServer(authorizer authorizer, guests guestCreator, operations operationL
 	for _, route := range preflights {
 		// Preflights are not rate limited: a browser sends one before the
 		// request it guards, and refusing it would refuse that request.
-		mux.HandleFunc(route.Pattern, restObservability(route.Pattern, restRequestMetrics)(route.Handler))
+		mux.HandleFunc(route.Pattern, restObservability(route.Pattern, preflightMetrics)(route.Handler))
 	}
 	for _, route := range wsRoutes {
 		mux.HandleFunc(route.Pattern, chain(routeMiddlewares(route, clients, wsObservability(route.Pattern, handshakeMetrics)), route.Handler))

@@ -18,12 +18,14 @@ type Manager struct {
 	games    gameCreator
 	editions editableVersionFinder
 	drafts   draftWriter
+	links    resourceLinkWriter
 }
 
 // New constructs a Manager. games and editions are Game Management's game
-// creation and edit authorization; drafts is Play's version being built.
-func New(games gameCreator, editions editableVersionFinder, drafts draftWriter) *Manager {
-	return &Manager{games: games, editions: editions, drafts: drafts}
+// creation and edit authorization; drafts is Play's version being built;
+// links is Identity's links an AI uses for a game.
+func New(games gameCreator, editions editableVersionFinder, drafts draftWriter, links resourceLinkWriter) *Manager {
+	return &Manager{games: games, editions: editions, drafts: drafts, links: links}
 }
 
 // editableVersionFinder is Game Management's decision of whether a user may

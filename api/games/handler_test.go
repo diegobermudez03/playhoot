@@ -27,9 +27,25 @@ const (
 )
 
 type dependencies struct {
-	creator *MockgameCreator
-	editor  *MockdraftEditor
-	reader  *MockdraftReader
+	creator  *MockgameCreator
+	editor   *MockdraftEditor
+	reader   *MockdraftReader
+	owner    *MockaiLinkOwner
+	status   *MockaiLinkStatusReader
+	resolver *MocklinkResolver
+}
+
+// testPublicBaseURL is where the API is reached from outside in tests.
+const testPublicBaseURL = "https://api.playhoot.test"
+
+func newTestHandler(ctrl *gomock.Controller) (*Handler, dependencies) {
+	deps := dependencies{
+		creator: NewMockgameCreator(ctrl), editor: NewMockdraftEditor(ctrl), reader: NewMockdraftReader(ctrl),
+		owner: NewMockaiLinkOwner(ctrl), status: NewMockaiLinkStatusReader(ctrl), resolver: NewMocklinkResolver(ctrl),
+	}
+	h := NewHandler(nil, deps.creator, deps.editor, deps.reader, AILinks{Owner: deps.owner, Status: deps.status, Resolver: deps.resolver, PublicBaseURL: testPublicBaseURL + "/"})
+	h.now = func() time.Time { return time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC) }
+	return h, deps
 }
 
 type test struct {
@@ -53,8 +69,7 @@ func run(t *testing.T, tests map[string]func(t *testing.T, deps dependencies) te
 	for name, setup := range tests {
 		t.Run(name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
-			deps := dependencies{creator: NewMockgameCreator(ctrl), editor: NewMockdraftEditor(ctrl), reader: NewMockdraftReader(ctrl)}
-			h := NewHandler(nil, deps.creator, deps.editor, deps.reader)
+			h, deps := newTestHandler(ctrl)
 			tc := setup(t, deps)
 
 			request := httptest.NewRequest(tc.method, tc.target, strings.NewReader(tc.body)).WithContext(callerCtx())
