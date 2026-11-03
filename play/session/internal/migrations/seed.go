@@ -13,7 +13,6 @@ func SeedTables(db *gorm.DB) error {
 		seed20261018000000SpaceDrift(),
 		seed20261020000000SpaceDriftFrontend(),
 		seed20261020100000Parques(),
-		seed20261022000000AspectRatios(),
 		seed20261026000000SpaceDriftAssets(),
 		seed20261028000000InputRequirements(),
 		seed20261101000000TapRace(),

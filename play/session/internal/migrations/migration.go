@@ -11,19 +11,14 @@ import (
 func MigrateTables(db *gorm.DB) error {
 	migrations := []*gormigrate.Migration{
 		migration20261015000000PlaySessions(),
-		migration20261021000000PlaySessionParticipantDisplayNames(),
-		migration20261022000000PlayGameVersionAspectRatios(),
 		migration20261023000000PlayGameFaultReports(),
-		migration20261025000000PlaySessionJoinCodesCodeIndex(),
 		migration20261026000000PlayGameVersionAssets(),
 		migration20261026100000PlayGameVersionSignedURLs(),
-		migration20261027000000PlayDropCheckConstraints(),
 		migration20261028000000PlayGameVersionInputRequirements(),
-		migration20261101000000PlayGameVersionScriptProfiles(),
 		migration20261101100000PlayDraftVersions(),
 		migration20261102000000PlayDraftAssets(),
-		migration20261102100000PlayDropAssetUploads(),
 		migration20261102200000PlayDraftBuilds(),
+		migration20261102300000PlayPreviews(),
 	}
 
 	// gormigrate refuses to run with an empty list.

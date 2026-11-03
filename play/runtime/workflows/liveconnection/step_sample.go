@@ -54,7 +54,8 @@ func (c *sessionController) acceptSample(ctx context.Context, player *connection
 func (c *sessionController) takeSample(ctx context.Context, player *connection, sample runtime.Sample) (participantID string, invalid error) {
 	s := c.lock()
 	defer c.unlock()
-	if s.phase != phaseRunning || player.participantID == "" || s.players[player.userUUID] != player {
+	// A paused preview drops SAMPLEs unacknowledged.
+	if s.phase != phaseRunning || s.paused || player.participantID == "" || s.players[player.userUUID] != player {
 		// Before the game runs there is nothing to consume it, and a replaced
 		// connection no longer plays.
 		samplesReceived.Inc(ctx, sampleResultLabel.Value(sampleDropped))
@@ -98,7 +99,11 @@ func (c *sessionController) takeSample(ctx context.Context, player *connection, 
 // sessionTime is the effective Session time now: monotonic, starting where
 // the game's confirmed state was when it began running here.
 func (s *liveState) sessionTime() int64 {
-	return s.baseSessionTimeMs + s.now().Sub(s.runningSince).Milliseconds()
+	at := s.now()
+	if s.paused {
+		at = s.pausedAt
+	}
+	return s.baseSessionTimeMs + at.Sub(s.runningSince).Milliseconds()
 }
 
 // resetInputs returns a participant whose transport is gone to the default

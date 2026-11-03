@@ -24,7 +24,7 @@ import (
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
 
-//go:generate mockgen -package=games -destination=handler_mock_test.go . gameCreator,draftEditor,draftReader,aiLinkOwner,aiLinkStatusReader,linkResolver
+//go:generate mockgen -package=games -destination=handler_mock_test.go . gameCreator,draftEditor,draftReader,aiLinkOwner,aiLinkStatusReader,linkResolver,cardManager,publisher
 
 // authorizer is Identity's coarse authorization.
 type authorizer interface {
@@ -34,7 +34,7 @@ type authorizer interface {
 // gameCreator creates a game with its version being built, idempotently per
 // caller and key.
 type gameCreator interface {
-	CreateGame(ctx context.Context, userUUID string, idempotencyKey string) (gameauthoring.CreatedGame, error)
+	CreateGame(ctx context.Context, userUUID string, name string, idempotencyKey string) (gameauthoring.CreatedGame, error)
 }
 
 // draftEditor changes a game's version being built for a user Game
@@ -48,6 +48,7 @@ type draftEditor interface {
 	// EnsureDraft creates in Play the version being built that a read found
 	// missing there, answering Game Management's edit decision.
 	EnsureDraft(ctx context.Context, userUUID string, gameUUID string) (game.EditableVersionOutcome, error)
+	StartPreview(ctx context.Context, userUUID string, gameUUID string, revision int64, players int) (gameauthoring.PreviewStart, error)
 }
 
 // draftReader reads a game's version being built for a user Game Management
@@ -94,13 +95,14 @@ type Handler struct {
 	editor     draftEditor
 	reader     draftReader
 	links      AILinks
+	cards      Cards
 	now        func() time.Time
 }
 
 // NewHandler constructs a Handler.
-func NewHandler(authorizer authorizer, creator gameCreator, editor draftEditor, reader draftReader, links AILinks) *Handler {
+func NewHandler(authorizer authorizer, creator gameCreator, editor draftEditor, reader draftReader, links AILinks, cards Cards) *Handler {
 	links.PublicBaseURL = strings.TrimRight(links.PublicBaseURL, "/")
-	return &Handler{authorizer: authorizer, creator: creator, editor: editor, reader: reader, links: links, now: time.Now}
+	return &Handler{authorizer: authorizer, creator: creator, editor: editor, reader: reader, links: links, cards: cards, now: time.Now}
 }
 
 // RESTRoutes returns this group's request/response endpoints.
@@ -108,12 +110,21 @@ func (h *Handler) RESTRoutes() []routing.Route {
 	edit := auth.Require(h.authorizer, identity.OperationEditGame)
 	return []routing.Route{
 		{Pattern: "POST /v1/games", Handler: h.handleCreateGame, Authorization: auth.Require(h.authorizer, identity.OperationCreateGame)},
+		{Pattern: "GET /v1/games/{gameUUID}", Handler: h.handleReadCard, Authorization: edit},
+		{Pattern: "PATCH /v1/games/{gameUUID}", Handler: h.handleUpdateCard, Authorization: edit},
+		{Pattern: "PUT /v1/games/{gameUUID}/logo", Handler: h.handleUploadLogo, Authorization: edit},
+		{Pattern: "POST /v1/games/{gameUUID}/logo/remove", Handler: h.handleRemoveLogo, Authorization: edit},
+		{Pattern: "POST /v1/games/{gameUUID}/photos", Handler: h.handleAddPhoto, Authorization: edit},
+		{Pattern: "POST /v1/games/{gameUUID}/photos/{photoID}/remove", Handler: h.handleRemovePhoto, Authorization: edit},
+		{Pattern: "POST /v1/games/{gameUUID}/publish", Handler: h.handlePublish, Authorization: edit},
+		{Pattern: "POST /v1/games/{gameUUID}/editions", Handler: h.handleOpenEdition, Authorization: edit},
 		{Pattern: "GET /v1/games/{gameUUID}/draft", Handler: h.handleReadDraft, Authorization: edit},
 		{Pattern: "POST /v1/games/{gameUUID}/draft/changes", Handler: h.handleApplyDraftChanges, Authorization: edit},
 		{Pattern: "GET /v1/games/{gameUUID}/draft/revisions", Handler: h.handleListDraftRevisions, Authorization: edit},
 		{Pattern: "GET /v1/games/{gameUUID}/draft/build", Handler: h.handleReadDraftBuild, Authorization: edit},
 		{Pattern: "POST /v1/games/{gameUUID}/draft/restore", Handler: h.handleRestoreDraftRevision, Authorization: edit},
 		{Pattern: "POST /v1/games/{gameUUID}/draft/simulations", Handler: h.handleSimulateDraft, Authorization: edit},
+		{Pattern: "POST /v1/games/{gameUUID}/draft/previews", Handler: h.handleStartPreview, Authorization: edit},
 		{Pattern: "PUT /v1/games/{gameUUID}/draft/assets/{key}", Handler: h.handleUploadAsset, Authorization: edit},
 		{Pattern: "POST /v1/games/{gameUUID}/draft/assets/{key}/remove", Handler: h.handleRemoveAsset, Authorization: edit},
 		{Pattern: "POST /v1/games/{gameUUID}/ai-link", Handler: h.handleCreateAILink, Authorization: edit},

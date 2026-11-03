@@ -114,6 +114,15 @@ func (g *GCS) Put(ctx context.Context, key string, content []byte, contentType s
 	return nil
 }
 
+// Delete implements Store.
+func (g *GCS) Delete(ctx context.Context, key string) error {
+	err := g.client.Bucket(g.bucket).Object(key).Delete(ctx)
+	if err != nil && !errors.Is(err, storage.ErrObjectNotExist) {
+		return fmt.Errorf("deleting gcs object: %w", err)
+	}
+	return nil
+}
+
 // PresignGet implements Store. It does not check that the object exists:
 // a signed URL for a missing object simply returns 404 when fetched.
 func (g *GCS) PresignGet(ctx context.Context, key string, expiresAt time.Time) (string, error) {

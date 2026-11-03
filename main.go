@@ -21,6 +21,7 @@ import (
 	composergameauthoring "github.com/diegobermudez03/playhoot/composer/gameauthoring"
 	"github.com/diegobermudez03/playhoot/game/usecases/checkplayability"
 	"github.com/diegobermudez03/playhoot/game/usecases/findeditableversion"
+	"github.com/diegobermudez03/playhoot/game/workflows/gamecard"
 	"github.com/diegobermudez03/playhoot/game/workflows/gamelifecycle"
 	"github.com/diegobermudez03/playhoot/identity/loginproviders"
 	"github.com/diegobermudez03/playhoot/identity/usecases/authorize"
@@ -53,6 +54,7 @@ import (
 	"github.com/diegobermudez03/playhoot/play/session/usecases/recordlimithits"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/resolvejoincode"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/storereplaychunk"
+	"github.com/diegobermudez03/playhoot/play/session/workflows/previewlifecycle"
 	"github.com/diegobermudez03/playhoot/play/session/workflows/sessionlifecycle"
 	"github.com/diegobermudez03/playhoot/play/session/workflows/versionbuilding"
 	"github.com/diegobermudez03/playhoot/play/session/workflows/versiondrafting"
@@ -208,14 +210,20 @@ func run() error {
 	}()
 
 	sessionLifecycle := sessionlifecycle.New(db, store, envVars.MaxActiveSessionsPerCreator)
-	playLifecycle := playlifecycle.New(checkplayability.New(), sessionLifecycle)
+	playLifecycle := playlifecycle.New(checkplayability.New(db), sessionLifecycle)
 	editableVersions := findeditableversion.New(db)
 	buildWakeUps := buildsignal.New()
 	versionDrafting := versiondrafting.New(db, store, buildWakeUps)
 	versionBuilding := versionbuilding.New(db, store, gametoolchain.Open(envVars.GameToolchainDir), buildWakeUps, versionbuilding.DefaultWorkers)
 	resourceLinks := resourcelinks.New(db)
-	gameAuthoring := gameauthoring.New(gamelifecycle.New(db), editableVersions, versionDrafting, resourceLinks)
-	gameAuthoringReads := composergameauthoring.New(editableVersions, versionDrafting, resourceLinks, simulategame.New(sandboxHost))
+	// Previews run on the live controller pinned to a draft build; they are
+	// never Sessions (play/session/workflows/previewlifecycle).
+	previews := liveconnection.NewPreviews(liveconnection.DefaultMaxLivePreviews, sandboxHost, previewlifecycle.New(db, versionDrafting))
+	defer previews.Close()
+	gameLifecycle := gamelifecycle.New(db)
+	gameCards := gamecard.New(db, store)
+	gameAuthoring := gameauthoring.New(gameLifecycle, editableVersions, versionDrafting, resourceLinks, previews, gameLifecycle, versionDrafting, gameCards)
+	gameAuthoringReads := composergameauthoring.New(editableVersions, versionDrafting, resourceLinks, simulategame.New(sandboxHost), gameCards)
 	owners := ownership.New(checklivesession.New(db))
 	replayRecorder := replayrecording.New(storereplaychunk.New(db, store), envVars.Replay)
 	// Closed after the controllers, deferred earlier: each stops its
@@ -269,9 +277,9 @@ func run() error {
 		liveConnections,
 		liveConnections,
 		resolvejoincode.New(db),
-		api.Games{Creator: gameAuthoring, Editor: gameAuthoring, Reader: gameAuthoringReads, AILinks: apigames.AILinks{
+		api.Games{Previews: previews, Creator: gameAuthoring, Editor: gameAuthoring, Reader: gameAuthoringReads, AILinks: apigames.AILinks{
 			Owner: gameAuthoring, Status: gameAuthoringReads, Resolver: resourceLinks, PublicBaseURL: envVars.PublicAPIBaseURL,
-		}},
+		}, Cards: apigames.Cards{Card: gameCards, Publisher: gameAuthoring}},
 		api.Config{
 			CORSAllowedOrigins:      envVars.CORSAllowedOrigins,
 			WebSocketAllowedOrigins: envVars.WebSocketAllowedOrigins,

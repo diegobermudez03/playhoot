@@ -24,6 +24,7 @@ var (
 		commandInvalid,
 		string(runtime.CommandNotRunning),
 		string(runtime.CommandRateLimited),
+		string(runtime.CommandPaused),
 	)
 
 	commandsReceived = metrics.NewCounter(
@@ -147,6 +148,10 @@ func (c *sessionController) runCommand(ctx context.Context, player *connection, 
 		// A replaced connection no longer plays; it is ending anyway.
 		c.unlock()
 		return answer(runtime.CommandNotRunning), nil
+	}
+	if s.paused {
+		c.unlock()
+		return answer(runtime.CommandPaused), nil
 	}
 	payload, invalid := s.manifest.Commands.Normalize(command.Name, command.Payload)
 	if invalid != nil {

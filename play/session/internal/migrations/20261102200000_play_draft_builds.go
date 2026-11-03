@@ -60,8 +60,11 @@ func migration20261102200000PlayDraftBuilds() *gormigrate.Migration {
 					content_type TEXT NOT NULL,
 					object_key TEXT NOT NULL,
 					created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+					registered_at TIMESTAMPTZ NOT NULL,
 					deleted_at TIMESTAMPTZ NULL
 				)`,
+				// Serves the cleanup's scan of objects still stored.
+				`CREATE INDEX play_build_artifact_objects_cleanup_idx ON play_build_artifact_objects (registered_at) WHERE deleted_at IS NULL`,
 			}
 			for _, statement := range statements {
 				if err := tx.Exec(statement).Error; err != nil {

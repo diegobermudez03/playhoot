@@ -17,7 +17,9 @@ import (
 // own narrow persistence contract, even though one internal/repo.Repo
 // satisfies all of them.
 type Manager struct {
-	createGameRepo createGameRepo
+	createGameRepo  createGameRepo
+	publishRepo     publishRepo
+	openEditionRepo openEditionRepo
 
 	// dbServicer is the handle utils.RunInDBTransaction opens transactions
 	// on; it is the same Repo, which owns the database handle.
@@ -31,9 +33,11 @@ type Manager struct {
 func New(db *gorm.DB) *Manager {
 	repo := internalrepo.New(db)
 	return &Manager{
-		createGameRepo: repo,
-		dbServicer:     repo,
-		now:            time.Now,
-		newUUID:        uuid.NewString,
+		createGameRepo:  repo,
+		publishRepo:     repo,
+		openEditionRepo: repo,
+		dbServicer:      repo,
+		now:             time.Now,
+		newUUID:         uuid.NewString,
 	}
 }

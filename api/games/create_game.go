@@ -2,14 +2,17 @@ package games
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/diegobermudez03/playhoot/api/internal/httpx"
+	"github.com/diegobermudez03/playhoot/game"
 	"github.com/diegobermudez03/playhoot/logging"
 )
 
 // createGameRequest never names the owner: it is the authorized caller.
 type createGameRequest struct {
+	Name           string `json:"name"`
 	IdempotencyKey string `json:"idempotency_key"`
 }
 
@@ -42,10 +45,17 @@ func (h *Handler) handleCreateGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	created, err := h.creator.CreateGame(ctx, userUUID, req.IdempotencyKey)
+	created, err := h.creator.CreateGame(ctx, userUUID, req.Name, req.IdempotencyKey)
 	if err != nil {
 		logging.LogError(ctx, err)
-		httpx.WriteError(w, http.StatusInternalServerError, "creating game failed")
+		switch {
+		case errors.Is(err, game.ErrInvalidCard):
+			httpx.WriteCodedError(w, http.StatusUnprocessableEntity, codeInvalidCard, "name is required and holds at most 80 characters")
+		case errors.Is(err, game.ErrIdempotencyConflict):
+			httpx.WriteCodedError(w, http.StatusConflict, codeIdempotencyConflict, "idempotency key reused with a conflicting request")
+		default:
+			httpx.WriteError(w, http.StatusInternalServerError, "creating game failed")
+		}
 		return
 	}
 	logging.LogFields(ctx, logging.Field("game_uuid", created.GameUUID))

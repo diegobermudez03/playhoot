@@ -137,7 +137,7 @@ func TestDeclaredAssets(t *testing.T) {
 			"flip":     {Type: gameversion.AssetAudio, Description: "Flip sound", Optional: true},
 		}, declared)
 
-		none, diagnostics := DeclaredAssets(`{"name":"Tap Race"}`)
+		none, diagnostics := DeclaredAssets(`{"format":"playhoot.project.v1"}`)
 		require.Empty(t, diagnostics)
 		require.Empty(t, none)
 	})

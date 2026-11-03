@@ -588,6 +588,10 @@ const (
 	// CommandRateLimited means the player, or the Session, sent more commands
 	// than allowed; the token was not used, so it may be retried later.
 	CommandRateLimited CommandOutcome = "rate_limited"
+
+	// CommandPaused means the preview is paused: the command did not run and
+	// its token stays unused.
+	CommandPaused CommandOutcome = "paused"
 )
 
 // CommandResult is the outcome of a Command. Response is set only when
@@ -623,3 +627,113 @@ var ErrInvalidSample = errors.New("invalid sample")
 // unused. A command the game ran and answered with a rejection of its own is
 // CommandExecuted, never this.
 var ErrInvalidCommand = errors.New("invalid command")
+
+// StartPreviewOutcome is the decision a StartPreview call reached.
+type StartPreviewOutcome string
+
+const (
+	// PreviewStarted means the preview runs; the owner connects to it.
+	PreviewStarted StartPreviewOutcome = "started"
+
+	// PreviewBuildNotReady means the revision has no SUCCEEDED build.
+	PreviewBuildNotReady StartPreviewOutcome = "build_not_ready"
+
+	// PreviewInvalidPlayers means the player count is outside the manifest's
+	// range, MinPlayers..MaxPlayers.
+	PreviewInvalidPlayers StartPreviewOutcome = "invalid_players"
+
+	// PreviewUnavailable means this instance has no room to run it now.
+	PreviewUnavailable StartPreviewOutcome = "unavailable"
+
+	// PreviewScriptFailure means the game's start failed in its script.
+	PreviewScriptFailure StartPreviewOutcome = "script_failure"
+)
+
+// StartPreviewResult is the outcome of starting a preview. PreviewUUID,
+// Revision and Participants are set only when started.
+type StartPreviewResult struct {
+	Outcome      StartPreviewOutcome
+	PreviewUUID  string
+	Revision     int64
+	Participants []string
+
+	// BuildStatus is the build's status when not ready, empty when the
+	// revision has no build.
+	BuildStatus string
+	MinPlayers  int
+	MaxPlayers  int
+}
+
+// PreviewStart is what the owner's connection to a preview is told when it
+// attaches: the preview, who it acts as, whether it is paused, and the
+// frontend to play with.
+type PreviewStart struct {
+	PreviewUUID  string
+	Revision     int64
+	Participants []string
+	ActingAs     string
+	Paused       bool
+	Frontend     GameFrontend
+}
+
+// AttachPreviewOutcome is how attaching to a preview went.
+type AttachPreviewOutcome string
+
+const (
+	PreviewAttached AttachPreviewOutcome = "attached"
+
+	// PreviewNotFound means there is no such preview for the caller: it does
+	// not exist, or it is someone else's.
+	PreviewNotFound AttachPreviewOutcome = "not_found"
+
+	// PreviewAlreadyEnded means the preview ended; EndReason tells why.
+	PreviewAlreadyEnded AttachPreviewOutcome = "ended"
+)
+
+// AttachPreviewResult is the outcome of attaching the owner's connection to
+// a preview. Start and Connection are set only when attached.
+type AttachPreviewResult struct {
+	Outcome    AttachPreviewOutcome
+	EndReason  string
+	Start      PreviewStart
+	Connection PreviewConnection
+}
+
+// PreviewConnection is everything the owner's connection can do with a
+// preview: act as one participant at a time and play as them. The caller
+// must run NextView and Ended until they report the end, and call Disconnect
+// once when the client is gone. A view whose ParticipantID changed is the
+// first, FULL, view after ActAs.
+type PreviewConnection struct {
+	// ActAs makes the connection play as participantID, resetting the inputs
+	// of the participant it played as; a FULL view of participantID follows.
+	// An unknown participant is ErrUnknownParticipant.
+	ActAs func(ctx context.Context, participantID string) error
+
+	// Sample and Command play as the participant acted as, as a player's
+	// connection does; while paused, SAMPLEs are dropped and COMMANDs are
+	// answered CommandPaused.
+	Sample  func(ctx context.Context, sample Sample) error
+	Command func(ctx context.Context, command Command) (CommandResult, error)
+
+	// Resync asks for the acted participant's view again, FULL.
+	Resync func(ctx context.Context) error
+
+	// Pause stops the preview's time and Resume goes on from where it
+	// stopped, so the game never sees the pause. End ends the preview.
+	Pause  func(ctx context.Context) error
+	Resume func(ctx context.Context) error
+	End    func(ctx context.Context) error
+
+	NextView func(ctx context.Context) (OwnView, bool)
+
+	// Ended blocks until the connection ends. When the preview ended,
+	// EndCause is its PreviewEndReason.
+	Ended func(ctx context.Context) (ConnectionEnd, bool)
+
+	Disconnect func()
+}
+
+// ErrUnknownParticipant is returned for a participant a preview does not
+// have.
+var ErrUnknownParticipant = errors.New("unknown participant")

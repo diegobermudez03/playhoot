@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/diegobermudez03/playhoot/game"
+	"github.com/diegobermudez03/playhoot/game/internal/business/card"
 	"github.com/diegobermudez03/playhoot/game/internal/business/edition"
 	internalrepo "github.com/diegobermudez03/playhoot/game/workflows/gamelifecycle/internal/repo"
 	"github.com/diegobermudez03/playhoot/logging"
@@ -21,7 +22,7 @@ import (
 
 // createGameRepo is CreateGame's own narrow persistence contract.
 type createGameRepo interface {
-	ClaimCreateGameRequest(ctx context.Context, tx *gorm.DB, ownerUUID string, idempotencyKey string) (uint, *internalrepo.CreateGameRequest, error)
+	ClaimCreateGameRequest(ctx context.Context, tx *gorm.DB, ownerUUID string, idempotencyKey string, name string) (uint, *internalrepo.CreateGameRequest, error)
 	CompleteCreateGameRequest(ctx context.Context, tx *gorm.DB, requestID uint, gameID uint) error
 	CreateGame(ctx context.Context, tx *gorm.DB, game internalrepo.NewGame) (uint, error)
 	CreateEdition(ctx context.Context, tx *gorm.DB, gameID uint, editionUUID string, status string, createdAt time.Time) error
@@ -48,10 +49,11 @@ type createGameAttempt struct {
 	replayed bool
 }
 
-// CreateGame creates an unpublished, private Game owned by ownerUUID, its card
-// empty, with its first edition open for editing. It is idempotent per
-// (ownerUUID, idempotencyKey): a retry answers the same Game and edition.
-func (m *Manager) CreateGame(ctx context.Context, ownerUUID string, idempotencyKey string) (game.CreatedGame, error) {
+// CreateGame creates an unpublished, private Game owned by ownerUUID named
+// name (game.ErrInvalidCard when empty or too long), with its first edition
+// open. Idempotent per (ownerUUID, idempotencyKey); another name under the
+// same key is game.ErrIdempotencyConflict.
+func (m *Manager) CreateGame(ctx context.Context, ownerUUID string, name string, idempotencyKey string) (game.CreatedGame, error) {
 	defer logging.Step(ctx, "gamelifecycle.create_game").Close()
 
 	owner, err := uuid.Parse(ownerUUID)
@@ -61,9 +63,13 @@ func (m *Manager) CreateGame(ctx context.Context, ownerUUID string, idempotencyK
 	if idempotencyKey == "" {
 		return game.CreatedGame{}, fmt.Errorf("idempotency key is required")
 	}
+	normalized, err := card.NormalizeName(name)
+	if err != nil || normalized == "" {
+		return game.CreatedGame{}, fmt.Errorf("%w: a new game needs a name of 1 to %d characters", game.ErrInvalidCard, card.MaxNameRunes)
+	}
 
 	attempt, err := utils.RunInDBTransaction(ctx, m.dbServicer, func(ctx context.Context, tx *gorm.DB) (createGameAttempt, error) {
-		return m.createGameInTx(ctx, tx, owner.String(), idempotencyKey)
+		return m.createGameInTx(ctx, tx, owner.String(), normalized, idempotencyKey)
 	})
 	if err != nil {
 		return game.CreatedGame{}, err
@@ -85,12 +91,15 @@ func (m *Manager) CreateGame(ctx context.Context, ownerUUID string, idempotencyK
 
 // createGameInTx is CreateGame's work inside its transaction; its arguments
 // are already validated and normalized.
-func (m *Manager) createGameInTx(ctx context.Context, tx *gorm.DB, ownerUUID string, idempotencyKey string) (createGameAttempt, error) {
-	requestID, existing, err := m.createGameRepo.ClaimCreateGameRequest(ctx, tx, ownerUUID, idempotencyKey)
+func (m *Manager) createGameInTx(ctx context.Context, tx *gorm.DB, ownerUUID string, name string, idempotencyKey string) (createGameAttempt, error) {
+	requestID, existing, err := m.createGameRepo.ClaimCreateGameRequest(ctx, tx, ownerUUID, idempotencyKey, name)
 	if err != nil {
 		return createGameAttempt{}, err
 	}
 	if existing != nil {
+		if existing.Name != nil && *existing.Name != name {
+			return createGameAttempt{}, fmt.Errorf("create game key: %w", game.ErrIdempotencyConflict)
+		}
 		// The claim and the Game it created commit together, so a request
 		// read back always has its Game.
 		if existing.GameID == nil {
@@ -112,6 +121,7 @@ func (m *Manager) createGameInTx(ctx context.Context, tx *gorm.DB, ownerUUID str
 	newGame := internalrepo.NewGame{
 		UUID:       m.newUUID(),
 		OwnerUUID:  ownerUUID,
+		Name:       name,
 		Visibility: string(game.Private),
 		CreatedAt:  now,
 	}

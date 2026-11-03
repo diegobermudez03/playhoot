@@ -44,9 +44,9 @@ func (m *MockcreateGameRepo) EXPECT() *MockcreateGameRepoMockRecorder {
 }
 
 // ClaimCreateGameRequest mocks base method.
-func (m *MockcreateGameRepo) ClaimCreateGameRequest(ctx context.Context, tx *gorm.DB, ownerUUID, idempotencyKey string) (uint, *repo.CreateGameRequest, error) {
+func (m *MockcreateGameRepo) ClaimCreateGameRequest(ctx context.Context, tx *gorm.DB, ownerUUID, idempotencyKey, name string) (uint, *repo.CreateGameRequest, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ClaimCreateGameRequest", ctx, tx, ownerUUID, idempotencyKey)
+	ret := m.ctrl.Call(m, "ClaimCreateGameRequest", ctx, tx, ownerUUID, idempotencyKey, name)
 	ret0, _ := ret[0].(uint)
 	ret1, _ := ret[1].(*repo.CreateGameRequest)
 	ret2, _ := ret[2].(error)
@@ -54,9 +54,9 @@ func (m *MockcreateGameRepo) ClaimCreateGameRequest(ctx context.Context, tx *gor
 }
 
 // ClaimCreateGameRequest indicates an expected call of ClaimCreateGameRequest.
-func (mr *MockcreateGameRepoMockRecorder) ClaimCreateGameRequest(ctx, tx, ownerUUID, idempotencyKey any) *gomock.Call {
+func (mr *MockcreateGameRepoMockRecorder) ClaimCreateGameRequest(ctx, tx, ownerUUID, idempotencyKey, name any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClaimCreateGameRequest", reflect.TypeOf((*MockcreateGameRepo)(nil).ClaimCreateGameRequest), ctx, tx, ownerUUID, idempotencyKey)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClaimCreateGameRequest", reflect.TypeOf((*MockcreateGameRepo)(nil).ClaimCreateGameRequest), ctx, tx, ownerUUID, idempotencyKey, name)
 }
 
 // CompleteCreateGameRequest mocks base method.

@@ -11,10 +11,9 @@ const (
 type VisibilityType string
 
 type Game struct {
-	UUID         string
-	Name         string
-	Description  string
-	OwnerUUID    string
-	LogoImageURL string
-	Visibility   VisibilityType
+	UUID        string
+	Name        string
+	Description string
+	OwnerUUID   string
+	Visibility  VisibilityType
 }

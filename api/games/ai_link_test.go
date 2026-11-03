@@ -146,7 +146,7 @@ func TestAILinkRoutes(t *testing.T) {
 	t.Run("the context page has what an AI needs, sources inline", func(t *testing.T) {
 		h, deps := newTestHandler(gomock.NewController(t))
 		deps.resolver.EXPECT().ResolveResourceLink(gomock.Any(), testLinkToken).Return(validLink(), nil)
-		deps.reader.EXPECT().ReadDraft(gomock.Any(), callerUUID, gameUUID, int64(0), true).Return(composergameauthoring.DraftRead{Access: game.EditableVersionFound, Snapshot: aiSnapshot("export const x = 1; // ```")}, nil)
+		deps.reader.EXPECT().ReadDraft(gomock.Any(), callerUUID, gameUUID, int64(0), true).Return(composergameauthoring.DraftRead{Access: game.EditableVersionFound, Snapshot: aiSnapshot("export const x = 1; // ```"), GameName: "Tap Race"}, nil)
 
 		recorder := serve(h, http.MethodGet, page, "")
 		require.Equal(t, http.StatusOK, recorder.Code)
@@ -187,7 +187,7 @@ func TestAILinkRoutes(t *testing.T) {
 	t.Run("the context page as JSON", func(t *testing.T) {
 		h, deps := newTestHandler(gomock.NewController(t))
 		deps.resolver.EXPECT().ResolveResourceLink(gomock.Any(), testLinkToken).Return(validLink(), nil)
-		deps.reader.EXPECT().ReadDraft(gomock.Any(), callerUUID, gameUUID, int64(0), true).Return(composergameauthoring.DraftRead{Access: game.EditableVersionFound, Snapshot: aiSnapshot("x")}, nil)
+		deps.reader.EXPECT().ReadDraft(gomock.Any(), callerUUID, gameUUID, int64(0), true).Return(composergameauthoring.DraftRead{Access: game.EditableVersionFound, Snapshot: aiSnapshot("x"), GameName: "Tap Race"}, nil)
 
 		recorder := serve(h, http.MethodGet, page+"?format=json", "")
 		require.Equal(t, http.StatusOK, recorder.Code)

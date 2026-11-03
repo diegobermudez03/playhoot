@@ -82,11 +82,12 @@ type buildStatusChangeRow struct {
 func (buildStatusChangeRow) TableName() string { return "play_game_version_build_status_changes" }
 
 type artifactObjectRow struct {
-	ID          uint
-	SHA256      string `gorm:"column:sha256"`
-	Size        int64
-	ContentType string
-	ObjectKey   string
+	ID           uint
+	SHA256       string `gorm:"column:sha256"`
+	Size         int64
+	ContentType  string
+	ObjectKey    string
+	RegisteredAt time.Time
 }
 
 func (artifactObjectRow) TableName() string { return "play_build_artifact_objects" }
@@ -215,11 +216,18 @@ func (r *Repo) FindReusable(ctx context.Context, tx *gorm.DB, versionID uint, in
 }
 
 // RegisterArtifactObject records content about to be stored, once per hash,
-// so every stored artifact is known and can be cleaned up.
-func (r *Repo) RegisterArtifactObject(ctx context.Context, tx *gorm.DB, sha256 string, size int64, contentType string, objectKey string) error {
-	row := artifactObjectRow{SHA256: sha256, Size: size, ContentType: contentType, ObjectKey: objectKey}
+// so every stored artifact is known and can be cleaned up. Registering it
+// again marks it as being stored now, and stored again if a cleanup deleted
+// it.
+func (r *Repo) RegisterArtifactObject(ctx context.Context, tx *gorm.DB, sha256 string, size int64, contentType string, objectKey string, registeredAt time.Time) error {
+	row := artifactObjectRow{SHA256: sha256, Size: size, ContentType: contentType, ObjectKey: objectKey, RegisteredAt: registeredAt}
 	if err := tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error; err != nil {
 		return fmt.Errorf("registering artifact object: %s", err)
+	}
+	if err := tx.WithContext(ctx).Exec(`
+		UPDATE play_build_artifact_objects SET registered_at = ?, deleted_at = NULL WHERE sha256 = ?
+	`, registeredAt, sha256).Error; err != nil {
+		return fmt.Errorf("registering artifact object again: %s", err)
 	}
 	return nil
 }

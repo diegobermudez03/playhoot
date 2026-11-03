@@ -24,10 +24,10 @@ func seedVersion(t *testing.T, db *gorm.DB, status string, key *string, sha *str
 	require.NoError(t, db.Raw(`INSERT INTO play_games (game_uuid) VALUES (?) RETURNING id`, uuid.NewString()).Scan(&gameID).Error)
 	var versionID int64
 	require.NoError(t, db.Raw(`
-		INSERT INTO play_game_versions (uuid, game_id, status, manifest, frontend_object_key, frontend_sha256, frontend_size, aspect_ratio)
-		VALUES (?, ?, ?, '{"schema_version":1,"players":{"min":1,"max":8}}', ?, ?, 10, ?)
+		INSERT INTO play_game_versions (uuid, game_id, status, manifest, frontend_object_key, frontend_sha256, frontend_size, aspect_ratio, script_profile)
+		VALUES (?, ?, ?, '{"schema_version":1,"players":{"min":1,"max":8}}', ?, ?, 10, ?, ?)
 		RETURNING id
-	`, uuid.NewString(), gameID, status, key, sha, aspectRatio).Scan(&versionID).Error)
+	`, uuid.NewString(), gameID, status, key, sha, aspectRatio, testScriptProfile).Scan(&versionID).Error)
 	return versionID
 }
 

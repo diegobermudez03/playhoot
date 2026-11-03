@@ -68,13 +68,15 @@ type Handler struct {
 	admins                  adminAttacher
 	players                 playerAttacher
 	joinCodes               joinCodeResolver
+	previews                previewAttacher
 	live                    liveRunner
 	webSocketOriginPatterns []string
 }
 
 // NewHandler constructs a Handler. webSocketOriginPatterns are the extra
 // origin hosts browser pages may open live connections from.
-func NewHandler(authorizer authorizer, creator sessionCreator, owners ownerLocator, admins adminAttacher, players playerAttacher, joinCodes joinCodeResolver, live liveRunner, webSocketOriginPatterns []string) *Handler {
+// previews attaches draft owners to their previews.
+func NewHandler(authorizer authorizer, creator sessionCreator, owners ownerLocator, admins adminAttacher, players playerAttacher, joinCodes joinCodeResolver, previews previewAttacher, live liveRunner, webSocketOriginPatterns []string) *Handler {
 	return &Handler{
 		authorizer:              authorizer,
 		creator:                 creator,
@@ -82,6 +84,7 @@ func NewHandler(authorizer authorizer, creator sessionCreator, owners ownerLocat
 		admins:                  admins,
 		players:                 players,
 		joinCodes:               joinCodes,
+		previews:                previews,
 		live:                    live,
 		webSocketOriginPatterns: webSocketOriginPatterns,
 	}
@@ -121,6 +124,13 @@ func (h *Handler) WebSocketRoutes() []routing.Route {
 			Middlewares: []routing.Middleware{
 				requireOwner(h.owners, h.refuseUpgraded, "sessionUUID"),
 			},
+		},
+		{
+			// Previews are run on this instance only; no owner routing.
+			Pattern:       "GET /v1/play/previews/{previewUUID}/connect",
+			Handler:       h.handlePreviewConnect,
+			Authorization: auth.RequireWebSocket(h.authorizer, identity.OperationEditGame),
+			RefuseLimit:   h.refuseLimit,
 		},
 		{
 			Pattern:       "GET /v1/play/join/{joinCode}",

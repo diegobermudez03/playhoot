@@ -14,12 +14,14 @@ import (
 type CreateGameRequest struct {
 	ID     uint
 	GameID *uint
+	Name   *string
 }
 
 // NewGame is a Game about to be created, unpublished, with its card empty.
 type NewGame struct {
 	UUID       string
 	OwnerUUID  string
+	Name       string
 	Visibility string
 	CreatedAt  time.Time
 }
@@ -35,33 +37,32 @@ type createGameRequest struct {
 	ID             uint
 	OwnerUUID      string
 	IdempotencyKey string
+	Name           *string
 }
 
 func (createGameRequest) TableName() string { return "game_create_requests" }
 
 type gameRow struct {
-	ID           uint
-	UUID         string
-	Name         string
-	Description  string
-	OwnerUUID    string
-	LogoImageURL string
-	Visibility   string
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	ID          uint
+	UUID        string
+	Name        string
+	Description string
+	OwnerUUID   string
+	Visibility  string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 func (gameRow) TableName() string { return "games" }
 
 type gameHistoryRow struct {
-	ID           uint
-	GameID       uint
-	Name         *string
-	Description  *string
-	LogoImageURL *string
-	Visibility   *string
-	IsPublished  *bool
-	CreatedAt    time.Time
+	ID          uint
+	GameID      uint
+	Name        *string
+	Description *string
+	Visibility  *string
+	IsPublished *bool
+	CreatedAt   time.Time
 }
 
 func (gameHistoryRow) TableName() string { return "game_histories" }
@@ -89,8 +90,8 @@ func (editionStatusChangeRow) TableName() string { return "game_edition_status_c
 // ClaimCreateGameRequest claims (ownerUUID, idempotencyKey), or returns the
 // request that already holds it. A concurrent claim of the same identity waits
 // for the first transaction and then sees its request.
-func (r *Repo) ClaimCreateGameRequest(ctx context.Context, tx *gorm.DB, ownerUUID string, idempotencyKey string) (uint, *CreateGameRequest, error) {
-	claim := createGameRequest{OwnerUUID: ownerUUID, IdempotencyKey: idempotencyKey}
+func (r *Repo) ClaimCreateGameRequest(ctx context.Context, tx *gorm.DB, ownerUUID string, idempotencyKey string, name string) (uint, *CreateGameRequest, error) {
+	claim := createGameRequest{OwnerUUID: ownerUUID, IdempotencyKey: idempotencyKey, Name: &name}
 	created := tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&claim)
 	if created.Error != nil {
 		return 0, nil, fmt.Errorf("claiming create game request: %s", created.Error)
@@ -101,7 +102,7 @@ func (r *Repo) ClaimCreateGameRequest(ctx context.Context, tx *gorm.DB, ownerUUI
 
 	var existing CreateGameRequest
 	read := tx.WithContext(ctx).Raw(`
-		SELECT id, game_id
+		SELECT id, game_id, name
 		FROM game_create_requests
 		WHERE owner_uuid = ? AND idempotency_key = ?
 	`, ownerUUID, idempotencyKey).Scan(&existing)
@@ -133,6 +134,7 @@ func (r *Repo) CompleteCreateGameRequest(ctx context.Context, tx *gorm.DB, reque
 func (r *Repo) CreateGame(ctx context.Context, tx *gorm.DB, game NewGame) (uint, error) {
 	row := gameRow{
 		UUID:       game.UUID,
+		Name:       game.Name,
 		OwnerUUID:  game.OwnerUUID,
 		Visibility: game.Visibility,
 		CreatedAt:  game.CreatedAt,
@@ -143,13 +145,12 @@ func (r *Repo) CreateGame(ctx context.Context, tx *gorm.DB, game NewGame) (uint,
 	}
 	empty, unpublished := "", false
 	history := gameHistoryRow{
-		GameID:       row.ID,
-		Name:         &empty,
-		Description:  &empty,
-		LogoImageURL: &empty,
-		Visibility:   &row.Visibility,
-		IsPublished:  &unpublished,
-		CreatedAt:    game.CreatedAt,
+		GameID:      row.ID,
+		Name:        &row.Name,
+		Description: &empty,
+		Visibility:  &row.Visibility,
+		IsPublished: &unpublished,
+		CreatedAt:   game.CreatedAt,
 	}
 	if err := tx.WithContext(ctx).Create(&history).Error; err != nil {
 		return 0, fmt.Errorf("recording game creation history: %s", err)

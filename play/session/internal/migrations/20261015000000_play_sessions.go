@@ -1,8 +1,13 @@
 package migrations
 
 import (
+	"fmt"
+
 	"github.com/go-gormigrate/gormigrate/v2"
 	"gorm.io/gorm"
+
+	"github.com/diegobermudez03/playhoot/play/session/internal/business/gameversion"
+	"github.com/diegobermudez03/playhoot/play/session/internal/business/sessionstatus"
 )
 
 // migration20261015000000PlaySessions creates the tables Session creation
@@ -27,27 +32,40 @@ func migration20261015000000PlaySessions() *gormigrate.Migration {
 				`CREATE INDEX play_games_current_version_id_idx ON play_games (current_version_id)`,
 
 				// The versions of a Game. Only an EXECUTABLE version is immutable
-				// and its scripts ready to run, so safe to play; newer versions may
-				// exist as DRAFT. The manifest is versioned JSON holding the
-				// structural facts the live Runtime needs about the game. Its
-				// backend script and frontend package live in object storage;
-				// these are their locators, which an EXECUTABLE version must have.
+				// and its scripts ready to run, so safe to play; a DRAFT is the
+				// version being built, its sources edited in place as revisions
+				// (current_revision; NULL for a version without authored sources).
+				// The manifest is versioned JSON holding the structural facts the
+				// live Runtime needs about the game; a DRAFT has none until it is
+				// built. Its backend script and frontend package live in object
+				// storage; these are their locators, which an EXECUTABLE version
+				// must have, like its aspect ratio (business/gameversion).
+				// script_profile is the scriptcheck.Profile the script is checked
+				// and run under.
 				`CREATE TABLE play_game_versions (
 					id BIGSERIAL PRIMARY KEY,
 					uuid UUID NOT NULL UNIQUE,
 					game_id BIGINT NOT NULL,
-					status TEXT NOT NULL CHECK (status IN ('DRAFT', 'EXECUTABLE')),
-					manifest JSONB NOT NULL,
+					status TEXT NOT NULL,
+					manifest JSONB NULL,
 					script_object_key TEXT NULL,
 					script_sha256 TEXT NULL,
 					script_size BIGINT NULL,
+					script_profile TEXT NOT NULL,
 					frontend_object_key TEXT NULL,
 					frontend_sha256 TEXT NULL,
 					frontend_size BIGINT NULL,
+					aspect_ratio TEXT NULL,
+					current_revision BIGINT NULL,
 					executable_at TIMESTAMPTZ NULL,
 					created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 				)`,
 				`CREATE INDEX play_game_versions_game_id_idx ON play_game_versions (game_id)`,
+				// A game has at most one DRAFT at a time.
+				fmt.Sprintf(`CREATE UNIQUE INDEX play_game_versions_one_draft_idx ON play_game_versions (game_id) WHERE status = '%s'`, gameversion.Draft),
+				// Cleanup finds whether any version still uses a stored object.
+				`CREATE INDEX play_game_versions_script_sha256_idx ON play_game_versions (script_sha256)`,
+				`CREATE INDEX play_game_versions_frontend_sha256_idx ON play_game_versions (frontend_sha256)`,
 
 				// A Session only references the version it is pinned to; the
 				// Game is reached through the version.
@@ -56,7 +74,7 @@ func migration20261015000000PlaySessions() *gormigrate.Migration {
 					uuid UUID NOT NULL UNIQUE,
 					game_version_id BIGINT NOT NULL,
 					created_by_user_uuid UUID NOT NULL,
-					status TEXT NOT NULL CHECK (status IN ('LOBBY', 'RUNNING', 'FINISHED', 'CANCELLED', 'EXPIRED', 'ABORTED')),
+					status TEXT NOT NULL,
 					end_cause TEXT NULL,
 					lobby_expires_at TIMESTAMPTZ NOT NULL,
 					expires_at TIMESTAMPTZ NOT NULL,
@@ -68,9 +86,9 @@ func migration20261015000000PlaySessions() *gormigrate.Migration {
 				// Reconciliation reads the Sessions past one of their deadlines.
 				// Each index holds only the Sessions its deadline applies to, so
 				// a Session leaves it as soon as it ends.
-				`CREATE INDEX play_sessions_lobby_expiry_idx ON play_sessions (lobby_expires_at) WHERE status = 'LOBBY'`,
-				`CREATE INDEX play_sessions_running_expiry_idx ON play_sessions (expires_at) WHERE status = 'RUNNING'`,
-				`CREATE INDEX play_sessions_owner_lease_idx ON play_sessions (owner_lease_expires_at) WHERE status = 'RUNNING'`,
+				fmt.Sprintf(`CREATE INDEX play_sessions_lobby_expiry_idx ON play_sessions (lobby_expires_at) WHERE status = '%s'`, sessionstatus.Lobby),
+				fmt.Sprintf(`CREATE INDEX play_sessions_running_expiry_idx ON play_sessions (expires_at) WHERE status = '%s'`, sessionstatus.Running),
+				fmt.Sprintf(`CREATE INDEX play_sessions_owner_lease_idx ON play_sessions (owner_lease_expires_at) WHERE status = '%s'`, sessionstatus.Running),
 
 				// Join codes have their own lifecycle: a code is active until it
 				// is released, and only one active row may hold a given code, so
@@ -85,6 +103,9 @@ func migration20261015000000PlaySessions() *gormigrate.Migration {
 				)`,
 				`CREATE INDEX play_session_join_codes_session_id_idx ON play_session_join_codes (session_id)`,
 				`CREATE UNIQUE INDEX play_session_join_codes_active_code_idx ON play_session_join_codes (code) WHERE released_at IS NULL`,
+				// A code is resolved by its most recent assignment, released or
+				// not.
+				`CREATE INDEX play_session_join_codes_code_idx ON play_session_join_codes (code, id)`,
 
 				// Every status a Session went through, appended in the same
 				// transaction that changes play_sessions.status. from_status is
@@ -102,12 +123,15 @@ func migration20261015000000PlaySessions() *gormigrate.Migration {
 				`CREATE INDEX play_session_status_changes_session_id_idx ON play_session_status_changes (session_id)`,
 
 				// Who plays a started Session: written once, when it becomes
-				// RUNNING. The game knows each player only by participant_id.
+				// RUNNING. The game knows each player only by participant_id;
+				// display_name is the name as it was when the game started, so a
+				// game recovered on another instance still shows who plays.
 				`CREATE TABLE play_session_participants (
 					id BIGSERIAL PRIMARY KEY,
 					session_id BIGINT NOT NULL,
 					user_uuid UUID NOT NULL,
 					participant_id TEXT NOT NULL,
+					display_name TEXT NOT NULL DEFAULT '',
 					created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 					UNIQUE (session_id, participant_id),
 					UNIQUE (session_id, user_uuid)
@@ -167,7 +191,7 @@ func migration20261015000000PlaySessions() *gormigrate.Migration {
 					user_uuid UUID NOT NULL,
 					idempotency_key TEXT NOT NULL,
 					game_uuid UUID NOT NULL,
-					outcome TEXT NULL CHECK (outcome IN ('created', 'game_unavailable')),
+					outcome TEXT NULL,
 					session_id BIGINT NULL,
 					created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 					UNIQUE (user_uuid, idempotency_key)

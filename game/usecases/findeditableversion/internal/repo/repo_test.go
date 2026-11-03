@@ -19,14 +19,13 @@ func TestMain(m *testing.M) {
 }
 
 type seededGame struct {
-	ID           uint
-	UUID         string
-	Name         string
-	Description  string
-	OwnerUUID    string
-	LogoImageURL string
-	Visibility   string
-	DeletedAt    *time.Time
+	ID          uint
+	UUID        string
+	Name        string
+	Description string
+	OwnerUUID   string
+	Visibility  string
+	DeletedAt   *time.Time
 }
 
 func (seededGame) TableName() string { return "games" }
@@ -69,11 +68,15 @@ func TestFindGameEditing(t *testing.T) {
 	tests := map[string]func(t *testing.T) test{
 		"game_with_an_open_edition_after_a_published_one": func(t *testing.T) test {
 			game, editions := seedGame(t, db, false, string(edition.Published), string(edition.Editing))
-			return test{gameUUID: game.UUID, expected: &GameEditing{OwnerUUID: game.OwnerUUID, VersionUUID: &editions[1]}}
+			return test{gameUUID: game.UUID, expected: &GameEditing{OwnerUUID: game.OwnerUUID, VersionUUID: &editions[1], BaseVersionUUID: &editions[0]}}
 		},
 		"game_without_an_open_edition": func(t *testing.T) test {
-			game, _ := seedGame(t, db, false, string(edition.Published))
-			return test{gameUUID: game.UUID, expected: &GameEditing{OwnerUUID: game.OwnerUUID}}
+			game, editions := seedGame(t, db, false, string(edition.Published))
+			return test{gameUUID: game.UUID, expected: &GameEditing{OwnerUUID: game.OwnerUUID, BaseVersionUUID: &editions[0]}}
+		},
+		"first_edition_has_no_base": func(t *testing.T) test {
+			game, editions := seedGame(t, db, false, string(edition.Editing))
+			return test{gameUUID: game.UUID, expected: &GameEditing{OwnerUUID: game.OwnerUUID, VersionUUID: &editions[0]}}
 		},
 		"deleted_game": func(t *testing.T) test {
 			game, _ := seedGame(t, db, true, string(edition.Editing))
@@ -88,7 +91,7 @@ func TestFindGameEditing(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			tc := setup(t)
 
-			editing, err := repo.FindGameEditing(context.Background(), tc.gameUUID, string(edition.Editing))
+			editing, err := repo.FindGameEditing(context.Background(), tc.gameUUID, string(edition.Editing), string(edition.Published))
 
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, editing)

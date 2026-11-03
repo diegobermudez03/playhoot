@@ -121,6 +121,10 @@ type BuiltArtifacts struct {
 	ServerObjectKey *string
 	ServerSHA256    *string
 	ServerSize      *int64
+	ClientObjectKey *string
+	ClientSHA256    *string
+	ClientSize      *int64
+	AspectRatio     *string
 	Manifest        []byte
 	ScriptProfile   string
 }
@@ -130,7 +134,8 @@ type BuiltArtifacts struct {
 func (r *Repo) FindBuiltArtifacts(ctx context.Context, tx *gorm.DB, versionUUID string, revision int64) (*BuiltArtifacts, error) {
 	var built BuiltArtifacts
 	result := tx.WithContext(ctx).Raw(`
-		SELECT b.revision, b.status, b.server_object_key, b.server_sha256, b.server_size, b.manifest, v.script_profile
+		SELECT b.revision, b.status, b.server_object_key, b.server_sha256, b.server_size,
+			b.client_object_key, b.client_sha256, b.client_size, b.aspect_ratio, b.manifest, v.script_profile
 		FROM play_game_version_builds b
 		JOIN play_game_versions v ON v.id = b.game_version_id
 		WHERE v.uuid = ? AND b.revision = ?

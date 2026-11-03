@@ -89,7 +89,7 @@ func (h *Handler) handleReadDraft(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	snapshot, ok := h.loadDraft(w, r, userUUID, gameUUID, revision, withContent)
+	snapshot, _, ok := h.loadDraft(w, r, userUUID, gameUUID, revision, withContent)
 	if !ok {
 		return
 	}
@@ -99,14 +99,14 @@ func (h *Handler) handleReadDraft(w http.ResponseWriter, r *http.Request) {
 // loadDraft reads a revision of the game's version being built (0: the
 // current one), creating the version first when its creation stopped before
 // Play had it; it answers the request itself and returns false otherwise.
-func (h *Handler) loadDraft(w http.ResponseWriter, r *http.Request, userUUID string, gameUUID string, revision int64, withContent bool) (sessionpkg.DraftSnapshot, bool) {
+func (h *Handler) loadDraft(w http.ResponseWriter, r *http.Request, userUUID string, gameUUID string, revision int64, withContent bool) (sessionpkg.DraftSnapshot, string, bool) {
 	ctx := r.Context()
 	read, err := h.reader.ReadDraft(ctx, userUUID, gameUUID, revision, withContent)
 	if err == nil && read.Missing {
 		// The game's creation stopped before Play had its version: create it
 		// and read once more.
 		if !h.ensureDraft(w, r, userUUID, gameUUID) {
-			return sessionpkg.DraftSnapshot{}, false
+			return sessionpkg.DraftSnapshot{}, "", false
 		}
 		read, err = h.reader.ReadDraft(ctx, userUUID, gameUUID, revision, withContent)
 	}
@@ -114,20 +114,20 @@ func (h *Handler) loadDraft(w http.ResponseWriter, r *http.Request, userUUID str
 		logging.LogError(ctx, err)
 		if errors.Is(err, sessionpkg.ErrDraftRevisionNotFound) {
 			httpx.WriteCodedError(w, http.StatusNotFound, codeRevisionNotFound, "the draft has no such revision")
-			return sessionpkg.DraftSnapshot{}, false
+			return sessionpkg.DraftSnapshot{}, "", false
 		}
 		httpx.WriteError(w, http.StatusInternalServerError, "reading draft failed")
-		return sessionpkg.DraftSnapshot{}, false
+		return sessionpkg.DraftSnapshot{}, "", false
 	}
 	if !writeAccessRefusal(w, read.Access) {
-		return sessionpkg.DraftSnapshot{}, false
+		return sessionpkg.DraftSnapshot{}, "", false
 	}
 	if read.Missing {
 		logging.LogFields(ctx, logging.Field("wiring_error", "draft still missing after it was ensured"))
 		httpx.WriteError(w, http.StatusInternalServerError, "reading draft failed")
-		return sessionpkg.DraftSnapshot{}, false
+		return sessionpkg.DraftSnapshot{}, "", false
 	}
-	return read.Snapshot, true
+	return read.Snapshot, read.GameName, true
 }
 
 // draftBody is a read of the version being built as the API answers it.

@@ -17,7 +17,7 @@ import (
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
 
-//go:generate mockgen -package=gameauthoring -destination=manager_mock_test.go . editableVersionFinder,draftReader,resourceLinkReader,gameSimulator
+//go:generate mockgen -package=gameauthoring -destination=manager_mock_test.go . editableVersionFinder,draftReader,resourceLinkReader,gameSimulator,cardReader
 
 // editableVersionFinder is Game Management's decision of whether a user may
 // edit, and so read, a game's version being built.
@@ -44,19 +44,26 @@ type resourceLinkReader interface {
 	ResourceLinkStatus(ctx context.Context, userUUID string, kind string, resourceID string) (identity.ResourceLinkStatus, error)
 }
 
+// cardReader is Game Management's card of a game, whose name a draft read
+// shows.
+type cardReader interface {
+	ReadCard(ctx context.Context, ownerUUID string, gameUUID string) (game.CardRead, error)
+}
+
 // Manager composes the game-authoring reads. It owns no business entity.
 type Manager struct {
 	editions  editableVersionFinder
 	drafts    draftReader
 	links     resourceLinkReader
 	simulator gameSimulator
+	cards     cardReader
 }
 
 // New constructs a Manager from Game Management's edit authorization, Play's
 // version being built, Identity's links an AI uses for a game and the
 // Runtime's simulation.
-func New(editions editableVersionFinder, drafts draftReader, links resourceLinkReader, simulator gameSimulator) *Manager {
-	return &Manager{editions: editions, drafts: drafts, links: links, simulator: simulator}
+func New(editions editableVersionFinder, drafts draftReader, links resourceLinkReader, simulator gameSimulator, cards cardReader) *Manager {
+	return &Manager{editions: editions, drafts: drafts, links: links, simulator: simulator, cards: cards}
 }
 
 // AILinkStatusRead is whether a game has a live link for an AI, set only
@@ -89,6 +96,8 @@ type DraftRead struct {
 	Access   game.EditableVersionOutcome
 	Missing  bool
 	Snapshot sessionpkg.DraftSnapshot
+	// GameName is the name on the game's card.
+	GameName string
 }
 
 // DraftRevisions is the list of revisions of a game's version being built,
@@ -120,7 +129,11 @@ func (m *Manager) ReadDraft(ctx context.Context, userUUID string, gameUUID strin
 		}
 		return DraftRead{}, fmt.Errorf("reading the version being built: %s", err)
 	}
-	return DraftRead{Access: editable.Outcome, Snapshot: snapshot}, nil
+	read, err := m.cards.ReadCard(ctx, userUUID, gameUUID)
+	if err != nil {
+		return DraftRead{}, fmt.Errorf("reading the game's card: %s", err)
+	}
+	return DraftRead{Access: editable.Outcome, Snapshot: snapshot, GameName: read.Card.Name}, nil
 }
 
 // ListDraftRevisions lists the revisions of the version of gameUUID being

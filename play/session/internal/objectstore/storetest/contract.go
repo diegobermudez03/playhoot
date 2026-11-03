@@ -47,6 +47,15 @@ func RunContract(t *testing.T, newStore func(t *testing.T) objectstore.Store) {
 		require.Equal(t, []byte("two"), got)
 	})
 
+	t.Run("delete removes an object and ignores a missing one", func(t *testing.T) {
+		store := newStore(t)
+		require.NoError(t, store.Put(ctx, "scripts/gone", []byte("bye"), "text/plain"))
+		require.NoError(t, store.Delete(ctx, "scripts/gone"))
+		_, err := store.Get(ctx, "scripts/gone")
+		require.True(t, errors.Is(err, objectstore.ErrNotFound), "got %v", err)
+		require.NoError(t, store.Delete(ctx, "scripts/gone"))
+	})
+
 	t.Run("presign of a stored object returns a URL to it", func(t *testing.T) {
 		store := newStore(t)
 		require.NoError(t, store.Put(ctx, "assets/a", []byte("png-bytes"), "image/png"))

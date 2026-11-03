@@ -436,7 +436,8 @@ func (c *sessionController) completeStart(participants []runtime.Participant, ga
 		s.commands[participant.ParticipantID] = newParticipantCommands(resumed.processed[participant.ParticipantID], s.limits)
 		// Whoever has no connection now has until awaitUntil to come.
 		presence := &participantPresence{disconnected: slices.Contains(resumed.disconnected, participant.ParticipantID)}
-		if !presence.disconnected {
+		// A preview's synthetic participants never wait for a transport.
+		if !presence.disconnected && !c.deps.previews {
 			presence.await(awaitUntil, cause)
 		}
 		s.presence[participant.ParticipantID] = presence

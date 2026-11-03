@@ -36,9 +36,9 @@ func seedStartableSession(t *testing.T, db *gorm.DB, store objectstore.Store, st
 	require.NoError(t, db.Create(&game).Error)
 	versionUUID := uuid.NewString()
 	require.NoError(t, db.Exec(`
-		INSERT INTO play_game_versions (uuid, game_id, status, manifest, script_object_key, script_sha256, script_size)
-		VALUES (?, ?, 'EXECUTABLE', '{"schema_version":1,"players":{"min":1,"max":4}}', ?, ?, ?)
-	`, versionUUID, game.ID, locator.ObjectKey, locator.SHA256, locator.Size).Error)
+		INSERT INTO play_game_versions (uuid, game_id, status, manifest, script_object_key, script_sha256, script_size, script_profile)
+		VALUES (?, ?, 'EXECUTABLE', '{"schema_version":1,"players":{"min":1,"max":4}}', ?, ?, ?, ?)
+	`, versionUUID, game.ID, locator.ObjectKey, locator.SHA256, locator.Size, testScriptProfile).Error)
 	var versionID uint
 	require.NoError(t, db.Raw(`SELECT id FROM play_game_versions WHERE uuid = ?`, versionUUID).Scan(&versionID).Error)
 	session := integrationSession{

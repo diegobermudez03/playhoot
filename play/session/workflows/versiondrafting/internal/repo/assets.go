@@ -12,22 +12,29 @@ import (
 // assetObjectRow is asset content Play may hold, registered before it is
 // stored.
 type assetObjectRow struct {
-	ID        uint
-	SHA256    string `gorm:"column:sha256"`
-	Size      int64
-	MIMEType  string `gorm:"column:mime_type"`
-	ObjectKey string
-	CreatedAt time.Time
+	ID           uint
+	SHA256       string `gorm:"column:sha256"`
+	Size         int64
+	MIMEType     string `gorm:"column:mime_type"`
+	ObjectKey    string
+	CreatedAt    time.Time
+	RegisteredAt time.Time
 }
 
 func (assetObjectRow) TableName() string { return "play_asset_objects" }
 
 // RegisterAssetObject records content about to be stored, once per hash, so
-// every stored object is known and can be cleaned up.
-func (r *Repo) RegisterAssetObject(ctx context.Context, tx *gorm.DB, sha256 string, size int64, mimeType string, objectKey string) error {
-	row := assetObjectRow{SHA256: sha256, Size: size, MIMEType: mimeType, ObjectKey: objectKey}
+// every stored object is known and can be cleaned up. Registering it again
+// marks it as being stored now, and stored again if a cleanup deleted it.
+func (r *Repo) RegisterAssetObject(ctx context.Context, tx *gorm.DB, sha256 string, size int64, mimeType string, objectKey string, registeredAt time.Time) error {
+	row := assetObjectRow{SHA256: sha256, Size: size, MIMEType: mimeType, ObjectKey: objectKey, RegisteredAt: registeredAt}
 	if err := tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error; err != nil {
 		return fmt.Errorf("registering asset object: %s", err)
+	}
+	if err := tx.WithContext(ctx).Exec(`
+		UPDATE play_asset_objects SET registered_at = ?, deleted_at = NULL WHERE sha256 = ?
+	`, registeredAt, sha256).Error; err != nil {
+		return fmt.Errorf("registering asset object again: %s", err)
 	}
 	return nil
 }

@@ -44,18 +44,18 @@ func (m *MockgameCreator) EXPECT() *MockgameCreatorMockRecorder {
 }
 
 // CreateGame mocks base method.
-func (m *MockgameCreator) CreateGame(ctx context.Context, ownerUUID, idempotencyKey string) (game.CreatedGame, error) {
+func (m *MockgameCreator) CreateGame(ctx context.Context, ownerUUID, name, idempotencyKey string) (game.CreatedGame, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateGame", ctx, ownerUUID, idempotencyKey)
+	ret := m.ctrl.Call(m, "CreateGame", ctx, ownerUUID, name, idempotencyKey)
 	ret0, _ := ret[0].(game.CreatedGame)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // CreateGame indicates an expected call of CreateGame.
-func (mr *MockgameCreatorMockRecorder) CreateGame(ctx, ownerUUID, idempotencyKey any) *gomock.Call {
+func (mr *MockgameCreatorMockRecorder) CreateGame(ctx, ownerUUID, name, idempotencyKey any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateGame", reflect.TypeOf((*MockgameCreator)(nil).CreateGame), ctx, ownerUUID, idempotencyKey)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateGame", reflect.TypeOf((*MockgameCreator)(nil).CreateGame), ctx, ownerUUID, name, idempotencyKey)
 }
 
 // MockeditableVersionFinder is a mock of editableVersionFinder interface.
@@ -137,18 +137,18 @@ func (mr *MockdraftWriterMockRecorder) ApplyChanges(ctx, versionUUID, change any
 }
 
 // CreateDraftVersion mocks base method.
-func (m *MockdraftWriter) CreateDraftVersion(ctx context.Context, gameUUID, versionUUID string) (session.DraftVersion, error) {
+func (m *MockdraftWriter) CreateDraftVersion(ctx context.Context, gameUUID, versionUUID, fromVersionUUID string) (session.DraftVersion, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateDraftVersion", ctx, gameUUID, versionUUID)
+	ret := m.ctrl.Call(m, "CreateDraftVersion", ctx, gameUUID, versionUUID, fromVersionUUID)
 	ret0, _ := ret[0].(session.DraftVersion)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // CreateDraftVersion indicates an expected call of CreateDraftVersion.
-func (mr *MockdraftWriterMockRecorder) CreateDraftVersion(ctx, gameUUID, versionUUID any) *gomock.Call {
+func (mr *MockdraftWriterMockRecorder) CreateDraftVersion(ctx, gameUUID, versionUUID, fromVersionUUID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateDraftVersion", reflect.TypeOf((*MockdraftWriter)(nil).CreateDraftVersion), ctx, gameUUID, versionUUID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateDraftVersion", reflect.TypeOf((*MockdraftWriter)(nil).CreateDraftVersion), ctx, gameUUID, versionUUID, fromVersionUUID)
 }
 
 // RemoveAsset mocks base method.

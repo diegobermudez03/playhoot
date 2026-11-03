@@ -29,11 +29,16 @@ type createDraftVersionRepo interface {
 	CreateVersion(ctx context.Context, tx *gorm.DB, gameID uint, versionUUID string, status string, scriptProfile string, revision int64) (uint, error)
 	StoreSourceContents(ctx context.Context, tx *gorm.DB, contents map[string]string) error
 	CreateRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64, revision draftsources.Revision, source string) error
+	FindRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64) (draftsources.Revision, bool, error)
 	QueueBuild(ctx context.Context, tx *gorm.DB, versionID uint, revision int64, buildUUID string, queued string, superseded string) (int, error)
 }
 
 // templateSource is the revision source of a DRAFT's starter revision.
 const templateSource = "template"
+
+// editionSource is the source of a new edition's first revision, copied from
+// the game's executable version.
+const editionSource = "edition"
 
 var (
 	createDraftOutcomeLabel = metrics.NewLabel("outcome", "created", "already_created", "another_draft_open")
@@ -45,11 +50,11 @@ var (
 	)
 )
 
-// CreateDraftVersion gives gameUUID the DRAFT version versionUUID, which the
-// caller chooses, at revision 1 with the starter sources. It is idempotent by
-// versionUUID; a versionUUID already naming another game's version, or one
-// no longer a DRAFT, is sessionpkg.ErrDraftVersionConflict.
-func (m *Manager) CreateDraftVersion(ctx context.Context, gameUUID string, versionUUID string) (sessionpkg.DraftVersion, error) {
+// CreateDraftVersion gives gameUUID the DRAFT versionUUID at revision 1: the
+// starter sources, or a copy of the executable fromVersionUUID's sources and
+// assets. Idempotent by versionUUID; one naming another game's version or no
+// longer a DRAFT is sessionpkg.ErrDraftVersionConflict.
+func (m *Manager) CreateDraftVersion(ctx context.Context, gameUUID string, versionUUID string, fromVersionUUID string) (sessionpkg.DraftVersion, error) {
 	defer logging.Step(ctx, "versiondrafting.create_draft_version").Close()
 
 	parsedGame, err := uuid.Parse(gameUUID)
@@ -60,8 +65,16 @@ func (m *Manager) CreateDraftVersion(ctx context.Context, gameUUID string, versi
 	if err != nil {
 		return sessionpkg.DraftVersion{}, fmt.Errorf("version uuid is not a valid UUID")
 	}
+	var from string
+	if fromVersionUUID != "" {
+		parsedFrom, err := uuid.Parse(fromVersionUUID)
+		if err != nil {
+			return sessionpkg.DraftVersion{}, fmt.Errorf("from version uuid is not a valid UUID")
+		}
+		from = parsedFrom.String()
+	}
 	done, err := utils.RunInDBTransaction(ctx, m.dbServicer, func(ctx context.Context, tx *gorm.DB) (committed[sessionpkg.DraftVersion], error) {
-		return m.createDraftVersionInTx(ctx, tx, parsedGame.String(), parsedVersion.String())
+		return m.createDraftVersionInTx(ctx, tx, parsedGame.String(), parsedVersion.String(), from)
 	})
 	if err != nil {
 		return sessionpkg.DraftVersion{}, err
@@ -78,7 +91,7 @@ func (m *Manager) CreateDraftVersion(ctx context.Context, gameUUID string, versi
 
 // createDraftVersionInTx is CreateDraftVersion's work inside its
 // transaction, with normalized UUIDs.
-func (m *Manager) createDraftVersionInTx(ctx context.Context, tx *gorm.DB, gameUUID string, versionUUID string) (committed[sessionpkg.DraftVersion], error) {
+func (m *Manager) createDraftVersionInTx(ctx context.Context, tx *gorm.DB, gameUUID string, versionUUID string, fromVersionUUID string) (committed[sessionpkg.DraftVersion], error) {
 	gameID, err := m.createDraftVersionRepo.LockGame(ctx, tx, gameUUID)
 	if err != nil {
 		return committed[sessionpkg.DraftVersion]{}, err
@@ -112,18 +125,21 @@ func (m *Manager) createDraftVersionInTx(ctx context.Context, tx *gorm.DB, gameU
 		return committed[sessionpkg.DraftVersion]{result: sessionpkg.DraftVersion{Outcome: sessionpkg.DraftAnotherOpen, GameUUID: gameUUID, VersionUUID: open.UUID, Revision: revision}}, nil
 	}
 
-	starter := draftsources.Apply(nil, draftsources.Template(), nil)
-	if len(starter.Diagnostics) > 0 {
-		return committed[sessionpkg.DraftVersion]{}, fmt.Errorf("the starter template breaks the source rules: %v", starter.Diagnostics)
+	first, err := m.firstRevision(ctx, tx, gameUUID, fromVersionUUID)
+	if err != nil {
+		return committed[sessionpkg.DraftVersion]{}, err
 	}
 	versionID, err := m.createDraftVersionRepo.CreateVersion(ctx, tx, gameID, versionUUID, string(gameversion.Draft), string(scriptcheck.ProfileSDKV1), 1)
 	if err != nil {
 		return committed[sessionpkg.DraftVersion]{}, err
 	}
-	if err := m.createDraftVersionRepo.StoreSourceContents(ctx, tx, starter.Contents); err != nil {
-		return committed[sessionpkg.DraftVersion]{}, err
+	if len(first.contents) > 0 {
+		if err := m.createDraftVersionRepo.StoreSourceContents(ctx, tx, first.contents); err != nil {
+			return committed[sessionpkg.DraftVersion]{}, err
+		}
 	}
-	if err := m.createDraftVersionRepo.CreateRevision(ctx, tx, versionID, 1, draftsources.Revision{Files: starter.Files}, templateSource); err != nil {
+	revision, source := first.revision, first.source
+	if err := m.createDraftVersionRepo.CreateRevision(ctx, tx, versionID, 1, revision, source); err != nil {
 		return committed[sessionpkg.DraftVersion]{}, err
 	}
 	superseded, err := m.queueBuild(ctx, tx, m.createDraftVersionRepo, versionID, 1)
@@ -135,6 +151,43 @@ func (m *Manager) createDraftVersionInTx(ctx context.Context, tx *gorm.DB, gameU
 
 // draftRevision is a DRAFT's current revision; every DRAFT this workflow
 // created has one, so a DRAFT without it is broken data.
+// startingRevision is a new DRAFT's revision 1, its source, and the source
+// contents still to store.
+type startingRevision struct {
+	revision draftsources.Revision
+	source   string
+	contents map[string]string
+}
+
+// firstRevision is a new DRAFT's revision 1: the starter sources, or the
+// files and assets of fromVersionUUID's current revision, whose contents are
+// already stored.
+func (m *Manager) firstRevision(ctx context.Context, tx *gorm.DB, gameUUID string, fromVersionUUID string) (startingRevision, error) {
+	if fromVersionUUID == "" {
+		starter := draftsources.Apply(nil, draftsources.Template(), nil)
+		if len(starter.Diagnostics) > 0 {
+			return startingRevision{}, fmt.Errorf("the starter template breaks the source rules: %v", starter.Diagnostics)
+		}
+		return startingRevision{revision: draftsources.Revision{Files: starter.Files}, source: templateSource, contents: starter.Contents}, nil
+	}
+	from, err := m.createDraftVersionRepo.FindVersion(ctx, tx, fromVersionUUID)
+	if err != nil {
+		return startingRevision{}, err
+	}
+	if from == nil || from.GameUUID != gameUUID || gameversion.Status(from.Status) != gameversion.Executable || from.CurrentRevision == nil {
+		return startingRevision{}, fmt.Errorf("version %s is not an executable version of game %s with sources to copy", fromVersionUUID, gameUUID)
+	}
+	copied, found, err := m.createDraftVersionRepo.FindRevision(ctx, tx, from.ID, *from.CurrentRevision)
+	if err != nil {
+		return startingRevision{}, err
+	}
+	if !found {
+		monitoring.Alert(ctx, "play executable version is missing the revision it was frozen at")
+		return startingRevision{}, fmt.Errorf("version %s has no revision %d", fromVersionUUID, *from.CurrentRevision)
+	}
+	return startingRevision{revision: copied, source: editionSource}, nil
+}
+
 func draftRevision(ctx context.Context, version *internalrepo.Version) (int64, error) {
 	if version.CurrentRevision == nil {
 		monitoring.Alert(ctx, "play draft version has no current revision")

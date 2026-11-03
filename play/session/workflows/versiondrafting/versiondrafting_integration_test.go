@@ -27,7 +27,7 @@ func TestDraftingIntegration(t *testing.T) {
 	newDraft := func(t *testing.T) (string, string) {
 		t.Helper()
 		gameUUID, versionUUID := uuid.NewString(), uuid.NewString()
-		created, err := m.CreateDraftVersion(ctx, gameUUID, versionUUID)
+		created, err := m.CreateDraftVersion(ctx, gameUUID, versionUUID, "")
 		require.NoError(t, err)
 		require.Equal(t, sessionpkg.DraftVersion{Outcome: sessionpkg.DraftCreated, GameUUID: gameUUID, VersionUUID: versionUUID, Revision: 1}, created)
 		return gameUUID, versionUUID
@@ -70,15 +70,15 @@ func TestDraftingIntegration(t *testing.T) {
 	t.Run("a_new_draft_holds_the_starter_template", func(t *testing.T) {
 		gameUUID, versionUUID := newDraft(t)
 
-		again, err := m.CreateDraftVersion(ctx, gameUUID, versionUUID)
+		again, err := m.CreateDraftVersion(ctx, gameUUID, versionUUID, "")
 		require.NoError(t, err)
 		require.Equal(t, sessionpkg.DraftAlreadyCreated, again.Outcome)
 
-		other, err := m.CreateDraftVersion(ctx, gameUUID, uuid.NewString())
+		other, err := m.CreateDraftVersion(ctx, gameUUID, uuid.NewString(), "")
 		require.NoError(t, err)
 		require.Equal(t, sessionpkg.DraftVersion{Outcome: sessionpkg.DraftAnotherOpen, GameUUID: gameUUID, VersionUUID: versionUUID, Revision: 1}, other)
 
-		_, err = m.CreateDraftVersion(ctx, uuid.NewString(), versionUUID)
+		_, err = m.CreateDraftVersion(ctx, uuid.NewString(), versionUUID, "")
 		require.ErrorIs(t, err, sessionpkg.ErrDraftVersionConflict)
 
 		snapshot, err := m.ReadDraft(ctx, versionUUID, 0, true)

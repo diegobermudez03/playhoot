@@ -68,8 +68,8 @@ func NewServer(authorizer authorizer, guests guestCreator, operations operationL
 			Providers: logins.Providers, LocalPages: logins.LocalPages, CompleteURL: logins.CompleteURL,
 		}),
 		apiclienttelemetry.NewHandler(authorizer),
-		apiplay.NewHandler(authorizer, sessionCreator, owners, admins, players, joinCodes, liveConnections, wsx.OriginPatterns(config.WebSocketAllowedOrigins)),
-		apigames.NewHandler(authorizer, games.Creator, games.Editor, games.Reader, games.AILinks),
+		apiplay.NewHandler(authorizer, sessionCreator, owners, admins, players, joinCodes, games.Previews, liveConnections, wsx.OriginPatterns(config.WebSocketAllowedOrigins)),
+		apigames.NewHandler(authorizer, games.Creator, games.Editor, games.Reader, games.AILinks, games.Cards),
 	}
 	clients := throttle.ClientAddress{TrustedProxies: config.TrustedProxyHops}
 	crossOrigin := cors.NewPolicy(config.CORSAllowedOrigins)

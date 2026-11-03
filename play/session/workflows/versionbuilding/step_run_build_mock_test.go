@@ -121,17 +121,17 @@ func (mr *MockrunBuildRepoMockRecorder) FinishBuild(ctx, tx, buildID, from, to, 
 }
 
 // RegisterArtifactObject mocks base method.
-func (m *MockrunBuildRepo) RegisterArtifactObject(ctx context.Context, tx *gorm.DB, sha256 string, size int64, contentType, objectKey string) error {
+func (m *MockrunBuildRepo) RegisterArtifactObject(ctx context.Context, tx *gorm.DB, sha256 string, size int64, contentType, objectKey string, registeredAt time.Time) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RegisterArtifactObject", ctx, tx, sha256, size, contentType, objectKey)
+	ret := m.ctrl.Call(m, "RegisterArtifactObject", ctx, tx, sha256, size, contentType, objectKey, registeredAt)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // RegisterArtifactObject indicates an expected call of RegisterArtifactObject.
-func (mr *MockrunBuildRepoMockRecorder) RegisterArtifactObject(ctx, tx, sha256, size, contentType, objectKey any) *gomock.Call {
+func (mr *MockrunBuildRepoMockRecorder) RegisterArtifactObject(ctx, tx, sha256, size, contentType, objectKey, registeredAt any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RegisterArtifactObject", reflect.TypeOf((*MockrunBuildRepo)(nil).RegisterArtifactObject), ctx, tx, sha256, size, contentType, objectKey)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RegisterArtifactObject", reflect.TypeOf((*MockrunBuildRepo)(nil).RegisterArtifactObject), ctx, tx, sha256, size, contentType, objectKey, registeredAt)
 }
 
 // MockartifactStorage is a mock of artifactStorage interface.

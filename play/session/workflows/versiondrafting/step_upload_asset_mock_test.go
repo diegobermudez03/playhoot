@@ -12,6 +12,7 @@ package versiondrafting
 import (
 	context "context"
 	reflect "reflect"
+	time "time"
 
 	draftsources "github.com/diegobermudez03/playhoot/play/session/internal/business/draftsources"
 	repo "github.com/diegobermudez03/playhoot/play/session/workflows/versiondrafting/internal/repo"
@@ -179,17 +180,17 @@ func (mr *MockuploadAssetRepoMockRecorder) QueueBuild(ctx, tx, versionID, revisi
 }
 
 // RegisterAssetObject mocks base method.
-func (m *MockuploadAssetRepo) RegisterAssetObject(ctx context.Context, tx *gorm.DB, sha256 string, size int64, mimeType, objectKey string) error {
+func (m *MockuploadAssetRepo) RegisterAssetObject(ctx context.Context, tx *gorm.DB, sha256 string, size int64, mimeType, objectKey string, registeredAt time.Time) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RegisterAssetObject", ctx, tx, sha256, size, mimeType, objectKey)
+	ret := m.ctrl.Call(m, "RegisterAssetObject", ctx, tx, sha256, size, mimeType, objectKey, registeredAt)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // RegisterAssetObject indicates an expected call of RegisterAssetObject.
-func (mr *MockuploadAssetRepoMockRecorder) RegisterAssetObject(ctx, tx, sha256, size, mimeType, objectKey any) *gomock.Call {
+func (mr *MockuploadAssetRepoMockRecorder) RegisterAssetObject(ctx, tx, sha256, size, mimeType, objectKey, registeredAt any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RegisterAssetObject", reflect.TypeOf((*MockuploadAssetRepo)(nil).RegisterAssetObject), ctx, tx, sha256, size, mimeType, objectKey)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RegisterAssetObject", reflect.TypeOf((*MockuploadAssetRepo)(nil).RegisterAssetObject), ctx, tx, sha256, size, mimeType, objectKey, registeredAt)
 }
 
 // MockassetStorage is a mock of assetStorage interface.

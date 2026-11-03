@@ -10,17 +10,14 @@ import (
 )
 
 // migration20261101000000GameEditions adds what creating and publishing a
-// Game needs (game creation project): when a Game was first published, its
-// editions (each the Play version it is built in) with their status history,
-// and the idempotency requests of Game creation.
+// Game needs (game creation project): its editions (each the Play version it
+// is built in) with their status history, and the idempotency requests of
+// Game creation.
 func migration20261101000000GameEditions() *gormigrate.Migration {
 	return &gormigrate.Migration{
 		ID: "20261101000000_game_editions",
 		Migrate: func(tx *gorm.DB) error {
 			statements := []string{
-				// Written once, when the Game is first published.
-				`ALTER TABLE games ADD COLUMN published_at TIMESTAMPTZ NULL`,
-
 				// uuid is also the Play version's uuid the edition is built in.
 				`CREATE TABLE game_editions (
 					id BIGSERIAL PRIMARY KEY,
@@ -43,11 +40,14 @@ func migration20261101000000GameEditions() *gormigrate.Migration {
 				)`,
 				`CREATE INDEX game_edition_status_changes_edition_id_idx ON game_edition_status_changes (edition_id)`,
 
-				// game_id is written once, by the creation that claimed the request.
+				// name is what the creation was asked with, to tell a retry from
+				// a different request; game_id is written once, by the creation
+				// that claimed the request.
 				`CREATE TABLE game_create_requests (
 					id BIGSERIAL PRIMARY KEY,
 					owner_uuid UUID NOT NULL,
 					idempotency_key TEXT NOT NULL,
+					name TEXT NOT NULL,
 					game_id BIGINT NULL,
 					created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 					UNIQUE (owner_uuid, idempotency_key)
@@ -62,10 +62,7 @@ func migration20261101000000GameEditions() *gormigrate.Migration {
 			return nil
 		},
 		Rollback: func(tx *gorm.DB) error {
-			if err := tx.Exec(`DROP TABLE game_create_requests, game_edition_status_changes, game_editions`).Error; err != nil {
-				return err
-			}
-			return tx.Exec(`ALTER TABLE games DROP COLUMN published_at`).Error
+			return tx.Exec(`DROP TABLE game_create_requests, game_edition_status_changes, game_editions`).Error
 		},
 	}
 }

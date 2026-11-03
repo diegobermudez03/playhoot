@@ -541,7 +541,7 @@ func TestHandleAdminJoin(t *testing.T) {
 			if tc.shuttingDown {
 				require.NoError(t, connections.Shutdown(context.Background()))
 			}
-			handler := NewHandler(nil, nil, nil, deps.admins, nil, nil, connections, tc.originPatterns)
+			handler := NewHandler(nil, nil, nil, deps.admins, nil, nil, nil, connections, tc.originPatterns)
 			handlerDone := make(chan struct{})
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				defer close(handlerDone)

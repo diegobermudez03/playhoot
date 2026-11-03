@@ -82,7 +82,7 @@ func (w *checkpointWriter) take() (checkpoint.Checkpoint, bool) {
 func (c *sessionController) offerCheckpoint() {
 	s := c.lock()
 	defer c.unlock()
-	if s.phase != phaseRunning || s.now().Sub(s.lastCheckpoint) < c.deps.checkpointInterval {
+	if c.deps.previews || s.phase != phaseRunning || s.now().Sub(s.lastCheckpoint) < c.deps.checkpointInterval {
 		return
 	}
 	s.lastCheckpoint = s.now()

@@ -36,13 +36,18 @@ func TestCreateGameInTx(t *testing.T) {
 	now := time.Date(2026, 11, 1, 12, 0, 0, 123456789, time.UTC)
 	nowInDB := now.Truncate(time.Microsecond)
 	gameIDRef := func() *uint { id := gameID; return &id }
-	newGame := internalrepo.NewGame{UUID: gameUUID, OwnerUUID: ownerUUID, Visibility: "private", CreatedAt: nowInDB}
+	newGame := internalrepo.NewGame{UUID: gameUUID, OwnerUUID: ownerUUID, Name: "Memoria", Visibility: "private", CreatedAt: nowInDB}
 	created := game.CreatedGame{GameUUID: gameUUID, EditionVersionUUID: editionUUID, CreatedAt: nowInDB}
 
 	tests := map[string]func(t *testing.T, deps dependencies) test{
+		"a_retry_with_another_name_is_a_conflict": func(t *testing.T, deps dependencies) test {
+			other := "Otro"
+			deps.repo.EXPECT().ClaimCreateGameRequest(ctx, tx, ownerUUID, key, "Memoria").Return(uint(0), &internalrepo.CreateGameRequest{ID: requestID, GameID: gameIDRef(), Name: &other}, nil)
+			return test{expectErr: true}
+		},
 		"game_created_with_its_open_edition": func(t *testing.T, deps dependencies) test {
 			gomock.InOrder(
-				deps.repo.EXPECT().ClaimCreateGameRequest(ctx, tx, ownerUUID, key).Return(requestID, nil, nil),
+				deps.repo.EXPECT().ClaimCreateGameRequest(ctx, tx, ownerUUID, key, "Memoria").Return(requestID, nil, nil),
 				deps.repo.EXPECT().CreateGame(ctx, tx, newGame).Return(gameID, nil),
 				deps.repo.EXPECT().CreateEdition(ctx, tx, gameID, editionUUID, "EDITING", nowInDB).Return(nil),
 				deps.repo.EXPECT().CompleteCreateGameRequest(ctx, tx, requestID, gameID).Return(nil),
@@ -51,29 +56,29 @@ func TestCreateGameInTx(t *testing.T) {
 		},
 		"retry_replays_the_created_game": func(t *testing.T, deps dependencies) test {
 			gomock.InOrder(
-				deps.repo.EXPECT().ClaimCreateGameRequest(ctx, tx, ownerUUID, key).Return(uint(0), &internalrepo.CreateGameRequest{ID: requestID, GameID: gameIDRef()}, nil),
+				deps.repo.EXPECT().ClaimCreateGameRequest(ctx, tx, ownerUUID, key, "Memoria").Return(uint(0), &internalrepo.CreateGameRequest{ID: requestID, GameID: gameIDRef()}, nil),
 				deps.repo.EXPECT().FindCreatedGame(ctx, tx, gameID).Return(&internalrepo.CreatedGame{GameUUID: gameUUID, EditionVersionUUID: editionUUID, CreatedAt: nowInDB}, nil),
 			)
 			return test{expected: createGameAttempt{created: created, replayed: true}}
 		},
 		"request_without_game_is_broken_data": func(t *testing.T, deps dependencies) test {
-			deps.repo.EXPECT().ClaimCreateGameRequest(ctx, tx, ownerUUID, key).Return(uint(0), &internalrepo.CreateGameRequest{ID: requestID}, nil)
+			deps.repo.EXPECT().ClaimCreateGameRequest(ctx, tx, ownerUUID, key, "Memoria").Return(uint(0), &internalrepo.CreateGameRequest{ID: requestID}, nil)
 			return test{expectErr: true}
 		},
 		"request_whose_game_has_no_edition_is_broken_data": func(t *testing.T, deps dependencies) test {
 			gomock.InOrder(
-				deps.repo.EXPECT().ClaimCreateGameRequest(ctx, tx, ownerUUID, key).Return(uint(0), &internalrepo.CreateGameRequest{ID: requestID, GameID: gameIDRef()}, nil),
+				deps.repo.EXPECT().ClaimCreateGameRequest(ctx, tx, ownerUUID, key, "Memoria").Return(uint(0), &internalrepo.CreateGameRequest{ID: requestID, GameID: gameIDRef()}, nil),
 				deps.repo.EXPECT().FindCreatedGame(ctx, tx, gameID).Return(nil, nil),
 			)
 			return test{expectErr: true}
 		},
 		"claiming_fails": func(t *testing.T, deps dependencies) test {
-			deps.repo.EXPECT().ClaimCreateGameRequest(ctx, tx, ownerUUID, key).Return(uint(0), nil, errors.New("database down"))
+			deps.repo.EXPECT().ClaimCreateGameRequest(ctx, tx, ownerUUID, key, "Memoria").Return(uint(0), nil, errors.New("database down"))
 			return test{expectErr: true}
 		},
 		"creating_the_edition_fails": func(t *testing.T, deps dependencies) test {
 			gomock.InOrder(
-				deps.repo.EXPECT().ClaimCreateGameRequest(ctx, tx, ownerUUID, key).Return(requestID, nil, nil),
+				deps.repo.EXPECT().ClaimCreateGameRequest(ctx, tx, ownerUUID, key, "Memoria").Return(requestID, nil, nil),
 				deps.repo.EXPECT().CreateGame(ctx, tx, newGame).Return(gameID, nil),
 				deps.repo.EXPECT().CreateEdition(ctx, tx, gameID, editionUUID, "EDITING", nowInDB).Return(errors.New("database down")),
 			)
@@ -97,7 +102,7 @@ func TestCreateGameInTx(t *testing.T) {
 			}
 			tc := setup(t, deps)
 
-			attempt, err := manager.createGameInTx(ctx, tx, ownerUUID, key)
+			attempt, err := manager.createGameInTx(ctx, tx, ownerUUID, "Memoria", key)
 
 			if tc.expectErr {
 				require.Error(t, err)
@@ -121,7 +126,7 @@ func TestCreateGameValidatesItsInput(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			manager := &Manager{}
 
-			_, err := manager.CreateGame(context.Background(), tc.ownerUUID, tc.key)
+			_, err := manager.CreateGame(context.Background(), tc.ownerUUID, "Memoria", tc.key)
 
 			require.Error(t, err)
 		})

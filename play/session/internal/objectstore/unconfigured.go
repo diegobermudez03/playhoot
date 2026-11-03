@@ -24,6 +24,11 @@ func (Unconfigured) Put(context.Context, string, []byte, string) error {
 }
 
 // PresignGet implements Store.
+// Delete implements Store.
+func (Unconfigured) Delete(context.Context, string) error {
+	return ErrNotConfigured
+}
+
 func (Unconfigured) PresignGet(context.Context, string, time.Time) (string, error) {
 	return "", ErrNotConfigured
 }

@@ -13,12 +13,11 @@ func migration20260822000000Games() *gormigrate.Migration {
 				CREATE TABLE games (
 					id BIGSERIAL PRIMARY KEY,
 					uuid UUID NOT NULL UNIQUE,
-					name VARCHAR(32) NOT NULL,
-					description VARCHAR(255) NOT NULL,
+					name TEXT NOT NULL,
+					description TEXT NOT NULL,
 					owner_uuid UUID NOT NULL,
-					current_definition_id BIGINT NULL,
-					logo_image_url TEXT NOT NULL,
 					visibility TEXT NOT NULL,
+					published_at TIMESTAMPTZ NULL,
 					created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 					updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 					deleted_at TIMESTAMPTZ NULL

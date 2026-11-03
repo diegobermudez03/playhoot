@@ -3,6 +3,7 @@ package repo
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -149,8 +150,8 @@ func TestAssetObjects(t *testing.T) {
 	ctx := context.Background()
 
 	hash := draftsources.SHA256Hex("png-" + uuid.NewString())
-	require.NoError(t, repo.RegisterAssetObject(ctx, db, hash, 3, "image/png", "game-versions/assets/"+hash))
-	require.NoError(t, repo.RegisterAssetObject(ctx, db, hash, 3, "image/png", "game-versions/assets/"+hash), "registering the same content again changes nothing")
+	require.NoError(t, repo.RegisterAssetObject(ctx, db, hash, 3, "image/png", "game-versions/assets/"+hash, time.Now()))
+	require.NoError(t, repo.RegisterAssetObject(ctx, db, hash, 3, "image/png", "game-versions/assets/"+hash, time.Now()), "registering the same content again changes nothing")
 	keys, err := repo.FindAssetObjectKeys(ctx, db, []string{hash, "absent"})
 	require.NoError(t, err)
 	require.Equal(t, map[string]string{hash: "game-versions/assets/" + hash}, keys)

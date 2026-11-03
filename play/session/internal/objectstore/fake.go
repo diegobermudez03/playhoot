@@ -51,6 +51,22 @@ func (f *Fake) Put(ctx context.Context, key string, content []byte, contentType 
 	return nil
 }
 
+// Delete implements Store.
+func (f *Fake) Delete(ctx context.Context, key string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.objects, key)
+	return nil
+}
+
+// Has reports whether an object exists at key.
+func (f *Fake) Has(key string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	_, found := f.objects[key]
+	return found
+}
+
 // PresignGet implements Store. The returned URL is not fetchable; it only
 // encodes the key and expiry so a test can assert what was signed.
 func (f *Fake) PresignGet(ctx context.Context, key string, expiresAt time.Time) (string, error) {

@@ -15,17 +15,21 @@ import (
 // its own file and declares its own narrow interfaces for the capabilities it
 // calls. It owns no business entity.
 type Manager struct {
-	games    gameCreator
-	editions editableVersionFinder
-	drafts   draftWriter
-	links    resourceLinkWriter
+	games        gameCreator
+	editions     editableVersionFinder
+	drafts       draftWriter
+	links        resourceLinkWriter
+	previews     previewStarter
+	publications gamePublisher
+	versions     versionPublisher
+	cards        cardNamer
 }
 
-// New constructs a Manager. games and editions are Game Management's game
-// creation and edit authorization; drafts is Play's version being built;
-// links is Identity's links an AI uses for a game.
-func New(games gameCreator, editions editableVersionFinder, drafts draftWriter, links resourceLinkWriter) *Manager {
-	return &Manager{games: games, editions: editions, drafts: drafts, links: links}
+// New constructs a Manager from Game Management's game creation, edit
+// authorization, releases and card; Play's version being built, previews and
+// freezing; and Identity's links an AI uses for a game.
+func New(games gameCreator, editions editableVersionFinder, drafts draftWriter, links resourceLinkWriter, previews previewStarter, publications gamePublisher, versions versionPublisher, cards cardNamer) *Manager {
+	return &Manager{games: games, editions: editions, drafts: drafts, links: links, previews: previews, publications: publications, versions: versions, cards: cards}
 }
 
 // editableVersionFinder is Game Management's decision of whether a user may

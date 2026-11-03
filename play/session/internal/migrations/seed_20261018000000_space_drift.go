@@ -4,6 +4,9 @@ import (
 	"github.com/go-gormigrate/gormigrate/v2"
 	"gorm.io/gorm"
 
+	"github.com/diegobermudez03/playhoot/play/runtime/sandbox/scriptcheck"
+	"github.com/diegobermudez03/playhoot/play/session/internal/business/gameversion"
+
 	"github.com/diegobermudez03/playhoot/play/session/internal/objectstore"
 )
 
@@ -228,13 +231,13 @@ func seed20261018000000SpaceDrift() *gormigrate.Migration {
 				{sql: `INSERT INTO play_games (game_uuid) VALUES (?)`, args: []any{seedSpaceDriftGameUUID}},
 				{
 					sql: `INSERT INTO play_game_versions (uuid, game_id, status, manifest,
-							script_object_key, script_sha256, script_size,
-							frontend_object_key, frontend_sha256, frontend_size, executable_at)
-						SELECT ?, id, 'EXECUTABLE', ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP FROM play_games WHERE game_uuid = ?`,
+							script_object_key, script_sha256, script_size, script_profile,
+							frontend_object_key, frontend_sha256, frontend_size, aspect_ratio, executable_at)
+						SELECT ?, id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP FROM play_games WHERE game_uuid = ?`,
 					args: []any{
-						seedSpaceDriftVersionUUID, seedSpaceDriftManifest,
-						seedSpaceDriftScriptLocator.ObjectKey, seedSpaceDriftScriptLocator.SHA256, seedSpaceDriftScriptLocator.Size,
-						seedFrontendPackageLocator.ObjectKey, seedFrontendPackageLocator.SHA256, seedFrontendPackageLocator.Size,
+						seedSpaceDriftVersionUUID, string(gameversion.Executable), seedSpaceDriftManifest,
+						seedSpaceDriftScriptLocator.ObjectKey, seedSpaceDriftScriptLocator.SHA256, seedSpaceDriftScriptLocator.Size, string(scriptcheck.ProfileHandwritten),
+						seedFrontendPackageLocator.ObjectKey, seedFrontendPackageLocator.SHA256, seedFrontendPackageLocator.Size, string(gameversion.AspectRatio16x9),
 						seedSpaceDriftGameUUID,
 					},
 				},

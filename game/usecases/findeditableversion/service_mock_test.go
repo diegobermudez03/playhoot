@@ -42,16 +42,16 @@ func (m *MockrepoAPI) EXPECT() *MockrepoAPIMockRecorder {
 }
 
 // FindGameEditing mocks base method.
-func (m *MockrepoAPI) FindGameEditing(ctx context.Context, gameUUID, editionStatus string) (*repo.GameEditing, error) {
+func (m *MockrepoAPI) FindGameEditing(ctx context.Context, gameUUID, editionStatus, publishedStatus string) (*repo.GameEditing, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "FindGameEditing", ctx, gameUUID, editionStatus)
+	ret := m.ctrl.Call(m, "FindGameEditing", ctx, gameUUID, editionStatus, publishedStatus)
 	ret0, _ := ret[0].(*repo.GameEditing)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // FindGameEditing indicates an expected call of FindGameEditing.
-func (mr *MockrepoAPIMockRecorder) FindGameEditing(ctx, gameUUID, editionStatus any) *gomock.Call {
+func (mr *MockrepoAPIMockRecorder) FindGameEditing(ctx, gameUUID, editionStatus, publishedStatus any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindGameEditing", reflect.TypeOf((*MockrepoAPI)(nil).FindGameEditing), ctx, gameUUID, editionStatus)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindGameEditing", reflect.TypeOf((*MockrepoAPI)(nil).FindGameEditing), ctx, gameUUID, editionStatus, publishedStatus)
 }

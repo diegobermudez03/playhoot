@@ -1,7 +1,6 @@
 package games
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"path"
@@ -65,7 +64,7 @@ func (h *Handler) handleAIContext(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusBadRequest, "format must be json or markdown")
 		return
 	}
-	snapshot, ok := h.loadDraft(w, r, userUUID, gameUUID, 0, true)
+	snapshot, name, ok := h.loadDraft(w, r, userUUID, gameUUID, 0, true)
 	if !ok {
 		return
 	}
@@ -79,14 +78,14 @@ func (h *Handler) handleAIContext(w http.ResponseWriter, r *http.Request) {
 	}
 	if format == "json" {
 		httpx.WriteJSON(w, http.StatusOK, aiContextResponse{
-			Format: aiContextFormat, GameName: projectName(snapshot.Files), ObservedAt: observedAt,
+			Format: aiContextFormat, GameName: gameName(name), ObservedAt: observedAt,
 			Revision: snapshot.Revision, SourcesInline: inline, SDKDocsURL: sdkDocsURL, URLs: urls, Draft: draftBody(snapshot),
 		})
 		return
 	}
 	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(aiContextMarkdown(snapshot, urls, observedAt, inline)))
+	_, _ = w.Write([]byte(aiContextMarkdown(gameName(name), snapshot, urls, observedAt, inline)))
 }
 
 // handleAIFile answers one file of a revision (?revision=N, the current one
@@ -105,7 +104,7 @@ func (h *Handler) handleAIFile(w http.ResponseWriter, r *http.Request) {
 		}
 		revision = parsed
 	}
-	snapshot, ok := h.loadDraft(w, r, userUUID, gameUUID, revision, true)
+	snapshot, _, ok := h.loadDraft(w, r, userUUID, gameUUID, revision, true)
 	if !ok {
 		return
 	}
@@ -138,29 +137,21 @@ func sourceBytes(files []sessionpkg.DraftFile) int64 {
 	return total
 }
 
-// projectName is the name game.project.json gives the game, or "untitled".
-func projectName(files []sessionpkg.DraftFile) string {
-	for _, file := range files {
-		if file.Path != "game.project.json" || file.Content == nil {
-			continue
-		}
-		var project struct {
-			Name string `json:"name"`
-		}
-		if json.Unmarshal([]byte(*file.Content), &project) == nil && strings.TrimSpace(project.Name) != "" {
-			return strings.TrimSpace(project.Name)
-		}
+// gameName is the name on the game's card, or "untitled".
+func gameName(name string) string {
+	if strings.TrimSpace(name) == "" {
+		return "untitled"
 	}
-	return "untitled"
+	return name
 }
 
 // aiContextMarkdown writes the context page for an AI reader, with stable
 // headings it can rely on.
-func aiContextMarkdown(snapshot sessionpkg.DraftSnapshot, urls aiURLs, observedAt time.Time, inline bool) string {
+func aiContextMarkdown(name string, snapshot sessionpkg.DraftSnapshot, urls aiURLs, observedAt time.Time, inline bool) string {
 	var b strings.Builder
 	line := func(format string, args ...any) { fmt.Fprintf(&b, format+"\n", args...) }
 
-	line("# Playhoot game: %s", projectName(snapshot.Files))
+	line("# Playhoot game: %s", name)
 	line("")
 	line("Observed revision **%d** at %s UTC. This page is a read of that revision only: read this link again after any change, never assume what happened.", snapshot.Revision, observedAt.Format(time.RFC3339))
 	line("")

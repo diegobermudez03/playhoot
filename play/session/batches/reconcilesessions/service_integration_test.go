@@ -162,9 +162,9 @@ func seedSession(t *testing.T, db *gorm.DB, status string, lobbyExpiresAt time.T
 	var gameID, versionID, sessionID uint
 	require.NoError(t, db.Raw(`INSERT INTO play_games (game_uuid) VALUES (?) RETURNING id`, uuid.NewString()).Scan(&gameID).Error)
 	require.NoError(t, db.Raw(`
-		INSERT INTO play_game_versions (uuid, game_id, status, manifest)
-		VALUES (?, ?, 'EXECUTABLE', '{"schema_version":1,"players":{"min":1,"max":4}}') RETURNING id
-	`, uuid.NewString(), gameID).Scan(&versionID).Error)
+		INSERT INTO play_game_versions (uuid, game_id, status, manifest, script_profile)
+		VALUES (?, ?, 'EXECUTABLE', '{"schema_version":1,"players":{"min":1,"max":4}}', ?) RETURNING id
+	`, uuid.NewString(), gameID, testScriptProfile).Scan(&versionID).Error)
 	require.NoError(t, db.Raw(`
 		INSERT INTO play_sessions (uuid, game_version_id, created_by_user_uuid, status, lobby_expires_at, expires_at)
 		VALUES (?, ?, ?, ?, ?, ?) RETURNING id

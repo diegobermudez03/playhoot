@@ -35,7 +35,7 @@ type runBuildRepo interface {
 	FindRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64) (draftsources.Revision, bool, error)
 	FindSourceContents(ctx context.Context, tx *gorm.DB, hashes []string) (map[string]string, error)
 	FindReusable(ctx context.Context, tx *gorm.DB, versionID uint, inputsSHA256 string, status string) (*internalrepo.ReusableBuild, error)
-	RegisterArtifactObject(ctx context.Context, tx *gorm.DB, sha256 string, size int64, contentType string, objectKey string) error
+	RegisterArtifactObject(ctx context.Context, tx *gorm.DB, sha256 string, size int64, contentType string, objectKey string, registeredAt time.Time) error
 	FinishBuild(ctx context.Context, tx *gorm.DB, buildID uint, from string, to string, artifacts internalrepo.Artifacts, finishedAt time.Time) (bool, error)
 }
 
@@ -233,10 +233,10 @@ func (m *Manager) storeArtifacts(ctx context.Context, output gamebuild.Output, d
 	server := objectstore.LocatorFor(backendScriptPrefix, output.Server)
 	client := objectstore.LocatorFor(frontendPackagePrefix, output.Client)
 	if _, err := utils.RunInDBTransaction(ctx, m.dbServicer, func(ctx context.Context, tx *gorm.DB) (struct{}, error) {
-		if err := m.runBuildRepo.RegisterArtifactObject(ctx, tx, server.SHA256, server.Size, serverContentType, server.ObjectKey); err != nil {
+		if err := m.runBuildRepo.RegisterArtifactObject(ctx, tx, server.SHA256, server.Size, serverContentType, server.ObjectKey, m.now()); err != nil {
 			return struct{}{}, err
 		}
-		return struct{}{}, m.runBuildRepo.RegisterArtifactObject(ctx, tx, client.SHA256, client.Size, clientContentType, client.ObjectKey)
+		return struct{}{}, m.runBuildRepo.RegisterArtifactObject(ctx, tx, client.SHA256, client.Size, clientContentType, client.ObjectKey, m.now())
 	}); err != nil {
 		return err
 	}

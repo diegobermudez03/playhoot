@@ -24,21 +24,22 @@ func TestCreateGameRequests(t *testing.T) {
 	t.Run("claim_then_complete_then_read_back", func(t *testing.T) {
 		owner := uuid.NewString()
 
-		requestID, existing, err := repo.ClaimCreateGameRequest(ctx, db, owner, "key-1")
+		requestID, existing, err := repo.ClaimCreateGameRequest(ctx, db, owner, "key-1", "Memoria")
 		require.NoError(t, err)
 		require.NotZero(t, requestID)
 		require.Nil(t, existing)
 		require.NoError(t, repo.CompleteCreateGameRequest(ctx, db, requestID, 77))
 
-		againID, again, err := repo.ClaimCreateGameRequest(ctx, db, owner, "key-1")
+		againID, again, err := repo.ClaimCreateGameRequest(ctx, db, owner, "key-1", "Memoria")
 		require.NoError(t, err)
 		require.Zero(t, againID)
 		gameID := uint(77)
-		require.Equal(t, &CreateGameRequest{ID: requestID, GameID: &gameID}, again)
+		name := "Memoria"
+		require.Equal(t, &CreateGameRequest{ID: requestID, GameID: &gameID, Name: &name}, again)
 	})
 
 	t.Run("a_completed_request_is_never_completed_again", func(t *testing.T) {
-		requestID, _, err := repo.ClaimCreateGameRequest(ctx, db, uuid.NewString(), "key-1")
+		requestID, _, err := repo.ClaimCreateGameRequest(ctx, db, uuid.NewString(), "key-1", "Memoria")
 		require.NoError(t, err)
 		require.NoError(t, repo.CompleteCreateGameRequest(ctx, db, requestID, 1))
 

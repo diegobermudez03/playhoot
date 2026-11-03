@@ -36,6 +36,8 @@ type Store interface {
 	// works until expiresAt, less than MaxPresignTTL from now, and stops within
 	// a second after it. It is a bearer credential until it expires.
 	PresignGet(ctx context.Context, key string, expiresAt time.Time) (string, error)
+	// Delete removes the object at key; a missing object is not an error.
+	Delete(ctx context.Context, key string) error
 }
 
 // MaxPresignTTL is the longest a signed URL may work from when it is signed,

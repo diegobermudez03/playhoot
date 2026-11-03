@@ -14,17 +14,9 @@ func MigrateTables(db *gorm.DB) error {
 		ValidateUnknownMigrations: false,
 	}, []*gormigrate.Migration{
 		migration20260822000000Games(),
-		migration20260822000001GameDefinitions(),
-		migration20260822000002GameImages(),
 		migration20260822000003GameHistories(),
-		migration20260822000004GameDefinitionHistories(),
-
-		// game_definitions/game_definition_histories retired: Session
-		// Runtime owns its own executable-artifact table independently of
-		// Game Management now.
-		migration20260929000000DropGameDefinitions(),
-
 		migration20261101000000GameEditions(),
+		migration20261103000000GamePublishing(),
 	})
 
 	return migrator.Migrate()

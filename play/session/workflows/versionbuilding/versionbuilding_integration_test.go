@@ -68,7 +68,7 @@ func TestBuildingIntegration(t *testing.T) {
 	newDraft := func(t *testing.T) string {
 		t.Helper()
 		versionUUID := uuid.NewString()
-		_, err := drafts.CreateDraftVersion(ctx, uuid.NewString(), versionUUID)
+		_, err := drafts.CreateDraftVersion(ctx, uuid.NewString(), versionUUID, "")
 		require.NoError(t, err)
 		return versionUUID
 	}

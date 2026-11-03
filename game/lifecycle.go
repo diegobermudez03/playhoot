@@ -26,10 +26,13 @@ const (
 )
 
 // EditableVersion is the Play version a user may edit for a Game, set only
-// when Outcome is EditableVersionFound.
+// when Outcome is EditableVersionFound. BaseVersionUUID is the version of the
+// Game's latest published edition, the one a later edition starts from;
+// empty for the first edition.
 type EditableVersion struct {
-	Outcome     EditableVersionOutcome
-	VersionUUID string
+	Outcome         EditableVersionOutcome
+	VersionUUID     string
+	BaseVersionUUID string
 }
 
 // ResourceKind is how a game is named among other kinds of resources when

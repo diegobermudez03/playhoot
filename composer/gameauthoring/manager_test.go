@@ -31,7 +31,9 @@ type dependencies struct {
 func newTestManager(t *testing.T) (*Manager, dependencies) {
 	ctrl := gomock.NewController(t)
 	deps := dependencies{editions: NewMockeditableVersionFinder(ctrl), drafts: NewMockdraftReader(ctrl), links: NewMockresourceLinkReader(ctrl), simulator: NewMockgameSimulator(ctrl)}
-	return New(deps.editions, deps.drafts, deps.links, deps.simulator), deps
+	cards := NewMockcardReader(ctrl)
+	cards.EXPECT().ReadCard(gomock.Any(), gomock.Any(), gomock.Any()).Return(game.CardRead{Outcome: game.CardDone, Card: game.Card{Name: "Memoria"}}, nil).AnyTimes()
+	return New(deps.editions, deps.drafts, deps.links, deps.simulator, cards), deps
 }
 
 func TestReadDraft(t *testing.T) {
@@ -49,7 +51,7 @@ func TestReadDraft(t *testing.T) {
 		"the_owner_reads_the_version_being_built": func(t *testing.T, deps dependencies) test {
 			deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(found, nil)
 			deps.drafts.EXPECT().ReadDraft(ctx, testVersionUUID, int64(0), true).Return(snapshot, nil)
-			return test{expected: DraftRead{Access: game.EditableVersionFound, Snapshot: snapshot}}
+			return test{expected: DraftRead{Access: game.EditableVersionFound, Snapshot: snapshot, GameName: "Memoria"}}
 		},
 		"not_found_never_reaches_play": func(t *testing.T, deps dependencies) test {
 			deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(game.EditableVersion{Outcome: game.EditableVersionNotFound}, nil)

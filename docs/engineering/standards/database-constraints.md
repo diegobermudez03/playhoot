@@ -24,4 +24,4 @@ How every change to a row stays visible afterwards (write-once columns, history 
 
 ## Scope
 
-Future migrations follow this standard. The existing migrations that predated it and had `CHECK` constraints were migrated on 2026-10-25, at the human's direction, by `20261027000000_play_drop_check_constraints`; no migration had foreign keys. The record is in `docs/projects/completed/session-runtime-v1/PROJECT.md`.
+Every migration follows this standard. The migrations that predated it had `CHECK` constraints; they were first dropped by a corrective migration (2026-10-25, recorded in `docs/projects/completed/session-runtime-v1/PROJECT.md`) and, since no environment is deployed yet, removed from the migrations that created them on 2026-11-02. No migration has foreign keys.

@@ -21,16 +21,22 @@ const (
 )
 
 type dependencies struct {
-	games    *MockgameCreator
-	editions *MockeditableVersionFinder
-	drafts   *MockdraftWriter
-	links    *MockresourceLinkWriter
+	games        *MockgameCreator
+	editions     *MockeditableVersionFinder
+	drafts       *MockdraftWriter
+	links        *MockresourceLinkWriter
+	previews     *MockpreviewStarter
+	publications *MockgamePublisher
+	versions     *MockversionPublisher
+	cards        *MockcardNamer
 }
 
 func newTestManager(t *testing.T) (*Manager, dependencies) {
 	ctrl := gomock.NewController(t)
-	deps := dependencies{games: NewMockgameCreator(ctrl), editions: NewMockeditableVersionFinder(ctrl), drafts: NewMockdraftWriter(ctrl), links: NewMockresourceLinkWriter(ctrl)}
-	return New(deps.games, deps.editions, deps.drafts, deps.links), deps
+	deps := dependencies{games: NewMockgameCreator(ctrl), editions: NewMockeditableVersionFinder(ctrl), drafts: NewMockdraftWriter(ctrl), links: NewMockresourceLinkWriter(ctrl), previews: NewMockpreviewStarter(ctrl), publications: NewMockgamePublisher(ctrl), versions: NewMockversionPublisher(ctrl), cards: NewMockcardNamer(ctrl)}
+	// No release is left being published unless a test says so.
+	deps.publications.EXPECT().FindPendingPublication(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+	return New(deps.games, deps.editions, deps.drafts, deps.links, deps.previews, deps.publications, deps.versions, deps.cards), deps
 }
 
 func TestCreateGame(t *testing.T) {
@@ -46,38 +52,38 @@ func TestCreateGame(t *testing.T) {
 	tests := map[string]func(t *testing.T, deps dependencies) test{
 		"creates_the_game_then_its_version_being_built": func(t *testing.T, deps dependencies) test {
 			gomock.InOrder(
-				deps.games.EXPECT().CreateGame(ctx, testUserUUID, testKey).Return(created, nil),
-				deps.drafts.EXPECT().CreateDraftVersion(ctx, testGameUUID, testVersionUUID).
+				deps.games.EXPECT().CreateGame(ctx, testUserUUID, "Memoria", testKey).Return(created, nil),
+				deps.drafts.EXPECT().CreateDraftVersion(ctx, testGameUUID, testVersionUUID, "").
 					Return(sessionpkg.DraftVersion{Outcome: sessionpkg.DraftCreated, GameUUID: testGameUUID, VersionUUID: testVersionUUID, Revision: 1}, nil),
 			)
 			return test{expected: wanted}
 		},
 		"a_retry_completes_the_same_game": func(t *testing.T, deps dependencies) test {
 			gomock.InOrder(
-				deps.games.EXPECT().CreateGame(ctx, testUserUUID, testKey).Return(created, nil),
-				deps.drafts.EXPECT().CreateDraftVersion(ctx, testGameUUID, testVersionUUID).
+				deps.games.EXPECT().CreateGame(ctx, testUserUUID, "Memoria", testKey).Return(created, nil),
+				deps.drafts.EXPECT().CreateDraftVersion(ctx, testGameUUID, testVersionUUID, "").
 					Return(sessionpkg.DraftVersion{Outcome: sessionpkg.DraftAlreadyCreated, GameUUID: testGameUUID, VersionUUID: testVersionUUID, Revision: 1}, nil),
 			)
 			return test{expected: wanted}
 		},
 		"another_version_being_built_is_broken_data": func(t *testing.T, deps dependencies) test {
-			deps.games.EXPECT().CreateGame(ctx, testUserUUID, testKey).Return(created, nil)
-			deps.drafts.EXPECT().CreateDraftVersion(ctx, testGameUUID, testVersionUUID).
+			deps.games.EXPECT().CreateGame(ctx, testUserUUID, "Memoria", testKey).Return(created, nil)
+			deps.drafts.EXPECT().CreateDraftVersion(ctx, testGameUUID, testVersionUUID, "").
 				Return(sessionpkg.DraftVersion{Outcome: sessionpkg.DraftAnotherOpen, VersionUUID: "other"}, nil)
 			return test{expectErr: true}
 		},
 		"unknown_draft_outcome_is_broken_data": func(t *testing.T, deps dependencies) test {
-			deps.games.EXPECT().CreateGame(ctx, testUserUUID, testKey).Return(created, nil)
-			deps.drafts.EXPECT().CreateDraftVersion(ctx, testGameUUID, testVersionUUID).Return(sessionpkg.DraftVersion{Outcome: "paused"}, nil)
+			deps.games.EXPECT().CreateGame(ctx, testUserUUID, "Memoria", testKey).Return(created, nil)
+			deps.drafts.EXPECT().CreateDraftVersion(ctx, testGameUUID, testVersionUUID, "").Return(sessionpkg.DraftVersion{Outcome: "paused"}, nil)
 			return test{expectErr: true}
 		},
 		"game_creation_fails_and_play_is_not_called": func(t *testing.T, deps dependencies) test {
-			deps.games.EXPECT().CreateGame(ctx, testUserUUID, testKey).Return(game.CreatedGame{}, errors.New("database down"))
+			deps.games.EXPECT().CreateGame(ctx, testUserUUID, "Memoria", testKey).Return(game.CreatedGame{}, errors.New("database down"))
 			return test{expectErr: true}
 		},
 		"draft_creation_fails": func(t *testing.T, deps dependencies) test {
-			deps.games.EXPECT().CreateGame(ctx, testUserUUID, testKey).Return(created, nil)
-			deps.drafts.EXPECT().CreateDraftVersion(ctx, testGameUUID, testVersionUUID).Return(sessionpkg.DraftVersion{}, errors.New("database down"))
+			deps.games.EXPECT().CreateGame(ctx, testUserUUID, "Memoria", testKey).Return(created, nil)
+			deps.drafts.EXPECT().CreateDraftVersion(ctx, testGameUUID, testVersionUUID, "").Return(sessionpkg.DraftVersion{}, errors.New("database down"))
 			return test{expectErr: true}
 		},
 	}
@@ -87,7 +93,7 @@ func TestCreateGame(t *testing.T) {
 			manager, deps := newTestManager(t)
 			tc := setup(t, deps)
 
-			result, err := manager.CreateGame(ctx, testUserUUID, testKey)
+			result, err := manager.CreateGame(ctx, testUserUUID, "Memoria", testKey)
 
 			if tc.expectErr {
 				require.Error(t, err)

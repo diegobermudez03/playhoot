@@ -19,7 +19,7 @@ import (
 
 // repoAPI is Service's own narrow persistence contract.
 type repoAPI interface {
-	FindGameEditing(ctx context.Context, gameUUID string, editionStatus string) (*repo.GameEditing, error)
+	FindGameEditing(ctx context.Context, gameUUID string, editionStatus string, publishedStatus string) (*repo.GameEditing, error)
 }
 
 // Service is the find-editable-version use case.
@@ -46,7 +46,7 @@ func (s *Service) FindEditableVersion(ctx context.Context, gameUUID string, user
 	if err != nil {
 		return game.EditableVersion{Outcome: game.EditableVersionNotFound}, nil
 	}
-	editing, err := s.repo.FindGameEditing(ctx, gameID.String(), string(edition.Editing))
+	editing, err := s.repo.FindGameEditing(ctx, gameID.String(), string(edition.Editing), string(edition.Published))
 	if err != nil {
 		return game.EditableVersion{}, err
 	}
@@ -66,5 +66,9 @@ func decide(editing *repo.GameEditing, user uuid.UUID) game.EditableVersion {
 	if editing.VersionUUID == nil {
 		return game.EditableVersion{Outcome: game.EditableVersionNotEditable}
 	}
-	return game.EditableVersion{Outcome: game.EditableVersionFound, VersionUUID: *editing.VersionUUID}
+	found := game.EditableVersion{Outcome: game.EditableVersionFound, VersionUUID: *editing.VersionUUID}
+	if editing.BaseVersionUUID != nil {
+		found.BaseVersionUUID = *editing.BaseVersionUUID
+	}
+	return found
 }

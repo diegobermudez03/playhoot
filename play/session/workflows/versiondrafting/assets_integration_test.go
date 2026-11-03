@@ -19,7 +19,7 @@ var pngBytes = []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01")
 // wavBytes is the smallest content the sniffer reads as a WAV.
 var wavBytes = []byte("RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00")
 
-const declaringProject = `{"format":"playhoot.project.v1","name":"Memory","aspectRatio":"16:9","assets":{` +
+const declaringProject = `{"format":"playhoot.project.v1","aspectRatio":"16:9","assets":{` +
 	`"cardBack":{"type":"image","description":"Card back, 512x768"},` +
 	`"flip":{"type":"audio","description":"Flip sound","optional":true}}}`
 
@@ -32,7 +32,7 @@ func TestDraftAssetsIntegration(t *testing.T) {
 	declaringDraft := func(t *testing.T) string {
 		t.Helper()
 		versionUUID := uuid.NewString()
-		_, err := m.CreateDraftVersion(ctx, uuid.NewString(), versionUUID)
+		_, err := m.CreateDraftVersion(ctx, uuid.NewString(), versionUUID, "")
 		require.NoError(t, err)
 		changed, err := m.ApplyChanges(ctx, versionUUID, sessionpkg.DraftChange{
 			BaseRevision: 1, Files: []sessionpkg.DraftFileContent{{Path: "game.project.json", Content: declaringProject}},
@@ -164,7 +164,7 @@ func TestDraftAssetsIntegration(t *testing.T) {
 
 	t.Run("an invalid declaration is refused with diagnostics", func(t *testing.T) {
 		versionUUID := uuid.NewString()
-		_, err := m.CreateDraftVersion(ctx, uuid.NewString(), versionUUID)
+		_, err := m.CreateDraftVersion(ctx, uuid.NewString(), versionUUID, "")
 		require.NoError(t, err)
 		result, err := m.ApplyChanges(ctx, versionUUID, sessionpkg.DraftChange{
 			BaseRevision: 1, Files: []sessionpkg.DraftFileContent{{Path: "game.project.json", Content: `{"assets":{"cardBack":{"type":"model","description":"x"}}}`}},

@@ -17,8 +17,8 @@ func TestRepoResolveVisibility(t *testing.T) {
 	gameUUID := uuid.NewString()
 	now := time.Now().UTC()
 	require.NoError(t, db.Exec(`
-		INSERT INTO games (uuid, name, description, owner_uuid, logo_image_url, visibility, created_at, updated_at)
-		VALUES (?, 'Test Game', 'A game', ?, '', 'public', ?, ?)
+		INSERT INTO games (uuid, name, description, owner_uuid, visibility, created_at, updated_at)
+		VALUES (?, 'Test Game', 'A game', ?, 'public', ?, ?)
 	`, gameUUID, uuid.NewString(), now, now).Error)
 
 	visibility, err := r.ResolveVisibility(context.Background(), gameUUID)
@@ -43,8 +43,8 @@ func TestRepoResolveVisibility_SoftDeletedIsNotFound(t *testing.T) {
 	gameUUID := uuid.NewString()
 	now := time.Now().UTC()
 	require.NoError(t, db.Exec(`
-		INSERT INTO games (uuid, name, description, owner_uuid, logo_image_url, visibility, created_at, updated_at, deleted_at)
-		VALUES (?, 'Test Game', 'A game', ?, '', 'public', ?, ?, ?)
+		INSERT INTO games (uuid, name, description, owner_uuid, visibility, created_at, updated_at, deleted_at)
+		VALUES (?, 'Test Game', 'A game', ?, 'public', ?, ?, ?)
 	`, gameUUID, uuid.NewString(), now, now, now).Error)
 
 	visibility, err := r.ResolveVisibility(context.Background(), gameUUID)

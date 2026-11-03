@@ -28,6 +28,10 @@ func PostgresMigrate(db *gorm.DB) error {
 // PostgresSeed fills the tables with test data. main only calls it outside
 // production; it runs after PostgresMigrate.
 func PostgresSeed(db *gorm.DB) error {
+	if err := gamemigrations.Seed(db); err != nil {
+		return fmt.Errorf("seeding game pkg: %w", err)
+	}
+
 	if err := sessionmigrations.Seed(db); err != nil {
 		return fmt.Errorf("seeding session pkg: %w", err)
 	}

@@ -24,3 +24,5 @@ Groups are organized like `orchestrator`'s: one subpackage per behavior, a `Mana
 `gameauthoring.SimulateDraft` (2026-11-02): the same authorization, then Play's `LoadBuiltRevision` (the revision's build with its script, profile and manifest; not ready unless it `SUCCEEDED`) and the Runtime's `simulategame.Simulate` of the scenario; a version Play lacks is reported `Missing` for the API to repair. It writes nothing.
 
 `gameauthoring.AILinkStatus` (2026-11-02): the same Game Management decision as the AI link writes (the owner, found or `not_editable`), then Identity's `ResourceLinkStatus` for the game: whether a live link exists, never the link itself.
+
+`gameauthoring.ReadDraft` also reads the game's card name from Game Management (2026-11-02), which the AI context page shows.

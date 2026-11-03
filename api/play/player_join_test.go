@@ -683,7 +683,7 @@ func TestHandlePlayerJoin(t *testing.T) {
 				_, err := connections.Reserve(context.Background(), callerUUID)
 				require.NoError(t, err)
 			}
-			handler := NewHandler(nil, nil, nil, nil, deps.players, nil, connections, nil)
+			handler := NewHandler(nil, nil, nil, nil, deps.players, nil, nil, connections, nil)
 			handlerDone := make(chan struct{})
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				defer close(handlerDone)

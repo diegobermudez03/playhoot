@@ -40,9 +40,13 @@ type Manager struct {
 	removeAssetRepo        removeAssetRepo
 	readBuildRepo          readBuildRepo
 	loadBuiltRevisionRepo  loadBuiltRevisionRepo
+	signBuiltFrontendRepo  signBuiltFrontendRepo
+	publishVersionRepo     publishVersionRepo
+	cleanUnusedObjectsRepo cleanUnusedObjectsRepo
 
-	assetLinks   assetLinkSigner
-	assetStorage assetStorage
+	assetLinks    assetLinkSigner
+	assetStorage  assetStorage
+	objectDeleter objectDeleter
 
 	// scripts reads builds' backend scripts from object storage.
 	scripts scriptLoader
@@ -75,10 +79,14 @@ func New(db *gorm.DB, store storage.Store, signal *buildsignal.Signal) *Manager 
 		removeAssetRepo:        repo,
 		readBuildRepo:          repo,
 		loadBuiltRevisionRepo:  repo,
+		signBuiltFrontendRepo:  repo,
+		publishVersionRepo:     repo,
+		cleanUnusedObjectsRepo: repo,
 		scripts:                objectstore.NewLoader(store, objectstore.DefaultLoaderEntries),
 		buildSignal:            signal,
 		assetLinks:             store,
 		assetStorage:           store,
+		objectDeleter:          store,
 		uploadSlots:            make(chan struct{}, maxConcurrentUploads),
 		dbServicer:             repo,
 		now:                    time.Now,

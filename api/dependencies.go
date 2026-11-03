@@ -110,7 +110,7 @@ type joinCodeResolver interface {
 // gameCreator is game authoring's creation of a game with its version being
 // built.
 type gameCreator interface {
-	CreateGame(ctx context.Context, userUUID string, idempotencyKey string) (gameauthoring.CreatedGame, error)
+	CreateGame(ctx context.Context, userUUID string, name string, idempotencyKey string) (gameauthoring.CreatedGame, error)
 }
 
 // draftEditor is game authoring's changes to a game's version being built.
@@ -120,6 +120,7 @@ type draftEditor interface {
 	UploadDraftAsset(ctx context.Context, userUUID string, gameUUID string, key string, content io.Reader, idempotencyKey string, origin string) (gameauthoring.DraftAssetEdit, error)
 	RemoveDraftAsset(ctx context.Context, userUUID string, gameUUID string, key string, idempotencyKey string, origin string) (gameauthoring.DraftAssetEdit, error)
 	EnsureDraft(ctx context.Context, userUUID string, gameUUID string) (game.EditableVersionOutcome, error)
+	StartPreview(ctx context.Context, userUUID string, gameUUID string, revision int64, players int) (gameauthoring.PreviewStart, error)
 }
 
 // draftReader is game authoring's reads of a game's version being built.
@@ -133,8 +134,15 @@ type draftReader interface {
 // Games is what game authoring needs, AILinks included: the links an AI uses
 // to read and change one game.
 type Games struct {
-	Creator gameCreator
-	Editor  draftEditor
-	Reader  draftReader
-	AILinks apigames.AILinks
+	Previews previewAttacher
+	Creator  gameCreator
+	Editor   draftEditor
+	Reader   draftReader
+	AILinks  apigames.AILinks
+	Cards    apigames.Cards
+}
+
+// previewAttacher attaches a draft owner's connection to their preview.
+type previewAttacher interface {
+	AttachPreview(ctx context.Context, previewUUID string, ownerUUID string) (runtime.AttachPreviewResult, error)
 }

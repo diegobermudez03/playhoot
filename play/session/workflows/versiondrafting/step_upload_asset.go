@@ -37,7 +37,7 @@ type uploadAssetRepo interface {
 	ClaimChangeAttempt(ctx context.Context, tx *gorm.DB, versionID uint, kind string, idempotencyKey string, requestSHA256 string, baseRevision int64, origin string) (uint, *internalrepo.ChangeAttempt, error)
 	FindRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64) (draftsources.Revision, bool, error)
 	FindSourceContents(ctx context.Context, tx *gorm.DB, hashes []string) (map[string]string, error)
-	RegisterAssetObject(ctx context.Context, tx *gorm.DB, sha256 string, size int64, mimeType string, objectKey string) error
+	RegisterAssetObject(ctx context.Context, tx *gorm.DB, sha256 string, size int64, mimeType string, objectKey string, registeredAt time.Time) error
 	AdvanceRevision(ctx context.Context, tx *gorm.DB, versionID uint, status string, base int64) (bool, error)
 	CreateRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64, revision draftsources.Revision, source string) error
 	QueueBuild(ctx context.Context, tx *gorm.DB, versionID uint, revision int64, buildUUID string, queued string, superseded string) (int, error)
@@ -329,7 +329,7 @@ func receive(key string, declaration *draftsources.AssetDeclaration, content io.
 func (m *Manager) storeAsset(ctx context.Context, received receivedUpload) error {
 	locator := objectstore.LocatorFor(assetObjectPrefix, received.content)
 	if _, err := utils.RunInDBTransaction(ctx, m.dbServicer, func(ctx context.Context, tx *gorm.DB) (struct{}, error) {
-		return struct{}{}, m.uploadAssetRepo.RegisterAssetObject(ctx, tx, locator.SHA256, locator.Size, received.binding.MIMEType, locator.ObjectKey)
+		return struct{}{}, m.uploadAssetRepo.RegisterAssetObject(ctx, tx, locator.SHA256, locator.Size, received.binding.MIMEType, locator.ObjectKey, m.now())
 	}); err != nil {
 		return err
 	}

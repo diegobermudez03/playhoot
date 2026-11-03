@@ -34,23 +34,28 @@ func TestFindEditableVersion(t *testing.T) {
 
 	tests := map[string]func(t *testing.T, mocks svcMocks) test{
 		"owner_edits_the_open_edition": func(t *testing.T, mocks svcMocks) test {
-			mocks.repo.EXPECT().FindGameEditing(ctx, gameUUID, "EDITING").Return(&repo.GameEditing{OwnerUUID: ownerUUID, VersionUUID: &version}, nil)
+			mocks.repo.EXPECT().FindGameEditing(ctx, gameUUID, "EDITING", "PUBLISHED").Return(&repo.GameEditing{OwnerUUID: ownerUUID, VersionUUID: &version}, nil)
 			return test{expected: game.EditableVersion{Outcome: game.EditableVersionFound, VersionUUID: versionUUID}}
 		},
 		"owner_uuid_in_another_textual_form_is_the_owner": func(t *testing.T, mocks svcMocks) test {
-			mocks.repo.EXPECT().FindGameEditing(ctx, gameUUID, "EDITING").Return(&repo.GameEditing{OwnerUUID: ownerUUID, VersionUUID: &version}, nil)
+			mocks.repo.EXPECT().FindGameEditing(ctx, gameUUID, "EDITING", "PUBLISHED").Return(&repo.GameEditing{OwnerUUID: ownerUUID, VersionUUID: &version}, nil)
 			return test{userUUID: "0F8FAD5B-D9CB-469F-A165-70867728950E", expected: game.EditableVersion{Outcome: game.EditableVersionFound, VersionUUID: versionUUID}}
 		},
+		"a_later_edition_names_the_published_version_it_starts_from": func(t *testing.T, mocks svcMocks) test {
+			base := "7ba7b810-9dad-41d1-80b4-00c04fd430c8"
+			mocks.repo.EXPECT().FindGameEditing(ctx, gameUUID, "EDITING", "PUBLISHED").Return(&repo.GameEditing{OwnerUUID: ownerUUID, VersionUUID: &version, BaseVersionUUID: &base}, nil)
+			return test{expected: game.EditableVersion{Outcome: game.EditableVersionFound, VersionUUID: versionUUID, BaseVersionUUID: base}}
+		},
 		"owner_without_an_open_edition": func(t *testing.T, mocks svcMocks) test {
-			mocks.repo.EXPECT().FindGameEditing(ctx, gameUUID, "EDITING").Return(&repo.GameEditing{OwnerUUID: ownerUUID}, nil)
+			mocks.repo.EXPECT().FindGameEditing(ctx, gameUUID, "EDITING", "PUBLISHED").Return(&repo.GameEditing{OwnerUUID: ownerUUID}, nil)
 			return test{expected: game.EditableVersion{Outcome: game.EditableVersionNotEditable}}
 		},
 		"someone_elses_game_is_not_found": func(t *testing.T, mocks svcMocks) test {
-			mocks.repo.EXPECT().FindGameEditing(ctx, gameUUID, "EDITING").Return(&repo.GameEditing{OwnerUUID: otherUUID, VersionUUID: &version}, nil)
+			mocks.repo.EXPECT().FindGameEditing(ctx, gameUUID, "EDITING", "PUBLISHED").Return(&repo.GameEditing{OwnerUUID: otherUUID, VersionUUID: &version}, nil)
 			return test{expected: game.EditableVersion{Outcome: game.EditableVersionNotFound}}
 		},
 		"unknown_game_is_not_found": func(t *testing.T, mocks svcMocks) test {
-			mocks.repo.EXPECT().FindGameEditing(ctx, gameUUID, "EDITING").Return(nil, nil)
+			mocks.repo.EXPECT().FindGameEditing(ctx, gameUUID, "EDITING", "PUBLISHED").Return(nil, nil)
 			return test{expected: game.EditableVersion{Outcome: game.EditableVersionNotFound}}
 		},
 		"malformed_game_uuid_is_not_found": func(t *testing.T, mocks svcMocks) test {
@@ -60,7 +65,7 @@ func TestFindEditableVersion(t *testing.T) {
 			return test{userUUID: "nope", expected: game.EditableVersion{Outcome: game.EditableVersionNotFound}}
 		},
 		"reading_fails": func(t *testing.T, mocks svcMocks) test {
-			mocks.repo.EXPECT().FindGameEditing(ctx, gameUUID, "EDITING").Return(nil, errors.New("database down"))
+			mocks.repo.EXPECT().FindGameEditing(ctx, gameUUID, "EDITING", "PUBLISHED").Return(nil, errors.New("database down"))
 			return test{expectErr: true}
 		},
 	}

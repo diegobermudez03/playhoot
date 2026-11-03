@@ -157,6 +157,11 @@ type controllerDependencies struct {
 	// liveLimits bound what players and the platform may ask of the Session.
 	liveLimits liveLimits
 	logger     *slog.Logger
+
+	// previews is set for the controllers of previews (previews.go): their
+	// participants are synthetic and never lose a transport, they can pause,
+	// and nothing of them is checkpointed.
+	previews bool
 }
 
 // sessionController is one live Session on its owner instance. Connections
@@ -514,6 +519,14 @@ type liveState struct {
 	// here.
 	runningSince      time.Time
 	baseSessionTimeMs int64
+	// paused is set while a preview is paused, since pausedAt: Session time
+	// stands still and no boundary runs.
+	paused   bool
+	pausedAt time.Time
+	// previewRevision is the draft revision a preview plays, and actingAs
+	// the participant its owner plays as.
+	previewRevision int64
+	actingAs        string
 	// lastActivity is when someone last played the running game: a distinct
 	// input transition or a COMMAND.
 	lastActivity time.Time

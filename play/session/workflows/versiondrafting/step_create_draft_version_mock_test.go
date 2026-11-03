@@ -72,6 +72,22 @@ func (mr *MockcreateDraftVersionRepoMockRecorder) CreateVersion(ctx, tx, gameID,
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateVersion", reflect.TypeOf((*MockcreateDraftVersionRepo)(nil).CreateVersion), ctx, tx, gameID, versionUUID, status, scriptProfile, revision)
 }
 
+// FindRevision mocks base method.
+func (m *MockcreateDraftVersionRepo) FindRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64) (draftsources.Revision, bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "FindRevision", ctx, tx, versionID, number)
+	ret0, _ := ret[0].(draftsources.Revision)
+	ret1, _ := ret[1].(bool)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// FindRevision indicates an expected call of FindRevision.
+func (mr *MockcreateDraftVersionRepoMockRecorder) FindRevision(ctx, tx, versionID, number any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindRevision", reflect.TypeOf((*MockcreateDraftVersionRepo)(nil).FindRevision), ctx, tx, versionID, number)
+}
+
 // FindVersion mocks base method.
 func (m *MockcreateDraftVersionRepo) FindVersion(ctx context.Context, tx *gorm.DB, versionUUID string) (*repo.Version, error) {
 	m.ctrl.T.Helper()

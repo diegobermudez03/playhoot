@@ -513,7 +513,7 @@ func replayEvents(placed []gameEvent) []replay.GameEvent {
 func (c *sessionController) takeBoundary() (boundary, bool) {
 	s := c.lock()
 	defer c.unlock()
-	if s.phase != phaseRunning {
+	if s.phase != phaseRunning || s.paused {
 		return boundary{}, false
 	}
 	s.expireGraces(c.root)
@@ -642,7 +642,8 @@ func (s *liveState) acknowledge(ctx context.Context, work boundary, executed exe
 	}
 	for _, participant := range s.participants {
 		player, found := s.players[participant.UserUUID]
-		if !found || player.isEnded() {
+		// A preview's one connection plays every participant, one at a time.
+		if !found || player.isEnded() || player.participantID != participant.ParticipantID {
 			continue
 		}
 		s.sendView(ctx, player, participant.ParticipantID, executed.views[participant.ParticipantID], executed.transientsFor(participant.ParticipantID))

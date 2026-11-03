@@ -53,6 +53,9 @@ func (m *Manager) editDraft(ctx context.Context, userUUID string, gameUUID strin
 // version Play does not have yet is created, and edit runs once more.
 func editVersion[T any](ctx context.Context, m *Manager, userUUID string, gameUUID string, edit func(versionUUID string) (T, error)) (game.EditableVersionOutcome, T, error) {
 	var none T
+	if err := m.resumePublication(ctx, userUUID, gameUUID); err != nil {
+		return "", none, err
+	}
 	editable, err := m.editableVersion(ctx, gameUUID, userUUID)
 	if err != nil {
 		return "", none, err
@@ -64,7 +67,7 @@ func editVersion[T any](ctx context.Context, m *Manager, userUUID string, gameUU
 
 	result, err := edit(editable.VersionUUID)
 	if errors.Is(err, sessionpkg.ErrDraftNotFound) {
-		if err := m.repairDraft(ctx, gameUUID, editable.VersionUUID); err != nil {
+		if err := m.repairDraft(ctx, gameUUID, editable); err != nil {
 			return "", none, err
 		}
 		result, err = edit(editable.VersionUUID)

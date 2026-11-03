@@ -6,6 +6,9 @@ import (
 	"github.com/go-gormigrate/gormigrate/v2"
 	"gorm.io/gorm"
 
+	"github.com/diegobermudez03/playhoot/play/runtime/sandbox/scriptcheck"
+	"github.com/diegobermudez03/playhoot/play/session/internal/business/gameversion"
+
 	"github.com/diegobermudez03/playhoot/play/session/internal/objectstore"
 )
 
@@ -414,13 +417,13 @@ func seed20261020100000Parques() *gormigrate.Migration {
 				{sql: `INSERT INTO play_games (game_uuid) VALUES (?)`, args: []any{seedParquesGameUUID}},
 				{
 					sql: `INSERT INTO play_game_versions (uuid, game_id, status, manifest,
-							script_object_key, script_sha256, script_size,
-							frontend_object_key, frontend_sha256, frontend_size, executable_at)
-						SELECT ?, id, 'EXECUTABLE', ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP FROM play_games WHERE game_uuid = ?`,
+							script_object_key, script_sha256, script_size, script_profile,
+							frontend_object_key, frontend_sha256, frontend_size, aspect_ratio, executable_at)
+						SELECT ?, id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP FROM play_games WHERE game_uuid = ?`,
 					args: []any{
-						seedParquesVersionUUID, seedParquesManifest,
-						seedParquesScriptLocator.ObjectKey, seedParquesScriptLocator.SHA256, seedParquesScriptLocator.Size,
-						seedParquesFrontendPackageLocator.ObjectKey, seedParquesFrontendPackageLocator.SHA256, seedParquesFrontendPackageLocator.Size,
+						seedParquesVersionUUID, string(gameversion.Executable), seedParquesManifest,
+						seedParquesScriptLocator.ObjectKey, seedParquesScriptLocator.SHA256, seedParquesScriptLocator.Size, string(scriptcheck.ProfileHandwritten),
+						seedParquesFrontendPackageLocator.ObjectKey, seedParquesFrontendPackageLocator.SHA256, seedParquesFrontendPackageLocator.Size, string(gameversion.AspectRatio1x1),
 						seedParquesGameUUID,
 					},
 				},

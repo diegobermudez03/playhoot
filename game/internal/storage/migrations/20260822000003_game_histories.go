@@ -13,9 +13,8 @@ func migration20260822000003GameHistories() *gormigrate.Migration {
 				CREATE TABLE game_histories (
 					id BIGSERIAL PRIMARY KEY,
 					game_id BIGINT NOT NULL,
-					name VARCHAR(32) NULL,
-					description VARCHAR(255) NULL,
-					logo_image_url TEXT NULL,
+					name TEXT NULL,
+					description TEXT NULL,
 					visibility TEXT NULL,
 					is_published BOOLEAN NULL,
 					created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP

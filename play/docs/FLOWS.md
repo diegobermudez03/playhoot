@@ -325,3 +325,32 @@ A simulation (below) or a preview only runs a succeeded build. Metrics: `play_dr
 3. It stops at the duration, when the game finishes, when its script fails (reported with the time and message, the state confirmed before it kept), after 10 s of real time, or once the result reaches 8 MiB (both `budget`, with what was simulated). Observations are taken at the first tick at or after the instant asked for (0: right after start): the whole state and every participant's view; the final one too. The same scenario and seed give the same result.
 
 Metrics: `play_runtime_simulations_total{outcome}`, `play_runtime_simulation_duration_seconds`, `play_runtime_simulated_seconds`, `play_runtime_simulation_boundaries`.
+
+### Previews
+
+Decided by the human 2026-11-02: a preview runs on the real live controller, pinned to a `SUCCEEDED` build of a draft revision; it can pause; one per game; it ends after 10 minutes without activity. It is not a Session: `play_previews` (`play/session/workflows/previewlifecycle`) records it apart, so it is never listed, joined, counted against the creator's active Sessions, reconciled or replayed.
+
+1. `orchestrator/gameauthoring.StartPreview`: Game Management authorizes the owner (and the missing-draft repair runs), then `liveconnection.Previews.StartPreview`: `previewlifecycle.OpenPreview` loads the revision's build (`versiondrafting.LoadBuiltRevision`: not ready unless `SUCCEEDED`), checks the player count against its manifest, signs the build's `client.html` and the revision's declared and bound assets until the preview's end (`versiondrafting.SignBuiltFrontend`), and in one transaction (the version row locked) ends the version's running preview as `replaced` and records the new one with P1..Pn, expiring after `sessionlifetime.Max`.
+2. The Runtime ends the replaced preview's controller (its connection is told `replaced`), then starts a controller of its own resolver (`Previews`, at most 50 per instance) whose dependencies keep nothing: no checkpoints, heartbeats, replay, ownership or fault reports. The game starts with the synthetic participants, all played by the owner; they never wait for a transport, so none is ever disconnected.
+3. The owner's one connection plays as one participant at a time (`act_as`): the previous participant's inputs go back to their defaults at once, SAMPLE sequences start again for the new one, and a FULL view of it follows; boundaries send views only to the participant acted as. A new connection replaces the attached one and plays as the participant last acted as.
+4. Pause: Session time stands still (`sessionTime` reads the instant it paused), no boundary runs, SAMPLEs are dropped unacknowledged and COMMANDs answered `paused`; resuming moves the start of Session time by the pause, so the game never sees it.
+5. Ends: the game finishing (after its final view), 10 minutes without inputs, commands or control messages (`idle`, also its maximum life), the owner's `end` (`ended_by_owner`), a newer preview (`replaced`), a script failure, or an infrastructure failure (`unavailable`). The end is recorded once (`ended_at`, `end_reason`). An instance restart ends what it ran: a later connection finds no controller and records it `unavailable`.
+
+Metrics: `play_previews_opened_total{outcome}`, `play_previews_ended_total{reason}`, `play_runtime_preview_starts_total{outcome}`, `play_runtime_preview_switches_total`, `play_runtime_preview_pauses_total`.
+
+
+### Publishing
+
+Decided by the human 2026-11-02 (game creation project, item J). `orchestrator/gameauthoring.Publish` coordinates; no domain calls the other.
+
+1. A release a crash left being published is completed first (`FindPendingPublication`); the same happens before every edit through the orchestrator.
+2. A `name` given with the publication replaces the card name (`gamecard.UpdateCard`).
+3. Game Management says which version is editable; Play's `versiondrafting.CheckPublication` checks the DRAFT's CURRENT revision: a build of exactly that revision `SUCCEEDED`, every declared asset not `optional` bound. Blockers are answered, nothing is recorded.
+4. Game Management's `BeginPublication` checks the card (a name) and records a release (sequence per game, the revision, the visibility); idempotent per key.
+5. Play's `FreezeVersion(game, version, revision)`, one transaction, locking the game: the DRAFT becomes `EXECUTABLE` (immutable forever: every edit answers `not_editable`) with the build's server/frontend locators, manifest and aspect ratio, `play_game_version_assets` from the revision's declared bindings, input requirements (sdk-v1 games: pointer press, desktop and mobile), and `play_games.current_version_id` pointing at it; idempotent (`already_frozen`); a revision that moved meanwhile answers `not_ready` `revision_changed` and the release is abandoned.
+6. Game Management's `CompletePublication`: edition `PUBLISHED`, first publication time, visibility, release completed.
+7. `CleanUnusedObjects`, best effort: deletes (bytes first, then `deleted_at`) a bounded batch of `play_asset_objects` and `play_build_artifact_objects` that no executable version and no revision or build of any DRAFT references (content is shared across games), only when registered more than an hour ago (an upload or a build may be storing it); each is checked again under its row lock. Registering content again clears `deleted_at`.
+
+A new edition (`OpenEdition`): Game Management opens an `EDITING` edition with a new version uuid; Play's `CreateDraftVersion(game, version, from)` copies the published version's current revision (files and asset bindings, source `edition`) as revision 1 and queues its build. The published version stays current until the next publication. The missing-draft repair uses the same base (`EditableVersion.BaseVersionUUID`).
+
+Sessions are pinned to the version current when they were created; a later publication does not move them.

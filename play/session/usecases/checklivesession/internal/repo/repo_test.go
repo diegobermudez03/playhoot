@@ -20,11 +20,12 @@ type testGame struct {
 func (testGame) TableName() string { return "play_games" }
 
 type testGameVersion struct {
-	ID       uint
-	UUID     string
-	GameID   uint
-	Status   string
-	Manifest string
+	ScriptProfile string
+	ID            uint
+	UUID          string
+	GameID        uint
+	Status        string
+	Manifest      string
 }
 
 func (testGameVersion) TableName() string { return "play_game_versions" }
@@ -46,7 +47,7 @@ func seedSession(t *testing.T, db *gorm.DB, status string, endCause *string, lob
 	t.Helper()
 	game := testGame{GameUUID: uuid.NewString()}
 	require.NoError(t, db.Create(&game).Error)
-	version := testGameVersion{UUID: uuid.NewString(), GameID: game.ID, Status: "EXECUTABLE", Manifest: `{"schema_version":1,"players":{"min":1,"max":8}}`}
+	version := testGameVersion{ScriptProfile: testScriptProfile, UUID: uuid.NewString(), GameID: game.ID, Status: "EXECUTABLE", Manifest: `{"schema_version":1,"players":{"min":1,"max":8}}`}
 	require.NoError(t, db.Create(&version).Error)
 	session := testSession{
 		UUID:              uuid.NewString(),
