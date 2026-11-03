@@ -55,6 +55,8 @@ type Artifacts struct {
 	ClientSize       *int64
 	Manifest         []byte
 	AspectRatio      *string
+	// Languages is the JSON list of the languages the game is written in.
+	Languages        []byte
 	UsesKeyboard     *bool
 	UsesPointerHover *bool
 	UsesPointerPress *bool
@@ -73,6 +75,7 @@ type ReusableBuild struct {
 	ClientSize       int64
 	Manifest         []byte
 	AspectRatio      string
+	Languages        []byte
 	UsesKeyboard     bool
 	UsesPointerHover bool
 	UsesPointerPress bool
@@ -207,7 +210,7 @@ func (r *Repo) FindReusable(ctx context.Context, tx *gorm.DB, versionID uint, in
 	var reusable ReusableBuild
 	result := tx.WithContext(ctx).Raw(`
 		SELECT id, server_object_key, server_sha256, server_size, client_object_key, client_sha256, client_size, manifest, aspect_ratio,
-			uses_keyboard, uses_pointer_hover, uses_pointer_press
+			languages, uses_keyboard, uses_pointer_hover, uses_pointer_press
 		FROM play_game_version_builds
 		WHERE game_version_id = ? AND inputs_sha256 = ? AND status = ? AND server_object_key IS NOT NULL
 		ORDER BY id
@@ -242,9 +245,12 @@ func (r *Repo) RegisterArtifactObject(ctx context.Context, tx *gorm.DB, sha256 s
 // FinishBuild moves buildID from from to to, writing what its end decided
 // once. False means the build was no longer in from, and nothing changed.
 func (r *Repo) FinishBuild(ctx context.Context, tx *gorm.DB, buildID uint, from string, to string, artifacts Artifacts, finishedAt time.Time) (bool, error) {
-	var manifest, diagnostics any
+	var manifest, diagnostics, languages any
 	if len(artifacts.Manifest) > 0 {
 		manifest = string(artifacts.Manifest)
+	}
+	if len(artifacts.Languages) > 0 {
+		languages = string(artifacts.Languages)
 	}
 	if len(artifacts.Diagnostics) > 0 {
 		diagnostics = string(artifacts.Diagnostics)
@@ -254,13 +260,13 @@ func (r *Repo) FinishBuild(ctx context.Context, tx *gorm.DB, buildID uint, from 
 			status = ?, inputs_sha256 = ?, toolchain_version = ?, diagnostics = ?,
 			server_object_key = ?, server_sha256 = ?, server_size = ?,
 			client_object_key = ?, client_sha256 = ?, client_size = ?,
-			manifest = ?, aspect_ratio = ?, uses_keyboard = ?, uses_pointer_hover = ?, uses_pointer_press = ?,
+			manifest = ?, aspect_ratio = ?, languages = ?, uses_keyboard = ?, uses_pointer_hover = ?, uses_pointer_press = ?,
 			reused_build_id = ?, finished_at = ?
 		WHERE id = ? AND status = ? AND finished_at IS NULL
 	`, to, nullable(artifacts.InputsSHA256), nullable(artifacts.ToolchainVersion), diagnostics,
 		artifacts.ServerObjectKey, artifacts.ServerSHA256, artifacts.ServerSize,
 		artifacts.ClientObjectKey, artifacts.ClientSHA256, artifacts.ClientSize,
-		manifest, artifacts.AspectRatio, artifacts.UsesKeyboard, artifacts.UsesPointerHover, artifacts.UsesPointerPress,
+		manifest, artifacts.AspectRatio, languages, artifacts.UsesKeyboard, artifacts.UsesPointerHover, artifacts.UsesPointerPress,
 		artifacts.ReusedBuildID, finishedAt,
 		buildID, from)
 	if result.Error != nil {

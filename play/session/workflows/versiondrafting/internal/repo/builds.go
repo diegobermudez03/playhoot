@@ -126,7 +126,9 @@ type BuiltArtifacts struct {
 	ClientSize      *int64
 	AspectRatio     *string
 	Manifest        []byte
-	ScriptProfile   string
+	// Languages is the JSON list of the languages the game is written in.
+	Languages     []byte
+	ScriptProfile string
 	// What the built client asks of the device; nil only for a build that did not succeed.
 	UsesKeyboard     *bool
 	UsesPointerHover *bool
@@ -139,7 +141,7 @@ func (r *Repo) FindBuiltArtifacts(ctx context.Context, tx *gorm.DB, versionUUID 
 	var built BuiltArtifacts
 	result := tx.WithContext(ctx).Raw(`
 		SELECT b.revision, b.status, b.server_object_key, b.server_sha256, b.server_size,
-			b.client_object_key, b.client_sha256, b.client_size, b.aspect_ratio, b.manifest, v.script_profile,
+			b.client_object_key, b.client_sha256, b.client_size, b.aspect_ratio, b.manifest, b.languages, v.script_profile,
 			b.uses_keyboard, b.uses_pointer_hover, b.uses_pointer_press
 		FROM play_game_version_builds b
 		JOIN play_game_versions v ON v.id = b.game_version_id

@@ -154,7 +154,7 @@ func TestDeclaredAssets(t *testing.T) {
 	})
 
 	t.Run("a change writing an invalid project file is refused", func(t *testing.T) {
-		applied := Apply(map[string]File{}, []Write{{Path: ProjectFile, Content: `{"assets":{"x":{"type":"image"}}}`}}, nil)
+		applied := Apply(map[string]File{}, []Write{{Path: ProjectFile, Content: `{"languages":["es"],"assets":{"x":{"type":"image"}}}`}}, nil)
 		require.Equal(t, CodeInvalidAsset, applied.Diagnostics[0].Code)
 	})
 }
@@ -180,4 +180,31 @@ func TestAssetStates(t *testing.T) {
 	require.Equal(t, AssetMissing, states[1].Status)
 	require.Equal(t, "old", states[2].Key)
 	require.Equal(t, AssetUndeclared, states[2].Status)
+}
+
+func TestDeclaredLanguages(t *testing.T) {
+	languages, diagnostics := DeclaredLanguages(`{"format":"playhoot.project.v1","languages":["es","en"]}`)
+	require.Empty(t, diagnostics)
+	require.Equal(t, []gameversion.Language{"es", "en"}, languages)
+
+	for name, project := range map[string]string{
+		"absent":      `{"format":"playhoot.project.v1"}`,
+		"empty":       `{"languages":[]}`,
+		"not_a_list":  `{"languages":"es"}`,
+		"unsupported": `{"languages":["es","fr"]}`,
+		"repeated":    `{"languages":["es","es"]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			languages, diagnostics := DeclaredLanguages(project)
+			require.Nil(t, languages)
+			require.Len(t, diagnostics, 1)
+			require.Equal(t, CodeInvalidLanguages, diagnostics[0].Code)
+		})
+	}
+
+	t.Run("a change of the project file without them is invalid", func(t *testing.T) {
+		applied := Apply(nil, []Write{{Path: ProjectFile, Content: `{"format":"playhoot.project.v1"}`}}, nil)
+		require.NotEmpty(t, applied.Diagnostics)
+		require.Equal(t, CodeInvalidLanguages, applied.Diagnostics[0].Code)
+	})
 }

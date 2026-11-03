@@ -29,6 +29,8 @@ type Output struct {
 	Client      []byte
 	Manifest    json.RawMessage
 	AspectRatio string
+	// Languages are the languages the game is written in, its main one first.
+	Languages []string
 	// What the client asks of the device, as the toolchain read it from the sources.
 	InputRequirements InputRequirements
 	Diagnostics       []build.Diagnostic

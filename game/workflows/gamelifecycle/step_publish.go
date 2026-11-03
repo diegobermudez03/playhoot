@@ -2,6 +2,7 @@ package gamelifecycle
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -29,7 +30,7 @@ type publishRepo interface {
 	LockRelease(ctx context.Context, tx *gorm.DB, releaseUUID string) (*internalrepo.ReleaseRecord, error)
 	NextReleaseSequence(ctx context.Context, tx *gorm.DB, gameID uint) (int64, error)
 	CreateRelease(ctx context.Context, tx *gorm.DB, release internalrepo.NewRelease) error
-	CompleteRelease(ctx context.Context, tx *gorm.DB, releaseID uint, at time.Time) (bool, error)
+	CompleteRelease(ctx context.Context, tx *gorm.DB, releaseID uint, languages []byte, at time.Time) (bool, error)
 	AbandonRelease(ctx context.Context, tx *gorm.DB, releaseID uint, reason string, at time.Time) (bool, error)
 	ChangeEditionStatus(ctx context.Context, tx *gorm.DB, editionID uint, from string, to string, publishedAt *time.Time, at time.Time) (bool, error)
 	MarkPublished(ctx context.Context, tx *gorm.DB, game internalrepo.OwnedGame, visibility string, at time.Time) error
@@ -216,12 +217,20 @@ func (m *Manager) FindPendingPublication(ctx context.Context, ownerUUID string, 
 // CompletePublication ends releaseUUID once Play runs its version: the
 // edition becomes published, the Game published with the release's
 // visibility (its first publication time written once), the release
-// completed. Completing it again answers the same.
-func (m *Manager) CompletePublication(ctx context.Context, releaseUUID string) (game.Release, error) {
+// completed with the languages the game is written in, as Play's frozen
+// version has them. Completing it again answers the same.
+func (m *Manager) CompletePublication(ctx context.Context, releaseUUID string, languages []string) (game.Release, error) {
 	defer logging.Step(ctx, "gamelifecycle.complete_publication").Close()
 
+	if len(languages) == 0 {
+		return game.Release{}, fmt.Errorf("a completed release has the languages its game is written in")
+	}
+	encoded, err := json.Marshal(languages)
+	if err != nil {
+		return game.Release{}, fmt.Errorf("encoding the release's languages: %w", err)
+	}
 	completed, err := utils.RunInDBTransaction(ctx, m.dbServicer, func(ctx context.Context, tx *gorm.DB) (lifecycleEnd, error) {
-		return m.completeInTx(ctx, tx, releaseUUID)
+		return m.completeInTx(ctx, tx, releaseUUID, encoded)
 	})
 	if err != nil {
 		return game.Release{}, err
@@ -238,7 +247,7 @@ type lifecycleEnd struct {
 	ended   bool
 }
 
-func (m *Manager) completeInTx(ctx context.Context, tx *gorm.DB, releaseUUID string) (lifecycleEnd, error) {
+func (m *Manager) completeInTx(ctx context.Context, tx *gorm.DB, releaseUUID string, languages []byte) (lifecycleEnd, error) {
 	release, err := m.publishRepo.LockRelease(ctx, tx, releaseUUID)
 	if err != nil {
 		return lifecycleEnd{}, err
@@ -272,7 +281,7 @@ func (m *Manager) completeInTx(ctx context.Context, tx *gorm.DB, releaseUUID str
 	if err := m.publishRepo.MarkPublished(ctx, tx, *owned, release.Visibility, now); err != nil {
 		return lifecycleEnd{}, err
 	}
-	if _, err := m.publishRepo.CompleteRelease(ctx, tx, release.ID, now); err != nil {
+	if _, err := m.publishRepo.CompleteRelease(ctx, tx, release.ID, languages, now); err != nil {
 		return lifecycleEnd{}, err
 	}
 	release.CompletedAt = &now

@@ -64,6 +64,9 @@ type FrozenVersion struct {
 	Outcome  FreezeOutcome
 	Revision int64
 	Blockers []PublishBlocker
+	// Languages are the languages the frozen version's game is written in,
+	// its main one first; set when it is frozen.
+	Languages []string
 }
 
 // CleanedObjects counts the stored objects a cleanup deleted because nothing

@@ -57,7 +57,7 @@ func TestNodeBuildsAProject(t *testing.T) {
 		require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(project, path)), 0o700))
 		require.NoError(t, os.WriteFile(filepath.Join(project, path), []byte(content), 0o600))
 	}
-	write("game.project.json", `{"format":"playhoot.project.v1","name":"Probe","aspectRatio":"1:1"}`)
+	write("game.project.json", `{"format":"playhoot.project.v1","languages":["es"],"aspectRatio":"1:1"}`)
 	write("server/game.ts", "import { defineGame } from '@playhoot/game-server';\nexport default defineGame({ players: { min: 1, max: 2 }, setup: () => ({ n: 0 }), view: (state) => state });\n")
 	write("client/Game.tsx", "export default function Game() { return null; }\n")
 

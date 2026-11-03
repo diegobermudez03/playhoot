@@ -56,6 +56,7 @@ func migration20261015000000PlaySessions() *gormigrate.Migration {
 					frontend_sha256 TEXT NULL,
 					frontend_size BIGINT NULL,
 					aspect_ratio TEXT NULL,
+					languages JSONB NULL,
 					current_revision BIGINT NULL,
 					executable_at TIMESTAMPTZ NULL,
 					created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP

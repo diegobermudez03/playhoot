@@ -83,6 +83,8 @@ type LiveRelease struct {
 	Revision    int64
 	VersionUUID string
 	CompletedAt time.Time
+	// Languages is the JSON list of the languages the game is written in.
+	Languages []byte
 }
 
 // FindLiveRelease returns gameID's latest completed release, or nil before
@@ -90,7 +92,7 @@ type LiveRelease struct {
 func (r *Repo) FindLiveRelease(ctx context.Context, tx *gorm.DB, gameID uint) (*LiveRelease, error) {
 	var found []LiveRelease
 	if err := tx.WithContext(ctx).Raw(`
-		SELECT r.sequence, r.revision, e.uuid AS version_uuid, r.completed_at
+		SELECT r.sequence, r.revision, e.uuid AS version_uuid, r.completed_at, r.languages
 		FROM game_releases r
 		JOIN game_editions e ON e.id = r.edition_id
 		WHERE r.game_id = ? AND r.completed_at IS NOT NULL

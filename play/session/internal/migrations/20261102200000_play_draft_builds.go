@@ -35,6 +35,7 @@ func migration20261102200000PlayDraftBuilds() *gormigrate.Migration {
 					client_size BIGINT NULL,
 					manifest JSONB NULL,
 					aspect_ratio TEXT NULL,
+					languages JSONB NULL,
 					uses_keyboard BOOLEAN NULL,
 					uses_pointer_hover BOOLEAN NULL,
 					uses_pointer_press BOOLEAN NULL,

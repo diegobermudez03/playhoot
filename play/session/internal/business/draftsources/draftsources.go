@@ -129,7 +129,9 @@ func Apply(current map[string]File, writes []Write, deletes []string) Applied {
 			continue
 		}
 		if write.Path == ProjectFile {
-			if _, invalid := DeclaredAssets(write.Content); len(invalid) > 0 {
+			_, invalidLanguages := DeclaredLanguages(write.Content)
+			_, invalidAssets := DeclaredAssets(write.Content)
+			if invalid := append(invalidLanguages, invalidAssets...); len(invalid) > 0 {
 				diagnostics = append(diagnostics, invalid...)
 				continue
 			}

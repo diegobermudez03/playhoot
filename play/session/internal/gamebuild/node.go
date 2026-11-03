@@ -109,7 +109,8 @@ type cliResult struct {
 		Column  int    `json:"column"`
 	} `json:"diagnostics"`
 	Record struct {
-		AspectRatio       string `json:"aspectRatio"`
+		AspectRatio       string   `json:"aspectRatio"`
+		Languages         []string `json:"languages"`
 		InputRequirements *struct {
 			UsesKeyboard     bool `json:"usesKeyboard"`
 			UsesPointerHover bool `json:"usesPointerHover"`
@@ -171,11 +172,12 @@ func (n *Node) Build(ctx context.Context, input Input) (Output, error) {
 		return Output{}, fmt.Errorf("reading the built manifest.json: %w", err)
 	}
 	requirements := result.Record.InputRequirements
-	if requirements == nil {
-		return Output{}, fmt.Errorf("the game tools answered no input requirements: the toolchain is older than this backend")
+	if requirements == nil || len(result.Record.Languages) == 0 {
+		return Output{}, fmt.Errorf("the game tools answered no input requirements or languages: the toolchain is older than this backend")
 	}
 	return Output{
 		OK: true, Server: server, Client: client, Manifest: manifest, AspectRatio: result.Record.AspectRatio,
+		Languages: result.Record.Languages,
 		InputRequirements: InputRequirements{
 			UsesKeyboard:     requirements.UsesKeyboard,
 			UsesPointerHover: requirements.UsesPointerHover,

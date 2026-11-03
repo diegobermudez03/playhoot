@@ -63,7 +63,7 @@ func TestBuildingIntegration(t *testing.T) {
 	drafts := versiondrafting.New(db, store, nil)
 	builder := &fakeBuilder{}
 	m := New(db, store, builder, nil, 1)
-	built := gamebuild.Output{OK: true, Server: []byte(validScript), Client: []byte("<html></html>"), Manifest: []byte(validManifest), AspectRatio: "16:9"}
+	built := gamebuild.Output{OK: true, Server: []byte(validScript), Client: []byte("<html></html>"), Manifest: []byte(validManifest), AspectRatio: "16:9", Languages: []string{"es", "en"}}
 
 	newDraft := func(t *testing.T) string {
 		t.Helper()

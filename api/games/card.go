@@ -81,6 +81,7 @@ type liveResponse struct {
 	Revision        int64     `json:"revision"`
 	VersionUUID     string    `json:"version_uuid"`
 	PublishedAt     time.Time `json:"published_at"`
+	Languages       []string  `json:"languages"`
 }
 
 func (h *Handler) handleReadCard(w http.ResponseWriter, r *http.Request) {
@@ -107,7 +108,7 @@ func (h *Handler) handleReadCard(w http.ResponseWriter, r *http.Request) {
 		Editing: card.Editing, Publishing: card.Publishing,
 	}
 	if card.Live != nil {
-		response.Live = &liveResponse{ReleaseSequence: card.Live.Sequence, Revision: card.Live.Revision, VersionUUID: card.Live.VersionUUID, PublishedAt: card.Live.PublishedAt}
+		response.Live = &liveResponse{ReleaseSequence: card.Live.Sequence, Revision: card.Live.Revision, VersionUUID: card.Live.VersionUUID, PublishedAt: card.Live.PublishedAt, Languages: card.Live.Languages}
 	}
 	if card.Logo != nil {
 		logo := imageResponse(*card.Logo)

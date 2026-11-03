@@ -19,7 +19,7 @@ var pngBytes = []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01")
 // wavBytes is the smallest content the sniffer reads as a WAV.
 var wavBytes = []byte("RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00")
 
-const declaringProject = `{"format":"playhoot.project.v1","aspectRatio":"16:9","assets":{` +
+const declaringProject = `{"format":"playhoot.project.v1","languages":["en"],"aspectRatio":"16:9","assets":{` +
 	`"cardBack":{"type":"image","description":"Card back, 512x768"},` +
 	`"flip":{"type":"audio","description":"Flip sound","optional":true}}}`
 

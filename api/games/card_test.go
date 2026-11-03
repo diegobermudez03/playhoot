@@ -28,11 +28,11 @@ func TestHandleReadCard(t *testing.T) {
 		"a_published_game_tells_its_live_release": func(t *testing.T, deps dependencies) test {
 			deps.card.EXPECT().ReadCard(gomock.Any(), callerUUID, gameUUID).Return(game.CardRead{Outcome: game.CardDone, Card: game.Card{
 				GameUUID: gameUUID, Name: "Memoria", Visibility: game.Public, Published: true, PublishedAt: &expires, Photos: []game.CardImage{},
-				Live: &game.LiveRelease{Sequence: 2, Revision: 7, VersionUUID: "v-7", PublishedAt: expires},
+				Live: &game.LiveRelease{Sequence: 2, Revision: 7, VersionUUID: "v-7", PublishedAt: expires, Languages: []string{"es", "en"}},
 			}}, nil)
 			return test{method: http.MethodGet, target: "/", gameUUID: gameUUID, noStore: true, expectedCode: http.StatusOK, expectedBody: `{
 				"game_uuid":"` + gameUUID + `","name":"Memoria","description":"","visibility":"public","published":true,"published_at":"2026-11-03T10:00:00Z","editing":false,"publishing":false,
-				"logo":null,"photos":[],"live":{"release_sequence":2,"revision":7,"version_uuid":"v-7","published_at":"2026-11-03T10:00:00Z"}}`}
+				"logo":null,"photos":[],"live":{"release_sequence":2,"revision":7,"version_uuid":"v-7","published_at":"2026-11-03T10:00:00Z","languages":["es","en"]}}`}
 		},
 		"someone_else": func(t *testing.T, deps dependencies) test {
 			deps.card.EXPECT().ReadCard(gomock.Any(), callerUUID, gameUUID).Return(game.CardRead{Outcome: game.CardNotFound}, nil)

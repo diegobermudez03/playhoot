@@ -62,10 +62,10 @@ func TestPublicationIntegration(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, started.Release.UUID, pending.UUID)
 
-		completed, err := manager.CompletePublication(ctx, started.Release.UUID)
+		completed, err := manager.CompletePublication(ctx, started.Release.UUID, []string{"es"})
 		require.NoError(t, err)
 		require.NotNil(t, completed.CompletedAt)
-		again, err := manager.CompletePublication(ctx, started.Release.UUID)
+		again, err := manager.CompletePublication(ctx, started.Release.UUID, []string{"es"})
 		require.NoError(t, err)
 		require.Equal(t, completed.CompletedAt.UTC(), again.CompletedAt.UTC())
 

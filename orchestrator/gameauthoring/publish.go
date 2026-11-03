@@ -26,7 +26,7 @@ type gamePublisher interface {
 	BeginPublication(ctx context.Context, ownerUUID string, gameUUID string, revision int64, visibility game.VisibilityType, idempotencyKey string) (game.Publication, error)
 	FindPendingPublication(ctx context.Context, ownerUUID string, gameUUID string) (*game.Release, error)
 	FindPublication(ctx context.Context, ownerUUID string, gameUUID string, idempotencyKey string) (*game.Publication, error)
-	CompletePublication(ctx context.Context, releaseUUID string) (game.Release, error)
+	CompletePublication(ctx context.Context, releaseUUID string, languages []string) (game.Release, error)
 	AbandonPublication(ctx context.Context, releaseUUID string, reason string) (game.Release, error)
 	OpenEdition(ctx context.Context, ownerUUID string, gameUUID string, idempotencyKey string) (game.Edition, error)
 }
@@ -220,7 +220,7 @@ func (m *Manager) finishRelease(ctx context.Context, release game.Release) (Publ
 		monitoring.Alert(ctx, "play answered an unknown freeze outcome")
 		return Publication{}, fmt.Errorf("unknown freeze outcome %q", frozen.Outcome)
 	}
-	completed, err := m.publications.CompletePublication(ctx, release.UUID)
+	completed, err := m.publications.CompletePublication(ctx, release.UUID, frozen.Languages)
 	if err != nil {
 		return Publication{}, fmt.Errorf("completing the release: %s", err)
 	}

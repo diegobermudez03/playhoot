@@ -1,0 +1,937 @@
+{
+  "about": "Runtime manifests the backend (play/session/internal/business/manifest Parse, with play/internal/business/inputs and commands) and the SDK build (packages/game-core validateManifest in playhoot_frontend) must decide the same way, with each field's default as the backend keeps it. This file is kept identical in both repositories; each side's test checks the other's copy when both checkouts are side by side.",
+  "cases": [
+    {
+      "name": "minimal manifest",
+      "manifest": {
+        "schema_version": 1,
+        "players": {
+          "min": 1,
+          "max": 4
+        }
+      },
+      "valid": true,
+      "defaults": {
+        "inputs": {},
+        "commands": {}
+      }
+    },
+    {
+      "name": "schema_version other than 1",
+      "manifest": {
+        "schema_version": 2,
+        "players": {
+          "min": 1,
+          "max": 4
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "players missing",
+      "manifest": {
+        "schema_version": 1
+      },
+      "valid": false
+    },
+    {
+      "name": "players min 0",
+      "manifest": {
+        "schema_version": 1,
+        "players": {
+          "min": 0,
+          "max": 2
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "players max below min",
+      "manifest": {
+        "schema_version": 1,
+        "players": {
+          "min": 3,
+          "max": 2
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "number takes 0 by default",
+      "manifest": {
+        "schema_version": 1,
+        "players": {
+          "min": 1,
+          "max": 4
+        },
+        "inputs": {
+          "f": {
+            "type": "number"
+          }
+        }
+      },
+      "valid": true,
+      "defaults": {
+        "inputs": {
+          "f": 0
+        },
+        "commands": {}
+      }
+    },
+    {
+      "name": "number min 1 without default refuses its natural zero",
+      "manifest": {
+        "schema_version": 1,
+        "players": {
+          "min": 1,
+          "max": 4
+        },
+        "inputs": {
+          "f": {
+            "type": "number",
+            "min": 1
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "number min 1 with default 1",
+      "manifest": {
+        "schema_version": 1,
+        "players": {
+          "min": 1,
+          "max": 4
+        },
+        "inputs": {
+          "f": {
+            "type": "number",
+            "min": 1,
+            "default": 1
+          }
+        }
+      },
+      "valid": true,
+      "defaults": {
+        "inputs": {
+          "f": 1
+        },
+        "commands": {}
+      }
+    },
+    {
+      "name": "number min above max",
+      "manifest": {
+        "schema_version": 1,
+        "players": {
+          "min": 1,
+          "max": 4
+        },
+        "inputs": {
+          "f": {
+            "type": "number",
+            "min": 5,
+            "max": 1,
+            "default": 3
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "number default out of range",
+      "manifest": {
+        "schema_version": 1,
+        "players": {
+          "min": 1,
+          "max": 4
+        },
+        "inputs": {
+          "f": {
+            "type": "number",
+            "min": 1,
+            "max": 10,
+            "default": 11
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "number default as a string",
+      "manifest": {
+        "schema_version": 1,
+        "players": {
+          "min": 1,
+          "max": 4
+        },
+        "inputs": {
+          "f": {
+            "type": "number",
+            "default": "3"
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "boolean default true",
+      "manifest": {
+        "schema_version": 1,
+        "players": {
+          "min": 1,
+          "max": 4
+        },
+        "inputs": {
+          "f": {
+            "type": "boolean",
+            "default": true
+          }
+        }
+      },
+      "valid": true,
+      "defaults": {
+        "inputs": {
+          "f": true
+        },
+        "commands": {}
+      }
+    },
+    {
+      "name": "boolean nullable",
+      "manifest": {
+        "schema_version": 1,
+        "players": {
+          "min": 1,
+          "max": 4
+        },
+        "inputs": {
+          "f": {
+            "type": "boolean",
+            "nullable": true
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "string takes empty by default",
+      "manifest": {
+        "schema_version": 1,
+        "players": {
+          "min": 1,
+          "max": 4
+        },
+        "inputs": {
+          "f": {
+            "type": "string"
+          }
+        }
+      },
+      "valid": true,
+      "defaults": {
+        "inputs": {
+          "f": ""
+        },
+        "commands": {}
+      }
+    },
+    {
+      "name": "nullable string takes null by default",
+      "manifest": {
+        "schema_version": 1,
+        "players": {
+          "min": 1,
+          "max": 4
+        },
+        "inputs": {
+          "f": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "valid": true,
+      "defaults": {
+        "inputs": {
+          "f": null
+        },
+        "commands": {}
+      }
+    },
+    {
+      "name": "string with min",
+      "manifest": {
+        "schema_version": 1,
+        "players": {
+          "min": 1,
+          "max": 4
+        },
+        "inputs": {
+          "f": {
+            "type": "string",
+            "min": 1
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "number with values",
+      "manifest": {
+        "schema_version": 1,
+        "players": {
+          "min": 1,
+          "max": 4
+        },
+        "inputs": {
+          "f": {
+            "type": "number",
+            "values": ["a"]
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "enum without default",
+      "manifest": {
+        "schema_version": 1,
+        "players": {
+          "min": 1,
+          "max": 4
+        },
+        "inputs": {
+          "f": {
+            "type": "enum",
+            "values": ["a", "b"]
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "enum default b",
+      "manifest": {
+        "schema_version": 1,
+        "players": {
+          "min": 1,
+          "max": 4
+        },
+        "inputs": {
+          "f": {
+            "type": "enum",
+            "values": ["a", "b"],
+            "default": "b"
+          }
+        }
+      },
+      "valid": true,
+      "defaults": {
+        "inputs": {
+          "f": "b"
+        },
+        "commands": {}
+      }
+    },
+    {
+      "name": "enum default not among its values",
+      "manifest": {
+        "schema_version": 1,
+        "players": {
+          "min": 1,
+          "max": 4
+        },
+        "inputs": {
+          "f": {
+            "type": "enum",
+            "values": ["a", "b"],
+            "default": "c"
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "enum without values",
+      "manifest": {
+        "schema_version": 1,
+        "players": {
+          "min": 1,
+          "max": 4
+        },
+        "inputs": {
+          "f": {
+            "type": "enum",
+            "values": [],
+            "default": "a"
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "enum with a repeated value",
+      "manifest": {
+        "schema_version": 1,
+        "players": {
+          "min": 1,
+          "max": 4
+        },
+        "inputs": {
+          "f": {
+            "type": "enum",
+            "values": ["a", "a"],
+            "default": "a"
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "enum with an empty value",
+      "manifest": {
+        "schema_version": 1,
+        "players": {
+          "min": 1,
+          "max": 4
+        },
+        "inputs": {
+          "f": {
+            "type": "enum",
+            "values": ["a", ""],
+            "default": "a"
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "vector2 takes [0,0] by default",
+      "manifest": {
+        "schema_version": 1,
+        "players": {
+          "min": 1,
+          "max": 4
+        },
+        "inputs": {
+          "f": {
+            "type": "vector2"
+          }
+        }
+      },
+      "valid": true,
+      "defaults": {
+        "inputs": {
+          "f": [0, 0]
+        },
+        "commands": {}
+      }
+    },
+    {
+      "name": "vector2 default [1,2]",
+      "manifest": {
+        "schema_version": 1,
+        "players": {
+          "min": 1,
+          "max": 4
+        },
+        "inputs": {
+          "f": {
+            "type": "vector2",
+            "default": [1, 2]
+          }
+        }
+      },
+      "valid": true,
+      "defaults": {
+        "inputs": {
+          "f": [1, 2]
+        },
+        "commands": {}
+      }
+    },
+    {
+      "name": "vector2 default with one number",
+      "manifest": {
+        "schema_version": 1,
+        "players": {
+          "min": 1,
+          "max": 4
+        },
+        "inputs": {
+          "f": {
+            "type": "vector2",
+            "default": [1]
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "unknown type",
+      "manifest": {
+        "schema_version": 1,
+        "players": {
+          "min": 1,
+          "max": 4
+        },
+        "inputs": {
+          "f": {
+            "type": "date"
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "input name starting with a digit",
+      "manifest": {
+        "schema_version": 1,
+        "players": {
+          "min": 1,
+          "max": 4
+        },
+        "inputs": {
+          "1f": {
+            "type": "boolean"
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "command payload defaults",
+      "manifest": {
+        "schema_version": 1,
+        "players": {
+          "min": 1,
+          "max": 4
+        },
+        "commands": {
+          "guess": {
+            "payload": {
+              "value": {
+                "type": "number",
+                "min": 1,
+                "max": 100,
+                "default": 50
+              }
+            }
+          },
+          "pass": {
+            "payload": {}
+          }
+        }
+      },
+      "valid": true,
+      "defaults": {
+        "inputs": {},
+        "commands": {
+          "guess": {
+            "value": 50
+          },
+          "pass": {}
+        }
+      }
+    },
+    {
+      "name": "command payload number min 1 without default",
+      "manifest": {
+        "schema_version": 1,
+        "players": {
+          "min": 1,
+          "max": 4
+        },
+        "commands": {
+          "guess": {
+            "payload": {
+              "value": {
+                "type": "number",
+                "min": 1,
+                "max": 100
+              }
+            }
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "command name with a dash",
+      "manifest": {
+        "schema_version": 1,
+        "players": {
+          "min": 1,
+          "max": 4
+        },
+        "commands": {
+          "go-on": {
+            "payload": {}
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "entrypoints update and playerRejoined",
+      "manifest": {
+        "schema_version": 1,
+        "players": {
+          "min": 1,
+          "max": 4
+        },
+        "entrypoints": ["update", "playerRejoined"]
+      },
+      "valid": true,
+      "defaults": {
+        "inputs": {},
+        "commands": {}
+      }
+    },
+    {
+      "name": "unknown entrypoint",
+      "manifest": {
+        "schema_version": 1,
+        "players": {
+          "min": 1,
+          "max": 4
+        },
+        "entrypoints": ["tick"]
+      },
+      "valid": false
+    },
+    {
+      "name": "entrypoint declared twice",
+      "manifest": {
+        "schema_version": 1,
+        "players": {
+          "min": 1,
+          "max": 4
+        },
+        "entrypoints": ["update", "update"]
+      },
+      "valid": false
+    },
+    {
+      "name": "33 inputs",
+      "manifest": {
+        "schema_version": 1,
+        "players": {
+          "min": 1,
+          "max": 4
+        },
+        "inputs": {
+          "i0": {
+            "type": "boolean"
+          },
+          "i1": {
+            "type": "boolean"
+          },
+          "i2": {
+            "type": "boolean"
+          },
+          "i3": {
+            "type": "boolean"
+          },
+          "i4": {
+            "type": "boolean"
+          },
+          "i5": {
+            "type": "boolean"
+          },
+          "i6": {
+            "type": "boolean"
+          },
+          "i7": {
+            "type": "boolean"
+          },
+          "i8": {
+            "type": "boolean"
+          },
+          "i9": {
+            "type": "boolean"
+          },
+          "i10": {
+            "type": "boolean"
+          },
+          "i11": {
+            "type": "boolean"
+          },
+          "i12": {
+            "type": "boolean"
+          },
+          "i13": {
+            "type": "boolean"
+          },
+          "i14": {
+            "type": "boolean"
+          },
+          "i15": {
+            "type": "boolean"
+          },
+          "i16": {
+            "type": "boolean"
+          },
+          "i17": {
+            "type": "boolean"
+          },
+          "i18": {
+            "type": "boolean"
+          },
+          "i19": {
+            "type": "boolean"
+          },
+          "i20": {
+            "type": "boolean"
+          },
+          "i21": {
+            "type": "boolean"
+          },
+          "i22": {
+            "type": "boolean"
+          },
+          "i23": {
+            "type": "boolean"
+          },
+          "i24": {
+            "type": "boolean"
+          },
+          "i25": {
+            "type": "boolean"
+          },
+          "i26": {
+            "type": "boolean"
+          },
+          "i27": {
+            "type": "boolean"
+          },
+          "i28": {
+            "type": "boolean"
+          },
+          "i29": {
+            "type": "boolean"
+          },
+          "i30": {
+            "type": "boolean"
+          },
+          "i31": {
+            "type": "boolean"
+          },
+          "i32": {
+            "type": "boolean"
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "65 commands",
+      "manifest": {
+        "schema_version": 1,
+        "players": {
+          "min": 1,
+          "max": 4
+        },
+        "commands": {
+          "c0": {
+            "payload": {}
+          },
+          "c1": {
+            "payload": {}
+          },
+          "c2": {
+            "payload": {}
+          },
+          "c3": {
+            "payload": {}
+          },
+          "c4": {
+            "payload": {}
+          },
+          "c5": {
+            "payload": {}
+          },
+          "c6": {
+            "payload": {}
+          },
+          "c7": {
+            "payload": {}
+          },
+          "c8": {
+            "payload": {}
+          },
+          "c9": {
+            "payload": {}
+          },
+          "c10": {
+            "payload": {}
+          },
+          "c11": {
+            "payload": {}
+          },
+          "c12": {
+            "payload": {}
+          },
+          "c13": {
+            "payload": {}
+          },
+          "c14": {
+            "payload": {}
+          },
+          "c15": {
+            "payload": {}
+          },
+          "c16": {
+            "payload": {}
+          },
+          "c17": {
+            "payload": {}
+          },
+          "c18": {
+            "payload": {}
+          },
+          "c19": {
+            "payload": {}
+          },
+          "c20": {
+            "payload": {}
+          },
+          "c21": {
+            "payload": {}
+          },
+          "c22": {
+            "payload": {}
+          },
+          "c23": {
+            "payload": {}
+          },
+          "c24": {
+            "payload": {}
+          },
+          "c25": {
+            "payload": {}
+          },
+          "c26": {
+            "payload": {}
+          },
+          "c27": {
+            "payload": {}
+          },
+          "c28": {
+            "payload": {}
+          },
+          "c29": {
+            "payload": {}
+          },
+          "c30": {
+            "payload": {}
+          },
+          "c31": {
+            "payload": {}
+          },
+          "c32": {
+            "payload": {}
+          },
+          "c33": {
+            "payload": {}
+          },
+          "c34": {
+            "payload": {}
+          },
+          "c35": {
+            "payload": {}
+          },
+          "c36": {
+            "payload": {}
+          },
+          "c37": {
+            "payload": {}
+          },
+          "c38": {
+            "payload": {}
+          },
+          "c39": {
+            "payload": {}
+          },
+          "c40": {
+            "payload": {}
+          },
+          "c41": {
+            "payload": {}
+          },
+          "c42": {
+            "payload": {}
+          },
+          "c43": {
+            "payload": {}
+          },
+          "c44": {
+            "payload": {}
+          },
+          "c45": {
+            "payload": {}
+          },
+          "c46": {
+            "payload": {}
+          },
+          "c47": {
+            "payload": {}
+          },
+          "c48": {
+            "payload": {}
+          },
+          "c49": {
+            "payload": {}
+          },
+          "c50": {
+            "payload": {}
+          },
+          "c51": {
+            "payload": {}
+          },
+          "c52": {
+            "payload": {}
+          },
+          "c53": {
+            "payload": {}
+          },
+          "c54": {
+            "payload": {}
+          },
+          "c55": {
+            "payload": {}
+          },
+          "c56": {
+            "payload": {}
+          },
+          "c57": {
+            "payload": {}
+          },
+          "c58": {
+            "payload": {}
+          },
+          "c59": {
+            "payload": {}
+          },
+          "c60": {
+            "payload": {}
+          },
+          "c61": {
+            "payload": {}
+          },
+          "c62": {
+            "payload": {}
+          },
+          "c63": {
+            "payload": {}
+          },
+          "c64": {
+            "payload": {}
+          }
+        }
+      },
+      "valid": false
+    }
+  ]
+}

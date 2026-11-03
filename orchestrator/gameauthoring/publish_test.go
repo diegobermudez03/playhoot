@@ -38,8 +38,8 @@ func TestPublish(t *testing.T) {
 					deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(editable, nil),
 					deps.versions.EXPECT().CheckPublication(ctx, testVersionUUID).Return(sessionpkg.PublishReadiness{Outcome: sessionpkg.PublishReady, Revision: 3}, nil),
 					deps.publications.EXPECT().BeginPublication(ctx, testUserUUID, testGameUUID, int64(3), game.Private, testKey).Return(game.Publication{Outcome: game.PublicationStarted, Release: &release}, nil),
-					deps.versions.EXPECT().FreezeVersion(ctx, testGameUUID, testVersionUUID, int64(3)).Return(sessionpkg.FrozenVersion{Outcome: sessionpkg.FreezeFrozen, Revision: 3}, nil),
-					deps.publications.EXPECT().CompletePublication(ctx, release.UUID).Return(release, nil),
+					deps.versions.EXPECT().FreezeVersion(ctx, testGameUUID, testVersionUUID, int64(3)).Return(sessionpkg.FrozenVersion{Outcome: sessionpkg.FreezeFrozen, Revision: 3, Languages: []string{"es", "en"}}, nil),
+					deps.publications.EXPECT().CompletePublication(ctx, release.UUID, []string{"es", "en"}).Return(release, nil),
 					deps.versions.EXPECT().CleanUnusedObjects(ctx).Return(sessionpkg.CleanedObjects{Assets: 1}, nil),
 				)
 			},
@@ -51,8 +51,8 @@ func TestPublish(t *testing.T) {
 				deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(editable, nil)
 				deps.versions.EXPECT().CheckPublication(ctx, testVersionUUID).Return(sessionpkg.PublishReadiness{Outcome: sessionpkg.PublishReady, Revision: 3}, nil)
 				deps.publications.EXPECT().BeginPublication(ctx, testUserUUID, testGameUUID, int64(3), game.Private, testKey).Return(game.Publication{Outcome: game.PublicationStarted, Release: &release}, nil)
-				deps.versions.EXPECT().FreezeVersion(ctx, testGameUUID, testVersionUUID, int64(3)).Return(sessionpkg.FrozenVersion{Outcome: sessionpkg.FreezeFrozen, Revision: 3}, nil)
-				deps.publications.EXPECT().CompletePublication(ctx, release.UUID).Return(release, nil)
+				deps.versions.EXPECT().FreezeVersion(ctx, testGameUUID, testVersionUUID, int64(3)).Return(sessionpkg.FrozenVersion{Outcome: sessionpkg.FreezeFrozen, Revision: 3, Languages: []string{"es", "en"}}, nil)
+				deps.publications.EXPECT().CompletePublication(ctx, release.UUID, []string{"es", "en"}).Return(release, nil)
 				deps.versions.EXPECT().CleanUnusedObjects(ctx).Return(sessionpkg.CleanedObjects{}, errors.New("storage down"))
 			},
 			expected: Publication{Outcome: Published, Release: &release},
@@ -95,8 +95,8 @@ func TestPublish(t *testing.T) {
 			setup: func(deps dependencies) {
 				gomock.InOrder(
 					deps.publications.EXPECT().FindPendingPublication(ctx, testUserUUID, testGameUUID).Return(&release, nil),
-					deps.versions.EXPECT().FreezeVersion(ctx, testGameUUID, testVersionUUID, int64(3)).Return(sessionpkg.FrozenVersion{Outcome: sessionpkg.FreezeAlreadyFrozen, Revision: 3}, nil),
-					deps.publications.EXPECT().CompletePublication(ctx, release.UUID).Return(release, nil),
+					deps.versions.EXPECT().FreezeVersion(ctx, testGameUUID, testVersionUUID, int64(3)).Return(sessionpkg.FrozenVersion{Outcome: sessionpkg.FreezeAlreadyFrozen, Revision: 3, Languages: []string{"es", "en"}}, nil),
+					deps.publications.EXPECT().CompletePublication(ctx, release.UUID, []string{"es", "en"}).Return(release, nil),
 					deps.versions.EXPECT().CleanUnusedObjects(ctx).Return(sessionpkg.CleanedObjects{}, nil),
 					deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(game.EditableVersion{Outcome: game.EditableVersionNotEditable}, nil),
 				)

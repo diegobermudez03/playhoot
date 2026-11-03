@@ -2,6 +2,7 @@ package versiondrafting
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"time"
@@ -127,7 +128,11 @@ func (m *Manager) freezeInTx(ctx context.Context, tx *gorm.DB, gameUUID string, 
 	}
 	switch gameversion.Status(version.Status) {
 	case gameversion.Executable:
-		return sessionpkg.FrozenVersion{Outcome: sessionpkg.FreezeAlreadyFrozen, Revision: current}, nil
+		languages, err := frozenLanguages(ctx, versionUUID, version.Languages)
+		if err != nil {
+			return sessionpkg.FrozenVersion{}, err
+		}
+		return sessionpkg.FrozenVersion{Outcome: sessionpkg.FreezeAlreadyFrozen, Revision: current, Languages: languages}, nil
 	case gameversion.Draft:
 	default:
 		monitoring.Alert(ctx, "play version has an unknown status")
@@ -177,7 +182,28 @@ func (m *Manager) freezeInTx(ctx context.Context, tx *gorm.DB, gameUUID string, 
 	if err := m.publishVersionRepo.SetCurrentVersion(ctx, tx, gameID, version.ID, at); err != nil {
 		return sessionpkg.FrozenVersion{}, err
 	}
-	return sessionpkg.FrozenVersion{Outcome: sessionpkg.FreezeFrozen, Revision: current}, nil
+	languages, err := frozenLanguages(ctx, versionUUID, artifacts.Languages)
+	if err != nil {
+		return sessionpkg.FrozenVersion{}, err
+	}
+	return sessionpkg.FrozenVersion{Outcome: sessionpkg.FreezeFrozen, Revision: current, Languages: languages}, nil
+}
+
+// frozenLanguages decodes the languages a frozen version keeps; none, or
+// one Playhoot does not speak, is broken data.
+func frozenLanguages(ctx context.Context, versionUUID string, encoded []byte) ([]string, error) {
+	var languages []string
+	if err := json.Unmarshal(encoded, &languages); err != nil || len(languages) == 0 {
+		monitoring.Alert(ctx, "play executable version has no valid languages")
+		return nil, fmt.Errorf("version %s has no valid languages", versionUUID)
+	}
+	for _, language := range languages {
+		if !gameversion.ValidLanguage(gameversion.Language(language)) {
+			monitoring.Alert(ctx, "play executable version has an unknown language")
+			return nil, fmt.Errorf("version %s has unknown language %q", versionUUID, language)
+		}
+	}
+	return languages, nil
 }
 
 // checkedRevision is what checking a revision for publication found.
@@ -236,7 +262,7 @@ func (m *Manager) checkRevision(ctx context.Context, tx *gorm.DB, version *inter
 func frozenArtifacts(ctx context.Context, versionUUID string, built *internalrepo.BuiltArtifacts) (internalrepo.FrozenArtifacts, error) {
 	if built.ServerObjectKey == nil || built.ServerSHA256 == nil || built.ServerSize == nil ||
 		built.ClientObjectKey == nil || built.ClientSHA256 == nil || built.ClientSize == nil ||
-		built.AspectRatio == nil || len(built.Manifest) == 0 {
+		built.AspectRatio == nil || len(built.Manifest) == 0 || len(built.Languages) == 0 {
 		monitoring.Alert(ctx, "play draft build succeeded without its artifacts")
 		return internalrepo.FrozenArtifacts{}, fmt.Errorf("version %s revision %d: a succeeded build is missing artifacts", versionUUID, built.Revision)
 	}
@@ -249,6 +275,7 @@ func frozenArtifacts(ctx context.Context, versionUUID string, built *internalrep
 		FrontSHA256:     *built.ClientSHA256,
 		FrontSize:       *built.ClientSize,
 		AspectRatio:     *built.AspectRatio,
+		Languages:       built.Languages,
 	}, nil
 }
 

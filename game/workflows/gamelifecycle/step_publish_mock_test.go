@@ -74,18 +74,18 @@ func (mr *MockpublishRepoMockRecorder) ChangeEditionStatus(ctx, tx, editionID, f
 }
 
 // CompleteRelease mocks base method.
-func (m *MockpublishRepo) CompleteRelease(ctx context.Context, tx *gorm.DB, releaseID uint, at time.Time) (bool, error) {
+func (m *MockpublishRepo) CompleteRelease(ctx context.Context, tx *gorm.DB, releaseID uint, languages []byte, at time.Time) (bool, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CompleteRelease", ctx, tx, releaseID, at)
+	ret := m.ctrl.Call(m, "CompleteRelease", ctx, tx, releaseID, languages, at)
 	ret0, _ := ret[0].(bool)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // CompleteRelease indicates an expected call of CompleteRelease.
-func (mr *MockpublishRepoMockRecorder) CompleteRelease(ctx, tx, releaseID, at any) *gomock.Call {
+func (mr *MockpublishRepoMockRecorder) CompleteRelease(ctx, tx, releaseID, languages, at any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CompleteRelease", reflect.TypeOf((*MockpublishRepo)(nil).CompleteRelease), ctx, tx, releaseID, at)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CompleteRelease", reflect.TypeOf((*MockpublishRepo)(nil).CompleteRelease), ctx, tx, releaseID, languages, at)
 }
 
 // CreateRelease mocks base method.

@@ -73,18 +73,18 @@ func (mr *MockgamePublisherMockRecorder) BeginPublication(ctx, ownerUUID, gameUU
 }
 
 // CompletePublication mocks base method.
-func (m *MockgamePublisher) CompletePublication(ctx context.Context, releaseUUID string) (game.Release, error) {
+func (m *MockgamePublisher) CompletePublication(ctx context.Context, releaseUUID string, languages []string) (game.Release, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CompletePublication", ctx, releaseUUID)
+	ret := m.ctrl.Call(m, "CompletePublication", ctx, releaseUUID, languages)
 	ret0, _ := ret[0].(game.Release)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // CompletePublication indicates an expected call of CompletePublication.
-func (mr *MockgamePublisherMockRecorder) CompletePublication(ctx, releaseUUID any) *gomock.Call {
+func (mr *MockgamePublisherMockRecorder) CompletePublication(ctx, releaseUUID, languages any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CompletePublication", reflect.TypeOf((*MockgamePublisher)(nil).CompletePublication), ctx, releaseUUID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CompletePublication", reflect.TypeOf((*MockgamePublisher)(nil).CompletePublication), ctx, releaseUUID, languages)
 }
 
 // FindPendingPublication mocks base method.

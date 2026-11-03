@@ -57,6 +57,9 @@ type LiveRelease struct {
 	Revision    int64
 	VersionUUID string
 	PublishedAt time.Time
+	// Languages are the languages the live version's game is written in, its
+	// main one first.
+	Languages []string
 }
 
 // CardOutcome is what a card operation decided.

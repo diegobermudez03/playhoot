@@ -31,10 +31,10 @@ func succeedBuild(t *testing.T, db *gorm.DB, store *objectstore.Fake, versionUUI
 		UPDATE play_game_version_builds SET status = ?,
 			server_object_key = ?, server_sha256 = ?, server_size = ?,
 			client_object_key = ?, client_sha256 = ?, client_size = ?,
-			manifest = ?, aspect_ratio = ?, uses_keyboard = ?, uses_pointer_hover = ?, uses_pointer_press = ?, finished_at = ?
+			manifest = ?, aspect_ratio = ?, languages = ?, uses_keyboard = ?, uses_pointer_hover = ?, uses_pointer_press = ?, finished_at = ?
 		WHERE revision = ? AND game_version_id = (SELECT id FROM play_game_versions WHERE uuid = ?)
 	`, string(build.Succeeded), server.ObjectKey, server.SHA256, server.Size, client.ObjectKey, client.SHA256, client.Size,
-		`{"schema_version":1,"players":{"min":1,"max":4}}`, string(gameversion.AspectRatio16x9), false, false, true, time.Now(), revision, versionUUID).Error)
+		`{"schema_version":1,"players":{"min":1,"max":4}}`, string(gameversion.AspectRatio16x9), `["es","en"]`, false, false, true, time.Now(), revision, versionUUID).Error)
 }
 
 func TestPublishingIntegration(t *testing.T) {
@@ -91,7 +91,7 @@ func TestPublishingIntegration(t *testing.T) {
 
 		frozen, err := m.FreezeVersion(ctx, gameUUID, versionUUID, revision)
 		require.NoError(t, err)
-		require.Equal(t, sessionpkg.FrozenVersion{Outcome: sessionpkg.FreezeFrozen, Revision: revision}, frozen)
+		require.Equal(t, sessionpkg.FrozenVersion{Outcome: sessionpkg.FreezeFrozen, Revision: revision, Languages: []string{"es", "en"}}, frozen)
 		again, err := m.FreezeVersion(ctx, gameUUID, versionUUID, revision)
 		require.NoError(t, err)
 		require.Equal(t, sessionpkg.FreezeAlreadyFrozen, again.Outcome)

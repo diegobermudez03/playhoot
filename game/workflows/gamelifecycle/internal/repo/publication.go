@@ -161,12 +161,13 @@ func (r *Repo) CreateRelease(ctx context.Context, tx *gorm.DB, release NewReleas
 	return nil
 }
 
-// CompleteRelease writes releaseID's completion once; false means it had
-// already ended.
-func (r *Repo) CompleteRelease(ctx context.Context, tx *gorm.DB, releaseID uint, at time.Time) (bool, error) {
+// CompleteRelease writes releaseID's completion once, with the languages its
+// version's game is written in (a JSON list); false means it had already
+// ended.
+func (r *Repo) CompleteRelease(ctx context.Context, tx *gorm.DB, releaseID uint, languages []byte, at time.Time) (bool, error) {
 	result := tx.WithContext(ctx).Exec(`
-		UPDATE game_releases SET completed_at = ? WHERE id = ? AND completed_at IS NULL AND abandoned_at IS NULL
-	`, at, releaseID)
+		UPDATE game_releases SET completed_at = ?, languages = ? WHERE id = ? AND completed_at IS NULL AND abandoned_at IS NULL
+	`, at, string(languages), releaseID)
 	if result.Error != nil {
 		return false, fmt.Errorf("completing release: %s", result.Error)
 	}

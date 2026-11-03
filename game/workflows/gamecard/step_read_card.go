@@ -2,6 +2,7 @@ package gamecard
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -12,6 +13,7 @@ import (
 	"github.com/diegobermudez03/playhoot/game/internal/business/edition"
 	internalrepo "github.com/diegobermudez03/playhoot/game/workflows/gamecard/internal/repo"
 	"github.com/diegobermudez03/playhoot/logging"
+	"github.com/diegobermudez03/playhoot/monitoring"
 )
 
 //go:generate mockgen -package=gamecard -destination=step_read_card_mock_test.go . readCardRepo
@@ -64,7 +66,12 @@ func (m *Manager) ReadCard(ctx context.Context, ownerUUID string, gameUUID strin
 		Photos: []game.CardImage{},
 	}
 	if live != nil {
-		read.Live = &game.LiveRelease{Sequence: live.Sequence, Revision: live.Revision, VersionUUID: live.VersionUUID, PublishedAt: live.CompletedAt.UTC()}
+		var languages []string
+		if err := json.Unmarshal(live.Languages, &languages); err != nil || len(languages) == 0 {
+			monitoring.Alert(ctx, "game completed release has no languages")
+			return game.CardRead{}, fmt.Errorf("game %s: its live release has no languages", gameUUID)
+		}
+		read.Live = &game.LiveRelease{Sequence: live.Sequence, Revision: live.Revision, VersionUUID: live.VersionUUID, PublishedAt: live.CompletedAt.UTC(), Languages: languages}
 	}
 	expiresAt := m.now().Add(imageLinkTTL)
 	for _, image := range images {

@@ -19,6 +19,8 @@ type FrozenArtifacts struct {
 	FrontSHA256     string
 	FrontSize       int64
 	AspectRatio     string
+	// Languages is the JSON list of the languages the game is written in.
+	Languages []byte
 }
 
 // FreezeVersion moves versionID from status from to to with the artifacts
@@ -29,12 +31,12 @@ func (r *Repo) FreezeVersion(ctx context.Context, tx *gorm.DB, versionID uint, f
 			status = ?, manifest = ?,
 			script_object_key = ?, script_sha256 = ?, script_size = ?,
 			frontend_object_key = ?, frontend_sha256 = ?, frontend_size = ?,
-			aspect_ratio = ?, executable_at = ?
+			aspect_ratio = ?, languages = ?, executable_at = ?
 		WHERE id = ? AND status = ?
 	`, to, string(frozen.Manifest),
 		frozen.ScriptObjectKey, frozen.ScriptSHA256, frozen.ScriptSize,
 		frozen.FrontObjectKey, frozen.FrontSHA256, frozen.FrontSize,
-		frozen.AspectRatio, at, versionID, from)
+		frozen.AspectRatio, string(frozen.Languages), at, versionID, from)
 	if result.Error != nil {
 		return false, fmt.Errorf("freezing version: %s", result.Error)
 	}

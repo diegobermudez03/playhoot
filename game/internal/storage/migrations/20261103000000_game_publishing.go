@@ -69,6 +69,7 @@ func migration20261103000000GamePublishing() *gormigrate.Migration {
 					completed_at TIMESTAMPTZ NULL,
 					abandoned_at TIMESTAMPTZ NULL,
 					abandon_reason TEXT NULL,
+					languages JSONB NULL,
 					UNIQUE (game_id, sequence),
 					UNIQUE (game_id, idempotency_key)
 				)`,
