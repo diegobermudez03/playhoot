@@ -127,6 +127,11 @@ type envVariables struct {
 	// elsewhere it defaults to http://localhost:<HTTP_PORT>.
 	PublicAPIBaseURL string
 
+	// PublicWebBaseURL is the address the web app is reached at, where the
+	// SDK guide AIs are pointed to is served. Required in production;
+	// elsewhere it defaults to http://localhost:5173 (the dev server).
+	PublicWebBaseURL string
+
 	// GameToolchainDir is the frontend repository checkout whose game tools
 	// build DRAFT revisions. Optional: without it every build fails as the
 	// platform's.
@@ -278,7 +283,7 @@ func run() error {
 		liveConnections,
 		resolvejoincode.New(db),
 		api.Games{Previews: previews, Creator: gameAuthoring, Editor: gameAuthoring, Reader: gameAuthoringReads, AILinks: apigames.AILinks{
-			Owner: gameAuthoring, Status: gameAuthoringReads, Resolver: resourceLinks, PublicBaseURL: envVars.PublicAPIBaseURL,
+			Owner: gameAuthoring, Status: gameAuthoringReads, Resolver: resourceLinks, PublicBaseURL: envVars.PublicAPIBaseURL, PublicWebBaseURL: envVars.PublicWebBaseURL,
 		}, Cards: apigames.Cards{Card: gameCards, Publisher: gameAuthoring}},
 		api.Config{
 			CORSAllowedOrigins:      envVars.CORSAllowedOrigins,
@@ -387,6 +392,7 @@ func readEnvVariables() (*envVariables, error) {
 
 		GameToolchainDir: strings.TrimSpace(os.Getenv("GAME_TOOLCHAIN_DIR")),
 		PublicAPIBaseURL: strings.TrimSpace(os.Getenv("PUBLIC_API_BASE_URL")),
+		PublicWebBaseURL: strings.TrimSpace(os.Getenv("PUBLIC_WEB_BASE_URL")),
 	}
 
 	required := []struct {
@@ -459,6 +465,12 @@ func readEnvVariables() (*envVariables, error) {
 			return nil, fmt.Errorf("PUBLIC_API_BASE_URL is required in production")
 		}
 		envVars.PublicAPIBaseURL = "http://localhost:" + envVars.HTTPPort
+	}
+	if envVars.PublicWebBaseURL == "" {
+		if strings.EqualFold(envVars.Environment, "production") {
+			return nil, fmt.Errorf("PUBLIC_WEB_BASE_URL is required in production")
+		}
+		envVars.PublicWebBaseURL = "http://localhost:5173"
 	}
 
 	return envVars, nil

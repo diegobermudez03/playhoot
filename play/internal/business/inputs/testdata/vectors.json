@@ -1,0 +1,344 @@
+{
+  "about": "Field values the backend (play/internal/business/inputs) and the SDK (packages/game-core validateValues in playhoot_frontend) must decide the same way. The field is named \"f\". This file is kept identical in both repositories; each side's test checks the other's copy when both checkouts are side by side.",
+  "cases": [
+    {
+      "name": "boolean true",
+      "field": {
+        "type": "boolean"
+      },
+      "valid": true,
+      "value": true,
+      "canonical": true
+    },
+    {
+      "name": "boolean as a string",
+      "field": {
+        "type": "boolean"
+      },
+      "valid": false,
+      "value": "true"
+    },
+    {
+      "name": "boolean null is false",
+      "field": {
+        "type": "boolean"
+      },
+      "valid": true,
+      "value": null,
+      "canonical": false
+    },
+    {
+      "name": "boolean absent is false",
+      "field": {
+        "type": "boolean"
+      },
+      "valid": true,
+      "absent": true,
+      "canonical": false
+    },
+    {
+      "name": "boolean absent takes its default",
+      "field": {
+        "type": "boolean",
+        "default": true
+      },
+      "valid": true,
+      "absent": true,
+      "canonical": true
+    },
+    {
+      "name": "number",
+      "field": {
+        "type": "number"
+      },
+      "valid": true,
+      "value": 5,
+      "canonical": 5
+    },
+    {
+      "name": "number with a fraction",
+      "field": {
+        "type": "number"
+      },
+      "valid": true,
+      "value": 1.5,
+      "canonical": 1.5
+    },
+    {
+      "name": "number as a string",
+      "field": {
+        "type": "number"
+      },
+      "valid": false,
+      "value": "5"
+    },
+    {
+      "name": "number null is zero",
+      "field": {
+        "type": "number"
+      },
+      "valid": true,
+      "value": null,
+      "canonical": 0
+    },
+    {
+      "name": "number null is zero, out of range",
+      "field": {
+        "type": "number",
+        "min": 1,
+        "default": 1
+      },
+      "valid": false,
+      "value": null
+    },
+    {
+      "name": "number above max",
+      "field": {
+        "type": "number",
+        "min": 0,
+        "max": 10
+      },
+      "valid": false,
+      "value": 11
+    },
+    {
+      "name": "number below min",
+      "field": {
+        "type": "number",
+        "min": 0,
+        "max": 10
+      },
+      "valid": false,
+      "value": -1
+    },
+    {
+      "name": "number at max",
+      "field": {
+        "type": "number",
+        "min": 0,
+        "max": 10
+      },
+      "valid": true,
+      "value": 10,
+      "canonical": 10
+    },
+    {
+      "name": "number absent takes its default",
+      "field": {
+        "type": "number",
+        "default": 3
+      },
+      "valid": true,
+      "absent": true,
+      "canonical": 3
+    },
+    {
+      "name": "vector2",
+      "field": {
+        "type": "vector2"
+      },
+      "valid": true,
+      "value": [1, 2],
+      "canonical": [1, 2]
+    },
+    {
+      "name": "vector2 with one number",
+      "field": {
+        "type": "vector2"
+      },
+      "valid": false,
+      "value": [1]
+    },
+    {
+      "name": "vector2 with a string",
+      "field": {
+        "type": "vector2"
+      },
+      "valid": false,
+      "value": [1, "2"]
+    },
+    {
+      "name": "vector2 null part is zero",
+      "field": {
+        "type": "vector2"
+      },
+      "valid": true,
+      "value": [null, 1],
+      "canonical": [0, 1]
+    },
+    {
+      "name": "vector2 absent",
+      "field": {
+        "type": "vector2"
+      },
+      "valid": true,
+      "absent": true,
+      "canonical": [0, 0]
+    },
+    {
+      "name": "vector2 as a string",
+      "field": {
+        "type": "vector2"
+      },
+      "valid": false,
+      "value": "x"
+    },
+    {
+      "name": "string",
+      "field": {
+        "type": "string"
+      },
+      "valid": true,
+      "value": "hi",
+      "canonical": "hi"
+    },
+    {
+      "name": "string of 256 bytes",
+      "field": {
+        "type": "string"
+      },
+      "valid": true,
+      "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "canonical": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "string of 257 bytes",
+      "field": {
+        "type": "string"
+      },
+      "valid": false,
+      "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "string of 255 bytes in 3-byte characters",
+      "field": {
+        "type": "string"
+      },
+      "valid": true,
+      "value": "€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€",
+      "canonical": "€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€"
+    },
+    {
+      "name": "string of 258 bytes in 3-byte characters",
+      "field": {
+        "type": "string"
+      },
+      "valid": false,
+      "value": "€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€"
+    },
+    {
+      "name": "string null when not nullable",
+      "field": {
+        "type": "string"
+      },
+      "valid": false,
+      "value": null
+    },
+    {
+      "name": "string null when nullable",
+      "field": {
+        "type": "string",
+        "nullable": true
+      },
+      "valid": true,
+      "value": null,
+      "canonical": null
+    },
+    {
+      "name": "string absent when nullable",
+      "field": {
+        "type": "string",
+        "nullable": true
+      },
+      "valid": true,
+      "absent": true,
+      "canonical": null
+    },
+    {
+      "name": "string absent",
+      "field": {
+        "type": "string"
+      },
+      "valid": true,
+      "absent": true,
+      "canonical": ""
+    },
+    {
+      "name": "string as a number",
+      "field": {
+        "type": "string"
+      },
+      "valid": false,
+      "value": 5
+    },
+    {
+      "name": "enum value",
+      "field": {
+        "type": "enum",
+        "values": ["red", "blue"],
+        "default": "red"
+      },
+      "valid": true,
+      "value": "blue",
+      "canonical": "blue"
+    },
+    {
+      "name": "enum unknown value",
+      "field": {
+        "type": "enum",
+        "values": ["red", "blue"],
+        "default": "red"
+      },
+      "valid": false,
+      "value": "green"
+    },
+    {
+      "name": "enum null",
+      "field": {
+        "type": "enum",
+        "values": ["red", "blue"],
+        "default": "red"
+      },
+      "valid": false,
+      "value": null
+    },
+    {
+      "name": "enum absent takes its default",
+      "field": {
+        "type": "enum",
+        "values": ["red", "blue"],
+        "default": "red"
+      },
+      "valid": true,
+      "absent": true,
+      "canonical": "red"
+    },
+    {
+      "name": "an undeclared field",
+      "field": {
+        "type": "number"
+      },
+      "valid": false,
+      "payload": {
+        "f": 1,
+        "g": 2
+      }
+    },
+    {
+      "name": "a payload that is an array",
+      "field": {
+        "type": "number"
+      },
+      "valid": false,
+      "payload": []
+    },
+    {
+      "name": "a payload that is null",
+      "field": {
+        "type": "number"
+      },
+      "valid": false,
+      "payload": null
+    }
+  ]
+}

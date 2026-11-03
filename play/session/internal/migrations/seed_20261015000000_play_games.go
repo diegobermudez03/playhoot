@@ -32,45 +32,27 @@ func seed20261015000000PlayGames() *gormigrate.Migration {
 	return &gormigrate.Migration{
 		ID: "seed_20261015000000_play_games",
 		Migrate: func(tx *gorm.DB) error {
-			statements := []struct {
-				sql  string
-				args []any
-			}{
-				{sql: `INSERT INTO play_games (game_uuid) VALUES (?), (?)`, args: []any{seedPlayableGameUUID, seedUnavailableGameUUID}},
-				{
-					sql: `INSERT INTO play_game_versions (uuid, game_id, status, manifest,
-							script_object_key, script_sha256, script_size, script_profile,
-							frontend_object_key, frontend_sha256, frontend_size, aspect_ratio, executable_at)
-						SELECT ?, id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP FROM play_games WHERE game_uuid = ?`,
-					args: []any{
-						"11111111-1111-4111-8111-0000000000a1", string(gameversion.Executable), seedManifest,
-						seedBackendScriptLocator.ObjectKey, seedBackendScriptLocator.SHA256, seedBackendScriptLocator.Size, string(scriptcheck.ProfileHandwritten),
-						seedFrontendPackageLocator.ObjectKey, seedFrontendPackageLocator.SHA256, seedFrontendPackageLocator.Size, string(gameversion.AspectRatio16x9),
-						seedPlayableGameUUID,
-					},
-				},
-				{
-					sql: `INSERT INTO play_game_versions (uuid, game_id, status, manifest, script_profile)
-						SELECT ?, id, ?, ?, ? FROM play_games WHERE game_uuid = ?`,
-					args: []any{"11111111-1111-4111-8111-0000000000a2", string(gameversion.Draft), seedManifest, string(scriptcheck.ProfileHandwritten), seedPlayableGameUUID},
-				},
-				{
-					sql: `UPDATE play_games SET current_version_id = (SELECT id FROM play_game_versions WHERE uuid = ?)
-						WHERE game_uuid = ?`,
-					args: []any{"11111111-1111-4111-8111-0000000000a1", seedPlayableGameUUID},
-				},
-				{
-					sql: `INSERT INTO play_game_versions (uuid, game_id, status, manifest, script_profile)
-						SELECT ?, id, ?, ?, ? FROM play_games WHERE game_uuid = ?`,
-					args: []any{"22222222-2222-4222-8222-0000000000b1", string(gameversion.Draft), seedManifest, string(scriptcheck.ProfileHandwritten), seedUnavailableGameUUID},
-				},
+			playable, err := seedCreateGame(tx, seedPlayableGameUUID)
+			if err != nil {
+				return err
 			}
-			for _, statement := range statements {
-				if err := tx.Exec(statement.sql, statement.args...).Error; err != nil {
-					return err
-				}
+			unavailable, err := seedCreateGame(tx, seedUnavailableGameUUID)
+			if err != nil {
+				return err
 			}
-			return nil
+			executable, err := seedCreateVersion(tx, seedExecutableVersion("11111111-1111-4111-8111-0000000000a1", playable, seedManifest,
+				seedBackendScriptLocator, scriptcheck.ProfileHandwritten, seedFrontendPackageLocator, gameversion.AspectRatio16x9))
+			if err != nil {
+				return err
+			}
+			if _, err := seedCreateVersion(tx, seedDraftVersion("11111111-1111-4111-8111-0000000000a2", playable, seedManifest)); err != nil {
+				return err
+			}
+			if err := seedSetCurrentVersion(tx, playable, executable); err != nil {
+				return err
+			}
+			_, err = seedCreateVersion(tx, seedDraftVersion("22222222-2222-4222-8222-0000000000b1", unavailable, seedManifest))
+			return err
 		},
 		Rollback: func(tx *gorm.DB) error {
 			if err := tx.Exec(`

@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"github.com/diegobermudez03/playhoot/play/internal/business/inputrequirements"
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 	"github.com/diegobermudez03/playhoot/play/session/internal/business/build"
 	"github.com/diegobermudez03/playhoot/play/session/internal/business/gameversion"
@@ -30,10 +31,10 @@ func succeedBuild(t *testing.T, db *gorm.DB, store *objectstore.Fake, versionUUI
 		UPDATE play_game_version_builds SET status = ?,
 			server_object_key = ?, server_sha256 = ?, server_size = ?,
 			client_object_key = ?, client_sha256 = ?, client_size = ?,
-			manifest = ?, aspect_ratio = ?, finished_at = ?
+			manifest = ?, aspect_ratio = ?, uses_keyboard = ?, uses_pointer_hover = ?, uses_pointer_press = ?, finished_at = ?
 		WHERE revision = ? AND game_version_id = (SELECT id FROM play_game_versions WHERE uuid = ?)
 	`, string(build.Succeeded), server.ObjectKey, server.SHA256, server.Size, client.ObjectKey, client.SHA256, client.Size,
-		`{"schema_version":1,"players":{"min":1,"max":4}}`, string(gameversion.AspectRatio16x9), time.Now(), revision, versionUUID).Error)
+		`{"schema_version":1,"players":{"min":1,"max":4}}`, string(gameversion.AspectRatio16x9), false, false, true, time.Now(), revision, versionUUID).Error)
 }
 
 func TestPublishingIntegration(t *testing.T) {
@@ -112,7 +113,8 @@ func TestPublishingIntegration(t *testing.T) {
 		require.True(t, row.Current)
 		require.Equal(t, 1, row.Assets)
 		require.Equal(t, string(gameversion.AspectRatio16x9), row.AspectRatio)
-		require.NotEmpty(t, row.Devices)
+		// The build's client only presses: it plays on desktop and mobile.
+		require.Equal(t, string(inputrequirements.DevicesBoth), row.Devices)
 
 		changed, err := m.ApplyChanges(ctx, versionUUID, sessionpkg.DraftChange{
 			BaseRevision: revision, Files: []sessionpkg.DraftFileContent{{Path: "notes.md", Content: "late"}},

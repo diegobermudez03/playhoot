@@ -2,12 +2,10 @@ package migrations
 
 import (
 	_ "embed"
-	"time"
 
 	"github.com/go-gormigrate/gormigrate/v2"
 	"gorm.io/gorm"
 
-	"github.com/diegobermudez03/playhoot/play/internal/business/inputrequirements"
 	"github.com/diegobermudez03/playhoot/play/runtime/sandbox/scriptcheck"
 	"github.com/diegobermudez03/playhoot/play/session/internal/business/gameversion"
 	"github.com/diegobermudez03/playhoot/play/session/internal/objectstore"
@@ -40,46 +38,6 @@ var (
 	seedTapRaceFrontendPackageLocator = objectstore.LocatorFor(frontendPackagePrefix, seedTapRaceFrontendPackage)
 )
 
-// Rows the Tap Race seed inserts, mapped explicitly.
-type seedTapRaceGameRow struct {
-	ID       uint
-	GameUUID string
-}
-
-func (seedTapRaceGameRow) TableName() string { return "play_games" }
-
-type seedTapRaceVersionRow struct {
-	ID                uint
-	UUID              string
-	GameID            uint
-	Status            string
-	Manifest          *string `gorm:"type:jsonb"`
-	ScriptObjectKey   *string
-	ScriptSHA256      *string `gorm:"column:script_sha256"`
-	ScriptSize        *int64
-	ScriptProfile     string
-	FrontendObjectKey *string
-	FrontendSHA256    *string `gorm:"column:frontend_sha256"`
-	FrontendSize      *int64
-	AspectRatio       *string
-	ExecutableAt      *time.Time
-}
-
-func (seedTapRaceVersionRow) TableName() string { return "play_game_versions" }
-
-type seedTapRaceInputRequirementsRow struct {
-	ID               uint
-	GameVersionID    uint
-	UsesKeyboard     bool
-	UsesPointerHover bool
-	UsesPointerPress bool
-	Devices          string
-}
-
-func (seedTapRaceInputRequirementsRow) TableName() string {
-	return "play_game_version_input_requirements"
-}
-
 // seed20261101000000TapRace adds the Tap Race Game and its EXECUTABLE
 // version, to play an SDK-built game end to end (game creation project,
 // CHECKLIST B).
@@ -87,48 +45,19 @@ func seed20261101000000TapRace() *gormigrate.Migration {
 	return &gormigrate.Migration{
 		ID: "seed_20261101000000_tap_race",
 		Migrate: func(tx *gorm.DB) error {
-			pressOnly := inputrequirements.Requirements{
-				UsesPointerPress: true,
-				Devices:          inputrequirements.DevicesFor(false, false, true),
-			}
-			if err := pressOnly.Validate(); err != nil {
+			game, err := seedCreateGame(tx, seedTapRaceGameUUID)
+			if err != nil {
 				return err
 			}
-			game := seedTapRaceGameRow{GameUUID: seedTapRaceGameUUID}
-			if err := tx.Create(&game).Error; err != nil {
+			version, err := seedCreateVersion(tx, seedExecutableVersion(seedTapRaceVersionUUID, game, seedTapRaceManifest,
+				seedTapRaceScriptLocator, scriptcheck.ProfileSDKV1, seedTapRaceFrontendPackageLocator, gameversion.AspectRatio16x9))
+			if err != nil {
 				return err
 			}
-			manifest, profile, ratio := seedTapRaceManifest, string(scriptcheck.ProfileSDKV1), string(gameversion.AspectRatio16x9)
-			now := time.Now()
-			version := seedTapRaceVersionRow{
-				UUID:              seedTapRaceVersionUUID,
-				GameID:            game.ID,
-				Status:            string(gameversion.Executable),
-				Manifest:          &manifest,
-				ScriptObjectKey:   &seedTapRaceScriptLocator.ObjectKey,
-				ScriptSHA256:      &seedTapRaceScriptLocator.SHA256,
-				ScriptSize:        &seedTapRaceScriptLocator.Size,
-				ScriptProfile:     profile,
-				FrontendObjectKey: &seedTapRaceFrontendPackageLocator.ObjectKey,
-				FrontendSHA256:    &seedTapRaceFrontendPackageLocator.SHA256,
-				FrontendSize:      &seedTapRaceFrontendPackageLocator.Size,
-				AspectRatio:       &ratio,
-				ExecutableAt:      &now,
-			}
-			if err := tx.Create(&version).Error; err != nil {
+			if err := seedCreateInputRequirements(tx, []uint{version}, seedPressOnly()); err != nil {
 				return err
 			}
-			requirements := seedTapRaceInputRequirementsRow{
-				GameVersionID:    version.ID,
-				UsesKeyboard:     pressOnly.UsesKeyboard,
-				UsesPointerHover: pressOnly.UsesPointerHover,
-				UsesPointerPress: pressOnly.UsesPointerPress,
-				Devices:          string(pressOnly.Devices),
-			}
-			if err := tx.Create(&requirements).Error; err != nil {
-				return err
-			}
-			return tx.Exec(`UPDATE play_games SET current_version_id = ? WHERE id = ?`, version.ID, game.ID).Error
+			return seedSetCurrentVersion(tx, game, version)
 		},
 		Rollback: func(tx *gorm.DB) error {
 			if err := tx.Exec(`

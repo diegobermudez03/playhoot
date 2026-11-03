@@ -72,6 +72,15 @@ type cardResponse struct {
 	PublishedAt *time.Time          `json:"published_at,omitempty"`
 	Editing     bool                `json:"editing"`
 	Publishing  bool                `json:"publishing"`
+	Live        *liveResponse       `json:"live"`
+}
+
+// liveResponse is the publication players get.
+type liveResponse struct {
+	ReleaseSequence int64     `json:"release_sequence"`
+	Revision        int64     `json:"revision"`
+	VersionUUID     string    `json:"version_uuid"`
+	PublishedAt     time.Time `json:"published_at"`
 }
 
 func (h *Handler) handleReadCard(w http.ResponseWriter, r *http.Request) {
@@ -96,6 +105,9 @@ func (h *Handler) handleReadCard(w http.ResponseWriter, r *http.Request) {
 		GameUUID: card.GameUUID, Name: card.Name, Description: card.Description, Photos: []cardImageResponse{},
 		Visibility: string(card.Visibility), Published: card.Published, PublishedAt: card.PublishedAt,
 		Editing: card.Editing, Publishing: card.Publishing,
+	}
+	if card.Live != nil {
+		response.Live = &liveResponse{ReleaseSequence: card.Live.Sequence, Revision: card.Live.Revision, VersionUUID: card.Live.VersionUUID, PublishedAt: card.Live.PublishedAt}
 	}
 	if card.Logo != nil {
 		logo := imageResponse(*card.Logo)

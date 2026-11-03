@@ -115,6 +115,23 @@ func TestSimulateSchedulesLikeALiveSession(t *testing.T) {
 		require.Equal(t, int64(150), result.Final.AtMs)
 	})
 
+	t.Run("a game without update simulates up to the duration even when its ticks run nothing", func(t *testing.T) {
+		withoutUpdate := logManifest
+		withoutUpdate.Update = false
+		result, err := service.Simulate(context.Background(), []byte(logScript), string(scriptcheck.ProfileHandwritten), withoutUpdate, runtime.Scenario{
+			Players: 1, DurationMs: 500,
+			Steps:       []runtime.ScenarioStep{{AtMs: 150, Player: "P1", Command: &runtime.ScenarioCommand{Name: "go"}}},
+			ObserveAtMs: []int64{450},
+		})
+		require.NoError(t, err)
+		require.Equal(t, runtime.SimulationStoppedDuration, result.Stopped)
+		require.Equal(t, int64(500), result.SimulatedMs, "the clock reached the duration")
+		require.Equal(t, int64(500), result.Final.AtMs)
+		require.Equal(t, int64(500), result.Observations[0].AtMs)
+		require.Equal(t, []string{"command:go@150:pos=0"}, stateLog(t, result.Final.State))
+		require.Equal(t, 1, result.Boundaries, "only the command's boundary ran")
+	})
+
 	t.Run("the same scenario and seed give the same result, another seed another", func(t *testing.T) {
 		scenario := runtime.Scenario{Players: 1, Seed: 7, DurationMs: 200}
 		first := simulateLog(t, service, scenario)

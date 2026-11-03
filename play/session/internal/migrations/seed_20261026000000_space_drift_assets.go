@@ -38,15 +38,15 @@ var seedSpaceDriftAssetsFrontendPackageLocator = objectstore.LocatorFor(frontend
 // seedAsset is one asset of a seed game version.
 type seedAsset struct {
 	key       string
-	assetType string
+	assetType gameversion.AssetType
 	mimeType  string
 	content   []byte
 }
 
 // seedSpaceDriftAssets are the assets of seedSpaceDriftAssetsVersionUUID.
 var seedSpaceDriftAssets = []seedAsset{
-	{key: "ship", assetType: "image", mimeType: "image/png", content: seedSpaceDriftShip},
-	{key: "thrust", assetType: "audio", mimeType: "audio/wav", content: seedSpaceDriftThrust},
+	{key: "ship", assetType: gameversion.AssetImage, mimeType: "image/png", content: seedSpaceDriftShip},
+	{key: "thrust", assetType: gameversion.AssetAudio, mimeType: "audio/wav", content: seedSpaceDriftThrust},
 }
 
 // seed20261026000000SpaceDriftAssets adds that version, asked by the human so
@@ -55,28 +55,26 @@ func seed20261026000000SpaceDriftAssets() *gormigrate.Migration {
 	return &gormigrate.Migration{
 		ID: "seed_20261026000000_space_drift_assets",
 		Migrate: func(tx *gorm.DB) error {
-			if err := tx.Exec(`INSERT INTO play_game_versions (uuid, game_id, status, manifest,
-					script_object_key, script_sha256, script_size, script_profile,
-					frontend_object_key, frontend_sha256, frontend_size, aspect_ratio, executable_at)
-				SELECT ?, id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP FROM play_games WHERE game_uuid = ?`,
-				seedSpaceDriftAssetsVersionUUID, string(gameversion.Executable), seedSpaceDriftManifest,
-				seedSpaceDriftScriptLocator.ObjectKey, seedSpaceDriftScriptLocator.SHA256, seedSpaceDriftScriptLocator.Size, string(scriptcheck.ProfileHandwritten),
-				seedSpaceDriftAssetsFrontendPackageLocator.ObjectKey, seedSpaceDriftAssetsFrontendPackageLocator.SHA256, seedSpaceDriftAssetsFrontendPackageLocator.Size, string(gameversion.AspectRatio16x9),
-				seedSpaceDriftGameUUID,
-			).Error; err != nil {
+			game, err := seedGameID(tx, seedSpaceDriftGameUUID)
+			if err != nil {
+				return err
+			}
+			version, err := seedCreateVersion(tx, seedExecutableVersion(seedSpaceDriftAssetsVersionUUID, game, seedSpaceDriftManifest,
+				seedSpaceDriftScriptLocator, scriptcheck.ProfileHandwritten, seedSpaceDriftAssetsFrontendPackageLocator, gameversion.AspectRatio16x9))
+			if err != nil {
 				return err
 			}
 			for _, asset := range seedSpaceDriftAssets {
 				locator := objectstore.LocatorFor(assetPrefix, asset.content)
-				if err := tx.Exec(`INSERT INTO play_game_version_assets (game_version_id, key, type, mime_type, object_key, sha256, size)
-					SELECT id, ?, ?, ?, ?, ?, ? FROM play_game_versions WHERE uuid = ?`,
-					asset.key, asset.assetType, asset.mimeType, locator.ObjectKey, locator.SHA256, locator.Size, seedSpaceDriftAssetsVersionUUID,
-				).Error; err != nil {
+				row := seedVersionAssetRow{
+					GameVersionID: version, Key: asset.key, Type: string(asset.assetType), MIMEType: asset.mimeType,
+					ObjectKey: &locator.ObjectKey, SHA256: locator.SHA256, Size: locator.Size,
+				}
+				if err := tx.Create(&row).Error; err != nil {
 					return err
 				}
 			}
-			return tx.Exec(`UPDATE play_games SET current_version_id = (SELECT id FROM play_game_versions WHERE uuid = ?)
-				WHERE game_uuid = ?`, seedSpaceDriftAssetsVersionUUID, seedSpaceDriftGameUUID).Error
+			return seedSetCurrentVersion(tx, game, version)
 		},
 		Rollback: func(tx *gorm.DB) error {
 			if err := tx.Exec(`

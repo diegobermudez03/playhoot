@@ -21,6 +21,7 @@ type readCardRepo interface {
 	FindGame(ctx context.Context, tx *gorm.DB, gameUUID string, lock bool) (*internalrepo.CardGame, error)
 	FindActiveImages(ctx context.Context, tx *gorm.DB, gameID uint) ([]internalrepo.Image, error)
 	FindLifecycleFacts(ctx context.Context, tx *gorm.DB, gameID uint, editingStatus string) (internalrepo.LifecycleFacts, error)
+	FindLiveRelease(ctx context.Context, tx *gorm.DB, gameID uint) (*internalrepo.LiveRelease, error)
 }
 
 // ReadCard returns ownerUUID's Game gameUUID's card, with signed links to
@@ -52,11 +53,18 @@ func (m *Manager) ReadCard(ctx context.Context, ownerUUID string, gameUUID strin
 	if err != nil {
 		return game.CardRead{}, err
 	}
+	live, err := m.readCardRepo.FindLiveRelease(ctx, db, found.ID)
+	if err != nil {
+		return game.CardRead{}, err
+	}
 	read := game.Card{
 		GameUUID: found.UUID, Name: found.Name, Description: found.Description,
 		Visibility: game.VisibilityType(found.Visibility), Published: found.PublishedAt != nil,
 		PublishedAt: found.PublishedAt, Editing: facts.Editing, Publishing: facts.Publishing,
 		Photos: []game.CardImage{},
+	}
+	if live != nil {
+		read.Live = &game.LiveRelease{Sequence: live.Sequence, Revision: live.Revision, VersionUUID: live.VersionUUID, PublishedAt: live.CompletedAt.UTC()}
 	}
 	expiresAt := m.now().Add(imageLinkTTL)
 	for _, image := range images {

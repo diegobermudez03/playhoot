@@ -148,6 +148,7 @@ func (m *Manager) runBuild(ctx context.Context, claimed *internalrepo.ClaimedBui
 		decided.ServerObjectKey, decided.ServerSHA256, decided.ServerSize = &reusable.ServerObjectKey, &reusable.ServerSHA256, &reusable.ServerSize
 		decided.ClientObjectKey, decided.ClientSHA256, decided.ClientSize = &reusable.ClientObjectKey, &reusable.ClientSHA256, &reusable.ClientSize
 		decided.Manifest, decided.AspectRatio, decided.ReusedBuildID = reusable.Manifest, &reusable.AspectRatio, &reusable.ID
+		decided.UsesKeyboard, decided.UsesPointerHover, decided.UsesPointerPress = &reusable.UsesKeyboard, &reusable.UsesPointerHover, &reusable.UsesPointerPress
 		return buildEnd{status: build.Succeeded, outcome: "reused", artifacts: decided}, nil
 	}
 
@@ -250,6 +251,8 @@ func (m *Manager) storeArtifacts(ctx context.Context, output gamebuild.Output, d
 	decided.ServerObjectKey, decided.ServerSHA256, decided.ServerSize = &server.ObjectKey, &server.SHA256, &server.Size
 	decided.ClientObjectKey, decided.ClientSHA256, decided.ClientSize = &client.ObjectKey, &client.SHA256, &client.Size
 	decided.Manifest, decided.AspectRatio = output.Manifest, &aspectRatio
+	requirements := output.InputRequirements
+	decided.UsesKeyboard, decided.UsesPointerHover, decided.UsesPointerPress = &requirements.UsesKeyboard, &requirements.UsesPointerHover, &requirements.UsesPointerPress
 	return nil
 }
 

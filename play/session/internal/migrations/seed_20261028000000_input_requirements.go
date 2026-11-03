@@ -3,8 +3,6 @@ package migrations
 import (
 	"github.com/go-gormigrate/gormigrate/v2"
 	"gorm.io/gorm"
-
-	"github.com/diegobermudez03/playhoot/play/internal/business/inputrequirements"
 )
 
 // seedInputRequirementsVersionUUIDs are every seeded game version, DRAFTs
@@ -28,18 +26,11 @@ func seed20261028000000InputRequirements() *gormigrate.Migration {
 	return &gormigrate.Migration{
 		ID: "seed_20261028000000_input_requirements",
 		Migrate: func(tx *gorm.DB) error {
-			pressOnly := inputrequirements.Requirements{
-				UsesPointerPress: true,
-				Devices:          inputrequirements.DevicesFor(false, false, true),
-			}
-			if err := pressOnly.Validate(); err != nil {
+			versions, err := seedVersionIDs(tx, seedInputRequirementsVersionUUIDs)
+			if err != nil {
 				return err
 			}
-			return tx.Exec(`INSERT INTO play_game_version_input_requirements
-					(game_version_id, uses_keyboard, uses_pointer_hover, uses_pointer_press, devices)
-				SELECT id, ?, ?, ?, ? FROM play_game_versions WHERE uuid IN ?`,
-				pressOnly.UsesKeyboard, pressOnly.UsesPointerHover, pressOnly.UsesPointerPress, string(pressOnly.Devices),
-				seedInputRequirementsVersionUUIDs).Error
+			return seedCreateInputRequirements(tx, versions, seedPressOnly())
 		},
 		Rollback: func(tx *gorm.DB) error {
 			return tx.Exec(`DELETE FROM play_game_version_input_requirements

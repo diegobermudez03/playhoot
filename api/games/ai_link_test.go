@@ -197,6 +197,17 @@ func TestAILinkRoutes(t *testing.T) {
 		require.Contains(t, body, `"game_name":"Tap Race"`)
 		require.Contains(t, body, `"sources_inline":true`)
 		require.Contains(t, body, `"changes":"`+testPublicBaseURL+page+`/changes"`)
+		require.Contains(t, body, `"sdk_docs_url":"`+testPublicWebBaseURL+`/docs/sdk/v1/index.md"`)
+	})
+
+	t.Run("the context page links the SDK guide on the web", func(t *testing.T) {
+		h, deps := newTestHandler(gomock.NewController(t))
+		deps.resolver.EXPECT().ResolveResourceLink(gomock.Any(), testLinkToken).Return(validLink(), nil)
+		deps.reader.EXPECT().ReadDraft(gomock.Any(), callerUUID, gameUUID, int64(0), true).Return(composergameauthoring.DraftRead{Access: game.EditableVersionFound, Snapshot: aiSnapshot("x")}, nil)
+
+		body := serve(h, http.MethodGet, page, "").Body.String()
+		require.Contains(t, body, testPublicWebBaseURL+"/docs/sdk/v1/index.md")
+		require.Contains(t, body, testPublicWebBaseURL+"/docs/sdk/v1/scenarios.md")
 	})
 
 	t.Run("a file of a pinned revision", func(t *testing.T) {

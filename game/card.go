@@ -46,6 +46,17 @@ type Card struct {
 	// being published.
 	Editing    bool
 	Publishing bool
+	// Live is the publication players get, nil before the first one.
+	Live *LiveRelease
+}
+
+// LiveRelease is a Game's latest completed release: the revision and
+// version it made current, and when.
+type LiveRelease struct {
+	Sequence    int64
+	Revision    int64
+	VersionUUID string
+	PublishedAt time.Time
 }
 
 // CardOutcome is what a card operation decided.

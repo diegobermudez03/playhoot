@@ -29,7 +29,16 @@ type Output struct {
 	Client      []byte
 	Manifest    json.RawMessage
 	AspectRatio string
-	Diagnostics []build.Diagnostic
+	// What the client asks of the device, as the toolchain read it from the sources.
+	InputRequirements InputRequirements
+	Diagnostics       []build.Diagnostic
+}
+
+// InputRequirements is what a built client needs: a physical keyboard, hovering, pressing.
+type InputRequirements struct {
+	UsesKeyboard     bool
+	UsesPointerHover bool
+	UsesPointerPress bool
 }
 
 // Builder builds SDK projects. An error is the toolchain itself failing

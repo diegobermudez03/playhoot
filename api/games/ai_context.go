@@ -16,9 +16,9 @@ import (
 // be written into the context page; past it the page links each file.
 const maxInlineSourceBytes = 150 << 10
 
-// sdkDocsURL is the SDK documentation an AI is pointed to. Provisional until
-// the frontend's creation guide (game-creation-web-v1 item G) is published.
-const sdkDocsURL = "https://playhoot.app/docs/sdk/v1"
+// guidePath is where the web app serves the SDK guide for AI agents, below
+// the web's public address (the frontend's apps/web/public/docs/sdk/v1).
+const guidePath = "/docs/sdk/v1"
 
 // aiContextFormat names the JSON form of the context page.
 const aiContextFormat = "playhoot.ai-context.v1"
@@ -79,13 +79,13 @@ func (h *Handler) handleAIContext(w http.ResponseWriter, r *http.Request) {
 	if format == "json" {
 		httpx.WriteJSON(w, http.StatusOK, aiContextResponse{
 			Format: aiContextFormat, GameName: gameName(name), ObservedAt: observedAt,
-			Revision: snapshot.Revision, SourcesInline: inline, SDKDocsURL: sdkDocsURL, URLs: urls, Draft: draftBody(snapshot),
+			Revision: snapshot.Revision, SourcesInline: inline, SDKDocsURL: h.links.GuideBaseURL + "/index.md", URLs: urls, Draft: draftBody(snapshot),
 		})
 		return
 	}
 	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(aiContextMarkdown(gameName(name), snapshot, urls, observedAt, inline)))
+	_, _ = w.Write([]byte(aiContextMarkdown(gameName(name), snapshot, urls, h.links.GuideBaseURL, observedAt, inline)))
 }
 
 // handleAIFile answers one file of a revision (?revision=N, the current one
@@ -147,7 +147,7 @@ func gameName(name string) string {
 
 // aiContextMarkdown writes the context page for an AI reader, with stable
 // headings it can rely on.
-func aiContextMarkdown(name string, snapshot sessionpkg.DraftSnapshot, urls aiURLs, observedAt time.Time, inline bool) string {
+func aiContextMarkdown(name string, snapshot sessionpkg.DraftSnapshot, urls aiURLs, guide string, observedAt time.Time, inline bool) string {
 	var b strings.Builder
 	line := func(format string, args ...any) { fmt.Fprintf(&b, format+"\n", args...) }
 
@@ -170,7 +170,7 @@ func aiContextMarkdown(name string, snapshot sessionpkg.DraftSnapshot, urls aiUR
 	line("- Assets (images, audio, video) are declared in `game.project.json` under `\"assets\"`. The person uploads them in the section **Recursos**, or you PUT the raw file to %s/<key> with an `Idempotency-Key` header.", urls.Assets)
 	line("- Every new revision is built automatically. Wait for its result with GET %s?revision=N&wait=20 .", urls.Build)
 	line("- To check what the game does, simulate it: POST a scenario `{\"format\": \"playhoot.scenario.v1\", \"revision\": N, \"players\": 2, \"seed\": 1, \"duration_ms\": 30000, \"steps\": [{\"at_ms\": 100, \"player\": \"P1\", \"command\": {\"name\": \"...\", \"payload\": {}}}, {\"at_ms\": 200, \"player\": \"P2\", \"inputs\": {...}}], \"observe_at_ms\": [1000]}` to %s ; the answer has the whole state and every player's view at each observation and at the end, each command's response, refused steps, events and errors. A revision can be simulated once its build SUCCEEDED. If you cannot send HTTP requests, give the scenario to the person: they paste it in the section **Escenarios** and send you the result.", urls.Simulations)
-	line("- SDK documentation: %s", sdkDocsURL)
+	line("- How to write a Playhoot game (read it before writing code): %s/index.md . The change format: %s/changes.md ; builds: %s/building.md ; scenarios: %s/scenarios.md ; assets: %s/assets.md .", guide, guide, guide, guide, guide)
 	line("")
 
 	line("## Build of revision %d", snapshot.Revision)

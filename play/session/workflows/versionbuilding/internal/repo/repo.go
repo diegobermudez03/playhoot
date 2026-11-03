@@ -55,21 +55,27 @@ type Artifacts struct {
 	ClientSize       *int64
 	Manifest         []byte
 	AspectRatio      *string
+	UsesKeyboard     *bool
+	UsesPointerHover *bool
+	UsesPointerPress *bool
 	ReusedBuildID    *uint
 }
 
 // ReusableBuild is a succeeded build whose artifacts another build with the
 // same inputs may take.
 type ReusableBuild struct {
-	ID              uint
-	ServerObjectKey string
-	ServerSHA256    string
-	ServerSize      int64
-	ClientObjectKey string
-	ClientSHA256    string
-	ClientSize      int64
-	Manifest        []byte
-	AspectRatio     string
+	ID               uint
+	ServerObjectKey  string
+	ServerSHA256     string
+	ServerSize       int64
+	ClientObjectKey  string
+	ClientSHA256     string
+	ClientSize       int64
+	Manifest         []byte
+	AspectRatio      string
+	UsesKeyboard     bool
+	UsesPointerHover bool
+	UsesPointerPress bool
 }
 
 type buildStatusChangeRow struct {
@@ -200,7 +206,8 @@ func (r *Repo) FindSourceContents(ctx context.Context, tx *gorm.DB, hashes []str
 func (r *Repo) FindReusable(ctx context.Context, tx *gorm.DB, versionID uint, inputsSHA256 string, status string) (*ReusableBuild, error) {
 	var reusable ReusableBuild
 	result := tx.WithContext(ctx).Raw(`
-		SELECT id, server_object_key, server_sha256, server_size, client_object_key, client_sha256, client_size, manifest, aspect_ratio
+		SELECT id, server_object_key, server_sha256, server_size, client_object_key, client_sha256, client_size, manifest, aspect_ratio,
+			uses_keyboard, uses_pointer_hover, uses_pointer_press
 		FROM play_game_version_builds
 		WHERE game_version_id = ? AND inputs_sha256 = ? AND status = ? AND server_object_key IS NOT NULL
 		ORDER BY id
@@ -247,12 +254,14 @@ func (r *Repo) FinishBuild(ctx context.Context, tx *gorm.DB, buildID uint, from 
 			status = ?, inputs_sha256 = ?, toolchain_version = ?, diagnostics = ?,
 			server_object_key = ?, server_sha256 = ?, server_size = ?,
 			client_object_key = ?, client_sha256 = ?, client_size = ?,
-			manifest = ?, aspect_ratio = ?, reused_build_id = ?, finished_at = ?
+			manifest = ?, aspect_ratio = ?, uses_keyboard = ?, uses_pointer_hover = ?, uses_pointer_press = ?,
+			reused_build_id = ?, finished_at = ?
 		WHERE id = ? AND status = ? AND finished_at IS NULL
 	`, to, nullable(artifacts.InputsSHA256), nullable(artifacts.ToolchainVersion), diagnostics,
 		artifacts.ServerObjectKey, artifacts.ServerSHA256, artifacts.ServerSize,
 		artifacts.ClientObjectKey, artifacts.ClientSHA256, artifacts.ClientSize,
-		manifest, artifacts.AspectRatio, artifacts.ReusedBuildID, finishedAt,
+		manifest, artifacts.AspectRatio, artifacts.UsesKeyboard, artifacts.UsesPointerHover, artifacts.UsesPointerPress,
+		artifacts.ReusedBuildID, finishedAt,
 		buildID, from)
 	if result.Error != nil {
 		return false, fmt.Errorf("finishing build: %s", result.Error)

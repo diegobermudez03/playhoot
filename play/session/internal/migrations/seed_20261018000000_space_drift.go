@@ -224,35 +224,16 @@ func seed20261018000000SpaceDrift() *gormigrate.Migration {
 	return &gormigrate.Migration{
 		ID: "seed_20261018000000_space_drift",
 		Migrate: func(tx *gorm.DB) error {
-			statements := []struct {
-				sql  string
-				args []any
-			}{
-				{sql: `INSERT INTO play_games (game_uuid) VALUES (?)`, args: []any{seedSpaceDriftGameUUID}},
-				{
-					sql: `INSERT INTO play_game_versions (uuid, game_id, status, manifest,
-							script_object_key, script_sha256, script_size, script_profile,
-							frontend_object_key, frontend_sha256, frontend_size, aspect_ratio, executable_at)
-						SELECT ?, id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP FROM play_games WHERE game_uuid = ?`,
-					args: []any{
-						seedSpaceDriftVersionUUID, string(gameversion.Executable), seedSpaceDriftManifest,
-						seedSpaceDriftScriptLocator.ObjectKey, seedSpaceDriftScriptLocator.SHA256, seedSpaceDriftScriptLocator.Size, string(scriptcheck.ProfileHandwritten),
-						seedFrontendPackageLocator.ObjectKey, seedFrontendPackageLocator.SHA256, seedFrontendPackageLocator.Size, string(gameversion.AspectRatio16x9),
-						seedSpaceDriftGameUUID,
-					},
-				},
-				{
-					sql: `UPDATE play_games SET current_version_id = (SELECT id FROM play_game_versions WHERE uuid = ?)
-						WHERE game_uuid = ?`,
-					args: []any{seedSpaceDriftVersionUUID, seedSpaceDriftGameUUID},
-				},
+			game, err := seedCreateGame(tx, seedSpaceDriftGameUUID)
+			if err != nil {
+				return err
 			}
-			for _, statement := range statements {
-				if err := tx.Exec(statement.sql, statement.args...).Error; err != nil {
-					return err
-				}
+			version, err := seedCreateVersion(tx, seedExecutableVersion(seedSpaceDriftVersionUUID, game, seedSpaceDriftManifest,
+				seedSpaceDriftScriptLocator, scriptcheck.ProfileHandwritten, seedFrontendPackageLocator, gameversion.AspectRatio16x9))
+			if err != nil {
+				return err
 			}
-			return nil
+			return seedSetCurrentVersion(tx, game, version)
 		},
 		Rollback: func(tx *gorm.DB) error {
 			if err := tx.Exec(`

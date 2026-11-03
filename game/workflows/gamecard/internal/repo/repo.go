@@ -76,6 +76,35 @@ func (r *Repo) FindLifecycleFacts(ctx context.Context, tx *gorm.DB, gameID uint,
 	return facts, nil
 }
 
+// LiveRelease is a Game's latest completed release with its edition's
+// version.
+type LiveRelease struct {
+	Sequence    int64
+	Revision    int64
+	VersionUUID string
+	CompletedAt time.Time
+}
+
+// FindLiveRelease returns gameID's latest completed release, or nil before
+// its first publication.
+func (r *Repo) FindLiveRelease(ctx context.Context, tx *gorm.DB, gameID uint) (*LiveRelease, error) {
+	var found []LiveRelease
+	if err := tx.WithContext(ctx).Raw(`
+		SELECT r.sequence, r.revision, e.uuid AS version_uuid, r.completed_at
+		FROM game_releases r
+		JOIN game_editions e ON e.id = r.edition_id
+		WHERE r.game_id = ? AND r.completed_at IS NOT NULL
+		ORDER BY r.sequence DESC
+		LIMIT 1
+	`, gameID).Scan(&found).Error; err != nil {
+		return nil, fmt.Errorf("finding live release: %s", err)
+	}
+	if len(found) == 0 {
+		return nil, nil
+	}
+	return &found[0], nil
+}
+
 type historyRow struct {
 	ID          uint
 	GameID      uint

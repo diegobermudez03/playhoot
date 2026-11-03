@@ -23,7 +23,16 @@ func TestHandleReadCard(t *testing.T) {
 			}}, nil)
 			return test{method: http.MethodGet, target: "/", gameUUID: gameUUID, noStore: true, expectedCode: http.StatusOK, expectedBody: `{
 				"game_uuid":"` + gameUUID + `","name":"Memoria","description":"","visibility":"private","published":false,"editing":true,"publishing":false,
-				"logo":{"uuid":"l-1","mime_type":"image/png","size":3,"url":"https://signed/logo","url_expires_at":"2026-11-03T10:00:00Z"},"photos":[]}`}
+				"logo":{"uuid":"l-1","mime_type":"image/png","size":3,"url":"https://signed/logo","url_expires_at":"2026-11-03T10:00:00Z"},"photos":[],"live":null}`}
+		},
+		"a_published_game_tells_its_live_release": func(t *testing.T, deps dependencies) test {
+			deps.card.EXPECT().ReadCard(gomock.Any(), callerUUID, gameUUID).Return(game.CardRead{Outcome: game.CardDone, Card: game.Card{
+				GameUUID: gameUUID, Name: "Memoria", Visibility: game.Public, Published: true, PublishedAt: &expires, Photos: []game.CardImage{},
+				Live: &game.LiveRelease{Sequence: 2, Revision: 7, VersionUUID: "v-7", PublishedAt: expires},
+			}}, nil)
+			return test{method: http.MethodGet, target: "/", gameUUID: gameUUID, noStore: true, expectedCode: http.StatusOK, expectedBody: `{
+				"game_uuid":"` + gameUUID + `","name":"Memoria","description":"","visibility":"public","published":true,"published_at":"2026-11-03T10:00:00Z","editing":false,"publishing":false,
+				"logo":null,"photos":[],"live":{"release_sequence":2,"revision":7,"version_uuid":"v-7","published_at":"2026-11-03T10:00:00Z"}}`}
 		},
 		"someone_else": func(t *testing.T, deps dependencies) test {
 			deps.card.EXPECT().ReadCard(gomock.Any(), callerUUID, gameUUID).Return(game.CardRead{Outcome: game.CardNotFound}, nil)

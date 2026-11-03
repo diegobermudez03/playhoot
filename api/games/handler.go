@@ -80,12 +80,15 @@ type linkResolver interface {
 }
 
 // AILinks is what the links an AI uses for a game need. PublicBaseURL is the
-// address the API is reached at from outside, with no trailing slash.
+// address the API is reached at from outside, PublicWebBaseURL the web app's,
+// where the SDK guide is served; GuideBaseURL is derived from it.
 type AILinks struct {
-	Owner         aiLinkOwner
-	Status        aiLinkStatusReader
-	Resolver      linkResolver
-	PublicBaseURL string
+	Owner            aiLinkOwner
+	Status           aiLinkStatusReader
+	Resolver         linkResolver
+	PublicBaseURL    string
+	PublicWebBaseURL string
+	GuideBaseURL     string
 }
 
 // Handler exposes the game authoring endpoints.
@@ -102,6 +105,7 @@ type Handler struct {
 // NewHandler constructs a Handler.
 func NewHandler(authorizer authorizer, creator gameCreator, editor draftEditor, reader draftReader, links AILinks, cards Cards) *Handler {
 	links.PublicBaseURL = strings.TrimRight(links.PublicBaseURL, "/")
+	links.GuideBaseURL = strings.TrimRight(links.PublicWebBaseURL, "/") + guidePath
 	return &Handler{authorizer: authorizer, creator: creator, editor: editor, reader: reader, links: links, cards: cards, now: time.Now}
 }
 

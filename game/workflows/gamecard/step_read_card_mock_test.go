@@ -86,3 +86,18 @@ func (mr *MockreadCardRepoMockRecorder) FindLifecycleFacts(ctx, tx, gameID, edit
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindLifecycleFacts", reflect.TypeOf((*MockreadCardRepo)(nil).FindLifecycleFacts), ctx, tx, gameID, editingStatus)
 }
+
+// FindLiveRelease mocks base method.
+func (m *MockreadCardRepo) FindLiveRelease(ctx context.Context, tx *gorm.DB, gameID uint) (*repo.LiveRelease, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "FindLiveRelease", ctx, tx, gameID)
+	ret0, _ := ret[0].(*repo.LiveRelease)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// FindLiveRelease indicates an expected call of FindLiveRelease.
+func (mr *MockreadCardRepoMockRecorder) FindLiveRelease(ctx, tx, gameID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindLiveRelease", reflect.TypeOf((*MockreadCardRepo)(nil).FindLiveRelease), ctx, tx, gameID)
+}

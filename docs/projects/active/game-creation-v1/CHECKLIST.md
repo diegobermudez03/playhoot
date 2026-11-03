@@ -26,6 +26,7 @@ Order decided by the human on 2026-11-01. Frontend items live in the frontend's 
 
 ## Publish (plan delivery 3)
 
+- [x] Guide link (2026-11-02): the AI context page links the frontend's SDK guide v1 at `<PUBLIC_WEB_BASE_URL>/docs/sdk/v1/` (index, changes, building, scenarios, assets), replacing the provisional URL; `PUBLIC_WEB_BASE_URL` required in production.
 - [ ] I. MCP server and OAuth for AIs (separate AI attempt/session tables in Identity).
 - [x] J. Publication (2026-11-02): card (`GET`/`PATCH /v1/games/{id}`, logo and photos through the backend), `POST /publish` (current revision only, required assets, succeeded build, name; release → Play freeze + current version → GM complete; reactive completion of a half-done release), real playability (published, public or owner), `POST /editions` (new DRAFT copied from the published version), cleanup of stored content nothing uses (`deleted_at` kept); games are named at creation (`POST /v1/games {name}`), publish may rename. Smoke-tested against a running backend.
 - [ ] K. Templates and remix.

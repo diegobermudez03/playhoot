@@ -41,13 +41,16 @@ type dependencies struct {
 // testPublicBaseURL is where the API is reached from outside in tests.
 const testPublicBaseURL = "https://api.playhoot.test"
 
+// testPublicWebBaseURL is where the web app, and so the SDK guide, is reached in tests.
+const testPublicWebBaseURL = "https://playhoot.test"
+
 func newTestHandler(ctrl *gomock.Controller) (*Handler, dependencies) {
 	deps := dependencies{
 		creator: NewMockgameCreator(ctrl), editor: NewMockdraftEditor(ctrl), reader: NewMockdraftReader(ctrl),
 		owner: NewMockaiLinkOwner(ctrl), status: NewMockaiLinkStatusReader(ctrl), resolver: NewMocklinkResolver(ctrl),
 		card: NewMockcardManager(ctrl), pub: NewMockpublisher(ctrl),
 	}
-	h := NewHandler(nil, deps.creator, deps.editor, deps.reader, AILinks{Owner: deps.owner, Status: deps.status, Resolver: deps.resolver, PublicBaseURL: testPublicBaseURL + "/"}, Cards{Card: deps.card, Publisher: deps.pub})
+	h := NewHandler(nil, deps.creator, deps.editor, deps.reader, AILinks{Owner: deps.owner, Status: deps.status, Resolver: deps.resolver, PublicBaseURL: testPublicBaseURL + "/", PublicWebBaseURL: testPublicWebBaseURL + "/"}, Cards{Card: deps.card, Publisher: deps.pub})
 	h.now = func() time.Time { return time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC) }
 	return h, deps
 }

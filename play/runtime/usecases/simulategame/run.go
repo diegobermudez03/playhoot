@@ -148,6 +148,9 @@ func (r *run) play(ctx context.Context) error {
 		if err := r.observeUpTo(ctx, tick); err != nil {
 			return r.stopping(err)
 		}
+		// The clock reached the tick even when nothing ran in it (a game
+		// without update() and nothing pending).
+		r.result.SimulatedMs = max(r.result.SimulatedMs, tick)
 	}
 	return nil
 }

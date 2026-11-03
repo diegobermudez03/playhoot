@@ -86,6 +86,29 @@ func TestCardIntegration(t *testing.T) {
 		require.Equal(t, 2, changes, "the creation and the one change of name")
 	})
 
+	t.Run("the live release is the latest completed one", func(t *testing.T) {
+		owner, gameUUID := newGame(t)
+		read, err := cards.ReadCard(ctx, owner, gameUUID)
+		require.NoError(t, err)
+		require.Nil(t, read.Card.Live, "nothing is live before the first publication")
+
+		var ids struct {
+			GameID      uint
+			EditionID   uint
+			EditionUUID string
+		}
+		require.NoError(t, db.Raw(`SELECT g.id AS game_id, e.id AS edition_id, e.uuid AS edition_uuid FROM games g JOIN game_editions e ON e.game_id = g.id WHERE g.uuid = ?`, gameUUID).Scan(&ids).Error)
+		completed := time.Date(2026, 11, 3, 9, 0, 0, 0, time.UTC)
+		insert := `INSERT INTO game_releases (uuid, game_id, edition_id, sequence, revision, visibility, owner_uuid, idempotency_key, created_at, completed_at, abandoned_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		require.NoError(t, db.Exec(insert, uuid.NewString(), ids.GameID, ids.EditionID, 1, 3, string(game.Private), owner, "first", completed, completed, nil).Error)
+		require.NoError(t, db.Exec(insert, uuid.NewString(), ids.GameID, ids.EditionID, 2, 5, string(game.Public), owner, "abandoned", completed, nil, completed).Error)
+
+		read, err = cards.ReadCard(ctx, owner, gameUUID)
+		require.NoError(t, err)
+		require.Equal(t, &game.LiveRelease{Sequence: 1, Revision: 3, VersionUUID: ids.EditionUUID, PublishedAt: completed}, read.Card.Live, "an abandoned release never goes live")
+	})
+
 	t.Run("a logo is checked by its bytes, stored and replaced", func(t *testing.T) {
 		owner, gameUUID := newGame(t)
 		wrong, err := cards.UploadImage(ctx, owner, gameUUID, card.Logo, bytes.NewReader(gifBytes), "gif")

@@ -48,15 +48,6 @@ var (
 	)
 )
 
-// sdkInputRequirements is what an sdk-v1 game asks of the device: its client
-// is a page of buttons and taps, so pointer press, on desktop and mobile.
-func sdkInputRequirements() inputrequirements.Requirements {
-	return inputrequirements.Requirements{
-		UsesPointerPress: true,
-		Devices:          inputrequirements.DevicesFor(false, false, true),
-	}
-}
-
 // CheckPublication tells whether the DRAFT versionUUID's current revision
 // may become an executable version, and why not when it may not.
 func (m *Manager) CheckPublication(ctx context.Context, versionUUID string) (sessionpkg.PublishReadiness, error) {
@@ -176,7 +167,7 @@ func (m *Manager) freezeInTx(ctx context.Context, tx *gorm.DB, gameUUID string, 
 	if err := m.publishVersionRepo.CreateVersionAssets(ctx, tx, version.ID, assets, at); err != nil {
 		return sessionpkg.FrozenVersion{}, err
 	}
-	requirements, err := versionInputRequirements(checked.built.ScriptProfile)
+	requirements, err := versionInputRequirements(checked.built)
 	if err != nil {
 		return sessionpkg.FrozenVersion{}, err
 	}
@@ -294,13 +285,21 @@ func (m *Manager) versionAssets(ctx context.Context, tx *gorm.DB, checked checke
 	return assets, nil
 }
 
-// versionInputRequirements is what a frozen version asks of the device, by
-// the profile its script was built with.
-func versionInputRequirements(profile string) (internalrepo.InputRequirements, error) {
-	if scriptcheck.Profile(profile) != scriptcheck.ProfileSDKV1 {
-		return internalrepo.InputRequirements{}, fmt.Errorf("only sdk-v1 drafts are published, not %q", profile)
+// versionInputRequirements is what a frozen version asks of the device: what
+// the toolchain read from the published build's client sources.
+func versionInputRequirements(built *internalrepo.BuiltArtifacts) (internalrepo.InputRequirements, error) {
+	if scriptcheck.Profile(built.ScriptProfile) != scriptcheck.ProfileSDKV1 {
+		return internalrepo.InputRequirements{}, fmt.Errorf("only sdk-v1 drafts are published, not %q", built.ScriptProfile)
 	}
-	requirements := sdkInputRequirements()
+	if built.UsesKeyboard == nil || built.UsesPointerHover == nil || built.UsesPointerPress == nil {
+		return internalrepo.InputRequirements{}, fmt.Errorf("revision %d: its succeeded build has no input requirements", built.Revision)
+	}
+	requirements := inputrequirements.Requirements{
+		UsesKeyboard:     *built.UsesKeyboard,
+		UsesPointerHover: *built.UsesPointerHover,
+		UsesPointerPress: *built.UsesPointerPress,
+		Devices:          inputrequirements.DevicesFor(*built.UsesKeyboard, *built.UsesPointerHover, *built.UsesPointerPress),
+	}
 	if err := requirements.Validate(); err != nil {
 		return internalrepo.InputRequirements{}, err
 	}
