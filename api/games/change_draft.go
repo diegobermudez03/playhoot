@@ -20,27 +20,30 @@ const changeFormat = "playhoot.project-change.v1"
 // limit) plus its JSON escaping and envelope.
 const maxChangeBodyBytes = 4 << 20
 
-type changeFileRequest struct {
+// ChangeFile is one file of a change, with its whole new content.
+type ChangeFile struct {
 	Path    string `json:"path"`
 	Content string `json:"content"`
 }
 
-// changeRequest is the change envelope.
-type changeRequest struct {
-	Format         string              `json:"format"`
-	BaseRevision   *int64              `json:"base_revision"`
-	Files          []changeFileRequest `json:"files"`
-	Delete         []string            `json:"delete"`
-	IdempotencyKey string              `json:"idempotency_key"`
+// ChangeRequest is the change envelope.
+type ChangeRequest struct {
+	Format         string       `json:"format"`
+	BaseRevision   *int64       `json:"base_revision"`
+	Files          []ChangeFile `json:"files"`
+	Delete         []string     `json:"delete"`
+	IdempotencyKey string       `json:"idempotency_key"`
 }
 
-type restoreRequest struct {
+// RestoreRequest makes an earlier revision the newest one.
+type RestoreRequest struct {
 	Revision       int64  `json:"revision"`
 	BaseRevision   *int64 `json:"base_revision"`
 	IdempotencyKey string `json:"idempotency_key"`
 }
 
-type changeResponse struct {
+// ChangeResponse is a change or a restore that was decided.
+type ChangeResponse struct {
 	Outcome  string               `json:"outcome"`
 	Revision int64                `json:"revision"`
 	Build    *buildStatusResponse `json:"build,omitempty"`
@@ -65,37 +68,44 @@ func (h *Handler) handleApplyDraftChanges(w http.ResponseWriter, r *http.Request
 		return
 	}
 	noStore(w)
-
-	var req changeRequest
+	var req ChangeRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxChangeBodyBytes)).Decode(&req); err != nil {
 		logging.LogError(ctx, err)
 		httpx.WriteError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	response, refusal := h.ApplyChanges(ctx, Caller{UserUUID: userUUID, Origin: originOf(ctx)}, gameUUID, req)
+	writeChange(w, response, refusal)
+}
+
+// ApplyChanges applies a change envelope to the game's version being built,
+// all of it or nothing.
+func (h *Handler) ApplyChanges(ctx context.Context, by Caller, rawGameUUID string, req ChangeRequest) (ChangeResponse, *Refusal) {
+	gameUUID, refusal := gameOf(ctx, rawGameUUID)
+	if refusal != nil {
+		return ChangeResponse{}, refusal
+	}
 	logging.LogFields(ctx, logging.Field("idempotency_key", req.IdempotencyKey), logging.Field("files", len(req.Files)), logging.Field("deletes", len(req.Delete)))
 	switch {
 	case req.Format != changeFormat:
-		httpx.WriteError(w, http.StatusBadRequest, "format must be "+changeFormat)
-		return
+		return ChangeResponse{}, refuse(http.StatusBadRequest, "format must be "+changeFormat)
 	case req.BaseRevision == nil:
-		httpx.WriteError(w, http.StatusBadRequest, "base_revision is required")
-		return
-	case req.IdempotencyKey == "" || len(req.IdempotencyKey) > maxIdempotencyKeyLength:
-		httpx.WriteError(w, http.StatusBadRequest, "idempotency_key is required and must be at most 128 characters")
-		return
+		return ChangeResponse{}, refuse(http.StatusBadRequest, "base_revision is required")
 	}
-
+	if refusal := idempotencyKeyRefusal(req.IdempotencyKey, "idempotency_key"); refusal != nil {
+		return ChangeResponse{}, refusal
+	}
 	change := sessionpkg.DraftChange{
 		BaseRevision:   *req.BaseRevision,
 		Delete:         req.Delete,
 		IdempotencyKey: req.IdempotencyKey,
-		Origin:         originOf(ctx),
+		Origin:         by.Origin,
 	}
 	for _, file := range req.Files {
 		change.Files = append(change.Files, sessionpkg.DraftFileContent{Path: file.Path, Content: file.Content})
 	}
-	edit, err := h.editor.ApplyDraftChanges(ctx, userUUID, gameUUID, change)
-	writeEdit(ctx, w, edit, err, "applying draft changes")
+	edit, err := h.editor.ApplyDraftChanges(ctx, by.UserUUID, gameUUID, change)
+	return editAnswer(ctx, edit, err, "applying draft changes")
 }
 
 // handleRestoreDraftRevision makes an earlier revision of the game's version
@@ -107,64 +117,78 @@ func (h *Handler) handleRestoreDraftRevision(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	noStore(w)
-
-	var req restoreRequest
+	var req RestoreRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxCreateGameBodyBytes)).Decode(&req); err != nil {
 		logging.LogError(ctx, err)
 		httpx.WriteError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	response, refusal := h.RestoreRevision(ctx, Caller{UserUUID: userUUID, Origin: originOf(ctx)}, gameUUID, req)
+	writeChange(w, response, refusal)
+}
+
+// RestoreRevision makes an earlier revision of the game's version being built
+// its newest one.
+func (h *Handler) RestoreRevision(ctx context.Context, by Caller, rawGameUUID string, req RestoreRequest) (ChangeResponse, *Refusal) {
+	gameUUID, refusal := gameOf(ctx, rawGameUUID)
+	if refusal != nil {
+		return ChangeResponse{}, refusal
+	}
 	logging.LogFields(ctx, logging.Field("idempotency_key", req.IdempotencyKey), logging.Field("restored_revision", req.Revision))
 	switch {
 	case req.Revision < 1:
-		httpx.WriteError(w, http.StatusBadRequest, "revision must be a positive integer")
-		return
+		return ChangeResponse{}, refuse(http.StatusBadRequest, "revision must be a positive integer")
 	case req.BaseRevision == nil:
-		httpx.WriteError(w, http.StatusBadRequest, "base_revision is required")
-		return
-	case req.IdempotencyKey == "" || len(req.IdempotencyKey) > maxIdempotencyKeyLength:
-		httpx.WriteError(w, http.StatusBadRequest, "idempotency_key is required and must be at most 128 characters")
-		return
+		return ChangeResponse{}, refuse(http.StatusBadRequest, "base_revision is required")
 	}
-
-	edit, err := h.editor.RestoreDraftRevision(ctx, userUUID, gameUUID, req.Revision, *req.BaseRevision, req.IdempotencyKey, originOf(ctx))
-	writeEdit(ctx, w, edit, err, "restoring draft revision")
+	if refusal := idempotencyKeyRefusal(req.IdempotencyKey, "idempotency_key"); refusal != nil {
+		return ChangeResponse{}, refusal
+	}
+	edit, err := h.editor.RestoreDraftRevision(ctx, by.UserUUID, gameUUID, req.Revision, *req.BaseRevision, req.IdempotencyKey, by.Origin)
+	return editAnswer(ctx, edit, err, "restoring draft revision")
 }
 
-// writeEdit answers a change or a restore. A replay answers what the first
-// request did.
-func writeEdit(ctx context.Context, w http.ResponseWriter, edit gameauthoring.DraftEdit, err error, what string) {
+// writeChange answers a decided change or restore over HTTP.
+func writeChange(w http.ResponseWriter, response ChangeResponse, refusal *Refusal) {
+	if refusal != nil {
+		writeRefusal(w, refusal)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, response)
+}
+
+// editAnswer is a change or a restore as answered. A replay answers what the
+// first request did.
+func editAnswer(ctx context.Context, edit gameauthoring.DraftEdit, err error, what string) (ChangeResponse, *Refusal) {
 	if err != nil {
 		logging.LogError(ctx, err)
 		if errors.Is(err, sessionpkg.ErrIdempotencyConflict) {
-			httpx.WriteCodedError(w, http.StatusConflict, codeIdempotencyConflict, "idempotency key reused with a conflicting request")
-			return
+			return ChangeResponse{}, refuseCoded(http.StatusConflict, codeIdempotencyConflict, "idempotency key reused with a conflicting request")
 		}
-		httpx.WriteError(w, http.StatusInternalServerError, what+" failed")
-		return
+		return ChangeResponse{}, refuse(http.StatusInternalServerError, what+" failed")
 	}
-	if !writeAccessRefusal(w, edit.Access) {
-		return
+	if refusal := accessRefusal(edit.Access); refusal != nil {
+		return ChangeResponse{}, refusal
 	}
 	result := edit.Result
 	logging.LogFields(ctx, logging.Field("draft_outcome", string(result.Outcome)), logging.Field("replayed", result.Replayed))
 	switch result.Outcome {
 	case sessionpkg.DraftChangeApplied, sessionpkg.DraftChangeUnchanged:
-		httpx.WriteJSON(w, http.StatusOK, changeResponse{Outcome: string(result.Outcome), Revision: result.Revision, Build: buildStatus(result.Build)})
+		return ChangeResponse{Outcome: string(result.Outcome), Revision: result.Revision, Build: buildStatus(result.Build)}, nil
 	case sessionpkg.DraftChangeConflict:
-		httpx.WriteJSON(w, http.StatusConflict, conflictResponse{
+		return ChangeResponse{}, &Refusal{Status: http.StatusConflict, Body: conflictResponse{
 			ErrorResponse:   httpx.ErrorResponse{Code: codeRevisionConflict, Message: "the draft changed since base_revision; read it again and redo the change on the current revision"},
 			CurrentRevision: result.Revision,
-		})
+		}}
 	case sessionpkg.DraftChangeInvalid:
-		httpx.WriteJSON(w, http.StatusUnprocessableEntity, invalidChangeResponse{
+		return ChangeResponse{}, &Refusal{Status: http.StatusUnprocessableEntity, Body: invalidChangeResponse{
 			ErrorResponse: httpx.ErrorResponse{Code: codeInvalidChange, Message: "the change was not applied; see diagnostics"},
 			Diagnostics:   diagnostics(result.Diagnostics),
-		})
+		}}
 	case sessionpkg.DraftChangeNotEditable:
-		httpx.WriteCodedError(w, http.StatusConflict, codeNotEditable, "the version can no longer be changed")
+		return ChangeResponse{}, refuseCoded(http.StatusConflict, codeNotEditable, "the version can no longer be changed")
 	default:
 		logging.LogFields(ctx, logging.Field("unknown_draft_outcome", string(result.Outcome)))
-		httpx.WriteError(w, http.StatusInternalServerError, what+" failed")
+		return ChangeResponse{}, refuse(http.StatusInternalServerError, what+" failed")
 	}
 }

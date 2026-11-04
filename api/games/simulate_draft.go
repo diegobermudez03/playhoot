@@ -1,6 +1,7 @@
 package games
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -30,7 +31,8 @@ const (
 	simulationRetryAfter = "5"
 )
 
-type scenarioRequest struct {
+// ScenarioRequest is a playhoot.scenario.v1 document.
+type ScenarioRequest struct {
 	Format      string                `json:"format"`
 	Revision    int64                 `json:"revision"`
 	Players     int                   `json:"players"`
@@ -107,7 +109,8 @@ type scriptErrorResponse struct {
 	Message string `json:"message"`
 }
 
-type simulationResponse struct {
+// SimulationResponse is what a simulated scenario did.
+type SimulationResponse struct {
 	Format       string                        `json:"format"`
 	Revision     int64                         `json:"revision"`
 	Players      []string                      `json:"players"`
@@ -126,6 +129,10 @@ type simulationResponse struct {
 	ScriptError  *scriptErrorResponse          `json:"script_error,omitempty"`
 }
 
+// invalidScenarioBody refuses a body that is not one scenario object within
+// its limit.
+const invalidScenarioBody = "invalid request body: the scenario must be one JSON object of at most 1 MiB"
+
 // handleSimulateDraft plays a scenario on a revision's build of the game's
 // version being built and answers what happened, at once: nothing is kept.
 func (h *Handler) handleSimulateDraft(w http.ResponseWriter, r *http.Request) {
@@ -135,25 +142,48 @@ func (h *Handler) handleSimulateDraft(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	noStore(w)
-	var req scenarioRequest
+	var req ScenarioRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxScenarioBodyBytes)).Decode(&req); err != nil {
 		logging.LogError(ctx, err)
-		httpx.WriteError(w, http.StatusBadRequest, "invalid request body: the scenario must be one JSON object of at most 1 MiB")
-		return
-	}
-	if req.Format != scenarioFormat {
-		httpx.WriteJSON(w, http.StatusUnprocessableEntity, invalidScenarioResponse{
-			ErrorResponse: httpx.ErrorResponse{Code: codeInvalidScenario, Message: "the scenario was not simulated; see diagnostics"},
-			Diagnostics:   []simulationDiagnosticResponse{{Field: "format", Message: "must be " + scenarioFormat}},
-		})
-		return
-	}
-	if req.Revision < 0 {
-		httpx.WriteError(w, http.StatusBadRequest, "revision must not be negative")
+		httpx.WriteError(w, http.StatusBadRequest, invalidScenarioBody)
 		return
 	}
 	if err := http.NewResponseController(w).SetWriteDeadline(time.Now().Add(simulategame.WallBudget + simulationWriteSlack)); err != nil {
 		logging.LogError(ctx, err)
+	}
+	result, refusal := h.Simulate(ctx, userUUID, gameUUID, req)
+	if refusal != nil {
+		writeRefusal(w, refusal)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result)
+}
+
+// DecodeScenario reads a scenario document given as JSON, within the same
+// limit as a simulation request's body.
+func DecodeScenario(raw []byte) (ScenarioRequest, *Refusal) {
+	var req ScenarioRequest
+	if len(raw) > maxScenarioBodyBytes || json.Unmarshal(raw, &req) != nil {
+		return ScenarioRequest{}, refuse(http.StatusBadRequest, invalidScenarioBody)
+	}
+	return req, nil
+}
+
+// Simulate plays a scenario on a revision's build of the game's version being
+// built and answers what happened: nothing is kept.
+func (h *Handler) Simulate(ctx context.Context, userUUID string, rawGameUUID string, req ScenarioRequest) (SimulationResponse, *Refusal) {
+	gameUUID, refusal := gameOf(ctx, rawGameUUID)
+	if refusal != nil {
+		return SimulationResponse{}, refusal
+	}
+	if req.Format != scenarioFormat {
+		return SimulationResponse{}, &Refusal{Status: http.StatusUnprocessableEntity, Body: invalidScenarioResponse{
+			ErrorResponse: httpx.ErrorResponse{Code: codeInvalidScenario, Message: "the scenario was not simulated; see diagnostics"},
+			Diagnostics:   []simulationDiagnosticResponse{{Field: "format", Message: "must be " + scenarioFormat}},
+		}}
+	}
+	if req.Revision < 0 {
+		return SimulationResponse{}, refuse(http.StatusBadRequest, "revision must not be negative")
 	}
 
 	scenario := scenarioOf(req)
@@ -161,8 +191,8 @@ func (h *Handler) handleSimulateDraft(w http.ResponseWriter, r *http.Request) {
 	if err == nil && read.Missing {
 		// The game's creation stopped before Play had its version: create it,
 		// which queues its first build, and try once more.
-		if !h.ensureDraft(w, r, userUUID, gameUUID) {
-			return
+		if refusal := h.ensureDraft(ctx, userUUID, gameUUID); refusal != nil {
+			return SimulationResponse{}, refusal
 		}
 		read, err = h.reader.SimulateDraft(ctx, userUUID, gameUUID, req.Revision, scenario)
 	}
@@ -170,53 +200,51 @@ func (h *Handler) handleSimulateDraft(w http.ResponseWriter, r *http.Request) {
 		logging.LogError(ctx, err)
 		switch {
 		case errors.Is(err, sessionpkg.ErrDraftBuildNotFound):
-			httpx.WriteJSON(w, http.StatusConflict, buildNotReadyResponse{
+			return SimulationResponse{}, &Refusal{Status: http.StatusConflict, Body: buildNotReadyResponse{
 				ErrorResponse: httpx.ErrorResponse{Code: codeBuildNotReady, Message: "that revision has no build to simulate"},
-			})
+			}}
 		case errors.Is(err, runtime.ErrSimulationsBusy):
-			w.Header().Set("Retry-After", simulationRetryAfter)
-			httpx.WriteCodedError(w, http.StatusServiceUnavailable, codeSimulationsBusy, "too many simulations in progress; try again in a few seconds")
+			refusal := refuseCoded(http.StatusServiceUnavailable, codeSimulationsBusy, "too many simulations in progress; try again in a few seconds")
+			refusal.RetryAfter = simulationRetryAfter
+			return SimulationResponse{}, refusal
 		default:
-			httpx.WriteError(w, http.StatusInternalServerError, "simulating draft failed")
+			return SimulationResponse{}, refuse(http.StatusInternalServerError, "simulating draft failed")
 		}
-		return
 	}
-	if !writeAccessRefusal(w, read.Access) {
-		return
+	if refusal := accessRefusal(read.Access); refusal != nil {
+		return SimulationResponse{}, refusal
 	}
 	if read.Missing {
 		logging.LogFields(ctx, logging.Field("wiring_error", "draft still missing after it was ensured"))
-		httpx.WriteError(w, http.StatusInternalServerError, "simulating draft failed")
-		return
+		return SimulationResponse{}, refuse(http.StatusInternalServerError, "simulating draft failed")
 	}
 	if !read.Ready {
-		httpx.WriteJSON(w, http.StatusConflict, buildNotReadyResponse{
+		return SimulationResponse{}, &Refusal{Status: http.StatusConflict, Body: buildNotReadyResponse{
 			ErrorResponse: httpx.ErrorResponse{Code: codeBuildNotReady, Message: "only a revision whose build SUCCEEDED can be simulated"},
 			Revision:      read.Revision,
 			BuildStatus:   string(read.BuildStatus),
-		})
-		return
+		}}
 	}
 	result := read.Result
 	switch result.Outcome {
 	case runtime.SimulationRan:
-		httpx.WriteJSON(w, http.StatusOK, simulationBody(read.Revision, result))
+		return simulationBody(read.Revision, result), nil
 	case runtime.SimulationInvalid:
 		diagnostics := make([]simulationDiagnosticResponse, len(result.Diagnostics))
 		for i, d := range result.Diagnostics {
 			diagnostics[i] = simulationDiagnosticResponse{Field: d.Field, Message: d.Message}
 		}
-		httpx.WriteJSON(w, http.StatusUnprocessableEntity, invalidScenarioResponse{
+		return SimulationResponse{}, &Refusal{Status: http.StatusUnprocessableEntity, Body: invalidScenarioResponse{
 			ErrorResponse: httpx.ErrorResponse{Code: codeInvalidScenario, Message: "the scenario was not simulated; see diagnostics"},
 			Diagnostics:   diagnostics,
-		})
+		}}
 	default:
 		logging.LogFields(ctx, logging.Field("unknown_simulation_outcome", string(result.Outcome)))
-		httpx.WriteError(w, http.StatusInternalServerError, "simulating draft failed")
+		return SimulationResponse{}, refuse(http.StatusInternalServerError, "simulating draft failed")
 	}
 }
 
-func scenarioOf(req scenarioRequest) runtime.Scenario {
+func scenarioOf(req ScenarioRequest) runtime.Scenario {
 	scenario := runtime.Scenario{Players: req.Players, Seed: defaultScenarioSeed, DurationMs: req.DurationMs, ObserveAtMs: req.ObserveAtMs}
 	if req.Seed != nil {
 		scenario.Seed = *req.Seed
@@ -242,8 +270,8 @@ func observationBody(observation runtime.SimulationObservation) observationRespo
 	return observationResponse{RequestedAtMs: observation.RequestedAtMs, AtMs: observation.AtMs, State: observation.State, Views: views}
 }
 
-func simulationBody(revision int64, result runtime.SimulationResult) simulationResponse {
-	body := simulationResponse{
+func simulationBody(revision int64, result runtime.SimulationResult) SimulationResponse {
+	body := SimulationResponse{
 		Format:       simulationResultFormat,
 		Revision:     revision,
 		Players:      result.Players,

@@ -114,6 +114,7 @@ func (h *Handler) RESTRoutes() []routing.Route {
 	edit := auth.Require(h.authorizer, identity.OperationEditGame)
 	return []routing.Route{
 		{Pattern: "POST /v1/games", Handler: h.handleCreateGame, Authorization: auth.Require(h.authorizer, identity.OperationCreateGame)},
+		{Pattern: "GET /v1/games", Handler: h.handleListGames, Authorization: edit},
 		{Pattern: "GET /v1/games/{gameUUID}", Handler: h.handleReadCard, Authorization: edit},
 		{Pattern: "PATCH /v1/games/{gameUUID}", Handler: h.handleUpdateCard, Authorization: edit},
 		{Pattern: "PUT /v1/games/{gameUUID}/logo", Handler: h.handleUploadLogo, Authorization: edit},

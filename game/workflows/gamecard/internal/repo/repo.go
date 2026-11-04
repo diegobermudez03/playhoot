@@ -301,3 +301,31 @@ func (r *Repo) CompleteImageRequest(ctx context.Context, tx *gorm.DB, requestID 
 	}
 	return nil
 }
+
+// OwnedGame is one of a user's Games with its lifecycle facts.
+type OwnedGame struct {
+	UUID        string
+	Name        string
+	Visibility  string
+	PublishedAt *time.Time
+	Editing     bool
+	Publishing  bool
+	UpdatedAt   time.Time
+}
+
+// ListOwnedGames returns ownerUUID's Games that are not deleted, the most
+// recently changed first.
+func (r *Repo) ListOwnedGames(ctx context.Context, tx *gorm.DB, ownerUUID string, editingStatus string) ([]OwnedGame, error) {
+	var found []OwnedGame
+	if err := tx.WithContext(ctx).Raw(`
+		SELECT g.uuid, g.name, g.visibility, g.published_at, g.updated_at,
+			EXISTS (SELECT 1 FROM game_editions e WHERE e.game_id = g.id AND e.status = ?) AS editing,
+			EXISTS (SELECT 1 FROM game_releases r WHERE r.game_id = g.id AND r.completed_at IS NULL AND r.abandoned_at IS NULL) AS publishing
+		FROM games g
+		WHERE g.owner_uuid = ? AND g.deleted_at IS NULL
+		ORDER BY g.updated_at DESC, g.id DESC
+	`, editingStatus, ownerUUID).Scan(&found).Error; err != nil {
+		return nil, fmt.Errorf("listing owned games: %s", err)
+	}
+	return found, nil
+}

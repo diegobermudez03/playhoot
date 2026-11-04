@@ -34,6 +34,7 @@ type Manager struct {
 	updateCardRepo  updateCardRepo
 	uploadImageRepo uploadImageRepo
 	removeImageRepo removeImageRepo
+	listGamesRepo   listGamesRepo
 
 	images imageStore
 
@@ -53,6 +54,7 @@ func New(db *gorm.DB, images imageStore) *Manager {
 		updateCardRepo:  repo,
 		uploadImageRepo: repo,
 		removeImageRepo: repo,
+		listGamesRepo:   repo,
 		images:          images,
 		dbServicer:      repo,
 		now:             time.Now,

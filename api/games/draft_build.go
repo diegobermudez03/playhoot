@@ -1,6 +1,7 @@
 package games
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
@@ -33,7 +34,8 @@ type buildArtifactResponse struct {
 	Size   int64  `json:"size"`
 }
 
-type buildResponse struct {
+// BuildResponse is a build of a revision of the version being built.
+type BuildResponse struct {
 	Revision    int64                     `json:"revision"`
 	Status      string                    `json:"status"`
 	Diagnostics []buildDiagnosticResponse `json:"diagnostics"`
@@ -51,7 +53,7 @@ type buildStatusResponse struct {
 	Status string `json:"status"`
 }
 
-func buildBody(build *sessionpkg.DraftBuild) *buildResponse {
+func buildBody(build *sessionpkg.DraftBuild) *BuildResponse {
 	if build == nil {
 		return nil
 	}
@@ -59,7 +61,7 @@ func buildBody(build *sessionpkg.DraftBuild) *buildResponse {
 	for i, d := range build.Diagnostics {
 		diagnostics[i] = buildDiagnosticResponse{Stage: d.Stage, Code: d.Code, File: d.File, Line: d.Line, Column: d.Column, Message: d.Message}
 	}
-	response := &buildResponse{
+	response := &BuildResponse{
 		Revision:    build.Revision,
 		Status:      string(build.Status),
 		Diagnostics: diagnostics,
@@ -96,53 +98,94 @@ func (h *Handler) handleReadDraftBuild(w http.ResponseWriter, r *http.Request) {
 	}
 	noStore(w)
 	query := r.URL.Query()
-	var revision int64
-	if raw := query.Get("revision"); raw != "" {
-		parsed, err := strconv.ParseInt(raw, 10, 64)
-		if err != nil || parsed < 1 {
-			httpx.WriteError(w, http.StatusBadRequest, "revision must be a positive integer")
-			return
-		}
-		revision = parsed
+	revision, refusal := revisionQuery(query.Get("revision"))
+	if refusal != nil {
+		writeRefusal(w, refusal)
+		return
 	}
 	var wait time.Duration
 	if raw := query.Get("wait"); raw != "" {
 		seconds, err := strconv.Atoi(raw)
-		if err != nil || seconds < 0 || time.Duration(seconds)*time.Second > versiondrafting.MaxBuildWait {
-			httpx.WriteError(w, http.StatusBadRequest, "wait must be a whole number of seconds from 0 to 20")
+		if err != nil {
+			writeRefusal(w, waitRefusal())
 			return
 		}
-		wait = time.Duration(seconds) * time.Second
+		if wait, refusal = BuildWait(seconds); refusal != nil {
+			writeRefusal(w, refusal)
+			return
+		}
 		if err := http.NewResponseController(w).SetWriteDeadline(time.Now().Add(wait + buildWaitSlack)); err != nil {
 			logging.LogError(ctx, err)
 		}
 	}
+	build, refusal := h.ReadBuild(ctx, userUUID, gameUUID, revision, wait)
+	if refusal != nil {
+		writeRefusal(w, refusal)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, build)
+}
 
-	read, err := h.reader.ReadDraftBuild(ctx, userUUID, gameUUID, revision, wait)
+// BuildWait is how long a build read waits for seconds, from 0 to 20.
+func BuildWait(seconds int) (time.Duration, *Refusal) {
+	if seconds < 0 || time.Duration(seconds)*time.Second > versiondrafting.MaxBuildWait {
+		return 0, waitRefusal()
+	}
+	return time.Duration(seconds) * time.Second, nil
+}
+
+func waitRefusal() *Refusal {
+	return refuse(http.StatusBadRequest, "wait must be a whole number of seconds from 0 to 20")
+}
+
+// revisionQuery reads an optional ?revision=N.
+func revisionQuery(raw string) (*int64, *Refusal) {
+	if raw == "" {
+		return nil, nil
+	}
+	parsed, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return nil, refuse(http.StatusBadRequest, "revision must be a positive integer")
+	}
+	return &parsed, revisionRefusal(&parsed)
+}
+
+// ReadBuild answers the build of a revision of the game's version being
+// built (nil: the current one), waiting up to wait for it to end.
+func (h *Handler) ReadBuild(ctx context.Context, userUUID string, rawGameUUID string, revision *int64, wait time.Duration) (*BuildResponse, *Refusal) {
+	gameUUID, refusal := gameOf(ctx, rawGameUUID)
+	if refusal != nil {
+		return nil, refusal
+	}
+	if refusal := revisionRefusal(revision); refusal != nil {
+		return nil, refusal
+	}
+	var number int64
+	if revision != nil {
+		number = *revision
+	}
+	read, err := h.reader.ReadDraftBuild(ctx, userUUID, gameUUID, number, wait)
 	if err == nil && read.Missing {
 		// The game's creation stopped before Play had its version: create it,
 		// which queues its first build, and read once more.
-		if !h.ensureDraft(w, r, userUUID, gameUUID) {
-			return
+		if refusal := h.ensureDraft(ctx, userUUID, gameUUID); refusal != nil {
+			return nil, refusal
 		}
-		read, err = h.reader.ReadDraftBuild(ctx, userUUID, gameUUID, revision, wait)
+		read, err = h.reader.ReadDraftBuild(ctx, userUUID, gameUUID, number, wait)
 	}
 	if err != nil {
 		logging.LogError(ctx, err)
 		if errors.Is(err, sessionpkg.ErrDraftBuildNotFound) {
-			httpx.WriteCodedError(w, http.StatusNotFound, codeBuildNotFound, "that revision has no build")
-			return
+			return nil, refuseCoded(http.StatusNotFound, codeBuildNotFound, "that revision has no build")
 		}
-		httpx.WriteError(w, http.StatusInternalServerError, "reading draft build failed")
-		return
+		return nil, refuse(http.StatusInternalServerError, "reading draft build failed")
 	}
-	if !writeAccessRefusal(w, read.Access) {
-		return
+	if refusal := accessRefusal(read.Access); refusal != nil {
+		return nil, refusal
 	}
 	if read.Missing {
 		logging.LogFields(ctx, logging.Field("wiring_error", "draft still missing after it was ensured"))
-		httpx.WriteError(w, http.StatusInternalServerError, "reading draft build failed")
-		return
+		return nil, refuse(http.StatusInternalServerError, "reading draft build failed")
 	}
-	httpx.WriteJSON(w, http.StatusOK, buildBody(&read.Build))
+	return buildBody(&read.Build), nil
 }

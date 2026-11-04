@@ -168,3 +168,15 @@ type Edition struct {
 	VersionUUID     string
 	BaseVersionUUID string
 }
+
+// GameSummary is one of a user's Games as their list of games shows it, with
+// where its lifecycle stands.
+type GameSummary struct {
+	GameUUID   string
+	Name       string
+	Published  bool
+	Visibility VisibilityType
+	Editing    bool
+	Publishing bool
+	UpdatedAt  time.Time
+}

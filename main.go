@@ -24,6 +24,7 @@ import (
 	"github.com/diegobermudez03/playhoot/game/workflows/gamecard"
 	"github.com/diegobermudez03/playhoot/game/workflows/gamelifecycle"
 	"github.com/diegobermudez03/playhoot/identity/loginproviders"
+	"github.com/diegobermudez03/playhoot/identity/usecases/aiauthorization"
 	"github.com/diegobermudez03/playhoot/identity/usecases/authorize"
 	"github.com/diegobermudez03/playhoot/identity/usecases/createguest"
 	"github.com/diegobermudez03/playhoot/identity/usecases/endsession"
@@ -262,6 +263,13 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("creating account login: %w", err)
 	}
+	publicAPI := strings.TrimRight(envVars.PublicAPIBaseURL, "/")
+	aiAuthorization, err := aiauthorization.New(db, envVars.IdentityAccessTokenKey, aiauthorization.Config{
+		Issuer: publicAPI, Resource: api.MCPResource(publicAPI), ConsentURL: strings.TrimRight(envVars.PublicWebBaseURL, "/") + "/connect-ai",
+	})
+	if err != nil {
+		return fmt.Errorf("creating AI authorization: %w", err)
+	}
 	server := api.NewServer(
 		authorizer,
 		guests,
@@ -285,6 +293,7 @@ func run() error {
 		api.Games{Previews: previews, Creator: gameAuthoring, Editor: gameAuthoring, Reader: gameAuthoringReads, AILinks: apigames.AILinks{
 			Owner: gameAuthoring, Status: gameAuthoringReads, Resolver: resourceLinks, PublicBaseURL: envVars.PublicAPIBaseURL, PublicWebBaseURL: envVars.PublicWebBaseURL,
 		}, Cards: apigames.Cards{Card: gameCards, Publisher: gameAuthoring}},
+		api.AI{Server: aiAuthorization},
 		api.Config{
 			CORSAllowedOrigins:      envVars.CORSAllowedOrigins,
 			WebSocketAllowedOrigins: envVars.WebSocketAllowedOrigins,

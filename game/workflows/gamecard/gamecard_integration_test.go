@@ -86,6 +86,31 @@ func TestCardIntegration(t *testing.T) {
 		require.Equal(t, 2, changes, "the creation and the one change of name")
 	})
 
+	t.Run("a user lists only their own games, the most recently changed first", func(t *testing.T) {
+		owner := uuid.NewString()
+		first, err := lifecycle.CreateGame(ctx, owner, "Primero", "first")
+		require.NoError(t, err)
+		second, err := lifecycle.CreateGame(ctx, owner, "Segundo", "second")
+		require.NoError(t, err)
+		_, err = lifecycle.CreateGame(ctx, uuid.NewString(), "Ajeno", "other")
+		require.NoError(t, err)
+		require.NoError(t, db.Exec(`UPDATE games SET updated_at = ? WHERE uuid = ?`, time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC), second.GameUUID).Error)
+
+		listed, err := cards.ListGames(ctx, owner)
+		require.NoError(t, err)
+		require.Len(t, listed, 2)
+		require.Equal(t, first.GameUUID, listed[0].GameUUID)
+		require.Equal(t, "Primero", listed[0].Name)
+		require.True(t, listed[0].Editing)
+		require.False(t, listed[0].Published)
+		require.False(t, listed[0].Publishing)
+		require.Equal(t, second.GameUUID, listed[1].GameUUID)
+
+		none, err := cards.ListGames(ctx, "not-a-uuid")
+		require.NoError(t, err)
+		require.Empty(t, none)
+	})
+
 	t.Run("the live release is the latest completed one", func(t *testing.T) {
 		owner, gameUUID := newGame(t)
 		read, err := cards.ReadCard(ctx, owner, gameUUID)

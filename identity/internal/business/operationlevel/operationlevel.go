@@ -19,6 +19,7 @@ var required = map[identity.Operation]identity.Level{
 	identity.OperationSetOwnDisplayName:     identity.LevelGuest,
 	identity.OperationCreateGame:            identity.LevelAccount,
 	identity.OperationEditGame:              identity.LevelAccount,
+	identity.OperationConnectAI:             identity.LevelAccount,
 }
 
 // rank orders the levels; a level missing from it satisfies nothing.

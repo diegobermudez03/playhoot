@@ -1,6 +1,7 @@
 package games
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"path"
@@ -40,15 +41,25 @@ type aiURLs struct {
 	Simulations string `json:"simulations"`
 }
 
-type aiContextResponse struct {
+// AIContextResponse is the JSON form of a game's context page.
+type AIContextResponse struct {
 	Format        string        `json:"format"`
 	GameName      string        `json:"game_name"`
 	ObservedAt    time.Time     `json:"observed_at"`
 	Revision      int64         `json:"revision"`
 	SourcesInline bool          `json:"sources_inline"`
 	SDKDocsURL    string        `json:"sdk_docs_url"`
-	URLs          aiURLs        `json:"urls"`
+	URLs          *aiURLs       `json:"urls,omitempty"`
 	Draft         draftResponse `json:"draft"`
+}
+
+// AIContext is everything an AI needs to propose the next change to a game:
+// Response, its JSON form, and what its Markdown page is written from.
+type AIContext struct {
+	Response AIContextResponse
+
+	name     string
+	snapshot sessionpkg.DraftSnapshot
 }
 
 // handleAIContext answers the context page of the game an AI's link names:
@@ -64,28 +75,54 @@ func (h *Handler) handleAIContext(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusBadRequest, "format must be json or markdown")
 		return
 	}
-	snapshot, name, ok := h.loadDraft(w, r, userUUID, gameUUID, 0, true)
-	if !ok {
+	read, refusal := h.ReadContext(r.Context(), userUUID, gameUUID, r.PathValue("token"))
+	if refusal != nil {
+		writeRefusal(w, refusal)
 		return
 	}
+	// Without a link (the owner's own route) there are no addresses to write
+	// a page with: the JSON form answers.
+	if format == "json" || read.Response.URLs == nil {
+		httpx.WriteJSON(w, http.StatusOK, read.Response)
+		return
+	}
+	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(aiContextMarkdown(read.name, read.snapshot, *read.Response.URLs, h.links.GuideBaseURL, read.Response.ObservedAt, read.Response.SourcesInline)))
+}
+
+// ReadContext reads the context of a game for an AI, at its current
+// revision. linkToken is the AI link it is read through, empty through MCP,
+// whose tools replace the link's addresses.
+func (h *Handler) ReadContext(ctx context.Context, userUUID string, rawGameUUID string, linkToken string) (AIContext, *Refusal) {
+	gameUUID, refusal := gameOf(ctx, rawGameUUID)
+	if refusal != nil {
+		return AIContext{}, refusal
+	}
+	snapshot, name, refusal := h.loadDraft(ctx, userUUID, gameUUID, 0, true)
+	if refusal != nil {
+		return AIContext{}, refusal
+	}
 	observedAt := h.now().UTC().Truncate(time.Second)
-	urls := aiAddresses(h.links.PublicBaseURL, r.PathValue("token"))
+	var urls *aiURLs
+	if linkToken != "" {
+		addresses := aiAddresses(h.links.PublicBaseURL, linkToken)
+		urls = &addresses
+	}
 	inline := sourceBytes(snapshot.Files) <= maxInlineSourceBytes
 	if !inline {
 		for i := range snapshot.Files {
 			snapshot.Files[i].Content = nil
 		}
 	}
-	if format == "json" {
-		httpx.WriteJSON(w, http.StatusOK, aiContextResponse{
+	return AIContext{
+		Response: AIContextResponse{
 			Format: aiContextFormat, GameName: gameName(name), ObservedAt: observedAt,
 			Revision: snapshot.Revision, SourcesInline: inline, SDKDocsURL: h.links.GuideBaseURL + "/index.md", URLs: urls, Draft: draftBody(snapshot),
-		})
-		return
-	}
-	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(aiContextMarkdown(gameName(name), snapshot, urls, h.links.GuideBaseURL, observedAt, inline)))
+		},
+		name:     gameName(name),
+		snapshot: snapshot,
+	}, nil
 }
 
 // handleAIFile answers one file of a revision (?revision=N, the current one
@@ -95,30 +132,51 @@ func (h *Handler) handleAIFile(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var revision int64
-	if raw := r.URL.Query().Get("revision"); raw != "" {
-		parsed, err := strconv.ParseInt(raw, 10, 64)
-		if err != nil || parsed < 1 {
-			httpx.WriteError(w, http.StatusBadRequest, "revision must be a positive integer")
-			return
-		}
-		revision = parsed
-	}
-	snapshot, _, ok := h.loadDraft(w, r, userUUID, gameUUID, revision, true)
-	if !ok {
+	revision, refusal := revisionQuery(r.URL.Query().Get("revision"))
+	if refusal != nil {
+		writeRefusal(w, refusal)
 		return
 	}
-	wanted := r.PathValue("path")
+	file, refusal := h.ReadFile(r.Context(), userUUID, gameUUID, r.PathValue("path"), revision)
+	if refusal != nil {
+		writeRefusal(w, refusal)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("X-Playhoot-Revision", strconv.FormatInt(file.Revision, 10))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(file.Content))
+}
+
+// File is one file of a revision of the version being built.
+type File struct {
+	Content  string
+	Revision int64
+}
+
+// ReadFile reads the file at path of a revision (nil: the current one).
+func (h *Handler) ReadFile(ctx context.Context, userUUID string, rawGameUUID string, path string, revision *int64) (File, *Refusal) {
+	gameUUID, refusal := gameOf(ctx, rawGameUUID)
+	if refusal != nil {
+		return File{}, refusal
+	}
+	if refusal := revisionRefusal(revision); refusal != nil {
+		return File{}, refusal
+	}
+	var number int64
+	if revision != nil {
+		number = *revision
+	}
+	snapshot, _, refusal := h.loadDraft(ctx, userUUID, gameUUID, number, true)
+	if refusal != nil {
+		return File{}, refusal
+	}
 	for _, file := range snapshot.Files {
-		if file.Path == wanted && file.Content != nil {
-			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-			w.Header().Set("X-Playhoot-Revision", strconv.FormatInt(snapshot.Revision, 10))
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(*file.Content))
-			return
+		if file.Path == path && file.Content != nil {
+			return File{Content: *file.Content, Revision: snapshot.Revision}, nil
 		}
 	}
-	httpx.WriteCodedError(w, http.StatusNotFound, codeFileNotFound, "the revision has no such file")
+	return File{}, refuseCoded(http.StatusNotFound, codeFileNotFound, "the revision has no such file")
 }
 
 func aiAddresses(base string, token string) aiURLs {

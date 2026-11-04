@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"time"
 
@@ -44,7 +45,8 @@ type assetResponse struct {
 	URLExpiresAt *time.Time `json:"url_expires_at,omitempty"`
 }
 
-type assetEditResponse struct {
+// AssetEditResponse is an asset upload or removal that was decided.
+type AssetEditResponse struct {
 	Outcome  string               `json:"outcome"`
 	Revision int64                `json:"revision"`
 	Asset    *assetResponse       `json:"asset,omitempty"`
@@ -61,28 +63,36 @@ func (h *Handler) handleUploadAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	noStore(w)
-	key := r.PathValue("key")
-	idempotencyKey := r.Header.Get("Idempotency-Key")
-	logging.LogFields(ctx, logging.Field("asset_key", key), logging.Field("idempotency_key", idempotencyKey))
-	if idempotencyKey == "" || len(idempotencyKey) > maxIdempotencyKeyLength {
-		httpx.WriteError(w, http.StatusBadRequest, "the Idempotency-Key header is required and must be at most 128 characters")
-		return
-	}
 	if err := http.NewResponseController(w).SetReadDeadline(time.Now().Add(assetUploadReadTime)); err != nil {
 		logging.LogError(ctx, err)
 	}
 	// One byte past the largest asset lets Play tell a file that is too
 	// large from one exactly at the limit.
 	body := http.MaxBytesReader(w, r.Body, sessionpkg.MaxDraftAssetBytes+1)
+	response, refusal := h.UploadAsset(ctx, Caller{UserUUID: userUUID, Origin: originOf(ctx)}, gameUUID, r.PathValue("key"), r.Header.Get("Idempotency-Key"), body)
+	writeAssetEdit(w, response, refusal)
+}
 
-	edit, err := h.editor.UploadDraftAsset(ctx, userUUID, gameUUID, key, body, idempotencyKey, originOf(ctx))
+// UploadAsset binds content, the bytes of a declared asset key of the
+// game's version being built, to it in a new revision. Play cuts content at
+// the declared type's limit.
+func (h *Handler) UploadAsset(ctx context.Context, by Caller, rawGameUUID string, key string, idempotencyKey string, content io.Reader) (AssetEditResponse, *Refusal) {
+	gameUUID, refusal := gameOf(ctx, rawGameUUID)
+	if refusal != nil {
+		return AssetEditResponse{}, refusal
+	}
+	logging.LogFields(ctx, logging.Field("asset_key", key), logging.Field("idempotency_key", idempotencyKey))
+	if refusal := idempotencyKeyRefusal(idempotencyKey, "the Idempotency-Key header"); refusal != nil {
+		return AssetEditResponse{}, refusal
+	}
+	edit, err := h.editor.UploadDraftAsset(ctx, by.UserUUID, gameUUID, key, content, idempotencyKey, by.Origin)
 	if errors.Is(err, sessionpkg.ErrUploadsBusy) {
 		logging.LogError(ctx, err)
-		w.Header().Set("Retry-After", "5")
-		httpx.WriteCodedError(w, http.StatusServiceUnavailable, codeUploadsBusy, "too many uploads in progress; try again in a few seconds")
-		return
+		refusal := refuseCoded(http.StatusServiceUnavailable, codeUploadsBusy, "too many uploads in progress; try again in a few seconds")
+		refusal.RetryAfter = "5"
+		return AssetEditResponse{}, refusal
 	}
-	writeAssetEdit(ctx, w, edit, err, "uploading asset")
+	return assetEditAnswer(ctx, edit, err, "uploading asset")
 }
 
 // handleRemoveAsset unbinds an asset's content from the game's version being
@@ -94,77 +104,81 @@ func (h *Handler) handleRemoveAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	noStore(w)
-	key := r.PathValue("key")
-	idempotencyKey, ok := assetEditKey(w, r)
-	if !ok {
-		return
-	}
-	logging.LogFields(ctx, logging.Field("asset_key", key))
-
-	edit, err := h.editor.RemoveDraftAsset(ctx, userUUID, gameUUID, key, idempotencyKey, originOf(ctx))
-	writeAssetEdit(ctx, w, edit, err, "removing asset")
-}
-
-// assetEditKey reads an asset edit's idempotency key, answering the request
-// itself and returning false when it is missing or the body is invalid.
-func assetEditKey(w http.ResponseWriter, r *http.Request) (string, bool) {
-	ctx := r.Context()
 	var req assetEditRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxAssetRequestBodyBytes)).Decode(&req); err != nil {
 		logging.LogError(ctx, err)
 		httpx.WriteError(w, http.StatusBadRequest, "invalid request body")
-		return "", false
+		return
 	}
-	logging.LogFields(ctx, logging.Field("idempotency_key", req.IdempotencyKey))
-	if req.IdempotencyKey == "" || len(req.IdempotencyKey) > maxIdempotencyKeyLength {
-		httpx.WriteError(w, http.StatusBadRequest, "idempotency_key is required and must be at most 128 characters")
-		return "", false
-	}
-	return req.IdempotencyKey, true
+	response, refusal := h.RemoveAsset(ctx, Caller{UserUUID: userUUID, Origin: originOf(ctx)}, gameUUID, r.PathValue("key"), req.IdempotencyKey)
+	writeAssetEdit(w, response, refusal)
 }
 
-// writeAssetEdit answers attaching or removing an asset. A replay answers
-// what the first request did.
-func writeAssetEdit(ctx context.Context, w http.ResponseWriter, edit gameauthoring.DraftAssetEdit, err error, what string) {
+// RemoveAsset unbinds an asset's content from the game's version being built
+// in a new revision.
+func (h *Handler) RemoveAsset(ctx context.Context, by Caller, rawGameUUID string, key string, idempotencyKey string) (AssetEditResponse, *Refusal) {
+	gameUUID, refusal := gameOf(ctx, rawGameUUID)
+	if refusal != nil {
+		return AssetEditResponse{}, refusal
+	}
+	logging.LogFields(ctx, logging.Field("idempotency_key", idempotencyKey))
+	if refusal := idempotencyKeyRefusal(idempotencyKey, "idempotency_key"); refusal != nil {
+		return AssetEditResponse{}, refusal
+	}
+	logging.LogFields(ctx, logging.Field("asset_key", key))
+	edit, err := h.editor.RemoveDraftAsset(ctx, by.UserUUID, gameUUID, key, idempotencyKey, by.Origin)
+	return assetEditAnswer(ctx, edit, err, "removing asset")
+}
+
+// writeAssetEdit answers a decided asset edit over HTTP.
+func writeAssetEdit(w http.ResponseWriter, response AssetEditResponse, refusal *Refusal) {
+	if refusal != nil {
+		writeRefusal(w, refusal)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, response)
+}
+
+// assetEditAnswer is attaching or removing an asset as answered. A replay
+// answers what the first request did.
+func assetEditAnswer(ctx context.Context, edit gameauthoring.DraftAssetEdit, err error, what string) (AssetEditResponse, *Refusal) {
 	if err != nil {
 		logging.LogError(ctx, err)
 		if errors.Is(err, sessionpkg.ErrIdempotencyConflict) {
-			httpx.WriteCodedError(w, http.StatusConflict, codeIdempotencyConflict, "idempotency key reused with a conflicting request")
-			return
+			return AssetEditResponse{}, refuseCoded(http.StatusConflict, codeIdempotencyConflict, "idempotency key reused with a conflicting request")
 		}
-		httpx.WriteError(w, http.StatusInternalServerError, what+" failed")
-		return
+		return AssetEditResponse{}, refuse(http.StatusInternalServerError, what+" failed")
 	}
-	if !writeAccessRefusal(w, edit.Access) {
-		return
+	if refusal := accessRefusal(edit.Access); refusal != nil {
+		return AssetEditResponse{}, refusal
 	}
 	result := edit.Result
 	logging.LogFields(ctx, logging.Field("asset_outcome", string(result.Outcome)), logging.Field("replayed", result.Replayed))
 	switch result.Outcome {
 	case sessionpkg.DraftAssetAttached, sessionpkg.DraftAssetRemoved, sessionpkg.DraftAssetUnchanged:
-		response := assetEditResponse{Outcome: string(result.Outcome), Revision: result.Revision, Build: buildStatus(result.Build)}
+		response := AssetEditResponse{Outcome: string(result.Outcome), Revision: result.Revision, Build: buildStatus(result.Build)}
 		if result.Asset != nil {
 			asset := assetBody(*result.Asset)
 			response.Asset = &asset
 		}
-		httpx.WriteJSON(w, http.StatusOK, response)
+		return response, nil
 	case sessionpkg.DraftAssetInvalid:
-		httpx.WriteJSON(w, http.StatusUnprocessableEntity, invalidChangeResponse{
+		return AssetEditResponse{}, &Refusal{Status: http.StatusUnprocessableEntity, Body: invalidChangeResponse{
 			ErrorResponse: httpx.ErrorResponse{Code: codeInvalidAsset, Message: "the asset was not attached; see diagnostics"},
 			Diagnostics:   diagnostics(result.Diagnostics),
-		})
+		}}
 	case sessionpkg.DraftAssetTooLarge:
-		httpx.WriteJSON(w, http.StatusRequestEntityTooLarge, invalidChangeResponse{
+		return AssetEditResponse{}, &Refusal{Status: http.StatusRequestEntityTooLarge, Body: invalidChangeResponse{
 			ErrorResponse: httpx.ErrorResponse{Code: codeAssetTooLarge, Message: "the file is larger than this asset allows; nothing was stored"},
 			Diagnostics:   diagnostics(result.Diagnostics),
-		})
+		}}
 	case sessionpkg.DraftAssetNotDeclared:
-		httpx.WriteCodedError(w, http.StatusNotFound, codeAssetNotDeclared, "game.project.json declares no such asset of this type; declare it first")
+		return AssetEditResponse{}, refuseCoded(http.StatusNotFound, codeAssetNotDeclared, "game.project.json declares no such asset of this type; declare it first")
 	case sessionpkg.DraftAssetNotEditable:
-		httpx.WriteCodedError(w, http.StatusConflict, codeNotEditable, "the version can no longer be changed")
+		return AssetEditResponse{}, refuseCoded(http.StatusConflict, codeNotEditable, "the version can no longer be changed")
 	default:
 		logging.LogFields(ctx, logging.Field("unknown_asset_outcome", string(result.Outcome)))
-		httpx.WriteError(w, http.StatusInternalServerError, what+" failed")
+		return AssetEditResponse{}, refuse(http.StatusInternalServerError, what+" failed")
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/diegobermudez03/playhoot/api/internal/routing"
@@ -54,6 +55,35 @@ func newRESTMetrics(patterns []string) *requestMetrics {
 		requestsHelp: "Finished REST requests, by matched route and response status code.",
 		duration:     "api_http_request_duration_seconds",
 		durationHelp: "Time taken to serve REST requests, by matched route.",
+	}, patterns, trackedStatusCodes)
+}
+
+// aiRoutePrefixes are the paths of the routes AI applications reach: the
+// OAuth server and its discovery documents, the MCP server and the AI link
+// routes, measured apart so neither family outgrows its series bound.
+var aiRoutePrefixes = []string{"/.well-known/", "/oauth/", "/mcp", "/ai/"}
+
+// aiRoute reports whether pattern ("METHOD /path") is an AI-facing route.
+func aiRoute(pattern string) bool {
+	_, path, found := strings.Cut(pattern, " ")
+	if !found {
+		path = pattern
+	}
+	for _, prefix := range aiRoutePrefixes {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// newAIMetrics declares the request metrics of the AI-facing routes.
+func newAIMetrics(patterns []string) *requestMetrics {
+	return newRequestMetrics(requestMetricNames{
+		requests:     "api_ai_http_requests_total",
+		requestsHelp: "Finished requests of the routes AI applications reach (OAuth, MCP, AI links), by matched route and response status code.",
+		duration:     "api_ai_http_request_duration_seconds",
+		durationHelp: "Time taken to serve the routes AI applications reach, by matched route.",
 	}, patterns, trackedStatusCodes)
 }
 

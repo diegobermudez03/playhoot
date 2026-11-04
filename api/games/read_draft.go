@@ -1,6 +1,7 @@
 package games
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
@@ -49,11 +50,12 @@ type draftResponse struct {
 	Attempts         []attemptResponse    `json:"attempts"`
 	// Build is the build of Revision; LastSuccessfulBuild the version's
 	// newest succeeded build, of Revision or an older one.
-	Build               *buildResponse `json:"build"`
-	LastSuccessfulBuild *buildResponse `json:"last_successful_build"`
+	Build               *BuildResponse `json:"build"`
+	LastSuccessfulBuild *BuildResponse `json:"last_successful_build"`
 }
 
-type revisionResponse struct {
+// RevisionResponse is one revision of the version being built.
+type RevisionResponse struct {
 	Number    int64     `json:"number"`
 	Source    string    `json:"source"`
 	Files     int       `json:"files"`
@@ -89,8 +91,9 @@ func (h *Handler) handleReadDraft(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	snapshot, _, ok := h.loadDraft(w, r, userUUID, gameUUID, revision, withContent)
-	if !ok {
+	snapshot, _, refusal := h.loadDraft(r.Context(), userUUID, gameUUID, revision, withContent)
+	if refusal != nil {
+		writeRefusal(w, refusal)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, draftBody(snapshot))
@@ -98,36 +101,32 @@ func (h *Handler) handleReadDraft(w http.ResponseWriter, r *http.Request) {
 
 // loadDraft reads a revision of the game's version being built (0: the
 // current one), creating the version first when its creation stopped before
-// Play had it; it answers the request itself and returns false otherwise.
-func (h *Handler) loadDraft(w http.ResponseWriter, r *http.Request, userUUID string, gameUUID string, revision int64, withContent bool) (sessionpkg.DraftSnapshot, string, bool) {
-	ctx := r.Context()
+// Play had it.
+func (h *Handler) loadDraft(ctx context.Context, userUUID string, gameUUID string, revision int64, withContent bool) (sessionpkg.DraftSnapshot, string, *Refusal) {
 	read, err := h.reader.ReadDraft(ctx, userUUID, gameUUID, revision, withContent)
 	if err == nil && read.Missing {
 		// The game's creation stopped before Play had its version: create it
 		// and read once more.
-		if !h.ensureDraft(w, r, userUUID, gameUUID) {
-			return sessionpkg.DraftSnapshot{}, "", false
+		if refusal := h.ensureDraft(ctx, userUUID, gameUUID); refusal != nil {
+			return sessionpkg.DraftSnapshot{}, "", refusal
 		}
 		read, err = h.reader.ReadDraft(ctx, userUUID, gameUUID, revision, withContent)
 	}
 	if err != nil {
 		logging.LogError(ctx, err)
 		if errors.Is(err, sessionpkg.ErrDraftRevisionNotFound) {
-			httpx.WriteCodedError(w, http.StatusNotFound, codeRevisionNotFound, "the draft has no such revision")
-			return sessionpkg.DraftSnapshot{}, "", false
+			return sessionpkg.DraftSnapshot{}, "", refuseCoded(http.StatusNotFound, codeRevisionNotFound, "the draft has no such revision")
 		}
-		httpx.WriteError(w, http.StatusInternalServerError, "reading draft failed")
-		return sessionpkg.DraftSnapshot{}, "", false
+		return sessionpkg.DraftSnapshot{}, "", refuse(http.StatusInternalServerError, "reading draft failed")
 	}
-	if !writeAccessRefusal(w, read.Access) {
-		return sessionpkg.DraftSnapshot{}, "", false
+	if refusal := accessRefusal(read.Access); refusal != nil {
+		return sessionpkg.DraftSnapshot{}, "", refusal
 	}
 	if read.Missing {
 		logging.LogFields(ctx, logging.Field("wiring_error", "draft still missing after it was ensured"))
-		httpx.WriteError(w, http.StatusInternalServerError, "reading draft failed")
-		return sessionpkg.DraftSnapshot{}, "", false
+		return sessionpkg.DraftSnapshot{}, "", refuse(http.StatusInternalServerError, "reading draft failed")
 	}
-	return read.Snapshot, read.GameName, true
+	return read.Snapshot, read.GameName, nil
 }
 
 // draftBody is a read of the version being built as the API answers it.
@@ -171,68 +170,71 @@ func draftBody(snapshot sessionpkg.DraftSnapshot) draftResponse {
 // handleListDraftRevisions answers every revision of the game's version
 // being built, oldest first.
 func (h *Handler) handleListDraftRevisions(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
 	userUUID, gameUUID, ok := caller(w, r, "listing draft revisions")
 	if !ok {
 		return
 	}
 	noStore(w)
+	revisions, refusal := h.ListRevisions(r.Context(), userUUID, gameUUID)
+	if refusal != nil {
+		writeRefusal(w, refusal)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, revisions)
+}
 
+// ListRevisions answers every revision of the game's version being built,
+// oldest first.
+func (h *Handler) ListRevisions(ctx context.Context, userUUID string, rawGameUUID string) ([]RevisionResponse, *Refusal) {
+	gameUUID, refusal := gameOf(ctx, rawGameUUID)
+	if refusal != nil {
+		return nil, refusal
+	}
 	listed, err := h.reader.ListDraftRevisions(ctx, userUUID, gameUUID)
 	if err == nil && listed.Missing {
-		if !h.ensureDraft(w, r, userUUID, gameUUID) {
-			return
+		if refusal := h.ensureDraft(ctx, userUUID, gameUUID); refusal != nil {
+			return nil, refusal
 		}
 		listed, err = h.reader.ListDraftRevisions(ctx, userUUID, gameUUID)
 	}
 	if err != nil {
 		logging.LogError(ctx, err)
-		httpx.WriteError(w, http.StatusInternalServerError, "listing draft revisions failed")
-		return
+		return nil, refuse(http.StatusInternalServerError, "listing draft revisions failed")
 	}
-	if !writeAccessRefusal(w, listed.Access) {
-		return
+	if refusal := accessRefusal(listed.Access); refusal != nil {
+		return nil, refusal
 	}
 	if listed.Missing {
 		logging.LogFields(ctx, logging.Field("wiring_error", "draft still missing after it was ensured"))
-		httpx.WriteError(w, http.StatusInternalServerError, "listing draft revisions failed")
-		return
+		return nil, refuse(http.StatusInternalServerError, "listing draft revisions failed")
 	}
-	revisions := make([]revisionResponse, len(listed.Revisions))
+	revisions := make([]RevisionResponse, len(listed.Revisions))
 	for i, revision := range listed.Revisions {
-		revisions[i] = revisionResponse{Number: revision.Number, Source: revision.Source, Files: revision.Files, CreatedAt: revision.CreatedAt}
+		revisions[i] = RevisionResponse{Number: revision.Number, Source: revision.Source, Files: revision.Files, CreatedAt: revision.CreatedAt}
 	}
-	httpx.WriteJSON(w, http.StatusOK, revisions)
+	return revisions, nil
 }
 
 // ensureDraft asks the orchestrator to create the game's version being built
-// that a read found missing in Play, returning false after answering when it
-// could not or the caller may no longer edit the game.
-func (h *Handler) ensureDraft(w http.ResponseWriter, r *http.Request, userUUID string, gameUUID string) bool {
-	ctx := r.Context()
+// that a read found missing in Play, refusing when it could not or the caller
+// may no longer edit the game.
+func (h *Handler) ensureDraft(ctx context.Context, userUUID string, gameUUID string) *Refusal {
 	access, err := h.editor.EnsureDraft(ctx, userUUID, gameUUID)
 	if err != nil {
 		logging.LogError(ctx, err)
-		httpx.WriteError(w, http.StatusInternalServerError, "preparing draft failed")
-		return false
+		return refuse(http.StatusInternalServerError, "preparing draft failed")
 	}
-	return writeAccessRefusal(w, access)
+	return accessRefusal(access)
 }
 
 // writeAccessRefusal answers a caller Game Management did not let edit the
 // game, returning false; it returns true when the caller may go on.
 func writeAccessRefusal(w http.ResponseWriter, access game.EditableVersionOutcome) bool {
-	switch access {
-	case game.EditableVersionFound:
-		return true
-	case game.EditableVersionNotEditable:
-		httpx.WriteCodedError(w, http.StatusConflict, codeNotEditable, "the game has no version being built")
-	default:
-		// not_found: unknown, deleted, or another person's game, never told
-		// apart.
-		httpx.WriteError(w, http.StatusNotFound, "game not found")
+	if refusal := accessRefusal(access); refusal != nil {
+		writeRefusal(w, refusal)
+		return false
 	}
-	return false
+	return true
 }
 
 func diagnostics(list []sessionpkg.DraftDiagnostic) []diagnosticResponse {

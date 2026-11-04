@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"io"
+	"strings"
 	"time"
 
 	apigames "github.com/diegobermudez03/playhoot/api/games"
@@ -145,4 +146,32 @@ type Games struct {
 // previewAttacher attaches a draft owner's connection to their preview.
 type previewAttacher interface {
 	AttachPreview(ctx context.Context, previewUUID string, ownerUUID string) (runtime.AttachPreviewResult, error)
+}
+
+// mcpPath is where the MCP server is reached, the resource AI tokens are
+// for.
+const mcpPath = "/mcp"
+
+// MCPResource is the MCP resource identifier for an API reached at base.
+func MCPResource(base string) string {
+	return strings.TrimRight(base, "/") + mcpPath
+}
+
+// AI is what AI applications' OAuth access and the MCP server need:
+// Identity's authorization server, which also verifies their tokens.
+type AI struct {
+	Server aiAuthorizationServer
+}
+
+// aiAuthorizationServer is Identity's OAuth server for AI applications.
+type aiAuthorizationServer interface {
+	RegisterClient(ctx context.Context, metadata identity.AIClientMetadata) (identity.RegisteredAIClient, error)
+	StartAuthorization(ctx context.Context, params identity.AIAuthorizationParams) (identity.AIAuthorizationStart, error)
+	ReadAuthorization(ctx context.Context, requestID string) (identity.PendingAIAuthorization, error)
+	DecideAuthorization(ctx context.Context, userUUID string, requestID string, approve bool) (string, error)
+	ExchangeToken(ctx context.Context, params identity.AITokenParams) (identity.AITokens, error)
+	Revoke(ctx context.Context, token string, clientID string) error
+	ListConnections(ctx context.Context, userUUID string) ([]identity.AIConnection, error)
+	RevokeConnection(ctx context.Context, userUUID string, connectionID string) (bool, error)
+	VerifyAccessToken(ctx context.Context, token string) (identity.AIAccess, bool, error)
 }

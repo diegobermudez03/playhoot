@@ -46,6 +46,11 @@ const (
 	// built. It requires a real account; whether the caller may edit that
 	// game is Game Management's decision.
 	OperationEditGame Operation = "EDIT_GAME"
+
+	// OperationConnectAI is approving an AI application's access to the
+	// caller's games and managing the AI connections they approved. It
+	// requires a real account.
+	OperationConnectAI Operation = "CONNECT_AI"
 )
 
 // Level is how strongly a caller is authenticated, on the ordered scale
@@ -304,4 +309,134 @@ type ResolvedResourceLink struct {
 	Kind       string
 	ResourceID string
 	ExpiresAt  time.Time
+}
+
+// AIScopeGames is the one scope an AI application is granted: reading,
+// creating and changing its User's games, never publishing them.
+const AIScopeGames = "games"
+
+// AIAuthError is an OAuth error an AI authorization operation answers, with
+// its RFC 6749 code (invalid_request, invalid_client, invalid_grant,
+// unauthorized_client, unsupported_grant_type, invalid_scope,
+// invalid_target, invalid_redirect_uri, invalid_client_metadata,
+// access_denied) and a description for the application's developer.
+type AIAuthError struct {
+	Code        string
+	Description string
+}
+
+func (e *AIAuthError) Error() string {
+	return e.Code + ": " + e.Description
+}
+
+// AIClientMetadata is what an AI application registers itself with (RFC
+// 7591). Only public clients exist: they authenticate with PKCE, never a
+// secret.
+type AIClientMetadata struct {
+	ClientName              string
+	ClientURI               string
+	RedirectURIs            []string
+	GrantTypes              []string
+	ResponseTypes           []string
+	TokenEndpointAuthMethod string
+	Scope                   string
+}
+
+// RegisteredAIClient is an AI application Identity knows, as registered.
+type RegisteredAIClient struct {
+	ClientID                string
+	ClientIDIssuedAt        time.Time
+	ClientName              string
+	ClientURI               string
+	RedirectURIs            []string
+	GrantTypes              []string
+	ResponseTypes           []string
+	TokenEndpointAuthMethod string
+	Scope                   string
+}
+
+// AIAuthorizationParams are an authorization request's parameters, as the
+// application's browser sent them.
+type AIAuthorizationParams struct {
+	ResponseType        string
+	ClientID            string
+	RedirectURI         string
+	State               string
+	CodeChallenge       string
+	CodeChallengeMethod string
+	Scope               string
+	Resource            string
+}
+
+// AIAuthorizationStartOutcome is what an authorization request turned out
+// to be.
+type AIAuthorizationStartOutcome string
+
+const (
+	// AIAuthorizationStarted means the request waits for its User's decision
+	// under RequestID.
+	AIAuthorizationStarted AIAuthorizationStartOutcome = "started"
+	// AIAuthorizationRedirectError means the request is refused and the
+	// browser goes back to the application's RedirectURL with the error.
+	AIAuthorizationRedirectError AIAuthorizationStartOutcome = "redirect_error"
+	// AIAuthorizationUntrusted means the client or its redirect URI are not
+	// trusted: the error is shown, the browser is never redirected.
+	AIAuthorizationUntrusted AIAuthorizationStartOutcome = "untrusted"
+)
+
+// AIAuthorizationStart is the answer to an authorization request.
+type AIAuthorizationStart struct {
+	Outcome     AIAuthorizationStartOutcome
+	RequestID   string
+	RedirectURL string
+	Error       *AIAuthError
+}
+
+// PendingAIAuthorization is what a User is asked to approve.
+type PendingAIAuthorization struct {
+	ClientName   string
+	ClientURI    string
+	RedirectHost string
+	Scopes       []string
+	ExpiresAt    time.Time
+}
+
+// ErrAIAuthorizationNotFound is an authorization request that does not
+// exist, expired or was already decided.
+var ErrAIAuthorizationNotFound = errors.New("AI authorization request not found")
+
+// AITokenParams are a token request's parameters (RFC 6749 §4.1.3, §6).
+type AITokenParams struct {
+	GrantType    string
+	ClientID     string
+	Code         string
+	RedirectURI  string
+	CodeVerifier string
+	RefreshToken string
+	Resource     string
+}
+
+// AITokens are what a token request is granted.
+type AITokens struct {
+	AccessToken  string
+	ExpiresIn    int64
+	RefreshToken string
+	Scope        string
+}
+
+// AIAccess is whom an AI access token acts for, valid until ExpiresAt.
+type AIAccess struct {
+	UserUUID     string
+	ConnectionID string
+	Scopes       []string
+	ExpiresAt    time.Time
+}
+
+// AIConnection is an AI application a User approved, until revoked.
+// LastUsedAt is the last time it was granted tokens.
+type AIConnection struct {
+	ConnectionID string
+	ClientName   string
+	CreatedAt    time.Time
+	LastUsedAt   time.Time
 }

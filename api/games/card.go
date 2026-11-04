@@ -21,6 +21,7 @@ type cardManager interface {
 	UpdateCard(ctx context.Context, ownerUUID string, gameUUID string, change game.CardChange) (game.CardEdit, error)
 	UploadImage(ctx context.Context, ownerUUID string, gameUUID string, kind game.CardImageKind, content io.Reader, idempotencyKey string) (game.CardEdit, error)
 	RemoveImage(ctx context.Context, ownerUUID string, gameUUID string, kind game.CardImageKind, imageUUID string) (game.CardEdit, error)
+	ListGames(ctx context.Context, ownerUUID string) ([]game.GameSummary, error)
 }
 
 // publisher publishes a game and opens a new edition of a published one.

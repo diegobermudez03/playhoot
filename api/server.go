@@ -18,6 +18,8 @@ import (
 	"github.com/diegobermudez03/playhoot/api/internal/routing"
 	"github.com/diegobermudez03/playhoot/api/internal/throttle"
 	"github.com/diegobermudez03/playhoot/api/internal/wsx"
+	apimcp "github.com/diegobermudez03/playhoot/api/mcp"
+	apioauth "github.com/diegobermudez03/playhoot/api/oauth"
 	apiplay "github.com/diegobermudez03/playhoot/api/play"
 	"github.com/diegobermudez03/playhoot/logging"
 )
@@ -59,9 +61,12 @@ func ParseAllowedOrigins(raw string) ([]string, error) {
 }
 
 // NewServer constructs a Server exposing every route group's endpoints.
-func NewServer(authorizer authorizer, guests guestCreator, operations operationLister, refreshes credentialRefresher, sessionEnder sessionEnder, displayNames displayNameSetter, logins Logins, sessionCreator sessionCreator, owners ownerLocator, admins adminAttacher, players playerAttacher, joinCodes joinCodeResolver, games Games, config Config) *Server {
+func NewServer(authorizer authorizer, guests guestCreator, operations operationLister, refreshes credentialRefresher, sessionEnder sessionEnder, displayNames displayNameSetter, logins Logins, sessionCreator sessionCreator, owners ownerLocator, admins adminAttacher, players playerAttacher, joinCodes joinCodeResolver, games Games, ai AI, config Config) *Server {
 	mux := http.NewServeMux()
 	liveConnections := live.New(config.MaxLiveConnections)
+	gamesHandler := apigames.NewHandler(authorizer, games.Creator, games.Editor, games.Reader, games.AILinks, games.Cards)
+	apiBase := strings.TrimRight(games.AILinks.PublicBaseURL, "/")
+	guide := strings.TrimRight(games.AILinks.PublicWebBaseURL, "/") + "/docs/sdk/v1/index.md"
 	groups := []routeGroup{
 		apiidentity.NewHandler(guests, operations, refreshes, sessionEnder, displayNames, authorizer, apiidentity.Logins{
 			Starter: logins.Starter, Callbacks: logins.Callbacks, Completer: logins.Completer,
@@ -69,7 +74,9 @@ func NewServer(authorizer authorizer, guests guestCreator, operations operationL
 		}),
 		apiclienttelemetry.NewHandler(authorizer),
 		apiplay.NewHandler(authorizer, sessionCreator, owners, admins, players, joinCodes, games.Previews, liveConnections, wsx.OriginPatterns(config.WebSocketAllowedOrigins)),
-		apigames.NewHandler(authorizer, games.Creator, games.Editor, games.Reader, games.AILinks, games.Cards),
+		gamesHandler,
+		apioauth.NewHandler(authorizer, ai.Server, apioauth.Config{Issuer: apiBase, Resource: apiBase + mcpPath, Documentation: guide}),
+		apimcp.NewHandler(ai.Server, gamesHandler, apimcp.Config{ResourceMetadataURL: apiBase + "/.well-known/oauth-protected-resource" + mcpPath, GuideURL: guide}),
 	}
 	clients := throttle.ClientAddress{TrustedProxies: config.TrustedProxyHops}
 	crossOrigin := cors.NewPolicy(config.CORSAllowedOrigins)
@@ -80,14 +87,21 @@ func NewServer(authorizer authorizer, guests guestCreator, operations operationL
 	}
 	preflights := preflightRoutes(restRoutes, crossOrigin)
 
-	var restRequestMetrics, preflightMetrics *requestMetrics
+	var restRequestMetrics, aiRequestMetrics, preflightMetrics *requestMetrics
 	var handshakeMetrics *handshakeMetrics
 	if len(restRoutes) > 0 {
-		patterns := make([]string, len(restRoutes))
-		for i, route := range restRoutes {
-			patterns[i] = route.Pattern
+		var patterns, aiPatterns []string
+		for _, route := range restRoutes {
+			if aiRoute(route.Pattern) {
+				aiPatterns = append(aiPatterns, route.Pattern)
+			} else {
+				patterns = append(patterns, route.Pattern)
+			}
 		}
 		restRequestMetrics = newRESTMetrics(patterns)
+		if len(aiPatterns) > 0 {
+			aiRequestMetrics = newAIMetrics(aiPatterns)
+		}
 		preflightPatterns := make([]string, len(preflights))
 		for i, route := range preflights {
 			preflightPatterns[i] = route.Pattern
@@ -107,7 +121,11 @@ func NewServer(authorizer authorizer, guests guestCreator, operations operationL
 		// request/response regardless of what a route-specific
 		// middleware does to it; CORS next, so a page can read every
 		// refusal too.
-		mux.HandleFunc(route.Pattern, chain(routeMiddlewares(route, clients, restObservability(route.Pattern, restRequestMetrics), crossOrigin.Responses()), route.Handler))
+		measured := restRequestMetrics
+		if aiRoute(route.Pattern) {
+			measured = aiRequestMetrics
+		}
+		mux.HandleFunc(route.Pattern, chain(routeMiddlewares(route, clients, restObservability(route.Pattern, measured), crossOrigin.Responses()), route.Handler))
 	}
 	for _, route := range preflights {
 		// Preflights are not rate limited: a browser sends one before the

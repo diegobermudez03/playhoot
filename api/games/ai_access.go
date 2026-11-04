@@ -27,6 +27,9 @@ var aiLinkLimits = routing.RequestLimits{
 	PerUser: []ratelimit.Limit{{Count: 20, Per: time.Second}, {Count: 300, Per: time.Minute}},
 }
 
+// AIRequestLimits are aiLinkLimits for the other AI channel, the MCP server.
+var AIRequestLimits = aiLinkLimits
+
 type originContextKey struct{}
 
 // originOf is where a change came from: an AI through its link, or the web.

@@ -33,6 +33,7 @@ The frontend counterpart is the frontend repository's Project `game-creation-web
 
 - AI links (the human, 2026-11-02): the link is a credential Identity keeps, scoped to one game; its token goes in the path for reads and writes; one active link per game, valid 7 days; renewing creates a new link and revokes the old one; the context page is Markdown served by the backend, with the sources inline when they weigh under 150 KiB, otherwise linked per file pinned to the observed revision.
 - Simulation for the AI (the human, 2026-11-02), done before the human preview: a separate loop on a virtual clock that reuses the sandbox and the live admission, limits and boundary planning (extracted from the live controller, which uses the same code), advancing 100 ms ticks; a command runs its own boundary at its arrival, with the samples before it and update(), as a live COMMAND flush. The scenario is an input the AI writes (or the person pastes in the section "Escenarios"); the result comes back at once and nothing is persisted. Platform-checked expectations are deferred.
+- MCP (the human, 2026-11-03): the official Go SDK (`github.com/modelcontextprotocol/go-sdk`, a released version pinned); the AI may create games (`create_game`) and list the User's games (`list_my_games`); `upload_asset` takes the content in base64; there is no publish tool. One OAuth scope, `games`, which never includes publishing.
 
 ## Completion Criteria
 

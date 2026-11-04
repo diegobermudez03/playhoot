@@ -15,6 +15,7 @@ func MigrateTables(db *gorm.DB) error {
 		migration20261029030000IdentityGuestLink(),
 		migration20261031000000IdentityProviderPKCE(),
 		migration20261102000000IdentityResourceLinks(),
+		migration20261103100000IdentityAIAuthorization(),
 	}
 
 	migrator := gormigrate.New(db, &gormigrate.Options{

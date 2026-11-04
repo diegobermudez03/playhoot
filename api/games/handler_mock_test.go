@@ -417,6 +417,21 @@ func (m *MockcardManager) EXPECT() *MockcardManagerMockRecorder {
 	return m.recorder
 }
 
+// ListGames mocks base method.
+func (m *MockcardManager) ListGames(ctx context.Context, ownerUUID string) ([]game.GameSummary, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListGames", ctx, ownerUUID)
+	ret0, _ := ret[0].([]game.GameSummary)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListGames indicates an expected call of ListGames.
+func (mr *MockcardManagerMockRecorder) ListGames(ctx, ownerUUID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListGames", reflect.TypeOf((*MockcardManager)(nil).ListGames), ctx, ownerUUID)
+}
+
 // ReadCard mocks base method.
 func (m *MockcardManager) ReadCard(ctx context.Context, ownerUUID, gameUUID string) (game.CardRead, error) {
 	m.ctrl.T.Helper()

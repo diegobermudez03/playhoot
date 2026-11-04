@@ -17,6 +17,7 @@ Identity maintains a stable Playhoot identity for a person so other domains may 
 - Registered accounts and their external identities (Google only in this phase: normalized issuer plus verified subject; email and name are observed data, never keys), and the sign-in flow that resolves or creates them (accepted 2026-10-27, `identity/docs/decisions/IDENTITY-ADR-0003-basic-identity-google-accounts-opaque-access-client-held-refresh.md`).
 - Playhoot's own credentials: families per browser or device, opaque access tokens, client-held rotating refresh tokens, their expiry, revocation, retry recovery and persistence (IDENTITY-ADR-0002, amended by IDENTITY-ADR-0003).
 - The catalog of operations with their minimum authentication level (`anonymous < guest < account`), which `Authorize` applies and clients read (IDENTITY-ADR-0003).
+- The authorization server through which a User connects an AI application to their account (OAuth 2.1 for the MCP server, 2026-11-03): registered AI clients, consent requests, connections and their tokens, kept apart from the User's own sessions.
 
 ## Does Not Own
 
