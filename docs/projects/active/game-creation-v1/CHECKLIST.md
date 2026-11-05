@@ -29,4 +29,77 @@ Order decided by the human on 2026-11-01. Frontend items live in the frontend's 
 - [x] Guide link (2026-11-02): the AI context page links the frontend's SDK guide v1 at `<PUBLIC_WEB_BASE_URL>/docs/sdk/v1/` (index, changes, building, scenarios, assets), replacing the provisional URL; `PUBLIC_WEB_BASE_URL` required in production.
 - [x] I. MCP server and OAuth for AIs (2026-11-03): Identity `aiauthorization` (DCR of public clients, code + PKCE S256, resource-bound 1 h access JWTs, rotating 30-day refresh tokens with reuse revocation, revocation, consent requests and connections on their own tables, `CONNECT_AI`); `api/oauth` (RFC 9728/8414 metadata, `/oauth/*`, consent and connections API); `api/mcp` at `/mcp` (official Go SDK, 11 tools, no publish; 2026-11-03 the human had each tool and its HTTP handler become thin translators around one shared `api/games` operation, instead of serving the HTTP handler in-process); `GET /v1/games`. Smoke-tested against a running backend with an MCP client; real clients on the VM in LAUNCH_READINESS.
 - [x] J. Publication (2026-11-02): card (`GET`/`PATCH /v1/games/{id}`, logo and photos through the backend), `POST /publish` (current revision only, required assets, succeeded build, name; release → Play freeze + current version → GM complete; reactive completion of a half-done release), real playability (published, public or owner), `POST /editions` (new DRAFT copied from the published version), cleanup of stored content nothing uses (`deleted_at` kept); games are named at creation (`POST /v1/games {name}`), publish may rename. Smoke-tested against a running backend.
-- [ ] K. Templates and remix.
+- [~] K. Templates and remix as the plan defined them: superseded 2026-11-05 by R (templates are published games marked by their owners, discovered by the AI).
+
+## Realignment (checklist `../docs/08_Playhoot_Checklist_Flujo_de_Creacion.md`, decided 2026-11-05)
+
+Order decided by the agent with the human's prior agreement. Each item names the checklist sections it serves. Rules that keep applying: no literals in SQL, inserts through GORM `Create()`, pre-launch migrations edited in place (tell the human to recreate the local DB), one MCP tool = one API endpoint = one service method, the AI-link routes mirror every AI operation. Frontend counterparts live in `game-creation-web-v1` under the same letters.
+
+### L. Context diet and read surface (B, D, I, AQ1)
+
+- [ ] `get_game_context` (MCP) and `GET /ai/v1/{token}?format=json`: files as `{path, sha256, size}` only, never contents; keep revision, observed_at, build summary (status, diagnostic count, first diagnostics), last successful revision (AH), assets with status, the last attempts compacted, `notes.md` and the brief summary (Q). The Markdown page keeps inlining sources under 150 KiB (read-only chats).
+- [ ] Every write (changes, restore, asset upload/removal, template use) answers the new revision's files `{path, sha256, size}` and what changed (added/modified/deleted paths).
+- [ ] Changes since a revision: `GET .../draft/changes?since=N` (+ AI link + MCP `list_changes_since`): added/modified/deleted paths with hashes between N and the current revision, no contents.
+- [ ] Read several files at once: `read_file` accepts a list of paths (one call, bounded total size).
+- [ ] MCP server instructions rewritten: the stable context of checklist I (what Playhoot is, authoritative backend, server/client/shared, security limits, revision/build semantics, the creation sequence of J starting with brief and templates, read files only when needed, prefer patches, asset policy, testing policy, the definition of done). No sources, SDK or templates inline.
+- [ ] Fix: `list_revisions` says newest first but answers oldest first (`api/mcp/tools.go`, `read_draft.go`). Newest first, paged.
+- [ ] Recent attempts: the rejected change's content is kept (bounded, with the attempt) so an external AI can read what failed; an attempts endpoint with paging instead of only the last 10 (Y).
+
+### M. Patch edits (C, AQ2, AO case 5)
+
+- [ ] `playhoot.project-change.v1` gains `edits: [{path, find, replace, all?}]` next to `files` and `delete`. Applied in order by the service on the base revision's content; `find` must match exactly once (or every occurrence with `all`); otherwise the whole change is `invalid_change` with diagnostics `edit_not_found` / `edit_ambiguous` (path, edit index), no revision. The result is validated like any write (UTF-8, limits) and stored as the whole file (snapshots unchanged). The idempotency fingerprint includes the edits.
+- [ ] The answer includes, per edited file, a bounded unified diff of what was applied (C P1).
+- [ ] MCP: `apply_changes` documents edits as the default way to change existing files; whole `files` only for new files or substantial rewrites. Same in the Markdown page.
+
+### N. Revision provenance and diff (A P1, AI)
+
+- [ ] Each revision records its parent revision, origin (web/api/mcp), the actor kind, `restored_from` for restores, the template it came from (game uuid, version uuid, revision) and the SDK/toolchain of the project. Edits the draft revision migration in place.
+- [ ] A new edition's revision 1 records the published version it was copied from.
+- [ ] Diff between two revisions of a draft: `GET .../draft/diff?from=&to=` (+ AI link + MCP `diff_revisions`): per-file status and a bounded unified diff, optionally one path.
+
+### O. Simulation v2 (S, T, U, AO cases 1 and 6)
+
+Reverts the 2026-11-02 "expectations deferred" and "nothing persisted".
+
+- [ ] Expectations in `playhoot.scenario.v1`: `expect: [{at_ms, of: global|P1.., path, op, value}]` with ops `eq, ne, exists, absent, lt, lte, gt, gte, in, len`; checked on the observation at that instant. Platform-checked, no arbitrary code.
+- [ ] Hold segments: `{from_ms, to_ms, player, inputs}` compiled to the SAMPLE snapshots of the live profile, released (neutral snapshot) at `to_ms`.
+- [ ] Compact result by default: passed/failed, each failed expectation with expected and actual, finished/stopped, errors, script error, rejected and event counts, `result_id`. No full states.
+- [ ] Results kept for a short time (bounded size, expiry, cleanup) and read on demand: `GET .../draft/simulations/{id}/state?at_ms&of&path` (+ AI link + MCP `read_simulation_state`), returning one projection or one sub-path of the global state.
+- [ ] Scenarios saved in the project run by path: `simulate` accepts `scenario_path` (`scenarios/*.json` of the simulated revision) or `all: true` (every saved scenario, a summary per scenario). Scenario files are validated when written (diagnostics on the change), so saved scenarios stay runnable.
+- [ ] Results say which revision and build they ran on (already) and the build's toolchain.
+
+### P. SDK docs and capabilities for agents (H, D, I)
+
+- [ ] The backend serves the SDK guide that belongs to the toolchain it builds with (read from `GAME_TOOLCHAIN_DIR`), so the docs an agent reads are the SDK version its build uses.
+- [ ] MCP `get_sdk_index` (the compact capability index the frontend guide provides, with the SDK version) and `get_sdk_doc(page)` (one page); AI-link routes for both. An MCP client without web fetch can read the guide.
+
+### Q. Game brief (K, J, AO case 8)
+
+- [ ] Project file `brief.json` (`playhoot.brief.v1`: players, goal, loop, actions, private information, rounds, scoring, ending, required capabilities, required assets, assessment, open questions), optional, validated as a schema on write (diagnostics, not blocking the draft). Allowed path added to `draftsources`; the starter project includes an empty brief.
+- [ ] The context (L) shows the brief and the authoring phase the agent recorded in it (`phase`: brief, foundation, building, testing, assets, ready), so a new agent knows where the work stands.
+
+### R. Templates, step 1: consumption by the AI (E1, E2, F, AI, AN, AQ3, AO case 2)
+
+- [ ] Game Management: a game records whether its owner allows its use as a template and whether Playhoot features it for AI (columns on the game entity, default off). In this step nothing but seeds and tests set them; marking, featuring and categories are step 2.
+- [ ] Template catalog port in Discovery (`Featured`, `Categories`, `Search(query, category, players, page)`), returning compact entries from data the database has: game uuid, name, description, categories, players min/max, languages, aspect ratio, input requirements, featured. Step-1 implementation answers empty lists (the human, 2026-11-05).
+- [ ] Eligibility checked by Game Management through the orchestrator: published and allowed as a template. Reading a template is allowed to any signed-in creator and any connected AI.
+- [ ] Operations (API + AI link + MCP): `browse_templates` (featured list and categories: the AI's starting point), `search_templates`, `inspect_template` (card metadata, its `brief.json`, its configuration schema and values (frontend S), the commands/players of its manifest, its files with sizes; no sources), `read_template_file` (one or several files of the template's published revision).
+- [ ] Instantiation: `create_game` takes an optional `template_game_uuid`; `use_template` applies a template to an existing draft as a new revision on a base revision (abandoning a template without restarting, AI), keeping the draft's `notes.md`, `brief.json` and uploads whose keys stay declared. Sources and asset bindings are copied from the template's published version; provenance recorded (N); the template is never modified; cleanup keeps the shared stored objects referenced.
+- [ ] The minimal starter project stays as the blank start when no template fits (E2 "ningún template encaja").
+- [ ] Platform data to compare template-based and scratch creation (F, AF, AE): the draft records its template; a per-draft read of builds until the first success, simulations, revisions, and source lines changed against the template or the starter.
+
+### S. Agent asset upload without the model's context (M, AJ)
+
+- [ ] `request_asset_upload(game, key)` (MCP + AI link): answers a short-lived, single-use upload URL to the backend's own asset PUT (bytes still validated by the backend, object-storage standard) bound to the game and key. `upload_asset` with base64 stays only for small files (SVG/icons, a low limit).
+- [ ] Asset reads to the agent carry key, type, size, dimensions/duration and description; never bytes.
+
+### T. Compact build results (Q, D P1)
+
+- [ ] Build answers carry the total diagnostic count and the first N diagnostics (by default), with every diagnostic having a `code` (game-tools codes from the frontend T).
+- [ ] The full toolchain output is kept with the build (bounded) and read on demand: `get_build_log` (+ AI link).
+- [ ] The toolchain version includes the Node version and the SDK version string; the build records the SDK version it bundled (G).
+- [ ] MCP errors keep `Retry-After` (as a field of the answer).
+
+### U. Acceptance (AO)
+
+- [ ] Run the in-scope acceptance cases of PROJECT.md against a running backend with an MCP client, and with a read-only chat through the AI link.
