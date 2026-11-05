@@ -184,9 +184,9 @@ func TestHandleReadDraft(t *testing.T) {
 				"asset_diagnostics":[],
 				"attempts":[{"kind":"asset_upload","outcome":"attached","base_revision":1,"revision":2,"origin":"web","diagnostics":[],"created_at":"2026-11-01T12:00:00Z"},
 					{"kind":"change","outcome":"invalid","base_revision":1,"origin":"web","diagnostics":[{"path":"/x","code":"invalid_path","message":"bad"}],"created_at":"2026-11-01T12:00:00Z"}],
-				"build":{"revision":2,"status":"FAILED","diagnostics":[{"stage":"types","file":"server/game.ts","line":3,"column":5,"message":"no"}],"reused":false,
+				"build":{"revision":2,"status":"FAILED","diagnostic_count":1,"diagnostics":[{"stage":"types","file":"server/game.ts","line":3,"column":5,"message":"no"}],"reused":false,
 					"queued_at":"2026-11-01T12:00:00Z","finished_at":"2026-11-01T12:00:00Z"},
-				"last_successful_build":{"revision":1,"status":"SUCCEEDED","diagnostics":[],"server":{"sha256":"s","size":7},"client":{"sha256":"c","size":9},
+				"last_successful_build":{"revision":1,"status":"SUCCEEDED","diagnostic_count":0,"diagnostics":[],"server":{"sha256":"s","size":7},"client":{"sha256":"c","size":9},
 					"aspect_ratio":"16:9","reused":false,"queued_at":"2026-11-01T12:00:00Z"}}`
 			return tc
 		},
@@ -283,6 +283,15 @@ func TestHandleApplyDraftChanges(t *testing.T) {
 			tc := post(body)
 			tc.expectedCode = http.StatusOK
 			tc.expectedBody = `{"outcome":"applied","revision":2}`
+			return tc
+		},
+		"applied_answers_the_new_files": func(t *testing.T, deps dependencies) test {
+			answers(deps, gameauthoring.DraftEdit{Access: found, Result: sessionpkg.DraftChangeResult{Outcome: sessionpkg.DraftChangeApplied, Revision: 2, Changes: &sessionpkg.DraftRevisionChanges{
+				Since: 1, Revision: 2, Files: []sessionpkg.DraftFile{{Path: "notes.md", SHA256: "h", Size: 2}}, Modified: []string{"notes.md"}, Deleted: []string{"shared/old.ts"},
+			}}}, nil)
+			tc := post(body)
+			tc.expectedCode = http.StatusOK
+			tc.expectedBody = `{"outcome":"applied","revision":2,"changes":{"since":1,"revision":2,"files":[{"path":"notes.md","sha256":"h","size":2}],"added":[],"modified":["notes.md"],"deleted":["shared/old.ts"]}}`
 			return tc
 		},
 		"a_change_that_changes_nothing": func(t *testing.T, deps dependencies) test {
@@ -384,23 +393,32 @@ func TestHandleListDraftRevisions(t *testing.T) {
 	created := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
 	tests := map[string]func(t *testing.T, deps dependencies) test{
 		"listed": func(t *testing.T, deps dependencies) test {
-			deps.reader.EXPECT().ListDraftRevisions(gomock.Any(), callerUUID, gameUUID).
+			deps.reader.EXPECT().ListDraftRevisions(gomock.Any(), callerUUID, gameUUID, int64(0), 0).
 				Return(composergameauthoring.DraftRevisions{Access: game.EditableVersionFound, Revisions: []sessionpkg.DraftRevision{{Number: 1, Source: "template", Files: 5, CreatedAt: created}}}, nil)
 			return test{method: http.MethodGet, target: "/", gameUUID: gameUUID, noStore: true, expectedCode: http.StatusOK,
 				expectedBody: `[{"number":1,"source":"template","files":5,"created_at":"2026-11-01T12:00:00Z"}]`}
 		},
 		"a_version_missing_in_play_is_created_and_listed_again": func(t *testing.T, deps dependencies) test {
 			gomock.InOrder(
-				deps.reader.EXPECT().ListDraftRevisions(gomock.Any(), callerUUID, gameUUID).
+				deps.reader.EXPECT().ListDraftRevisions(gomock.Any(), callerUUID, gameUUID, int64(0), 0).
 					Return(composergameauthoring.DraftRevisions{Access: game.EditableVersionFound, Missing: true}, nil),
 				deps.editor.EXPECT().EnsureDraft(gomock.Any(), callerUUID, gameUUID).Return(game.EditableVersionFound, nil),
-				deps.reader.EXPECT().ListDraftRevisions(gomock.Any(), callerUUID, gameUUID).
+				deps.reader.EXPECT().ListDraftRevisions(gomock.Any(), callerUUID, gameUUID, int64(0), 0).
 					Return(composergameauthoring.DraftRevisions{Access: game.EditableVersionFound, Revisions: []sessionpkg.DraftRevision{{Number: 1, Source: "template", Files: 5, CreatedAt: created}}}, nil),
 			)
 			return test{method: http.MethodGet, target: "/", gameUUID: gameUUID, noStore: true, expectedCode: http.StatusOK}
 		},
+		"a_page_below_a_revision": func(t *testing.T, deps dependencies) test {
+			deps.reader.EXPECT().ListDraftRevisions(gomock.Any(), callerUUID, gameUUID, int64(5), 2).
+				Return(composergameauthoring.DraftRevisions{Access: game.EditableVersionFound, Revisions: []sessionpkg.DraftRevision{{Number: 4, Source: "mcp", Files: 6, CreatedAt: created}, {Number: 3, Source: "web", Files: 6, CreatedAt: created}}}, nil)
+			return test{method: http.MethodGet, target: "/?before=5&limit=2", gameUUID: gameUUID, noStore: true, expectedCode: http.StatusOK,
+				expectedBody: `[{"number":4,"source":"mcp","files":6,"created_at":"2026-11-01T12:00:00Z"},{"number":3,"source":"web","files":6,"created_at":"2026-11-01T12:00:00Z"}]`}
+		},
+		"a_limit_past_a_page": func(t *testing.T, deps dependencies) test {
+			return test{method: http.MethodGet, target: "/?limit=101", gameUUID: gameUUID, noStore: true, expectedCode: http.StatusBadRequest}
+		},
 		"not_owner": func(t *testing.T, deps dependencies) test {
-			deps.reader.EXPECT().ListDraftRevisions(gomock.Any(), callerUUID, gameUUID).
+			deps.reader.EXPECT().ListDraftRevisions(gomock.Any(), callerUUID, gameUUID, int64(0), 0).
 				Return(composergameauthoring.DraftRevisions{Access: game.EditableVersionNotFound}, nil)
 			return test{method: http.MethodGet, target: "/", gameUUID: gameUUID, expectedCode: http.StatusNotFound}
 		},

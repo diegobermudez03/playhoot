@@ -71,6 +71,12 @@ func (m *Manager) RemoveAsset(ctx context.Context, versionUUID string, key strin
 			return sessionpkg.DraftAssetResult{}, err
 		}
 	}
+	if result.Outcome == sessionpkg.DraftAssetAttached || result.Outcome == sessionpkg.DraftAssetRemoved || result.Outcome == sessionpkg.DraftAssetUnchanged {
+		made := result.Outcome != sessionpkg.DraftAssetUnchanged
+		if result.Changes, err = m.writtenChanges(ctx, parsed.String(), result.Revision, made); err != nil {
+			return sessionpkg.DraftAssetResult{}, err
+		}
+	}
 	return result, nil
 }
 

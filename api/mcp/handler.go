@@ -33,11 +33,12 @@ type tokenVerifier interface {
 type gameOperations interface {
 	ListGames(ctx context.Context, userUUID string) ([]games.GameSummaryResponse, *games.Refusal)
 	CreateGame(ctx context.Context, userUUID string, req games.CreateGameRequest) (games.CreateGameResponse, *games.Refusal)
-	ReadContext(ctx context.Context, userUUID string, gameUUID string, linkToken string) (games.AIContext, *games.Refusal)
-	ReadFile(ctx context.Context, userUUID string, gameUUID string, path string, revision *int64) (games.File, *games.Refusal)
+	ReadContext(ctx context.Context, userUUID string, gameUUID string, linkToken string, inlineSources bool) (games.AIContext, *games.Refusal)
+	ReadFiles(ctx context.Context, userUUID string, gameUUID string, paths []string, revision *int64) (*games.FilesResponse, *games.Refusal)
+	ReadChanges(ctx context.Context, userUUID string, gameUUID string, since int64, revision *int64) (*games.RevisionChangesResponse, *games.Refusal)
 	ApplyChanges(ctx context.Context, by games.Caller, gameUUID string, req games.ChangeRequest) (games.ChangeResponse, *games.Refusal)
 	RestoreRevision(ctx context.Context, by games.Caller, gameUUID string, req games.RestoreRequest) (games.ChangeResponse, *games.Refusal)
-	ListRevisions(ctx context.Context, userUUID string, gameUUID string) ([]games.RevisionResponse, *games.Refusal)
+	ListRevisions(ctx context.Context, userUUID string, gameUUID string, before int64, limit int) ([]games.RevisionResponse, *games.Refusal)
 	UploadAsset(ctx context.Context, by games.Caller, gameUUID string, key string, idempotencyKey string, content io.Reader) (games.AssetEditResponse, *games.Refusal)
 	RemoveAsset(ctx context.Context, by games.Caller, gameUUID string, key string, idempotencyKey string) (games.AssetEditResponse, *games.Refusal)
 	ReadBuild(ctx context.Context, userUUID string, gameUUID string, revision *int64, wait time.Duration) (*games.BuildResponse, *games.Refusal)
@@ -152,13 +153,20 @@ func userOf(req *sdk.CallToolRequest) (string, error) {
 	return req.Extra.TokenInfo.UserID, nil
 }
 
+// instructions is the stable context every AI gets when it connects: what
+// Playhoot is, how its projects work and how to use the tools. It never
+// carries a game's sources, the SDK or results: the tools read those on
+// demand.
 func instructions(guide string) string {
 	return strings.Join([]string{
-		"Playhoot hosts multiplayer games written with its TypeScript SDK: authoritative server logic in a sandbox and a React client in an isolated frame.",
-		"Before writing code, read the SDK guide: " + guide + " (start there; it lists every page).",
-		"Work on the connected user's games: list_my_games or create_game, then get_game_context (current revision, build, assets, recent attempts, notes.md and the sources).",
-		"Change a game with apply_changes on the revision you read (base_revision); every revision builds automatically: wait for it with get_build, then try rules with simulate.",
+		"Playhoot hosts live multiplayer games and activities written with its TypeScript SDK. The server side (server/, authoritative: every rule, score and secret lives there) runs in a sandbox without network, files, clock or randomness of its own; the client side (client/, React) runs in an isolated frame and only shows views and sends commands; shared/ holds code both import. game.project.json declares languages, aspect ratio and assets.",
+		"The project is the source of truth, not your memory: every change makes a new numbered revision (history is never rewritten), every revision is built automatically, and builds, simulations and previews say which revision they ran on. A new conversation resumes from get_game_context alone.",
+		"Read only what you need. get_game_context answers where the game stands (revision, files with hashes and sizes, build, assets, recent attempts, notes.md), never the sources: read files with read_files, and after a write or a conflict read what changed with list_changes_since instead of everything again.",
+		"Change files with apply_changes on the revision you read (base_revision). Its answer has the new revision and every file's hash; revision_conflict means someone changed the game since: read what changed and redo yours on the current revision. restore_revision brings an earlier revision back as a new one.",
+		"Before writing code, read the SDK guide's index (" + guide + ") and only the pages your game needs; use what the SDK provides instead of writing it again.",
+		"Work in this order: agree the rules with the user and keep them in notes.md, write the smallest change that works, wait for its build with get_build, check the rules with simulate on scenarios, then let the user try it in Probar juego. Done means: the build SUCCEEDED, scenarios show the rules hold, required assets are uploaded or replaced by drawn shapes, and the user confirmed it plays as intended.",
+		"Assets are declared in game.project.json and referenced by key; prefer HTML/CSS and SVG drawn in code over image files. If you cannot produce a file, ask the user to upload it in Recursos.",
 		"Every tool that changes something needs a new random idempotency_key per change; send the same key only to retry that same change.",
-		"You cannot publish: the user publishes in Playhoot, and plays the draft there in Probar juego.",
+		"You cannot publish: the user publishes in Playhoot.",
 	}, "\n")
 }

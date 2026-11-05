@@ -17,6 +17,10 @@ import (
 // be written into the context page; past it the page links each file.
 const maxInlineSourceBytes = 150 << 10
 
+// maxContextDiagnostics is how many of a build's diagnostics a context
+// carries; the build read has them all.
+const maxContextDiagnostics = 20
+
 // guidePath is where the web app serves the SDK guide for AI agents, below
 // the web's public address (the frontend's apps/web/public/docs/sdk/v1).
 const guidePath = "/docs/sdk/v1"
@@ -34,6 +38,8 @@ const codeFileNotFound = "file_not_found"
 type aiURLs struct {
 	Self        string `json:"self"`
 	Changes     string `json:"changes"`
+	Changed     string `json:"changed"`
+	Revisions   string `json:"revisions"`
 	Restore     string `json:"restore"`
 	Build       string `json:"build"`
 	Files       string `json:"files"`
@@ -41,13 +47,16 @@ type aiURLs struct {
 	Simulations string `json:"simulations"`
 }
 
-// AIContextResponse is the JSON form of a game's context page.
+// AIContextResponse is the JSON form of a game's context: what an AI needs
+// to know where the game stands, never the sources unless SourcesInline (the
+// Markdown page only). Notes is the content of notes.md.
 type AIContextResponse struct {
 	Format        string        `json:"format"`
 	GameName      string        `json:"game_name"`
 	ObservedAt    time.Time     `json:"observed_at"`
 	Revision      int64         `json:"revision"`
 	SourcesInline bool          `json:"sources_inline"`
+	Notes         *string       `json:"notes,omitempty"`
 	SDKDocsURL    string        `json:"sdk_docs_url"`
 	URLs          *aiURLs       `json:"urls,omitempty"`
 	Draft         draftResponse `json:"draft"`
@@ -63,8 +72,10 @@ type AIContext struct {
 }
 
 // handleAIContext answers the context page of the game an AI's link names:
-// everything it needs to propose the next change, as Markdown, or as JSON
-// with ?format=json. It reads the current revision; nothing is changed.
+// everything it needs to propose the next change, as Markdown with the
+// sources inline when small (a chat that only reads links gets everything in
+// one read), or as JSON without them with ?format=json. It reads the current
+// revision; nothing is changed.
 func (h *Handler) handleAIContext(w http.ResponseWriter, r *http.Request) {
 	userUUID, gameUUID, ok := caller(w, r, "reading AI context")
 	if !ok {
@@ -75,7 +86,7 @@ func (h *Handler) handleAIContext(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusBadRequest, "format must be json or markdown")
 		return
 	}
-	read, refusal := h.ReadContext(r.Context(), userUUID, gameUUID, r.PathValue("token"))
+	read, refusal := h.ReadContext(r.Context(), userUUID, gameUUID, r.PathValue("token"), format != "json")
 	if refusal != nil {
 		writeRefusal(w, refusal)
 		return
@@ -88,13 +99,15 @@ func (h *Handler) handleAIContext(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(aiContextMarkdown(read.name, read.snapshot, *read.Response.URLs, h.links.GuideBaseURL, read.Response.ObservedAt, read.Response.SourcesInline)))
+	_, _ = w.Write([]byte(aiContextMarkdown(read.name, read.snapshot, *read.Response.URLs, h.links.GuideBaseURL, read.Response.ObservedAt, read.Response.SourcesInline, read.Response.Notes)))
 }
 
 // ReadContext reads the context of a game for an AI, at its current
 // revision. linkToken is the AI link it is read through, empty through MCP,
-// whose tools replace the link's addresses.
-func (h *Handler) ReadContext(ctx context.Context, userUUID string, rawGameUUID string, linkToken string) (AIContext, *Refusal) {
+// whose tools replace the link's addresses. Only with inlineSources (the
+// Markdown page) does it carry the sources' contents, when small; otherwise
+// it carries their paths, hashes and sizes, and notes.md.
+func (h *Handler) ReadContext(ctx context.Context, userUUID string, rawGameUUID string, linkToken string, inlineSources bool) (AIContext, *Refusal) {
 	gameUUID, refusal := gameOf(ctx, rawGameUUID)
 	if refusal != nil {
 		return AIContext{}, refusal
@@ -109,16 +122,24 @@ func (h *Handler) ReadContext(ctx context.Context, userUUID string, rawGameUUID 
 		addresses := aiAddresses(h.links.PublicBaseURL, linkToken)
 		urls = &addresses
 	}
-	inline := sourceBytes(snapshot.Files) <= maxInlineSourceBytes
+	var notes *string
+	for _, file := range snapshot.Files {
+		if file.Path == notesPath && file.Content != nil {
+			notes = file.Content
+		}
+	}
+	inline := inlineSources && sourceBytes(snapshot.Files) <= maxInlineSourceBytes
 	if !inline {
 		for i := range snapshot.Files {
 			snapshot.Files[i].Content = nil
 		}
 	}
+	draft := draftBody(snapshot)
+	draft.Build = firstDiagnostics(draft.Build)
 	return AIContext{
 		Response: AIContextResponse{
 			Format: aiContextFormat, GameName: gameName(name), ObservedAt: observedAt,
-			Revision: snapshot.Revision, SourcesInline: inline, SDKDocsURL: h.links.GuideBaseURL + "/index.md", URLs: urls, Draft: draftBody(snapshot),
+			Revision: snapshot.Revision, SourcesInline: inline, Notes: notes, SDKDocsURL: h.links.GuideBaseURL + "/index.md", URLs: urls, Draft: draft,
 		},
 		name:     gameName(name),
 		snapshot: snapshot,
@@ -179,10 +200,21 @@ func (h *Handler) ReadFile(ctx context.Context, userUUID string, rawGameUUID str
 	return File{}, refuseCoded(http.StatusNotFound, codeFileNotFound, "the revision has no such file")
 }
 
+// firstDiagnostics is build with only its first diagnostics, the count
+// telling how many it has.
+func firstDiagnostics(build *BuildResponse) *BuildResponse {
+	if build == nil || len(build.Diagnostics) <= maxContextDiagnostics {
+		return build
+	}
+	trimmed := *build
+	trimmed.Diagnostics = build.Diagnostics[:maxContextDiagnostics]
+	return &trimmed
+}
+
 func aiAddresses(base string, token string) aiURLs {
 	self := base + aiPathPrefix + token
 	return aiURLs{
-		Self: self, Changes: self + "/changes", Restore: self + "/restore",
+		Self: self, Changes: self + "/changes", Changed: self + "/changed", Revisions: self + "/revisions", Restore: self + "/restore",
 		Build: self + "/build", Files: self + "/files", Assets: self + "/assets", Simulations: self + "/simulations",
 	}
 }
@@ -205,7 +237,7 @@ func gameName(name string) string {
 
 // aiContextMarkdown writes the context page for an AI reader, with stable
 // headings it can rely on.
-func aiContextMarkdown(name string, snapshot sessionpkg.DraftSnapshot, urls aiURLs, guide string, observedAt time.Time, inline bool) string {
+func aiContextMarkdown(name string, snapshot sessionpkg.DraftSnapshot, urls aiURLs, guide string, observedAt time.Time, inline bool, notes *string) string {
 	var b strings.Builder
 	line := func(format string, args ...any) { fmt.Fprintf(&b, format+"\n", args...) }
 
@@ -223,7 +255,8 @@ func aiContextMarkdown(name string, snapshot sessionpkg.DraftSnapshot, urls aiUR
 	line("```")
 	line("")
 	line("- If you cannot send HTTP requests, give the document to the person: they paste it in the section **Cambios de mi IA** of the game in Playhoot and tell you when it is applied.")
-	line("- If you can, POST it to %s . A `revision_conflict` answer means the game changed since you read it: read this link again and redo the change on the new revision.", urls.Changes)
+	line("- Read only what you need: one file as text at %s/<path>?revision=N, several as JSON at %s?path=<path>&path=<path>, and what changed since a revision you already know (paths and hashes, no contents) at %s?since=N . The revisions, newest first: %s .", urls.Files, urls.Files, urls.Changed, urls.Revisions)
+	line("- If you can, POST it to %s . The answer has the new revision with every file's hash and what changed. A `revision_conflict` answer means the game changed since you read it: read what changed since your revision and redo the change on the new one.", urls.Changes)
 	line("- To go back to an earlier revision, POST `{\"revision\": N, \"base_revision\": %d, \"idempotency_key\": \"...\"}` to %s .", snapshot.Revision, urls.Restore)
 	line("- Assets (images, audio, video) are declared in `game.project.json` under `\"assets\"`. The person uploads them in the section **Recursos**, or you PUT the raw file to %s/<key> with an `Idempotency-Key` header.", urls.Assets)
 	line("- Every new revision is built automatically. Wait for its result with GET %s?revision=N&wait=20 .", urls.Build)
@@ -237,12 +270,19 @@ func aiContextMarkdown(name string, snapshot sessionpkg.DraftSnapshot, urls aiUR
 		line("No build yet.")
 	} else {
 		line("Status: **%s**", snapshot.Build.Status)
-		for _, d := range snapshot.Build.Diagnostics {
+		shown := snapshot.Build.Diagnostics
+		if len(shown) > maxContextDiagnostics {
+			shown = shown[:maxContextDiagnostics]
+		}
+		for _, d := range shown {
 			where := d.File
 			if where != "" && d.Line > 0 {
 				where = fmt.Sprintf("%s:%d:%d", d.File, d.Line, d.Column)
 			}
 			line("- `%s` [%s] %s", where, d.Stage, d.Message)
+		}
+		if hidden := len(snapshot.Build.Diagnostics) - len(shown); hidden > 0 {
+			line("- and %d more: GET %s?revision=%d", hidden, urls.Build, snapshot.Revision)
 		}
 	}
 	if snapshot.LastSuccessfulBuild != nil {
@@ -290,15 +330,10 @@ func aiContextMarkdown(name string, snapshot sessionpkg.DraftSnapshot, urls aiUR
 
 	line("## Notes (%s)", notesPath)
 	line("")
-	notes := false
-	for _, file := range snapshot.Files {
-		if file.Path == notesPath && file.Content != nil {
-			line("%s", strings.TrimRight(*file.Content, "\n"))
-			notes = true
-		}
-	}
-	if !notes {
-		line("See %s/%s?revision=%d .", urls.Files, notesPath, snapshot.Revision)
+	if notes != nil {
+		line("%s", strings.TrimRight(*notes, "\n"))
+	} else {
+		line("This revision has no %s.", notesPath)
 	}
 	line("")
 

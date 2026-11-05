@@ -42,11 +42,13 @@ type RestoreRequest struct {
 	IdempotencyKey string `json:"idempotency_key"`
 }
 
-// ChangeResponse is a change or a restore that was decided.
+// ChangeResponse is a change or a restore that was decided. Changes are the
+// revision's files with their hashes and what the decision changed.
 type ChangeResponse struct {
-	Outcome  string               `json:"outcome"`
-	Revision int64                `json:"revision"`
-	Build    *buildStatusResponse `json:"build,omitempty"`
+	Outcome  string                   `json:"outcome"`
+	Revision int64                    `json:"revision"`
+	Build    *buildStatusResponse     `json:"build,omitempty"`
+	Changes  *RevisionChangesResponse `json:"changes,omitempty"`
 }
 
 type conflictResponse struct {
@@ -174,7 +176,7 @@ func editAnswer(ctx context.Context, edit gameauthoring.DraftEdit, err error, wh
 	logging.LogFields(ctx, logging.Field("draft_outcome", string(result.Outcome)), logging.Field("replayed", result.Replayed))
 	switch result.Outcome {
 	case sessionpkg.DraftChangeApplied, sessionpkg.DraftChangeUnchanged:
-		return ChangeResponse{Outcome: string(result.Outcome), Revision: result.Revision, Build: buildStatus(result.Build)}, nil
+		return ChangeResponse{Outcome: string(result.Outcome), Revision: result.Revision, Build: buildStatus(result.Build), Changes: changesBody(result.Changes)}, nil
 	case sessionpkg.DraftChangeConflict:
 		return ChangeResponse{}, &Refusal{Status: http.StatusConflict, Body: conflictResponse{
 			ErrorResponse:   httpx.ErrorResponse{Code: codeRevisionConflict, Message: "the draft changed since base_revision; read it again and redo the change on the current revision"},

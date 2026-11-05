@@ -45,6 +45,11 @@ type fakeGames struct {
 	changes  []games.ChangeRequest
 	gameIDs  []string
 	revision *int64
+	since    int64
+	paths    []string
+	before   int64
+	limit    int
+	inline   *bool
 	wait     time.Duration
 	upload   []byte
 	key      string
@@ -63,12 +68,26 @@ func (f *fakeGames) CreateGame(ctx context.Context, userUUID string, req games.C
 	panic("not used")
 }
 
-func (f *fakeGames) ReadContext(ctx context.Context, userUUID string, gameUUID string, linkToken string) (games.AIContext, *games.Refusal) {
-	panic("not used")
+func (f *fakeGames) ReadContext(ctx context.Context, userUUID string, gameUUID string, linkToken string, inlineSources bool) (games.AIContext, *games.Refusal) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.users = append(f.users, userUUID)
+	f.inline = &inlineSources
+	return games.AIContext{Response: games.AIContextResponse{Format: "playhoot.ai-context.v1", Revision: 4}}, f.refusal
 }
 
-func (f *fakeGames) ReadFile(ctx context.Context, userUUID string, gameUUID string, path string, revision *int64) (games.File, *games.Refusal) {
-	panic("not used")
+func (f *fakeGames) ReadFiles(ctx context.Context, userUUID string, gameUUID string, paths []string, revision *int64) (*games.FilesResponse, *games.Refusal) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.paths, f.revision = paths, revision
+	return &games.FilesResponse{Revision: 4, Files: nil, Missing: []string{}}, f.refusal
+}
+
+func (f *fakeGames) ReadChanges(ctx context.Context, userUUID string, gameUUID string, since int64, revision *int64) (*games.RevisionChangesResponse, *games.Refusal) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.since, f.revision = since, revision
+	return &games.RevisionChangesResponse{Since: since, Revision: 4}, f.refusal
 }
 
 func (f *fakeGames) ApplyChanges(ctx context.Context, by games.Caller, gameUUID string, req games.ChangeRequest) (games.ChangeResponse, *games.Refusal) {
@@ -84,8 +103,11 @@ func (f *fakeGames) RestoreRevision(ctx context.Context, by games.Caller, gameUU
 	panic("not used")
 }
 
-func (f *fakeGames) ListRevisions(ctx context.Context, userUUID string, gameUUID string) ([]games.RevisionResponse, *games.Refusal) {
-	panic("not used")
+func (f *fakeGames) ListRevisions(ctx context.Context, userUUID string, gameUUID string, before int64, limit int) ([]games.RevisionResponse, *games.Refusal) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.before, f.limit = before, limit
+	return []games.RevisionResponse{}, f.refusal
 }
 
 func (f *fakeGames) UploadAsset(ctx context.Context, by games.Caller, gameUUID string, key string, idempotencyKey string, content io.Reader) (games.AssetEditResponse, *games.Refusal) {
@@ -172,7 +194,7 @@ func TestToolsCallTheirGamesOperations(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 	sort.Strings(names)
-	require.Equal(t, []string{"apply_changes", "create_game", "get_build", "get_game_context", "list_my_games", "list_revisions", "read_file", "remove_asset", "restore_revision", "simulate", "upload_asset"}, names)
+	require.Equal(t, []string{"apply_changes", "create_game", "get_build", "get_game_context", "list_changes_since", "list_my_games", "list_revisions", "read_files", "remove_asset", "restore_revision", "simulate", "upload_asset"}, names)
 	require.NotContains(t, names, "publish")
 
 	result, err := session.CallTool(ctx, &sdk.CallToolParams{Name: "apply_changes", Arguments: map[string]any{
@@ -194,6 +216,36 @@ func TestToolsCallTheirGamesOperations(t *testing.T) {
 	missing, err := session.CallTool(ctx, &sdk.CallToolParams{Name: "apply_changes", Arguments: map[string]any{"game_uuid": "g1", "base_revision": 1, "files": []any{}}})
 	require.True(t, err != nil || missing.IsError, "idempotency_key is required by the tool's schema")
 	require.Len(t, fake.changes, 1, "a call missing its idempotency key never reaches the operation")
+}
+
+func TestReadToolsAnswerOnlyWhatIsAsked(t *testing.T) {
+	ctx := context.Background()
+	fake := &fakeGames{}
+	session := connect(t, serve(t, fake).URL, "good")
+	call := func(name string, arguments map[string]any) string {
+		t.Helper()
+		result, err := session.CallTool(ctx, &sdk.CallToolParams{Name: name, Arguments: arguments})
+		require.NoError(t, err)
+		require.False(t, result.IsError, name)
+		return result.Content[0].(*sdk.TextContent).Text
+	}
+
+	call("get_game_context", map[string]any{"game_uuid": "g1"})
+	require.NotNil(t, fake.inline)
+	require.False(t, *fake.inline, "the context through MCP never carries the sources")
+
+	call("read_files", map[string]any{"game_uuid": "g1", "paths": []string{"server/game.ts", "notes.md"}})
+	require.Equal(t, []string{"server/game.ts", "notes.md"}, fake.paths)
+	require.Nil(t, fake.revision, "no revision means the current one")
+
+	answer := call("list_changes_since", map[string]any{"game_uuid": "g1", "since": 2, "revision": 4})
+	require.Equal(t, int64(2), fake.since)
+	require.Equal(t, int64(4), *fake.revision)
+	require.Contains(t, answer, `"since":2`)
+
+	call("list_revisions", map[string]any{"game_uuid": "g1", "before": 9, "limit": 5})
+	require.Equal(t, int64(9), fake.before)
+	require.Equal(t, 5, fake.limit)
 }
 
 func TestRefusalsAreToolErrors(t *testing.T) {

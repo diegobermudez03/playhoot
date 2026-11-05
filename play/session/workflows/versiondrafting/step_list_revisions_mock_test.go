@@ -58,16 +58,16 @@ func (mr *MocklistRevisionsRepoMockRecorder) FindVersion(ctx, tx, versionUUID an
 }
 
 // ListRevisions mocks base method.
-func (m *MocklistRevisionsRepo) ListRevisions(ctx context.Context, tx *gorm.DB, versionID uint) ([]repo.Revision, error) {
+func (m *MocklistRevisionsRepo) ListRevisions(ctx context.Context, tx *gorm.DB, versionID uint, before int64, limit int) ([]repo.Revision, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListRevisions", ctx, tx, versionID)
+	ret := m.ctrl.Call(m, "ListRevisions", ctx, tx, versionID, before, limit)
 	ret0, _ := ret[0].([]repo.Revision)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // ListRevisions indicates an expected call of ListRevisions.
-func (mr *MocklistRevisionsRepoMockRecorder) ListRevisions(ctx, tx, versionID any) *gomock.Call {
+func (mr *MocklistRevisionsRepoMockRecorder) ListRevisions(ctx, tx, versionID, before, limit any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListRevisions", reflect.TypeOf((*MocklistRevisionsRepo)(nil).ListRevisions), ctx, tx, versionID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListRevisions", reflect.TypeOf((*MocklistRevisionsRepo)(nil).ListRevisions), ctx, tx, versionID, before, limit)
 }

@@ -28,7 +28,8 @@ type editableVersionFinder interface {
 // draftReader is Play's reads of a version being built.
 type draftReader interface {
 	ReadDraft(ctx context.Context, versionUUID string, revision int64, withContent bool) (sessionpkg.DraftSnapshot, error)
-	ListRevisions(ctx context.Context, versionUUID string) ([]sessionpkg.DraftRevision, error)
+	ListRevisions(ctx context.Context, versionUUID string, before int64, limit int) ([]sessionpkg.DraftRevision, error)
+	RevisionChanges(ctx context.Context, versionUUID string, since int64, upTo int64) (sessionpkg.DraftRevisionChanges, error)
 	ReadBuild(ctx context.Context, versionUUID string, revision int64, wait time.Duration) (sessionpkg.DraftBuild, error)
 	LoadBuiltRevision(ctx context.Context, versionUUID string, revision int64) (sessionpkg.BuiltRevision, error)
 }
@@ -137,15 +138,16 @@ func (m *Manager) ReadDraft(ctx context.Context, userUUID string, gameUUID strin
 }
 
 // ListDraftRevisions lists the revisions of the version of gameUUID being
-// built.
-func (m *Manager) ListDraftRevisions(ctx context.Context, userUUID string, gameUUID string) (DraftRevisions, error) {
+// built numbered below before (from the current one when 0), newest first,
+// at most limit.
+func (m *Manager) ListDraftRevisions(ctx context.Context, userUUID string, gameUUID string, before int64, limit int) (DraftRevisions, error) {
 	defer logging.Step(ctx, "composer.list_draft_revisions").Close()
 
 	editable, err := m.editableVersion(ctx, gameUUID, userUUID)
 	if err != nil || editable.Outcome != game.EditableVersionFound {
 		return DraftRevisions{Access: editable.Outcome}, err
 	}
-	revisions, err := m.drafts.ListRevisions(ctx, editable.VersionUUID)
+	revisions, err := m.drafts.ListRevisions(ctx, editable.VersionUUID, before, limit)
 	if errors.Is(err, sessionpkg.ErrDraftNotFound) {
 		logging.LogFields(ctx, logging.Field("draft_missing", true))
 		return DraftRevisions{Access: editable.Outcome, Missing: true}, nil
@@ -154,6 +156,39 @@ func (m *Manager) ListDraftRevisions(ctx context.Context, userUUID string, gameU
 		return DraftRevisions{}, fmt.Errorf("listing the revisions of the version being built: %s", err)
 	}
 	return DraftRevisions{Access: editable.Outcome, Revisions: revisions}, nil
+}
+
+// DraftChanges is what changed in a game's version being built between two
+// revisions, set only when Access is found and the version is not Missing.
+type DraftChanges struct {
+	Access  game.EditableVersionOutcome
+	Missing bool
+	Changes sessionpkg.DraftRevisionChanges
+}
+
+// ReadDraftChanges reads the files of revision upTo (0: the current one) of
+// the version of gameUUID being built and what changed since revision since
+// (0: since the beginning). A revision it lacks returns
+// sessionpkg.ErrDraftRevisionNotFound.
+func (m *Manager) ReadDraftChanges(ctx context.Context, userUUID string, gameUUID string, since int64, upTo int64) (DraftChanges, error) {
+	defer logging.Step(ctx, "composer.read_draft_changes").Close()
+
+	editable, err := m.editableVersion(ctx, gameUUID, userUUID)
+	if err != nil || editable.Outcome != game.EditableVersionFound {
+		return DraftChanges{Access: editable.Outcome}, err
+	}
+	changes, err := m.drafts.RevisionChanges(ctx, editable.VersionUUID, since, upTo)
+	if errors.Is(err, sessionpkg.ErrDraftNotFound) {
+		logging.LogFields(ctx, logging.Field("draft_missing", true))
+		return DraftChanges{Access: editable.Outcome, Missing: true}, nil
+	}
+	if err != nil {
+		if errors.Is(err, sessionpkg.ErrDraftRevisionNotFound) {
+			return DraftChanges{}, err
+		}
+		return DraftChanges{}, fmt.Errorf("reading the changes of the version being built: %s", err)
+	}
+	return DraftChanges{Access: editable.Outcome, Changes: changes}, nil
 }
 
 // DraftBuildRead is a read of one revision's build of a game's version being

@@ -91,7 +91,7 @@ func TestRevisionsAndContents(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, ok)
 
-	revisions, err := repo.ListRevisions(ctx, db, versionID)
+	revisions, err := repo.ListRevisions(ctx, db, versionID, 0, 10)
 	require.NoError(t, err)
 	require.Len(t, revisions, 1)
 	require.Equal(t, Revision{Number: 1, Source: "template", Files: 1, CreatedAt: revisions[0].CreatedAt}, revisions[0])

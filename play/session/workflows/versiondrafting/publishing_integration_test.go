@@ -134,7 +134,7 @@ func TestPublishingIntegration(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, published.Files, next.Files)
 			require.Equal(t, published.Assets[0].SHA256, next.Assets[0].SHA256)
-			revisions, err := m.ListRevisions(ctx, nextUUID)
+			revisions, err := m.ListRevisions(ctx, nextUUID, 0, 0)
 			require.NoError(t, err)
 			require.Equal(t, editionSource, revisions[0].Source)
 		})

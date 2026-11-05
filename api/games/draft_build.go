@@ -36,16 +36,19 @@ type buildArtifactResponse struct {
 
 // BuildResponse is a build of a revision of the version being built.
 type BuildResponse struct {
-	Revision    int64                     `json:"revision"`
-	Status      string                    `json:"status"`
-	Diagnostics []buildDiagnosticResponse `json:"diagnostics"`
-	Server      *buildArtifactResponse    `json:"server,omitempty"`
-	Client      *buildArtifactResponse    `json:"client,omitempty"`
-	AspectRatio string                    `json:"aspect_ratio,omitempty"`
-	Reused      bool                      `json:"reused"`
-	QueuedAt    time.Time                 `json:"queued_at"`
-	StartedAt   *time.Time                `json:"started_at,omitempty"`
-	FinishedAt  *time.Time                `json:"finished_at,omitempty"`
+	Revision int64  `json:"revision"`
+	Status   string `json:"status"`
+	// DiagnosticCount is how many diagnostics the build has; Diagnostics
+	// may hold only the first ones where a read says so.
+	DiagnosticCount int                       `json:"diagnostic_count"`
+	Diagnostics     []buildDiagnosticResponse `json:"diagnostics"`
+	Server          *buildArtifactResponse    `json:"server,omitempty"`
+	Client          *buildArtifactResponse    `json:"client,omitempty"`
+	AspectRatio     string                    `json:"aspect_ratio,omitempty"`
+	Reused          bool                      `json:"reused"`
+	QueuedAt        time.Time                 `json:"queued_at"`
+	StartedAt       *time.Time                `json:"started_at,omitempty"`
+	FinishedAt      *time.Time                `json:"finished_at,omitempty"`
 }
 
 // buildStatusResponse is the build an edit made, as its answer carries it.
@@ -62,14 +65,15 @@ func buildBody(build *sessionpkg.DraftBuild) *BuildResponse {
 		diagnostics[i] = buildDiagnosticResponse{Stage: d.Stage, Code: d.Code, File: d.File, Line: d.Line, Column: d.Column, Message: d.Message}
 	}
 	response := &BuildResponse{
-		Revision:    build.Revision,
-		Status:      string(build.Status),
-		Diagnostics: diagnostics,
-		AspectRatio: build.AspectRatio,
-		Reused:      build.Reused,
-		QueuedAt:    build.QueuedAt,
-		StartedAt:   build.StartedAt,
-		FinishedAt:  build.FinishedAt,
+		Revision:        build.Revision,
+		Status:          string(build.Status),
+		DiagnosticCount: len(diagnostics),
+		Diagnostics:     diagnostics,
+		AspectRatio:     build.AspectRatio,
+		Reused:          build.Reused,
+		QueuedAt:        build.QueuedAt,
+		StartedAt:       build.StartedAt,
+		FinishedAt:      build.FinishedAt,
 	}
 	if build.Server != nil {
 		response.Server = &buildArtifactResponse{SHA256: build.Server.SHA256, Size: build.Server.Size}

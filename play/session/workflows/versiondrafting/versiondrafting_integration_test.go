@@ -107,6 +107,17 @@ func TestDraftingIntegration(t *testing.T) {
 
 		applied, err := m.ApplyChanges(ctx, versionUUID, write(1, "k1", "shared/rules.ts", "export const rounds = 5;\n"))
 		require.NoError(t, err)
+		require.NotNil(t, applied.Changes, "a write answers its revision's files")
+		require.Equal(t, int64(1), applied.Changes.Since)
+		require.Equal(t, int64(2), applied.Changes.Revision)
+		require.Equal(t, []string{"shared/rules.ts"}, applied.Changes.Added)
+		require.Empty(t, applied.Changes.Modified)
+		require.Empty(t, applied.Changes.Deleted)
+		require.Len(t, applied.Changes.Files, len(draftsources.Template())+1)
+		for _, file := range applied.Changes.Files {
+			require.Nil(t, file.Content, "a write never answers contents")
+			require.NotEmpty(t, file.SHA256)
+		}
 		require.Equal(t, sessionpkg.DraftChangeResult{Outcome: sessionpkg.DraftChangeApplied, Revision: 2}, withQueuedBuild(t, applied))
 
 		replayed, err := m.ApplyChanges(ctx, versionUUID, write(1, "k1", "shared/rules.ts", "export const rounds = 5;\n"))
@@ -155,16 +166,16 @@ func TestDraftingIntegration(t *testing.T) {
 
 		same, err := m.ApplyChanges(ctx, versionUUID, write(2, "b", "shared/rules.ts", rules))
 		require.NoError(t, err)
-		require.Equal(t, sessionpkg.DraftChangeResult{Outcome: sessionpkg.DraftChangeUnchanged, Revision: 2}, same)
+		require.Equal(t, sessionpkg.DraftChangeResult{Outcome: sessionpkg.DraftChangeUnchanged, Revision: 2}, keptUnchanged(t, same))
 		replayed, err := m.ApplyChanges(ctx, versionUUID, write(2, "b", "shared/rules.ts", rules))
 		require.NoError(t, err)
-		require.Equal(t, sessionpkg.DraftChangeResult{Outcome: sessionpkg.DraftChangeUnchanged, Revision: 2, Replayed: true}, replayed)
+		require.Equal(t, sessionpkg.DraftChangeResult{Outcome: sessionpkg.DraftChangeUnchanged, Revision: 2, Replayed: true}, keptUnchanged(t, replayed))
 
 		restoredCurrent, err := m.RestoreRevision(ctx, versionUUID, 2, 2, "c", sessionpkg.DraftOriginWeb)
 		require.NoError(t, err)
-		require.Equal(t, sessionpkg.DraftChangeResult{Outcome: sessionpkg.DraftChangeUnchanged, Revision: 2}, restoredCurrent)
+		require.Equal(t, sessionpkg.DraftChangeResult{Outcome: sessionpkg.DraftChangeUnchanged, Revision: 2}, keptUnchanged(t, restoredCurrent))
 
-		revisions, err := m.ListRevisions(ctx, versionUUID)
+		revisions, err := m.ListRevisions(ctx, versionUUID, 0, 0)
 		require.NoError(t, err)
 		require.Len(t, revisions, 2)
 		snapshot, err := m.ReadDraft(ctx, versionUUID, 0, false)
@@ -209,15 +220,19 @@ func TestDraftingIntegration(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, one.Files, three.Files)
 
-		revisions, err := m.ListRevisions(ctx, versionUUID)
+		revisions, err := m.ListRevisions(ctx, versionUUID, 0, 0)
 		require.NoError(t, err)
 		sources := make([]string, len(revisions))
 		for i, revision := range revisions {
 			sources[i] = revision.Source
-			require.Equal(t, int64(i+1), revision.Number)
+			require.Equal(t, int64(len(revisions)-i), revision.Number, "newest first")
 		}
-		require.Equal(t, []string{"template", "web", "restore"}, sources)
-		require.Equal(t, len(draftsources.Template()), revisions[0].Files)
+		require.Equal(t, []string{"restore", "web", "template"}, sources)
+		require.Equal(t, len(draftsources.Template()), revisions[2].Files)
+		older, err := m.ListRevisions(ctx, versionUUID, 3, 1)
+		require.NoError(t, err)
+		require.Len(t, older, 1, "a page holds at most limit")
+		require.Equal(t, int64(2), older[0].Number, "before excludes itself")
 	})
 
 	t.Run("a_version_no_longer_a_draft_is_not_editable", func(t *testing.T) {
@@ -232,7 +247,7 @@ func TestDraftingIntegration(t *testing.T) {
 	t.Run("unknown_version", func(t *testing.T) {
 		_, err := m.ReadDraft(ctx, uuid.NewString(), 0, false)
 		require.ErrorIs(t, err, sessionpkg.ErrDraftNotFound)
-		_, err = m.ListRevisions(ctx, uuid.NewString())
+		_, err = m.ListRevisions(ctx, uuid.NewString(), 0, 0)
 		require.ErrorIs(t, err, sessionpkg.ErrDraftNotFound)
 		_, err = m.ApplyChanges(ctx, uuid.NewString(), write(1, "k", "notes.md", "x"))
 		require.ErrorIs(t, err, sessionpkg.ErrDraftNotFound)
@@ -247,5 +262,19 @@ func withQueuedBuild(t *testing.T, result sessionpkg.DraftChangeResult) sessionp
 	require.Equal(t, sessionpkg.DraftBuildQueued, result.Build.Status)
 	require.Equal(t, result.Revision, result.Build.Revision)
 	result.Build = nil
+	require.NotNil(t, result.Changes)
+	require.Equal(t, result.Revision, result.Changes.Revision)
+	result.Changes = nil
+	return result
+}
+
+// keptUnchanged checks that an unchanged write answers its revision's files
+// with nothing changed, and returns the result without them.
+func keptUnchanged(t *testing.T, result sessionpkg.DraftChangeResult) sessionpkg.DraftChangeResult {
+	t.Helper()
+	require.NotNil(t, result.Changes)
+	require.Equal(t, result.Revision, result.Changes.Since)
+	require.Empty(t, result.Changes.Modified)
+	result.Changes = nil
 	return result
 }

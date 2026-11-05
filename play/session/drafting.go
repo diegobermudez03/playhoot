@@ -104,6 +104,22 @@ type DraftChangeResult struct {
 	Replayed    bool
 	// Build is the build of Revision when the change made it, nil otherwise.
 	Build *DraftBuild
+	// Changes are Revision's files, and what changed from the revision
+	// before it, when applied or unchanged; nil otherwise.
+	Changes *DraftRevisionChanges
+}
+
+// DraftRevisionChanges are a revision's files, without contents, and the
+// paths that changed since an earlier revision (Since): added, modified and
+// deleted, each sorted. Since 0 means the version's beginning: every file is
+// added.
+type DraftRevisionChanges struct {
+	Since    int64
+	Revision int64
+	Files    []DraftFile
+	Added    []string
+	Modified []string
+	Deleted  []string
 }
 
 // DraftFile is one source file of a revision. Content is set only when the
@@ -237,6 +253,9 @@ type DraftAssetResult struct {
 	// Build is the build of Revision when the attachment or removal made it,
 	// nil otherwise.
 	Build *DraftBuild
+	// Changes are Revision's files, and what changed from the revision
+	// before it, when attached, removed or unchanged; nil otherwise.
+	Changes *DraftRevisionChanges
 }
 
 // DraftRevision is one revision in a version's history. Source is who made
@@ -247,6 +266,10 @@ type DraftRevision struct {
 	Files     int
 	CreatedAt time.Time
 }
+
+// MaxDraftRevisionsPage is the most revisions one page of a version's
+// history holds.
+const MaxDraftRevisionsPage = 100
 
 // ErrDraftBuildNotFound is returned when a revision has no build: it was
 // made before builds existed.

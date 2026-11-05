@@ -32,10 +32,22 @@ type gameInput struct {
 	GameUUID string `json:"game_uuid" jsonschema:"the game's uuid, from list_my_games or create_game"`
 }
 
-type readFileInput struct {
+type readFilesInput struct {
+	GameUUID string   `json:"game_uuid" jsonschema:"the game's uuid"`
+	Paths    []string `json:"paths" jsonschema:"the files' paths in the project, such as server/game.ts; at most 50"`
+	Revision int64    `json:"revision,omitempty" jsonschema:"the revision to read; the current one when omitted"`
+}
+
+type listRevisionsInput struct {
 	GameUUID string `json:"game_uuid" jsonschema:"the game's uuid"`
-	Path     string `json:"path" jsonschema:"the file's path in the project, such as server/game.ts"`
-	Revision int64  `json:"revision,omitempty" jsonschema:"the revision to read; the current one when omitted"`
+	Before   int64  `json:"before,omitempty" jsonschema:"list the revisions numbered below this one; from the current one when omitted"`
+	Limit    int    `json:"limit,omitempty" jsonschema:"how many revisions, at most 100 (the default)"`
+}
+
+type listChangesInput struct {
+	GameUUID string `json:"game_uuid" jsonschema:"the game's uuid"`
+	Since    int64  `json:"since" jsonschema:"the revision you already know; 0 lists every file as added"`
+	Revision int64  `json:"revision,omitempty" jsonschema:"compare up to this revision; the current one when omitted"`
 }
 
 type changeFile struct {
@@ -101,33 +113,33 @@ func (h *Handler) addTools(server *sdk.Server) {
 			}
 			return answer(h.games.CreateGame(ctx, user, games.CreateGameRequest{Name: in.Name, IdempotencyKey: in.IdempotencyKey}))
 		})
-	sdk.AddTool(server, &sdk.Tool{Name: "get_game_context", Description: "Reads everything needed to change a game: its current revision and when it was observed, the build of that revision with its diagnostics, the declared assets, the recent attempts, notes.md and the sources (inline when small), and the SDK guide's address. Read it again after any change."},
+	sdk.AddTool(server, &sdk.Tool{Name: "get_game_context", Description: "Reads where a game stands: its current revision and when it was observed, every file's path, hash and size (not their contents: read those with read_files), the build of that revision (status and its first diagnostics), the last revision that built, the declared assets with their status, the recent attempts, notes.md and the SDK guide's address."},
 		func(ctx context.Context, req *sdk.CallToolRequest, in gameInput) (*sdk.CallToolResult, any, error) {
 			user, err := userOf(req)
 			if err != nil {
 				return nil, nil, err
 			}
 			// No link: the tools replace the link's addresses.
-			read, refusal := h.games.ReadContext(ctx, user, in.GameUUID, "")
+			read, refusal := h.games.ReadContext(ctx, user, in.GameUUID, "", false)
 			return answer(read.Response, refusal)
 		})
-	sdk.AddTool(server, &sdk.Tool{Name: "read_file", Description: "Reads one file of a revision of the game as plain text."},
-		func(ctx context.Context, req *sdk.CallToolRequest, in readFileInput) (*sdk.CallToolResult, any, error) {
+	sdk.AddTool(server, &sdk.Tool{Name: "read_files", Description: "Reads the files you name of a revision of the game, with their contents and hashes; missing lists the paths the revision does not have. Read only the files you need."},
+		func(ctx context.Context, req *sdk.CallToolRequest, in readFilesInput) (*sdk.CallToolResult, any, error) {
 			user, err := userOf(req)
 			if err != nil {
 				return nil, nil, err
 			}
-			var revision *int64
-			if in.Revision > 0 {
-				revision = &in.Revision
-			}
-			file, refusal := h.games.ReadFile(ctx, user, in.GameUUID, in.Path, revision)
-			if refusal != nil {
-				return refused(refusal), nil, nil
-			}
-			return text(file.Content), nil, nil
+			return answer(h.games.ReadFiles(ctx, user, in.GameUUID, in.Paths, optionalRevision(in.Revision)))
 		})
-	sdk.AddTool(server, &sdk.Tool{Name: "apply_changes", Description: "Changes the game's sources on the revision you read: the files given replace theirs whole, the paths in delete are removed. Applied, it makes a new revision, which builds automatically (wait for it with get_build)."},
+	sdk.AddTool(server, &sdk.Tool{Name: "list_changes_since", Description: "Lists what changed in the game since a revision you already know: the paths added, modified and deleted, and every file's hash and size at the current revision (or the one given). No contents: read the changed files you need with read_files."},
+		func(ctx context.Context, req *sdk.CallToolRequest, in listChangesInput) (*sdk.CallToolResult, any, error) {
+			user, err := userOf(req)
+			if err != nil {
+				return nil, nil, err
+			}
+			return answer(h.games.ReadChanges(ctx, user, in.GameUUID, in.Since, optionalRevision(in.Revision)))
+		})
+	sdk.AddTool(server, &sdk.Tool{Name: "apply_changes", Description: "Changes the game's sources on the revision you read: the files given replace theirs whole, the paths in delete are removed. Applied, it makes a new revision, which builds automatically (wait for it with get_build); the answer has every file's hash and what changed."},
 		func(ctx context.Context, req *sdk.CallToolRequest, in applyChangesInput) (*sdk.CallToolResult, any, error) {
 			by, err := callerOf(req)
 			if err != nil {
@@ -150,13 +162,13 @@ func (h *Handler) addTools(server *sdk.Server) {
 			}
 			return answer(h.games.RestoreRevision(ctx, by, in.GameUUID, games.RestoreRequest{Revision: in.Revision, BaseRevision: &in.BaseRevision, IdempotencyKey: in.IdempotencyKey}))
 		})
-	sdk.AddTool(server, &sdk.Tool{Name: "list_revisions", Description: "Lists the game's revisions, newest first, with where each came from."},
-		func(ctx context.Context, req *sdk.CallToolRequest, in gameInput) (*sdk.CallToolResult, any, error) {
+	sdk.AddTool(server, &sdk.Tool{Name: "list_revisions", Description: "Lists the game's revisions, newest first, with where each came from; a page of at most limit, below before."},
+		func(ctx context.Context, req *sdk.CallToolRequest, in listRevisionsInput) (*sdk.CallToolResult, any, error) {
 			user, err := userOf(req)
 			if err != nil {
 				return nil, nil, err
 			}
-			return answer(h.games.ListRevisions(ctx, user, in.GameUUID))
+			return answer(h.games.ListRevisions(ctx, user, in.GameUUID, in.Before, in.Limit))
 		})
 	sdk.AddTool(server, &sdk.Tool{Name: "upload_asset", Description: "Uploads the file of an asset game.project.json declares, in base64. Limits by type: image 5 MiB, audio 10 MiB, video 50 MiB, 100 MiB in all. If you cannot produce the file, ask the user to upload it in Recursos."},
 		func(ctx context.Context, req *sdk.CallToolRequest, in uploadAssetInput) (*sdk.CallToolResult, any, error) {
@@ -208,6 +220,14 @@ func (h *Handler) addTools(server *sdk.Server) {
 			}
 			return answer(h.games.Simulate(ctx, user, in.GameUUID, scenario))
 		})
+}
+
+// optionalRevision is a revision a tool names, nil when it names none (0).
+func optionalRevision(revision int64) *int64 {
+	if revision == 0 {
+		return nil
+	}
+	return &revision
 }
 
 // callerOf is the User a tool call acts for, changing as an AI application

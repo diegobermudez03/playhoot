@@ -102,6 +102,10 @@ func TestDraftAssetsIntegration(t *testing.T) {
 		require.NotNil(t, removed.Build, "the new revision's build is queued with it")
 		require.Equal(t, sessionpkg.DraftBuildQueued, removed.Build.Status)
 		removed.Build = nil
+		require.NotNil(t, removed.Changes)
+		require.Equal(t, int64(4), removed.Changes.Since)
+		require.Empty(t, removed.Changes.Added, "an asset removal changes no source file")
+		removed.Changes = nil
 		require.Equal(t, sessionpkg.DraftAssetResult{Outcome: sessionpkg.DraftAssetRemoved, Revision: 5}, removed)
 		notBound, err := m.RemoveAsset(ctx, versionUUID, "cardBack", "remove-again", sessionpkg.DraftOriginWeb)
 		require.NoError(t, err)

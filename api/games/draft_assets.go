@@ -45,12 +45,14 @@ type assetResponse struct {
 	URLExpiresAt *time.Time `json:"url_expires_at,omitempty"`
 }
 
-// AssetEditResponse is an asset upload or removal that was decided.
+// AssetEditResponse is an asset upload or removal that was decided. Changes
+// are the revision's source files with their hashes.
 type AssetEditResponse struct {
-	Outcome  string               `json:"outcome"`
-	Revision int64                `json:"revision"`
-	Asset    *assetResponse       `json:"asset,omitempty"`
-	Build    *buildStatusResponse `json:"build,omitempty"`
+	Outcome  string                   `json:"outcome"`
+	Revision int64                    `json:"revision"`
+	Asset    *assetResponse           `json:"asset,omitempty"`
+	Build    *buildStatusResponse     `json:"build,omitempty"`
+	Changes  *RevisionChangesResponse `json:"changes,omitempty"`
 }
 
 // handleUploadAsset receives the bytes of a declared asset of the game's
@@ -156,7 +158,7 @@ func assetEditAnswer(ctx context.Context, edit gameauthoring.DraftAssetEdit, err
 	logging.LogFields(ctx, logging.Field("asset_outcome", string(result.Outcome)), logging.Field("replayed", result.Replayed))
 	switch result.Outcome {
 	case sessionpkg.DraftAssetAttached, sessionpkg.DraftAssetRemoved, sessionpkg.DraftAssetUnchanged:
-		response := AssetEditResponse{Outcome: string(result.Outcome), Revision: result.Revision, Build: buildStatus(result.Build)}
+		response := AssetEditResponse{Outcome: string(result.Outcome), Revision: result.Revision, Build: buildStatus(result.Build), Changes: changesBody(result.Changes)}
 		if result.Asset != nil {
 			asset := assetBody(*result.Asset)
 			response.Asset = &asset

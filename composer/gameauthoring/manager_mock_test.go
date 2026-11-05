@@ -85,18 +85,18 @@ func (m *MockdraftReader) EXPECT() *MockdraftReaderMockRecorder {
 }
 
 // ListRevisions mocks base method.
-func (m *MockdraftReader) ListRevisions(ctx context.Context, versionUUID string) ([]session.DraftRevision, error) {
+func (m *MockdraftReader) ListRevisions(ctx context.Context, versionUUID string, before int64, limit int) ([]session.DraftRevision, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListRevisions", ctx, versionUUID)
+	ret := m.ctrl.Call(m, "ListRevisions", ctx, versionUUID, before, limit)
 	ret0, _ := ret[0].([]session.DraftRevision)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // ListRevisions indicates an expected call of ListRevisions.
-func (mr *MockdraftReaderMockRecorder) ListRevisions(ctx, versionUUID any) *gomock.Call {
+func (mr *MockdraftReaderMockRecorder) ListRevisions(ctx, versionUUID, before, limit any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListRevisions", reflect.TypeOf((*MockdraftReader)(nil).ListRevisions), ctx, versionUUID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListRevisions", reflect.TypeOf((*MockdraftReader)(nil).ListRevisions), ctx, versionUUID, before, limit)
 }
 
 // LoadBuiltRevision mocks base method.
@@ -142,6 +142,21 @@ func (m *MockdraftReader) ReadDraft(ctx context.Context, versionUUID string, rev
 func (mr *MockdraftReaderMockRecorder) ReadDraft(ctx, versionUUID, revision, withContent any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReadDraft", reflect.TypeOf((*MockdraftReader)(nil).ReadDraft), ctx, versionUUID, revision, withContent)
+}
+
+// RevisionChanges mocks base method.
+func (m *MockdraftReader) RevisionChanges(ctx context.Context, versionUUID string, since, upTo int64) (session.DraftRevisionChanges, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RevisionChanges", ctx, versionUUID, since, upTo)
+	ret0, _ := ret[0].(session.DraftRevisionChanges)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RevisionChanges indicates an expected call of RevisionChanges.
+func (mr *MockdraftReaderMockRecorder) RevisionChanges(ctx, versionUUID, since, upTo any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RevisionChanges", reflect.TypeOf((*MockdraftReader)(nil).RevisionChanges), ctx, versionUUID, since, upTo)
 }
 
 // MockresourceLinkReader is a mock of resourceLinkReader interface.

@@ -96,6 +96,12 @@ func (m *Manager) RestoreRevision(ctx context.Context, versionUUID string, revis
 			return sessionpkg.DraftChangeResult{}, err
 		}
 	}
+	if result.Outcome == sessionpkg.DraftChangeApplied || result.Outcome == sessionpkg.DraftChangeUnchanged {
+		made := result.Outcome == sessionpkg.DraftChangeApplied
+		if result.Changes, err = m.writtenChanges(ctx, parsed.String(), result.Revision, made); err != nil {
+			return sessionpkg.DraftChangeResult{}, err
+		}
+	}
 	logging.LogFields(ctx, logging.Field("restore_outcome", string(result.Outcome)), logging.Field("revision", result.Revision))
 	return result, nil
 }

@@ -184,7 +184,7 @@ func TestAILinkRoutes(t *testing.T) {
 		require.NotContains(t, body, "xxxxxxxxxx")
 	})
 
-	t.Run("the context page as JSON", func(t *testing.T) {
+	t.Run("the context as JSON carries no source contents", func(t *testing.T) {
 		h, deps := newTestHandler(gomock.NewController(t))
 		deps.resolver.EXPECT().ResolveResourceLink(gomock.Any(), testLinkToken).Return(validLink(), nil)
 		deps.reader.EXPECT().ReadDraft(gomock.Any(), callerUUID, gameUUID, int64(0), true).Return(composergameauthoring.DraftRead{Access: game.EditableVersionFound, Snapshot: aiSnapshot("x"), GameName: "Tap Race"}, nil)
@@ -195,8 +195,12 @@ func TestAILinkRoutes(t *testing.T) {
 		body := recorder.Body.String()
 		require.Contains(t, body, `"format":"playhoot.ai-context.v1"`)
 		require.Contains(t, body, `"game_name":"Tap Race"`)
-		require.Contains(t, body, `"sources_inline":true`)
+		require.Contains(t, body, `"sources_inline":false`)
+		require.NotContains(t, body, `"content"`, "the JSON context lists files, it never carries them")
+		require.Contains(t, body, `"notes":"`, "notes.md comes with the context")
+		require.Contains(t, body, `{"path":"server/game.ts","sha256":"c","size":1}`)
 		require.Contains(t, body, `"changes":"`+testPublicBaseURL+page+`/changes"`)
+		require.Contains(t, body, `"changed":"`+testPublicBaseURL+page+`/changed"`)
 		require.Contains(t, body, `"sdk_docs_url":"`+testPublicWebBaseURL+`/docs/sdk/v1/index.md"`)
 	})
 
@@ -223,6 +227,23 @@ func TestAILinkRoutes(t *testing.T) {
 		missing := serve(h, http.MethodGet, page+"/files/client/Nope.tsx?revision=2", "")
 		require.Equal(t, http.StatusNotFound, missing.Code)
 		require.Contains(t, missing.Body.String(), codeFileNotFound)
+	})
+
+	t.Run("several files, what changed and the revisions through the link", func(t *testing.T) {
+		h, deps := newTestHandler(gomock.NewController(t))
+		deps.resolver.EXPECT().ResolveResourceLink(gomock.Any(), testLinkToken).Return(validLink(), nil).Times(3)
+		deps.reader.EXPECT().ReadDraft(gomock.Any(), callerUUID, gameUUID, int64(0), true).Return(composergameauthoring.DraftRead{Access: game.EditableVersionFound, Snapshot: aiSnapshot("export {}")}, nil)
+		deps.reader.EXPECT().ReadDraftChanges(gomock.Any(), callerUUID, gameUUID, int64(2), int64(0)).Return(composergameauthoring.DraftChanges{Access: game.EditableVersionFound, Changes: sessionpkg.DraftRevisionChanges{Since: 2, Revision: 3}}, nil)
+		deps.reader.EXPECT().ListDraftRevisions(gomock.Any(), callerUUID, gameUUID, int64(0), 0).Return(composergameauthoring.DraftRevisions{Access: game.EditableVersionFound}, nil)
+
+		files := serve(h, http.MethodGet, page+"/files?path=server/game.ts", "")
+		require.Equal(t, http.StatusOK, files.Code)
+		require.Contains(t, files.Body.String(), `"content":"export {}"`)
+		requireAIHeaders(t, files)
+		changed := serve(h, http.MethodGet, page+"/changed?since=2", "")
+		require.Equal(t, http.StatusOK, changed.Code)
+		require.Contains(t, changed.Body.String(), `"since":2`)
+		require.Equal(t, http.StatusOK, serve(h, http.MethodGet, page+"/revisions", "").Code)
 	})
 
 	t.Run("a change through the link comes from the API, as the owner", func(t *testing.T) {

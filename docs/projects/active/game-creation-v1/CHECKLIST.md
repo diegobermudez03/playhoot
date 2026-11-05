@@ -37,13 +37,15 @@ Order decided by the agent with the human's prior agreement. Each item names the
 
 ### L. Context diet and read surface (B, D, I, AQ1)
 
-- [ ] `get_game_context` (MCP) and `GET /ai/v1/{token}?format=json`: files as `{path, sha256, size}` only, never contents; keep revision, observed_at, build summary (status, diagnostic count, first diagnostics), last successful revision (AH), assets with status, the last attempts compacted, `notes.md` and the brief summary (Q). The Markdown page keeps inlining sources under 150 KiB (read-only chats).
-- [ ] Every write (changes, restore, asset upload/removal, template use) answers the new revision's files `{path, sha256, size}` and what changed (added/modified/deleted paths).
-- [ ] Changes since a revision: `GET .../draft/changes?since=N` (+ AI link + MCP `list_changes_since`): added/modified/deleted paths with hashes between N and the current revision, no contents.
-- [ ] Read several files at once: `read_file` accepts a list of paths (one call, bounded total size).
-- [ ] MCP server instructions rewritten: the stable context of checklist I (what Playhoot is, authoritative backend, server/client/shared, security limits, revision/build semantics, the creation sequence of J starting with brief and templates, read files only when needed, prefer patches, asset policy, testing policy, the definition of done). No sources, SDK or templates inline.
-- [ ] Fix: `list_revisions` says newest first but answers oldest first (`api/mcp/tools.go`, `read_draft.go`). Newest first, paged.
-- [ ] Recent attempts: the rejected change's content is kept (bounded, with the attempt) so an external AI can read what failed; an attempts endpoint with paging instead of only the last 10 (Y).
+- [x] `get_game_context` (MCP) and `GET /ai/v1/{token}?format=json` carry no source contents (2026-11-05): files as `{path, sha256, size}`, `notes` (notes.md), the build with its first 20 diagnostics and `diagnostic_count` (every build answer has the count), `last_successful_build`, assets, the last 10 attempts. The Markdown page keeps inlining sources under 150 KiB (read-only chats) and caps its diagnostics the same way. The brief summary comes with Q.
+- [x] Every write answers the revision's files and what it changed (2026-11-05): Play `RevisionChanges` read after the decision (`writtenChanges`), `changes: {since, revision, files, added, modified, deleted}` on applied/unchanged changes and restores and on asset attachments/removals/unchanged (template use will too, R).
+- [x] Changes since a revision (2026-11-05): `GET /v1/games/{id}/draft/changed?since=N&revision=M`, `GET /ai/v1/{token}/changed`, MCP `list_changes_since`; composer `ReadDraftChanges`.
+- [x] Several files at once (2026-11-05): `GET .../draft/files?path=...` (1..50 paths, `missing` for absent ones), `GET /ai/v1/{token}/files?path=...`; MCP `read_file` replaced by `read_files`. No extra size bound: a project is at most 2 MiB.
+- [x] MCP server instructions rewritten as the stable context of checklist I (2026-11-05): what Playhoot is, server/client/shared and the sandbox limits, revisions and builds, reading only what is needed, the working order and the definition of done, assets (HTML/CSS and SVG first), idempotency, no publishing. Templates and patches are added to them with R and M.
+- [x] `list_revisions` newest first and paged (2026-11-05): `?before=N&limit=L` (at most 100), MCP `before`/`limit`, `GET /ai/v1/{token}/revisions` added to the link. The frontend Historial follows (its L).
+- [~] Keeping a rejected change's content and paging the attempts: moved out by the agent (2026-11-05). Checklist Y asks that errors of an attempt be readable by an external AI, which the last 10 attempts with their diagnostics already give; storing every rejected body is not asked for.
+
+Postgres integration tests were updated (`versiondrafting_integration_test.go`, `assets_integration_test.go`, `repo_test.go`) but not run in this environment (no Docker); unit tests cover the steps, composer, API and MCP.
 
 ### M. Patch edits (C, AQ2, AO case 5)
 

@@ -90,15 +90,22 @@ func (r *Repo) FindRevision(ctx context.Context, tx *gorm.DB, versionID uint, nu
 	return revision, true, nil
 }
 
-// ListRevisions returns versionID's revisions, oldest first.
-func (r *Repo) ListRevisions(ctx context.Context, tx *gorm.DB, versionID uint) ([]Revision, error) {
-	var revisions []Revision
-	if err := tx.WithContext(ctx).Raw(`
+// ListRevisions returns versionID's revisions numbered below before (every
+// one when before is 0), newest first, at most limit.
+func (r *Repo) ListRevisions(ctx context.Context, tx *gorm.DB, versionID uint, before int64, limit int) ([]Revision, error) {
+	query := `
 		SELECT number, source, (SELECT count(*) FROM jsonb_object_keys(files)) AS files, created_at
 		FROM play_game_version_revisions
-		WHERE game_version_id = ?
-		ORDER BY number
-	`, versionID).Scan(&revisions).Error; err != nil {
+		WHERE game_version_id = ?`
+	args := []any{versionID}
+	if before > 0 {
+		query += ` AND number < ?`
+		args = append(args, before)
+	}
+	query += ` ORDER BY number DESC LIMIT ?`
+	args = append(args, limit)
+	var revisions []Revision
+	if err := tx.WithContext(ctx).Raw(query, args...).Scan(&revisions).Error; err != nil {
 		return nil, fmt.Errorf("listing revisions: %s", err)
 	}
 	return revisions, nil

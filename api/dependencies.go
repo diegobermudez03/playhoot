@@ -127,7 +127,8 @@ type draftEditor interface {
 // draftReader is game authoring's reads of a game's version being built.
 type draftReader interface {
 	ReadDraft(ctx context.Context, userUUID string, gameUUID string, revision int64, withContent bool) (composergameauthoring.DraftRead, error)
-	ListDraftRevisions(ctx context.Context, userUUID string, gameUUID string) (composergameauthoring.DraftRevisions, error)
+	ListDraftRevisions(ctx context.Context, userUUID string, gameUUID string, before int64, limit int) (composergameauthoring.DraftRevisions, error)
+	ReadDraftChanges(ctx context.Context, userUUID string, gameUUID string, since int64, upTo int64) (composergameauthoring.DraftChanges, error)
 	ReadDraftBuild(ctx context.Context, userUUID string, gameUUID string, revision int64, wait time.Duration) (composergameauthoring.DraftBuildRead, error)
 	SimulateDraft(ctx context.Context, userUUID string, gameUUID string, revision int64, scenario runtime.Scenario) (composergameauthoring.DraftSimulation, error)
 }

@@ -25,7 +25,7 @@ func TestHandleReadDraftBuild(t *testing.T) {
 				Return(composergameauthoring.DraftBuildRead{Access: game.EditableVersionFound, Build: succeeded}, nil)
 			tc := get("/?revision=3&wait=20")
 			tc.expectedCode = http.StatusOK
-			tc.expectedBody = `{"revision":3,"status":"SUCCEEDED","diagnostics":[],"server":{"sha256":"s","size":7},"client":{"sha256":"c","size":9},
+			tc.expectedBody = `{"revision":3,"status":"SUCCEEDED","diagnostic_count":0,"diagnostics":[],"server":{"sha256":"s","size":7},"client":{"sha256":"c","size":9},
 				"aspect_ratio":"16:9","reused":true,"queued_at":"2026-11-02T12:00:00Z","started_at":"2026-11-02T12:00:00Z","finished_at":"2026-11-02T12:00:00Z"}`
 			return tc
 		},
@@ -34,7 +34,7 @@ func TestHandleReadDraftBuild(t *testing.T) {
 				Return(composergameauthoring.DraftBuildRead{Access: game.EditableVersionFound, Build: sessionpkg.DraftBuild{Revision: 4, Status: sessionpkg.DraftBuildQueued, QueuedAt: created}}, nil)
 			tc := get("/")
 			tc.expectedCode = http.StatusOK
-			tc.expectedBody = `{"revision":4,"status":"QUEUED","diagnostics":[],"reused":false,"queued_at":"2026-11-02T12:00:00Z"}`
+			tc.expectedBody = `{"revision":4,"status":"QUEUED","diagnostic_count":0,"diagnostics":[],"reused":false,"queued_at":"2026-11-02T12:00:00Z"}`
 			return tc
 		},
 		"wait_over_the_limit": func(t *testing.T, deps dependencies) test {

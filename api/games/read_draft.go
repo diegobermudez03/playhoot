@@ -167,15 +167,35 @@ func draftBody(snapshot sessionpkg.DraftSnapshot) draftResponse {
 	}
 }
 
-// handleListDraftRevisions answers every revision of the game's version
-// being built, oldest first.
+// handleListDraftRevisions answers the revisions of the game's version being
+// built, newest first: a page of ?limit (at most 100, the default) below
+// ?before (from the current one by default).
 func (h *Handler) handleListDraftRevisions(w http.ResponseWriter, r *http.Request) {
 	userUUID, gameUUID, ok := caller(w, r, "listing draft revisions")
 	if !ok {
 		return
 	}
 	noStore(w)
-	revisions, refusal := h.ListRevisions(r.Context(), userUUID, gameUUID)
+	query := r.URL.Query()
+	var before int64
+	if raw := query.Get("before"); raw != "" {
+		parsed, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || parsed < 1 {
+			httpx.WriteError(w, http.StatusBadRequest, "before must be a positive integer")
+			return
+		}
+		before = parsed
+	}
+	var limit int
+	if raw := query.Get("limit"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > sessionpkg.MaxDraftRevisionsPage {
+			httpx.WriteError(w, http.StatusBadRequest, "limit must be between 1 and "+strconv.Itoa(sessionpkg.MaxDraftRevisionsPage))
+			return
+		}
+		limit = parsed
+	}
+	revisions, refusal := h.ListRevisions(r.Context(), userUUID, gameUUID, before, limit)
 	if refusal != nil {
 		writeRefusal(w, refusal)
 		return
@@ -183,19 +203,23 @@ func (h *Handler) handleListDraftRevisions(w http.ResponseWriter, r *http.Reques
 	httpx.WriteJSON(w, http.StatusOK, revisions)
 }
 
-// ListRevisions answers every revision of the game's version being built,
-// oldest first.
-func (h *Handler) ListRevisions(ctx context.Context, userUUID string, rawGameUUID string) ([]RevisionResponse, *Refusal) {
+// ListRevisions answers the revisions of the game's version being built
+// numbered below before (from the current one when 0), newest first, at
+// most limit (0: the most a page holds).
+func (h *Handler) ListRevisions(ctx context.Context, userUUID string, rawGameUUID string, before int64, limit int) ([]RevisionResponse, *Refusal) {
 	gameUUID, refusal := gameOf(ctx, rawGameUUID)
 	if refusal != nil {
 		return nil, refusal
 	}
-	listed, err := h.reader.ListDraftRevisions(ctx, userUUID, gameUUID)
+	if before < 0 || limit < 0 || limit > sessionpkg.MaxDraftRevisionsPage {
+		return nil, refuse(http.StatusBadRequest, "before must be a revision number and limit at most "+strconv.Itoa(sessionpkg.MaxDraftRevisionsPage))
+	}
+	listed, err := h.reader.ListDraftRevisions(ctx, userUUID, gameUUID, before, limit)
 	if err == nil && listed.Missing {
 		if refusal := h.ensureDraft(ctx, userUUID, gameUUID); refusal != nil {
 			return nil, refusal
 		}
-		listed, err = h.reader.ListDraftRevisions(ctx, userUUID, gameUUID)
+		listed, err = h.reader.ListDraftRevisions(ctx, userUUID, gameUUID, before, limit)
 	}
 	if err != nil {
 		logging.LogError(ctx, err)

@@ -101,6 +101,54 @@ func TestReadDraft(t *testing.T) {
 	}
 }
 
+func TestReadDraftChanges(t *testing.T) {
+	ctx := context.Background()
+	changes := sessionpkg.DraftRevisionChanges{Since: 2, Revision: 3, Files: []sessionpkg.DraftFile{{Path: "server/game.ts", SHA256: "abc", Size: 3}}, Added: []string{}, Modified: []string{"server/game.ts"}, Deleted: []string{}}
+	found := game.EditableVersion{Outcome: game.EditableVersionFound, VersionUUID: testVersionUUID}
+
+	t.Run("the_owner_reads_what_changed", func(t *testing.T) {
+		manager, deps := newTestManager(t)
+		deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(found, nil)
+		deps.drafts.EXPECT().RevisionChanges(ctx, testVersionUUID, int64(2), int64(0)).Return(changes, nil)
+
+		result, err := manager.ReadDraftChanges(ctx, testUserUUID, testGameUUID, 2, 0)
+
+		require.NoError(t, err)
+		require.Equal(t, DraftChanges{Access: game.EditableVersionFound, Changes: changes}, result)
+	})
+
+	t.Run("a_version_play_does_not_have_yet_is_reported_missing", func(t *testing.T) {
+		manager, deps := newTestManager(t)
+		deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(found, nil)
+		deps.drafts.EXPECT().RevisionChanges(ctx, testVersionUUID, int64(0), int64(0)).Return(sessionpkg.DraftRevisionChanges{}, sessionpkg.ErrDraftNotFound)
+
+		result, err := manager.ReadDraftChanges(ctx, testUserUUID, testGameUUID, 0, 0)
+
+		require.NoError(t, err)
+		require.Equal(t, DraftChanges{Access: game.EditableVersionFound, Missing: true}, result)
+	})
+
+	t.Run("a_revision_it_lacks_is_kept_recognizable", func(t *testing.T) {
+		manager, deps := newTestManager(t)
+		deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(found, nil)
+		deps.drafts.EXPECT().RevisionChanges(ctx, testVersionUUID, int64(9), int64(0)).Return(sessionpkg.DraftRevisionChanges{}, sessionpkg.ErrDraftRevisionNotFound)
+
+		_, err := manager.ReadDraftChanges(ctx, testUserUUID, testGameUUID, 9, 0)
+
+		require.ErrorIs(t, err, sessionpkg.ErrDraftRevisionNotFound)
+	})
+
+	t.Run("not_found_never_reaches_play", func(t *testing.T) {
+		manager, deps := newTestManager(t)
+		deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(game.EditableVersion{Outcome: game.EditableVersionNotFound}, nil)
+
+		result, err := manager.ReadDraftChanges(ctx, testUserUUID, testGameUUID, 0, 0)
+
+		require.NoError(t, err)
+		require.Equal(t, DraftChanges{Access: game.EditableVersionNotFound}, result)
+	})
+}
+
 func TestListDraftRevisions(t *testing.T) {
 	ctx := context.Background()
 	revisions := []sessionpkg.DraftRevision{{Number: 1, Source: "template", Files: 5, CreatedAt: time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)}}
@@ -108,9 +156,9 @@ func TestListDraftRevisions(t *testing.T) {
 	t.Run("the_owner_lists_the_revisions", func(t *testing.T) {
 		manager, deps := newTestManager(t)
 		deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(game.EditableVersion{Outcome: game.EditableVersionFound, VersionUUID: testVersionUUID}, nil)
-		deps.drafts.EXPECT().ListRevisions(ctx, testVersionUUID).Return(revisions, nil)
+		deps.drafts.EXPECT().ListRevisions(ctx, testVersionUUID, int64(5), 20).Return(revisions, nil)
 
-		result, err := manager.ListDraftRevisions(ctx, testUserUUID, testGameUUID)
+		result, err := manager.ListDraftRevisions(ctx, testUserUUID, testGameUUID, 5, 20)
 
 		require.NoError(t, err)
 		require.Equal(t, DraftRevisions{Access: game.EditableVersionFound, Revisions: revisions}, result)
@@ -119,9 +167,9 @@ func TestListDraftRevisions(t *testing.T) {
 	t.Run("a_version_play_does_not_have_yet_is_reported_missing", func(t *testing.T) {
 		manager, deps := newTestManager(t)
 		deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(game.EditableVersion{Outcome: game.EditableVersionFound, VersionUUID: testVersionUUID}, nil)
-		deps.drafts.EXPECT().ListRevisions(ctx, testVersionUUID).Return(nil, sessionpkg.ErrDraftNotFound)
+		deps.drafts.EXPECT().ListRevisions(ctx, testVersionUUID, int64(5), 20).Return(nil, sessionpkg.ErrDraftNotFound)
 
-		result, err := manager.ListDraftRevisions(ctx, testUserUUID, testGameUUID)
+		result, err := manager.ListDraftRevisions(ctx, testUserUUID, testGameUUID, 5, 20)
 
 		require.NoError(t, err)
 		require.Equal(t, DraftRevisions{Access: game.EditableVersionFound, Missing: true}, result)
@@ -131,7 +179,7 @@ func TestListDraftRevisions(t *testing.T) {
 		manager, deps := newTestManager(t)
 		deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(game.EditableVersion{Outcome: game.EditableVersionNotFound}, nil)
 
-		result, err := manager.ListDraftRevisions(ctx, testUserUUID, testGameUUID)
+		result, err := manager.ListDraftRevisions(ctx, testUserUUID, testGameUUID, 5, 20)
 
 		require.NoError(t, err)
 		require.Equal(t, DraftRevisions{Access: game.EditableVersionNotFound}, result)

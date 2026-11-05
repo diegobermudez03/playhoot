@@ -202,18 +202,18 @@ func (m *MockdraftReader) EXPECT() *MockdraftReaderMockRecorder {
 }
 
 // ListDraftRevisions mocks base method.
-func (m *MockdraftReader) ListDraftRevisions(ctx context.Context, userUUID, gameUUID string) (gameauthoring.DraftRevisions, error) {
+func (m *MockdraftReader) ListDraftRevisions(ctx context.Context, userUUID, gameUUID string, before int64, limit int) (gameauthoring.DraftRevisions, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListDraftRevisions", ctx, userUUID, gameUUID)
+	ret := m.ctrl.Call(m, "ListDraftRevisions", ctx, userUUID, gameUUID, before, limit)
 	ret0, _ := ret[0].(gameauthoring.DraftRevisions)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // ListDraftRevisions indicates an expected call of ListDraftRevisions.
-func (mr *MockdraftReaderMockRecorder) ListDraftRevisions(ctx, userUUID, gameUUID any) *gomock.Call {
+func (mr *MockdraftReaderMockRecorder) ListDraftRevisions(ctx, userUUID, gameUUID, before, limit any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListDraftRevisions", reflect.TypeOf((*MockdraftReader)(nil).ListDraftRevisions), ctx, userUUID, gameUUID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListDraftRevisions", reflect.TypeOf((*MockdraftReader)(nil).ListDraftRevisions), ctx, userUUID, gameUUID, before, limit)
 }
 
 // ReadDraft mocks base method.
@@ -244,6 +244,21 @@ func (m *MockdraftReader) ReadDraftBuild(ctx context.Context, userUUID, gameUUID
 func (mr *MockdraftReaderMockRecorder) ReadDraftBuild(ctx, userUUID, gameUUID, revision, wait any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReadDraftBuild", reflect.TypeOf((*MockdraftReader)(nil).ReadDraftBuild), ctx, userUUID, gameUUID, revision, wait)
+}
+
+// ReadDraftChanges mocks base method.
+func (m *MockdraftReader) ReadDraftChanges(ctx context.Context, userUUID, gameUUID string, since, upTo int64) (gameauthoring.DraftChanges, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ReadDraftChanges", ctx, userUUID, gameUUID, since, upTo)
+	ret0, _ := ret[0].(gameauthoring.DraftChanges)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ReadDraftChanges indicates an expected call of ReadDraftChanges.
+func (mr *MockdraftReaderMockRecorder) ReadDraftChanges(ctx, userUUID, gameUUID, since, upTo any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReadDraftChanges", reflect.TypeOf((*MockdraftReader)(nil).ReadDraftChanges), ctx, userUUID, gameUUID, since, upTo)
 }
 
 // SimulateDraft mocks base method.
