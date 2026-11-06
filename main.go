@@ -54,6 +54,7 @@ import (
 	"github.com/diegobermudez03/playhoot/play/session/usecases/recordgamefault"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/recordlimithits"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/resolvejoincode"
+	"github.com/diegobermudez03/playhoot/play/session/usecases/keepsimulationresults"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/storereplaychunk"
 	"github.com/diegobermudez03/playhoot/play/session/workflows/previewlifecycle"
 	"github.com/diegobermudez03/playhoot/play/session/workflows/sessionlifecycle"
@@ -229,7 +230,7 @@ func run() error {
 	gameLifecycle := gamelifecycle.New(db)
 	gameCards := gamecard.New(db, store)
 	gameAuthoring := gameauthoring.New(gameLifecycle, editableVersions, versionDrafting, resourceLinks, previews, gameLifecycle, versionDrafting, gameCards)
-	gameAuthoringReads := composergameauthoring.New(editableVersions, versionDrafting, resourceLinks, simulategame.New(sandboxHost), gameCards)
+	gameAuthoringReads := composergameauthoring.New(editableVersions, versionDrafting, resourceLinks, simulategame.New(sandboxHost, keepsimulationresults.New(db)), gameCards)
 	owners := ownership.New(checklivesession.New(db))
 	replayRecorder := replayrecording.New(storereplaychunk.New(db, store), envVars.Replay)
 	// Closed after the controllers, deferred earlier: each stops its

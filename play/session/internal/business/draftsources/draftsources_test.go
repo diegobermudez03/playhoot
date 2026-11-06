@@ -32,9 +32,9 @@ func TestApply(t *testing.T) {
 			current["shared/old.ts"] = File{SHA256: "abc", Size: 3}
 			expected := base()
 			expected["server/game.ts"] = File{SHA256: SHA256Hex("x"), Size: 1}
-			expected["scenarios/win.json"] = File{SHA256: SHA256Hex("{}"), Size: 2}
+			expected["scenarios/win.json"] = File{SHA256: SHA256Hex(validScenario), Size: int64(len(validScenario))}
 			return test{
-				writes:        []Write{{Path: "server/game.ts", Content: "x"}, {Path: "scenarios/win.json", Content: "{}"}},
+				writes:        []Write{{Path: "server/game.ts", Content: "x"}, {Path: "scenarios/win.json", Content: validScenario}},
 				deletes:       []string{"shared/old.ts"},
 				expectedFiles: expected,
 			}
@@ -123,7 +123,7 @@ func TestTemplate(t *testing.T) {
 	for i, write := range writes {
 		paths[i] = write.Path
 	}
-	require.Equal(t, []string{"client/Game.tsx", "game.project.json", "notes.md", "server/game.ts", "shared/actions.ts"}, paths)
+	require.Equal(t, []string{"client/Game.tsx", "game.project.json", "notes.md", "scenarios/first-to-goal.json", "server/game.ts", "shared/actions.ts"}, paths)
 	applied := Apply(nil, writes, nil)
 	require.Empty(t, applied.Diagnostics, "the template must be a valid project")
 }
@@ -207,4 +207,18 @@ func TestDeclaredLanguages(t *testing.T) {
 		require.NotEmpty(t, applied.Diagnostics)
 		require.Equal(t, CodeInvalidLanguages, applied.Diagnostics[0].Code)
 	})
+}
+
+const validScenario = `{"format": "playhoot.scenario.v1", "players": 2, "duration_ms": 1000}`
+
+func TestApplyValidatesSavedScenarios(t *testing.T) {
+	applied := Apply(nil, append(Template(), Write{Path: "scenarios/broken.json", Content: `{"format": "playhoot.scenario.v1", "players": 2, "expect": [{"path": "a", "op": "matches"}]}`}), nil)
+
+	codes := make([]string, len(applied.Diagnostics))
+	for i, diagnostic := range applied.Diagnostics {
+		require.Equal(t, "scenarios/broken.json", diagnostic.Path)
+		codes[i] = diagnostic.Code
+	}
+	require.Equal(t, []string{CodeInvalidScenario, CodeInvalidScenario}, codes)
+	require.Equal(t, "duration_ms: is required", applied.Diagnostics[0].Message)
 }

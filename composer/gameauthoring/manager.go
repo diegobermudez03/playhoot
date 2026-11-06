@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/diegobermudez03/playhoot/game"
@@ -38,7 +40,8 @@ type draftReader interface {
 // gameSimulator is the Runtime's simulation of a scenario on a game's
 // backend script.
 type gameSimulator interface {
-	Simulate(ctx context.Context, script []byte, profile string, manifest sessionpkg.RuntimeManifest, scenario runtime.Scenario) (runtime.SimulationResult, error)
+	Simulate(ctx context.Context, owner string, script []byte, profile string, manifest sessionpkg.RuntimeManifest, scenario runtime.Scenario) (runtime.SimulationResult, error)
+	ReadState(ctx context.Context, id string, owner string, atMs *int64, of string, path string) (runtime.SimulationStateRead, error)
 }
 
 // resourceLinkReader is Identity's view of the links to one resource.
@@ -266,7 +269,9 @@ type DraftSimulation struct {
 	Revision    int64
 	BuildStatus sessionpkg.DraftBuildStatus
 	Ready       bool
-	Result      runtime.SimulationResult
+	// ToolchainVersion is the toolchain that built the revision, when known.
+	ToolchainVersion string
+	Result           runtime.SimulationResult
 }
 
 // SimulateDraft plays scenario on the build of revision (0: the current one)
@@ -291,18 +296,160 @@ func (m *Manager) SimulateDraft(ctx context.Context, userUUID string, gameUUID s
 		}
 		return DraftSimulation{}, fmt.Errorf("loading the build to simulate: %s", err)
 	}
-	read := DraftSimulation{Access: editable.Outcome, Revision: built.Revision, BuildStatus: built.BuildStatus, Ready: built.Ready}
+	read := DraftSimulation{Access: editable.Outcome, Revision: built.Revision, BuildStatus: built.BuildStatus, Ready: built.Ready, ToolchainVersion: built.ToolchainVersion}
 	if !built.Ready {
 		return read, nil
 	}
-	read.Result, err = m.simulator.Simulate(ctx, built.Script, built.ScriptProfile, built.Manifest, scenario)
+	read.Result, err = m.simulate(ctx, editable.VersionUUID, built, scenario)
 	if err != nil {
-		if errors.Is(err, runtime.ErrSimulationsBusy) {
-			return DraftSimulation{}, err
-		}
-		return DraftSimulation{}, fmt.Errorf("simulating: %s", err)
+		return DraftSimulation{}, err
 	}
 	return read, nil
+}
+
+// simulate plays scenario on built, keeping the result for the version.
+func (m *Manager) simulate(ctx context.Context, versionUUID string, built sessionpkg.BuiltRevision, scenario runtime.Scenario) (runtime.SimulationResult, error) {
+	result, err := m.simulator.Simulate(ctx, versionUUID, built.Script, built.ScriptProfile, built.Manifest, scenario)
+	if err != nil {
+		if errors.Is(err, runtime.ErrSimulationsBusy) {
+			return runtime.SimulationResult{}, err
+		}
+		return runtime.SimulationResult{}, fmt.Errorf("simulating: %s", err)
+	}
+	return result, nil
+}
+
+// MaxSavedScenarios is how many saved scenarios one run of them all plays;
+// the rest, by path, are listed as skipped.
+const MaxSavedScenarios = 10
+
+// SavedScenarioRun is one saved scenario played: Diagnostics when its file is
+// not a valid scenario document (then it did not run), its Result otherwise
+// (an invalid outcome included).
+type SavedScenarioRun struct {
+	Path        string
+	Diagnostics []runtime.SimulationDiagnostic
+	Result      runtime.SimulationResult
+}
+
+// DraftSavedSimulations is a run of the scenarios saved in a revision of a
+// game's version being built, set only when Access is found, the version is
+// not Missing and the build is Ready; NotFound when the path asked for is
+// not a saved scenario.
+type DraftSavedSimulations struct {
+	Access           game.EditableVersionOutcome
+	Missing          bool
+	Revision         int64
+	BuildStatus      sessionpkg.DraftBuildStatus
+	Ready            bool
+	ToolchainVersion string
+	NotFound         bool
+	Runs             []SavedScenarioRun
+	Skipped          []string
+}
+
+// SimulateSavedScenarios plays the scenarios saved under scenarios/ in
+// revision (0: the current one) of the version of gameUUID being built, on
+// that revision's build: the one at path, or every one (by path, at most
+// MaxSavedScenarios) when path is empty.
+func (m *Manager) SimulateSavedScenarios(ctx context.Context, userUUID string, gameUUID string, revision int64, path string) (DraftSavedSimulations, error) {
+	defer logging.Step(ctx, "composer.simulate_saved_scenarios").Close()
+
+	editable, err := m.editableVersion(ctx, gameUUID, userUUID)
+	if err != nil || editable.Outcome != game.EditableVersionFound {
+		return DraftSavedSimulations{Access: editable.Outcome}, err
+	}
+	built, err := m.drafts.LoadBuiltRevision(ctx, editable.VersionUUID, revision)
+	if errors.Is(err, sessionpkg.ErrDraftNotFound) {
+		logging.LogFields(ctx, logging.Field("draft_missing", true))
+		return DraftSavedSimulations{Access: editable.Outcome, Missing: true}, nil
+	}
+	if err != nil {
+		if errors.Is(err, sessionpkg.ErrDraftBuildNotFound) {
+			return DraftSavedSimulations{}, err
+		}
+		return DraftSavedSimulations{}, fmt.Errorf("loading the build to simulate: %s", err)
+	}
+	read := DraftSavedSimulations{Access: editable.Outcome, Revision: built.Revision, BuildStatus: built.BuildStatus, Ready: built.Ready, ToolchainVersion: built.ToolchainVersion}
+	if !built.Ready {
+		return read, nil
+	}
+	// The scenarios of the very revision the build is of.
+	snapshot, err := m.drafts.ReadDraft(ctx, editable.VersionUUID, built.Revision, true)
+	if err != nil {
+		return DraftSavedSimulations{}, fmt.Errorf("reading the saved scenarios: %s", err)
+	}
+	saved := savedScenarios(snapshot.Files)
+	if path != "" {
+		content, found := saved[path]
+		if !found {
+			read.NotFound = true
+			return read, nil
+		}
+		saved = map[string]string{path: content}
+	}
+	paths := make([]string, 0, len(saved))
+	for savedPath := range saved {
+		paths = append(paths, savedPath)
+	}
+	sort.Strings(paths)
+	if len(paths) > MaxSavedScenarios {
+		read.Skipped = paths[MaxSavedScenarios:]
+		paths = paths[:MaxSavedScenarios]
+	}
+	for _, savedPath := range paths {
+		run := SavedScenarioRun{Path: savedPath}
+		scenario, diagnostics := runtime.DecodeScenario([]byte(saved[savedPath]))
+		if len(diagnostics) > 0 {
+			run.Diagnostics = diagnostics
+		} else if run.Result, err = m.simulate(ctx, editable.VersionUUID, built, scenario); err != nil {
+			return DraftSavedSimulations{}, err
+		}
+		read.Runs = append(read.Runs, run)
+	}
+	logging.LogFields(ctx, logging.Field("saved_scenarios_run", len(read.Runs)), logging.Field("saved_scenarios_skipped", len(read.Skipped)))
+	return read, nil
+}
+
+// savedScenarios are the contents of the scenario files among files, by
+// path.
+func savedScenarios(files []sessionpkg.DraftFile) map[string]string {
+	saved := map[string]string{}
+	for _, file := range files {
+		if strings.HasPrefix(file.Path, "scenarios/") && strings.HasSuffix(file.Path, ".json") && file.Content != nil {
+			saved[file.Path] = *file.Content
+		}
+	}
+	return saved
+}
+
+// DraftSimulationState is one value of a kept simulation result of a
+// game's version being built, set only when Access is found.
+type DraftSimulationState struct {
+	Access game.EditableVersionOutcome
+	Read   runtime.SimulationStateRead
+}
+
+// ReadSimulationState reads one value of the kept simulation result id of
+// the version of gameUUID being built: at path of the global state or a
+// participant's view (of), in the observation for atMs (nil: the final
+// one). An unknown or expired result returns
+// runtime.ErrSimulationResultNotFound.
+func (m *Manager) ReadSimulationState(ctx context.Context, userUUID string, gameUUID string, id string, atMs *int64, of string, path string) (DraftSimulationState, error) {
+	defer logging.Step(ctx, "composer.read_simulation_state").Close()
+
+	editable, err := m.editableVersion(ctx, gameUUID, userUUID)
+	if err != nil || editable.Outcome != game.EditableVersionFound {
+		return DraftSimulationState{Access: editable.Outcome}, err
+	}
+	read, err := m.simulator.ReadState(ctx, id, editable.VersionUUID, atMs, of, path)
+	if err != nil {
+		if errors.Is(err, runtime.ErrSimulationResultNotFound) {
+			return DraftSimulationState{}, err
+		}
+		return DraftSimulationState{}, fmt.Errorf("reading a simulation's state: %s", err)
+	}
+	return DraftSimulationState{Access: editable.Outcome, Read: read}, nil
 }
 
 // editableVersion asks Game Management for the version userUUID may read. A

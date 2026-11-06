@@ -132,6 +132,8 @@ type draftReader interface {
 	ReadDraftDiff(ctx context.Context, userUUID string, gameUUID string, from int64, to int64, onlyPath string) (composergameauthoring.DraftDiff, error)
 	ReadDraftBuild(ctx context.Context, userUUID string, gameUUID string, revision int64, wait time.Duration) (composergameauthoring.DraftBuildRead, error)
 	SimulateDraft(ctx context.Context, userUUID string, gameUUID string, revision int64, scenario runtime.Scenario) (composergameauthoring.DraftSimulation, error)
+	SimulateSavedScenarios(ctx context.Context, userUUID string, gameUUID string, revision int64, path string) (composergameauthoring.DraftSavedSimulations, error)
+	ReadSimulationState(ctx context.Context, userUUID string, gameUUID string, id string, atMs *int64, of string, path string) (composergameauthoring.DraftSimulationState, error)
 }
 
 // Games is what game authoring needs, AILinks included: the links an AI uses

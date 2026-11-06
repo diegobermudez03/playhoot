@@ -60,6 +60,8 @@ type draftReader interface {
 	ReadDraftDiff(ctx context.Context, userUUID string, gameUUID string, from int64, to int64, onlyPath string) (composergameauthoring.DraftDiff, error)
 	ReadDraftBuild(ctx context.Context, userUUID string, gameUUID string, revision int64, wait time.Duration) (composergameauthoring.DraftBuildRead, error)
 	SimulateDraft(ctx context.Context, userUUID string, gameUUID string, revision int64, scenario runtime.Scenario) (composergameauthoring.DraftSimulation, error)
+	SimulateSavedScenarios(ctx context.Context, userUUID string, gameUUID string, revision int64, path string) (composergameauthoring.DraftSavedSimulations, error)
+	ReadSimulationState(ctx context.Context, userUUID string, gameUUID string, id string, atMs *int64, of string, path string) (composergameauthoring.DraftSimulationState, error)
 }
 
 // aiLinkOwner creates and revokes the link an AI uses for a game, for its
@@ -134,6 +136,7 @@ func (h *Handler) RESTRoutes() []routing.Route {
 		{Pattern: "GET /v1/games/{gameUUID}/draft/build", Handler: h.handleReadDraftBuild, Authorization: edit},
 		{Pattern: "POST /v1/games/{gameUUID}/draft/restore", Handler: h.handleRestoreDraftRevision, Authorization: edit},
 		{Pattern: "POST /v1/games/{gameUUID}/draft/simulations", Handler: h.handleSimulateDraft, Authorization: edit},
+		{Pattern: "GET /v1/games/{gameUUID}/draft/simulations/{resultID}/state", Handler: h.handleReadSimulationState, Authorization: edit},
 		{Pattern: "POST /v1/games/{gameUUID}/draft/previews", Handler: h.handleStartPreview, Authorization: edit},
 		{Pattern: "PUT /v1/games/{gameUUID}/draft/assets/{key}", Handler: h.handleUploadAsset, Authorization: edit},
 		{Pattern: "POST /v1/games/{gameUUID}/draft/assets/{key}/remove", Handler: h.handleRemoveAsset, Authorization: edit},
@@ -153,6 +156,7 @@ func (h *Handler) RESTRoutes() []routing.Route {
 		{Pattern: "POST /ai/v1/{token}/changes", Handler: h.handleApplyDraftChanges, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},
 		{Pattern: "POST /ai/v1/{token}/restore", Handler: h.handleRestoreDraftRevision, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},
 		{Pattern: "POST /ai/v1/{token}/simulations", Handler: h.handleSimulateDraft, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},
+		{Pattern: "GET /ai/v1/{token}/simulations/{resultID}/state", Handler: h.handleReadSimulationState, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},
 		{Pattern: "PUT /ai/v1/{token}/assets/{key}", Handler: h.handleUploadAsset, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},
 		{Pattern: "POST /ai/v1/{token}/assets/{key}/remove", Handler: h.handleRemoveAsset, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},
 	}

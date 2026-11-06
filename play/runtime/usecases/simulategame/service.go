@@ -13,8 +13,11 @@ import (
 	"slices"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/monitoring/metrics"
+	"github.com/diegobermudez03/playhoot/play/internal/business/scenariodoc"
 	"github.com/diegobermudez03/playhoot/play/runtime"
 	"github.com/diegobermudez03/playhoot/play/runtime/internal/business/gamemanifest"
 	"github.com/diegobermudez03/playhoot/play/runtime/sandbox"
@@ -35,9 +38,12 @@ type gameSandbox interface {
 const (
 	// MaxDurationMs is the most game time a scenario may run.
 	MaxDurationMs = 10 * 60 * 1000
-	// MaxSteps and MaxObservations bound what a scenario asks for.
+	// MaxSteps, MaxHolds, MaxObservations and MaxExpectations bound what a
+	// scenario asks for.
 	MaxSteps        = 2000
+	MaxHolds        = 500
 	MaxObservations = 50
+	MaxExpectations = 100
 	// WallBudget is the most real time a simulation runs; past it, it stops
 	// with what it simulated.
 	WallBudget = 10 * time.Second
@@ -74,26 +80,40 @@ var (
 	)
 )
 
-// Service runs simulations.
-type Service struct {
-	sandbox gameSandbox
-	slots   chan struct{}
-	now     func() time.Time
+// resultStore keeps simulation results for a while: Play's Session domain
+// (keepsimulationresults).
+type resultStore interface {
+	KeepSimulationResult(ctx context.Context, versionUUID string, resultUUID string, result json.RawMessage, expiresAt time.Time) error
+	FindSimulationResult(ctx context.Context, resultUUID string, versionUUID string) (json.RawMessage, bool, error)
 }
 
-// New constructs a Service running games in host.
-func New(host gameSandbox) *Service {
-	return &Service{sandbox: host, slots: make(chan struct{}, maxConcurrentSimulations), now: time.Now}
+// Service runs simulations and keeps their results for a while.
+type Service struct {
+	sandbox gameSandbox
+	results resultStore
+	slots   chan struct{}
+	now     func() time.Time
+	newID   func() string
+}
+
+// New constructs a Service running games in host and keeping their results
+// in results.
+func New(host gameSandbox, results resultStore) *Service {
+	return &Service{sandbox: host, results: results, slots: make(chan struct{}, maxConcurrentSimulations), now: time.Now, newID: uuid.NewString}
 }
 
 // Simulate plays scenario on script, run under profile, whose game declares
-// manifest. A scenario that cannot be played is answered SimulationInvalid;
-// a game whose script fails is a result with its ScriptError.
-func (s *Service) Simulate(ctx context.Context, script []byte, profile string, manifest sessionpkg.RuntimeManifest, scenario runtime.Scenario) (runtime.SimulationResult, error) {
+// manifest, and keeps the result for versionUUID (ID, until ExpiresAt). A
+// scenario that cannot be played is answered SimulationInvalid; a game whose
+// script fails is a result with its ScriptError.
+func (s *Service) Simulate(ctx context.Context, versionUUID string, script []byte, profile string, manifest sessionpkg.RuntimeManifest, scenario runtime.Scenario) (runtime.SimulationResult, error) {
 	defer logging.Step(ctx, "simulategame.simulate").Close()
 
 	began := s.now()
 	result, err := s.simulate(ctx, script, profile, manifest, scenario)
+	if err == nil && result.Outcome == runtime.SimulationRan {
+		err = s.keep(ctx, versionUUID, &result)
+	}
 	outcome := "failed"
 	switch {
 	case errors.Is(err, runtime.ErrSimulationsBusy):
@@ -108,8 +128,51 @@ func (s *Service) Simulate(ctx context.Context, script []byte, profile string, m
 	}
 	simulationsTotal.Inc(ctx, simulationOutcomeLabel.Value(outcome))
 	simulationDuration.ObserveDuration(ctx, s.now().Sub(began))
-	logging.LogFields(ctx, logging.Field("simulation_outcome", outcome), logging.Field("simulated_ms", result.SimulatedMs), logging.Field("boundaries", result.Boundaries))
+	logging.LogFields(ctx, logging.Field("simulation_outcome", outcome), logging.Field("simulated_ms", result.SimulatedMs), logging.Field("boundaries", result.Boundaries), logging.Field("simulation_id", result.ID))
 	return result, err
+}
+
+// keep names result and stores it for versionUUID until it expires.
+func (s *Service) keep(ctx context.Context, versionUUID string, result *runtime.SimulationResult) error {
+	result.ID, result.ExpiresAt = s.newID(), s.now().UTC().Add(ResultTTL).Truncate(time.Microsecond)
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		return fmt.Errorf("encoding the simulation result: %w", err)
+	}
+	if err := s.results.KeepSimulationResult(ctx, versionUUID, result.ID, encoded, result.ExpiresAt); err != nil {
+		return fmt.Errorf("keeping the simulation result: %w", err)
+	}
+	return nil
+}
+
+// Result is the kept result id names, when versionUUID's and not expired;
+// else runtime.ErrSimulationResultNotFound.
+func (s *Service) Result(ctx context.Context, id string, versionUUID string) (runtime.SimulationResult, error) {
+	encoded, found, err := s.results.FindSimulationResult(ctx, id, versionUUID)
+	if err != nil {
+		return runtime.SimulationResult{}, fmt.Errorf("finding the simulation result: %w", err)
+	}
+	if !found {
+		return runtime.SimulationResult{}, runtime.ErrSimulationResultNotFound
+	}
+	var result runtime.SimulationResult
+	if err := json.Unmarshal(encoded, &result); err != nil {
+		return runtime.SimulationResult{}, fmt.Errorf("decoding the simulation result: %w", err)
+	}
+	return result, nil
+}
+
+// ReadState reads one value of the kept result id names (versionUUID's): at
+// path of the global state or a participant's view (of), in the observation
+// taken for atMs (nil: the final one).
+func (s *Service) ReadState(ctx context.Context, id string, versionUUID string, atMs *int64, of string, path string) (runtime.SimulationStateRead, error) {
+	result, err := s.Result(ctx, id, versionUUID)
+	if err != nil {
+		return runtime.SimulationStateRead{}, err
+	}
+	read := readState(result, atMs, of, path)
+	logging.LogFields(ctx, logging.Field("state_read", read.Outcome))
+	return read, nil
 }
 
 func (s *Service) simulate(ctx context.Context, script []byte, profile string, manifest sessionpkg.RuntimeManifest, scenario runtime.Scenario) (runtime.SimulationResult, error) {
@@ -120,6 +183,8 @@ func (s *Service) simulate(ctx context.Context, script []byte, profile string, m
 	if diagnostics := Validate(rules, scenario); len(diagnostics) > 0 {
 		return runtime.SimulationResult{Outcome: runtime.SimulationInvalid, Diagnostics: diagnostics}, nil
 	}
+	played := withHolds(rules, scenario)
+	played.ObserveAtMs = observationPoints(scenario)
 	select {
 	case s.slots <- struct{}{}:
 		defer func() { <-s.slots }()
@@ -138,7 +203,7 @@ func (s *Service) simulate(ctx context.Context, script []byte, profile string, m
 	}
 	defer func() { _ = s.sandbox.DiscardContext(context.WithoutCancel(ctx), contextID) }()
 
-	run := newRun(s.sandbox, contextID, rules, scenario, s.now)
+	run := newRun(s.sandbox, contextID, rules, played, s.now)
 	if err := run.play(budgeted); err != nil {
 		if budgeted.Err() != nil && ctx.Err() == nil {
 			run.result.Stopped = runtime.SimulationStoppedBudget
@@ -149,6 +214,7 @@ func (s *Service) simulate(ctx context.Context, script []byte, profile string, m
 	if err := run.observeFinal(context.WithoutCancel(ctx)); err != nil {
 		return runtime.SimulationResult{}, err
 	}
+	checkExpectations(scenario, &run.result)
 	return run.result, nil
 }
 
@@ -168,8 +234,14 @@ func Validate(rules gamemanifest.Rules, scenario runtime.Scenario) []runtime.Sim
 	if len(scenario.Steps) > MaxSteps {
 		add("steps", fmt.Sprintf("at most %d steps", MaxSteps))
 	}
-	if len(scenario.ObserveAtMs) > MaxObservations {
-		add("observe_at_ms", fmt.Sprintf("at most %d observations", MaxObservations))
+	if len(scenario.Holds) > MaxHolds {
+		add("holds", fmt.Sprintf("at most %d holds", MaxHolds))
+	}
+	if len(scenario.Expect) > MaxExpectations {
+		add("expect", fmt.Sprintf("at most %d expectations", MaxExpectations))
+	}
+	if points := observationPoints(scenario); len(points) > MaxObservations {
+		add("observe_at_ms", fmt.Sprintf("at most %d instants observed, the expectations' included", MaxObservations))
 	}
 	players := participants(scenario.Players)
 	for i, step := range scenario.Steps {
@@ -190,6 +262,32 @@ func Validate(rules gamemanifest.Rules, scenario runtime.Scenario) []runtime.Sim
 	for i, at := range scenario.ObserveAtMs {
 		if at < 0 || at > scenario.DurationMs {
 			add(fmt.Sprintf("observe_at_ms[%d]", i), "must be from 0 to duration_ms")
+		}
+	}
+	held := map[string][]runtime.ScenarioHold{}
+	for i, hold := range scenario.Holds {
+		field := fmt.Sprintf("holds[%d]", i)
+		if !slices.Contains(players, hold.Player) {
+			add(field+".player", fmt.Sprintf("%q does not play: players are P1 to P%d", hold.Player, max(scenario.Players, 1)))
+		}
+		if hold.FromMs < 0 || hold.ToMs <= hold.FromMs || hold.ToMs > scenario.DurationMs {
+			add(field, "from_ms and to_ms must be within 0..duration_ms, from_ms before to_ms")
+		}
+		for _, other := range held[hold.Player] {
+			if hold.FromMs < other.ToMs && other.FromMs < hold.ToMs {
+				add(field, "overlaps another hold of the same player")
+				break
+			}
+		}
+		held[hold.Player] = append(held[hold.Player], hold)
+	}
+	for i, expectation := range scenario.Expect {
+		field := fmt.Sprintf("expect[%d]", i)
+		if expectation.Of != scenariodoc.OfGlobal && !slices.Contains(players, expectation.Of) {
+			add(field+".of", fmt.Sprintf("%q does not play: players are P1 to P%d", expectation.Of, max(scenario.Players, 1)))
+		}
+		if expectation.AtMs != nil && (*expectation.AtMs < 0 || *expectation.AtMs > scenario.DurationMs) {
+			add(field+".at_ms", "must be from 0 to duration_ms; leave it out to check the end")
 		}
 	}
 	return diagnostics

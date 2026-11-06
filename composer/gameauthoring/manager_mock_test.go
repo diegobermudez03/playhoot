@@ -237,19 +237,34 @@ func (m *MockgameSimulator) EXPECT() *MockgameSimulatorMockRecorder {
 	return m.recorder
 }
 
-// Simulate mocks base method.
-func (m *MockgameSimulator) Simulate(ctx context.Context, script []byte, profile string, manifest session.RuntimeManifest, scenario runtime.Scenario) (runtime.SimulationResult, error) {
+// ReadState mocks base method.
+func (m *MockgameSimulator) ReadState(ctx context.Context, id, owner string, atMs *int64, of, path string) (runtime.SimulationStateRead, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Simulate", ctx, script, profile, manifest, scenario)
+	ret := m.ctrl.Call(m, "ReadState", ctx, id, owner, atMs, of, path)
+	ret0, _ := ret[0].(runtime.SimulationStateRead)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ReadState indicates an expected call of ReadState.
+func (mr *MockgameSimulatorMockRecorder) ReadState(ctx, id, owner, atMs, of, path any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReadState", reflect.TypeOf((*MockgameSimulator)(nil).ReadState), ctx, id, owner, atMs, of, path)
+}
+
+// Simulate mocks base method.
+func (m *MockgameSimulator) Simulate(ctx context.Context, owner string, script []byte, profile string, manifest session.RuntimeManifest, scenario runtime.Scenario) (runtime.SimulationResult, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Simulate", ctx, owner, script, profile, manifest, scenario)
 	ret0, _ := ret[0].(runtime.SimulationResult)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Simulate indicates an expected call of Simulate.
-func (mr *MockgameSimulatorMockRecorder) Simulate(ctx, script, profile, manifest, scenario any) *gomock.Call {
+func (mr *MockgameSimulatorMockRecorder) Simulate(ctx, owner, script, profile, manifest, scenario any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Simulate", reflect.TypeOf((*MockgameSimulator)(nil).Simulate), ctx, script, profile, manifest, scenario)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Simulate", reflect.TypeOf((*MockgameSimulator)(nil).Simulate), ctx, owner, script, profile, manifest, scenario)
 }
 
 // MockcardReader is a mock of cardReader interface.

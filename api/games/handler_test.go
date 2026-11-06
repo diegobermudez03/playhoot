@@ -65,6 +65,8 @@ type test struct {
 	expectedCode int
 	expectedBody string
 	noStore      bool
+	// check, when set, inspects the answered body.
+	check func(t *testing.T, body string)
 }
 
 func callerCtx() context.Context {
@@ -98,6 +100,9 @@ func run(t *testing.T, tests map[string]func(t *testing.T, deps dependencies) te
 			}
 			if tc.noStore {
 				require.Equal(t, "no-store", recorder.Header().Get("Cache-Control"))
+			}
+			if tc.check != nil {
+				tc.check(t, recorder.Body.String())
 			}
 		})
 	}

@@ -14,6 +14,8 @@ import (
 	"sort"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/diegobermudez03/playhoot/play/internal/business/scenariodoc"
 )
 
 // Limits of one project's sources, counted after a change applies.
@@ -40,6 +42,9 @@ const (
 	CodeFileTooLarge    = "file_too_large"
 	CodeTooManyFiles    = "too_many_files"
 	CodeProjectTooLarge = "project_too_large"
+	// CodeInvalidScenario refuses a scenarios/*.json file that is not a
+	// playhoot.scenario.v1 document, so saved scenarios stay runnable.
+	CodeInvalidScenario = "invalid_scenario"
 )
 
 // File is one source file of a revision: its content's SHA-256 (lowercase
@@ -129,6 +134,18 @@ func Apply(current map[string]File, writes []Write, deletes []string) Applied {
 		if len(write.Content) > MaxFileBytes {
 			refuse(write.Path, CodeFileTooLarge, fmt.Sprintf("the file has %d bytes; the limit is %d", len(write.Content), MaxFileBytes))
 			continue
+		}
+		if strings.HasPrefix(write.Path, "scenarios/") {
+			if _, invalid := scenariodoc.Decode([]byte(write.Content)); len(invalid) > 0 {
+				for _, problem := range invalid {
+					message := problem.Message
+					if problem.Field != "" {
+						message = problem.Field + ": " + message
+					}
+					refuse(write.Path, CodeInvalidScenario, message)
+				}
+				continue
+			}
 		}
 		if write.Path == ProjectFile {
 			_, invalidLanguages := DeclaredLanguages(write.Content)

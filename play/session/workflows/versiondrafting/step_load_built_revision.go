@@ -85,6 +85,7 @@ func (m *Manager) LoadBuiltRevision(ctx context.Context, versionUUID string, rev
 	loaded.Ready = true
 	loaded.Script = script
 	loaded.ScriptProfile = built.ScriptProfile
+	loaded.ToolchainVersion = built.ToolchainVersion
 	loaded.Manifest = parsedManifest.Runtime()
 	return loaded, nil
 }

@@ -43,7 +43,8 @@ type gameOperations interface {
 	UploadAsset(ctx context.Context, by games.Caller, gameUUID string, key string, idempotencyKey string, content io.Reader) (games.AssetEditResponse, *games.Refusal)
 	RemoveAsset(ctx context.Context, by games.Caller, gameUUID string, key string, idempotencyKey string) (games.AssetEditResponse, *games.Refusal)
 	ReadBuild(ctx context.Context, userUUID string, gameUUID string, revision *int64, wait time.Duration) (*games.BuildResponse, *games.Refusal)
-	Simulate(ctx context.Context, userUUID string, gameUUID string, req games.ScenarioRequest) (games.SimulationResponse, *games.Refusal)
+	Simulate(ctx context.Context, userUUID string, gameUUID string, req games.SimulateRequest) (any, *games.Refusal)
+	ReadSimulationState(ctx context.Context, userUUID string, gameUUID string, resultID string, atMs *int64, of string, path string) (*games.SimulationStateResponse, *games.Refusal)
 }
 
 // Config is where the MCP server is reached and what it points AIs to.
@@ -165,7 +166,7 @@ func instructions(guide string) string {
 		"Read only what you need. get_game_context answers where the game stands (revision, files with hashes and sizes, build, assets, recent attempts, notes.md), never the sources: read files with read_files, and after a write or a conflict read what changed with list_changes_since instead of everything again.",
 		"Change files with apply_changes on the revision you read (base_revision): existing files through edits (find/replace, find copied exactly and appearing once), whole files only when new or rewritten substantially; that keeps changes small and cheap. Its answer has the new revision, every file's hash and each edit's diff; revision_conflict means someone changed the game since: read what changed and redo yours on the current revision. restore_revision brings an earlier revision back as a new one; list_revisions says where each revision came from and diff_revisions what changed between two.",
 		"Before writing code, read the SDK guide's index (" + guide + ") and only the pages your game needs; use what the SDK provides instead of writing it again.",
-		"Work in this order: agree the rules with the user and keep them in notes.md, write the smallest change that works, wait for its build with get_build, check the rules with simulate on scenarios, then let the user try it in Probar juego. Done means: the build SUCCEEDED, scenarios show the rules hold, required assets are uploaded or replaced by drawn shapes, and the user confirmed it plays as intended.",
+		"Work in this order: agree the rules with the user and keep them in notes.md, write the smallest change that works, wait for its build with get_build, check the rules with simulate on scenarios with expectations (save the ones worth keeping under scenarios/ and rerun them with all), then let the user try it in Probar juego. Done means: the build SUCCEEDED, scenarios show the rules hold, required assets are uploaded or replaced by drawn shapes, and the user confirmed it plays as intended.",
 		"Assets are declared in game.project.json and referenced by key; prefer HTML/CSS and SVG drawn in code over image files. If you cannot produce a file, ask the user to upload it in Recursos.",
 		"Every tool that changes something needs a new random idempotency_key per change; send the same key only to retry that same change.",
 		"You cannot publish: the user publishes in Playhoot.",

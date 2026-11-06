@@ -47,14 +47,17 @@ type fakeGames struct {
 	revision *int64
 	since    int64
 	from     int64
-	paths    []string
-	before   int64
-	limit    int
-	inline   *bool
-	wait     time.Duration
-	upload   []byte
-	key      string
-	idemKey  string
+
+	simulations []games.SimulateRequest
+	stateRead   []any
+	paths       []string
+	before      int64
+	limit       int
+	inline      *bool
+	wait        time.Duration
+	upload      []byte
+	key         string
+	idemKey     string
 
 	change  games.ChangeResponse
 	asset   games.AssetEditResponse
@@ -139,8 +142,18 @@ func (f *fakeGames) ReadBuild(ctx context.Context, userUUID string, gameUUID str
 	return nil, f.refusal
 }
 
-func (f *fakeGames) Simulate(ctx context.Context, userUUID string, gameUUID string, req games.ScenarioRequest) (games.SimulationResponse, *games.Refusal) {
-	panic("not used")
+func (f *fakeGames) Simulate(ctx context.Context, userUUID string, gameUUID string, req games.SimulateRequest) (any, *games.Refusal) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.simulations = append(f.simulations, req)
+	return map[string]any{"format": "playhoot.simulation-summary.v1"}, f.refusal
+}
+
+func (f *fakeGames) ReadSimulationState(ctx context.Context, userUUID string, gameUUID string, resultID string, atMs *int64, of string, path string) (*games.SimulationStateResponse, *games.Refusal) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.stateRead = []any{resultID, atMs, of, path}
+	return &games.SimulationStateResponse{ResultID: resultID, Of: of, Path: path}, f.refusal
 }
 
 type bearer struct{ token string }
@@ -202,7 +215,7 @@ func TestToolsCallTheirGamesOperations(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 	sort.Strings(names)
-	require.Equal(t, []string{"apply_changes", "create_game", "diff_revisions", "get_build", "get_game_context", "list_changes_since", "list_my_games", "list_revisions", "read_files", "remove_asset", "restore_revision", "simulate", "upload_asset"}, names)
+	require.Equal(t, []string{"apply_changes", "create_game", "diff_revisions", "get_build", "get_game_context", "list_changes_since", "list_my_games", "list_revisions", "read_files", "read_simulation_state", "remove_asset", "restore_revision", "simulate", "upload_asset"}, names)
 	require.NotContains(t, names, "publish")
 
 	result, err := session.CallTool(ctx, &sdk.CallToolParams{Name: "apply_changes", Arguments: map[string]any{
@@ -256,6 +269,17 @@ func TestReadToolsAnswerOnlyWhatIsAsked(t *testing.T) {
 	call("list_revisions", map[string]any{"game_uuid": "g1", "before": 9, "limit": 5})
 	require.Equal(t, int64(9), fake.before)
 	require.Equal(t, 5, fake.limit)
+
+	call("simulate", map[string]any{"game_uuid": "g1", "scenario": map[string]any{"format": "playhoot.scenario.v1"}, "detail": "full"})
+	call("simulate", map[string]any{"game_uuid": "g1", "all": true, "revision": 3})
+	require.Len(t, fake.simulations, 2)
+	require.JSONEq(t, `{"format":"playhoot.scenario.v1"}`, string(fake.simulations[0].Scenario))
+	require.Equal(t, "full", fake.simulations[0].Detail)
+	require.Equal(t, games.SimulateRequest{Revision: 3, All: true}, fake.simulations[1], "saved scenarios carry no scenario")
+
+	call("read_simulation_state", map[string]any{"game_uuid": "g1", "result_id": "r-1", "at_ms": 300, "of": "P1", "path": "hand"})
+	at := int64(300)
+	require.Equal(t, []any{"r-1", &at, "P1", "hand"}, fake.stateRead)
 
 	answer = call("diff_revisions", map[string]any{"game_uuid": "g1", "from": 2, "path": "notes.md"})
 	require.Equal(t, int64(2), fake.from)

@@ -129,6 +129,8 @@ type BuiltArtifacts struct {
 	// Languages is the JSON list of the languages the game is written in.
 	Languages     []byte
 	ScriptProfile string
+	// ToolchainVersion is the toolchain that built it; empty when unknown.
+	ToolchainVersion string
 	// What the built client asks of the device; nil only for a build that did not succeed.
 	UsesKeyboard     *bool
 	UsesPointerHover *bool
@@ -142,7 +144,7 @@ func (r *Repo) FindBuiltArtifacts(ctx context.Context, tx *gorm.DB, versionUUID 
 	result := tx.WithContext(ctx).Raw(`
 		SELECT b.revision, b.status, b.server_object_key, b.server_sha256, b.server_size,
 			b.client_object_key, b.client_sha256, b.client_size, b.aspect_ratio, b.manifest, b.languages, v.script_profile,
-			b.uses_keyboard, b.uses_pointer_hover, b.uses_pointer_press
+			b.uses_keyboard, b.uses_pointer_hover, b.uses_pointer_press, COALESCE(b.toolchain_version, '') AS toolchain_version
 		FROM play_game_version_builds b
 		JOIN play_game_versions v ON v.id = b.game_version_id
 		WHERE v.uuid = ? AND b.revision = ?

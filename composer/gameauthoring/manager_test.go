@@ -3,6 +3,7 @@ package gameauthoring
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -296,15 +297,15 @@ func TestSimulateDraft(t *testing.T) {
 	found := game.EditableVersion{Outcome: game.EditableVersionFound, VersionUUID: testVersionUUID}
 	scenario := runtime.Scenario{Players: 1, Seed: 1, DurationMs: 100}
 	manifest := sessionpkg.RuntimeManifest{MinPlayers: 1, MaxPlayers: 2}
-	ready := sessionpkg.BuiltRevision{Revision: 3, BuildStatus: sessionpkg.DraftBuildSucceeded, Ready: true, Script: []byte("script"), ScriptProfile: "sdk-v1", Manifest: manifest}
+	ready := sessionpkg.BuiltRevision{Revision: 3, BuildStatus: sessionpkg.DraftBuildSucceeded, Ready: true, Script: []byte("script"), ScriptProfile: "sdk-v1", Manifest: manifest, ToolchainVersion: "tc-1"}
 	ran := runtime.SimulationResult{Outcome: runtime.SimulationRan, Stopped: runtime.SimulationStoppedDuration}
 
 	tests := map[string]func(t *testing.T, deps dependencies) test{
 		"the_owner_simulates_a_succeeded_build": func(t *testing.T, deps dependencies) test {
 			deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(found, nil)
 			deps.drafts.EXPECT().LoadBuiltRevision(ctx, testVersionUUID, int64(0)).Return(ready, nil)
-			deps.simulator.EXPECT().Simulate(ctx, []byte("script"), "sdk-v1", manifest, scenario).Return(ran, nil)
-			return test{expected: DraftSimulation{Access: game.EditableVersionFound, Revision: 3, BuildStatus: sessionpkg.DraftBuildSucceeded, Ready: true, Result: ran}}
+			deps.simulator.EXPECT().Simulate(ctx, testVersionUUID, []byte("script"), "sdk-v1", manifest, scenario).Return(ran, nil)
+			return test{expected: DraftSimulation{Access: game.EditableVersionFound, Revision: 3, BuildStatus: sessionpkg.DraftBuildSucceeded, Ready: true, ToolchainVersion: "tc-1", Result: ran}}
 		},
 		"a_build_that_did_not_succeed_is_never_simulated": func(t *testing.T, deps dependencies) test {
 			deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(found, nil)
@@ -328,7 +329,7 @@ func TestSimulateDraft(t *testing.T) {
 		"busy_keeps_its_error": func(t *testing.T, deps dependencies) test {
 			deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(found, nil)
 			deps.drafts.EXPECT().LoadBuiltRevision(ctx, testVersionUUID, int64(0)).Return(ready, nil)
-			deps.simulator.EXPECT().Simulate(ctx, gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(runtime.SimulationResult{}, runtime.ErrSimulationsBusy)
+			deps.simulator.EXPECT().Simulate(ctx, gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(runtime.SimulationResult{}, runtime.ErrSimulationsBusy)
 			return test{expectErr: true, expectedErrorIs: runtime.ErrSimulationsBusy}
 		},
 	}
@@ -351,4 +352,110 @@ func TestSimulateDraft(t *testing.T) {
 			require.Equal(t, tc.expected, simulated)
 		})
 	}
+}
+
+func TestSimulateSavedScenarios(t *testing.T) {
+	ctx := context.Background()
+	found := game.EditableVersion{Outcome: game.EditableVersionFound, VersionUUID: testVersionUUID}
+	manifest := sessionpkg.RuntimeManifest{MinPlayers: 1, MaxPlayers: 2}
+	ready := sessionpkg.BuiltRevision{Revision: 3, BuildStatus: sessionpkg.DraftBuildSucceeded, Ready: true, Script: []byte("script"), ScriptProfile: "sdk-v1", Manifest: manifest, ToolchainVersion: "tc-1"}
+	content := func(text string) *string { return &text }
+	valid := `{"format": "playhoot.scenario.v1", "players": 1, "duration_ms": 100}`
+	snapshot := sessionpkg.DraftSnapshot{Files: []sessionpkg.DraftFile{
+		{Path: "notes.md", Content: content("# notes")},
+		{Path: "scenarios/b.json", Content: content(valid)},
+		{Path: "scenarios/a.json", Content: content(valid)},
+		{Path: "scenarios/broken.json", Content: content(`{"format": "x"}`)},
+	}}
+	ran := runtime.SimulationResult{Outcome: runtime.SimulationRan, ID: "r-1"}
+	scenario := runtime.Scenario{Players: 1, Seed: 1, DurationMs: 100}
+
+	t.Run("every_saved_scenario_of_the_built_revision_by_path", func(t *testing.T) {
+		manager, deps := newTestManager(t)
+		deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(found, nil)
+		deps.drafts.EXPECT().LoadBuiltRevision(ctx, testVersionUUID, int64(0)).Return(ready, nil)
+		deps.drafts.EXPECT().ReadDraft(ctx, testVersionUUID, int64(3), true).Return(snapshot, nil)
+		deps.simulator.EXPECT().Simulate(ctx, testVersionUUID, []byte("script"), "sdk-v1", manifest, scenario).Return(ran, nil).Times(2)
+
+		result, err := manager.SimulateSavedScenarios(ctx, testUserUUID, testGameUUID, 0, "")
+
+		require.NoError(t, err)
+		require.Equal(t, int64(3), result.Revision)
+		require.Equal(t, "tc-1", result.ToolchainVersion)
+		require.Len(t, result.Runs, 3)
+		require.Equal(t, []string{"scenarios/a.json", "scenarios/b.json", "scenarios/broken.json"}, []string{result.Runs[0].Path, result.Runs[1].Path, result.Runs[2].Path})
+		require.Equal(t, ran, result.Runs[0].Result)
+		require.NotEmpty(t, result.Runs[2].Diagnostics, "an invalid file is reported, never simulated")
+	})
+
+	t.Run("one_path_or_not_found", func(t *testing.T) {
+		manager, deps := newTestManager(t)
+		deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(found, nil).Times(2)
+		deps.drafts.EXPECT().LoadBuiltRevision(ctx, testVersionUUID, int64(0)).Return(ready, nil).Times(2)
+		deps.drafts.EXPECT().ReadDraft(ctx, testVersionUUID, int64(3), true).Return(snapshot, nil).Times(2)
+		deps.simulator.EXPECT().Simulate(ctx, testVersionUUID, []byte("script"), "sdk-v1", manifest, scenario).Return(ran, nil)
+
+		one, err := manager.SimulateSavedScenarios(ctx, testUserUUID, testGameUUID, 0, "scenarios/b.json")
+		require.NoError(t, err)
+		require.Len(t, one.Runs, 1)
+		missing, err := manager.SimulateSavedScenarios(ctx, testUserUUID, testGameUUID, 0, "scenarios/none.json")
+		require.NoError(t, err)
+		require.True(t, missing.NotFound)
+	})
+
+	t.Run("more_than_the_bound_are_skipped", func(t *testing.T) {
+		many := sessionpkg.DraftSnapshot{}
+		for i := 0; i < MaxSavedScenarios+2; i++ {
+			many.Files = append(many.Files, sessionpkg.DraftFile{Path: fmt.Sprintf("scenarios/s%02d.json", i), Content: content(`{}`)})
+		}
+		manager, deps := newTestManager(t)
+		deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(found, nil)
+		deps.drafts.EXPECT().LoadBuiltRevision(ctx, testVersionUUID, int64(0)).Return(ready, nil)
+		deps.drafts.EXPECT().ReadDraft(ctx, testVersionUUID, int64(3), true).Return(many, nil)
+
+		result, err := manager.SimulateSavedScenarios(ctx, testUserUUID, testGameUUID, 0, "")
+
+		require.NoError(t, err)
+		require.Len(t, result.Runs, MaxSavedScenarios)
+		require.Equal(t, []string{"scenarios/s10.json", "scenarios/s11.json"}, result.Skipped)
+	})
+
+	t.Run("a_build_not_ready_reads_no_scenario", func(t *testing.T) {
+		manager, deps := newTestManager(t)
+		deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(found, nil)
+		deps.drafts.EXPECT().LoadBuiltRevision(ctx, testVersionUUID, int64(0)).Return(sessionpkg.BuiltRevision{Revision: 3, BuildStatus: sessionpkg.DraftBuildRunning}, nil)
+
+		result, err := manager.SimulateSavedScenarios(ctx, testUserUUID, testGameUUID, 0, "")
+
+		require.NoError(t, err)
+		require.False(t, result.Ready)
+	})
+}
+
+func TestReadSimulationState(t *testing.T) {
+	ctx := context.Background()
+	found := game.EditableVersion{Outcome: game.EditableVersionFound, VersionUUID: testVersionUUID}
+	at := int64(300)
+
+	t.Run("the_owner_reads_a_kept_result_of_its_version", func(t *testing.T) {
+		manager, deps := newTestManager(t)
+		read := runtime.SimulationStateRead{Outcome: runtime.StateReadFound, Of: "global", Path: "pos"}
+		deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(found, nil)
+		deps.simulator.EXPECT().ReadState(ctx, "r-1", testVersionUUID, &at, "global", "pos").Return(read, nil)
+
+		result, err := manager.ReadSimulationState(ctx, testUserUUID, testGameUUID, "r-1", &at, "global", "pos")
+
+		require.NoError(t, err)
+		require.Equal(t, DraftSimulationState{Access: game.EditableVersionFound, Read: read}, result)
+	})
+
+	t.Run("an_unknown_result_is_kept_recognizable", func(t *testing.T) {
+		manager, deps := newTestManager(t)
+		deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(found, nil)
+		deps.simulator.EXPECT().ReadState(ctx, "r-2", testVersionUUID, nil, "global", "").Return(runtime.SimulationStateRead{}, runtime.ErrSimulationResultNotFound)
+
+		_, err := manager.ReadSimulationState(ctx, testUserUUID, testGameUUID, "r-2", nil, "global", "")
+
+		require.ErrorIs(t, err, runtime.ErrSimulationResultNotFound)
+	})
 }

@@ -276,6 +276,21 @@ func (mr *MockdraftReaderMockRecorder) ReadDraftDiff(ctx, userUUID, gameUUID, fr
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReadDraftDiff", reflect.TypeOf((*MockdraftReader)(nil).ReadDraftDiff), ctx, userUUID, gameUUID, from, to, onlyPath)
 }
 
+// ReadSimulationState mocks base method.
+func (m *MockdraftReader) ReadSimulationState(ctx context.Context, userUUID, gameUUID, id string, atMs *int64, of, path string) (gameauthoring.DraftSimulationState, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ReadSimulationState", ctx, userUUID, gameUUID, id, atMs, of, path)
+	ret0, _ := ret[0].(gameauthoring.DraftSimulationState)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ReadSimulationState indicates an expected call of ReadSimulationState.
+func (mr *MockdraftReaderMockRecorder) ReadSimulationState(ctx, userUUID, gameUUID, id, atMs, of, path any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReadSimulationState", reflect.TypeOf((*MockdraftReader)(nil).ReadSimulationState), ctx, userUUID, gameUUID, id, atMs, of, path)
+}
+
 // SimulateDraft mocks base method.
 func (m *MockdraftReader) SimulateDraft(ctx context.Context, userUUID, gameUUID string, revision int64, scenario runtime.Scenario) (gameauthoring.DraftSimulation, error) {
 	m.ctrl.T.Helper()
@@ -289,6 +304,21 @@ func (m *MockdraftReader) SimulateDraft(ctx context.Context, userUUID, gameUUID 
 func (mr *MockdraftReaderMockRecorder) SimulateDraft(ctx, userUUID, gameUUID, revision, scenario any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SimulateDraft", reflect.TypeOf((*MockdraftReader)(nil).SimulateDraft), ctx, userUUID, gameUUID, revision, scenario)
+}
+
+// SimulateSavedScenarios mocks base method.
+func (m *MockdraftReader) SimulateSavedScenarios(ctx context.Context, userUUID, gameUUID string, revision int64, path string) (gameauthoring.DraftSavedSimulations, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SimulateSavedScenarios", ctx, userUUID, gameUUID, revision, path)
+	ret0, _ := ret[0].(gameauthoring.DraftSavedSimulations)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SimulateSavedScenarios indicates an expected call of SimulateSavedScenarios.
+func (mr *MockdraftReaderMockRecorder) SimulateSavedScenarios(ctx, userUUID, gameUUID, revision, path any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SimulateSavedScenarios", reflect.TypeOf((*MockdraftReader)(nil).SimulateSavedScenarios), ctx, userUUID, gameUUID, revision, path)
 }
 
 // MockaiLinkOwner is a mock of aiLinkOwner interface.

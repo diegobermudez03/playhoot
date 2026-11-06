@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -54,12 +55,51 @@ func newService(t *testing.T) *Service {
 	t.Helper()
 	host := sandbox.NewHost(sandbox.HostLimits{})
 	t.Cleanup(func() { _ = host.Close() })
-	return New(host)
+	return New(host, newFakeStore())
+}
+
+// fakeStore keeps results as the Session domain would, in memory, expiring
+// them by the time it is told.
+type fakeStore struct {
+	mu   sync.Mutex
+	kept map[string]storedResult
+	now  func() time.Time
+	fail error
+}
+
+type storedResult struct {
+	version string
+	result  json.RawMessage
+	expires time.Time
+}
+
+func newFakeStore() *fakeStore {
+	return &fakeStore{kept: map[string]storedResult{}, now: time.Now}
+}
+
+func (f *fakeStore) KeepSimulationResult(ctx context.Context, versionUUID string, resultUUID string, result json.RawMessage, expiresAt time.Time) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.fail != nil {
+		return f.fail
+	}
+	f.kept[resultUUID] = storedResult{version: versionUUID, result: result, expires: expiresAt}
+	return nil
+}
+
+func (f *fakeStore) FindSimulationResult(ctx context.Context, resultUUID string, versionUUID string) (json.RawMessage, bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	stored, found := f.kept[resultUUID]
+	if !found || stored.version != versionUUID || !f.now().Before(stored.expires) {
+		return nil, false, nil
+	}
+	return stored.result, true, nil
 }
 
 func simulateLog(t *testing.T, service *Service, scenario runtime.Scenario) runtime.SimulationResult {
 	t.Helper()
-	result, err := service.Simulate(context.Background(), []byte(logScript), string(scriptcheck.ProfileHandwritten), logManifest, scenario)
+	result, err := service.Simulate(context.Background(), "v-1", []byte(logScript), string(scriptcheck.ProfileHandwritten), logManifest, scenario)
 	require.NoError(t, err)
 	return result
 }
@@ -118,7 +158,7 @@ func TestSimulateSchedulesLikeALiveSession(t *testing.T) {
 	t.Run("a game without update simulates up to the duration even when its ticks run nothing", func(t *testing.T) {
 		withoutUpdate := logManifest
 		withoutUpdate.Update = false
-		result, err := service.Simulate(context.Background(), []byte(logScript), string(scriptcheck.ProfileHandwritten), withoutUpdate, runtime.Scenario{
+		result, err := service.Simulate(context.Background(), "v-1", []byte(logScript), string(scriptcheck.ProfileHandwritten), withoutUpdate, runtime.Scenario{
 			Players: 1, DurationMs: 500,
 			Steps:       []runtime.ScenarioStep{{AtMs: 150, Player: "P1", Command: &runtime.ScenarioCommand{Name: "go"}}},
 			ObserveAtMs: []int64{450},
@@ -136,6 +176,8 @@ func TestSimulateSchedulesLikeALiveSession(t *testing.T) {
 		scenario := runtime.Scenario{Players: 1, Seed: 7, DurationMs: 200}
 		first := simulateLog(t, service, scenario)
 		second := simulateLog(t, service, scenario)
+		require.NotEqual(t, first.ID, second.ID, "each run is kept on its own")
+		first.ID, first.ExpiresAt, second.ID, second.ExpiresAt = "", time.Time{}, "", time.Time{}
 		require.Equal(t, first, second)
 		scenario.Seed = 8
 		other := simulateLog(t, service, scenario)
@@ -220,7 +262,7 @@ func TestSimulateStops(t *testing.T) {
 		for range maxConcurrentSimulations {
 			service.slots <- struct{}{}
 		}
-		_, err := service.Simulate(context.Background(), []byte(logScript), string(scriptcheck.ProfileHandwritten), logManifest, runtime.Scenario{Players: 1, DurationMs: 100})
+		_, err := service.Simulate(context.Background(), "v-1", []byte(logScript), string(scriptcheck.ProfileHandwritten), logManifest, runtime.Scenario{Players: 1, DurationMs: 100})
 		require.ErrorIs(t, err, runtime.ErrSimulationsBusy)
 	})
 }
@@ -234,7 +276,7 @@ func TestSimulateABuiltGame(t *testing.T) {
 		steps[i] = runtime.ScenarioStep{AtMs: int64(150 * (i + 1)), Player: "P1", Command: &runtime.ScenarioCommand{Name: "tap"}}
 	}
 
-	result, err := newService(t).Simulate(context.Background(), script, string(scriptcheck.ProfileSDKV1), manifest, runtime.Scenario{Players: 2, DurationMs: 31000, Steps: steps, ObserveAtMs: []int64{1000}})
+	result, err := newService(t).Simulate(context.Background(), "v-1", script, string(scriptcheck.ProfileSDKV1), manifest, runtime.Scenario{Players: 2, DurationMs: 31000, Steps: steps, ObserveAtMs: []int64{1000}})
 
 	require.NoError(t, err)
 	require.True(t, result.Finished)

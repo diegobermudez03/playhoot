@@ -421,4 +421,6 @@ type BuiltRevision struct {
 	Script        []byte
 	ScriptProfile string
 	Manifest      RuntimeManifest
+	// ToolchainVersion identifies the toolchain that built it, when known.
+	ToolchainVersion string
 }

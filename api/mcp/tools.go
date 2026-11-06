@@ -105,8 +105,20 @@ type getBuildInput struct {
 }
 
 type simulateInput struct {
-	GameUUID string         `json:"game_uuid" jsonschema:"the game's uuid"`
-	Scenario map[string]any `json:"scenario" jsonschema:"a playhoot.scenario.v1 document, as the guide's scenarios page describes"`
+	GameUUID     string         `json:"game_uuid" jsonschema:"the game's uuid"`
+	Scenario     map[string]any `json:"scenario,omitempty" jsonschema:"a playhoot.scenario.v1 document, as the guide's scenarios page describes"`
+	ScenarioPath string         `json:"scenario_path,omitempty" jsonschema:"run the scenario saved at this path (scenarios/<name>.json) of the revision instead"`
+	All          bool           `json:"all,omitempty" jsonschema:"run every saved scenario (at most 10), a summary each"`
+	Revision     int64          `json:"revision,omitempty" jsonschema:"the revision to simulate; the current one when omitted"`
+	Detail       string         `json:"detail,omitempty" jsonschema:"summary (default) or full: every state, view, command answer and event"`
+}
+
+type readSimulationStateInput struct {
+	GameUUID string `json:"game_uuid" jsonschema:"the game's uuid"`
+	ResultID string `json:"result_id" jsonschema:"the result_id a simulate answer gave"`
+	AtMs     *int64 `json:"at_ms,omitempty" jsonschema:"an instant the simulation observed (observed_at_ms); the end when omitted"`
+	Of       string `json:"of,omitempty" jsonschema:"global (default, the authoritative state) or a player (P1, P2...) for their view"`
+	Path     string `json:"path,omitempty" jsonschema:"a path into it, as players.P1.hand[0]; the whole value when omitted"`
 }
 
 // addTools declares every tool on server. Each one translates its arguments
@@ -234,17 +246,25 @@ func (h *Handler) addTools(server *sdk.Server) {
 			}
 			return answer(h.games.ReadBuild(ctx, user, in.GameUUID, &in.Revision, wait))
 		})
-	sdk.AddTool(server, &sdk.Tool{Name: "simulate", Description: "Runs a scenario on the current revision's succeeded build with a virtual clock, and answers the global state and each player's view at the instants asked for, the command answers, refusals, events and errors. Same seed, same result."},
+	sdk.AddTool(server, &sdk.Tool{Name: "simulate", Description: "Runs a scenario on a revision's succeeded build with a virtual clock (same seed, same result): the scenario given, the one saved at scenario_path, or all saved ones. Expectations (expect) are checked by the platform; holds keep inputs pressed for a while. The answer is a summary: passed, each failed expectation with expected and actual, how it stopped, counts, the first refusals and errors, and a result_id to read any observed state with read_simulation_state. detail full answers everything instead."},
 		func(ctx context.Context, req *sdk.CallToolRequest, in simulateInput) (*sdk.CallToolResult, any, error) {
 			user, err := userOf(req)
 			if err != nil {
 				return nil, nil, err
 			}
-			scenario, refusal := games.DecodeScenario(mustJSON(in.Scenario))
-			if refusal != nil {
-				return refused(refusal), nil, nil
+			simulation := games.SimulateRequest{Revision: in.Revision, Detail: in.Detail, ScenarioPath: in.ScenarioPath, All: in.All}
+			if in.ScenarioPath == "" && !in.All {
+				simulation.Scenario = mustJSON(in.Scenario)
 			}
-			return answer(h.games.Simulate(ctx, user, in.GameUUID, scenario))
+			return answer(h.games.Simulate(ctx, user, in.GameUUID, simulation))
+		})
+	sdk.AddTool(server, &sdk.Tool{Name: "read_simulation_state", Description: "Reads one value of a simulation result while it is kept (30 minutes): the global state or a player's view, at an observed instant or the end, whole or at a path. A value over 64 KiB answers its size and keys instead: ask for a narrower path."},
+		func(ctx context.Context, req *sdk.CallToolRequest, in readSimulationStateInput) (*sdk.CallToolResult, any, error) {
+			user, err := userOf(req)
+			if err != nil {
+				return nil, nil, err
+			}
+			return answer(h.games.ReadSimulationState(ctx, user, in.GameUUID, in.ResultID, in.AtMs, in.Of, in.Path))
 		})
 }
 
