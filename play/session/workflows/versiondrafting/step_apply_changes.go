@@ -25,6 +25,7 @@ type applyChangesRepo interface {
 	FindVersion(ctx context.Context, tx *gorm.DB, versionUUID string) (*internalrepo.Version, error)
 	ClaimChangeAttempt(ctx context.Context, tx *gorm.DB, versionID uint, kind string, idempotencyKey string, requestSHA256 string, baseRevision int64, origin string) (uint, *internalrepo.ChangeAttempt, error)
 	FindRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64) (draftsources.Revision, bool, error)
+	FindSourceContents(ctx context.Context, tx *gorm.DB, hashes []string) (map[string]string, error)
 	StoreSourceContents(ctx context.Context, tx *gorm.DB, contents map[string]string) error
 	AdvanceRevision(ctx context.Context, tx *gorm.DB, versionID uint, status string, base int64) (bool, error)
 	CreateRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64, revision draftsources.Revision, source string) error
@@ -43,11 +44,13 @@ var (
 )
 
 // changeRequest is what makes two changes the same request: the base they
-// were made over and what they write and delete, in order.
+// were made over and what they write, edit and delete, in order. Edits are
+// left out when none, so a change without them keeps its fingerprint.
 type changeRequest struct {
 	Kind         string                        `json:"kind"`
 	BaseRevision int64                         `json:"base_revision"`
 	Files        []sessionpkg.DraftFileContent `json:"files"`
+	Edits        []draftsources.Edit           `json:"edits,omitempty"`
 	Delete       []string                      `json:"delete"`
 }
 
@@ -71,7 +74,7 @@ func (m *Manager) ApplyChanges(ctx context.Context, versionUUID string, change s
 	if change.BaseRevision < 1 {
 		return sessionpkg.DraftChangeResult{}, fmt.Errorf("base revision must be at least 1")
 	}
-	fingerprint, err := changeattempt.Fingerprint(changeRequest{Kind: "change", BaseRevision: change.BaseRevision, Files: change.Files, Delete: change.Delete})
+	fingerprint, err := changeattempt.Fingerprint(changeRequest{Kind: "change", BaseRevision: change.BaseRevision, Files: change.Files, Edits: edits(change.Edits), Delete: change.Delete})
 	if err != nil {
 		return sessionpkg.DraftChangeResult{}, err
 	}
@@ -161,13 +164,25 @@ func (m *Manager) decideChange(ctx context.Context, tx *gorm.DB, version *intern
 		return sessionpkg.DraftChangeResult{}, nil, fmt.Errorf("version %s has no revision %d", version.UUID, current)
 	}
 
-	writes := make([]draftsources.Write, len(change.Files))
-	for i, file := range change.Files {
-		writes[i] = draftsources.Write{Path: file.Path, Content: file.Content}
+	invalid := func(diagnostics []draftsources.Diagnostic) (sessionpkg.DraftChangeResult, []draftsources.Diagnostic, error) {
+		return sessionpkg.DraftChangeResult{Outcome: sessionpkg.DraftChangeInvalid, Revision: current, Diagnostics: changeattempt.Public(diagnostics)}, diagnostics, nil
 	}
+	edited, before, diagnostics, err := m.resolveEdits(ctx, tx, revision.Files, edits(change.Edits))
+	if err != nil {
+		return sessionpkg.DraftChangeResult{}, nil, err
+	}
+	if len(diagnostics) > 0 {
+		return invalid(diagnostics)
+	}
+	writes := make([]draftsources.Write, 0, len(change.Files)+len(edited))
+	for _, file := range change.Files {
+		writes = append(writes, draftsources.Write{Path: file.Path, Content: file.Content})
+	}
+	// An edited path also written or deleted is a duplicate_path for Apply.
+	writes = append(writes, edited...)
 	applied := draftsources.Apply(revision.Files, writes, change.Delete)
 	if len(applied.Diagnostics) > 0 {
-		return sessionpkg.DraftChangeResult{Outcome: sessionpkg.DraftChangeInvalid, Revision: current, Diagnostics: changeattempt.Public(applied.Diagnostics)}, applied.Diagnostics, nil
+		return invalid(applied.Diagnostics)
 	}
 	if draftsources.SameFiles(revision.Files, applied.Files) {
 		return sessionpkg.DraftChangeResult{Outcome: sessionpkg.DraftChangeUnchanged, Revision: current}, nil, nil
@@ -190,5 +205,54 @@ func (m *Manager) decideChange(ctx context.Context, tx *gorm.DB, version *intern
 	if err := m.applyChangesRepo.CreateRevision(ctx, tx, version.ID, next, nextRevision, change.Origin); err != nil {
 		return sessionpkg.DraftChangeResult{}, nil, err
 	}
-	return sessionpkg.DraftChangeResult{Outcome: sessionpkg.DraftChangeApplied, Revision: next}, nil, nil
+	return sessionpkg.DraftChangeResult{Outcome: sessionpkg.DraftChangeApplied, Revision: next, Diffs: editDiffs(edited, before)}, nil, nil
+}
+
+// resolveEdits turns edits into whole-file writes over the files of the base
+// revision, answering as well the edited files' contents before them, by
+// path.
+func (m *Manager) resolveEdits(ctx context.Context, tx *gorm.DB, files map[string]draftsources.File, fileEdits []draftsources.Edit) ([]draftsources.Write, map[string]string, []draftsources.Diagnostic, error) {
+	if len(fileEdits) == 0 {
+		return nil, nil, nil, nil
+	}
+	contents, err := m.applyChangesRepo.FindSourceContents(ctx, tx, draftsources.EditedHashes(files, fileEdits))
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	writes, diagnostics, err := draftsources.ResolveEdits(files, contents, fileEdits)
+	if err != nil {
+		monitoring.Alert(ctx, "play draft revision references a source content that is not stored")
+		return nil, nil, nil, err
+	}
+	before := make(map[string]string, len(writes))
+	for _, write := range writes {
+		before[write.Path] = contents[files[write.Path].SHA256]
+	}
+	return writes, before, diagnostics, nil
+}
+
+// editDiffs are the diffs of the edited files, in the order they were
+// edited.
+func editDiffs(edited []draftsources.Write, before map[string]string) []sessionpkg.DraftFileDiff {
+	if len(edited) == 0 {
+		return nil
+	}
+	diffs := make([]sessionpkg.DraftFileDiff, len(edited))
+	for i, write := range edited {
+		diff := draftsources.Diff(write.Path, before[write.Path], write.Content)
+		diffs[i] = sessionpkg.DraftFileDiff{Path: diff.Path, Diff: diff.Diff, Truncated: diff.Truncated}
+	}
+	return diffs
+}
+
+// edits are a change's edits in the sources' terms.
+func edits(fileEdits []sessionpkg.DraftFileEdit) []draftsources.Edit {
+	if len(fileEdits) == 0 {
+		return nil
+	}
+	converted := make([]draftsources.Edit, len(fileEdits))
+	for i, edit := range fileEdits {
+		converted[i] = draftsources.Edit{Path: edit.Path, Find: edit.Find, Replace: edit.Replace, All: edit.All}
+	}
+	return converted
 }

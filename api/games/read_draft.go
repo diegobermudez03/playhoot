@@ -23,6 +23,7 @@ type draftFileResponse struct {
 type diagnosticResponse struct {
 	Path    string `json:"path"`
 	Code    string `json:"code"`
+	Edit    *int   `json:"edit,omitempty"`
 	Message string `json:"message"`
 }
 
@@ -264,7 +265,7 @@ func writeAccessRefusal(w http.ResponseWriter, access game.EditableVersionOutcom
 func diagnostics(list []sessionpkg.DraftDiagnostic) []diagnosticResponse {
 	result := make([]diagnosticResponse, len(list))
 	for i, diagnostic := range list {
-		result[i] = diagnosticResponse{Path: diagnostic.Path, Code: diagnostic.Code, Message: diagnostic.Message}
+		result[i] = diagnosticResponse{Path: diagnostic.Path, Code: diagnostic.Code, Edit: diagnostic.Edit, Message: diagnostic.Message}
 	}
 	return result
 }

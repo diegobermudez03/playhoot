@@ -71,10 +71,12 @@ type Write struct {
 }
 
 // Diagnostic is one reason a change is refused; Path is empty when the
-// reason is about the change as a whole.
+// reason is about the change as a whole. Edit is the index of the edit it is
+// about, when it is about one.
 type Diagnostic struct {
 	Path    string `json:"path,omitempty"`
 	Code    string `json:"code"`
+	Edit    *int   `json:"edit,omitempty"`
 	Message string `json:"message"`
 }
 

@@ -49,9 +49,9 @@ Postgres integration tests were updated (`versiondrafting_integration_test.go`, 
 
 ### M. Patch edits (C, AQ2, AO case 5)
 
-- [ ] `playhoot.project-change.v1` gains `edits: [{path, find, replace, all?}]` next to `files` and `delete`. Applied in order by the service on the base revision's content; `find` must match exactly once (or every occurrence with `all`); otherwise the whole change is `invalid_change` with diagnostics `edit_not_found` / `edit_ambiguous` (path, edit index), no revision. The result is validated like any write (UTF-8, limits) and stored as the whole file (snapshots unchanged). The idempotency fingerprint includes the edits.
-- [ ] The answer includes, per edited file, a bounded unified diff of what was applied (C P1).
-- [ ] MCP: `apply_changes` documents edits as the default way to change existing files; whole `files` only for new files or substantial rewrites. Same in the Markdown page.
+- [x] `playhoot.project-change.v1` gains `edits: [{path, find, replace, all?}]` next to `files` and `delete` (2026-11-05): `draftsources.ResolveEdits` applies them in order on the base revision's stored contents (`FindSourceContents`) and turns them into whole-file writes before `Apply`, so snapshots stay whole files and every rule (UTF-8, sizes, limits) holds. `edit_not_found`, `edit_ambiguous`, `invalid_edit` (empty find), `not_found` (no such file) and `file_too_large` refuse the whole change with the edit's index (`edit` on the diagnostic, also in the API and the attempts); an edited path also written or deleted is `duplicate_path`; later edits of a file whose earlier edit failed are not checked. Edits are in the idempotency fingerprint (`omitempty`: earlier fingerprints unchanged). Unit tests (`edits_test.go`, step, API, MCP); Postgres integration case added but not run here (no Docker).
+- [x] The answer includes, per edited file, a bounded unified diff of what was applied (2026-11-05): `diffs: [{path, diff, truncated}]`, 3 lines of context, cut at 8 KiB on a line (`go-difflib`, now a direct dependency). Only on the first answer: a replay answers no diffs (the attempt does not keep them).
+- [x] MCP: `apply_changes` documents edits as the default way to change existing files, whole `files` only for new files or substantial rewrites (2026-11-05); same in the server instructions and the AI link's Markdown page (with an example and what to do on `edit_not_found` / `edit_ambiguous`). The SDK guide's `changes.md` is the frontend's (its M).
 
 ### N. Revision provenance and diff (A P1, AI)
 

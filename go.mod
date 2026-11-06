@@ -14,6 +14,7 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/klauspost/compress v1.18.0
 	github.com/modelcontextprotocol/go-sdk v1.7.0
+	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
 	github.com/stretchr/testify v1.11.1
 	go.uber.org/mock v0.6.0
 	gorm.io/driver/postgres v1.6.0
@@ -50,7 +51,6 @@ require (
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
-	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/rogpeppe/go-internal v1.16.0 // indirect
 	github.com/segmentio/asm v1.1.3 // indirect
 	github.com/segmentio/encoding v0.5.4 // indirect

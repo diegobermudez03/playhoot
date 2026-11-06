@@ -55,10 +55,18 @@ type changeFile struct {
 	Content string `json:"content" jsonschema:"the file's complete new content"`
 }
 
+type changeEdit struct {
+	Path    string `json:"path" jsonschema:"an existing file's path"`
+	Find    string `json:"find" jsonschema:"text copied exactly from the file, with enough surrounding lines to appear once"`
+	Replace string `json:"replace" jsonschema:"the text that takes its place"`
+	All     bool   `json:"all,omitempty" jsonschema:"replace every occurrence of find instead of requiring exactly one"`
+}
+
 type applyChangesInput struct {
 	GameUUID       string       `json:"game_uuid" jsonschema:"the game's uuid"`
 	BaseRevision   int64        `json:"base_revision" jsonschema:"the revision you read; a revision_conflict answer means the game changed since: read it again"`
-	Files          []changeFile `json:"files" jsonschema:"only the files that change, each with its whole new content"`
+	Edits          []changeEdit `json:"edits,omitempty" jsonschema:"find/replace edits of existing files, applied in order on base_revision: the default way to change a file"`
+	Files          []changeFile `json:"files,omitempty" jsonschema:"new files, or files rewritten substantially, each with its whole new content"`
 	Delete         []string     `json:"delete,omitempty" jsonschema:"paths of files to remove"`
 	IdempotencyKey string       `json:"idempotency_key" jsonschema:"a new random string for this change; resend the same one only to retry it"`
 }
@@ -139,7 +147,7 @@ func (h *Handler) addTools(server *sdk.Server) {
 			}
 			return answer(h.games.ReadChanges(ctx, user, in.GameUUID, in.Since, optionalRevision(in.Revision)))
 		})
-	sdk.AddTool(server, &sdk.Tool{Name: "apply_changes", Description: "Changes the game's sources on the revision you read: the files given replace theirs whole, the paths in delete are removed. Applied, it makes a new revision, which builds automatically (wait for it with get_build); the answer has every file's hash and what changed."},
+	sdk.AddTool(server, &sdk.Tool{Name: "apply_changes", Description: "Changes the game's sources on the revision you read, all or nothing. Change existing files with edits (find/replace, applied in order; find must appear exactly once unless all is set, otherwise edit_not_found or edit_ambiguous names the edit and nothing applies); use files only for new files or substantial rewrites; delete removes paths. A path goes in one of the three only. Applied, it makes a new revision, which builds automatically (wait for it with get_build); the answer has every file's hash, what changed and the diff of each edited file."},
 		func(ctx context.Context, req *sdk.CallToolRequest, in applyChangesInput) (*sdk.CallToolResult, any, error) {
 			by, err := callerOf(req)
 			if err != nil {
@@ -151,6 +159,9 @@ func (h *Handler) addTools(server *sdk.Server) {
 			}
 			for _, file := range in.Files {
 				change.Files = append(change.Files, games.ChangeFile{Path: file.Path, Content: file.Content})
+			}
+			for _, edit := range in.Edits {
+				change.Edits = append(change.Edits, games.ChangeEdit{Path: edit.Path, Find: edit.Find, Replace: edit.Replace, All: edit.All})
 			}
 			return answer(h.games.ApplyChanges(ctx, by, in.GameUUID, change))
 		})

@@ -118,6 +118,21 @@ func (mr *MockapplyChangesRepoMockRecorder) FindRevision(ctx, tx, versionID, num
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindRevision", reflect.TypeOf((*MockapplyChangesRepo)(nil).FindRevision), ctx, tx, versionID, number)
 }
 
+// FindSourceContents mocks base method.
+func (m *MockapplyChangesRepo) FindSourceContents(ctx context.Context, tx *gorm.DB, hashes []string) (map[string]string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "FindSourceContents", ctx, tx, hashes)
+	ret0, _ := ret[0].(map[string]string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// FindSourceContents indicates an expected call of FindSourceContents.
+func (mr *MockapplyChangesRepoMockRecorder) FindSourceContents(ctx, tx, hashes any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindSourceContents", reflect.TypeOf((*MockapplyChangesRepo)(nil).FindSourceContents), ctx, tx, hashes)
+}
+
 // FindVersion mocks base method.
 func (m *MockapplyChangesRepo) FindVersion(ctx context.Context, tx *gorm.DB, versionUUID string) (*repo.Version, error) {
 	m.ctrl.T.Helper()

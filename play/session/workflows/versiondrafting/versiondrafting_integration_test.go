@@ -157,6 +157,44 @@ func TestDraftingIntegration(t *testing.T) {
 		require.ErrorIs(t, err, sessionpkg.ErrDraftRevisionNotFound)
 	})
 
+	t.Run("edits_change_existing_files_on_their_stored_content", func(t *testing.T) {
+		_, versionUUID := newDraft(t)
+		applied, err := m.ApplyChanges(ctx, versionUUID, write(1, "e0", "shared/rules.ts", "export const rounds = 5;\nexport const lives = 5;\n"))
+		require.NoError(t, err)
+		require.Equal(t, sessionpkg.DraftChangeApplied, applied.Outcome)
+
+		edit := func(key string, edits ...sessionpkg.DraftFileEdit) sessionpkg.DraftChange {
+			return sessionpkg.DraftChange{BaseRevision: 2, Edits: edits, IdempotencyKey: key, Origin: sessionpkg.DraftOriginMCP}
+		}
+		ambiguous, err := m.ApplyChanges(ctx, versionUUID, edit("e1", sessionpkg.DraftFileEdit{Path: "shared/rules.ts", Find: "= 5", Replace: "= 3"}))
+		require.NoError(t, err)
+		require.Equal(t, sessionpkg.DraftChangeInvalid, ambiguous.Outcome)
+		require.Equal(t, draftsources.CodeEditAmbiguous, ambiguous.Diagnostics[0].Code)
+		require.Equal(t, 0, *ambiguous.Diagnostics[0].Edit)
+
+		edited, err := m.ApplyChanges(ctx, versionUUID, edit("e2", sessionpkg.DraftFileEdit{Path: "shared/rules.ts", Find: "rounds = 5", Replace: "rounds = 3"}))
+		require.NoError(t, err)
+		require.Equal(t, sessionpkg.DraftChangeApplied, edited.Outcome)
+		require.Equal(t, []string{"shared/rules.ts"}, edited.Changes.Modified)
+		require.Len(t, edited.Diffs, 1)
+		require.Contains(t, edited.Diffs[0].Diff, "+export const rounds = 3;")
+
+		read, err := m.ReadDraft(ctx, versionUUID, 0, true)
+		require.NoError(t, err)
+		for _, file := range read.Files {
+			if file.Path == "shared/rules.ts" {
+				require.Equal(t, "export const rounds = 3;\nexport const lives = 5;\n", *file.Content, "the whole edited file is stored")
+			}
+		}
+
+		replayed, err := m.ApplyChanges(ctx, versionUUID, edit("e2", sessionpkg.DraftFileEdit{Path: "shared/rules.ts", Find: "rounds = 5", Replace: "rounds = 3"}))
+		require.NoError(t, err)
+		require.True(t, replayed.Replayed)
+		require.Nil(t, replayed.Diffs, "a replay answers no diffs")
+		_, err = m.ApplyChanges(ctx, versionUUID, edit("e2", sessionpkg.DraftFileEdit{Path: "shared/rules.ts", Find: "rounds = 5", Replace: "rounds = 4"}))
+		require.ErrorIs(t, err, sessionpkg.ErrIdempotencyConflict, "the edits are part of the fingerprint")
+	})
+
 	t.Run("a_change_or_restore_that_changes_nothing_creates_no_revision", func(t *testing.T) {
 		_, versionUUID := newDraft(t)
 		const rules = "export const rounds = 5;\n"

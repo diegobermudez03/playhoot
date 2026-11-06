@@ -26,11 +26,23 @@ type ChangeFile struct {
 	Content string `json:"content"`
 }
 
-// ChangeRequest is the change envelope.
+// ChangeEdit replaces Find with Replace in an existing file: its one
+// occurrence, or every occurrence when All.
+type ChangeEdit struct {
+	Path    string `json:"path"`
+	Find    string `json:"find"`
+	Replace string `json:"replace"`
+	All     bool   `json:"all,omitempty"`
+}
+
+// ChangeRequest is the change envelope: edits of existing files, applied in
+// order on the base revision, files written whole and paths deleted; a path
+// appears in one of them only.
 type ChangeRequest struct {
 	Format         string       `json:"format"`
 	BaseRevision   *int64       `json:"base_revision"`
 	Files          []ChangeFile `json:"files"`
+	Edits          []ChangeEdit `json:"edits"`
 	Delete         []string     `json:"delete"`
 	IdempotencyKey string       `json:"idempotency_key"`
 }
@@ -43,12 +55,22 @@ type RestoreRequest struct {
 }
 
 // ChangeResponse is a change or a restore that was decided. Changes are the
-// revision's files with their hashes and what the decision changed.
+// revision's files with their hashes and what the decision changed; Diffs
+// the bounded unified diffs of the files the change edited.
 type ChangeResponse struct {
 	Outcome  string                   `json:"outcome"`
 	Revision int64                    `json:"revision"`
 	Build    *buildStatusResponse     `json:"build,omitempty"`
 	Changes  *RevisionChangesResponse `json:"changes,omitempty"`
+	Diffs    []FileDiffResponse       `json:"diffs,omitempty"`
+}
+
+// FileDiffResponse is an edited file's unified diff, cut at 8 KiB when
+// truncated.
+type FileDiffResponse struct {
+	Path      string `json:"path"`
+	Diff      string `json:"diff"`
+	Truncated bool   `json:"truncated,omitempty"`
 }
 
 type conflictResponse struct {
@@ -87,7 +109,7 @@ func (h *Handler) ApplyChanges(ctx context.Context, by Caller, rawGameUUID strin
 	if refusal != nil {
 		return ChangeResponse{}, refusal
 	}
-	logging.LogFields(ctx, logging.Field("idempotency_key", req.IdempotencyKey), logging.Field("files", len(req.Files)), logging.Field("deletes", len(req.Delete)))
+	logging.LogFields(ctx, logging.Field("idempotency_key", req.IdempotencyKey), logging.Field("files", len(req.Files)), logging.Field("edits", len(req.Edits)), logging.Field("deletes", len(req.Delete)))
 	switch {
 	case req.Format != changeFormat:
 		return ChangeResponse{}, refuse(http.StatusBadRequest, "format must be "+changeFormat)
@@ -105,6 +127,9 @@ func (h *Handler) ApplyChanges(ctx context.Context, by Caller, rawGameUUID strin
 	}
 	for _, file := range req.Files {
 		change.Files = append(change.Files, sessionpkg.DraftFileContent{Path: file.Path, Content: file.Content})
+	}
+	for _, edit := range req.Edits {
+		change.Edits = append(change.Edits, sessionpkg.DraftFileEdit{Path: edit.Path, Find: edit.Find, Replace: edit.Replace, All: edit.All})
 	}
 	edit, err := h.editor.ApplyDraftChanges(ctx, by.UserUUID, gameUUID, change)
 	return editAnswer(ctx, edit, err, "applying draft changes")
@@ -176,7 +201,7 @@ func editAnswer(ctx context.Context, edit gameauthoring.DraftEdit, err error, wh
 	logging.LogFields(ctx, logging.Field("draft_outcome", string(result.Outcome)), logging.Field("replayed", result.Replayed))
 	switch result.Outcome {
 	case sessionpkg.DraftChangeApplied, sessionpkg.DraftChangeUnchanged:
-		return ChangeResponse{Outcome: string(result.Outcome), Revision: result.Revision, Build: buildStatus(result.Build), Changes: changesBody(result.Changes)}, nil
+		return ChangeResponse{Outcome: string(result.Outcome), Revision: result.Revision, Build: buildStatus(result.Build), Changes: changesBody(result.Changes), Diffs: diffsBody(result.Diffs)}, nil
 	case sessionpkg.DraftChangeConflict:
 		return ChangeResponse{}, &Refusal{Status: http.StatusConflict, Body: conflictResponse{
 			ErrorResponse:   httpx.ErrorResponse{Code: codeRevisionConflict, Message: "the draft changed since base_revision; read it again and redo the change on the current revision"},
@@ -193,4 +218,16 @@ func editAnswer(ctx context.Context, edit gameauthoring.DraftEdit, err error, wh
 		logging.LogFields(ctx, logging.Field("unknown_draft_outcome", string(result.Outcome)))
 		return ChangeResponse{}, refuse(http.StatusInternalServerError, what+" failed")
 	}
+}
+
+// diffsBody is the edited files' diffs as answered.
+func diffsBody(diffs []sessionpkg.DraftFileDiff) []FileDiffResponse {
+	if len(diffs) == 0 {
+		return nil
+	}
+	body := make([]FileDiffResponse, len(diffs))
+	for i, diff := range diffs {
+		body[i] = FileDiffResponse{Path: diff.Path, Diff: diff.Diff, Truncated: diff.Truncated}
+	}
+	return body
 }

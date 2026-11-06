@@ -1,7 +1,8 @@
 # draftsources
 
 The rules of a DRAFT version's authored sources (which paths a project may hold, its limits, how a
-change applies) and the starter template a new DRAFT begins with.
+change applies, how find/replace edits resolve into whole files and the bounded diff answered for
+them) and the starter template a new DRAFT begins with.
 
 `template/` is a copy of the frontend repository's SDK fixture `playhoot_frontend/fixtures/sdk-games/tap-race`
 (its sources only, never `dist/`) plus `notes.md`. It must keep building with the current Playhoot SDK

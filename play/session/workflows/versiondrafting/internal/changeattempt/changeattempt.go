@@ -53,7 +53,7 @@ func Public(diagnostics []draftsources.Diagnostic) []sessionpkg.DraftDiagnostic 
 	}
 	public := make([]sessionpkg.DraftDiagnostic, len(diagnostics))
 	for i, diagnostic := range diagnostics {
-		public[i] = sessionpkg.DraftDiagnostic{Path: diagnostic.Path, Code: diagnostic.Code, Message: diagnostic.Message}
+		public[i] = sessionpkg.DraftDiagnostic{Path: diagnostic.Path, Code: diagnostic.Code, Edit: diagnostic.Edit, Message: diagnostic.Message}
 	}
 	return public
 }

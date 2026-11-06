@@ -2,6 +2,7 @@ package versiondrafting
 
 import (
 	"fmt"
+	"testing"
 
 	"go.uber.org/mock/gomock"
 
@@ -24,4 +25,16 @@ func (m revisionMatcher) Matches(x any) bool {
 
 func (m revisionMatcher) String() string {
 	return fmt.Sprintf("is a revision with %d files", m.files)
+}
+
+// templateContent is the content of the starter template's file at filePath.
+func templateContent(t *testing.T, filePath string) string {
+	t.Helper()
+	for _, write := range draftsources.Template() {
+		if write.Path == filePath {
+			return write.Content
+		}
+	}
+	t.Fatalf("the template has no %s", filePath)
+	return ""
 }

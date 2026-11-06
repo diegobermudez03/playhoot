@@ -63,6 +63,64 @@ func TestApplyChangesInTx(t *testing.T) {
 				superseded: 1,
 			}
 		},
+		"edits_apply_on_the_base_contents_and_answer_their_diff": func(t *testing.T, deps dependencies) test {
+			claims(deps, draft(3), 3)
+			notes := templateContent(t, "notes.md")
+			edited := notes + "more\n"
+			gomock.InOrder(
+				deps.repo.EXPECT().FindRevision(ctx, tx, versionID, int64(3)).Return(draftsources.Revision{Files: starter}, true, nil),
+				deps.repo.EXPECT().FindSourceContents(ctx, tx, []string{starter["notes.md"].SHA256}).Return(map[string]string{starter["notes.md"].SHA256: notes}, nil),
+				deps.repo.EXPECT().AdvanceRevision(ctx, tx, versionID, "DRAFT", int64(3)).Return(true, nil),
+				deps.repo.EXPECT().StoreSourceContents(ctx, tx, map[string]string{draftsources.SHA256Hex(edited): edited}).Return(nil),
+				deps.repo.EXPECT().CreateRevision(ctx, tx, versionID, int64(4), revisionWithFiles(len(starter)), "api").Return(nil),
+				deps.repo.EXPECT().QueueBuild(ctx, tx, versionID, int64(4), "build-uuid", "QUEUED", "SUPERSEDED").Return(0, nil),
+				deps.repo.EXPECT().CompleteChangeAttempt(ctx, tx, attemptID, "applied", revision(4), nil).Return(nil),
+			)
+			c := change(3)
+			c.Edits = []sessionpkg.DraftFileEdit{{Path: "notes.md", Find: notes, Replace: edited}}
+			diff := draftsources.Diff("notes.md", notes, edited)
+			return test{
+				change:   c,
+				expected: sessionpkg.DraftChangeResult{Outcome: sessionpkg.DraftChangeApplied, Revision: 4, Diffs: []sessionpkg.DraftFileDiff{{Path: "notes.md", Diff: diff.Diff}}},
+			}
+		},
+		"an_edit_that_does_not_match_refuses_the_change": func(t *testing.T, deps dependencies) test {
+			claims(deps, draft(3), 3)
+			notes := templateContent(t, "notes.md")
+			_, diagnostics, err := draftsources.ResolveEdits(starter, map[string]string{starter["notes.md"].SHA256: notes}, []draftsources.Edit{{Path: "notes.md", Find: "absent text", Replace: "x"}})
+			require.NoError(t, err)
+			gomock.InOrder(
+				deps.repo.EXPECT().FindRevision(ctx, tx, versionID, int64(3)).Return(draftsources.Revision{Files: starter}, true, nil),
+				deps.repo.EXPECT().FindSourceContents(ctx, tx, []string{starter["notes.md"].SHA256}).Return(map[string]string{starter["notes.md"].SHA256: notes}, nil),
+				deps.repo.EXPECT().CompleteChangeAttempt(ctx, tx, attemptID, "invalid", revision(3), diagnostics).Return(nil),
+			)
+			c := change(3, sessionpkg.DraftFileContent{Path: "shared/x.ts", Content: "x"})
+			c.Edits = []sessionpkg.DraftFileEdit{{Path: "notes.md", Find: "absent text", Replace: "x"}}
+			zero := 0
+			return test{
+				change: c,
+				expected: sessionpkg.DraftChangeResult{Outcome: sessionpkg.DraftChangeInvalid, Revision: 3, Diagnostics: []sessionpkg.DraftDiagnostic{
+					{Path: "notes.md", Code: draftsources.CodeEditNotFound, Edit: &zero, Message: diagnostics[0].Message},
+				}},
+			}
+		},
+		"a_path_both_edited_and_written_is_a_duplicate": func(t *testing.T, deps dependencies) test {
+			claims(deps, draft(3), 3)
+			notes := templateContent(t, "notes.md")
+			gomock.InOrder(
+				deps.repo.EXPECT().FindRevision(ctx, tx, versionID, int64(3)).Return(draftsources.Revision{Files: starter}, true, nil),
+				deps.repo.EXPECT().FindSourceContents(ctx, tx, gomock.Any()).Return(map[string]string{starter["notes.md"].SHA256: notes}, nil),
+				deps.repo.EXPECT().CompleteChangeAttempt(ctx, tx, attemptID, "invalid", revision(3), gomock.Any()).Return(nil),
+			)
+			c := change(3, sessionpkg.DraftFileContent{Path: "notes.md", Content: "x"})
+			c.Edits = []sessionpkg.DraftFileEdit{{Path: "notes.md", Find: notes, Replace: "y"}}
+			return test{
+				change: c,
+				expected: sessionpkg.DraftChangeResult{Outcome: sessionpkg.DraftChangeInvalid, Revision: 3, Diagnostics: []sessionpkg.DraftDiagnostic{
+					{Path: "notes.md", Code: draftsources.CodeDuplicatePath, Message: "the path appears more than once in the change"},
+				}},
+			}
+		},
 		"stale_base_is_a_conflict": func(t *testing.T, deps dependencies) test {
 			claims(deps, draft(5), 3)
 			deps.repo.EXPECT().CompleteChangeAttempt(ctx, tx, attemptID, "conflict", revision(5), nil).Return(nil)

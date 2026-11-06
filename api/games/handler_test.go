@@ -294,6 +294,28 @@ func TestHandleApplyDraftChanges(t *testing.T) {
 			tc.expectedBody = `{"outcome":"applied","revision":2,"changes":{"since":1,"revision":2,"files":[{"path":"notes.md","sha256":"h","size":2}],"added":[],"modified":["notes.md"],"deleted":["shared/old.ts"]}}`
 			return tc
 		},
+		"edits_pass_in_order_and_answer_their_diffs": func(t *testing.T, deps dependencies) test {
+			edits := sessionpkg.DraftChange{
+				BaseRevision: 1, Edits: []sessionpkg.DraftFileEdit{{Path: "notes.md", Find: "a", Replace: "b"}, {Path: "notes.md", Find: "c", Replace: "d", All: true}},
+				IdempotencyKey: "key-2", Origin: sessionpkg.DraftOriginWeb,
+			}
+			deps.editor.EXPECT().ApplyDraftChanges(gomock.Any(), callerUUID, gameUUID, edits).Return(gameauthoring.DraftEdit{Access: found, Result: sessionpkg.DraftChangeResult{
+				Outcome: sessionpkg.DraftChangeApplied, Revision: 2, Diffs: []sessionpkg.DraftFileDiff{{Path: "notes.md", Diff: "-a\n+b\n", Truncated: true}},
+			}}, nil)
+			tc := post(`{"format":"playhoot.project-change.v1","base_revision":1,"edits":[{"path":"notes.md","find":"a","replace":"b"},{"path":"notes.md","find":"c","replace":"d","all":true}],"idempotency_key":"key-2"}`)
+			tc.expectedCode = http.StatusOK
+			tc.expectedBody = `{"outcome":"applied","revision":2,"diffs":[{"path":"notes.md","diff":"-a\n+b\n","truncated":true}]}`
+			return tc
+		},
+		"an_edit_diagnostic_names_its_edit": func(t *testing.T, deps dependencies) test {
+			one := 1
+			answers(deps, gameauthoring.DraftEdit{Access: found, Result: sessionpkg.DraftChangeResult{Outcome: sessionpkg.DraftChangeInvalid, Revision: 1,
+				Diagnostics: []sessionpkg.DraftDiagnostic{{Path: "notes.md", Code: "edit_ambiguous", Edit: &one, Message: "edit 1: find appears 2 times"}}}}, nil)
+			tc := post(body)
+			tc.expectedCode = http.StatusUnprocessableEntity
+			tc.expectedBody = `{"code":"invalid_change","message":"the change was not applied; see diagnostics","diagnostics":[{"path":"notes.md","code":"edit_ambiguous","edit":1,"message":"edit 1: find appears 2 times"}]}`
+			return tc
+		},
 		"a_change_that_changes_nothing": func(t *testing.T, deps dependencies) test {
 			answers(deps, gameauthoring.DraftEdit{Access: found, Result: sessionpkg.DraftChangeResult{Outcome: sessionpkg.DraftChangeUnchanged, Revision: 1}}, nil)
 			tc := post(body)

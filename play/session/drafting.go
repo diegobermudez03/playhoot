@@ -54,13 +54,24 @@ type DraftFileContent struct {
 	Content string
 }
 
+// DraftFileEdit replaces Find with Replace in an existing file: its one
+// occurrence, or every occurrence when All.
+type DraftFileEdit struct {
+	Path    string
+	Find    string
+	Replace string
+	All     bool
+}
+
 // DraftChange is one change to a DRAFT's sources, made over BaseRevision,
-// the revision its author last read. It applies whole or not at all.
-// IdempotencyKey identifies it across retries; Origin is one of the draft
-// change origins.
+// the revision its author last read. It applies whole or not at all: Edits,
+// in order, on the base revision's contents, then Files written whole and
+// Delete removed; a path appears in one of the three only. IdempotencyKey
+// identifies it across retries; Origin is one of the draft change origins.
 type DraftChange struct {
 	BaseRevision   int64
 	Files          []DraftFileContent
+	Edits          []DraftFileEdit
 	Delete         []string
 	IdempotencyKey string
 	Origin         string
@@ -86,10 +97,12 @@ const (
 )
 
 // DraftDiagnostic is one reason a change was refused; Path is empty when the
-// reason is about the change as a whole.
+// reason is about the change as a whole. Edit is the index of the edit it is
+// about (edit_not_found, edit_ambiguous, ...), nil otherwise.
 type DraftDiagnostic struct {
 	Path    string
 	Code    string
+	Edit    *int
 	Message string
 }
 
@@ -107,6 +120,16 @@ type DraftChangeResult struct {
 	// Changes are Revision's files, and what changed from the revision
 	// before it, when applied or unchanged; nil otherwise.
 	Changes *DraftRevisionChanges
+	// Diffs are the bounded unified diffs of the files the change edited,
+	// when it applied and was not replayed.
+	Diffs []DraftFileDiff
+}
+
+// DraftFileDiff is a file's unified diff, cut at 8 KiB (Truncated).
+type DraftFileDiff struct {
+	Path      string
+	Diff      string
+	Truncated bool
 }
 
 // DraftRevisionChanges are a revision's files, without contents, and the

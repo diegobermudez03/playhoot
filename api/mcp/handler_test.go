@@ -199,6 +199,7 @@ func TestToolsCallTheirGamesOperations(t *testing.T) {
 
 	result, err := session.CallTool(ctx, &sdk.CallToolParams{Name: "apply_changes", Arguments: map[string]any{
 		"game_uuid": "g1", "base_revision": 1, "files": []map[string]any{{"path": "notes.md", "content": "# Notes"}}, "idempotency_key": "k1",
+		"edits": []map[string]any{{"path": "server/game.ts", "find": "a", "replace": "b"}, {"path": "server/game.ts", "find": "c", "replace": "d", "all": true}},
 	}})
 	require.NoError(t, err)
 	require.False(t, result.IsError)
@@ -212,6 +213,7 @@ func TestToolsCallTheirGamesOperations(t *testing.T) {
 	require.Equal(t, int64(1), *change.BaseRevision)
 	require.Equal(t, []string{}, change.Delete)
 	require.Equal(t, []games.ChangeFile{{Path: "notes.md", Content: "# Notes"}}, change.Files)
+	require.Equal(t, []games.ChangeEdit{{Path: "server/game.ts", Find: "a", Replace: "b"}, {Path: "server/game.ts", Find: "c", Replace: "d", All: true}}, change.Edits)
 
 	missing, err := session.CallTool(ctx, &sdk.CallToolParams{Name: "apply_changes", Arguments: map[string]any{"game_uuid": "g1", "base_revision": 1, "files": []any{}}})
 	require.True(t, err != nil || missing.IsError, "idempotency_key is required by the tool's schema")
