@@ -149,9 +149,47 @@ func TestReadDraftChanges(t *testing.T) {
 	})
 }
 
+func TestReadDraftDiff(t *testing.T) {
+	ctx := context.Background()
+	found := game.EditableVersion{Outcome: game.EditableVersionFound, VersionUUID: testVersionUUID}
+	diff := sessionpkg.DraftRevisionDiff{From: 1, To: 3, Files: []sessionpkg.DraftRevisionFileDiff{{Path: "notes.md", Status: "modified", Diff: "-a\n+b\n"}}}
+
+	t.Run("the_owner_compares_two_revisions", func(t *testing.T) {
+		manager, deps := newTestManager(t)
+		deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(found, nil)
+		deps.drafts.EXPECT().DiffRevisions(ctx, testVersionUUID, int64(1), int64(0), "notes.md").Return(diff, nil)
+
+		result, err := manager.ReadDraftDiff(ctx, testUserUUID, testGameUUID, 1, 0, "notes.md")
+
+		require.NoError(t, err)
+		require.Equal(t, DraftDiff{Access: game.EditableVersionFound, Diff: diff}, result)
+	})
+
+	t.Run("a_version_play_does_not_have_yet_is_reported_missing", func(t *testing.T) {
+		manager, deps := newTestManager(t)
+		deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(found, nil)
+		deps.drafts.EXPECT().DiffRevisions(ctx, testVersionUUID, int64(1), int64(2), "").Return(sessionpkg.DraftRevisionDiff{}, sessionpkg.ErrDraftNotFound)
+
+		result, err := manager.ReadDraftDiff(ctx, testUserUUID, testGameUUID, 1, 2, "")
+
+		require.NoError(t, err)
+		require.Equal(t, DraftDiff{Access: game.EditableVersionFound, Missing: true}, result)
+	})
+
+	t.Run("a_revision_it_lacks_is_kept_recognizable", func(t *testing.T) {
+		manager, deps := newTestManager(t)
+		deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(found, nil)
+		deps.drafts.EXPECT().DiffRevisions(ctx, testVersionUUID, int64(9), int64(0), "").Return(sessionpkg.DraftRevisionDiff{}, sessionpkg.ErrDraftRevisionNotFound)
+
+		_, err := manager.ReadDraftDiff(ctx, testUserUUID, testGameUUID, 9, 0, "")
+
+		require.ErrorIs(t, err, sessionpkg.ErrDraftRevisionNotFound)
+	})
+}
+
 func TestListDraftRevisions(t *testing.T) {
 	ctx := context.Background()
-	revisions := []sessionpkg.DraftRevision{{Number: 1, Source: "template", Files: 5, CreatedAt: time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)}}
+	revisions := []sessionpkg.DraftRevision{{Number: 1, Kind: "template", Actor: "platform", SDK: "sdk-v1", Files: 5, CreatedAt: time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)}}
 
 	t.Run("the_owner_lists_the_revisions", func(t *testing.T) {
 		manager, deps := newTestManager(t)

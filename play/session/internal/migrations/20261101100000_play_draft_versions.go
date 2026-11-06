@@ -5,11 +5,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// migration20261101100000PlayDraftVersions lets a DRAFT version hold authored
-// sources and asset bindings edited in place: each change is a new revision
-// of the same version. Revisions are write-once and are the history of
-// play_game_versions.current_revision; file contents are stored once per
-// hash; every attempt sent is kept, applied or not.
+// migration20261101100000PlayDraftVersions gives a DRAFT write-once revisions
+// of its sources and asset bindings, each with its provenance; file contents
+// stored once per hash; and every change attempt, applied or not.
 func migration20261101100000PlayDraftVersions() *gormigrate.Migration {
 	return &gormigrate.Migration{
 		ID: "20261101100000_play_draft_versions",
@@ -21,7 +19,15 @@ func migration20261101100000PlayDraftVersions() *gormigrate.Migration {
 					number BIGINT NOT NULL,
 					files JSONB NOT NULL,
 					assets JSONB NOT NULL,
-					source TEXT NOT NULL,
+					kind TEXT NOT NULL,
+					origin TEXT NULL,
+					actor TEXT NOT NULL,
+					parent_revision BIGINT NULL,
+					restored_from BIGINT NULL,
+					from_game_uuid UUID NULL,
+					from_version_uuid UUID NULL,
+					from_revision BIGINT NULL,
+					sdk TEXT NOT NULL,
 					created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 					UNIQUE (game_version_id, number)
 				)`,

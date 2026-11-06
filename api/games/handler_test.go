@@ -413,12 +413,13 @@ func TestHandleRestoreDraftRevision(t *testing.T) {
 
 func TestHandleListDraftRevisions(t *testing.T) {
 	created := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
+	one, three, seven := int64(1), int64(3), int64(7)
 	tests := map[string]func(t *testing.T, deps dependencies) test{
 		"listed": func(t *testing.T, deps dependencies) test {
 			deps.reader.EXPECT().ListDraftRevisions(gomock.Any(), callerUUID, gameUUID, int64(0), 0).
-				Return(composergameauthoring.DraftRevisions{Access: game.EditableVersionFound, Revisions: []sessionpkg.DraftRevision{{Number: 1, Source: "template", Files: 5, CreatedAt: created}}}, nil)
+				Return(composergameauthoring.DraftRevisions{Access: game.EditableVersionFound, Revisions: []sessionpkg.DraftRevision{{Number: 1, Kind: "template", Actor: "platform", SDK: "sdk-v1", Files: 5, CreatedAt: created}}}, nil)
 			return test{method: http.MethodGet, target: "/", gameUUID: gameUUID, noStore: true, expectedCode: http.StatusOK,
-				expectedBody: `[{"number":1,"source":"template","files":5,"created_at":"2026-11-01T12:00:00Z"}]`}
+				expectedBody: `[{"number":1,"kind":"template","actor":"platform","sdk":"sdk-v1","files":5,"created_at":"2026-11-01T12:00:00Z"}]`}
 		},
 		"a_version_missing_in_play_is_created_and_listed_again": func(t *testing.T, deps dependencies) test {
 			gomock.InOrder(
@@ -426,15 +427,19 @@ func TestHandleListDraftRevisions(t *testing.T) {
 					Return(composergameauthoring.DraftRevisions{Access: game.EditableVersionFound, Missing: true}, nil),
 				deps.editor.EXPECT().EnsureDraft(gomock.Any(), callerUUID, gameUUID).Return(game.EditableVersionFound, nil),
 				deps.reader.EXPECT().ListDraftRevisions(gomock.Any(), callerUUID, gameUUID, int64(0), 0).
-					Return(composergameauthoring.DraftRevisions{Access: game.EditableVersionFound, Revisions: []sessionpkg.DraftRevision{{Number: 1, Source: "template", Files: 5, CreatedAt: created}}}, nil),
+					Return(composergameauthoring.DraftRevisions{Access: game.EditableVersionFound, Revisions: []sessionpkg.DraftRevision{{Number: 1, Kind: "template", Actor: "platform", SDK: "sdk-v1", Files: 5, CreatedAt: created}}}, nil),
 			)
 			return test{method: http.MethodGet, target: "/", gameUUID: gameUUID, noStore: true, expectedCode: http.StatusOK}
 		},
 		"a_page_below_a_revision": func(t *testing.T, deps dependencies) test {
 			deps.reader.EXPECT().ListDraftRevisions(gomock.Any(), callerUUID, gameUUID, int64(5), 2).
-				Return(composergameauthoring.DraftRevisions{Access: game.EditableVersionFound, Revisions: []sessionpkg.DraftRevision{{Number: 4, Source: "mcp", Files: 6, CreatedAt: created}, {Number: 3, Source: "web", Files: 6, CreatedAt: created}}}, nil)
+				Return(composergameauthoring.DraftRevisions{Access: game.EditableVersionFound, Revisions: []sessionpkg.DraftRevision{
+					{Number: 4, Kind: "restore", Origin: "mcp", Actor: "ai", Parent: &three, RestoredFrom: &one, SDK: "sdk-v1", Files: 6, CreatedAt: created},
+					{Number: 1, Kind: "edition", Actor: "platform", From: &sessionpkg.DraftRevisionFrom{GameUUID: gameUUID, VersionUUID: "v-1", Revision: &seven}, SDK: "sdk-v1", Files: 6, CreatedAt: created},
+				}}, nil)
 			return test{method: http.MethodGet, target: "/?before=5&limit=2", gameUUID: gameUUID, noStore: true, expectedCode: http.StatusOK,
-				expectedBody: `[{"number":4,"source":"mcp","files":6,"created_at":"2026-11-01T12:00:00Z"},{"number":3,"source":"web","files":6,"created_at":"2026-11-01T12:00:00Z"}]`}
+				expectedBody: `[{"number":4,"kind":"restore","origin":"mcp","actor":"ai","parent":3,"restored_from":1,"sdk":"sdk-v1","files":6,"created_at":"2026-11-01T12:00:00Z"},` +
+					`{"number":1,"kind":"edition","actor":"platform","from":{"game_uuid":"` + gameUUID + `","version_uuid":"v-1","revision":7},"sdk":"sdk-v1","files":6,"created_at":"2026-11-01T12:00:00Z"}]`}
 		},
 		"a_limit_past_a_page": func(t *testing.T, deps dependencies) test {
 			return test{method: http.MethodGet, target: "/?limit=101", gameUUID: gameUUID, noStore: true, expectedCode: http.StatusBadRequest}

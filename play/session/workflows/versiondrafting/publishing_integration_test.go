@@ -136,7 +136,12 @@ func TestPublishingIntegration(t *testing.T) {
 			require.Equal(t, published.Assets[0].SHA256, next.Assets[0].SHA256)
 			revisions, err := m.ListRevisions(ctx, nextUUID, 0, 0)
 			require.NoError(t, err)
-			require.Equal(t, editionSource, revisions[0].Source)
+			first := revisions[0]
+			require.Equal(t, sessionpkg.DraftRevisionEdition, first.Kind)
+			require.Equal(t, sessionpkg.DraftActorPlatform, first.Actor)
+			require.Nil(t, first.Parent)
+			require.Equal(t, &sessionpkg.DraftRevisionFrom{GameUUID: gameUUID, VersionUUID: versionUUID, Revision: &revision}, first.From, "a new edition records the published version it was copied from")
+			require.Equal(t, "sdk-v1", first.SDK)
 		})
 	})
 

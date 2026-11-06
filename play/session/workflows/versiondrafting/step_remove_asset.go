@@ -25,7 +25,7 @@ type removeAssetRepo interface {
 	ClaimChangeAttempt(ctx context.Context, tx *gorm.DB, versionID uint, kind string, idempotencyKey string, requestSHA256 string, baseRevision int64, origin string) (uint, *internalrepo.ChangeAttempt, error)
 	FindRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64) (draftsources.Revision, bool, error)
 	AdvanceRevision(ctx context.Context, tx *gorm.DB, versionID uint, status string, base int64) (bool, error)
-	CreateRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64, revision draftsources.Revision, source string) error
+	CreateRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64, revision draftsources.Revision, provenance internalrepo.Provenance) error
 	QueueBuild(ctx context.Context, tx *gorm.DB, versionID uint, revision int64, buildUUID string, queued string, superseded string) (int, error)
 	CompleteChangeAttempt(ctx context.Context, tx *gorm.DB, attemptID uint, outcome string, revision *int64, diagnostics []draftsources.Diagnostic) error
 }
@@ -102,7 +102,7 @@ func (m *Manager) removeAssetInTx(ctx context.Context, tx *gorm.DB, versionUUID 
 		return committed[sessionpkg.DraftAssetResult]{result: replayed}, err
 	}
 
-	decided, err := m.decideRemove(ctx, tx, version, key)
+	decided, err := m.decideRemove(ctx, tx, version, key, origin)
 	if err != nil {
 		return committed[sessionpkg.DraftAssetResult]{}, err
 	}
@@ -121,7 +121,7 @@ func (m *Manager) removeAssetInTx(ctx context.Context, tx *gorm.DB, versionUUID 
 
 // decideRemove decides the removal against the version's current revision
 // and, when the key is bound, writes the new revision without it.
-func (m *Manager) decideRemove(ctx context.Context, tx *gorm.DB, version *internalrepo.Version, key string) (sessionpkg.DraftAssetResult, error) {
+func (m *Manager) decideRemove(ctx context.Context, tx *gorm.DB, version *internalrepo.Version, key string, origin string) (sessionpkg.DraftAssetResult, error) {
 	for race := 0; race < maxRevisionRaces; race++ {
 		var current int64
 		if version.CurrentRevision != nil {
@@ -160,7 +160,7 @@ func (m *Manager) decideRemove(ctx context.Context, tx *gorm.DB, version *intern
 			}
 		}
 		next := current + 1
-		if err := m.removeAssetRepo.CreateRevision(ctx, tx, version.ID, next, draftsources.Revision{Files: revision.Files, Assets: assets}, assetRevisionSource); err != nil {
+		if err := m.removeAssetRepo.CreateRevision(ctx, tx, version.ID, next, draftsources.Revision{Files: revision.Files, Assets: assets}, written(version, sessionpkg.DraftRevisionAsset, current, origin)); err != nil {
 			return sessionpkg.DraftAssetResult{}, err
 		}
 		return sessionpkg.DraftAssetResult{Outcome: sessionpkg.DraftAssetRemoved, Revision: next}, nil

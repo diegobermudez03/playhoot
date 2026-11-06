@@ -35,9 +35,10 @@ func TestApplyChangesInTx(t *testing.T) {
 	tx := &gorm.DB{}
 	revision := func(n int64) *int64 { return &n }
 	draft := func(current int64) *internalrepo.Version {
-		return &internalrepo.Version{ID: versionID, UUID: versionUUID, GameUUID: "game", Status: "DRAFT", CurrentRevision: revision(current)}
+		return &internalrepo.Version{ID: versionID, UUID: versionUUID, GameUUID: "game", Status: "DRAFT", ScriptProfile: "sdk-v1", CurrentRevision: revision(current)}
 	}
 	starter := draftsources.Apply(nil, draftsources.Template(), nil).Files
+	changeProvenance := internalrepo.Provenance{Kind: "change", Origin: "api", Actor: "ai", ParentRevision: revision(3), SDK: "sdk-v1"}
 	change := func(base int64, files ...sessionpkg.DraftFileContent) sessionpkg.DraftChange {
 		return sessionpkg.DraftChange{BaseRevision: base, Files: files, IdempotencyKey: "key", Origin: "api"}
 	}
@@ -53,7 +54,7 @@ func TestApplyChangesInTx(t *testing.T) {
 				deps.repo.EXPECT().FindRevision(ctx, tx, versionID, int64(3)).Return(draftsources.Revision{Files: starter}, true, nil),
 				deps.repo.EXPECT().AdvanceRevision(ctx, tx, versionID, "DRAFT", int64(3)).Return(true, nil),
 				deps.repo.EXPECT().StoreSourceContents(ctx, tx, map[string]string{draftsources.SHA256Hex("x"): "x"}).Return(nil),
-				deps.repo.EXPECT().CreateRevision(ctx, tx, versionID, int64(4), revisionWithFiles(len(starter)+1), "api").Return(nil),
+				deps.repo.EXPECT().CreateRevision(ctx, tx, versionID, int64(4), revisionWithFiles(len(starter)+1), changeProvenance).Return(nil),
 				deps.repo.EXPECT().QueueBuild(ctx, tx, versionID, int64(4), "build-uuid", "QUEUED", "SUPERSEDED").Return(1, nil),
 				deps.repo.EXPECT().CompleteChangeAttempt(ctx, tx, attemptID, "applied", revision(4), nil).Return(nil),
 			)
@@ -72,7 +73,7 @@ func TestApplyChangesInTx(t *testing.T) {
 				deps.repo.EXPECT().FindSourceContents(ctx, tx, []string{starter["notes.md"].SHA256}).Return(map[string]string{starter["notes.md"].SHA256: notes}, nil),
 				deps.repo.EXPECT().AdvanceRevision(ctx, tx, versionID, "DRAFT", int64(3)).Return(true, nil),
 				deps.repo.EXPECT().StoreSourceContents(ctx, tx, map[string]string{draftsources.SHA256Hex(edited): edited}).Return(nil),
-				deps.repo.EXPECT().CreateRevision(ctx, tx, versionID, int64(4), revisionWithFiles(len(starter)), "api").Return(nil),
+				deps.repo.EXPECT().CreateRevision(ctx, tx, versionID, int64(4), revisionWithFiles(len(starter)), changeProvenance).Return(nil),
 				deps.repo.EXPECT().QueueBuild(ctx, tx, versionID, int64(4), "build-uuid", "QUEUED", "SUPERSEDED").Return(0, nil),
 				deps.repo.EXPECT().CompleteChangeAttempt(ctx, tx, attemptID, "applied", revision(4), nil).Return(nil),
 			)

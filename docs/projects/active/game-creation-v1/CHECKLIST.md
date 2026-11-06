@@ -55,9 +55,9 @@ Postgres integration tests were updated (`versiondrafting_integration_test.go`, 
 
 ### N. Revision provenance and diff (A P1, AI)
 
-- [ ] Each revision records its parent revision, origin (web/api/mcp), the actor kind, `restored_from` for restores, the template it came from (game uuid, version uuid, revision) and the SDK/toolchain of the project. Edits the draft revision migration in place.
-- [ ] A new edition's revision 1 records the published version it was copied from.
-- [ ] Diff between two revisions of a draft: `GET .../draft/diff?from=&to=` (+ AI link + MCP `diff_revisions`): per-file status and a bounded unified diff, optionally one path.
+- [x] Each revision records its provenance (2026-11-06), migration `20261101100000_play_draft_versions` edited in place (`source` replaced; recreate the local database): `kind` (template, edition, change, restore, asset), `origin` (web/api/mcp, NULL when the platform made it), `actor` (person/ai/platform, derived from the origin by `changeattempt.ActorOf`), `parent_revision`, `restored_from`, `from_game_uuid`/`from_version_uuid`/`from_revision` and `sdk` (the version's script profile; the build toolchain is not versioned yet, so the profile is what identifies the SDK). The built-in starter has no `from` (it is no game's version); template use fills it with R. API `revisions` answer them (`source` removed), MCP `list_revisions` documents them. "Modules applied" (checklist A) has no meaning yet: there are no modules.
+- [x] A new edition's revision 1 records the published version it was copied from (2026-11-06): kind `edition`, `from` = the game, that version and the revision it was frozen at.
+- [x] Diff between two revisions (2026-11-06): Play `DiffRevisions`, composer `ReadDraftDiff`, `GET /v1/games/{id}/draft/diff?from=&to=&path=`, `GET /ai/v1/{token}/diff` (in the context's URLs and the Markdown page), MCP `diff_revisions`: per-file status (added/modified/deleted), unified diffs 8 KiB per file and 64 KiB in all (`omitted` past it), either order, one path optionally. Unit tests (step, composer, API, MCP); repository round-trip and integration cases added but not run here (no Docker).
 
 ### O. Simulation v2 (S, T, U, AO cases 1 and 6)
 

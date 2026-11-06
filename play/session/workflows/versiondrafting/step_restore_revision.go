@@ -26,13 +26,10 @@ type restoreRevisionRepo interface {
 	ClaimChangeAttempt(ctx context.Context, tx *gorm.DB, versionID uint, kind string, idempotencyKey string, requestSHA256 string, baseRevision int64, origin string) (uint, *internalrepo.ChangeAttempt, error)
 	FindRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64) (draftsources.Revision, bool, error)
 	AdvanceRevision(ctx context.Context, tx *gorm.DB, versionID uint, status string, base int64) (bool, error)
-	CreateRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64, revision draftsources.Revision, source string) error
+	CreateRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64, revision draftsources.Revision, provenance internalrepo.Provenance) error
 	QueueBuild(ctx context.Context, tx *gorm.DB, versionID uint, revision int64, buildUUID string, queued string, superseded string) (int, error)
 	CompleteChangeAttempt(ctx context.Context, tx *gorm.DB, attemptID uint, outcome string, revision *int64, diagnostics []draftsources.Diagnostic) error
 }
-
-// restoreSource is the revision source of a restored revision.
-const restoreSource = "restore"
 
 // codeRevisionNotFound refuses a restore of a revision the version lacks.
 const codeRevisionNotFound = "revision_not_found"
@@ -124,7 +121,7 @@ func (m *Manager) restoreRevisionInTx(ctx context.Context, tx *gorm.DB, versionU
 		return committed[sessionpkg.DraftChangeResult]{result: replayed}, err
 	}
 
-	decided, diagnostics, err := m.decideRestore(ctx, tx, version, revision, baseRevision)
+	decided, diagnostics, err := m.decideRestore(ctx, tx, version, revision, baseRevision, origin)
 	if err != nil {
 		return committed[sessionpkg.DraftChangeResult]{}, err
 	}
@@ -143,7 +140,7 @@ func (m *Manager) restoreRevisionInTx(ctx context.Context, tx *gorm.DB, versionU
 
 // decideRestore decides the restore against the version's current revision
 // and, when it applies, writes the new revision.
-func (m *Manager) decideRestore(ctx context.Context, tx *gorm.DB, version *internalrepo.Version, revision int64, baseRevision int64) (sessionpkg.DraftChangeResult, []draftsources.Diagnostic, error) {
+func (m *Manager) decideRestore(ctx context.Context, tx *gorm.DB, version *internalrepo.Version, revision int64, baseRevision int64, origin string) (sessionpkg.DraftChangeResult, []draftsources.Diagnostic, error) {
 	var current int64
 	if version.CurrentRevision != nil {
 		current = *version.CurrentRevision
@@ -185,7 +182,7 @@ func (m *Manager) decideRestore(ctx context.Context, tx *gorm.DB, version *inter
 	next := current + 1
 	// The restored revision's contents and assets are already stored:
 	// nothing is new but the revision.
-	if err := m.restoreRevisionRepo.CreateRevision(ctx, tx, version.ID, next, restored, restoreSource); err != nil {
+	if err := m.restoreRevisionRepo.CreateRevision(ctx, tx, version.ID, next, restored, restoreProvenance(version, current, revision, origin)); err != nil {
 		return sessionpkg.DraftChangeResult{}, nil, err
 	}
 	return sessionpkg.DraftChangeResult{Outcome: sessionpkg.DraftChangeApplied, Revision: next}, nil, nil

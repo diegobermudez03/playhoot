@@ -28,17 +28,10 @@ type createDraftVersionRepo interface {
 	FindVersionOfGameInStatus(ctx context.Context, tx *gorm.DB, gameID uint, status string) (*internalrepo.Version, error)
 	CreateVersion(ctx context.Context, tx *gorm.DB, gameID uint, versionUUID string, status string, scriptProfile string, revision int64) (uint, error)
 	StoreSourceContents(ctx context.Context, tx *gorm.DB, contents map[string]string) error
-	CreateRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64, revision draftsources.Revision, source string) error
+	CreateRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64, revision draftsources.Revision, provenance internalrepo.Provenance) error
 	FindRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64) (draftsources.Revision, bool, error)
 	QueueBuild(ctx context.Context, tx *gorm.DB, versionID uint, revision int64, buildUUID string, queued string, superseded string) (int, error)
 }
-
-// templateSource is the revision source of a DRAFT's starter revision.
-const templateSource = "template"
-
-// editionSource is the source of a new edition's first revision, copied from
-// the game's executable version.
-const editionSource = "edition"
 
 var (
 	createDraftOutcomeLabel = metrics.NewLabel("outcome", "created", "already_created", "another_draft_open")
@@ -138,8 +131,7 @@ func (m *Manager) createDraftVersionInTx(ctx context.Context, tx *gorm.DB, gameU
 			return committed[sessionpkg.DraftVersion]{}, err
 		}
 	}
-	revision, source := first.revision, first.source
-	if err := m.createDraftVersionRepo.CreateRevision(ctx, tx, versionID, 1, revision, source); err != nil {
+	if err := m.createDraftVersionRepo.CreateRevision(ctx, tx, versionID, 1, first.revision, first.provenance); err != nil {
 		return committed[sessionpkg.DraftVersion]{}, err
 	}
 	superseded, err := m.queueBuild(ctx, tx, m.createDraftVersionRepo, versionID, 1)
@@ -151,12 +143,12 @@ func (m *Manager) createDraftVersionInTx(ctx context.Context, tx *gorm.DB, gameU
 
 // draftRevision is a DRAFT's current revision; every DRAFT this workflow
 // created has one, so a DRAFT without it is broken data.
-// startingRevision is a new DRAFT's revision 1, its source, and the source
-// contents still to store.
+// startingRevision is a new DRAFT's revision 1, its provenance, and the
+// source contents still to store.
 type startingRevision struct {
-	revision draftsources.Revision
-	source   string
-	contents map[string]string
+	revision   draftsources.Revision
+	provenance internalrepo.Provenance
+	contents   map[string]string
 }
 
 // firstRevision is a new DRAFT's revision 1: the starter sources, or the
@@ -168,7 +160,9 @@ func (m *Manager) firstRevision(ctx context.Context, tx *gorm.DB, gameUUID strin
 		if len(starter.Diagnostics) > 0 {
 			return startingRevision{}, fmt.Errorf("the starter template breaks the source rules: %v", starter.Diagnostics)
 		}
-		return startingRevision{revision: draftsources.Revision{Files: starter.Files}, source: templateSource, contents: starter.Contents}, nil
+		// The built-in starter is no game's version: it has no From.
+		provenance := internalrepo.Provenance{Kind: sessionpkg.DraftRevisionTemplate, Actor: sessionpkg.DraftActorPlatform, SDK: string(scriptcheck.ProfileSDKV1)}
+		return startingRevision{revision: draftsources.Revision{Files: starter.Files}, provenance: provenance, contents: starter.Contents}, nil
 	}
 	from, err := m.createDraftVersionRepo.FindVersion(ctx, tx, fromVersionUUID)
 	if err != nil {
@@ -185,7 +179,11 @@ func (m *Manager) firstRevision(ctx context.Context, tx *gorm.DB, gameUUID strin
 		monitoring.Alert(ctx, "play executable version is missing the revision it was frozen at")
 		return startingRevision{}, fmt.Errorf("version %s has no revision %d", fromVersionUUID, *from.CurrentRevision)
 	}
-	return startingRevision{revision: copied, source: editionSource}, nil
+	provenance := internalrepo.Provenance{
+		Kind: sessionpkg.DraftRevisionEdition, Actor: sessionpkg.DraftActorPlatform, SDK: string(scriptcheck.ProfileSDKV1),
+		FromGameUUID: gameUUID, FromVersionUUID: from.UUID, FromRevision: from.CurrentRevision,
+	}
+	return startingRevision{revision: copied, provenance: provenance}, nil
 }
 
 func draftRevision(ctx context.Context, version *internalrepo.Version) (int64, error) {

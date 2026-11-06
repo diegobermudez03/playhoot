@@ -261,6 +261,21 @@ func (mr *MockdraftReaderMockRecorder) ReadDraftChanges(ctx, userUUID, gameUUID,
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReadDraftChanges", reflect.TypeOf((*MockdraftReader)(nil).ReadDraftChanges), ctx, userUUID, gameUUID, since, upTo)
 }
 
+// ReadDraftDiff mocks base method.
+func (m *MockdraftReader) ReadDraftDiff(ctx context.Context, userUUID, gameUUID string, from, to int64, onlyPath string) (gameauthoring.DraftDiff, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ReadDraftDiff", ctx, userUUID, gameUUID, from, to, onlyPath)
+	ret0, _ := ret[0].(gameauthoring.DraftDiff)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ReadDraftDiff indicates an expected call of ReadDraftDiff.
+func (mr *MockdraftReaderMockRecorder) ReadDraftDiff(ctx, userUUID, gameUUID, from, to, onlyPath any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReadDraftDiff", reflect.TypeOf((*MockdraftReader)(nil).ReadDraftDiff), ctx, userUUID, gameUUID, from, to, onlyPath)
+}
+
 // SimulateDraft mocks base method.
 func (m *MockdraftReader) SimulateDraft(ctx context.Context, userUUID, gameUUID string, revision int64, scenario runtime.Scenario) (gameauthoring.DraftSimulation, error) {
 	m.ctrl.T.Helper()

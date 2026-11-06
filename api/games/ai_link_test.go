@@ -201,6 +201,7 @@ func TestAILinkRoutes(t *testing.T) {
 		require.Contains(t, body, `{"path":"server/game.ts","sha256":"c","size":1}`)
 		require.Contains(t, body, `"changes":"`+testPublicBaseURL+page+`/changes"`)
 		require.Contains(t, body, `"changed":"`+testPublicBaseURL+page+`/changed"`)
+		require.Contains(t, body, `"diff":"`+testPublicBaseURL+page+`/diff"`)
 		require.Contains(t, body, `"sdk_docs_url":"`+testPublicWebBaseURL+`/docs/sdk/v1/index.md"`)
 	})
 

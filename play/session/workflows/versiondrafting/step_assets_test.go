@@ -24,7 +24,7 @@ const (
 )
 
 func assetDraft(status string, current int64) *internalrepo.Version {
-	return &internalrepo.Version{ID: assetVersionID, UUID: assetVersionUUID, GameUUID: "game", Status: status, CurrentRevision: &current}
+	return &internalrepo.Version{ID: assetVersionID, UUID: assetVersionUUID, GameUUID: "game", Status: status, ScriptProfile: "sdk-v1", CurrentRevision: &current}
 }
 
 // declaringRevision is a revision whose project declares cardBack as an
@@ -152,7 +152,7 @@ func TestRemoveAssetInTx(t *testing.T) {
 		repo.EXPECT().ClaimChangeAttempt(ctx, tx, assetVersionID, "asset_removal", "key", fingerprint, int64(2), "web").Return(uint(7), nil, nil)
 		repo.EXPECT().FindRevision(ctx, tx, assetVersionID, int64(2)).Return(bound, true, nil)
 		repo.EXPECT().AdvanceRevision(ctx, tx, assetVersionID, "DRAFT", int64(2)).Return(true, nil)
-		repo.EXPECT().CreateRevision(ctx, tx, assetVersionID, int64(3), draftsources.Revision{Assets: map[string]draftsources.AssetBinding{}}, "asset").Return(nil)
+		repo.EXPECT().CreateRevision(ctx, tx, assetVersionID, int64(3), draftsources.Revision{Assets: map[string]draftsources.AssetBinding{}}, internalrepo.Provenance{Kind: "asset", Origin: "web", Actor: "person", ParentRevision: &two, SDK: "sdk-v1"}).Return(nil)
 		repo.EXPECT().QueueBuild(ctx, tx, assetVersionID, int64(3), "build-uuid", "QUEUED", "SUPERSEDED").Return(0, nil)
 		three := int64(3)
 		repo.EXPECT().CompleteChangeAttempt(ctx, tx, uint(7), "removed", &three, nil).Return(nil)

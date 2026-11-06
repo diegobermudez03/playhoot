@@ -46,6 +46,7 @@ type fakeGames struct {
 	gameIDs  []string
 	revision *int64
 	since    int64
+	from     int64
 	paths    []string
 	before   int64
 	limit    int
@@ -101,6 +102,13 @@ func (f *fakeGames) ApplyChanges(ctx context.Context, by games.Caller, gameUUID 
 
 func (f *fakeGames) RestoreRevision(ctx context.Context, by games.Caller, gameUUID string, req games.RestoreRequest) (games.ChangeResponse, *games.Refusal) {
 	panic("not used")
+}
+
+func (f *fakeGames) ReadDiff(ctx context.Context, userUUID string, gameUUID string, from int64, to *int64, onlyPath string) (*games.DiffResponse, *games.Refusal) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.from, f.revision, f.paths = from, to, []string{onlyPath}
+	return &games.DiffResponse{From: from, To: 5, Files: []games.FileDiffEntryBody{}}, f.refusal
 }
 
 func (f *fakeGames) ListRevisions(ctx context.Context, userUUID string, gameUUID string, before int64, limit int) ([]games.RevisionResponse, *games.Refusal) {
@@ -194,7 +202,7 @@ func TestToolsCallTheirGamesOperations(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 	sort.Strings(names)
-	require.Equal(t, []string{"apply_changes", "create_game", "get_build", "get_game_context", "list_changes_since", "list_my_games", "list_revisions", "read_files", "remove_asset", "restore_revision", "simulate", "upload_asset"}, names)
+	require.Equal(t, []string{"apply_changes", "create_game", "diff_revisions", "get_build", "get_game_context", "list_changes_since", "list_my_games", "list_revisions", "read_files", "remove_asset", "restore_revision", "simulate", "upload_asset"}, names)
 	require.NotContains(t, names, "publish")
 
 	result, err := session.CallTool(ctx, &sdk.CallToolParams{Name: "apply_changes", Arguments: map[string]any{
@@ -248,6 +256,12 @@ func TestReadToolsAnswerOnlyWhatIsAsked(t *testing.T) {
 	call("list_revisions", map[string]any{"game_uuid": "g1", "before": 9, "limit": 5})
 	require.Equal(t, int64(9), fake.before)
 	require.Equal(t, 5, fake.limit)
+
+	answer = call("diff_revisions", map[string]any{"game_uuid": "g1", "from": 2, "path": "notes.md"})
+	require.Equal(t, int64(2), fake.from)
+	require.Nil(t, fake.revision, "no to means the current one")
+	require.Equal(t, []string{"notes.md"}, fake.paths)
+	require.Contains(t, answer, `"to":5`)
 }
 
 func TestRefusalsAreToolErrors(t *testing.T) {

@@ -30,6 +30,7 @@ type draftReader interface {
 	ReadDraft(ctx context.Context, versionUUID string, revision int64, withContent bool) (sessionpkg.DraftSnapshot, error)
 	ListRevisions(ctx context.Context, versionUUID string, before int64, limit int) ([]sessionpkg.DraftRevision, error)
 	RevisionChanges(ctx context.Context, versionUUID string, since int64, upTo int64) (sessionpkg.DraftRevisionChanges, error)
+	DiffRevisions(ctx context.Context, versionUUID string, from int64, to int64, onlyPath string) (sessionpkg.DraftRevisionDiff, error)
 	ReadBuild(ctx context.Context, versionUUID string, revision int64, wait time.Duration) (sessionpkg.DraftBuild, error)
 	LoadBuiltRevision(ctx context.Context, versionUUID string, revision int64) (sessionpkg.BuiltRevision, error)
 }
@@ -189,6 +190,39 @@ func (m *Manager) ReadDraftChanges(ctx context.Context, userUUID string, gameUUI
 		return DraftChanges{}, fmt.Errorf("reading the changes of the version being built: %s", err)
 	}
 	return DraftChanges{Access: editable.Outcome, Changes: changes}, nil
+}
+
+// DraftDiff compares two revisions of a game's version being built, set only
+// when Access is found and the version is not Missing.
+type DraftDiff struct {
+	Access  game.EditableVersionOutcome
+	Missing bool
+	Diff    sessionpkg.DraftRevisionDiff
+}
+
+// ReadDraftDiff compares revision from (0: the empty project) with revision
+// to (0: the current one) of the version of gameUUID being built, only
+// onlyPath when set. A revision it lacks returns
+// sessionpkg.ErrDraftRevisionNotFound.
+func (m *Manager) ReadDraftDiff(ctx context.Context, userUUID string, gameUUID string, from int64, to int64, onlyPath string) (DraftDiff, error) {
+	defer logging.Step(ctx, "composer.read_draft_diff").Close()
+
+	editable, err := m.editableVersion(ctx, gameUUID, userUUID)
+	if err != nil || editable.Outcome != game.EditableVersionFound {
+		return DraftDiff{Access: editable.Outcome}, err
+	}
+	diff, err := m.drafts.DiffRevisions(ctx, editable.VersionUUID, from, to, onlyPath)
+	if errors.Is(err, sessionpkg.ErrDraftNotFound) {
+		logging.LogFields(ctx, logging.Field("draft_missing", true))
+		return DraftDiff{Access: editable.Outcome, Missing: true}, nil
+	}
+	if err != nil {
+		if errors.Is(err, sessionpkg.ErrDraftRevisionNotFound) {
+			return DraftDiff{}, err
+		}
+		return DraftDiff{}, fmt.Errorf("comparing revisions of the version being built: %s", err)
+	}
+	return DraftDiff{Access: editable.Outcome, Diff: diff}, nil
 }
 
 // DraftBuildRead is a read of one revision's build of a game's version being

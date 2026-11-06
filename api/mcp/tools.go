@@ -50,6 +50,13 @@ type listChangesInput struct {
 	Revision int64  `json:"revision,omitempty" jsonschema:"compare up to this revision; the current one when omitted"`
 }
 
+type diffRevisionsInput struct {
+	GameUUID string `json:"game_uuid" jsonschema:"the game's uuid"`
+	From     int64  `json:"from" jsonschema:"the earlier revision; 0 is the empty project"`
+	To       int64  `json:"to,omitempty" jsonschema:"the later revision; the current one when omitted"`
+	Path     string `json:"path,omitempty" jsonschema:"only this file"`
+}
+
 type changeFile struct {
 	Path    string `json:"path" jsonschema:"the file's path in the project"`
 	Content string `json:"content" jsonschema:"the file's complete new content"`
@@ -173,13 +180,21 @@ func (h *Handler) addTools(server *sdk.Server) {
 			}
 			return answer(h.games.RestoreRevision(ctx, by, in.GameUUID, games.RestoreRequest{Revision: in.Revision, BaseRevision: &in.BaseRevision, IdempotencyKey: in.IdempotencyKey}))
 		})
-	sdk.AddTool(server, &sdk.Tool{Name: "list_revisions", Description: "Lists the game's revisions, newest first, with where each came from; a page of at most limit, below before."},
+	sdk.AddTool(server, &sdk.Tool{Name: "list_revisions", Description: "Lists the game's revisions, newest first, with their provenance: kind (template, edition, change, restore, asset), origin (web, api, mcp; none when the platform made it), actor (person, ai, platform), parent, restored_from, from (the version it was copied from) and sdk; a page of at most limit, below before."},
 		func(ctx context.Context, req *sdk.CallToolRequest, in listRevisionsInput) (*sdk.CallToolResult, any, error) {
 			user, err := userOf(req)
 			if err != nil {
 				return nil, nil, err
 			}
 			return answer(h.games.ListRevisions(ctx, user, in.GameUUID, in.Before, in.Limit))
+		})
+	sdk.AddTool(server, &sdk.Tool{Name: "diff_revisions", Description: "Compares two revisions of the game: each file added, modified or deleted with its unified diff (8 KiB per file, 64 KiB in all; a file marked omitted is listed without its diff, ask for its path alone). Use it to review what a change or a restore did, or to recover a good part of an earlier revision."},
+		func(ctx context.Context, req *sdk.CallToolRequest, in diffRevisionsInput) (*sdk.CallToolResult, any, error) {
+			user, err := userOf(req)
+			if err != nil {
+				return nil, nil, err
+			}
+			return answer(h.games.ReadDiff(ctx, user, in.GameUUID, in.From, optionalRevision(in.To), in.Path))
 		})
 	sdk.AddTool(server, &sdk.Tool{Name: "upload_asset", Description: "Uploads the file of an asset game.project.json declares, in base64. Limits by type: image 5 MiB, audio 10 MiB, video 50 MiB, 100 MiB in all. If you cannot produce the file, ask the user to upload it in Recursos."},
 		func(ctx context.Context, req *sdk.CallToolRequest, in uploadAssetInput) (*sdk.CallToolResult, any, error) {

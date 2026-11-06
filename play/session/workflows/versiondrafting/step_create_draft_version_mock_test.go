@@ -44,17 +44,17 @@ func (m *MockcreateDraftVersionRepo) EXPECT() *MockcreateDraftVersionRepoMockRec
 }
 
 // CreateRevision mocks base method.
-func (m *MockcreateDraftVersionRepo) CreateRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64, revision draftsources.Revision, source string) error {
+func (m *MockcreateDraftVersionRepo) CreateRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64, revision draftsources.Revision, provenance repo.Provenance) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateRevision", ctx, tx, versionID, number, revision, source)
+	ret := m.ctrl.Call(m, "CreateRevision", ctx, tx, versionID, number, revision, provenance)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // CreateRevision indicates an expected call of CreateRevision.
-func (mr *MockcreateDraftVersionRepoMockRecorder) CreateRevision(ctx, tx, versionID, number, revision, source any) *gomock.Call {
+func (mr *MockcreateDraftVersionRepoMockRecorder) CreateRevision(ctx, tx, versionID, number, revision, provenance any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateRevision", reflect.TypeOf((*MockcreateDraftVersionRepo)(nil).CreateRevision), ctx, tx, versionID, number, revision, source)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateRevision", reflect.TypeOf((*MockcreateDraftVersionRepo)(nil).CreateRevision), ctx, tx, versionID, number, revision, provenance)
 }
 
 // CreateVersion mocks base method.

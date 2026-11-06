@@ -43,7 +43,7 @@ func TestCreateDraftVersionInTx(t *testing.T) {
 				deps.repo.EXPECT().FindVersionOfGameInStatus(ctx, tx, gameID, "DRAFT").Return(nil, nil),
 				deps.repo.EXPECT().CreateVersion(ctx, tx, gameID, versionUUID, "DRAFT", "sdk-v1", int64(1)).Return(versionID, nil),
 				deps.repo.EXPECT().StoreSourceContents(ctx, tx, gomock.Len(5)).Return(nil),
-				deps.repo.EXPECT().CreateRevision(ctx, tx, versionID, int64(1), revisionWithFiles(5), "template").Return(nil),
+				deps.repo.EXPECT().CreateRevision(ctx, tx, versionID, int64(1), revisionWithFiles(5), internalrepo.Provenance{Kind: "template", Actor: "platform", SDK: "sdk-v1"}).Return(nil),
 				deps.repo.EXPECT().QueueBuild(ctx, tx, versionID, int64(1), "build-uuid", "QUEUED", "SUPERSEDED").Return(0, nil),
 			)
 			return test{expected: sessionpkg.DraftVersion{Outcome: sessionpkg.DraftCreated, GameUUID: gameUUID, VersionUUID: versionUUID, Revision: 1}}

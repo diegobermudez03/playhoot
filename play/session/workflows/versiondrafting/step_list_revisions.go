@@ -57,7 +57,7 @@ func (m *Manager) listRevisionsInTx(ctx context.Context, tx *gorm.DB, versionUUI
 	}
 	result := make([]sessionpkg.DraftRevision, len(revisions))
 	for i, revision := range revisions {
-		result[i] = sessionpkg.DraftRevision{Number: revision.Number, Source: revision.Source, Files: revision.Files, CreatedAt: revision.CreatedAt}
+		result[i] = publicRevision(revision)
 	}
 	return result, nil
 }

@@ -195,6 +195,27 @@ func TestDraftingIntegration(t *testing.T) {
 		require.ErrorIs(t, err, sessionpkg.ErrIdempotencyConflict, "the edits are part of the fingerprint")
 	})
 
+	t.Run("diff_between_two_revisions", func(t *testing.T) {
+		_, versionUUID := newDraft(t)
+		_, err := m.ApplyChanges(ctx, versionUUID, write(1, "d1", "shared/rules.ts", "export const rounds = 5;\n"))
+		require.NoError(t, err)
+		_, err = m.ApplyChanges(ctx, versionUUID, write(2, "d2", "shared/rules.ts", "export const rounds = 3;\n"))
+		require.NoError(t, err)
+
+		diff, err := m.DiffRevisions(ctx, versionUUID, 1, 0, "")
+		require.NoError(t, err)
+		require.Equal(t, int64(3), diff.To)
+		require.Len(t, diff.Files, 1)
+		require.Equal(t, sessionpkg.DraftFileAdded, diff.Files[0].Status)
+		require.Contains(t, diff.Files[0].Diff, "+export const rounds = 3;")
+
+		diff, err = m.DiffRevisions(ctx, versionUUID, 2, 3, "shared/rules.ts")
+		require.NoError(t, err)
+		require.Equal(t, sessionpkg.DraftFileModified, diff.Files[0].Status)
+		_, err = m.DiffRevisions(ctx, versionUUID, 1, 4, "")
+		require.ErrorIs(t, err, sessionpkg.ErrDraftRevisionNotFound)
+	})
+
 	t.Run("a_change_or_restore_that_changes_nothing_creates_no_revision", func(t *testing.T) {
 		_, versionUUID := newDraft(t)
 		const rules = "export const rounds = 5;\n"
@@ -260,13 +281,25 @@ func TestDraftingIntegration(t *testing.T) {
 
 		revisions, err := m.ListRevisions(ctx, versionUUID, 0, 0)
 		require.NoError(t, err)
-		sources := make([]string, len(revisions))
+		kinds := make([]string, len(revisions))
 		for i, revision := range revisions {
-			sources[i] = revision.Source
+			kinds[i] = revision.Kind
 			require.Equal(t, int64(len(revisions)-i), revision.Number, "newest first")
+			require.Equal(t, "sdk-v1", revision.SDK)
 		}
-		require.Equal(t, []string{"restore", "web", "template"}, sources)
+		require.Equal(t, []string{"restore", "change", "template"}, kinds)
 		require.Equal(t, len(draftsources.Template()), revisions[2].Files)
+		one64, two64 := int64(1), int64(2)
+		require.Equal(t, sessionpkg.DraftRevision{
+			Number: 3, Kind: "restore", Origin: "api", Actor: "ai", Parent: &two64, RestoredFrom: &one64, SDK: "sdk-v1",
+			Files: revisions[0].Files, CreatedAt: revisions[0].CreatedAt,
+		}, revisions[0], "a restore records its parent and the revision it brought back")
+		require.Equal(t, "web", revisions[1].Origin)
+		require.Equal(t, &one64, revisions[1].Parent)
+		require.Equal(t, sessionpkg.DraftActorPlatform, revisions[2].Actor)
+		require.Empty(t, revisions[2].Origin, "the platform made the starter revision")
+		require.Nil(t, revisions[2].Parent)
+		require.Nil(t, revisions[2].From, "the built-in starter is no game's version")
 		older, err := m.ListRevisions(ctx, versionUUID, 3, 1)
 		require.NoError(t, err)
 		require.Len(t, older, 1, "a page holds at most limit")

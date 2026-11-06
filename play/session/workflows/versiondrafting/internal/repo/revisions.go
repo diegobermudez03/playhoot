@@ -13,22 +13,45 @@ import (
 	"github.com/diegobermudez03/playhoot/play/session/internal/business/draftsources"
 )
 
+// Provenance is where a revision came from. Origin is empty when the
+// platform made it; the pointers and From* are nil or empty when they do not
+// apply.
+type Provenance struct {
+	Kind            string
+	Origin          string
+	Actor           string
+	ParentRevision  *int64
+	RestoredFrom    *int64
+	FromGameUUID    string
+	FromVersionUUID string
+	FromRevision    *int64
+	SDK             string
+}
+
 // Revision is one entry of a version's revision history.
 type Revision struct {
-	Number    int64
-	Source    string
+	Number int64
+	Provenance
 	Files     int
 	CreatedAt time.Time
 }
 
 type revisionRow struct {
-	ID            uint
-	GameVersionID uint
-	Number        int64
-	Files         string `gorm:"type:jsonb"`
-	Assets        string `gorm:"type:jsonb"`
-	Source        string
-	CreatedAt     time.Time
+	ID              uint
+	GameVersionID   uint
+	Number          int64
+	Files           string `gorm:"type:jsonb"`
+	Assets          string `gorm:"type:jsonb"`
+	Kind            string
+	Origin          *string
+	Actor           string
+	ParentRevision  *int64
+	RestoredFrom    *int64
+	FromGameUUID    *string
+	FromVersionUUID *string
+	FromRevision    *int64
+	SDK             string `gorm:"column:sdk"`
+	CreatedAt       time.Time
 }
 
 func (revisionRow) TableName() string { return "play_game_version_revisions" }
@@ -43,9 +66,9 @@ type sourceFileRow struct {
 
 func (sourceFileRow) TableName() string { return "play_source_files" }
 
-// CreateRevision records revision number of versionID with its files and
-// asset bindings.
-func (r *Repo) CreateRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64, revision draftsources.Revision, source string) error {
+// CreateRevision records revision number of versionID with its files, asset
+// bindings and provenance.
+func (r *Repo) CreateRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64, revision draftsources.Revision, provenance Provenance) error {
 	files, err := json.Marshal(revision.Files)
 	if err != nil {
 		return fmt.Errorf("encoding revision files: %s", err)
@@ -58,7 +81,13 @@ func (r *Repo) CreateRevision(ctx context.Context, tx *gorm.DB, versionID uint, 
 	if err != nil {
 		return fmt.Errorf("encoding revision assets: %s", err)
 	}
-	row := revisionRow{GameVersionID: versionID, Number: number, Files: string(files), Assets: string(bindings), Source: source}
+	row := revisionRow{
+		GameVersionID: versionID, Number: number, Files: string(files), Assets: string(bindings),
+		Kind: provenance.Kind, Origin: nonEmpty(provenance.Origin), Actor: provenance.Actor,
+		ParentRevision: provenance.ParentRevision, RestoredFrom: provenance.RestoredFrom,
+		FromGameUUID: nonEmpty(provenance.FromGameUUID), FromVersionUUID: nonEmpty(provenance.FromVersionUUID), FromRevision: provenance.FromRevision,
+		SDK: provenance.SDK,
+	}
 	if err := tx.WithContext(ctx).Create(&row).Error; err != nil {
 		return fmt.Errorf("creating revision: %s", err)
 	}
@@ -94,7 +123,9 @@ func (r *Repo) FindRevision(ctx context.Context, tx *gorm.DB, versionID uint, nu
 // one when before is 0), newest first, at most limit.
 func (r *Repo) ListRevisions(ctx context.Context, tx *gorm.DB, versionID uint, before int64, limit int) ([]Revision, error) {
 	query := `
-		SELECT number, source, (SELECT count(*) FROM jsonb_object_keys(files)) AS files, created_at
+		SELECT number, kind, COALESCE(origin, '') AS origin, actor, parent_revision, restored_from,
+			COALESCE(from_game_uuid::text, '') AS from_game_uuid, COALESCE(from_version_uuid::text, '') AS from_version_uuid, from_revision, sdk,
+			(SELECT count(*) FROM jsonb_object_keys(files)) AS files, created_at
 		FROM play_game_version_revisions
 		WHERE game_version_id = ?`
 	args := []any{versionID}
@@ -149,4 +180,12 @@ func (r *Repo) FindSourceContents(ctx context.Context, tx *gorm.DB, hashes []str
 		contents[row.SHA256] = row.Content
 	}
 	return contents, nil
+}
+
+// nonEmpty is value, or nil when it is empty, for a NULL column.
+func nonEmpty(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
 }

@@ -57,6 +57,7 @@ type draftReader interface {
 	ReadDraft(ctx context.Context, userUUID string, gameUUID string, revision int64, withContent bool) (composergameauthoring.DraftRead, error)
 	ListDraftRevisions(ctx context.Context, userUUID string, gameUUID string, before int64, limit int) (composergameauthoring.DraftRevisions, error)
 	ReadDraftChanges(ctx context.Context, userUUID string, gameUUID string, since int64, upTo int64) (composergameauthoring.DraftChanges, error)
+	ReadDraftDiff(ctx context.Context, userUUID string, gameUUID string, from int64, to int64, onlyPath string) (composergameauthoring.DraftDiff, error)
 	ReadDraftBuild(ctx context.Context, userUUID string, gameUUID string, revision int64, wait time.Duration) (composergameauthoring.DraftBuildRead, error)
 	SimulateDraft(ctx context.Context, userUUID string, gameUUID string, revision int64, scenario runtime.Scenario) (composergameauthoring.DraftSimulation, error)
 }
@@ -128,6 +129,7 @@ func (h *Handler) RESTRoutes() []routing.Route {
 		{Pattern: "POST /v1/games/{gameUUID}/draft/changes", Handler: h.handleApplyDraftChanges, Authorization: edit},
 		{Pattern: "GET /v1/games/{gameUUID}/draft/revisions", Handler: h.handleListDraftRevisions, Authorization: edit},
 		{Pattern: "GET /v1/games/{gameUUID}/draft/changed", Handler: h.handleReadDraftChanged, Authorization: edit},
+		{Pattern: "GET /v1/games/{gameUUID}/draft/diff", Handler: h.handleReadDraftDiff, Authorization: edit},
 		{Pattern: "GET /v1/games/{gameUUID}/draft/files", Handler: h.handleReadDraftFiles, Authorization: edit},
 		{Pattern: "GET /v1/games/{gameUUID}/draft/build", Handler: h.handleReadDraftBuild, Authorization: edit},
 		{Pattern: "POST /v1/games/{gameUUID}/draft/restore", Handler: h.handleRestoreDraftRevision, Authorization: edit},
@@ -145,6 +147,7 @@ func (h *Handler) RESTRoutes() []routing.Route {
 		{Pattern: "GET /ai/v1/{token}/files/{path...}", Handler: h.handleAIFile, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},
 		{Pattern: "GET /ai/v1/{token}/files", Handler: h.handleReadDraftFiles, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},
 		{Pattern: "GET /ai/v1/{token}/changed", Handler: h.handleReadDraftChanged, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},
+		{Pattern: "GET /ai/v1/{token}/diff", Handler: h.handleReadDraftDiff, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},
 		{Pattern: "GET /ai/v1/{token}/revisions", Handler: h.handleListDraftRevisions, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},
 		{Pattern: "GET /ai/v1/{token}/build", Handler: h.handleReadDraftBuild, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},
 		{Pattern: "POST /ai/v1/{token}/changes", Handler: h.handleApplyDraftChanges, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},

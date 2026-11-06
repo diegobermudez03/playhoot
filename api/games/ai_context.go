@@ -40,6 +40,7 @@ type aiURLs struct {
 	Changes     string `json:"changes"`
 	Changed     string `json:"changed"`
 	Revisions   string `json:"revisions"`
+	Diff        string `json:"diff"`
 	Restore     string `json:"restore"`
 	Build       string `json:"build"`
 	Files       string `json:"files"`
@@ -214,7 +215,7 @@ func firstDiagnostics(build *BuildResponse) *BuildResponse {
 func aiAddresses(base string, token string) aiURLs {
 	self := base + aiPathPrefix + token
 	return aiURLs{
-		Self: self, Changes: self + "/changes", Changed: self + "/changed", Revisions: self + "/revisions", Restore: self + "/restore",
+		Self: self, Changes: self + "/changes", Changed: self + "/changed", Revisions: self + "/revisions", Diff: self + "/diff", Restore: self + "/restore",
 		Build: self + "/build", Files: self + "/files", Assets: self + "/assets", Simulations: self + "/simulations",
 	}
 }
@@ -256,7 +257,7 @@ func aiContextMarkdown(name string, snapshot sessionpkg.DraftSnapshot, urls aiUR
 	line("")
 	line("- Prefer edits: they are small and cheap. If an edit's `find` is not in the file (`edit_not_found`) or appears more than once (`edit_ambiguous`), nothing applies and the diagnostic names the edit by its index: read the file again and fix that edit.")
 	line("- If you cannot send HTTP requests, give the document to the person: they paste it in the section **Cambios de mi IA** of the game in Playhoot and tell you when it is applied.")
-	line("- Read only what you need: one file as text at %s/<path>?revision=N, several as JSON at %s?path=<path>&path=<path>, and what changed since a revision you already know (paths and hashes, no contents) at %s?since=N . The revisions, newest first: %s .", urls.Files, urls.Files, urls.Changed, urls.Revisions)
+	line("- Read only what you need: one file as text at %s/<path>?revision=N, several as JSON at %s?path=<path>&path=<path>, and what changed since a revision you already know (paths and hashes, no contents) at %s?since=N . The revisions, newest first, with where each came from: %s . What changed between two revisions, as unified diffs: %s?from=N&to=M (to defaults to the current one; add &path=<path> for one file).", urls.Files, urls.Files, urls.Changed, urls.Revisions, urls.Diff)
 	line("- If you can, POST it to %s . The answer has the new revision with every file's hash and what changed. A `revision_conflict` answer means the game changed since you read it: read what changed since your revision and redo the change on the new one.", urls.Changes)
 	line("- To go back to an earlier revision, POST `{\"revision\": N, \"base_revision\": %d, \"idempotency_key\": \"...\"}` to %s .", snapshot.Revision, urls.Restore)
 	line("- Assets (images, audio, video) are declared in `game.project.json` under `\"assets\"`. The person uploads them in the section **Recursos**, or you PUT the raw file to %s/<key> with an `Idempotency-Key` header.", urls.Assets)

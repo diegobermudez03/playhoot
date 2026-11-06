@@ -81,3 +81,16 @@ func ReplayAsset(ctx context.Context, existing *internalrepo.ChangeAttempt, requ
 		Replayed:    true,
 	}, nil
 }
+
+// ActorOf is the kind of actor behind origin: a person in the web app, an AI
+// through its link or MCP, the platform itself when there is no origin.
+func ActorOf(origin string) string {
+	switch origin {
+	case sessionpkg.DraftOriginWeb:
+		return sessionpkg.DraftActorPerson
+	case "":
+		return sessionpkg.DraftActorPlatform
+	default:
+		return sessionpkg.DraftActorAI
+	}
+}

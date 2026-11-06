@@ -89,17 +89,17 @@ func (mr *MockapplyChangesRepoMockRecorder) CompleteChangeAttempt(ctx, tx, attem
 }
 
 // CreateRevision mocks base method.
-func (m *MockapplyChangesRepo) CreateRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64, revision draftsources.Revision, source string) error {
+func (m *MockapplyChangesRepo) CreateRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64, revision draftsources.Revision, provenance repo.Provenance) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateRevision", ctx, tx, versionID, number, revision, source)
+	ret := m.ctrl.Call(m, "CreateRevision", ctx, tx, versionID, number, revision, provenance)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // CreateRevision indicates an expected call of CreateRevision.
-func (mr *MockapplyChangesRepoMockRecorder) CreateRevision(ctx, tx, versionID, number, revision, source any) *gomock.Call {
+func (mr *MockapplyChangesRepoMockRecorder) CreateRevision(ctx, tx, versionID, number, revision, provenance any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateRevision", reflect.TypeOf((*MockapplyChangesRepo)(nil).CreateRevision), ctx, tx, versionID, number, revision, source)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateRevision", reflect.TypeOf((*MockapplyChangesRepo)(nil).CreateRevision), ctx, tx, versionID, number, revision, provenance)
 }
 
 // FindRevision mocks base method.

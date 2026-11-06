@@ -39,7 +39,7 @@ type uploadAssetRepo interface {
 	FindSourceContents(ctx context.Context, tx *gorm.DB, hashes []string) (map[string]string, error)
 	RegisterAssetObject(ctx context.Context, tx *gorm.DB, sha256 string, size int64, mimeType string, objectKey string, registeredAt time.Time) error
 	AdvanceRevision(ctx context.Context, tx *gorm.DB, versionID uint, status string, base int64) (bool, error)
-	CreateRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64, revision draftsources.Revision, source string) error
+	CreateRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64, revision draftsources.Revision, provenance internalrepo.Provenance) error
 	QueueBuild(ctx context.Context, tx *gorm.DB, versionID uint, revision int64, buildUUID string, queued string, superseded string) (int, error)
 	CompleteChangeAttempt(ctx context.Context, tx *gorm.DB, attemptID uint, outcome string, revision *int64, diagnostics []draftsources.Diagnostic) error
 }
@@ -48,10 +48,6 @@ type uploadAssetRepo interface {
 type assetStorage interface {
 	Put(ctx context.Context, key string, content []byte, contentType string) error
 }
-
-// assetRevisionSource is the revision source of a revision that attached or
-// removed an asset.
-const assetRevisionSource = "asset"
 
 // maxRevisionRaces bounds how many times attaching retries when a change of
 // the sources commits a new revision while it decides.
@@ -423,7 +419,7 @@ func (m *Manager) attachInTx(ctx context.Context, tx *gorm.DB, versionUUID strin
 		return committed[sessionpkg.DraftAssetResult]{result: replayed}, err
 	}
 
-	decided, diagnostics, err := m.decideAttach(ctx, tx, version, received)
+	decided, diagnostics, err := m.decideAttach(ctx, tx, version, received, origin)
 	if err != nil {
 		return committed[sessionpkg.DraftAssetResult]{}, err
 	}
@@ -442,7 +438,7 @@ func (m *Manager) attachInTx(ctx context.Context, tx *gorm.DB, versionUUID strin
 
 // decideAttach decides the upload against the version's current revision
 // and, when it attaches, writes the new revision.
-func (m *Manager) decideAttach(ctx context.Context, tx *gorm.DB, version *internalrepo.Version, received receivedUpload) (sessionpkg.DraftAssetResult, []draftsources.Diagnostic, error) {
+func (m *Manager) decideAttach(ctx context.Context, tx *gorm.DB, version *internalrepo.Version, received receivedUpload, origin string) (sessionpkg.DraftAssetResult, []draftsources.Diagnostic, error) {
 	for race := 0; race < maxRevisionRaces; race++ {
 		var current int64
 		if version.CurrentRevision != nil {
@@ -507,7 +503,7 @@ func (m *Manager) decideAttach(ctx context.Context, tx *gorm.DB, version *intern
 		}
 		assets[key] = received.binding
 		next := current + 1
-		if err := m.uploadAssetRepo.CreateRevision(ctx, tx, version.ID, next, draftsources.Revision{Files: revision.Files, Assets: assets}, assetRevisionSource); err != nil {
+		if err := m.uploadAssetRepo.CreateRevision(ctx, tx, version.ID, next, draftsources.Revision{Files: revision.Files, Assets: assets}, written(version, sessionpkg.DraftRevisionAsset, current, origin)); err != nil {
 			return sessionpkg.DraftAssetResult{}, nil, err
 		}
 		binding := received.binding

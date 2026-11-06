@@ -57,10 +57,24 @@ type draftResponse struct {
 
 // RevisionResponse is one revision of the version being built.
 type RevisionResponse struct {
-	Number    int64     `json:"number"`
-	Source    string    `json:"source"`
-	Files     int       `json:"files"`
-	CreatedAt time.Time `json:"created_at"`
+	Number       int64                 `json:"number"`
+	Kind         string                `json:"kind"`
+	Origin       string                `json:"origin,omitempty"`
+	Actor        string                `json:"actor"`
+	Parent       *int64                `json:"parent,omitempty"`
+	RestoredFrom *int64                `json:"restored_from,omitempty"`
+	From         *RevisionFromResponse `json:"from,omitempty"`
+	SDK          string                `json:"sdk"`
+	Files        int                   `json:"files"`
+	CreatedAt    time.Time             `json:"created_at"`
+}
+
+// RevisionFromResponse is the version a revision was copied from: a
+// template's, or the published version a new edition starts from.
+type RevisionFromResponse struct {
+	GameUUID    string `json:"game_uuid"`
+	VersionUUID string `json:"version_uuid"`
+	Revision    *int64 `json:"revision,omitempty"`
 }
 
 // handleReadDraft answers a revision of the game's version being built
@@ -235,7 +249,7 @@ func (h *Handler) ListRevisions(ctx context.Context, userUUID string, rawGameUUI
 	}
 	revisions := make([]RevisionResponse, len(listed.Revisions))
 	for i, revision := range listed.Revisions {
-		revisions[i] = RevisionResponse{Number: revision.Number, Source: revision.Source, Files: revision.Files, CreatedAt: revision.CreatedAt}
+		revisions[i] = revisionBody(revision)
 	}
 	return revisions, nil
 }
@@ -268,4 +282,17 @@ func diagnostics(list []sessionpkg.DraftDiagnostic) []diagnosticResponse {
 		result[i] = diagnosticResponse{Path: diagnostic.Path, Code: diagnostic.Code, Edit: diagnostic.Edit, Message: diagnostic.Message}
 	}
 	return result
+}
+
+// revisionBody is a history entry with its provenance as answered.
+func revisionBody(revision sessionpkg.DraftRevision) RevisionResponse {
+	body := RevisionResponse{
+		Number: revision.Number, Kind: revision.Kind, Origin: revision.Origin, Actor: revision.Actor,
+		Parent: revision.Parent, RestoredFrom: revision.RestoredFrom, SDK: revision.SDK,
+		Files: revision.Files, CreatedAt: revision.CreatedAt,
+	}
+	if revision.From != nil {
+		body.From = &RevisionFromResponse{GameUUID: revision.From.GameUUID, VersionUUID: revision.From.VersionUUID, Revision: revision.From.Revision}
+	}
+	return body
 }

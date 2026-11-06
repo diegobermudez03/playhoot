@@ -125,6 +125,36 @@ type DraftChangeResult struct {
 	Diffs []DraftFileDiff
 }
 
+// What a diff between two revisions says of a file.
+const (
+	DraftFileAdded    = "added"
+	DraftFileModified = "modified"
+	DraftFileDeleted  = "deleted"
+)
+
+// MaxDraftDiffBytes bounds the diffs one comparison of two revisions
+// answers in all; files past it are listed without their diff (Omitted).
+const MaxDraftDiffBytes = 64 * 1024
+
+// DraftRevisionDiff compares revision From with revision To of a version (0
+// as From is the empty project): each file that differs, by path.
+type DraftRevisionDiff struct {
+	From  int64
+	To    int64
+	Files []DraftRevisionFileDiff
+}
+
+// DraftRevisionFileDiff is one file that differs between two revisions:
+// Status (the DraftFile* statuses) and its unified diff, cut at 8 KiB
+// (Truncated) or left out when the comparison's budget ran out (Omitted).
+type DraftRevisionFileDiff struct {
+	Path      string
+	Status    string
+	Diff      string
+	Truncated bool
+	Omitted   bool
+}
+
 // DraftFileDiff is a file's unified diff, cut at 8 KiB (Truncated).
 type DraftFileDiff struct {
 	Path      string
@@ -281,13 +311,49 @@ type DraftAssetResult struct {
 	Changes *DraftRevisionChanges
 }
 
-// DraftRevision is one revision in a version's history. Source is who made
-// it: the starter template, a change's origin, or a restore.
+// Kinds of revision: what made it.
+const (
+	DraftRevisionTemplate = "template"
+	DraftRevisionEdition  = "edition"
+	DraftRevisionChange   = "change"
+	DraftRevisionRestore  = "restore"
+	DraftRevisionAsset    = "asset"
+)
+
+// Kinds of actor behind a revision.
+const (
+	DraftActorPerson   = "person"
+	DraftActorAI       = "ai"
+	DraftActorPlatform = "platform"
+)
+
+// DraftRevision is one revision in a version's history with its provenance.
 type DraftRevision struct {
-	Number    int64
-	Source    string
+	Number int64
+	// Kind is one of the DraftRevision* kinds; the list may grow.
+	Kind string
+	// Origin is one of the draft change origins, empty when the platform
+	// made the revision.
+	Origin string
+	Actor  string
+	// Parent is nil for revision 1; RestoredFrom is set on restores only.
+	Parent       *int64
+	RestoredFrom *int64
+	// From is the version it was copied from: a template's or, for a new
+	// edition, the published one.
+	From *DraftRevisionFrom
+	// SDK is the version's script profile.
+	SDK       string
 	Files     int
 	CreatedAt time.Time
+}
+
+// DraftRevisionFrom is the version a revision was copied from, at Revision
+// when known.
+type DraftRevisionFrom struct {
+	GameUUID    string
+	VersionUUID string
+	Revision    *int64
 }
 
 // MaxDraftRevisionsPage is the most revisions one page of a version's

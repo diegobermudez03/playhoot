@@ -15,6 +15,7 @@ type Version struct {
 	UUID            string
 	GameUUID        string
 	Status          string
+	ScriptProfile   string
 	CurrentRevision *int64
 	// Languages is the JSON list of the languages an executable version's
 	// game is written in; nil for a DRAFT.
@@ -22,7 +23,7 @@ type Version struct {
 }
 
 const selectVersion = `
-	SELECT v.id, v.uuid, g.game_uuid, v.status, v.current_revision, v.languages
+	SELECT v.id, v.uuid, g.game_uuid, v.status, v.script_profile, v.current_revision, v.languages
 	FROM play_game_versions v
 	JOIN play_games g ON g.id = v.game_id
 `

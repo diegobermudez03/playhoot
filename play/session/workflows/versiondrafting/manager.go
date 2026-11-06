@@ -37,6 +37,7 @@ type Manager struct {
 	restoreRevisionRepo    restoreRevisionRepo
 	listRevisionsRepo      listRevisionsRepo
 	revisionChangesRepo    revisionChangesRepo
+	diffRevisionsRepo      diffRevisionsRepo
 	uploadAssetRepo        uploadAssetRepo
 	removeAssetRepo        removeAssetRepo
 	readBuildRepo          readBuildRepo
@@ -77,6 +78,7 @@ func New(db *gorm.DB, store storage.Store, signal *buildsignal.Signal) *Manager 
 		restoreRevisionRepo:    repo,
 		listRevisionsRepo:      repo,
 		revisionChangesRepo:    repo,
+		diffRevisionsRepo:      repo,
 		uploadAssetRepo:        repo,
 		removeAssetRepo:        repo,
 		readBuildRepo:          repo,

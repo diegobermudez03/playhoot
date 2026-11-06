@@ -82,7 +82,7 @@ func TestRevisionsAndContents(t *testing.T) {
 
 	files := map[string]draftsources.File{"notes.md": {SHA256: draftsources.SHA256Hex("hi"), Size: 2}}
 	assets := map[string]draftsources.AssetBinding{"cardBack": {SHA256: draftsources.SHA256Hex("png"), Size: 3, MIMEType: "image/png"}}
-	require.NoError(t, repo.CreateRevision(ctx, db, versionID, 1, draftsources.Revision{Files: files, Assets: assets}, "template"))
+	require.NoError(t, repo.CreateRevision(ctx, db, versionID, 1, draftsources.Revision{Files: files, Assets: assets}, Provenance{Kind: "template", Actor: "platform", SDK: "sdk-v1"}))
 	found, ok, err := repo.FindRevision(ctx, db, versionID, 1)
 	require.NoError(t, err)
 	require.True(t, ok)
@@ -91,10 +91,18 @@ func TestRevisionsAndContents(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, ok)
 
+	one, seven := int64(1), int64(7)
+	copied := Provenance{
+		Kind: "restore", Origin: "mcp", Actor: "ai", ParentRevision: &one, RestoredFrom: &one,
+		FromGameUUID: "7c9e6679-7425-40de-944b-e07fc1f90ae7", FromVersionUUID: "0f8fad5b-d9cb-469f-a165-70867728950e", FromRevision: &seven, SDK: "sdk-v1",
+	}
+	require.NoError(t, repo.CreateRevision(ctx, db, versionID, 2, draftsources.Revision{Files: files}, copied))
+
 	revisions, err := repo.ListRevisions(ctx, db, versionID, 0, 10)
 	require.NoError(t, err)
-	require.Len(t, revisions, 1)
-	require.Equal(t, Revision{Number: 1, Source: "template", Files: 1, CreatedAt: revisions[0].CreatedAt}, revisions[0])
+	require.Len(t, revisions, 2)
+	require.Equal(t, Revision{Number: 2, Provenance: copied, Files: 1, CreatedAt: revisions[0].CreatedAt}, revisions[0], "every provenance field round-trips")
+	require.Equal(t, Revision{Number: 1, Provenance: Provenance{Kind: "template", Actor: "platform", SDK: "sdk-v1"}, Files: 1, CreatedAt: revisions[1].CreatedAt}, revisions[1], "absent fields read back empty")
 
 	contents := map[string]string{draftsources.SHA256Hex("hi"): "hi"}
 	require.NoError(t, repo.StoreSourceContents(ctx, db, contents))

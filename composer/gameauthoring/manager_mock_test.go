@@ -84,6 +84,21 @@ func (m *MockdraftReader) EXPECT() *MockdraftReaderMockRecorder {
 	return m.recorder
 }
 
+// DiffRevisions mocks base method.
+func (m *MockdraftReader) DiffRevisions(ctx context.Context, versionUUID string, from, to int64, onlyPath string) (session.DraftRevisionDiff, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DiffRevisions", ctx, versionUUID, from, to, onlyPath)
+	ret0, _ := ret[0].(session.DraftRevisionDiff)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// DiffRevisions indicates an expected call of DiffRevisions.
+func (mr *MockdraftReaderMockRecorder) DiffRevisions(ctx, versionUUID, from, to, onlyPath any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DiffRevisions", reflect.TypeOf((*MockdraftReader)(nil).DiffRevisions), ctx, versionUUID, from, to, onlyPath)
+}
+
 // ListRevisions mocks base method.
 func (m *MockdraftReader) ListRevisions(ctx context.Context, versionUUID string, before int64, limit int) ([]session.DraftRevision, error) {
 	m.ctrl.T.Helper()

@@ -28,7 +28,7 @@ type applyChangesRepo interface {
 	FindSourceContents(ctx context.Context, tx *gorm.DB, hashes []string) (map[string]string, error)
 	StoreSourceContents(ctx context.Context, tx *gorm.DB, contents map[string]string) error
 	AdvanceRevision(ctx context.Context, tx *gorm.DB, versionID uint, status string, base int64) (bool, error)
-	CreateRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64, revision draftsources.Revision, source string) error
+	CreateRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64, revision draftsources.Revision, provenance internalrepo.Provenance) error
 	QueueBuild(ctx context.Context, tx *gorm.DB, versionID uint, revision int64, buildUUID string, queued string, superseded string) (int, error)
 	CompleteChangeAttempt(ctx context.Context, tx *gorm.DB, attemptID uint, outcome string, revision *int64, diagnostics []draftsources.Diagnostic) error
 }
@@ -202,7 +202,7 @@ func (m *Manager) decideChange(ctx context.Context, tx *gorm.DB, version *intern
 	next := current + 1
 	// Asset bindings are kept: a change of the sources never touches them.
 	nextRevision := draftsources.Revision{Files: applied.Files, Assets: revision.Assets}
-	if err := m.applyChangesRepo.CreateRevision(ctx, tx, version.ID, next, nextRevision, change.Origin); err != nil {
+	if err := m.applyChangesRepo.CreateRevision(ctx, tx, version.ID, next, nextRevision, written(version, sessionpkg.DraftRevisionChange, current, change.Origin)); err != nil {
 		return sessionpkg.DraftChangeResult{}, nil, err
 	}
 	return sessionpkg.DraftChangeResult{Outcome: sessionpkg.DraftChangeApplied, Revision: next, Diffs: editDiffs(edited, before)}, nil, nil
