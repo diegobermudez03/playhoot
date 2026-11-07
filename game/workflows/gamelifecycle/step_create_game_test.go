@@ -19,6 +19,7 @@ func TestCreateGameInTx(t *testing.T) {
 		repo *MockcreateGameRepo
 	}
 	type test struct {
+		template  *game.TemplateSource
 		expected  createGameAttempt
 		expectErr bool
 	}
@@ -42,45 +43,60 @@ func TestCreateGameInTx(t *testing.T) {
 	tests := map[string]func(t *testing.T, deps dependencies) test{
 		"a_retry_with_another_name_is_a_conflict": func(t *testing.T, deps dependencies) test {
 			other := "Otro"
-			deps.repo.EXPECT().ClaimCreateGameRequest(ctx, tx, ownerUUID, key, "Memoria").Return(uint(0), &internalrepo.CreateGameRequest{ID: requestID, GameID: gameIDRef(), Name: &other}, nil)
+			deps.repo.EXPECT().ClaimCreateGameRequest(ctx, tx, ownerUUID, key, "Memoria", "").Return(uint(0), &internalrepo.CreateGameRequest{ID: requestID, GameID: gameIDRef(), Name: &other}, nil)
 			return test{expectErr: true}
 		},
 		"game_created_with_its_open_edition": func(t *testing.T, deps dependencies) test {
 			gomock.InOrder(
-				deps.repo.EXPECT().ClaimCreateGameRequest(ctx, tx, ownerUUID, key, "Memoria").Return(requestID, nil, nil),
+				deps.repo.EXPECT().ClaimCreateGameRequest(ctx, tx, ownerUUID, key, "Memoria", "").Return(requestID, nil, nil),
 				deps.repo.EXPECT().CreateGame(ctx, tx, newGame).Return(gameID, nil),
-				deps.repo.EXPECT().CreateEdition(ctx, tx, gameID, editionUUID, "EDITING", nowInDB).Return(nil),
+				deps.repo.EXPECT().CreateEdition(ctx, tx, gameID, editionUUID, "EDITING", nil, nowInDB).Return(nil),
 				deps.repo.EXPECT().CompleteCreateGameRequest(ctx, tx, requestID, gameID).Return(nil),
 			)
 			return test{expected: createGameAttempt{created: created}}
 		},
+		"a_game_started_from_a_template_records_it_on_its_edition": func(t *testing.T, deps dependencies) test {
+			template := &game.TemplateSource{GameUUID: "0f8fad5b-d9cb-469f-a165-70867728950e", VersionUUID: "6ba7b810-9dad-11d1-80b4-00c04fd430c8"}
+			gomock.InOrder(
+				deps.repo.EXPECT().ClaimCreateGameRequest(ctx, tx, ownerUUID, key, "Memoria", template.GameUUID).Return(requestID, nil, nil),
+				deps.repo.EXPECT().CreateGame(ctx, tx, newGame).Return(gameID, nil),
+				deps.repo.EXPECT().CreateEdition(ctx, tx, gameID, editionUUID, "EDITING", template, nowInDB).Return(nil),
+				deps.repo.EXPECT().CompleteCreateGameRequest(ctx, tx, requestID, gameID).Return(nil),
+			)
+			return test{template: template, expected: createGameAttempt{created: created}}
+		},
+		"a_retry_with_another_template_is_a_conflict": func(t *testing.T, deps dependencies) test {
+			name, other := "Memoria", "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+			deps.repo.EXPECT().ClaimCreateGameRequest(ctx, tx, ownerUUID, key, "Memoria", "").Return(uint(0), &internalrepo.CreateGameRequest{ID: requestID, GameID: gameIDRef(), Name: &name, TemplateGameUUID: &other}, nil)
+			return test{expectErr: true}
+		},
 		"retry_replays_the_created_game": func(t *testing.T, deps dependencies) test {
 			gomock.InOrder(
-				deps.repo.EXPECT().ClaimCreateGameRequest(ctx, tx, ownerUUID, key, "Memoria").Return(uint(0), &internalrepo.CreateGameRequest{ID: requestID, GameID: gameIDRef()}, nil),
+				deps.repo.EXPECT().ClaimCreateGameRequest(ctx, tx, ownerUUID, key, "Memoria", "").Return(uint(0), &internalrepo.CreateGameRequest{ID: requestID, GameID: gameIDRef()}, nil),
 				deps.repo.EXPECT().FindCreatedGame(ctx, tx, gameID).Return(&internalrepo.CreatedGame{GameUUID: gameUUID, EditionVersionUUID: editionUUID, CreatedAt: nowInDB}, nil),
 			)
 			return test{expected: createGameAttempt{created: created, replayed: true}}
 		},
 		"request_without_game_is_broken_data": func(t *testing.T, deps dependencies) test {
-			deps.repo.EXPECT().ClaimCreateGameRequest(ctx, tx, ownerUUID, key, "Memoria").Return(uint(0), &internalrepo.CreateGameRequest{ID: requestID}, nil)
+			deps.repo.EXPECT().ClaimCreateGameRequest(ctx, tx, ownerUUID, key, "Memoria", "").Return(uint(0), &internalrepo.CreateGameRequest{ID: requestID}, nil)
 			return test{expectErr: true}
 		},
 		"request_whose_game_has_no_edition_is_broken_data": func(t *testing.T, deps dependencies) test {
 			gomock.InOrder(
-				deps.repo.EXPECT().ClaimCreateGameRequest(ctx, tx, ownerUUID, key, "Memoria").Return(uint(0), &internalrepo.CreateGameRequest{ID: requestID, GameID: gameIDRef()}, nil),
+				deps.repo.EXPECT().ClaimCreateGameRequest(ctx, tx, ownerUUID, key, "Memoria", "").Return(uint(0), &internalrepo.CreateGameRequest{ID: requestID, GameID: gameIDRef()}, nil),
 				deps.repo.EXPECT().FindCreatedGame(ctx, tx, gameID).Return(nil, nil),
 			)
 			return test{expectErr: true}
 		},
 		"claiming_fails": func(t *testing.T, deps dependencies) test {
-			deps.repo.EXPECT().ClaimCreateGameRequest(ctx, tx, ownerUUID, key, "Memoria").Return(uint(0), nil, errors.New("database down"))
+			deps.repo.EXPECT().ClaimCreateGameRequest(ctx, tx, ownerUUID, key, "Memoria", "").Return(uint(0), nil, errors.New("database down"))
 			return test{expectErr: true}
 		},
 		"creating_the_edition_fails": func(t *testing.T, deps dependencies) test {
 			gomock.InOrder(
-				deps.repo.EXPECT().ClaimCreateGameRequest(ctx, tx, ownerUUID, key, "Memoria").Return(requestID, nil, nil),
+				deps.repo.EXPECT().ClaimCreateGameRequest(ctx, tx, ownerUUID, key, "Memoria", "").Return(requestID, nil, nil),
 				deps.repo.EXPECT().CreateGame(ctx, tx, newGame).Return(gameID, nil),
-				deps.repo.EXPECT().CreateEdition(ctx, tx, gameID, editionUUID, "EDITING", nowInDB).Return(errors.New("database down")),
+				deps.repo.EXPECT().CreateEdition(ctx, tx, gameID, editionUUID, "EDITING", nil, nowInDB).Return(errors.New("database down")),
 			)
 			return test{expectErr: true}
 		},
@@ -102,7 +118,7 @@ func TestCreateGameInTx(t *testing.T) {
 			}
 			tc := setup(t, deps)
 
-			attempt, err := manager.createGameInTx(ctx, tx, ownerUUID, "Memoria", key)
+			attempt, err := manager.createGameInTx(ctx, tx, ownerUUID, "Memoria", key, tc.template)
 
 			if tc.expectErr {
 				require.Error(t, err)
@@ -126,7 +142,7 @@ func TestCreateGameValidatesItsInput(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			manager := &Manager{}
 
-			_, err := manager.CreateGame(context.Background(), tc.ownerUUID, "Memoria", tc.key)
+			_, err := manager.CreateGame(context.Background(), tc.ownerUUID, "Memoria", tc.key, nil)
 
 			require.Error(t, err)
 		})

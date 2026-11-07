@@ -8,6 +8,7 @@ import (
 
 	apigames "github.com/diegobermudez03/playhoot/api/games"
 	composergameauthoring "github.com/diegobermudez03/playhoot/composer/gameauthoring"
+	"github.com/diegobermudez03/playhoot/discovery"
 	"github.com/diegobermudez03/playhoot/game"
 	"github.com/diegobermudez03/playhoot/identity"
 	"github.com/diegobermudez03/playhoot/orchestrator/gameauthoring"
@@ -111,13 +112,14 @@ type joinCodeResolver interface {
 // gameCreator is game authoring's creation of a game with its version being
 // built.
 type gameCreator interface {
-	CreateGame(ctx context.Context, userUUID string, name string, idempotencyKey string) (gameauthoring.CreatedGame, error)
+	CreateGame(ctx context.Context, userUUID string, name string, idempotencyKey string, templateGameUUID string) (gameauthoring.CreatedGame, error)
 }
 
 // draftEditor is game authoring's changes to a game's version being built.
 type draftEditor interface {
 	ApplyDraftChanges(ctx context.Context, userUUID string, gameUUID string, change sessionpkg.DraftChange) (gameauthoring.DraftEdit, error)
 	RestoreDraftRevision(ctx context.Context, userUUID string, gameUUID string, revision int64, baseRevision int64, idempotencyKey string, origin string) (gameauthoring.DraftEdit, error)
+	UseTemplate(ctx context.Context, userUUID string, gameUUID string, templateGameUUID string, baseRevision int64, idempotencyKey string, origin string) (gameauthoring.DraftEdit, error)
 	UploadDraftAsset(ctx context.Context, userUUID string, gameUUID string, key string, content io.Reader, idempotencyKey string, origin string) (gameauthoring.DraftAssetEdit, error)
 	RemoveDraftAsset(ctx context.Context, userUUID string, gameUUID string, key string, idempotencyKey string, origin string) (gameauthoring.DraftAssetEdit, error)
 	EnsureDraft(ctx context.Context, userUUID string, gameUUID string) (game.EditableVersionOutcome, error)
@@ -129,6 +131,10 @@ type draftReader interface {
 	ReadDraft(ctx context.Context, userUUID string, gameUUID string, revision int64, withContent bool) (composergameauthoring.DraftRead, error)
 	ListDraftRevisions(ctx context.Context, userUUID string, gameUUID string, before int64, limit int) (composergameauthoring.DraftRevisions, error)
 	ReadDraftChanges(ctx context.Context, userUUID string, gameUUID string, since int64, upTo int64) (composergameauthoring.DraftChanges, error)
+	BrowseTemplates(ctx context.Context) (composergameauthoring.TemplateBrowse, error)
+	SearchTemplates(ctx context.Context, query discovery.TemplateQuery) (discovery.TemplatePage, error)
+	InspectTemplate(ctx context.Context, templateGameUUID string) (composergameauthoring.TemplateRead, error)
+	ReadTemplateFiles(ctx context.Context, templateGameUUID string, paths []string) (composergameauthoring.TemplateFiles, error)
 	ReadDraftDiff(ctx context.Context, userUUID string, gameUUID string, from int64, to int64, onlyPath string) (composergameauthoring.DraftDiff, error)
 	ReadDraftBuild(ctx context.Context, userUUID string, gameUUID string, revision int64, wait time.Duration) (composergameauthoring.DraftBuildRead, error)
 	SimulateDraft(ctx context.Context, userUUID string, gameUUID string, revision int64, scenario runtime.Scenario) (composergameauthoring.DraftSimulation, error)

@@ -19,7 +19,7 @@ import (
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
 
-//go:generate mockgen -package=gameauthoring -destination=manager_mock_test.go . editableVersionFinder,draftReader,resourceLinkReader,gameSimulator,cardReader
+//go:generate mockgen -package=gameauthoring -destination=manager_mock_test.go . editableVersionFinder,draftReader,resourceLinkReader,gameSimulator,cardReader,templateFinder,templateCatalog
 
 // editableVersionFinder is Game Management's decision of whether a user may
 // edit, and so read, a game's version being built.
@@ -62,13 +62,15 @@ type Manager struct {
 	links     resourceLinkReader
 	simulator gameSimulator
 	cards     cardReader
+	templates templateFinder
+	catalog   templateCatalog
 }
 
 // New constructs a Manager from Game Management's edit authorization, Play's
 // version being built, Identity's links an AI uses for a game and the
 // Runtime's simulation.
-func New(editions editableVersionFinder, drafts draftReader, links resourceLinkReader, simulator gameSimulator, cards cardReader) *Manager {
-	return &Manager{editions: editions, drafts: drafts, links: links, simulator: simulator, cards: cards}
+func New(editions editableVersionFinder, drafts draftReader, links resourceLinkReader, simulator gameSimulator, cards cardReader, templates templateFinder, catalog templateCatalog) *Manager {
+	return &Manager{editions: editions, drafts: drafts, links: links, simulator: simulator, cards: cards, templates: templates, catalog: catalog}
 }
 
 // AILinkStatusRead is whether a game has a live link for an AI, set only

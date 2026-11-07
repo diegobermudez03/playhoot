@@ -16,9 +16,9 @@ import (
 // releases being published, which these tests decide.
 func newPublishTestManager(t *testing.T) (*Manager, dependencies) {
 	ctrl := gomock.NewController(t)
-	deps := dependencies{games: NewMockgameCreator(ctrl), editions: NewMockeditableVersionFinder(ctrl), drafts: NewMockdraftWriter(ctrl), links: NewMockresourceLinkWriter(ctrl), previews: NewMockpreviewStarter(ctrl), publications: NewMockgamePublisher(ctrl), versions: NewMockversionPublisher(ctrl), cards: NewMockcardNamer(ctrl)}
+	deps := dependencies{games: NewMockgameCreator(ctrl), editions: NewMockeditableVersionFinder(ctrl), drafts: NewMockdraftWriter(ctrl), links: NewMockresourceLinkWriter(ctrl), previews: NewMockpreviewStarter(ctrl), publications: NewMockgamePublisher(ctrl), versions: NewMockversionPublisher(ctrl), cards: NewMockcardNamer(ctrl), templates: NewMocktemplateFinder(ctrl)}
 	deps.publications.EXPECT().FindPublication(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
-	return New(deps.games, deps.editions, deps.drafts, deps.links, deps.previews, deps.publications, deps.versions, deps.cards), deps
+	return New(deps.games, deps.editions, deps.drafts, deps.links, deps.previews, deps.publications, deps.versions, deps.cards, deps.templates), deps
 }
 
 func TestPublish(t *testing.T) {
@@ -149,7 +149,7 @@ func TestPublishRetryOfAnEndedRelease(t *testing.T) {
 	release := game.Release{UUID: "r-1", VersionUUID: testVersionUUID, Revision: 3}
 	ctrl := gomock.NewController(t)
 	deps := dependencies{publications: NewMockgamePublisher(ctrl)}
-	m := New(nil, nil, nil, nil, nil, deps.publications, nil, nil)
+	m := New(nil, nil, nil, nil, nil, deps.publications, nil, nil, nil)
 	gomock.InOrder(
 		deps.publications.EXPECT().FindPendingPublication(ctx, testUserUUID, testGameUUID).Return(nil, nil),
 		deps.publications.EXPECT().FindPublication(ctx, testUserUUID, testGameUUID, testKey).Return(&game.Publication{Outcome: game.PublicationCompleted, Release: &release}, nil),
@@ -194,7 +194,7 @@ func TestOpenEdition(t *testing.T) {
 		gomock.InOrder(
 			deps.publications.EXPECT().FindPendingPublication(ctx, testUserUUID, testGameUUID).Return(nil, nil),
 			deps.publications.EXPECT().OpenEdition(ctx, testUserUUID, testGameUUID, testKey).Return(game.Edition{Outcome: game.EditionOpened, VersionUUID: testVersionUUID, BaseVersionUUID: baseVersion}, nil),
-			deps.drafts.EXPECT().CreateDraftVersion(ctx, testGameUUID, testVersionUUID, baseVersion).Return(sessionpkg.DraftVersion{Outcome: sessionpkg.DraftCreated, Revision: 1}, nil),
+			deps.drafts.EXPECT().CreateDraftVersion(ctx, testGameUUID, testVersionUUID, sessionpkg.DraftStart{FromVersionUUID: baseVersion}).Return(sessionpkg.DraftVersion{Outcome: sessionpkg.DraftCreated, Revision: 1}, nil),
 		)
 		opened, err := m.OpenEdition(ctx, testUserUUID, testGameUUID, testKey)
 		require.NoError(t, err)
@@ -216,7 +216,7 @@ func TestOpenEdition(t *testing.T) {
 		deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(game.EditableVersion{Outcome: game.EditableVersionFound, VersionUUID: testVersionUUID, BaseVersionUUID: baseVersion}, nil)
 		gomock.InOrder(
 			deps.drafts.EXPECT().RemoveAsset(ctx, testVersionUUID, "cardBack", testKey, "web").Return(sessionpkg.DraftAssetResult{}, sessionpkg.ErrDraftNotFound),
-			deps.drafts.EXPECT().CreateDraftVersion(ctx, testGameUUID, testVersionUUID, baseVersion).Return(sessionpkg.DraftVersion{Outcome: sessionpkg.DraftCreated, Revision: 1}, nil),
+			deps.drafts.EXPECT().CreateDraftVersion(ctx, testGameUUID, testVersionUUID, sessionpkg.DraftStart{FromVersionUUID: baseVersion}).Return(sessionpkg.DraftVersion{Outcome: sessionpkg.DraftCreated, Revision: 1}, nil),
 			deps.drafts.EXPECT().RemoveAsset(ctx, testVersionUUID, "cardBack", testKey, "web").Return(sessionpkg.DraftAssetResult{Outcome: sessionpkg.DraftAssetUnchanged, Revision: 1}, nil),
 		)
 		_, err := m.RemoveDraftAsset(ctx, testUserUUID, testGameUUID, "cardBack", testKey, "web")

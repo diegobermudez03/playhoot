@@ -64,7 +64,7 @@ func ParseAllowedOrigins(raw string) ([]string, error) {
 func NewServer(authorizer authorizer, guests guestCreator, operations operationLister, refreshes credentialRefresher, sessionEnder sessionEnder, displayNames displayNameSetter, logins Logins, sessionCreator sessionCreator, owners ownerLocator, admins adminAttacher, players playerAttacher, joinCodes joinCodeResolver, games Games, ai AI, config Config) *Server {
 	mux := http.NewServeMux()
 	liveConnections := live.New(config.MaxLiveConnections)
-	gamesHandler := apigames.NewHandler(authorizer, games.Creator, games.Editor, games.Reader, games.AILinks, games.Cards)
+	gamesHandler := apigames.NewHandler(authorizer, games.Creator, games.Editor, games.Reader, games.AILinks, games.Cards, games.Reader)
 	apiBase := strings.TrimRight(games.AILinks.PublicBaseURL, "/")
 	guide := strings.TrimRight(games.AILinks.PublicWebBaseURL, "/") + "/docs/sdk/v1/index.md"
 	groups := []routeGroup{
@@ -87,20 +87,26 @@ func NewServer(authorizer authorizer, guests guestCreator, operations operationL
 	}
 	preflights := preflightRoutes(restRoutes, crossOrigin)
 
-	var restRequestMetrics, aiRequestMetrics, preflightMetrics *requestMetrics
+	var restRequestMetrics, aiRequestMetrics, authoringRequestMetrics, preflightMetrics *requestMetrics
 	var handshakeMetrics *handshakeMetrics
 	if len(restRoutes) > 0 {
-		var patterns, aiPatterns []string
+		var patterns, aiPatterns, authoringPatterns []string
 		for _, route := range restRoutes {
-			if aiRoute(route.Pattern) {
+			switch {
+			case aiRoute(route.Pattern):
 				aiPatterns = append(aiPatterns, route.Pattern)
-			} else {
+			case authoringRoute(route.Pattern):
+				authoringPatterns = append(authoringPatterns, route.Pattern)
+			default:
 				patterns = append(patterns, route.Pattern)
 			}
 		}
 		restRequestMetrics = newRESTMetrics(patterns)
 		if len(aiPatterns) > 0 {
 			aiRequestMetrics = newAIMetrics(aiPatterns)
+		}
+		if len(authoringPatterns) > 0 {
+			authoringRequestMetrics = newAuthoringMetrics(authoringPatterns)
 		}
 		preflightPatterns := make([]string, len(preflights))
 		for i, route := range preflights {
@@ -122,8 +128,11 @@ func NewServer(authorizer authorizer, guests guestCreator, operations operationL
 		// middleware does to it; CORS next, so a page can read every
 		// refusal too.
 		measured := restRequestMetrics
-		if aiRoute(route.Pattern) {
+		switch {
+		case aiRoute(route.Pattern):
 			measured = aiRequestMetrics
+		case authoringRoute(route.Pattern):
+			measured = authoringRequestMetrics
 		}
 		mux.HandleFunc(route.Pattern, chain(routeMiddlewares(route, clients, restObservability(route.Pattern, measured), crossOrigin.Responses()), route.Handler))
 	}

@@ -20,7 +20,9 @@ import (
 	apigames "github.com/diegobermudez03/playhoot/api/games"
 	composergameauthoring "github.com/diegobermudez03/playhoot/composer/gameauthoring"
 	"github.com/diegobermudez03/playhoot/game/usecases/checkplayability"
+	"github.com/diegobermudez03/playhoot/discovery/usecases/templatecatalog"
 	"github.com/diegobermudez03/playhoot/game/usecases/findeditableversion"
+	"github.com/diegobermudez03/playhoot/game/usecases/findtemplate"
 	"github.com/diegobermudez03/playhoot/game/workflows/gamecard"
 	"github.com/diegobermudez03/playhoot/game/workflows/gamelifecycle"
 	"github.com/diegobermudez03/playhoot/identity/loginproviders"
@@ -220,6 +222,7 @@ func run() error {
 	sessionLifecycle := sessionlifecycle.New(db, store, envVars.MaxActiveSessionsPerCreator)
 	playLifecycle := playlifecycle.New(checkplayability.New(db), sessionLifecycle)
 	editableVersions := findeditableversion.New(db)
+	templates := findtemplate.New(db)
 	buildWakeUps := buildsignal.New()
 	versionDrafting := versiondrafting.New(db, store, buildWakeUps)
 	// One toolchain builds the games and serves the SDK guide agents read, so
@@ -233,8 +236,8 @@ func run() error {
 	defer previews.Close()
 	gameLifecycle := gamelifecycle.New(db)
 	gameCards := gamecard.New(db, store)
-	gameAuthoring := gameauthoring.New(gameLifecycle, editableVersions, versionDrafting, resourceLinks, previews, gameLifecycle, versionDrafting, gameCards)
-	gameAuthoringReads := composergameauthoring.New(editableVersions, versionDrafting, resourceLinks, simulategame.New(sandboxHost, keepsimulationresults.New(db)), gameCards)
+	gameAuthoring := gameauthoring.New(gameLifecycle, editableVersions, versionDrafting, resourceLinks, previews, gameLifecycle, versionDrafting, gameCards, templates)
+	gameAuthoringReads := composergameauthoring.New(editableVersions, versionDrafting, resourceLinks, simulategame.New(sandboxHost, keepsimulationresults.New(db)), gameCards, templates, templatecatalog.New())
 	owners := ownership.New(checklivesession.New(db))
 	replayRecorder := replayrecording.New(storereplaychunk.New(db, store), envVars.Replay)
 	// Closed after the controllers, deferred earlier: each stops its

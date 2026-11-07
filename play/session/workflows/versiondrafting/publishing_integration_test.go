@@ -46,7 +46,7 @@ func TestPublishingIntegration(t *testing.T) {
 	declaringDraft := func(t *testing.T, gameUUID string) string {
 		t.Helper()
 		versionUUID := uuid.NewString()
-		_, err := m.CreateDraftVersion(ctx, gameUUID, versionUUID, "")
+		_, err := m.CreateDraftVersion(ctx, gameUUID, versionUUID, sessionpkg.DraftStart{})
 		require.NoError(t, err)
 		changed, err := m.ApplyChanges(ctx, versionUUID, sessionpkg.DraftChange{
 			BaseRevision: 1, Files: []sessionpkg.DraftFileContent{{Path: "game.project.json", Content: declaringProject}},
@@ -125,7 +125,7 @@ func TestPublishingIntegration(t *testing.T) {
 
 		t.Run("a new edition starts from the frozen sources and assets", func(t *testing.T) {
 			nextUUID := uuid.NewString()
-			created, err := m.CreateDraftVersion(ctx, gameUUID, nextUUID, versionUUID)
+			created, err := m.CreateDraftVersion(ctx, gameUUID, nextUUID, sessionpkg.DraftStart{FromVersionUUID: versionUUID})
 			require.NoError(t, err)
 			require.Equal(t, sessionpkg.DraftCreated, created.Outcome)
 			published, err := m.ReadDraft(ctx, versionUUID, 0, false)

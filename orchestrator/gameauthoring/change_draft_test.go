@@ -50,7 +50,7 @@ func TestApplyDraftChanges(t *testing.T) {
 			deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(found, nil)
 			gomock.InOrder(
 				deps.drafts.EXPECT().ApplyChanges(ctx, testVersionUUID, change).Return(sessionpkg.DraftChangeResult{}, sessionpkg.ErrDraftNotFound),
-				deps.drafts.EXPECT().CreateDraftVersion(ctx, testGameUUID, testVersionUUID, "").Return(sessionpkg.DraftVersion{Outcome: sessionpkg.DraftCreated, GameUUID: testGameUUID, VersionUUID: testVersionUUID, Revision: 1}, nil),
+				deps.drafts.EXPECT().CreateDraftVersion(ctx, testGameUUID, testVersionUUID, sessionpkg.DraftStart{}).Return(sessionpkg.DraftVersion{Outcome: sessionpkg.DraftCreated, GameUUID: testGameUUID, VersionUUID: testVersionUUID, Revision: 1}, nil),
 				deps.drafts.EXPECT().ApplyChanges(ctx, testVersionUUID, change).Return(applied, nil),
 			)
 			return test{expected: DraftEdit{Access: game.EditableVersionFound, Result: applied}}
@@ -58,19 +58,19 @@ func TestApplyDraftChanges(t *testing.T) {
 		"a_failed_repair_is_an_error": func(t *testing.T, deps dependencies) test {
 			deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(found, nil)
 			deps.drafts.EXPECT().ApplyChanges(ctx, testVersionUUID, change).Return(sessionpkg.DraftChangeResult{}, sessionpkg.ErrDraftNotFound)
-			deps.drafts.EXPECT().CreateDraftVersion(ctx, testGameUUID, testVersionUUID, "").Return(sessionpkg.DraftVersion{}, errors.New("database down"))
+			deps.drafts.EXPECT().CreateDraftVersion(ctx, testGameUUID, testVersionUUID, sessionpkg.DraftStart{}).Return(sessionpkg.DraftVersion{}, errors.New("database down"))
 			return test{expectErr: true}
 		},
 		"another_version_being_built_in_play_is_broken_data": func(t *testing.T, deps dependencies) test {
 			deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(found, nil)
 			deps.drafts.EXPECT().ApplyChanges(ctx, testVersionUUID, change).Return(sessionpkg.DraftChangeResult{}, sessionpkg.ErrDraftNotFound)
-			deps.drafts.EXPECT().CreateDraftVersion(ctx, testGameUUID, testVersionUUID, "").Return(sessionpkg.DraftVersion{Outcome: sessionpkg.DraftAnotherOpen, VersionUUID: "other"}, nil)
+			deps.drafts.EXPECT().CreateDraftVersion(ctx, testGameUUID, testVersionUUID, sessionpkg.DraftStart{}).Return(sessionpkg.DraftVersion{Outcome: sessionpkg.DraftAnotherOpen, VersionUUID: "other"}, nil)
 			return test{expectErr: true}
 		},
 		"still_missing_after_the_repair_is_an_error": func(t *testing.T, deps dependencies) test {
 			deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(found, nil)
 			deps.drafts.EXPECT().ApplyChanges(ctx, testVersionUUID, change).Return(sessionpkg.DraftChangeResult{}, sessionpkg.ErrDraftNotFound).Times(2)
-			deps.drafts.EXPECT().CreateDraftVersion(ctx, testGameUUID, testVersionUUID, "").Return(sessionpkg.DraftVersion{Outcome: sessionpkg.DraftAlreadyCreated}, nil)
+			deps.drafts.EXPECT().CreateDraftVersion(ctx, testGameUUID, testVersionUUID, sessionpkg.DraftStart{}).Return(sessionpkg.DraftVersion{Outcome: sessionpkg.DraftAlreadyCreated}, nil)
 			return test{expectErr: true}
 		},
 		"a_reused_key_keeps_its_error": func(t *testing.T, deps dependencies) test {
@@ -137,7 +137,7 @@ func TestEnsureDraft(t *testing.T) {
 	t.Run("a_missing_version_is_created", func(t *testing.T) {
 		manager, deps := newTestManager(t)
 		deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(found, nil)
-		deps.drafts.EXPECT().CreateDraftVersion(ctx, testGameUUID, testVersionUUID, "").Return(sessionpkg.DraftVersion{Outcome: sessionpkg.DraftCreated}, nil)
+		deps.drafts.EXPECT().CreateDraftVersion(ctx, testGameUUID, testVersionUUID, sessionpkg.DraftStart{}).Return(sessionpkg.DraftVersion{Outcome: sessionpkg.DraftCreated}, nil)
 
 		access, err := manager.EnsureDraft(ctx, testUserUUID, testGameUUID)
 
@@ -148,7 +148,7 @@ func TestEnsureDraft(t *testing.T) {
 	t.Run("a_present_version_is_kept", func(t *testing.T) {
 		manager, deps := newTestManager(t)
 		deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(found, nil)
-		deps.drafts.EXPECT().CreateDraftVersion(ctx, testGameUUID, testVersionUUID, "").Return(sessionpkg.DraftVersion{Outcome: sessionpkg.DraftAlreadyCreated}, nil)
+		deps.drafts.EXPECT().CreateDraftVersion(ctx, testGameUUID, testVersionUUID, sessionpkg.DraftStart{}).Return(sessionpkg.DraftVersion{Outcome: sessionpkg.DraftAlreadyCreated}, nil)
 
 		access, err := manager.EnsureDraft(ctx, testUserUUID, testGameUUID)
 
@@ -169,7 +169,7 @@ func TestEnsureDraft(t *testing.T) {
 	t.Run("another_version_being_built_is_broken_data", func(t *testing.T) {
 		manager, deps := newTestManager(t)
 		deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(found, nil)
-		deps.drafts.EXPECT().CreateDraftVersion(ctx, testGameUUID, testVersionUUID, "").Return(sessionpkg.DraftVersion{Outcome: sessionpkg.DraftAnotherOpen, VersionUUID: "other"}, nil)
+		deps.drafts.EXPECT().CreateDraftVersion(ctx, testGameUUID, testVersionUUID, sessionpkg.DraftStart{}).Return(sessionpkg.DraftVersion{Outcome: sessionpkg.DraftAnotherOpen, VersionUUID: "other"}, nil)
 
 		_, err := manager.EnsureDraft(ctx, testUserUUID, testGameUUID)
 

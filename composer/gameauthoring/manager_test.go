@@ -27,14 +27,16 @@ type dependencies struct {
 	drafts    *MockdraftReader
 	links     *MockresourceLinkReader
 	simulator *MockgameSimulator
+	templates *MocktemplateFinder
+	catalog   *MocktemplateCatalog
 }
 
 func newTestManager(t *testing.T) (*Manager, dependencies) {
 	ctrl := gomock.NewController(t)
-	deps := dependencies{editions: NewMockeditableVersionFinder(ctrl), drafts: NewMockdraftReader(ctrl), links: NewMockresourceLinkReader(ctrl), simulator: NewMockgameSimulator(ctrl)}
+	deps := dependencies{editions: NewMockeditableVersionFinder(ctrl), drafts: NewMockdraftReader(ctrl), links: NewMockresourceLinkReader(ctrl), simulator: NewMockgameSimulator(ctrl), templates: NewMocktemplateFinder(ctrl), catalog: NewMocktemplateCatalog(ctrl)}
 	cards := NewMockcardReader(ctrl)
 	cards.EXPECT().ReadCard(gomock.Any(), gomock.Any(), gomock.Any()).Return(game.CardRead{Outcome: game.CardDone, Card: game.Card{Name: "Memoria"}}, nil).AnyTimes()
-	return New(deps.editions, deps.drafts, deps.links, deps.simulator, cards), deps
+	return New(deps.editions, deps.drafts, deps.links, deps.simulator, cards, deps.templates, deps.catalog), deps
 }
 
 func TestReadDraft(t *testing.T) {

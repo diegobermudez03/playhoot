@@ -14,6 +14,7 @@ import (
 	reflect "reflect"
 	time "time"
 
+	game "github.com/diegobermudez03/playhoot/game"
 	repo "github.com/diegobermudez03/playhoot/game/workflows/gamelifecycle/internal/repo"
 	gomock "go.uber.org/mock/gomock"
 	gorm "gorm.io/gorm"
@@ -44,9 +45,9 @@ func (m *MockcreateGameRepo) EXPECT() *MockcreateGameRepoMockRecorder {
 }
 
 // ClaimCreateGameRequest mocks base method.
-func (m *MockcreateGameRepo) ClaimCreateGameRequest(ctx context.Context, tx *gorm.DB, ownerUUID, idempotencyKey, name string) (uint, *repo.CreateGameRequest, error) {
+func (m *MockcreateGameRepo) ClaimCreateGameRequest(ctx context.Context, tx *gorm.DB, ownerUUID, idempotencyKey, name, templateGameUUID string) (uint, *repo.CreateGameRequest, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ClaimCreateGameRequest", ctx, tx, ownerUUID, idempotencyKey, name)
+	ret := m.ctrl.Call(m, "ClaimCreateGameRequest", ctx, tx, ownerUUID, idempotencyKey, name, templateGameUUID)
 	ret0, _ := ret[0].(uint)
 	ret1, _ := ret[1].(*repo.CreateGameRequest)
 	ret2, _ := ret[2].(error)
@@ -54,9 +55,9 @@ func (m *MockcreateGameRepo) ClaimCreateGameRequest(ctx context.Context, tx *gor
 }
 
 // ClaimCreateGameRequest indicates an expected call of ClaimCreateGameRequest.
-func (mr *MockcreateGameRepoMockRecorder) ClaimCreateGameRequest(ctx, tx, ownerUUID, idempotencyKey, name any) *gomock.Call {
+func (mr *MockcreateGameRepoMockRecorder) ClaimCreateGameRequest(ctx, tx, ownerUUID, idempotencyKey, name, templateGameUUID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClaimCreateGameRequest", reflect.TypeOf((*MockcreateGameRepo)(nil).ClaimCreateGameRequest), ctx, tx, ownerUUID, idempotencyKey, name)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClaimCreateGameRequest", reflect.TypeOf((*MockcreateGameRepo)(nil).ClaimCreateGameRequest), ctx, tx, ownerUUID, idempotencyKey, name, templateGameUUID)
 }
 
 // CompleteCreateGameRequest mocks base method.
@@ -74,32 +75,32 @@ func (mr *MockcreateGameRepoMockRecorder) CompleteCreateGameRequest(ctx, tx, req
 }
 
 // CreateEdition mocks base method.
-func (m *MockcreateGameRepo) CreateEdition(ctx context.Context, tx *gorm.DB, gameID uint, editionUUID, status string, createdAt time.Time) error {
+func (m *MockcreateGameRepo) CreateEdition(ctx context.Context, tx *gorm.DB, gameID uint, editionUUID, status string, template *game.TemplateSource, createdAt time.Time) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateEdition", ctx, tx, gameID, editionUUID, status, createdAt)
+	ret := m.ctrl.Call(m, "CreateEdition", ctx, tx, gameID, editionUUID, status, template, createdAt)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // CreateEdition indicates an expected call of CreateEdition.
-func (mr *MockcreateGameRepoMockRecorder) CreateEdition(ctx, tx, gameID, editionUUID, status, createdAt any) *gomock.Call {
+func (mr *MockcreateGameRepoMockRecorder) CreateEdition(ctx, tx, gameID, editionUUID, status, template, createdAt any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateEdition", reflect.TypeOf((*MockcreateGameRepo)(nil).CreateEdition), ctx, tx, gameID, editionUUID, status, createdAt)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateEdition", reflect.TypeOf((*MockcreateGameRepo)(nil).CreateEdition), ctx, tx, gameID, editionUUID, status, template, createdAt)
 }
 
 // CreateGame mocks base method.
-func (m *MockcreateGameRepo) CreateGame(ctx context.Context, tx *gorm.DB, game repo.NewGame) (uint, error) {
+func (m *MockcreateGameRepo) CreateGame(ctx context.Context, tx *gorm.DB, arg2 repo.NewGame) (uint, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateGame", ctx, tx, game)
+	ret := m.ctrl.Call(m, "CreateGame", ctx, tx, arg2)
 	ret0, _ := ret[0].(uint)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // CreateGame indicates an expected call of CreateGame.
-func (mr *MockcreateGameRepoMockRecorder) CreateGame(ctx, tx, game any) *gomock.Call {
+func (mr *MockcreateGameRepoMockRecorder) CreateGame(ctx, tx, arg2 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateGame", reflect.TypeOf((*MockcreateGameRepo)(nil).CreateGame), ctx, tx, game)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateGame", reflect.TypeOf((*MockcreateGameRepo)(nil).CreateGame), ctx, tx, arg2)
 }
 
 // FindCreatedGame mocks base method.

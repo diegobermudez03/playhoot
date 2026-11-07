@@ -32,7 +32,7 @@ func TestDraftAssetsIntegration(t *testing.T) {
 	declaringDraft := func(t *testing.T) string {
 		t.Helper()
 		versionUUID := uuid.NewString()
-		_, err := m.CreateDraftVersion(ctx, uuid.NewString(), versionUUID, "")
+		_, err := m.CreateDraftVersion(ctx, uuid.NewString(), versionUUID, sessionpkg.DraftStart{})
 		require.NoError(t, err)
 		changed, err := m.ApplyChanges(ctx, versionUUID, sessionpkg.DraftChange{
 			BaseRevision: 1, Files: []sessionpkg.DraftFileContent{{Path: "game.project.json", Content: declaringProject}},
@@ -168,7 +168,7 @@ func TestDraftAssetsIntegration(t *testing.T) {
 
 	t.Run("an invalid declaration is refused with diagnostics", func(t *testing.T) {
 		versionUUID := uuid.NewString()
-		_, err := m.CreateDraftVersion(ctx, uuid.NewString(), versionUUID, "")
+		_, err := m.CreateDraftVersion(ctx, uuid.NewString(), versionUUID, sessionpkg.DraftStart{})
 		require.NoError(t, err)
 		result, err := m.ApplyChanges(ctx, versionUUID, sessionpkg.DraftChange{
 			BaseRevision: 1, Files: []sessionpkg.DraftFileContent{{Path: "game.project.json", Content: `{"assets":{"cardBack":{"type":"model","description":"x"}}}`}},

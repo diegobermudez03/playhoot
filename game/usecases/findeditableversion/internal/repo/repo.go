@@ -12,9 +12,11 @@ import (
 // GameEditing is a Game's owner and the version of its open edition, nil
 // when it has none.
 type GameEditing struct {
-	OwnerUUID       string
-	VersionUUID     *string
-	BaseVersionUUID *string
+	OwnerUUID           string
+	VersionUUID         *string
+	BaseVersionUUID     *string
+	TemplateGameUUID    *string
+	TemplateVersionUUID *string
 }
 
 // Repo reads Games and their editions.
@@ -33,6 +35,7 @@ func (r *Repo) FindGameEditing(ctx context.Context, gameUUID string, editionStat
 	var editing GameEditing
 	result := r.db.WithContext(ctx).Raw(`
 		SELECT g.owner_uuid, e.uuid AS version_uuid,
+			e.template_game_uuid::text AS template_game_uuid, e.template_version_uuid::text AS template_version_uuid,
 			(SELECT p.uuid FROM game_editions p WHERE p.game_id = g.id AND p.status = ? ORDER BY p.id DESC LIMIT 1) AS base_version_uuid
 		FROM games g
 		LEFT JOIN game_editions e ON e.game_id = g.id AND e.status = ?

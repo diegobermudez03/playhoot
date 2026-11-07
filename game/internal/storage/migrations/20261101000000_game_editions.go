@@ -18,12 +18,15 @@ func migration20261101000000GameEditions() *gormigrate.Migration {
 		ID: "20261101000000_game_editions",
 		Migrate: func(tx *gorm.DB) error {
 			statements := []string{
-				// uuid is also the Play version's uuid the edition is built in.
+				// uuid is also the Play version's uuid the edition is built in;
+				// a first edition started from a template names it.
 				`CREATE TABLE game_editions (
 					id BIGSERIAL PRIMARY KEY,
 					uuid UUID NOT NULL UNIQUE,
 					game_id BIGINT NOT NULL,
 					status TEXT NOT NULL,
+					template_game_uuid UUID NULL,
+					template_version_uuid UUID NULL,
 					created_at TIMESTAMPTZ NOT NULL,
 					published_at TIMESTAMPTZ NULL
 				)`,
@@ -40,14 +43,15 @@ func migration20261101000000GameEditions() *gormigrate.Migration {
 				)`,
 				`CREATE INDEX game_edition_status_changes_edition_id_idx ON game_edition_status_changes (edition_id)`,
 
-				// name is what the creation was asked with, to tell a retry from
-				// a different request; game_id is written once, by the creation
+				// name and template_game_uuid are what the creation was asked
+				// with, to tell a retry from a different request; game_id is written once, by the creation
 				// that claimed the request.
 				`CREATE TABLE game_create_requests (
 					id BIGSERIAL PRIMARY KEY,
 					owner_uuid UUID NOT NULL,
 					idempotency_key TEXT NOT NULL,
 					name TEXT NOT NULL,
+					template_game_uuid UUID NULL,
 					game_id BIGINT NULL,
 					created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 					UNIQUE (owner_uuid, idempotency_key)

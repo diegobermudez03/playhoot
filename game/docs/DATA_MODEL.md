@@ -18,12 +18,16 @@ classDiagram
         updated_at
         deleted_at
         published_at
+        template_allowed
+        template_featured
     }
     class game_editions {
         id
         uuid
         game_id
         status
+        template_game_uuid
+        template_version_uuid
         created_at
         published_at
     }

@@ -24,13 +24,13 @@ func TestCreateGameRequests(t *testing.T) {
 	t.Run("claim_then_complete_then_read_back", func(t *testing.T) {
 		owner := uuid.NewString()
 
-		requestID, existing, err := repo.ClaimCreateGameRequest(ctx, db, owner, "key-1", "Memoria")
+		requestID, existing, err := repo.ClaimCreateGameRequest(ctx, db, owner, "key-1", "Memoria", "")
 		require.NoError(t, err)
 		require.NotZero(t, requestID)
 		require.Nil(t, existing)
 		require.NoError(t, repo.CompleteCreateGameRequest(ctx, db, requestID, 77))
 
-		againID, again, err := repo.ClaimCreateGameRequest(ctx, db, owner, "key-1", "Memoria")
+		againID, again, err := repo.ClaimCreateGameRequest(ctx, db, owner, "key-1", "Memoria", "")
 		require.NoError(t, err)
 		require.Zero(t, againID)
 		gameID := uint(77)
@@ -39,7 +39,7 @@ func TestCreateGameRequests(t *testing.T) {
 	})
 
 	t.Run("a_completed_request_is_never_completed_again", func(t *testing.T) {
-		requestID, _, err := repo.ClaimCreateGameRequest(ctx, db, uuid.NewString(), "key-1", "Memoria")
+		requestID, _, err := repo.ClaimCreateGameRequest(ctx, db, uuid.NewString(), "key-1", "Memoria", "")
 		require.NoError(t, err)
 		require.NoError(t, repo.CompleteCreateGameRequest(ctx, db, requestID, 1))
 
@@ -65,7 +65,7 @@ func TestCreateGameAndEdition(t *testing.T) {
 		gameID, game := newGame(t)
 		editionUUID := uuid.NewString()
 
-		require.NoError(t, repo.CreateEdition(ctx, db, gameID, editionUUID, "EDITING", now))
+		require.NoError(t, repo.CreateEdition(ctx, db, gameID, editionUUID, "EDITING", nil, now))
 
 		created, err := repo.FindCreatedGame(ctx, db, gameID)
 		require.NoError(t, err)
@@ -82,10 +82,10 @@ func TestCreateGameAndEdition(t *testing.T) {
 
 	t.Run("a_game_has_at_most_one_editing_edition", func(t *testing.T) {
 		gameID, _ := newGame(t)
-		require.NoError(t, repo.CreateEdition(ctx, db, gameID, uuid.NewString(), "EDITING", now))
+		require.NoError(t, repo.CreateEdition(ctx, db, gameID, uuid.NewString(), "EDITING", nil, now))
 
-		require.Error(t, repo.CreateEdition(ctx, db, gameID, uuid.NewString(), "EDITING", now))
-		require.NoError(t, repo.CreateEdition(ctx, db, gameID, uuid.NewString(), "PUBLISHED", now))
+		require.Error(t, repo.CreateEdition(ctx, db, gameID, uuid.NewString(), "EDITING", nil, now))
+		require.NoError(t, repo.CreateEdition(ctx, db, gameID, uuid.NewString(), "PUBLISHED", nil, now))
 	})
 
 	t.Run("an_unknown_game_is_not_found", func(t *testing.T) {

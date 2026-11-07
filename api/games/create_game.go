@@ -6,15 +6,20 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/google/uuid"
+
 	"github.com/diegobermudez03/playhoot/api/internal/httpx"
 	"github.com/diegobermudez03/playhoot/game"
 	"github.com/diegobermudez03/playhoot/logging"
+	"github.com/diegobermudez03/playhoot/orchestrator/gameauthoring"
 )
 
 // CreateGameRequest never names the owner: it is the caller.
 type CreateGameRequest struct {
 	Name           string `json:"name"`
 	IdempotencyKey string `json:"idempotency_key"`
+	// TemplateGameUUID, when set, starts the game from that template.
+	TemplateGameUUID string `json:"template_game_uuid,omitempty"`
 }
 
 // CreateGameResponse is a game created with its version being built.
@@ -55,12 +60,22 @@ func (h *Handler) CreateGame(ctx context.Context, userUUID string, req CreateGam
 	if refusal := idempotencyKeyRefusal(req.IdempotencyKey, "idempotency_key"); refusal != nil {
 		return CreateGameResponse{}, refusal
 	}
-	created, err := h.creator.CreateGame(ctx, userUUID, req.Name, req.IdempotencyKey)
+	if req.TemplateGameUUID != "" {
+		template, err := uuid.Parse(req.TemplateGameUUID)
+		if err != nil {
+			return CreateGameResponse{}, templateNotFound()
+		}
+		req.TemplateGameUUID = template.String()
+		logging.LogFields(ctx, logging.Field("template_game_uuid", req.TemplateGameUUID))
+	}
+	created, err := h.creator.CreateGame(ctx, userUUID, req.Name, req.IdempotencyKey, req.TemplateGameUUID)
 	if err != nil {
 		logging.LogError(ctx, err)
 		switch {
 		case errors.Is(err, game.ErrInvalidCard):
 			return CreateGameResponse{}, refuseCoded(http.StatusUnprocessableEntity, codeInvalidCard, "name is required and holds at most 80 characters")
+		case errors.Is(err, gameauthoring.ErrTemplateNotFound):
+			return CreateGameResponse{}, templateNotFound()
 		case errors.Is(err, game.ErrIdempotencyConflict):
 			return CreateGameResponse{}, refuseCoded(http.StatusConflict, codeIdempotencyConflict, "idempotency key reused with a conflicting request")
 		default:

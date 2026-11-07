@@ -70,5 +70,8 @@ func decide(editing *repo.GameEditing, user uuid.UUID) game.EditableVersion {
 	if editing.BaseVersionUUID != nil {
 		found.BaseVersionUUID = *editing.BaseVersionUUID
 	}
+	if editing.TemplateGameUUID != nil && editing.TemplateVersionUUID != nil {
+		found.Template = &game.TemplateSource{GameUUID: *editing.TemplateGameUUID, VersionUUID: *editing.TemplateVersionUUID}
+	}
 	return found
 }

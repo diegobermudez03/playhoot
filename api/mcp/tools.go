@@ -11,6 +11,7 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/diegobermudez03/playhoot/api/games"
+	"github.com/diegobermudez03/playhoot/discovery"
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
 
@@ -24,8 +25,32 @@ var maxAssetBase64 = base64.StdEncoding.EncodedLen(sessionpkg.MaxDraftAssetBytes
 type listGamesInput struct{}
 
 type createGameInput struct {
-	Name           string `json:"name" jsonschema:"the game's name, 1 to 80 characters; the user can change it later"`
-	IdempotencyKey string `json:"idempotency_key" jsonschema:"a new random string for this creation; resend the same one only to retry it"`
+	Name             string `json:"name" jsonschema:"the game's name, 1 to 80 characters; the user can change it later"`
+	IdempotencyKey   string `json:"idempotency_key" jsonschema:"a new random string for this creation; resend the same one only to retry it"`
+	TemplateGameUUID string `json:"template_game_uuid,omitempty" jsonschema:"start from this template (from browse_templates or search_templates) instead of the starter project"`
+}
+
+type searchTemplatesInput struct {
+	Query    string `json:"query,omitempty" jsonschema:"words to match in names, descriptions and categories"`
+	Category string `json:"category,omitempty" jsonschema:"one category, as browse_templates lists them"`
+	Players  int    `json:"players,omitempty" jsonschema:"a number of players the template must accept"`
+	Page     int    `json:"page,omitempty" jsonschema:"the page, from 1"`
+}
+
+type templateInput struct {
+	TemplateGameUUID string `json:"template_game_uuid" jsonschema:"the template's game uuid"`
+}
+
+type readTemplateFilesInput struct {
+	TemplateGameUUID string   `json:"template_game_uuid" jsonschema:"the template's game uuid"`
+	Paths            []string `json:"paths" jsonschema:"the files to read, as inspect_template lists them; at most 50"`
+}
+
+type useTemplateInput struct {
+	GameUUID         string `json:"game_uuid" jsonschema:"the game whose version being built switches"`
+	TemplateGameUUID string `json:"template_game_uuid" jsonschema:"the template to start over from"`
+	BaseRevision     int64  `json:"base_revision" jsonschema:"the revision you read"`
+	IdempotencyKey   string `json:"idempotency_key" jsonschema:"a new random string for this switch"`
 }
 
 type gameInput struct {
@@ -138,13 +163,49 @@ func (h *Handler) addTools(server *sdk.Server) {
 			}
 			return answer(h.games.ListGames(ctx, user))
 		})
-	sdk.AddTool(server, &sdk.Tool{Name: "create_game", Description: "Creates a new, unpublished game for the user, with a starter project as revision 1 (it builds automatically). Answers its game_uuid."},
+	sdk.AddTool(server, &sdk.Tool{Name: "create_game", Description: "Creates a new, unpublished game for the user: revision 1 is a copy of a template (template_game_uuid) or the starter project, and it builds automatically. Answers its game_uuid."},
 		func(ctx context.Context, req *sdk.CallToolRequest, in createGameInput) (*sdk.CallToolResult, any, error) {
 			user, err := userOf(req)
 			if err != nil {
 				return nil, nil, err
 			}
-			return answer(h.games.CreateGame(ctx, user, games.CreateGameRequest{Name: in.Name, IdempotencyKey: in.IdempotencyKey}))
+			return answer(h.games.CreateGame(ctx, user, games.CreateGameRequest{Name: in.Name, IdempotencyKey: in.IdempotencyKey, TemplateGameUUID: in.TemplateGameUUID}))
+		})
+	sdk.AddTool(server, &sdk.Tool{Name: "browse_templates", Description: "Where finding a template starts: the templates Playhoot features and the categories, each template with its name, description, categories, players, languages and devices. Templates are published games their owners let others start from."},
+		func(ctx context.Context, req *sdk.CallToolRequest, _ sdkIndexInput) (*sdk.CallToolResult, any, error) {
+			if _, err := userOf(req); err != nil {
+				return nil, nil, err
+			}
+			return answer(h.games.BrowseTemplates(ctx))
+		})
+	sdk.AddTool(server, &sdk.Tool{Name: "search_templates", Description: "Searches templates by words, a category and a number of players: a page of compact entries (no code)."},
+		func(ctx context.Context, req *sdk.CallToolRequest, in searchTemplatesInput) (*sdk.CallToolResult, any, error) {
+			if _, err := userOf(req); err != nil {
+				return nil, nil, err
+			}
+			return answer(h.games.SearchTemplates(ctx, discovery.TemplateQuery{Text: in.Query, Category: in.Category, Players: in.Players, Page: in.Page}))
+		})
+	sdk.AddTool(server, &sdk.Tool{Name: "inspect_template", Description: "Inspects one template before choosing it: its card, the revision it was published at, its brief.json, the players, commands and inputs its build declares, and its files with sizes. Never its code: read only the files you need with read_template_files."},
+		func(ctx context.Context, req *sdk.CallToolRequest, in templateInput) (*sdk.CallToolResult, any, error) {
+			if _, err := userOf(req); err != nil {
+				return nil, nil, err
+			}
+			return answer(h.games.InspectTemplate(ctx, in.TemplateGameUUID))
+		})
+	sdk.AddTool(server, &sdk.Tool{Name: "read_template_files", Description: "Reads files of a template's published revision, with their contents; missing lists the paths it does not have."},
+		func(ctx context.Context, req *sdk.CallToolRequest, in readTemplateFilesInput) (*sdk.CallToolResult, any, error) {
+			if _, err := userOf(req); err != nil {
+				return nil, nil, err
+			}
+			return answer(h.games.ReadTemplateFiles(ctx, in.TemplateGameUUID, in.Paths))
+		})
+	sdk.AddTool(server, &sdk.Tool{Name: "use_template", Description: "Starts a game's version being built over from a template, as a new revision on the one you read: the template's code and assets, keeping the game's notes.md, brief.json and the uploads the template still declares. History keeps what was there; restore_revision brings it back."},
+		func(ctx context.Context, req *sdk.CallToolRequest, in useTemplateInput) (*sdk.CallToolResult, any, error) {
+			by, err := callerOf(req)
+			if err != nil {
+				return nil, nil, err
+			}
+			return answer(h.games.UseTemplate(ctx, by, in.GameUUID, games.UseTemplateRequest{TemplateGameUUID: in.TemplateGameUUID, BaseRevision: &in.BaseRevision, IdempotencyKey: in.IdempotencyKey}))
 		})
 	sdk.AddTool(server, &sdk.Tool{Name: "get_game_context", Description: "Reads where a game stands: its current revision and when it was observed, every file's path, hash and size (not their contents: read those with read_files), the build of that revision (status and its first diagnostics), the last revision that built, the declared assets with their status, the recent attempts, notes.md, brief.json with the phase the work is in, and the SDK guide's address."},
 		func(ctx context.Context, req *sdk.CallToolRequest, in gameInput) (*sdk.CallToolResult, any, error) {

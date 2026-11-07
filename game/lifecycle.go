@@ -28,11 +28,43 @@ const (
 // EditableVersion is the Play version a user may edit for a Game, set only
 // when Outcome is EditableVersionFound. BaseVersionUUID is the version of the
 // Game's latest published edition, the one a later edition starts from;
-// empty for the first edition.
+// empty for the first edition. Template is the template a first edition
+// started from, nil otherwise.
 type EditableVersion struct {
 	Outcome         EditableVersionOutcome
 	VersionUUID     string
 	BaseVersionUUID string
+	Template        *TemplateSource
+}
+
+// TemplateSource is a template a Game starts from: the template Game and the
+// Play version of its published edition copied.
+type TemplateSource struct {
+	GameUUID    string
+	VersionUUID string
+}
+
+// TemplateOutcome is what FindTemplate decided.
+type TemplateOutcome string
+
+const (
+	// TemplateFound means the Game may be started from.
+	TemplateFound TemplateOutcome = "found"
+	// TemplateNotFound means no Game with that uuid is published and allowed
+	// as a template by its owner.
+	TemplateNotFound TemplateOutcome = "not_found"
+)
+
+// Template is a Game anyone may start a game from, set only when Outcome is
+// TemplateFound: published, not deleted and allowed as a template by its
+// owner. VersionUUID is its latest published edition's Play version.
+type Template struct {
+	Outcome     TemplateOutcome
+	GameUUID    string
+	VersionUUID string
+	Name        string
+	Description string
+	Featured    bool
 }
 
 // ResourceKind is how a game is named among other kinds of resources when

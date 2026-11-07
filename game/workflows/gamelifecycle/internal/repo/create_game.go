@@ -7,14 +7,17 @@ import (
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+
+	"github.com/diegobermudez03/playhoot/game"
 )
 
 // CreateGameRequest is a claimed Game-creation idempotency request. GameID is
 // nil until the creation that claimed it completes it.
 type CreateGameRequest struct {
-	ID     uint
-	GameID *uint
-	Name   *string
+	ID               uint
+	GameID           *uint
+	Name             *string
+	TemplateGameUUID *string
 }
 
 // NewGame is a Game about to be created, unpublished, with its card empty.
@@ -34,10 +37,11 @@ type CreatedGame struct {
 }
 
 type createGameRequest struct {
-	ID             uint
-	OwnerUUID      string
-	IdempotencyKey string
-	Name           *string
+	ID               uint
+	OwnerUUID        string
+	IdempotencyKey   string
+	Name             *string
+	TemplateGameUUID *string
 }
 
 func (createGameRequest) TableName() string { return "game_create_requests" }
@@ -68,11 +72,13 @@ type gameHistoryRow struct {
 func (gameHistoryRow) TableName() string { return "game_histories" }
 
 type editionRow struct {
-	ID        uint
-	UUID      string
-	GameID    uint
-	Status    string
-	CreatedAt time.Time
+	ID                  uint
+	UUID                string
+	GameID              uint
+	Status              string
+	TemplateGameUUID    *string
+	TemplateVersionUUID *string
+	CreatedAt           time.Time
 }
 
 func (editionRow) TableName() string { return "game_editions" }
@@ -90,8 +96,11 @@ func (editionStatusChangeRow) TableName() string { return "game_edition_status_c
 // ClaimCreateGameRequest claims (ownerUUID, idempotencyKey), or returns the
 // request that already holds it. A concurrent claim of the same identity waits
 // for the first transaction and then sees its request.
-func (r *Repo) ClaimCreateGameRequest(ctx context.Context, tx *gorm.DB, ownerUUID string, idempotencyKey string, name string) (uint, *CreateGameRequest, error) {
+func (r *Repo) ClaimCreateGameRequest(ctx context.Context, tx *gorm.DB, ownerUUID string, idempotencyKey string, name string, templateGameUUID string) (uint, *CreateGameRequest, error) {
 	claim := createGameRequest{OwnerUUID: ownerUUID, IdempotencyKey: idempotencyKey, Name: &name}
+	if templateGameUUID != "" {
+		claim.TemplateGameUUID = &templateGameUUID
+	}
 	created := tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&claim)
 	if created.Error != nil {
 		return 0, nil, fmt.Errorf("claiming create game request: %s", created.Error)
@@ -102,7 +111,7 @@ func (r *Repo) ClaimCreateGameRequest(ctx context.Context, tx *gorm.DB, ownerUUI
 
 	var existing CreateGameRequest
 	read := tx.WithContext(ctx).Raw(`
-		SELECT id, game_id, name
+		SELECT id, game_id, name, template_game_uuid::text AS template_game_uuid
 		FROM game_create_requests
 		WHERE owner_uuid = ? AND idempotency_key = ?
 	`, ownerUUID, idempotencyKey).Scan(&existing)
@@ -160,8 +169,11 @@ func (r *Repo) CreateGame(ctx context.Context, tx *gorm.DB, game NewGame) (uint,
 
 // CreateEdition inserts an edition of gameID in status, with the status
 // change that opened it.
-func (r *Repo) CreateEdition(ctx context.Context, tx *gorm.DB, gameID uint, editionUUID string, status string, createdAt time.Time) error {
+func (r *Repo) CreateEdition(ctx context.Context, tx *gorm.DB, gameID uint, editionUUID string, status string, template *game.TemplateSource, createdAt time.Time) error {
 	row := editionRow{UUID: editionUUID, GameID: gameID, Status: status, CreatedAt: createdAt}
+	if template != nil {
+		row.TemplateGameUUID, row.TemplateVersionUUID = &template.GameUUID, &template.VersionUUID
+	}
 	if err := tx.WithContext(ctx).Create(&row).Error; err != nil {
 		return fmt.Errorf("creating game edition: %s", err)
 	}

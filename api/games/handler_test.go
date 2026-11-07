@@ -36,6 +36,7 @@ type dependencies struct {
 	resolver *MocklinkResolver
 	card     *MockcardManager
 	pub      *Mockpublisher
+	template *MocktemplateReader
 }
 
 // testPublicBaseURL is where the API is reached from outside in tests.
@@ -48,9 +49,9 @@ func newTestHandler(ctrl *gomock.Controller) (*Handler, dependencies) {
 	deps := dependencies{
 		creator: NewMockgameCreator(ctrl), editor: NewMockdraftEditor(ctrl), reader: NewMockdraftReader(ctrl),
 		owner: NewMockaiLinkOwner(ctrl), status: NewMockaiLinkStatusReader(ctrl), resolver: NewMocklinkResolver(ctrl),
-		card: NewMockcardManager(ctrl), pub: NewMockpublisher(ctrl),
+		card: NewMockcardManager(ctrl), pub: NewMockpublisher(ctrl), template: NewMocktemplateReader(ctrl),
 	}
-	h := NewHandler(nil, deps.creator, deps.editor, deps.reader, AILinks{Owner: deps.owner, Status: deps.status, Resolver: deps.resolver, PublicBaseURL: testPublicBaseURL + "/", PublicWebBaseURL: testPublicWebBaseURL + "/"}, Cards{Card: deps.card, Publisher: deps.pub})
+	h := NewHandler(nil, deps.creator, deps.editor, deps.reader, AILinks{Owner: deps.owner, Status: deps.status, Resolver: deps.resolver, PublicBaseURL: testPublicBaseURL + "/", PublicWebBaseURL: testPublicWebBaseURL + "/"}, Cards{Card: deps.card, Publisher: deps.pub}, deps.template)
 	h.now = func() time.Time { return time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC) }
 	return h, deps
 }
@@ -114,7 +115,7 @@ func TestHandleCreateGame(t *testing.T) {
 	}
 	tests := map[string]func(t *testing.T, deps dependencies) test{
 		"game_created": func(t *testing.T, deps dependencies) test {
-			deps.creator.EXPECT().CreateGame(gomock.Any(), callerUUID, "Memoria", "key-1").
+			deps.creator.EXPECT().CreateGame(gomock.Any(), callerUUID, "Memoria", "key-1", "").
 				Return(gameauthoring.CreatedGame{GameUUID: gameUUID, VersionUUID: versionUUID, Revision: 1}, nil)
 			tc := post(`{"name":"Memoria","idempotency_key":"key-1"}`)
 			tc.expectedCode = http.StatusCreated
@@ -122,13 +123,13 @@ func TestHandleCreateGame(t *testing.T) {
 			return tc
 		},
 		"a_name_refused": func(t *testing.T, deps dependencies) test {
-			deps.creator.EXPECT().CreateGame(gomock.Any(), callerUUID, "", "key-1").Return(gameauthoring.CreatedGame{}, fmt.Errorf("x: %w", game.ErrInvalidCard))
+			deps.creator.EXPECT().CreateGame(gomock.Any(), callerUUID, "", "key-1", "").Return(gameauthoring.CreatedGame{}, fmt.Errorf("x: %w", game.ErrInvalidCard))
 			tc := post(`{"idempotency_key":"key-1"}`)
 			tc.expectedCode = http.StatusUnprocessableEntity
 			return tc
 		},
 		"a_key_reused_with_another_name": func(t *testing.T, deps dependencies) test {
-			deps.creator.EXPECT().CreateGame(gomock.Any(), callerUUID, "Otro", "key-1").Return(gameauthoring.CreatedGame{}, game.ErrIdempotencyConflict)
+			deps.creator.EXPECT().CreateGame(gomock.Any(), callerUUID, "Otro", "key-1", "").Return(gameauthoring.CreatedGame{}, game.ErrIdempotencyConflict)
 			tc := post(`{"name":"Otro","idempotency_key":"key-1"}`)
 			tc.expectedCode = http.StatusConflict
 			return tc
@@ -144,7 +145,7 @@ func TestHandleCreateGame(t *testing.T) {
 			return tc
 		},
 		"creation_fails": func(t *testing.T, deps dependencies) test {
-			deps.creator.EXPECT().CreateGame(gomock.Any(), callerUUID, "Memoria", "key-1").Return(gameauthoring.CreatedGame{}, errors.New("down"))
+			deps.creator.EXPECT().CreateGame(gomock.Any(), callerUUID, "Memoria", "key-1", "").Return(gameauthoring.CreatedGame{}, errors.New("down"))
 			tc := post(`{"name":"Memoria","idempotency_key":"key-1"}`)
 			tc.expectedCode = http.StatusInternalServerError
 			return tc

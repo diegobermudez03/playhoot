@@ -44,10 +44,11 @@ var (
 )
 
 // CreateDraftVersion gives gameUUID the DRAFT versionUUID at revision 1: the
-// starter sources, or a copy of the executable fromVersionUUID's sources and
-// assets. Idempotent by versionUUID; one naming another game's version or no
-// longer a DRAFT is sessionpkg.ErrDraftVersionConflict.
-func (m *Manager) CreateDraftVersion(ctx context.Context, gameUUID string, versionUUID string, fromVersionUUID string) (sessionpkg.DraftVersion, error) {
+// starter sources, or a copy of what start names (an earlier published
+// version of the game, or a template's). Idempotent by versionUUID; one
+// naming another game's version or no longer a DRAFT is
+// sessionpkg.ErrDraftVersionConflict.
+func (m *Manager) CreateDraftVersion(ctx context.Context, gameUUID string, versionUUID string, start sessionpkg.DraftStart) (sessionpkg.DraftVersion, error) {
 	defer logging.Step(ctx, "versiondrafting.create_draft_version").Close()
 
 	parsedGame, err := uuid.Parse(gameUUID)
@@ -58,13 +59,20 @@ func (m *Manager) CreateDraftVersion(ctx context.Context, gameUUID string, versi
 	if err != nil {
 		return sessionpkg.DraftVersion{}, fmt.Errorf("version uuid is not a valid UUID")
 	}
-	var from string
-	if fromVersionUUID != "" {
-		parsedFrom, err := uuid.Parse(fromVersionUUID)
+	var from sessionpkg.DraftStart
+	if start.FromVersionUUID != "" {
+		parsedFrom, err := uuid.Parse(start.FromVersionUUID)
 		if err != nil {
 			return sessionpkg.DraftVersion{}, fmt.Errorf("from version uuid is not a valid UUID")
 		}
-		from = parsedFrom.String()
+		from.FromVersionUUID = parsedFrom.String()
+	}
+	if start.TemplateGameUUID != "" {
+		parsedTemplate, err := uuid.Parse(start.TemplateGameUUID)
+		if err != nil || from.FromVersionUUID == "" {
+			return sessionpkg.DraftVersion{}, fmt.Errorf("a template start names a valid template game and its version")
+		}
+		from.TemplateGameUUID = parsedTemplate.String()
 	}
 	done, err := utils.RunInDBTransaction(ctx, m.dbServicer, func(ctx context.Context, tx *gorm.DB) (committed[sessionpkg.DraftVersion], error) {
 		return m.createDraftVersionInTx(ctx, tx, parsedGame.String(), parsedVersion.String(), from)
@@ -84,7 +92,7 @@ func (m *Manager) CreateDraftVersion(ctx context.Context, gameUUID string, versi
 
 // createDraftVersionInTx is CreateDraftVersion's work inside its
 // transaction, with normalized UUIDs.
-func (m *Manager) createDraftVersionInTx(ctx context.Context, tx *gorm.DB, gameUUID string, versionUUID string, fromVersionUUID string) (committed[sessionpkg.DraftVersion], error) {
+func (m *Manager) createDraftVersionInTx(ctx context.Context, tx *gorm.DB, gameUUID string, versionUUID string, from sessionpkg.DraftStart) (committed[sessionpkg.DraftVersion], error) {
 	gameID, err := m.createDraftVersionRepo.LockGame(ctx, tx, gameUUID)
 	if err != nil {
 		return committed[sessionpkg.DraftVersion]{}, err
@@ -118,7 +126,7 @@ func (m *Manager) createDraftVersionInTx(ctx context.Context, tx *gorm.DB, gameU
 		return committed[sessionpkg.DraftVersion]{result: sessionpkg.DraftVersion{Outcome: sessionpkg.DraftAnotherOpen, GameUUID: gameUUID, VersionUUID: open.UUID, Revision: revision}}, nil
 	}
 
-	first, err := m.firstRevision(ctx, tx, gameUUID, fromVersionUUID)
+	first, err := m.firstRevision(ctx, tx, gameUUID, from)
 	if err != nil {
 		return committed[sessionpkg.DraftVersion]{}, err
 	}
@@ -152,9 +160,10 @@ type startingRevision struct {
 }
 
 // firstRevision is a new DRAFT's revision 1: the starter sources, or the
-// files and assets of fromVersionUUID's current revision, whose contents are
-// already stored.
-func (m *Manager) firstRevision(ctx context.Context, tx *gorm.DB, gameUUID string, fromVersionUUID string) (startingRevision, error) {
+// files and assets of the current revision of the version start names, whose
+// contents are already stored.
+func (m *Manager) firstRevision(ctx context.Context, tx *gorm.DB, gameUUID string, start sessionpkg.DraftStart) (startingRevision, error) {
+	fromVersionUUID := start.FromVersionUUID
 	if fromVersionUUID == "" {
 		starter := draftsources.Apply(nil, draftsources.Template(), nil)
 		if len(starter.Diagnostics) > 0 {
@@ -164,11 +173,19 @@ func (m *Manager) firstRevision(ctx context.Context, tx *gorm.DB, gameUUID strin
 		provenance := internalrepo.Provenance{Kind: sessionpkg.DraftRevisionTemplate, Actor: sessionpkg.DraftActorPlatform, SDK: string(scriptcheck.ProfileSDKV1)}
 		return startingRevision{revision: draftsources.Revision{Files: starter.Files}, provenance: provenance, contents: starter.Contents}, nil
 	}
+	// An edition copies its own game's version; a template, the template's.
+	sourceGame, kind := gameUUID, sessionpkg.DraftRevisionEdition
+	if start.TemplateGameUUID != "" {
+		sourceGame, kind = start.TemplateGameUUID, sessionpkg.DraftRevisionTemplate
+	}
 	from, err := m.createDraftVersionRepo.FindVersion(ctx, tx, fromVersionUUID)
 	if err != nil {
 		return startingRevision{}, err
 	}
-	if from == nil || from.GameUUID != gameUUID || gameversion.Status(from.Status) != gameversion.Executable || from.CurrentRevision == nil {
+	if from == nil || from.GameUUID != sourceGame || gameversion.Status(from.Status) != gameversion.Executable || from.CurrentRevision == nil {
+		if start.TemplateGameUUID != "" {
+			return startingRevision{}, fmt.Errorf("version %s of template %s: %w", fromVersionUUID, sourceGame, sessionpkg.ErrDraftTemplateNotFound)
+		}
 		return startingRevision{}, fmt.Errorf("version %s is not an executable version of game %s with sources to copy", fromVersionUUID, gameUUID)
 	}
 	copied, found, err := m.createDraftVersionRepo.FindRevision(ctx, tx, from.ID, *from.CurrentRevision)
@@ -180,8 +197,8 @@ func (m *Manager) firstRevision(ctx context.Context, tx *gorm.DB, gameUUID strin
 		return startingRevision{}, fmt.Errorf("version %s has no revision %d", fromVersionUUID, *from.CurrentRevision)
 	}
 	provenance := internalrepo.Provenance{
-		Kind: sessionpkg.DraftRevisionEdition, Actor: sessionpkg.DraftActorPlatform, SDK: string(scriptcheck.ProfileSDKV1),
-		FromGameUUID: gameUUID, FromVersionUUID: from.UUID, FromRevision: from.CurrentRevision,
+		Kind: kind, Actor: sessionpkg.DraftActorPlatform, SDK: string(scriptcheck.ProfileSDKV1),
+		FromGameUUID: sourceGame, FromVersionUUID: from.UUID, FromRevision: from.CurrentRevision,
 	}
 	return startingRevision{revision: copied, provenance: provenance}, nil
 }

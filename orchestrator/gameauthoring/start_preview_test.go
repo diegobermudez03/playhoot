@@ -44,7 +44,7 @@ func TestStartPreview(t *testing.T) {
 		deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(found, nil).AnyTimes()
 		gomock.InOrder(
 			deps.previews.EXPECT().StartPreview(ctx, testVersionUUID, testUserUUID, int64(0), 1).Return(runtime.StartPreviewResult{}, sessionpkg.ErrDraftNotFound),
-			deps.drafts.EXPECT().CreateDraftVersion(ctx, testGameUUID, testVersionUUID, "").Return(sessionpkg.DraftVersion{Outcome: sessionpkg.DraftCreated, GameUUID: testGameUUID, VersionUUID: testVersionUUID, Revision: 1}, nil),
+			deps.drafts.EXPECT().CreateDraftVersion(ctx, testGameUUID, testVersionUUID, sessionpkg.DraftStart{}).Return(sessionpkg.DraftVersion{Outcome: sessionpkg.DraftCreated, GameUUID: testGameUUID, VersionUUID: testVersionUUID, Revision: 1}, nil),
 			deps.previews.EXPECT().StartPreview(ctx, testVersionUUID, testUserUUID, int64(0), 1).Return(runtime.StartPreviewResult{Outcome: runtime.PreviewBuildNotReady}, nil),
 		)
 

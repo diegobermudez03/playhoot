@@ -96,7 +96,7 @@ func TestCreateDraftVersionInTx(t *testing.T) {
 			tc := setup(t, deps)
 			m := &Manager{createDraftVersionRepo: deps.repo, newUUID: func() string { return "build-uuid" }}
 
-			got, err := m.createDraftVersionInTx(ctx, tx, gameUUID, versionUUID, "")
+			got, err := m.createDraftVersionInTx(ctx, tx, gameUUID, versionUUID, sessionpkg.DraftStart{})
 
 			if tc.expectErr {
 				require.Error(t, err)

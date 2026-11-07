@@ -54,7 +54,7 @@ func TestCardIntegration(t *testing.T) {
 	newGame := func(t *testing.T) (string, string) {
 		t.Helper()
 		owner := uuid.NewString()
-		created, err := lifecycle.CreateGame(ctx, owner, "Memoria", "create")
+		created, err := lifecycle.CreateGame(ctx, owner, "Memoria", "create", nil)
 		require.NoError(t, err)
 		return owner, created.GameUUID
 	}
@@ -88,11 +88,11 @@ func TestCardIntegration(t *testing.T) {
 
 	t.Run("a user lists only their own games, the most recently changed first", func(t *testing.T) {
 		owner := uuid.NewString()
-		first, err := lifecycle.CreateGame(ctx, owner, "Primero", "first")
+		first, err := lifecycle.CreateGame(ctx, owner, "Primero", "first", nil)
 		require.NoError(t, err)
-		second, err := lifecycle.CreateGame(ctx, owner, "Segundo", "second")
+		second, err := lifecycle.CreateGame(ctx, owner, "Segundo", "second", nil)
 		require.NoError(t, err)
-		_, err = lifecycle.CreateGame(ctx, uuid.NewString(), "Ajeno", "other")
+		_, err = lifecycle.CreateGame(ctx, uuid.NewString(), "Ajeno", "other", nil)
 		require.NoError(t, err)
 		require.NoError(t, db.Exec(`UPDATE games SET updated_at = ? WHERE uuid = ?`, time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC), second.GameUUID).Error)
 

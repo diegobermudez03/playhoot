@@ -44,18 +44,18 @@ func (m *MockgameCreator) EXPECT() *MockgameCreatorMockRecorder {
 }
 
 // CreateGame mocks base method.
-func (m *MockgameCreator) CreateGame(ctx context.Context, ownerUUID, name, idempotencyKey string) (game.CreatedGame, error) {
+func (m *MockgameCreator) CreateGame(ctx context.Context, ownerUUID, name, idempotencyKey string, template *game.TemplateSource) (game.CreatedGame, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateGame", ctx, ownerUUID, name, idempotencyKey)
+	ret := m.ctrl.Call(m, "CreateGame", ctx, ownerUUID, name, idempotencyKey, template)
 	ret0, _ := ret[0].(game.CreatedGame)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // CreateGame indicates an expected call of CreateGame.
-func (mr *MockgameCreatorMockRecorder) CreateGame(ctx, ownerUUID, name, idempotencyKey any) *gomock.Call {
+func (mr *MockgameCreatorMockRecorder) CreateGame(ctx, ownerUUID, name, idempotencyKey, template any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateGame", reflect.TypeOf((*MockgameCreator)(nil).CreateGame), ctx, ownerUUID, name, idempotencyKey)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateGame", reflect.TypeOf((*MockgameCreator)(nil).CreateGame), ctx, ownerUUID, name, idempotencyKey, template)
 }
 
 // MockeditableVersionFinder is a mock of editableVersionFinder interface.
@@ -136,19 +136,34 @@ func (mr *MockdraftWriterMockRecorder) ApplyChanges(ctx, versionUUID, change any
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ApplyChanges", reflect.TypeOf((*MockdraftWriter)(nil).ApplyChanges), ctx, versionUUID, change)
 }
 
-// CreateDraftVersion mocks base method.
-func (m *MockdraftWriter) CreateDraftVersion(ctx context.Context, gameUUID, versionUUID, fromVersionUUID string) (session.DraftVersion, error) {
+// ApplyTemplate mocks base method.
+func (m *MockdraftWriter) ApplyTemplate(ctx context.Context, versionUUID string, template session.DraftTemplate, baseRevision int64, idempotencyKey, origin string) (session.DraftChangeResult, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateDraftVersion", ctx, gameUUID, versionUUID, fromVersionUUID)
+	ret := m.ctrl.Call(m, "ApplyTemplate", ctx, versionUUID, template, baseRevision, idempotencyKey, origin)
+	ret0, _ := ret[0].(session.DraftChangeResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ApplyTemplate indicates an expected call of ApplyTemplate.
+func (mr *MockdraftWriterMockRecorder) ApplyTemplate(ctx, versionUUID, template, baseRevision, idempotencyKey, origin any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ApplyTemplate", reflect.TypeOf((*MockdraftWriter)(nil).ApplyTemplate), ctx, versionUUID, template, baseRevision, idempotencyKey, origin)
+}
+
+// CreateDraftVersion mocks base method.
+func (m *MockdraftWriter) CreateDraftVersion(ctx context.Context, gameUUID, versionUUID string, start session.DraftStart) (session.DraftVersion, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateDraftVersion", ctx, gameUUID, versionUUID, start)
 	ret0, _ := ret[0].(session.DraftVersion)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // CreateDraftVersion indicates an expected call of CreateDraftVersion.
-func (mr *MockdraftWriterMockRecorder) CreateDraftVersion(ctx, gameUUID, versionUUID, fromVersionUUID any) *gomock.Call {
+func (mr *MockdraftWriterMockRecorder) CreateDraftVersion(ctx, gameUUID, versionUUID, start any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateDraftVersion", reflect.TypeOf((*MockdraftWriter)(nil).CreateDraftVersion), ctx, gameUUID, versionUUID, fromVersionUUID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateDraftVersion", reflect.TypeOf((*MockdraftWriter)(nil).CreateDraftVersion), ctx, gameUUID, versionUUID, start)
 }
 
 // RemoveAsset mocks base method.

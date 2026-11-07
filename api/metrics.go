@@ -77,6 +77,36 @@ func aiRoute(pattern string) bool {
 	return false
 }
 
+// authoringRoutePrefixes are the paths of the routes a creator's web app
+// uses while building a game (its version being built and the templates),
+// measured apart from the other REST routes for the same reason.
+var authoringRoutePrefixes = []string{"/v1/games/{gameUUID}/draft", "/v1/templates"}
+
+// authoringRoute reports whether pattern ("METHOD /path") is a route of
+// building a game.
+func authoringRoute(pattern string) bool {
+	_, path, found := strings.Cut(pattern, " ")
+	if !found {
+		path = pattern
+	}
+	for _, prefix := range authoringRoutePrefixes {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// newAuthoringMetrics declares the request metrics of building a game.
+func newAuthoringMetrics(patterns []string) *requestMetrics {
+	return newRequestMetrics(requestMetricNames{
+		requests:     "api_authoring_http_requests_total",
+		requestsHelp: "Finished requests of the routes building a game (its version being built, templates), by matched route and response status code.",
+		duration:     "api_authoring_http_request_duration_seconds",
+		durationHelp: "Time taken to serve the routes building a game, by matched route.",
+	}, patterns, trackedStatusCodes)
+}
+
 // newAIMetrics declares the request metrics of the AI-facing routes.
 func newAIMetrics(patterns []string) *requestMetrics {
 	return newRequestMetrics(requestMetricNames{

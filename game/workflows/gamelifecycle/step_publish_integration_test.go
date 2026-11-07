@@ -20,7 +20,7 @@ func TestPublicationIntegration(t *testing.T) {
 	named := func(t *testing.T) (string, game.CreatedGame) {
 		t.Helper()
 		owner := uuid.NewString()
-		created, err := manager.CreateGame(ctx, owner, "Memoria", "create")
+		created, err := manager.CreateGame(ctx, owner, "Memoria", "create", nil)
 		require.NoError(t, err)
 		require.NoError(t, db.Exec(`UPDATE games SET name = ? WHERE uuid = ?`, "Memoria", created.GameUUID).Error)
 		return owner, created
@@ -28,7 +28,7 @@ func TestPublicationIntegration(t *testing.T) {
 
 	t.Run("a card without a name is not ready and records no release", func(t *testing.T) {
 		owner := uuid.NewString()
-		created, err := manager.CreateGame(ctx, owner, "Memoria", "create")
+		created, err := manager.CreateGame(ctx, owner, "Memoria", "create", nil)
 		require.NoError(t, err)
 		// Unreachable for games named at creation; kept as a defense.
 		require.NoError(t, db.Exec(`UPDATE games SET name = ? WHERE uuid = ?`, "", created.GameUUID).Error)

@@ -50,18 +50,18 @@ func TestCreateGameIntegration(t *testing.T) {
 
 	t.Run("the name is required, and a key keeps the name it was used with", func(t *testing.T) {
 		owner := uuid.NewString()
-		_, err := manager.CreateGame(ctx, owner, "   ", "key-1")
+		_, err := manager.CreateGame(ctx, owner, "   ", "key-1", nil)
 		require.ErrorIs(t, err, game.ErrInvalidCard)
-		_, err = manager.CreateGame(ctx, owner, "Memoria", "key-1")
+		_, err = manager.CreateGame(ctx, owner, "Memoria", "key-1", nil)
 		require.NoError(t, err)
-		_, err = manager.CreateGame(ctx, owner, "Otro", "key-1")
+		_, err = manager.CreateGame(ctx, owner, "Otro", "key-1", nil)
 		require.ErrorIs(t, err, game.ErrIdempotencyConflict)
 	})
 
 	t.Run("creates_an_unpublished_private_game_with_its_open_edition", func(t *testing.T) {
 		owner := uuid.NewString()
 
-		created, err := manager.CreateGame(ctx, owner, "Memoria", "key-1")
+		created, err := manager.CreateGame(ctx, owner, "Memoria", "key-1", nil)
 
 		require.NoError(t, err)
 		persisted := readGame(t, created.GameUUID)
@@ -81,12 +81,12 @@ func TestCreateGameIntegration(t *testing.T) {
 
 	t.Run("a_retry_answers_the_same_game_and_a_new_key_another", func(t *testing.T) {
 		owner := uuid.NewString()
-		first, err := manager.CreateGame(ctx, owner, "Memoria", "key-1")
+		first, err := manager.CreateGame(ctx, owner, "Memoria", "key-1", nil)
 		require.NoError(t, err)
 
-		retried, err := manager.CreateGame(ctx, owner, "Memoria", "key-1")
+		retried, err := manager.CreateGame(ctx, owner, "Memoria", "key-1", nil)
 		require.NoError(t, err)
-		other, err := manager.CreateGame(ctx, owner, "Memoria", "key-2")
+		other, err := manager.CreateGame(ctx, owner, "Memoria", "key-2", nil)
 		require.NoError(t, err)
 
 		require.Equal(t, first, retried)
@@ -104,7 +104,7 @@ func TestCreateGameIntegration(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				results[i], errs[i] = manager.CreateGame(ctx, owner, "Memoria", "same-key")
+				results[i], errs[i] = manager.CreateGame(ctx, owner, "Memoria", "same-key", nil)
 			}()
 		}
 		wg.Wait()

@@ -18,6 +18,7 @@ import (
 
 	"github.com/diegobermudez03/playhoot/api/games"
 	"github.com/diegobermudez03/playhoot/api/internal/httpx"
+	"github.com/diegobermudez03/playhoot/discovery"
 	"github.com/diegobermudez03/playhoot/identity"
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
@@ -48,16 +49,19 @@ type fakeGames struct {
 	since    int64
 	from     int64
 
-	simulations []games.SimulateRequest
-	stateRead   []any
-	paths       []string
-	before      int64
-	limit       int
-	inline      *bool
-	wait        time.Duration
-	upload      []byte
-	key         string
-	idemKey     string
+	simulations   []games.SimulateRequest
+	templateQuery discovery.TemplateQuery
+	useTemplate   games.UseTemplateRequest
+	created       []games.CreateGameRequest
+	stateRead     []any
+	paths         []string
+	before        int64
+	limit         int
+	inline        *bool
+	wait          time.Duration
+	upload        []byte
+	key           string
+	idemKey       string
 
 	change  games.ChangeResponse
 	asset   games.AssetEditResponse
@@ -119,6 +123,36 @@ func (f *fakeGames) ReadSDKPage(ctx context.Context, page string) (*games.SDKPag
 		return nil, &games.Refusal{Status: http.StatusNotFound, Body: map[string]any{"code": "sdk_page_not_found"}}
 	}
 	return &games.SDKPageResponse{Page: page, Content: "# " + page + "\n", ToolchainVersion: "tc-1"}, nil
+}
+
+func (f *fakeGames) BrowseTemplates(ctx context.Context) (*games.BrowseTemplatesResponse, *games.Refusal) {
+	return &games.BrowseTemplatesResponse{Featured: []games.TemplateEntryResponse{}, Categories: []games.TemplateCategoryResponse{}}, f.refusal
+}
+
+func (f *fakeGames) SearchTemplates(ctx context.Context, query discovery.TemplateQuery) (*games.SearchTemplatesResponse, *games.Refusal) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.templateQuery = query
+	return &games.SearchTemplatesResponse{Page: 1, Templates: []games.TemplateEntryResponse{}}, f.refusal
+}
+
+func (f *fakeGames) InspectTemplate(ctx context.Context, templateGameUUID string) (*games.TemplateResponse, *games.Refusal) {
+	return &games.TemplateResponse{GameUUID: templateGameUUID, Name: "Quiz", Files: nil}, f.refusal
+}
+
+func (f *fakeGames) ReadTemplateFiles(ctx context.Context, templateGameUUID string, paths []string) (*games.FilesResponse, *games.Refusal) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.paths = paths
+	return &games.FilesResponse{Revision: 9, Missing: []string{}}, f.refusal
+}
+
+func (f *fakeGames) UseTemplate(ctx context.Context, by games.Caller, gameUUID string, req games.UseTemplateRequest) (games.ChangeResponse, *games.Refusal) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.callers = append(f.callers, by)
+	f.useTemplate = req
+	return games.ChangeResponse{Outcome: "applied", Revision: 4}, f.refusal
 }
 
 func (f *fakeGames) ListRevisions(ctx context.Context, userUUID string, gameUUID string, before int64, limit int) ([]games.RevisionResponse, *games.Refusal) {
@@ -222,7 +256,7 @@ func TestToolsCallTheirGamesOperations(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 	sort.Strings(names)
-	require.Equal(t, []string{"apply_changes", "create_game", "diff_revisions", "get_build", "get_game_context", "get_sdk_doc", "get_sdk_index", "list_changes_since", "list_my_games", "list_revisions", "read_files", "read_simulation_state", "remove_asset", "restore_revision", "simulate", "upload_asset"}, names)
+	require.Equal(t, []string{"apply_changes", "browse_templates", "create_game", "diff_revisions", "get_build", "get_game_context", "get_sdk_doc", "get_sdk_index", "inspect_template", "list_changes_since", "list_my_games", "list_revisions", "read_files", "read_simulation_state", "read_template_files", "remove_asset", "restore_revision", "search_templates", "simulate", "upload_asset", "use_template"}, names)
 	require.NotContains(t, names, "publish")
 
 	result, err := session.CallTool(ctx, &sdk.CallToolParams{Name: "apply_changes", Arguments: map[string]any{
@@ -291,6 +325,16 @@ func TestReadToolsAnswerOnlyWhatIsAsked(t *testing.T) {
 	require.Equal(t, "<!-- capabilities.md, toolchain tc-1 -->\n# capabilities.md\n", call("get_sdk_index", map[string]any{}), "the index is answered as Markdown")
 	require.Equal(t, "<!-- examples/quiz.md, toolchain tc-1 -->\n# examples/quiz.md\n", call("get_sdk_doc", map[string]any{"page": "examples/quiz.md"}))
 
+	require.Contains(t, call("browse_templates", map[string]any{}), `"featured":[]`)
+	call("search_templates", map[string]any{"query": "quiz", "category": "trivia", "players": 4})
+	require.Equal(t, discovery.TemplateQuery{Text: "quiz", Category: "trivia", Players: 4}, fake.templateQuery)
+	require.Contains(t, call("inspect_template", map[string]any{"template_game_uuid": "t1"}), `"name":"Quiz"`)
+	call("read_template_files", map[string]any{"template_game_uuid": "t1", "paths": []string{"server/game.ts"}})
+	require.Equal(t, []string{"server/game.ts"}, fake.paths)
+	call("use_template", map[string]any{"game_uuid": "g1", "template_game_uuid": "t1", "base_revision": 3, "idempotency_key": "k"})
+	require.Equal(t, "t1", fake.useTemplate.TemplateGameUUID)
+	require.Equal(t, int64(3), *fake.useTemplate.BaseRevision)
+
 	answer = call("diff_revisions", map[string]any{"game_uuid": "g1", "from": 2, "path": "notes.md"})
 	require.Equal(t, int64(2), fake.from)
 	require.Nil(t, fake.revision, "no to means the current one")
@@ -352,7 +396,7 @@ func (allowAll) Authorize(ctx context.Context, token string, operation identity.
 // before any domain is called, so the handler needs none.
 func TestHTTPAndMCPRefuseAlike(t *testing.T) {
 	ctx := context.Background()
-	gamesHandler := games.NewHandler(allowAll{}, nil, nil, nil, games.AILinks{}, games.Cards{})
+	gamesHandler := games.NewHandler(allowAll{}, nil, nil, nil, games.AILinks{}, games.Cards{}, nil)
 	mux := http.NewServeMux()
 	for _, route := range gamesHandler.RESTRoutes() {
 		mux.HandleFunc(route.Pattern, route.Authorization(route.Handler))

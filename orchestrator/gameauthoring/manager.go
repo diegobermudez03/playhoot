@@ -23,13 +23,14 @@ type Manager struct {
 	publications gamePublisher
 	versions     versionPublisher
 	cards        cardNamer
+	templates    templateFinder
 }
 
 // New constructs a Manager from Game Management's game creation, edit
-// authorization, releases and card; Play's version being built, previews and
+// authorization, releases, card and templates; Play's version being built, previews and
 // freezing; and Identity's links an AI uses for a game.
-func New(games gameCreator, editions editableVersionFinder, drafts draftWriter, links resourceLinkWriter, previews previewStarter, publications gamePublisher, versions versionPublisher, cards cardNamer) *Manager {
-	return &Manager{games: games, editions: editions, drafts: drafts, links: links, previews: previews, publications: publications, versions: versions, cards: cards}
+func New(games gameCreator, editions editableVersionFinder, drafts draftWriter, links resourceLinkWriter, previews previewStarter, publications gamePublisher, versions versionPublisher, cards cardNamer, templates templateFinder) *Manager {
+	return &Manager{games: games, editions: editions, drafts: drafts, links: links, previews: previews, publications: publications, versions: versions, cards: cards, templates: templates}
 }
 
 // editableVersionFinder is Game Management's decision of whether a user may

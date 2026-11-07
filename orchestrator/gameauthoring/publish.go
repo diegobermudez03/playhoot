@@ -291,7 +291,7 @@ func (m *Manager) OpenEdition(ctx context.Context, userUUID string, gameUUID str
 		monitoring.Alert(ctx, "game management opened an edition without its versions")
 		return EditionOpening{}, fmt.Errorf("edition of game %s opened without its versions", gameUUID)
 	}
-	draft, err := m.createDraft(ctx, gameUUID, opened.VersionUUID, opened.BaseVersionUUID)
+	draft, err := m.createDraft(ctx, gameUUID, opened.VersionUUID, sessionpkg.DraftStart{FromVersionUUID: opened.BaseVersionUUID})
 	if err != nil {
 		return EditionOpening{}, err
 	}

@@ -32,6 +32,25 @@ const (
 	DraftAnotherOpen CreateDraftOutcome = "another_draft_open"
 )
 
+// DraftStart is what a new DRAFT's revision 1 copies: nothing (the starter
+// project), the published FromVersionUUID of the same game (a new edition),
+// or, with TemplateGameUUID, the published FromVersionUUID of that template.
+type DraftStart struct {
+	FromVersionUUID  string
+	TemplateGameUUID string
+}
+
+// DraftTemplate is a template a DRAFT switches to: a game and the Play
+// version of its published edition.
+type DraftTemplate struct {
+	GameUUID    string
+	VersionUUID string
+}
+
+// ErrDraftTemplateNotFound is returned when a template's version is not an
+// executable version of that game with sources to copy.
+var ErrDraftTemplateNotFound = errors.New("template version not found")
+
 // DraftVersion is what creating a DRAFT answered: the game and the DRAFT it
 // has, and that DRAFT's current revision.
 type DraftVersion struct {
@@ -193,6 +212,7 @@ const (
 	DraftAttemptRestore      DraftAttemptKind = "restore"
 	DraftAttemptAssetUpload  DraftAttemptKind = "asset_upload"
 	DraftAttemptAssetRemoval DraftAttemptKind = "asset_removal"
+	DraftAttemptTemplate     DraftAttemptKind = "template"
 )
 
 // DraftChangeAttempt is one change sent to a version, applied or not.

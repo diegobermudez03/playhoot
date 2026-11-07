@@ -46,7 +46,7 @@ func TestDraftAssets(t *testing.T) {
 		deps.editions.EXPECT().FindEditableVersion(ctx, testGameUUID, testUserUUID).Return(found, nil)
 		gomock.InOrder(
 			deps.drafts.EXPECT().UploadAsset(ctx, testVersionUUID, "cardBack", content, testKey, sessionpkg.DraftOriginWeb).Return(sessionpkg.DraftAssetResult{}, sessionpkg.ErrDraftNotFound),
-			deps.drafts.EXPECT().CreateDraftVersion(ctx, testGameUUID, testVersionUUID, "").Return(sessionpkg.DraftVersion{Outcome: sessionpkg.DraftCreated, GameUUID: testGameUUID, VersionUUID: testVersionUUID, Revision: 1}, nil),
+			deps.drafts.EXPECT().CreateDraftVersion(ctx, testGameUUID, testVersionUUID, sessionpkg.DraftStart{}).Return(sessionpkg.DraftVersion{Outcome: sessionpkg.DraftCreated, GameUUID: testGameUUID, VersionUUID: testVersionUUID, Revision: 1}, nil),
 			deps.drafts.EXPECT().UploadAsset(ctx, testVersionUUID, "cardBack", content, testKey, sessionpkg.DraftOriginWeb).Return(attached, nil),
 		)
 

@@ -44,7 +44,7 @@ func (m *Manager) EnsureDraft(ctx context.Context, userUUID string, gameUUID str
 // repairDraft creates versionUUID in Play for gameUUID, which is idempotent
 // by version uuid, so it needs no request key of its own.
 func (m *Manager) repairDraft(ctx context.Context, gameUUID string, editable game.EditableVersion) error {
-	created, err := m.createDraft(ctx, gameUUID, editable.VersionUUID, editable.BaseVersionUUID)
+	created, err := m.createDraft(ctx, gameUUID, editable.VersionUUID, draftStart(editable))
 	if err != nil {
 		draftRepairsTotal.Inc(ctx, draftRepairOutcomeLabel.Value("failed"))
 		return err
@@ -61,8 +61,8 @@ func (m *Manager) repairDraft(ctx context.Context, gameUUID string, editable gam
 // createDraft creates versionUUID in Play for gameUUID. Another version being
 // built for the same game is broken data: Game Management has one open
 // edition per game, and it names this version.
-func (m *Manager) createDraft(ctx context.Context, gameUUID string, versionUUID string, fromVersionUUID string) (sessionpkg.DraftVersion, error) {
-	draft, err := m.drafts.CreateDraftVersion(ctx, gameUUID, versionUUID, fromVersionUUID)
+func (m *Manager) createDraft(ctx context.Context, gameUUID string, versionUUID string, start sessionpkg.DraftStart) (sessionpkg.DraftVersion, error) {
+	draft, err := m.drafts.CreateDraftVersion(ctx, gameUUID, versionUUID, start)
 	if err != nil {
 		return sessionpkg.DraftVersion{}, fmt.Errorf("creating the version being built: %s", err)
 	}

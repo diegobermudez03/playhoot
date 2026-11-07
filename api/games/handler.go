@@ -24,7 +24,7 @@ import (
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
 
-//go:generate mockgen -package=games -destination=handler_mock_test.go . gameCreator,draftEditor,draftReader,aiLinkOwner,aiLinkStatusReader,linkResolver,cardManager,publisher
+//go:generate mockgen -package=games -destination=handler_mock_test.go . gameCreator,draftEditor,draftReader,aiLinkOwner,aiLinkStatusReader,linkResolver,cardManager,publisher,templateReader
 
 // authorizer is Identity's coarse authorization.
 type authorizer interface {
@@ -34,7 +34,7 @@ type authorizer interface {
 // gameCreator creates a game with its version being built, idempotently per
 // caller and key.
 type gameCreator interface {
-	CreateGame(ctx context.Context, userUUID string, name string, idempotencyKey string) (gameauthoring.CreatedGame, error)
+	CreateGame(ctx context.Context, userUUID string, name string, idempotencyKey string, templateGameUUID string) (gameauthoring.CreatedGame, error)
 }
 
 // draftEditor changes a game's version being built for a user Game
@@ -43,6 +43,7 @@ type gameCreator interface {
 type draftEditor interface {
 	ApplyDraftChanges(ctx context.Context, userUUID string, gameUUID string, change sessionpkg.DraftChange) (gameauthoring.DraftEdit, error)
 	RestoreDraftRevision(ctx context.Context, userUUID string, gameUUID string, revision int64, baseRevision int64, idempotencyKey string, origin string) (gameauthoring.DraftEdit, error)
+	UseTemplate(ctx context.Context, userUUID string, gameUUID string, templateGameUUID string, baseRevision int64, idempotencyKey string, origin string) (gameauthoring.DraftEdit, error)
 	UploadDraftAsset(ctx context.Context, userUUID string, gameUUID string, key string, content io.Reader, idempotencyKey string, origin string) (gameauthoring.DraftAssetEdit, error)
 	RemoveDraftAsset(ctx context.Context, userUUID string, gameUUID string, key string, idempotencyKey string, origin string) (gameauthoring.DraftAssetEdit, error)
 	// EnsureDraft creates in Play the version being built that a read found
@@ -104,21 +105,23 @@ type Handler struct {
 	reader     draftReader
 	links      AILinks
 	cards      Cards
+	templates  templateReader
 	now        func() time.Time
 }
 
 // NewHandler constructs a Handler.
-func NewHandler(authorizer authorizer, creator gameCreator, editor draftEditor, reader draftReader, links AILinks, cards Cards) *Handler {
+func NewHandler(authorizer authorizer, creator gameCreator, editor draftEditor, reader draftReader, links AILinks, cards Cards, templates templateReader) *Handler {
 	links.PublicBaseURL = strings.TrimRight(links.PublicBaseURL, "/")
 	links.GuideBaseURL = strings.TrimRight(links.PublicWebBaseURL, "/") + guidePath
-	return &Handler{authorizer: authorizer, creator: creator, editor: editor, reader: reader, links: links, cards: cards, now: time.Now}
+	return &Handler{authorizer: authorizer, creator: creator, editor: editor, reader: reader, links: links, cards: cards, templates: templates, now: time.Now}
 }
 
 // RESTRoutes returns this group's request/response endpoints.
 func (h *Handler) RESTRoutes() []routing.Route {
 	edit := auth.Require(h.authorizer, identity.OperationEditGame)
+	create := auth.Require(h.authorizer, identity.OperationCreateGame)
 	return []routing.Route{
-		{Pattern: "POST /v1/games", Handler: h.handleCreateGame, Authorization: auth.Require(h.authorizer, identity.OperationCreateGame)},
+		{Pattern: "POST /v1/games", Handler: h.handleCreateGame, Authorization: create},
 		{Pattern: "GET /v1/games", Handler: h.handleListGames, Authorization: edit},
 		{Pattern: "GET /v1/games/{gameUUID}", Handler: h.handleReadCard, Authorization: edit},
 		{Pattern: "PATCH /v1/games/{gameUUID}", Handler: h.handleUpdateCard, Authorization: edit},
@@ -136,6 +139,12 @@ func (h *Handler) RESTRoutes() []routing.Route {
 		{Pattern: "GET /v1/games/{gameUUID}/draft/files", Handler: h.handleReadDraftFiles, Authorization: edit},
 		{Pattern: "GET /v1/games/{gameUUID}/draft/build", Handler: h.handleReadDraftBuild, Authorization: edit},
 		{Pattern: "POST /v1/games/{gameUUID}/draft/restore", Handler: h.handleRestoreDraftRevision, Authorization: edit},
+		{Pattern: "POST /v1/games/{gameUUID}/draft/template", Handler: h.handleUseTemplate, Authorization: edit},
+		// Templates: any creator may find, read and start from them.
+		{Pattern: "GET /v1/templates", Handler: h.handleBrowseTemplates, Authorization: create},
+		{Pattern: "GET /v1/templates/search", Handler: h.handleSearchTemplates, Authorization: create},
+		{Pattern: "GET /v1/templates/{templateGameUUID}", Handler: h.handleInspectTemplate, Authorization: create},
+		{Pattern: "GET /v1/templates/{templateGameUUID}/files", Handler: h.handleReadTemplateFiles, Authorization: create},
 		{Pattern: "POST /v1/games/{gameUUID}/draft/simulations", Handler: h.handleSimulateDraft, Authorization: edit},
 		{Pattern: "GET /v1/games/{gameUUID}/draft/simulations/{resultID}/state", Handler: h.handleReadSimulationState, Authorization: edit},
 		{Pattern: "POST /v1/games/{gameUUID}/draft/previews", Handler: h.handleStartPreview, Authorization: edit},
@@ -157,6 +166,11 @@ func (h *Handler) RESTRoutes() []routing.Route {
 		{Pattern: "GET /ai/v1/{token}/build", Handler: h.handleReadDraftBuild, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},
 		{Pattern: "POST /ai/v1/{token}/changes", Handler: h.handleApplyDraftChanges, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},
 		{Pattern: "POST /ai/v1/{token}/restore", Handler: h.handleRestoreDraftRevision, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},
+		{Pattern: "POST /ai/v1/{token}/template", Handler: h.handleUseTemplate, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},
+		{Pattern: "GET /ai/v1/{token}/templates", Handler: h.handleBrowseTemplates, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},
+		{Pattern: "GET /ai/v1/{token}/templates/search", Handler: h.handleSearchTemplates, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},
+		{Pattern: "GET /ai/v1/{token}/templates/{templateGameUUID}", Handler: h.handleInspectTemplate, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},
+		{Pattern: "GET /ai/v1/{token}/templates/{templateGameUUID}/files", Handler: h.handleReadTemplateFiles, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},
 		{Pattern: "POST /ai/v1/{token}/simulations", Handler: h.handleSimulateDraft, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},
 		{Pattern: "GET /ai/v1/{token}/simulations/{resultID}/state", Handler: h.handleReadSimulationState, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},
 		{Pattern: "PUT /ai/v1/{token}/assets/{key}", Handler: h.handleUploadAsset, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},
