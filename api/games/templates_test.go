@@ -55,6 +55,15 @@ func TestHandleTemplates(t *testing.T) {
 				return test{method: http.MethodGet, target: "/", pathValues: map[string]string{"templateGameUUID": testTemplateGame}, expectedCode: http.StatusOK,
 					expectedBody: `{"game_uuid":"` + testTemplateGame + `","name":"Quiz","description":"A quiz","featured":false,"revision":9,"brief":{"format":"playhoot.brief.v1"},"manifest":{"players":{"min":1,"max":30}},"files":[{"path":"server/game.ts","sha256":"s","size":10}]}`}
 			},
+			"with_configuration": func(t *testing.T, deps dependencies) test {
+				values := `{"format":"playhoot.config.v1","values":{"rounds":5}}`
+				deps.template.EXPECT().InspectTemplate(gomock.Any(), testTemplateGame).Return(composergameauthoring.TemplateRead{
+					Found: true, Template: game.Template{GameUUID: testTemplateGame, Name: "Quiz"}, Revision: 9,
+					ConfigDeclared: []byte(`{"rounds":{"type":"number","description":"Rounds","default":3}}`), ConfigValues: &values, Files: []sessionpkg.DraftFile{},
+				}, nil)
+				return test{method: http.MethodGet, target: "/", pathValues: map[string]string{"templateGameUUID": testTemplateGame}, expectedCode: http.StatusOK,
+					expectedBody: `{"game_uuid":"` + testTemplateGame + `","name":"Quiz","description":"","featured":false,"revision":9,"config":{"declared":{"rounds":{"type":"number","description":"Rounds","default":3}},"values":{"format":"playhoot.config.v1","values":{"rounds":5}}},"files":[]}`}
+			},
 			"not_a_template": func(t *testing.T, deps dependencies) test {
 				deps.template.EXPECT().InspectTemplate(gomock.Any(), testTemplateGame).Return(composergameauthoring.TemplateRead{}, nil)
 				return test{method: http.MethodGet, target: "/", pathValues: map[string]string{"templateGameUUID": testTemplateGame}, expectedCode: http.StatusNotFound,

@@ -40,8 +40,12 @@ func TestInspectTemplate(t *testing.T) {
 	found := game.Template{Outcome: game.TemplateFound, GameUUID: testTemplateGame, VersionUUID: testTemplateVersion, Name: "Quiz"}
 	brief := `{"format":"playhoot.brief.v1"}`
 	code := "export default 1"
+	project := `{"format":"playhoot.project.v1","config":{"rounds":{"type":"number"}}}`
+	values := `{"format":"playhoot.config.v1","values":{"rounds":5}}`
 	snapshot := sessionpkg.DraftSnapshot{Revision: 9, Files: []sessionpkg.DraftFile{
 		{Path: "brief.json", SHA256: "b", Size: int64(len(brief)), Content: &brief},
+		{Path: "config.json", SHA256: "c", Size: int64(len(values)), Content: &values},
+		{Path: "game.project.json", SHA256: "p", Size: int64(len(project)), Content: &project},
 		{Path: "server/game.ts", SHA256: "s", Size: int64(len(code)), Content: &code},
 	}}
 
@@ -59,6 +63,8 @@ func TestInspectTemplate(t *testing.T) {
 		require.Equal(t, int64(9), read.Revision)
 		require.Equal(t, brief, *read.Brief)
 		require.JSONEq(t, `{"players":{"min":1,"max":30}}`, string(read.Manifest))
+		require.JSONEq(t, `{"rounds":{"type":"number"}}`, string(read.ConfigDeclared))
+		require.Equal(t, values, *read.ConfigValues)
 		for _, file := range read.Files {
 			require.Nil(t, file.Content, file.Path)
 		}

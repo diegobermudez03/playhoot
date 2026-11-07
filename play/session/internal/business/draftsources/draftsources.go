@@ -163,6 +163,12 @@ func Apply(current map[string]File, writes []Write, deletes []string) Applied {
 				continue
 			}
 		}
+		if write.Path == ConfigFile {
+			if message := checkConfig(write.Content); message != "" {
+				refuse(write.Path, CodeInvalidConfig, message)
+				continue
+			}
+		}
 		if write.Path == ProjectFile {
 			_, invalidLanguages := DeclaredLanguages(write.Content)
 			_, invalidAssets := DeclaredAssets(write.Content)
@@ -227,7 +233,7 @@ func checkPath(filePath string, refuse func(filePath, code, message string)) boo
 		}
 	}
 	if !Allowed(filePath) {
-		refuse(filePath, CodePathNotAllowed, "allowed: game.project.json, notes.md, brief.json, .ts/.tsx files under shared/, server/ or client/, and .json files under scenarios/")
+		refuse(filePath, CodePathNotAllowed, "allowed: game.project.json, config.json, notes.md, brief.json, .ts/.tsx files under shared/, server/ or client/, and .json files under scenarios/")
 		return false
 	}
 	return true
@@ -237,7 +243,7 @@ func checkPath(filePath string, refuse func(filePath, code, message string)) boo
 // hold.
 func Allowed(filePath string) bool {
 	switch {
-	case filePath == "game.project.json" || filePath == "notes.md" || filePath == gamebrief.Path:
+	case filePath == ProjectFile || filePath == ConfigFile || filePath == "notes.md" || filePath == gamebrief.Path:
 		return true
 	case strings.HasPrefix(filePath, "shared/") || strings.HasPrefix(filePath, "server/") || strings.HasPrefix(filePath, "client/"):
 		extension := path.Ext(filePath)

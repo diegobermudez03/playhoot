@@ -8,3 +8,5 @@ them) and the starter template a new DRAFT begins with.
 (its sources and its saved `scenarios/`, never `dist/`) plus `notes.md`, and an empty `brief.json` in phase `brief` (the fixture's own brief describes Tap Race as finished; a new game starts by agreeing what it will be). It must keep building with the current Playhoot SDK
 (`npm run game -- build <project>` in the frontend repository): when the SDK changes, copy the fixture
 again.
+
+`config.json` (2026-11-07, `config.go`): the configuration's values (`playhoot.config.v1`), allowed and checked only for its shape when written (`invalid_config`): the values are checked against game.project.json's `"config"` by the build, in the frontend toolchain. `DeclaredConfig` reads that declaration as written, for `inspect_template`.

@@ -37,6 +37,24 @@ function helper(state) { const copy = state.items.slice(); copy.sort(); state.it
 function __playhoot_module_values() { return [QUESTIONS, commands, game]; }` + tail,
 		},
 		{
+			name: "constants may read properties of other constants",
+			script: `const config = { rounds: 3, timing: { seconds: 20 } };
+const ROUNDS = config.rounds;
+const game = defineGame({ phases: { play: { seconds: config.timing.seconds } }, rounds: ROUNDS });
+function defineGame(d) { return d; }
+function __playhoot_module_values() { return [config, ROUNDS, game]; }` + tail,
+		},
+		{
+			name: "property reads reach no constructor and literals hold no getters",
+			script: `const A = { a: 1 };
+const B = A.constructor;
+const C = A["a"];
+const D = { get x() { return 1; } };
+function __playhoot_module_values() { return [A]; }` + tail,
+			// Reading constructor anywhere is also a global access.
+			rules: []string{RuleModuleState, RuleGlobalAccess, RuleModuleState, RuleModuleState},
+		},
+		{
 			name: "computed constants and calls other than definitions are refused",
 			script: `const made = make();
 const size = GOAL * 2;

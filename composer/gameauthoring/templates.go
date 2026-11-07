@@ -60,15 +60,18 @@ func (m *Manager) SearchTemplates(ctx context.Context, query discovery.TemplateQ
 
 // TemplateRead is a template as an AI inspects it before choosing it, set
 // only when Found: its card, the revision its published version was frozen
-// at, its files without contents, its brief.json, and the manifest its build
-// declares (players, commands, inputs). Never its code.
+// at, its files without contents, its brief.json, the manifest its build
+// declares (players, commands, inputs), and what it lets change as data: its
+// configuration's declaration and values. Never its code.
 type TemplateRead struct {
-	Found    bool
-	Template game.Template
-	Revision int64
-	Files    []sessionpkg.DraftFile
-	Brief    *string
-	Manifest []byte
+	Found          bool
+	Template       game.Template
+	Revision       int64
+	Files          []sessionpkg.DraftFile
+	Brief          *string
+	Manifest       []byte
+	ConfigDeclared []byte
+	ConfigValues   *string
 }
 
 // InspectTemplate reads templateGameUUID as a template: anyone may.
@@ -81,8 +84,13 @@ func (m *Manager) InspectTemplate(ctx context.Context, templateGameUUID string) 
 	}
 	read := TemplateRead{Found: true, Template: template, Revision: snapshot.Revision, Files: make([]sessionpkg.DraftFile, len(snapshot.Files))}
 	for i, file := range snapshot.Files {
-		if file.Path == sessionpkg.BriefPath {
+		switch {
+		case file.Path == sessionpkg.BriefPath:
 			read.Brief = file.Content
+		case file.Path == sessionpkg.ConfigPath:
+			read.ConfigValues = file.Content
+		case file.Path == sessionpkg.ProjectPath && file.Content != nil:
+			read.ConfigDeclared = sessionpkg.DeclaredConfig(*file.Content)
 		}
 		file.Content = nil
 		read.Files[i] = file

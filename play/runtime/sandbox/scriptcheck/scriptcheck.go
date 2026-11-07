@@ -310,11 +310,14 @@ func primitiveValue(expression ast.Expression) bool {
 
 // sdkConstant reports whether an sdk-v1 top-level const may hold expression,
 // which is evaluated once at load: it can create no hidden state, since it
-// calls nothing but the SDK's pure definition functions.
+// calls nothing but the SDK's pure definition functions. A property read
+// (config.rounds) runs no code: literals have no getters here.
 func sdkConstant(expression ast.Expression) bool {
 	switch e := expression.(type) {
 	case *ast.FunctionLiteral, *ast.ArrowFunctionLiteral, *ast.Identifier:
 		return true
+	case *ast.DotExpression:
+		return propertyRead(e)
 	case *ast.ArrayLiteral:
 		for _, value := range e.Value {
 			if !sdkConstant(value) {
@@ -326,7 +329,7 @@ func sdkConstant(expression ast.Expression) bool {
 		for _, property := range e.Value {
 			switch p := property.(type) {
 			case *ast.PropertyKeyed:
-				if p.Computed || !sdkConstant(p.Value) {
+				if p.Computed || p.Kind != ast.PropertyKindValue && p.Kind != ast.PropertyKindMethod || !sdkConstant(p.Value) {
 					return false
 				}
 			case *ast.PropertyShort:
@@ -357,6 +360,22 @@ func sdkConstant(expression ast.Expression) bool {
 		return true
 	default:
 		return primitiveValue(expression)
+	}
+}
+
+// propertyRead reports whether expression is a chain of plain property reads
+// from a name (a.b.c), reaching no constructor or prototype.
+func propertyRead(expression *ast.DotExpression) bool {
+	if forbiddenProperties[string(expression.Identifier.Name)] {
+		return false
+	}
+	switch left := expression.Left.(type) {
+	case *ast.Identifier:
+		return true
+	case *ast.DotExpression:
+		return propertyRead(left)
+	default:
+		return false
 	}
 }
 

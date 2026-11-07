@@ -65,17 +65,26 @@ type SearchTemplatesResponse struct {
 }
 
 // TemplateResponse is a template as an AI inspects it: its card, the
-// revision it was published at, its brief.json and build manifest as
-// written, and its files without contents.
+// revision it was published at, its brief.json, build manifest and
+// configuration as written, and its files without contents.
 type TemplateResponse struct {
-	GameUUID    string              `json:"game_uuid"`
-	Name        string              `json:"name"`
-	Description string              `json:"description"`
-	Featured    bool                `json:"featured"`
-	Revision    int64               `json:"revision"`
-	Brief       json.RawMessage     `json:"brief,omitempty"`
-	Manifest    json.RawMessage     `json:"manifest,omitempty"`
-	Files       []draftFileResponse `json:"files"`
+	GameUUID    string                  `json:"game_uuid"`
+	Name        string                  `json:"name"`
+	Description string                  `json:"description"`
+	Featured    bool                    `json:"featured"`
+	Revision    int64                   `json:"revision"`
+	Brief       json.RawMessage         `json:"brief,omitempty"`
+	Manifest    json.RawMessage         `json:"manifest,omitempty"`
+	Config      *TemplateConfigResponse `json:"config,omitempty"`
+	Files       []draftFileResponse     `json:"files"`
+}
+
+// TemplateConfigResponse is what a template lets change as data:
+// game.project.json's "config" (each value's type, limits, description and
+// default) and config.json's document, when it has one.
+type TemplateConfigResponse struct {
+	Declared json.RawMessage `json:"declared"`
+	Values   json.RawMessage `json:"values,omitempty"`
 }
 
 // UseTemplateRequest switches a draft to a template over base_revision.
@@ -191,6 +200,12 @@ func (h *Handler) InspectTemplate(ctx context.Context, templateGameUUID string) 
 	}
 	if len(read.Manifest) > 0 && json.Valid(read.Manifest) {
 		body.Manifest = json.RawMessage(read.Manifest)
+	}
+	if len(read.ConfigDeclared) > 0 && json.Valid(read.ConfigDeclared) {
+		body.Config = &TemplateConfigResponse{Declared: json.RawMessage(read.ConfigDeclared)}
+		if read.ConfigValues != nil && json.Valid([]byte(*read.ConfigValues)) {
+			body.Config.Values = json.RawMessage(*read.ConfigValues)
+		}
 	}
 	for i, file := range read.Files {
 		body.Files[i] = draftFileResponse{Path: file.Path, SHA256: file.SHA256, Size: file.Size}

@@ -242,3 +242,25 @@ func TestApplyValidatesTheBrief(t *testing.T) {
 	valid := Apply(base.Files, []Write{{Path: "brief.json", Content: `{"format": "playhoot.brief.v1", "phase": "building", "goal": "Tap fast"}`}}, nil)
 	require.Empty(t, valid.Diagnostics)
 }
+
+func TestApplyChecksConfigDocument(t *testing.T) {
+	base := Apply(nil, Template(), nil)
+	require.Empty(t, base.Diagnostics)
+
+	for _, content := range []string{`[]`, `{"values": {}}`, `{"format": "playhoot.config.v1", "values": []}`, `not json`} {
+		refused := Apply(base.Files, []Write{{Path: "config.json", Content: content}}, nil)
+		require.Len(t, refused.Diagnostics, 1, content)
+		require.Equal(t, CodeInvalidConfig, refused.Diagnostics[0].Code)
+	}
+
+	valid := Apply(base.Files, []Write{{Path: "config.json", Content: `{"format": "playhoot.config.v1", "values": {"rounds": 5}}`}}, nil)
+	require.Empty(t, valid.Diagnostics)
+	require.Contains(t, valid.Files, "config.json")
+}
+
+func TestDeclaredConfig(t *testing.T) {
+	require.JSONEq(t, `{"rounds": {"type": "number"}}`, string(DeclaredConfig(`{"format": "playhoot.project.v1", "config": {"rounds": {"type": "number"}}}`)))
+	require.Nil(t, DeclaredConfig(`{"format": "playhoot.project.v1"}`))
+	require.Nil(t, DeclaredConfig(`{"config": []}`))
+	require.Nil(t, DeclaredConfig(`not json`))
+}

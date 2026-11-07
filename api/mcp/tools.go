@@ -185,7 +185,7 @@ func (h *Handler) addTools(server *sdk.Server) {
 			}
 			return answer(h.games.SearchTemplates(ctx, discovery.TemplateQuery{Text: in.Query, Category: in.Category, Players: in.Players, Page: in.Page}))
 		})
-	sdk.AddTool(server, &sdk.Tool{Name: "inspect_template", Description: "Inspects one template before choosing it: its card, the revision it was published at, its brief.json, the players, commands and inputs its build declares, and its files with sizes. Never its code: read only the files you need with read_template_files."},
+	sdk.AddTool(server, &sdk.Tool{Name: "inspect_template", Description: "Inspects one template before choosing it: its card, the revision it was published at, its brief.json, the players, commands and inputs its build declares, what it lets change as data (config: each value's type, limits and description, and config.json's values), and its files with sizes. Never its code: read only the files you need with read_template_files."},
 		func(ctx context.Context, req *sdk.CallToolRequest, in templateInput) (*sdk.CallToolResult, any, error) {
 			if _, err := userOf(req); err != nil {
 				return nil, nil, err
