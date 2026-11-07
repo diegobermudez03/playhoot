@@ -202,7 +202,7 @@ func TestAILinkRoutes(t *testing.T) {
 		require.Contains(t, body, `"changes":"`+testPublicBaseURL+page+`/changes"`)
 		require.Contains(t, body, `"changed":"`+testPublicBaseURL+page+`/changed"`)
 		require.Contains(t, body, `"diff":"`+testPublicBaseURL+page+`/diff"`)
-		require.Contains(t, body, `"sdk_docs_url":"`+testPublicWebBaseURL+`/docs/sdk/v1/index.md"`)
+		require.Contains(t, body, `"sdk_docs_url":"`+testPublicBaseURL+page+`/sdk/index.md"`, "through a link, the guide of the toolchain")
 	})
 
 	t.Run("the context page links the SDK guide on the web", func(t *testing.T) {
@@ -211,8 +211,8 @@ func TestAILinkRoutes(t *testing.T) {
 		deps.reader.EXPECT().ReadDraft(gomock.Any(), callerUUID, gameUUID, int64(0), true).Return(composergameauthoring.DraftRead{Access: game.EditableVersionFound, Snapshot: aiSnapshot("x")}, nil)
 
 		body := serve(h, http.MethodGet, page, "").Body.String()
-		require.Contains(t, body, testPublicWebBaseURL+"/docs/sdk/v1/index.md")
-		require.Contains(t, body, testPublicWebBaseURL+"/docs/sdk/v1/scenarios.md")
+		require.Contains(t, body, testPublicBaseURL+page+"/sdk/index.md")
+		require.Contains(t, body, testPublicBaseURL+page+"/sdk/capabilities.md")
 	})
 
 	t.Run("a file of a pinned revision", func(t *testing.T) {

@@ -114,6 +114,13 @@ func (f *fakeGames) ReadDiff(ctx context.Context, userUUID string, gameUUID stri
 	return &games.DiffResponse{From: from, To: 5, Files: []games.FileDiffEntryBody{}}, f.refusal
 }
 
+func (f *fakeGames) ReadSDKPage(ctx context.Context, page string) (*games.SDKPageResponse, *games.Refusal) {
+	if page == "missing.md" {
+		return nil, &games.Refusal{Status: http.StatusNotFound, Body: map[string]any{"code": "sdk_page_not_found"}}
+	}
+	return &games.SDKPageResponse{Page: page, Content: "# " + page + "\n", ToolchainVersion: "tc-1"}, nil
+}
+
 func (f *fakeGames) ListRevisions(ctx context.Context, userUUID string, gameUUID string, before int64, limit int) ([]games.RevisionResponse, *games.Refusal) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -215,7 +222,7 @@ func TestToolsCallTheirGamesOperations(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 	sort.Strings(names)
-	require.Equal(t, []string{"apply_changes", "create_game", "diff_revisions", "get_build", "get_game_context", "list_changes_since", "list_my_games", "list_revisions", "read_files", "read_simulation_state", "remove_asset", "restore_revision", "simulate", "upload_asset"}, names)
+	require.Equal(t, []string{"apply_changes", "create_game", "diff_revisions", "get_build", "get_game_context", "get_sdk_doc", "get_sdk_index", "list_changes_since", "list_my_games", "list_revisions", "read_files", "read_simulation_state", "remove_asset", "restore_revision", "simulate", "upload_asset"}, names)
 	require.NotContains(t, names, "publish")
 
 	result, err := session.CallTool(ctx, &sdk.CallToolParams{Name: "apply_changes", Arguments: map[string]any{
@@ -280,6 +287,9 @@ func TestReadToolsAnswerOnlyWhatIsAsked(t *testing.T) {
 	call("read_simulation_state", map[string]any{"game_uuid": "g1", "result_id": "r-1", "at_ms": 300, "of": "P1", "path": "hand"})
 	at := int64(300)
 	require.Equal(t, []any{"r-1", &at, "P1", "hand"}, fake.stateRead)
+
+	require.Equal(t, "<!-- capabilities.md, toolchain tc-1 -->\n# capabilities.md\n", call("get_sdk_index", map[string]any{}), "the index is answered as Markdown")
+	require.Equal(t, "<!-- examples/quiz.md, toolchain tc-1 -->\n# examples/quiz.md\n", call("get_sdk_doc", map[string]any{"page": "examples/quiz.md"}))
 
 	answer = call("diff_revisions", map[string]any{"game_uuid": "g1", "from": 2, "path": "notes.md"})
 	require.Equal(t, int64(2), fake.from)

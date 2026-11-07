@@ -55,6 +55,7 @@ import (
 	"github.com/diegobermudez03/playhoot/play/session/usecases/recordlimithits"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/resolvejoincode"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/keepsimulationresults"
+	"github.com/diegobermudez03/playhoot/play/session/usecases/readsdkguide"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/storereplaychunk"
 	"github.com/diegobermudez03/playhoot/play/session/workflows/previewlifecycle"
 	"github.com/diegobermudez03/playhoot/play/session/workflows/sessionlifecycle"
@@ -221,7 +222,10 @@ func run() error {
 	editableVersions := findeditableversion.New(db)
 	buildWakeUps := buildsignal.New()
 	versionDrafting := versiondrafting.New(db, store, buildWakeUps)
-	versionBuilding := versionbuilding.New(db, store, gametoolchain.Open(envVars.GameToolchainDir), buildWakeUps, versionbuilding.DefaultWorkers)
+	// One toolchain builds the games and serves the SDK guide agents read, so
+	// the guide describes the SDK the builds use.
+	toolchain := gametoolchain.Open(envVars.GameToolchainDir)
+	versionBuilding := versionbuilding.New(db, store, toolchain, buildWakeUps, versionbuilding.DefaultWorkers)
 	resourceLinks := resourcelinks.New(db)
 	// Previews run on the live controller pinned to a draft build; they are
 	// never Sessions (play/session/workflows/previewlifecycle).
@@ -292,7 +296,7 @@ func run() error {
 		liveConnections,
 		resolvejoincode.New(db),
 		api.Games{Previews: previews, Creator: gameAuthoring, Editor: gameAuthoring, Reader: gameAuthoringReads, AILinks: apigames.AILinks{
-			Owner: gameAuthoring, Status: gameAuthoringReads, Resolver: resourceLinks, PublicBaseURL: envVars.PublicAPIBaseURL, PublicWebBaseURL: envVars.PublicWebBaseURL,
+			Owner: gameAuthoring, Status: gameAuthoringReads, Resolver: resourceLinks, Guide: readsdkguide.New(envVars.GameToolchainDir, toolchain), PublicBaseURL: envVars.PublicAPIBaseURL, PublicWebBaseURL: envVars.PublicWebBaseURL,
 		}, Cards: apigames.Cards{Card: gameCards, Publisher: gameAuthoring}},
 		api.AI{Server: aiAuthorization},
 		api.Config{

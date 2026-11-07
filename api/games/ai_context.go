@@ -41,6 +41,7 @@ type aiURLs struct {
 	Changed     string `json:"changed"`
 	Revisions   string `json:"revisions"`
 	Diff        string `json:"diff"`
+	SDK         string `json:"sdk"`
 	Restore     string `json:"restore"`
 	Build       string `json:"build"`
 	Files       string `json:"files"`
@@ -100,7 +101,7 @@ func (h *Handler) handleAIContext(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(aiContextMarkdown(read.name, read.snapshot, *read.Response.URLs, h.links.GuideBaseURL, read.Response.ObservedAt, read.Response.SourcesInline, read.Response.Notes)))
+	_, _ = w.Write([]byte(aiContextMarkdown(read.name, read.snapshot, *read.Response.URLs, read.Response.URLs.SDK, read.Response.ObservedAt, read.Response.SourcesInline, read.Response.Notes)))
 }
 
 // ReadContext reads the context of a game for an AI, at its current
@@ -137,10 +138,16 @@ func (h *Handler) ReadContext(ctx context.Context, userUUID string, rawGameUUID 
 	}
 	draft := draftBody(snapshot)
 	draft.Build = firstDiagnostics(draft.Build)
+	// Through a link, the guide of the toolchain this game builds with; the
+	// web app's copy otherwise.
+	sdkDocs := h.links.GuideBaseURL + "/index.md"
+	if urls != nil {
+		sdkDocs = urls.SDK + "/index.md"
+	}
 	return AIContext{
 		Response: AIContextResponse{
 			Format: aiContextFormat, GameName: gameName(name), ObservedAt: observedAt,
-			Revision: snapshot.Revision, SourcesInline: inline, Notes: notes, SDKDocsURL: h.links.GuideBaseURL + "/index.md", URLs: urls, Draft: draft,
+			Revision: snapshot.Revision, SourcesInline: inline, Notes: notes, SDKDocsURL: sdkDocs, URLs: urls, Draft: draft,
 		},
 		name:     gameName(name),
 		snapshot: snapshot,
@@ -215,7 +222,7 @@ func firstDiagnostics(build *BuildResponse) *BuildResponse {
 func aiAddresses(base string, token string) aiURLs {
 	self := base + aiPathPrefix + token
 	return aiURLs{
-		Self: self, Changes: self + "/changes", Changed: self + "/changed", Revisions: self + "/revisions", Diff: self + "/diff", Restore: self + "/restore",
+		Self: self, Changes: self + "/changes", Changed: self + "/changed", Revisions: self + "/revisions", Diff: self + "/diff", SDK: self + "/sdk", Restore: self + "/restore",
 		Build: self + "/build", Files: self + "/files", Assets: self + "/assets", Simulations: self + "/simulations",
 	}
 }
@@ -263,7 +270,7 @@ func aiContextMarkdown(name string, snapshot sessionpkg.DraftSnapshot, urls aiUR
 	line("- Assets (images, audio, video) are declared in `game.project.json` under `\"assets\"`. The person uploads them in the section **Recursos**, or you PUT the raw file to %s/<key> with an `Idempotency-Key` header.", urls.Assets)
 	line("- Every new revision is built automatically. Wait for its result with GET %s?revision=N&wait=20 .", urls.Build)
 	line("- To check what the game does, simulate it: POST a scenario `{\"format\": \"playhoot.scenario.v1\", \"revision\": N, \"players\": 2, \"seed\": 1, \"duration_ms\": 30000, \"steps\": [{\"at_ms\": 100, \"player\": \"P1\", \"command\": {\"name\": \"...\", \"payload\": {}}}], \"holds\": [{\"from_ms\": 1000, \"to_ms\": 1800, \"player\": \"P2\", \"inputs\": {...}}], \"expect\": [{\"at_ms\": 2000, \"of\": \"global\", \"path\": \"scores.P1\", \"op\": \"eq\", \"value\": 1}]}` to %s (or `{\"scenario_path\": \"scenarios/<name>.json\"}` / `{\"all\": true}` for the saved ones). The answer is a summary: passed, each failed expectation with expected and actual, how it stopped, counts and a `result_id`; read any observed state at %s/<result_id>/state?at_ms=N&of=P1&path=a.b (`\"detail\": \"full\"` answers everything at once). A revision can be simulated once its build SUCCEEDED. If you cannot send HTTP requests, give the scenario to the person: they paste it in the section **Escenarios** and send you the result.", urls.Simulations, urls.Simulations)
-	line("- How to write a Playhoot game (read it before writing code): %s/index.md . The change format: %s/changes.md ; builds: %s/building.md ; scenarios: %s/scenarios.md ; assets: %s/assets.md .", guide, guide, guide, guide, guide)
+	line("- How to write a Playhoot game (read it before writing code): %s/index.md , then the one-line index of what the SDK gives, %s/capabilities.md , and only the pages your game needs. The order of work and what done means: %s/policies.md ; the change format: %s/changes.md ; scenarios: %s/scenarios.md .", guide, guide, guide, guide, guide)
 	line("")
 
 	line("## Build of revision %d", snapshot.Revision)

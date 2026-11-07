@@ -90,6 +90,7 @@ type AILinks struct {
 	Owner            aiLinkOwner
 	Status           aiLinkStatusReader
 	Resolver         linkResolver
+	Guide            sdkGuide
 	PublicBaseURL    string
 	PublicWebBaseURL string
 	GuideBaseURL     string
@@ -151,6 +152,7 @@ func (h *Handler) RESTRoutes() []routing.Route {
 		{Pattern: "GET /ai/v1/{token}/files", Handler: h.handleReadDraftFiles, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},
 		{Pattern: "GET /ai/v1/{token}/changed", Handler: h.handleReadDraftChanged, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},
 		{Pattern: "GET /ai/v1/{token}/diff", Handler: h.handleReadDraftDiff, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},
+		{Pattern: "GET /ai/v1/{token}/sdk/{page...}", Handler: h.handleAISDKPage, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},
 		{Pattern: "GET /ai/v1/{token}/revisions", Handler: h.handleListDraftRevisions, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},
 		{Pattern: "GET /ai/v1/{token}/build", Handler: h.handleReadDraftBuild, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},
 		{Pattern: "POST /ai/v1/{token}/changes", Handler: h.handleApplyDraftChanges, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},

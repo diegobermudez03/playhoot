@@ -57,6 +57,12 @@ type diffRevisionsInput struct {
 	Path     string `json:"path,omitempty" jsonschema:"only this file"`
 }
 
+type sdkDocInput struct {
+	Page string `json:"page" jsonschema:"a page of the guide, as get_sdk_index lists them: index.md, policies.md, server.md, examples/quiz.md..."`
+}
+
+type sdkIndexInput struct{}
+
 type changeFile struct {
 	Path    string `json:"path" jsonschema:"the file's path in the project"`
 	Content string `json:"content" jsonschema:"the file's complete new content"`
@@ -208,6 +214,20 @@ func (h *Handler) addTools(server *sdk.Server) {
 			}
 			return answer(h.games.ReadDiff(ctx, user, in.GameUUID, in.From, optionalRevision(in.To), in.Path))
 		})
+	sdk.AddTool(server, &sdk.Tool{Name: "get_sdk_index", Description: "The SDK guide's compact index: what the SDK gives, one line each, with its page and an example, the SDK version, and what it does not provide. Read it first, then only the pages you need with get_sdk_doc. The guide belongs to the toolchain your game builds with."},
+		func(ctx context.Context, req *sdk.CallToolRequest, _ sdkIndexInput) (*sdk.CallToolResult, any, error) {
+			if _, err := userOf(req); err != nil {
+				return nil, nil, err
+			}
+			return markdown(h.games.ReadSDKPage(ctx, sessionpkg.SDKGuideIndex))
+		})
+	sdk.AddTool(server, &sdk.Tool{Name: "get_sdk_doc", Description: "One page of the SDK guide, in Markdown: index.md (start here), policies.md, project.md, server.md, client.md, ui.md, phases.md, assets.md, changes.md, building.md, scenarios.md, or an example (examples/<name>.md)."},
+		func(ctx context.Context, req *sdk.CallToolRequest, in sdkDocInput) (*sdk.CallToolResult, any, error) {
+			if _, err := userOf(req); err != nil {
+				return nil, nil, err
+			}
+			return markdown(h.games.ReadSDKPage(ctx, in.Page))
+		})
 	sdk.AddTool(server, &sdk.Tool{Name: "upload_asset", Description: "Uploads the file of an asset game.project.json declares, in base64. Limits by type: image 5 MiB, audio 10 MiB, video 50 MiB, 100 MiB in all. If you cannot produce the file, ask the user to upload it in Recursos."},
 		func(ctx context.Context, req *sdk.CallToolRequest, in uploadAssetInput) (*sdk.CallToolResult, any, error) {
 			by, err := callerOf(req)
@@ -284,6 +304,19 @@ func callerOf(req *sdk.CallToolRequest) (games.Caller, error) {
 		return games.Caller{}, err
 	}
 	return games.Caller{UserUUID: user, Origin: sessionpkg.DraftOriginMCP}, nil
+}
+
+// markdown is a tool's result for a guide page: its Markdown as is (no JSON
+// escaping), after a line naming the toolchain; or the refusal.
+func markdown(page *games.SDKPageResponse, refusal *games.Refusal) (*sdk.CallToolResult, any, error) {
+	if refusal != nil {
+		return refused(refusal), nil, nil
+	}
+	content := page.Content
+	if page.ToolchainVersion != "" {
+		content = "<!-- " + page.Page + ", toolchain " + page.ToolchainVersion + " -->\n" + content
+	}
+	return text(content), nil, nil
 }
 
 // answer is a tool's result for an operation's answer: its value as JSON, or

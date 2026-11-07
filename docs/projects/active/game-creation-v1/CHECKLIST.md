@@ -74,8 +74,8 @@ Also: `play/session/internal/fixturescenarios` plays the frontend fixtures' save
 
 ### P. SDK docs and capabilities for agents (H, D, I)
 
-- [ ] The backend serves the SDK guide that belongs to the toolchain it builds with (read from `GAME_TOOLCHAIN_DIR`), so the docs an agent reads are the SDK version its build uses.
-- [ ] MCP `get_sdk_index` (the compact capability index the frontend guide provides, with the SDK version) and `get_sdk_doc(page)` (one page); AI-link routes for both. An MCP client without web fetch can read the guide.
+- [x] The backend serves the SDK guide of the toolchain it builds with (2026-11-06): Play `readsdkguide` reads `<GAME_TOOLCHAIN_DIR>/apps/web/public/docs/sdk/v1` (the same checkout and `gametoolchain` instance the builds use; `internal/sdkguide` accepts only `name.md` or `folder/name.md`, 256 KiB at most) and answers each page with the toolchain's version. Packaging the guide with the deployed toolchain is in `LAUNCH_READINESS.md`.
+- [x] MCP `get_sdk_index` (the frontend's `capabilities.md`, which names the SDK version) and `get_sdk_doc(page)`, answered as Markdown text headed by the toolchain version (no JSON escaping); AI link `GET /ai/v1/{token}/sdk/{page...}` (`text/markdown`, `Playhoot-Toolchain-Version`), which the context's `sdk_docs_url` and Markdown page now point to; server instructions send the AI to them (the web copy stays as a fallback). An MCP client without web fetch can read the whole guide.
 
 ### Q. Game brief (K, J, AO case 8)
 
