@@ -14,6 +14,7 @@ import (
 	"github.com/diegobermudez03/playhoot/play/runtime/sandbox"
 	"github.com/diegobermudez03/playhoot/play/runtime/sandbox/scriptcheck"
 	"github.com/diegobermudez03/playhoot/play/runtime/usecases/simulategame"
+	"github.com/diegobermudez03/playhoot/play/session/internal/business/gamebrief"
 	"github.com/diegobermudez03/playhoot/play/session/internal/business/manifest"
 )
 
@@ -52,6 +53,11 @@ func TestFixtureScenariosHold(t *testing.T) {
 			continue
 		}
 		t.Run(game.Name(), func(t *testing.T) {
+			brief, err := os.ReadFile(filepath.Join(dir, "brief.json"))
+			require.NoError(t, err, "every fixture keeps its brief")
+			_, problems := gamebrief.Parse(brief)
+			require.Empty(t, problems, "the platform accepts the fixture's brief")
+
 			script, err := os.ReadFile(filepath.Join(dir, "dist", "server.js"))
 			if err != nil {
 				t.Skipf("%s is not built (npm run game -- build fixtures/sdk-games/%s in the frontend checkout)", game.Name(), game.Name())

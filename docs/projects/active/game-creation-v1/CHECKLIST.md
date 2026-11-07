@@ -79,8 +79,8 @@ Also: `play/session/internal/fixturescenarios` plays the frontend fixtures' save
 
 ### Q. Game brief (K, J, AO case 8)
 
-- [ ] Project file `brief.json` (`playhoot.brief.v1`: players, goal, loop, actions, private information, rounds, scoring, ending, required capabilities, required assets, assessment, open questions), optional, validated as a schema on write (diagnostics, not blocking the draft). Allowed path added to `draftsources`; the starter project includes an empty brief.
-- [ ] The context (L) shows the brief and the authoring phase the agent recorded in it (`phase`: brief, foundation, building, testing, assets, ready), so a new agent knows where the work stands.
+- [x] Project file `brief.json` (2026-11-07): `playhoot.brief.v1` (players, goal, loop, actions, private_information, rounds, scoring, ending, capabilities, assets, assessment, open_questions, phase), every field but `format` optional, unknown fields refused; `play/session/internal/business/gamebrief` checks it and `draftsources` allows the path and refuses an invalid one when written (`invalid_brief`, per field), like saved scenarios, so the brief anyone reads is valid; nothing requires it to build or publish. Shared vectors with the SDK (`gamebrief/testdata/brief-vectors.json`, each side checks the other's copy). The starter template includes `{"format": "playhoot.brief.v1", "phase": "brief"}`; the fixture test also checks every fixture's brief.
+- [x] The context shows the brief and the phase (2026-11-07): JSON `brief` (as written) and `phase`; the Markdown page has a Brief section before the notes (or asks for one), and does not list it again among the sources; MCP instructions and `get_game_context` tell the AI to write it first and keep its phase current.
 
 ### R. Templates, step 1: consumption by the AI (E1, E2, F, AI, AN, AQ3, AO case 2)
 

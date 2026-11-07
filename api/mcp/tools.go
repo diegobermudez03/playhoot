@@ -146,7 +146,7 @@ func (h *Handler) addTools(server *sdk.Server) {
 			}
 			return answer(h.games.CreateGame(ctx, user, games.CreateGameRequest{Name: in.Name, IdempotencyKey: in.IdempotencyKey}))
 		})
-	sdk.AddTool(server, &sdk.Tool{Name: "get_game_context", Description: "Reads where a game stands: its current revision and when it was observed, every file's path, hash and size (not their contents: read those with read_files), the build of that revision (status and its first diagnostics), the last revision that built, the declared assets with their status, the recent attempts, notes.md and the SDK guide's address."},
+	sdk.AddTool(server, &sdk.Tool{Name: "get_game_context", Description: "Reads where a game stands: its current revision and when it was observed, every file's path, hash and size (not their contents: read those with read_files), the build of that revision (status and its first diagnostics), the last revision that built, the declared assets with their status, the recent attempts, notes.md, brief.json with the phase the work is in, and the SDK guide's address."},
 		func(ctx context.Context, req *sdk.CallToolRequest, in gameInput) (*sdk.CallToolResult, any, error) {
 			user, err := userOf(req)
 			if err != nil {

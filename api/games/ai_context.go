@@ -2,6 +2,7 @@ package games
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"path"
@@ -51,17 +52,20 @@ type aiURLs struct {
 
 // AIContextResponse is the JSON form of a game's context: what an AI needs
 // to know where the game stands, never the sources unless SourcesInline (the
-// Markdown page only). Notes is the content of notes.md.
+// Markdown page only). Notes is the content of notes.md; Brief brief.json
+// as written and Phase the work's phase it records.
 type AIContextResponse struct {
-	Format        string        `json:"format"`
-	GameName      string        `json:"game_name"`
-	ObservedAt    time.Time     `json:"observed_at"`
-	Revision      int64         `json:"revision"`
-	SourcesInline bool          `json:"sources_inline"`
-	Notes         *string       `json:"notes,omitempty"`
-	SDKDocsURL    string        `json:"sdk_docs_url"`
-	URLs          *aiURLs       `json:"urls,omitempty"`
-	Draft         draftResponse `json:"draft"`
+	Format        string          `json:"format"`
+	GameName      string          `json:"game_name"`
+	ObservedAt    time.Time       `json:"observed_at"`
+	Revision      int64           `json:"revision"`
+	SourcesInline bool            `json:"sources_inline"`
+	Notes         *string         `json:"notes,omitempty"`
+	Brief         json.RawMessage `json:"brief,omitempty"`
+	Phase         string          `json:"phase,omitempty"`
+	SDKDocsURL    string          `json:"sdk_docs_url"`
+	URLs          *aiURLs         `json:"urls,omitempty"`
+	Draft         draftResponse   `json:"draft"`
 }
 
 // AIContext is everything an AI needs to propose the next change to a game:
@@ -101,7 +105,7 @@ func (h *Handler) handleAIContext(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(aiContextMarkdown(read.name, read.snapshot, *read.Response.URLs, read.Response.URLs.SDK, read.Response.ObservedAt, read.Response.SourcesInline, read.Response.Notes)))
+	_, _ = w.Write([]byte(aiContextMarkdown(read.name, read.snapshot, *read.Response.URLs, read.Response.URLs.SDK, read.Response.ObservedAt, read.Response.SourcesInline, read.Response.Notes, read.Response.Brief, read.Response.Phase)))
 }
 
 // ReadContext reads the context of a game for an AI, at its current
@@ -125,9 +129,17 @@ func (h *Handler) ReadContext(ctx context.Context, userUUID string, rawGameUUID 
 		urls = &addresses
 	}
 	var notes *string
+	var brief json.RawMessage
+	var phase string
 	for _, file := range snapshot.Files {
 		if file.Path == notesPath && file.Content != nil {
 			notes = file.Content
+		}
+		// A stored brief is valid: it was checked when written.
+		if file.Path == sessionpkg.BriefPath && file.Content != nil {
+			if recorded, valid := sessionpkg.BriefPhase(*file.Content); valid {
+				brief, phase = json.RawMessage(*file.Content), recorded
+			}
 		}
 	}
 	inline := inlineSources && sourceBytes(snapshot.Files) <= maxInlineSourceBytes
@@ -147,7 +159,7 @@ func (h *Handler) ReadContext(ctx context.Context, userUUID string, rawGameUUID 
 	return AIContext{
 		Response: AIContextResponse{
 			Format: aiContextFormat, GameName: gameName(name), ObservedAt: observedAt,
-			Revision: snapshot.Revision, SourcesInline: inline, Notes: notes, SDKDocsURL: sdkDocs, URLs: urls, Draft: draft,
+			Revision: snapshot.Revision, SourcesInline: inline, Notes: notes, Brief: brief, Phase: phase, SDKDocsURL: sdkDocs, URLs: urls, Draft: draft,
 		},
 		name:     gameName(name),
 		snapshot: snapshot,
@@ -245,7 +257,7 @@ func gameName(name string) string {
 
 // aiContextMarkdown writes the context page for an AI reader, with stable
 // headings it can rely on.
-func aiContextMarkdown(name string, snapshot sessionpkg.DraftSnapshot, urls aiURLs, guide string, observedAt time.Time, inline bool, notes *string) string {
+func aiContextMarkdown(name string, snapshot sessionpkg.DraftSnapshot, urls aiURLs, guide string, observedAt time.Time, inline bool, notes *string, brief json.RawMessage, phase string) string {
 	var b strings.Builder
 	line := func(format string, args ...any) { fmt.Fprintf(&b, format+"\n", args...) }
 
@@ -337,6 +349,19 @@ func aiContextMarkdown(name string, snapshot sessionpkg.DraftSnapshot, urls aiUR
 	}
 	line("")
 
+	line("## Brief (%s)", sessionpkg.BriefPath)
+	line("")
+	if brief != nil {
+		line("Phase of the work: **%s** (brief, foundation, building, testing, assets, ready). Keep it current as the work moves on.", phase)
+		line("")
+		line("```json")
+		line("%s", strings.TrimRight(string(brief), "\n"))
+		line("```")
+	} else {
+		line("This revision has no %s: agree the game with the person and write it first (%s/brief.md).", sessionpkg.BriefPath, guide)
+	}
+	line("")
+
 	line("## Notes (%s)", notesPath)
 	line("")
 	if notes != nil {
@@ -352,7 +377,7 @@ func aiContextMarkdown(name string, snapshot sessionpkg.DraftSnapshot, urls aiUR
 		line("The sources are too large for this page; read each file:")
 	}
 	for _, file := range snapshot.Files {
-		if file.Path == notesPath {
+		if file.Path == notesPath || file.Path == sessionpkg.BriefPath {
 			continue
 		}
 		if !inline || file.Content == nil {

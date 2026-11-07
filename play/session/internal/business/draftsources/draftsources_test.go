@@ -123,7 +123,7 @@ func TestTemplate(t *testing.T) {
 	for i, write := range writes {
 		paths[i] = write.Path
 	}
-	require.Equal(t, []string{"client/Game.tsx", "game.project.json", "notes.md", "scenarios/first-to-goal.json", "server/game.ts", "shared/actions.ts"}, paths)
+	require.Equal(t, []string{"brief.json", "client/Game.tsx", "game.project.json", "notes.md", "scenarios/first-to-goal.json", "server/game.ts", "shared/actions.ts"}, paths)
 	applied := Apply(nil, writes, nil)
 	require.Empty(t, applied.Diagnostics, "the template must be a valid project")
 }
@@ -221,4 +221,24 @@ func TestApplyValidatesSavedScenarios(t *testing.T) {
 	}
 	require.Equal(t, []string{CodeInvalidScenario, CodeInvalidScenario}, codes)
 	require.Equal(t, "duration_ms: is required", applied.Diagnostics[0].Message)
+}
+
+func TestApplyValidatesTheBrief(t *testing.T) {
+	refused := Apply(nil, append(Template(), Write{Path: "brief.json", Content: `{"format": "playhoot.brief.v1", "phase": "done", "title": "x"}`}), nil)
+	require.Len(t, refused.Diagnostics, 1, "the template's own brief.json and this one are the same path")
+
+	base := Apply(nil, Template(), nil)
+	require.Empty(t, base.Diagnostics)
+	changed := Apply(base.Files, []Write{{Path: "brief.json", Content: `{"format": "playhoot.brief.v1", "phase": "done", "title": "x"}`}}, nil)
+	codes := []string{}
+	messages := []string{}
+	for _, diagnostic := range changed.Diagnostics {
+		codes = append(codes, diagnostic.Code)
+		messages = append(messages, diagnostic.Message)
+	}
+	require.Equal(t, []string{CodeInvalidBrief, CodeInvalidBrief}, codes)
+	require.Equal(t, "phase: is one of brief, foundation, building, testing, assets, ready", messages[0])
+
+	valid := Apply(base.Files, []Write{{Path: "brief.json", Content: `{"format": "playhoot.brief.v1", "phase": "building", "goal": "Tap fast"}`}}, nil)
+	require.Empty(t, valid.Diagnostics)
 }

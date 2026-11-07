@@ -16,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/diegobermudez03/playhoot/play/internal/business/scenariodoc"
+	"github.com/diegobermudez03/playhoot/play/session/internal/business/gamebrief"
 )
 
 // Limits of one project's sources, counted after a change applies.
@@ -45,6 +46,9 @@ const (
 	// CodeInvalidScenario refuses a scenarios/*.json file that is not a
 	// playhoot.scenario.v1 document, so saved scenarios stay runnable.
 	CodeInvalidScenario = "invalid_scenario"
+	// CodeInvalidBrief refuses a brief.json that is not a playhoot.brief.v1
+	// document, so the brief an agent reads is always readable.
+	CodeInvalidBrief = "invalid_brief"
 )
 
 // File is one source file of a revision: its content's SHA-256 (lowercase
@@ -147,6 +151,18 @@ func Apply(current map[string]File, writes []Write, deletes []string) Applied {
 				continue
 			}
 		}
+		if write.Path == gamebrief.Path {
+			if _, invalid := gamebrief.Parse([]byte(write.Content)); len(invalid) > 0 {
+				for _, problem := range invalid {
+					message := problem.Message
+					if problem.Field != "" {
+						message = problem.Field + ": " + message
+					}
+					refuse(write.Path, CodeInvalidBrief, message)
+				}
+				continue
+			}
+		}
 		if write.Path == ProjectFile {
 			_, invalidLanguages := DeclaredLanguages(write.Content)
 			_, invalidAssets := DeclaredAssets(write.Content)
@@ -211,7 +227,7 @@ func checkPath(filePath string, refuse func(filePath, code, message string)) boo
 		}
 	}
 	if !Allowed(filePath) {
-		refuse(filePath, CodePathNotAllowed, "allowed: game.project.json, notes.md, .ts/.tsx files under shared/, server/ or client/, and .json files under scenarios/")
+		refuse(filePath, CodePathNotAllowed, "allowed: game.project.json, notes.md, brief.json, .ts/.tsx files under shared/, server/ or client/, and .json files under scenarios/")
 		return false
 	}
 	return true
@@ -221,7 +237,7 @@ func checkPath(filePath string, refuse func(filePath, code, message string)) boo
 // hold.
 func Allowed(filePath string) bool {
 	switch {
-	case filePath == "game.project.json" || filePath == "notes.md":
+	case filePath == "game.project.json" || filePath == "notes.md" || filePath == gamebrief.Path:
 		return true
 	case strings.HasPrefix(filePath, "shared/") || strings.HasPrefix(filePath, "server/") || strings.HasPrefix(filePath, "client/"):
 		extension := path.Ext(filePath)

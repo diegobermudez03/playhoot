@@ -205,6 +205,36 @@ func TestAILinkRoutes(t *testing.T) {
 		require.Contains(t, body, `"sdk_docs_url":"`+testPublicBaseURL+page+`/sdk/index.md"`, "through a link, the guide of the toolchain")
 	})
 
+	t.Run("the context carries the brief and its phase", func(t *testing.T) {
+		h, deps := newTestHandler(gomock.NewController(t))
+		deps.resolver.EXPECT().ResolveResourceLink(gomock.Any(), testLinkToken).Return(validLink(), nil).Times(2)
+		withBrief := func(context.Context, string, string, int64, bool) (composergameauthoring.DraftRead, error) {
+			snapshot := aiSnapshot("x")
+			brief := `{"format": "playhoot.brief.v1", "phase": "testing", "goal": "First to 20 taps"}`
+			snapshot.Files = append(snapshot.Files, sessionpkg.DraftFile{Path: "brief.json", SHA256: "d", Size: int64(len(brief)), Content: &brief})
+			return composergameauthoring.DraftRead{Access: game.EditableVersionFound, Snapshot: snapshot}, nil
+		}
+		deps.reader.EXPECT().ReadDraft(gomock.Any(), callerUUID, gameUUID, int64(0), true).DoAndReturn(withBrief).Times(2)
+
+		body := serve(h, http.MethodGet, page+"?format=json", "").Body.String()
+		require.Contains(t, body, `"brief":{"format":"playhoot.brief.v1","phase":"testing","goal":"First to 20 taps"}`)
+		require.Contains(t, body, `"phase":"testing"`)
+
+		markdown := serve(h, http.MethodGet, page, "").Body.String()
+		require.Contains(t, markdown, "Phase of the work: **testing**")
+		require.Contains(t, markdown, `"goal": "First to 20 taps"`)
+		require.NotContains(t, markdown, "### `brief.json`", "the brief is shown once, not again among the sources")
+	})
+
+	t.Run("a context without a brief asks for one", func(t *testing.T) {
+		h, deps := newTestHandler(gomock.NewController(t))
+		deps.resolver.EXPECT().ResolveResourceLink(gomock.Any(), testLinkToken).Return(validLink(), nil)
+		deps.reader.EXPECT().ReadDraft(gomock.Any(), callerUUID, gameUUID, int64(0), true).Return(composergameauthoring.DraftRead{Access: game.EditableVersionFound, Snapshot: aiSnapshot("x")}, nil)
+
+		markdown := serve(h, http.MethodGet, page, "").Body.String()
+		require.Contains(t, markdown, "This revision has no brief.json")
+	})
+
 	t.Run("the context page links the SDK guide on the web", func(t *testing.T) {
 		h, deps := newTestHandler(gomock.NewController(t))
 		deps.resolver.EXPECT().ResolveResourceLink(gomock.Any(), testLinkToken).Return(validLink(), nil)

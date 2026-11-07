@@ -1,0 +1,245 @@
+{
+  "about": "Briefs (brief.json, playhoot.brief.v1) the backend (play/session/internal/business/gamebrief Parse) and the SDK (packages/game-core validateBrief in playhoot_frontend) must decide the same way, naming the same fields in the same order. This file is kept identical in both repositories; each side checks the other's copy when both checkouts are side by side.",
+  "cases": [
+    {
+      "name": "empty brief",
+      "brief": {
+        "format": "playhoot.brief.v1"
+      },
+      "valid": true,
+      "fields": []
+    },
+    {
+      "name": "every field",
+      "brief": {
+        "format": "playhoot.brief.v1",
+        "phase": "testing",
+        "players": {
+          "min": 2,
+          "max": 8
+        },
+        "goal": "Be the first to tap 20 times.",
+        "loop": "Everyone taps at once.",
+        "actions": ["tap"],
+        "private_information": [],
+        "rounds": "One round of 30 seconds.",
+        "scoring": "One point per tap.",
+        "ending": "At 20 taps or after 30 seconds.",
+        "capabilities": ["Commands", "Time and deadlines"],
+        "assets": [],
+        "assessment": "",
+        "open_questions": ["Should ties share the win?"]
+      },
+      "valid": true,
+      "fields": []
+    },
+    {
+      "name": "each phase",
+      "brief": {
+        "format": "playhoot.brief.v1",
+        "phase": "ready"
+      },
+      "valid": true,
+      "fields": []
+    },
+    {
+      "name": "one player",
+      "brief": {
+        "format": "playhoot.brief.v1",
+        "players": {
+          "min": 1,
+          "max": 1
+        }
+      },
+      "valid": true,
+      "fields": []
+    },
+    {
+      "name": "no format",
+      "brief": {
+        "goal": "x"
+      },
+      "valid": false,
+      "fields": ["format"]
+    },
+    {
+      "name": "another format",
+      "brief": {
+        "format": "playhoot.brief.v2"
+      },
+      "valid": false,
+      "fields": ["format"]
+    },
+    {
+      "name": "unknown phase",
+      "brief": {
+        "format": "playhoot.brief.v1",
+        "phase": "done"
+      },
+      "valid": false,
+      "fields": ["phase"]
+    },
+    {
+      "name": "unknown field",
+      "brief": {
+        "format": "playhoot.brief.v1",
+        "title": "Tap"
+      },
+      "valid": false,
+      "fields": ["title"]
+    },
+    {
+      "name": "players out of order",
+      "brief": {
+        "format": "playhoot.brief.v1",
+        "players": {
+          "min": 4,
+          "max": 2
+        }
+      },
+      "valid": false,
+      "fields": ["players"]
+    },
+    {
+      "name": "players not whole",
+      "brief": {
+        "format": "playhoot.brief.v1",
+        "players": {
+          "min": 0,
+          "max": 2.5
+        }
+      },
+      "valid": false,
+      "fields": ["players.max", "players.min"]
+    },
+    {
+      "name": "players with more fields",
+      "brief": {
+        "format": "playhoot.brief.v1",
+        "players": {
+          "min": 1,
+          "max": 2,
+          "teams": 2
+        }
+      },
+      "valid": false,
+      "fields": ["players.teams"]
+    },
+    {
+      "name": "players missing max",
+      "brief": {
+        "format": "playhoot.brief.v1",
+        "players": {
+          "min": 1
+        }
+      },
+      "valid": false,
+      "fields": ["players.max"]
+    },
+    {
+      "name": "a text that is not one",
+      "brief": {
+        "format": "playhoot.brief.v1",
+        "goal": 3,
+        "ending": null
+      },
+      "valid": false,
+      "fields": ["ending", "goal"]
+    },
+    {
+      "name": "a text too long",
+      "brief": {
+        "format": "playhoot.brief.v1",
+        "loop": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      },
+      "valid": false,
+      "fields": ["loop"]
+    },
+    {
+      "name": "a list that is not one",
+      "brief": {
+        "format": "playhoot.brief.v1",
+        "actions": "tap",
+        "assets": null
+      },
+      "valid": false,
+      "fields": ["actions", "assets"]
+    },
+    {
+      "name": "a list item that is not a text",
+      "brief": {
+        "format": "playhoot.brief.v1",
+        "actions": ["tap", 2]
+      },
+      "valid": false,
+      "fields": ["actions[1]"]
+    },
+    {
+      "name": "a list too long",
+      "brief": {
+        "format": "playhoot.brief.v1",
+        "open_questions": [
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q",
+          "q"
+        ]
+      },
+      "valid": false,
+      "fields": ["open_questions"]
+    },
+    {
+      "name": "not an object",
+      "brief": ["playhoot.brief.v1"],
+      "valid": false,
+      "fields": [""]
+    }
+  ]
+}
