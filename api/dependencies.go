@@ -8,6 +8,7 @@ import (
 
 	apigames "github.com/diegobermudez03/playhoot/api/games"
 	"github.com/diegobermudez03/playhoot/compliance"
+	"github.com/diegobermudez03/playhoot/plan"
 	composergameauthoring "github.com/diegobermudez03/playhoot/composer/gameauthoring"
 	"github.com/diegobermudez03/playhoot/discovery"
 	"github.com/diegobermudez03/playhoot/game"
@@ -198,6 +199,17 @@ type acceptanceRecorder interface {
 type marketRuleManager interface {
 	ReadMarketRules(ctx context.Context, country string) (compliance.MarketRules, error)
 	AdminSetMarketRule(ctx context.Context, adminUUID string, rule compliance.MarketRule) (compliance.SetMarketRuleOutcome, error)
+}
+
+// Plan is what Plan's endpoints need.
+type Plan struct {
+	FreeLimits freeLimitManager
+}
+
+// freeLimitManager is admin's free-limit configuration.
+type freeLimitManager interface {
+	ReadFreeLimits(ctx context.Context) (plan.FreeLimitConfigs, error)
+	AdminSetFreeLimits(ctx context.Context, adminUUID string, limits plan.Limits, effectiveAt time.Time, reason string) (plan.SetFreeLimitsOutcome, error)
 }
 
 // Queues is admin's access to every domain's dead letter queue.

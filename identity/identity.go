@@ -75,6 +75,10 @@ const (
 	// OperationManageMarkets is reading and changing the market matrix. It
 	// requires the administrator.
 	OperationManageMarkets Operation = "MANAGE_MARKETS"
+
+	// OperationManagePlans is reading and changing the free limits. It
+	// requires the administrator.
+	OperationManagePlans Operation = "MANAGE_PLANS"
 )
 
 // Level is how strongly a caller is authenticated, on the ordered scale
