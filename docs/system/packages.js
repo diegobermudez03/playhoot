@@ -10,6 +10,7 @@ PH.package({
     'A worker per domain on every instance: claims due tasks with SKIP LOCKED under a 5-minute lease (the task of a crashed worker is claimed again when the lease ends), runs the registered handler, retries with exponential backoff and jitter (V-02: 10 attempts, 10 s doubling to 1 h); after max attempts, or a failure the handler marks permanent, the task turns dead (that is the dead letter queue).',
     'At-least-once delivery: every handler must be idempotent.',
     'Handlers are registered per task type by the owning domain; cross-domain delivery types (notify, analytics-event, spend-event) are registered by the orchestrator, so domains never call each other (D-010).',
+    'A spend-event payload carries category, service, reference, quantity, unit, measured, idempotency_key and occurred_at; the source domain is the queue it came from.',
     'Delayed tasks via run_at; periodic tasks are scheduled once when the worker starts and re-enqueue themselves on completion. Tasks of a type nobody handles yet wait in the queue.',
     'A registry over every domain queue for admin: list dead tasks (newest 100 per queue), retry (back to pending with fresh attempts), cancel. Reached through flows whose step names this package (D-013).',
     'Service, queue and processor code kept separate, ready to migrate to a real outbox and queue: domain services only enqueue inside their transaction; the queue owns the table; the processor (worker) claims, runs handlers and records outcomes; handlers are plain functions registered per type.'

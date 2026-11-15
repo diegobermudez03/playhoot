@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	apicompliance "github.com/diegobermudez03/playhoot/api/compliance"
-	apiplan "github.com/diegobermudez03/playhoot/api/plan"
+	apibudget "github.com/diegobermudez03/playhoot/api/budget"
 	apiclienttelemetry "github.com/diegobermudez03/playhoot/api/clienttelemetry"
+	apicompliance "github.com/diegobermudez03/playhoot/api/compliance"
 	apigames "github.com/diegobermudez03/playhoot/api/games"
 	apiidentity "github.com/diegobermudez03/playhoot/api/identity"
 	"github.com/diegobermudez03/playhoot/api/internal/cors"
@@ -22,6 +22,7 @@ import (
 	"github.com/diegobermudez03/playhoot/api/internal/wsx"
 	apimcp "github.com/diegobermudez03/playhoot/api/mcp"
 	apioauth "github.com/diegobermudez03/playhoot/api/oauth"
+	apiplan "github.com/diegobermudez03/playhoot/api/plan"
 	apiplay "github.com/diegobermudez03/playhoot/api/play"
 	apiqueues "github.com/diegobermudez03/playhoot/api/queues"
 	apisecondfactor "github.com/diegobermudez03/playhoot/api/secondfactor"
@@ -65,7 +66,7 @@ func ParseAllowedOrigins(raw string) ([]string, error) {
 }
 
 // NewServer constructs a Server exposing every route group's endpoints.
-func NewServer(authorizer authorizer, guests guestCreator, operations operationLister, refreshes credentialRefresher, sessionEnder sessionEnder, displayNames displayNameSetter, logins Logins, sessionCreator sessionCreator, owners ownerLocator, admins adminAttacher, players playerAttacher, joinCodes joinCodeResolver, games Games, ai AI, queues Queues, secondFactor secondFactor, compliance Compliance, plan Plan, config Config) *Server {
+func NewServer(authorizer authorizer, guests guestCreator, operations operationLister, refreshes credentialRefresher, sessionEnder sessionEnder, displayNames displayNameSetter, logins Logins, sessionCreator sessionCreator, owners ownerLocator, admins adminAttacher, players playerAttacher, joinCodes joinCodeResolver, games Games, ai AI, queues Queues, secondFactor secondFactor, compliance Compliance, plan Plan, budget Budget, config Config) *Server {
 	mux := http.NewServeMux()
 	liveConnections := live.New(config.MaxLiveConnections)
 	gamesHandler := apigames.NewHandler(authorizer, games.Creator, games.Editor, games.Reader, games.AILinks, games.Cards, games.Reader)
@@ -84,6 +85,7 @@ func NewServer(authorizer authorizer, guests guestCreator, operations operationL
 		apisecondfactor.NewHandler(authorizer, secondFactor),
 		apicompliance.NewHandler(authorizer, compliance.Declarations, compliance.Acceptances, compliance.MarketRules),
 		apiplan.NewHandler(authorizer, plan.FreeLimits),
+		apibudget.NewHandler(authorizer, budget.Status, budget.Controls),
 		apimcp.NewHandler(ai.Server, gamesHandler, apimcp.Config{ResourceMetadataURL: apiBase + "/.well-known/oauth-protected-resource" + mcpPath, GuideURL: guide}),
 	}
 	clients := throttle.ClientAddress{TrustedProxies: config.TrustedProxyHops}
@@ -95,16 +97,18 @@ func NewServer(authorizer authorizer, guests guestCreator, operations operationL
 	}
 	preflights := preflightRoutes(restRoutes, crossOrigin)
 
-	var restRequestMetrics, aiRequestMetrics, authoringRequestMetrics, preflightMetrics *requestMetrics
+	var restRequestMetrics, aiRequestMetrics, authoringRequestMetrics, adminRequestMetrics, preflightMetrics *requestMetrics
 	var handshakeMetrics *handshakeMetrics
 	if len(restRoutes) > 0 {
-		var patterns, aiPatterns, authoringPatterns []string
+		var patterns, aiPatterns, authoringPatterns, adminPatterns []string
 		for _, route := range restRoutes {
 			switch {
 			case aiRoute(route.Pattern):
 				aiPatterns = append(aiPatterns, route.Pattern)
 			case authoringRoute(route.Pattern):
 				authoringPatterns = append(authoringPatterns, route.Pattern)
+			case adminRoute(route.Pattern):
+				adminPatterns = append(adminPatterns, route.Pattern)
 			default:
 				patterns = append(patterns, route.Pattern)
 			}
@@ -115,6 +119,9 @@ func NewServer(authorizer authorizer, guests guestCreator, operations operationL
 		}
 		if len(authoringPatterns) > 0 {
 			authoringRequestMetrics = newAuthoringMetrics(authoringPatterns)
+		}
+		if len(adminPatterns) > 0 {
+			adminRequestMetrics = newAdminMetrics(adminPatterns)
 		}
 		preflightPatterns := make([]string, len(preflights))
 		for i, route := range preflights {
@@ -141,6 +148,8 @@ func NewServer(authorizer authorizer, guests guestCreator, operations operationL
 			measured = aiRequestMetrics
 		case authoringRoute(route.Pattern):
 			measured = authoringRequestMetrics
+		case adminRoute(route.Pattern):
+			measured = adminRequestMetrics
 		}
 		mux.HandleFunc(route.Pattern, chain(routeMiddlewares(route, clients, restObservability(route.Pattern, measured), crossOrigin.Responses()), route.Handler))
 	}

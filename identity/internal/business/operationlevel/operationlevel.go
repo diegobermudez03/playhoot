@@ -26,6 +26,7 @@ var required = map[identity.Operation]identity.Level{
 	identity.OperationAcceptTexts:            identity.LevelGuest,
 	identity.OperationManageMarkets:          identity.LevelAdmin,
 	identity.OperationManagePlans:            identity.LevelAdmin,
+	identity.OperationManageBudget:           identity.LevelAdmin,
 }
 
 // rank orders the levels; a level missing from it satisfies nothing.

@@ -79,6 +79,11 @@ const (
 	// OperationManagePlans is reading and changing the free limits. It
 	// requires the administrator.
 	OperationManagePlans Operation = "MANAGE_PLANS"
+
+	// OperationManageBudget is reading the budget panel and, with a fresh
+	// step-up proof, changing caps and rates, cutting off or reopening. It
+	// requires the administrator.
+	OperationManageBudget Operation = "MANAGE_BUDGET"
 )
 
 // Level is how strongly a caller is authenticated, on the ordered scale

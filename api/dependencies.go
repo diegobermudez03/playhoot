@@ -7,13 +7,14 @@ import (
 	"time"
 
 	apigames "github.com/diegobermudez03/playhoot/api/games"
+	"github.com/diegobermudez03/playhoot/budget"
 	"github.com/diegobermudez03/playhoot/compliance"
-	"github.com/diegobermudez03/playhoot/plan"
 	composergameauthoring "github.com/diegobermudez03/playhoot/composer/gameauthoring"
 	"github.com/diegobermudez03/playhoot/discovery"
 	"github.com/diegobermudez03/playhoot/game"
 	"github.com/diegobermudez03/playhoot/identity"
 	"github.com/diegobermudez03/playhoot/orchestrator/gameauthoring"
+	"github.com/diegobermudez03/playhoot/plan"
 	"github.com/diegobermudez03/playhoot/play/runtime"
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 	"github.com/diegobermudez03/playhoot/utils/txqueue"
@@ -210,6 +211,25 @@ type Plan struct {
 type freeLimitManager interface {
 	ReadFreeLimits(ctx context.Context) (plan.FreeLimitConfigs, error)
 	AdminSetFreeLimits(ctx context.Context, adminUUID string, limits plan.Limits, effectiveAt time.Time, reason string) (plan.SetFreeLimitsOutcome, error)
+}
+
+// Budget is what Budget's endpoints need: the control panel and the
+// step-up cost-control flows.
+type Budget struct {
+	Status   budgetStatusReader
+	Controls costControls
+}
+
+// budgetStatusReader is Budget's control panel.
+type budgetStatusReader interface {
+	Status(ctx context.Context) (budget.Status, error)
+}
+
+// costControls are the administrator's step-up budget flows.
+type costControls interface {
+	SetControls(ctx context.Context, adminUUID string, proof string, change budget.Controls) (budget.SetControlsOutcome, error)
+	Cutoff(ctx context.Context, adminUUID string, proof string, reason string) (budget.CutoffOutcome, error)
+	Reopen(ctx context.Context, adminUUID string, proof string, categories []budget.Category, reason string) (budget.ReopenOutcome, error)
 }
 
 // Queues is admin's access to every domain's dead letter queue.

@@ -394,12 +394,12 @@ PH.flow({
 
 // ---------- Budget control (steps designed by T-100) ----------
 PH.flow({
-  id: 'spending-restriction', status: 'planned', coordinator: 'orchestrator', effect: 'write',
+  id: 'spending-restriction', status: 'implemented', coordinator: 'orchestrator', effect: 'write',
   name: 'Spending restriction change',
   summary: 'The ladder moves (restriction, selective pause, automatic emergency shutdown) and the reason is communicated as a service restriction, never as lack of balance.',
   steps: [
     { n: 1, domain: 'budget', operation: 'budget.evaluate-ladder', when: 'after spend ingestion and on the periodic queue task', onFailure: 'The queue retries; missing metrics themselves restrict admission.' },
-    { n: 2, domain: 'notifications', operation: 'notifications.accept-entry', when: 'the level changed (notify task left by step 1, addressed to the admin)', onFailure: 'The queue retries; the level change itself is already in force.' }
+    { n: 2, domain: 'notifications', operation: 'notifications.accept-entry', when: 'the level changed (notify task left by step 1, addressed to the admin; it waits in the queue until Notifications registers delivery)', onFailure: 'The queue retries; the level change itself is already in force.' }
   ],
   persistence: 'queue',
   idempotency: 'Each ladder move appends exactly one change row; the notify task carries that row’s key, so retries never duplicate the notification.',
@@ -407,7 +407,7 @@ PH.flow({
   sources: ['P32§3-6']
 });
 PH.flow({
-  id: 'adjust-cost-controls', status: 'planned', coordinator: 'orchestrator', effect: 'write',
+  id: 'adjust-cost-controls', status: 'implemented', coordinator: 'orchestrator', effect: 'write',
   name: 'Adjust cost controls',
   summary: 'The admin changes caps or rates with reinforced authentication; every change keeps actor, reason and history.',
   steps: [
@@ -420,7 +420,7 @@ PH.flow({
   sources: ['P32§2', 'P32§7']
 });
 PH.flow({
-  id: 'emergency-cutoff', status: 'planned', coordinator: 'orchestrator', effect: 'write',
+  id: 'emergency-cutoff', status: 'implemented', coordinator: 'orchestrator', effect: 'write',
   name: 'Admin emergency cutoff',
   summary: 'The admin imposes an immediate shutdown with a reason, behind the second factor.',
   steps: [
@@ -433,7 +433,7 @@ PH.flow({
   sources: ['P32§7']
 });
 PH.flow({
-  id: 'reopen-spending', status: 'planned', coordinator: 'orchestrator', effect: 'write',
+  id: 'reopen-spending', status: 'implemented', coordinator: 'orchestrator', effect: 'write',
   name: 'Reopen after shutdown',
   summary: 'Only an explicit manual reopening with second factor lifts the shutdown, gradually; restart, deploy or month change never do.',
   steps: [
@@ -476,7 +476,7 @@ PH.flow({
   sources: ['P31§1-3', 'P32§1-2']
 });
 PH.flow({
-  id: 'ingest-spend-events', status: 'planned', coordinator: 'orchestrator', effect: 'write',
+  id: 'ingest-spend-events', status: 'implemented', coordinator: 'orchestrator', effect: 'write',
   name: 'Ingest spend events',
   summary: 'Processes spend-event tasks from the domains into the budget’s spend record.',
   steps: [

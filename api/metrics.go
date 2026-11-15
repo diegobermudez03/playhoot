@@ -97,6 +97,31 @@ func authoringRoute(pattern string) bool {
 	return false
 }
 
+// adminRoutePrefix is the path of the administrator's routes, measured
+// apart from the other REST routes for the same reason.
+const adminRoutePrefix = "/admin/"
+
+// adminRoute reports whether pattern ("METHOD /path") is an administrator
+// route.
+func adminRoute(pattern string) bool {
+	_, path, found := strings.Cut(pattern, " ")
+	if !found {
+		path = pattern
+	}
+	return strings.HasPrefix(path, adminRoutePrefix)
+}
+
+// newAdminMetrics declares the request metrics of the administrator's
+// routes.
+func newAdminMetrics(patterns []string) *requestMetrics {
+	return newRequestMetrics(requestMetricNames{
+		requests:     "api_admin_http_requests_total",
+		requestsHelp: "Finished requests of the administrator's routes, by matched route and response status code.",
+		duration:     "api_admin_http_request_duration_seconds",
+		durationHelp: "Time taken to serve the administrator's routes, by matched route.",
+	}, patterns, trackedStatusCodes)
+}
+
 // newAuthoringMetrics declares the request metrics of building a game.
 func newAuthoringMetrics(patterns []string) *requestMetrics {
 	return newRequestMetrics(requestMetricNames{

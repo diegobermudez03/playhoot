@@ -3,10 +3,11 @@ package main
 import (
 	"fmt"
 
+	budgetmigrations "github.com/diegobermudez03/playhoot/budget/migration"
 	compliancemigrations "github.com/diegobermudez03/playhoot/compliance/migration"
 	gamemigrations "github.com/diegobermudez03/playhoot/game/migration"
-	planmigrations "github.com/diegobermudez03/playhoot/plan/migration"
 	identitymigrations "github.com/diegobermudez03/playhoot/identity/migration"
+	planmigrations "github.com/diegobermudez03/playhoot/plan/migration"
 	sessionmigrations "github.com/diegobermudez03/playhoot/play/session/migration"
 	"gorm.io/gorm"
 )
@@ -30,6 +31,10 @@ func PostgresMigrate(db *gorm.DB) error {
 
 	if err := planmigrations.Migrate(db); err != nil {
 		return fmt.Errorf("migrating plan pkg: %w", err)
+	}
+
+	if err := budgetmigrations.Migrate(db); err != nil {
+		return fmt.Errorf("migrating budget pkg: %w", err)
 	}
 
 	return nil

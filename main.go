@@ -22,12 +22,18 @@ import (
 
 	"github.com/diegobermudez03/playhoot/api"
 	apigames "github.com/diegobermudez03/playhoot/api/games"
-	composerdeadtasks "github.com/diegobermudez03/playhoot/composer/deadtasks"
-	composergameauthoring "github.com/diegobermudez03/playhoot/composer/gameauthoring"
+	"github.com/diegobermudez03/playhoot/budget"
+	"github.com/diegobermudez03/playhoot/budget/usecases/manualladder"
+	"github.com/diegobermudez03/playhoot/budget/usecases/recordspend"
+	"github.com/diegobermudez03/playhoot/budget/usecases/setcontrols"
+	"github.com/diegobermudez03/playhoot/budget/usecases/settlework"
+	budgetstatus "github.com/diegobermudez03/playhoot/budget/usecases/status"
+	"github.com/diegobermudez03/playhoot/budget/workflows/evaluateladder"
 	"github.com/diegobermudez03/playhoot/compliance/usecases/acceptances"
 	"github.com/diegobermudez03/playhoot/compliance/usecases/marketaccess"
 	"github.com/diegobermudez03/playhoot/compliance/usecases/marketrules"
-	"github.com/diegobermudez03/playhoot/plan/usecases/freelimits"
+	composerdeadtasks "github.com/diegobermudez03/playhoot/composer/deadtasks"
+	composergameauthoring "github.com/diegobermudez03/playhoot/composer/gameauthoring"
 	"github.com/diegobermudez03/playhoot/discovery/usecases/templatecatalog"
 	"github.com/diegobermudez03/playhoot/game/usecases/checkplayability"
 	"github.com/diegobermudez03/playhoot/game/usecases/findeditableversion"
@@ -49,9 +55,13 @@ import (
 	"github.com/diegobermudez03/playhoot/identity/usecases/setdisplayname"
 	"github.com/diegobermudez03/playhoot/identity/usecases/sweepresourcegrants"
 	"github.com/diegobermudez03/playhoot/identity/workflows/accountlogin"
+	"github.com/diegobermudez03/playhoot/orchestrator/costcontrol"
 	orchestratordeadtasks "github.com/diegobermudez03/playhoot/orchestrator/deadtasks"
 	"github.com/diegobermudez03/playhoot/orchestrator/gameauthoring"
 	"github.com/diegobermudez03/playhoot/orchestrator/playlifecycle"
+	"github.com/diegobermudez03/playhoot/orchestrator/spendingestion"
+	"github.com/diegobermudez03/playhoot/orchestrator/stepup"
+	"github.com/diegobermudez03/playhoot/plan/usecases/freelimits"
 	"github.com/diegobermudez03/playhoot/play/runtime/sandbox"
 	"github.com/diegobermudez03/playhoot/play/runtime/usecases/ownership"
 	"github.com/diegobermudez03/playhoot/play/runtime/usecases/simulategame"
@@ -270,6 +280,13 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("creating second factor: %w", err)
 	}
+	budgetQueue := queues.Queue(budget.QueueDomain)
+	evaluateladder.New(db, budgetQueue).Register(budgetQueue)
+	settlework.New(db).Register(budgetQueue)
+	// Spend events are delivered from every domain queue; a domain whose
+	// queue is added later joins this list.
+	spendingestion.New(recordspend.New(db, budgetQueue)).Register(queues.Queue(identity.QueueDomain), budgetQueue)
+	costControls := costcontrol.New(stepup.New(secondFactor), setcontrols.New(db), manualladder.New(db, budgetQueue))
 	// Previews run on the live controller pinned to a draft build; they are
 	// never Sessions (play/session/workflows/previewlifecycle).
 	previews := liveconnection.NewPreviews(liveconnection.DefaultMaxLivePreviews, sandboxHost, previewlifecycle.New(db, versionDrafting))
@@ -346,6 +363,7 @@ func run() error {
 		secondFactor,
 		api.Compliance{Declarations: marketaccess.New(db), Acceptances: acceptances.New(db), MarketRules: marketrules.New(db)},
 		api.Plan{FreeLimits: freelimits.New(db)},
+		api.Budget{Status: budgetstatus.New(db), Controls: costControls},
 		api.Config{
 			CORSAllowedOrigins:      envVars.CORSAllowedOrigins,
 			WebSocketAllowedOrigins: envVars.WebSocketAllowedOrigins,

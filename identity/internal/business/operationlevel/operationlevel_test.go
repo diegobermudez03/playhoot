@@ -72,6 +72,7 @@ func TestCatalog(t *testing.T) {
 		{Operation: identity.OperationEditGame, RequiredLevel: identity.LevelAccount},
 		{Operation: identity.OperationJoinSessionAsAdmin, RequiredLevel: identity.LevelAccount},
 		{Operation: identity.OperationJoinSessionAsPlayer, RequiredLevel: identity.LevelGuest},
+		{Operation: identity.OperationManageBudget, RequiredLevel: identity.LevelAdmin},
 		{Operation: identity.OperationManageMarkets, RequiredLevel: identity.LevelAdmin},
 		{Operation: identity.OperationManagePlans, RequiredLevel: identity.LevelAdmin},
 		{Operation: identity.OperationManageQueues, RequiredLevel: identity.LevelAdmin},
