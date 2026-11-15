@@ -37,6 +37,7 @@ type dependencies struct {
 	card     *MockcardManager
 	pub      *Mockpublisher
 	template *MocktemplateReader
+	grants   *MockresourceGrants
 }
 
 // testPublicBaseURL is where the API is reached from outside in tests.
@@ -50,8 +51,9 @@ func newTestHandler(ctrl *gomock.Controller) (*Handler, dependencies) {
 		creator: NewMockgameCreator(ctrl), editor: NewMockdraftEditor(ctrl), reader: NewMockdraftReader(ctrl),
 		owner: NewMockaiLinkOwner(ctrl), status: NewMockaiLinkStatusReader(ctrl), resolver: NewMocklinkResolver(ctrl),
 		card: NewMockcardManager(ctrl), pub: NewMockpublisher(ctrl), template: NewMocktemplateReader(ctrl),
+		grants: NewMockresourceGrants(ctrl),
 	}
-	h := NewHandler(nil, deps.creator, deps.editor, deps.reader, AILinks{Owner: deps.owner, Status: deps.status, Resolver: deps.resolver, PublicBaseURL: testPublicBaseURL + "/", PublicWebBaseURL: testPublicWebBaseURL + "/"}, Cards{Card: deps.card, Publisher: deps.pub}, deps.template)
+	h := NewHandler(nil, deps.creator, deps.editor, deps.reader, AILinks{Owner: deps.owner, Status: deps.status, Resolver: deps.resolver, Grants: deps.grants, PublicBaseURL: testPublicBaseURL + "/", PublicWebBaseURL: testPublicWebBaseURL + "/"}, Cards{Card: deps.card, Publisher: deps.pub}, deps.template)
 	h.now = func() time.Time { return time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC) }
 	return h, deps
 }

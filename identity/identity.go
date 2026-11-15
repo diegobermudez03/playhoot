@@ -265,6 +265,48 @@ var ErrUserNotFound = errors.New("user not found")
 // request that differs from the one it was first used with.
 var ErrIdempotencyConflict = errors.New("idempotency key reused with a conflicting request")
 
+// ErrTooManyResourceGrants means the User already holds as many live
+// single-use grants as allowed; one expiring or being used frees a place.
+var ErrTooManyResourceGrants = errors.New("too many live resource grants")
+
+// CreatedResourceGrant is a new single-use grant. Token is shown only here:
+// Identity keeps its hash.
+type CreatedResourceGrant struct {
+	GrantUUID string
+	Token     string
+	ExpiresAt time.Time
+}
+
+// ClaimResourceGrantOutcome is what claiming a grant token turned out to be.
+type ClaimResourceGrantOutcome string
+
+const (
+	// ResourceGrantClaimed means the grant was live and is now used: its
+	// holder may do what Scope says, once, for UserUUID on the resource.
+	ResourceGrantClaimed ClaimResourceGrantOutcome = "claimed"
+
+	// ResourceGrantUnknown means no grant has this token.
+	ResourceGrantUnknown ClaimResourceGrantOutcome = "unknown"
+
+	// ResourceGrantExpired means the grant outlived its lifetime unused.
+	ResourceGrantExpired ClaimResourceGrantOutcome = "expired"
+
+	// ResourceGrantUsed means the grant was already used.
+	ResourceGrantUsed ClaimResourceGrantOutcome = "used"
+)
+
+// ClaimedResourceGrant is a grant token claimed. Every field but Outcome is
+// set only when Outcome is ResourceGrantClaimed. Identity never knows what
+// the resource or the scope mean.
+type ClaimedResourceGrant struct {
+	Outcome    ClaimResourceGrantOutcome
+	GrantUUID  string
+	UserUUID   string
+	Kind       string
+	ResourceID string
+	Scope      string
+}
+
 // ResolveResourceLinkOutcome is what a resource link token turned out to be.
 type ResolveResourceLinkOutcome string
 

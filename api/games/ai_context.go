@@ -282,7 +282,7 @@ func aiContextMarkdown(name string, snapshot sessionpkg.DraftSnapshot, urls aiUR
 	line("- If you can, POST it to %s . The answer has the new revision with every file's hash and what changed. A `revision_conflict` answer means the game changed since you read it: read what changed since your revision and redo the change on the new one.", urls.Changes)
 	line("- Templates are published games their owners let others start from. Before building on the starter project, look for one close to this game: GET %s (featured and categories), %s/search?q=words&category=c&players=n, %s/<template_game_uuid> to inspect one (card, brief, manifest, files; never all its code) and %s/<template_game_uuid>/files?path=<path> for the files you need. To start over from one, POST `{\"template_game_uuid\": \"...\", \"base_revision\": %d, \"idempotency_key\": \"...\"}` to %s : notes.md, brief.json and the uploads it still declares stay. When none fits, keep the starter project.", urls.Templates, urls.Templates, urls.Templates, urls.Templates, snapshot.Revision, urls.Template)
 	line("- To go back to an earlier revision, POST `{\"revision\": N, \"base_revision\": %d, \"idempotency_key\": \"...\"}` to %s .", snapshot.Revision, urls.Restore)
-	line("- Assets (images, audio, video) are declared in `game.project.json` under `\"assets\"`. The person uploads them in the section **Recursos**, or you PUT the raw file to %s/<key> with an `Idempotency-Key` header.", urls.Assets)
+	line("- Assets (images, audio, video) are declared in `game.project.json` under `\"assets\"`. The person uploads them in the section **Recursos**, or you upload the file without it passing through your context: POST %s/<key>/upload-url answers a single-use `upload_url` to PUT the raw file to (`curl -T <file> <upload_url>`); you may also PUT it to %s/<key> with an `Idempotency-Key` header.", urls.Assets, urls.Assets)
 	line("- Every new revision is built automatically. Wait for its result with GET %s?revision=N&wait=20 .", urls.Build)
 	line("- To check what the game does, simulate it: POST a scenario `{\"format\": \"playhoot.scenario.v1\", \"revision\": N, \"players\": 2, \"seed\": 1, \"duration_ms\": 30000, \"steps\": [{\"at_ms\": 100, \"player\": \"P1\", \"command\": {\"name\": \"...\", \"payload\": {}}}], \"holds\": [{\"from_ms\": 1000, \"to_ms\": 1800, \"player\": \"P2\", \"inputs\": {...}}], \"expect\": [{\"at_ms\": 2000, \"of\": \"global\", \"path\": \"scores.P1\", \"op\": \"eq\", \"value\": 1}]}` to %s (or `{\"scenario_path\": \"scenarios/<name>.json\"}` / `{\"all\": true}` for the saved ones). The answer is a summary: passed, each failed expectation with expected and actual, how it stopped, counts and a `result_id`; read any observed state at %s/<result_id>/state?at_ms=N&of=P1&path=a.b (`\"detail\": \"full\"` answers everything at once). A revision can be simulated once its build SUCCEEDED. If you cannot send HTTP requests, give the scenario to the person: they paste it in the section **Escenarios** and send you the result.", urls.Simulations, urls.Simulations)
 	line("- How to write a Playhoot game (read it before writing code): %s/index.md , then the one-line index of what the SDK gives, %s/capabilities.md , and only the pages your game needs. The order of work and what done means: %s/policies.md ; the change format: %s/changes.md ; scenarios: %s/scenarios.md .", guide, guide, guide, guide, guide)
@@ -328,7 +328,7 @@ func aiContextMarkdown(name string, snapshot sessionpkg.DraftSnapshot, urls aiUR
 		if asset.Optional {
 			required = "optional"
 		}
-		line("- `%s` (%s, %s): **%s** — %s", asset.Key, asset.Type, required, asset.Status, asset.Description)
+		line("- `%s` (%s, %s): **%s**%s — %s", asset.Key, asset.Type, required, asset.Status, measures(asset), asset.Description)
 	}
 	for _, d := range snapshot.AssetDiagnostics {
 		line("- problem in `%s` (%s): %s", d.Path, d.Code, d.Message)
@@ -426,4 +426,20 @@ func codeLanguage(file string) string {
 	default:
 		return ""
 	}
+}
+
+// measures is what an uploaded asset's file weighs and measures, for the
+// agent to use it without reading it: never its bytes.
+func measures(asset sessionpkg.DraftAsset) string {
+	if asset.Size == 0 {
+		return ""
+	}
+	text := fmt.Sprintf(" (%d bytes", asset.Size)
+	if asset.Width > 0 && asset.Height > 0 {
+		text += fmt.Sprintf(", %dx%d", asset.Width, asset.Height)
+	}
+	if asset.DurationMs > 0 {
+		text += fmt.Sprintf(", %.1f s", float64(asset.DurationMs)/1000)
+	}
+	return text + ")"
 }

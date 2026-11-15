@@ -41,6 +41,9 @@ type assetResponse struct {
 	SHA256       string     `json:"sha256,omitempty"`
 	Size         int64      `json:"size,omitempty"`
 	MIMEType     string     `json:"mime_type,omitempty"`
+	Width        int        `json:"width,omitempty"`
+	Height       int        `json:"height,omitempty"`
+	DurationMs   int64      `json:"duration_ms,omitempty"`
 	URL          string     `json:"url,omitempty"`
 	URLExpiresAt *time.Time `json:"url_expires_at,omitempty"`
 }
@@ -188,7 +191,8 @@ func assetEditAnswer(ctx context.Context, edit gameauthoring.DraftAssetEdit, err
 func assetBody(asset sessionpkg.DraftAsset) assetResponse {
 	body := assetResponse{
 		Key: asset.Key, Type: asset.Type, Description: asset.Description, Optional: asset.Optional,
-		Status: string(asset.Status), SHA256: asset.SHA256, Size: asset.Size, MIMEType: asset.MIMEType, URL: asset.URL,
+		Status: string(asset.Status), SHA256: asset.SHA256, Size: asset.Size, MIMEType: asset.MIMEType,
+		Width: asset.Width, Height: asset.Height, DurationMs: asset.DurationMs, URL: asset.URL,
 	}
 	if !asset.URLExpiresAt.IsZero() {
 		expiresAt := asset.URLExpiresAt

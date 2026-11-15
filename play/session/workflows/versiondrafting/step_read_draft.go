@@ -13,6 +13,7 @@ import (
 	"github.com/diegobermudez03/playhoot/monitoring"
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 	"github.com/diegobermudez03/playhoot/play/session/internal/business/draftsources"
+	"github.com/diegobermudez03/playhoot/play/session/internal/business/gameversion"
 	"github.com/diegobermudez03/playhoot/play/session/workflows/versiondrafting/internal/changeattempt"
 	internalrepo "github.com/diegobermudez03/playhoot/play/session/workflows/versiondrafting/internal/repo"
 	"github.com/diegobermudez03/playhoot/utils"
@@ -25,7 +26,7 @@ type readDraftRepo interface {
 	FindVersion(ctx context.Context, tx *gorm.DB, versionUUID string) (*internalrepo.Version, error)
 	FindRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64) (draftsources.Revision, bool, error)
 	FindSourceContents(ctx context.Context, tx *gorm.DB, hashes []string) (map[string]string, error)
-	FindAssetObjectKeys(ctx context.Context, tx *gorm.DB, hashes []string) (map[string]string, error)
+	FindAssetObjects(ctx context.Context, tx *gorm.DB, hashes []string) (map[string]internalrepo.StoredAssetObject, error)
 	RecentChangeAttempts(ctx context.Context, tx *gorm.DB, versionID uint, limit int) ([]internalrepo.ChangeAttempt, error)
 	FindBuild(ctx context.Context, tx *gorm.DB, versionUUID string, revision int64, running string) (*internalrepo.Build, error)
 	FindLastBuildInStatus(ctx context.Context, tx *gorm.DB, versionUUID string, status string, running string) (*internalrepo.Build, error)
@@ -39,7 +40,7 @@ type assetLinkSigner interface {
 // draftRead is what one read transaction gathered; links are signed after it.
 type draftRead struct {
 	snapshot   sessionpkg.DraftSnapshot
-	objectKeys map[string]string
+	objects    map[string]internalrepo.StoredAssetObject
 }
 
 // ReadDraft returns versionUUID's sources and assets at revision, or at its
@@ -70,12 +71,13 @@ func (m *Manager) ReadDraft(ctx context.Context, versionUUID string, revision in
 		if asset.SHA256 == "" {
 			continue
 		}
-		objectKey, found := read.objectKeys[asset.SHA256]
+		object, found := read.objects[asset.SHA256]
 		if !found {
 			monitoring.Alert(ctx, "play draft revision binds an asset content that is not stored")
 			return sessionpkg.DraftSnapshot{}, fmt.Errorf("asset content %s of %s is not stored", asset.SHA256, asset.Key)
 		}
-		link, err := m.assetLinks.PresignGet(ctx, objectKey, expiresAt)
+		read.snapshot.Assets[i] = withMedia(asset, object.Media)
+		link, err := m.assetLinks.PresignGet(ctx, object.ObjectKey, expiresAt)
 		if err != nil {
 			return sessionpkg.DraftSnapshot{}, fmt.Errorf("signing asset link: %w", err)
 		}
@@ -124,7 +126,7 @@ func (m *Manager) readDraftInTx(ctx context.Context, tx *gorm.DB, versionUUID st
 			return draftRead{}, err
 		}
 		read.snapshot.Assets, read.snapshot.AssetDiagnostics = draftAssets(pinned, contents)
-		read.objectKeys, err = m.readDraftRepo.FindAssetObjectKeys(ctx, tx, boundHashes(pinned.Assets))
+		read.objects, err = m.readDraftRepo.FindAssetObjects(ctx, tx, boundHashes(pinned.Assets))
 		if err != nil {
 			return draftRead{}, err
 		}
@@ -209,6 +211,12 @@ func publicAsset(state draftsources.AssetState) sessionpkg.DraftAsset {
 		asset.Size = state.Binding.Size
 		asset.MIMEType = state.Binding.MIMEType
 	}
+	return asset
+}
+
+// withMedia is asset with what its content measures.
+func withMedia(asset sessionpkg.DraftAsset, media gameversion.Media) sessionpkg.DraftAsset {
+	asset.Width, asset.Height, asset.DurationMs = media.Width, media.Height, media.DurationMs
 	return asset
 }
 

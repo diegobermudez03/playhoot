@@ -37,7 +37,7 @@ type uploadAssetRepo interface {
 	ClaimChangeAttempt(ctx context.Context, tx *gorm.DB, versionID uint, kind string, idempotencyKey string, requestSHA256 string, baseRevision int64, origin string) (uint, *internalrepo.ChangeAttempt, error)
 	FindRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64) (draftsources.Revision, bool, error)
 	FindSourceContents(ctx context.Context, tx *gorm.DB, hashes []string) (map[string]string, error)
-	RegisterAssetObject(ctx context.Context, tx *gorm.DB, sha256 string, size int64, mimeType string, objectKey string, registeredAt time.Time) error
+	RegisterAssetObject(ctx context.Context, tx *gorm.DB, sha256 string, size int64, mimeType string, media gameversion.Media, objectKey string, registeredAt time.Time) error
 	AdvanceRevision(ctx context.Context, tx *gorm.DB, versionID uint, status string, base int64) (bool, error)
 	CreateRevision(ctx context.Context, tx *gorm.DB, versionID uint, number int64, revision draftsources.Revision, provenance internalrepo.Provenance) error
 	QueueBuild(ctx context.Context, tx *gorm.DB, versionID uint, revision int64, buildUUID string, queued string, superseded string) (int, error)
@@ -129,6 +129,8 @@ type receivedUpload struct {
 	refusal     sessionpkg.DraftAssetOutcome
 	diagnostics []draftsources.Diagnostic
 	binding     draftsources.AssetBinding
+	// media is what the accepted content measures.
+	media gameversion.Media
 }
 
 // UploadAsset receives the content of the asset key the DRAFT versionUUID
@@ -322,6 +324,7 @@ func receive(key string, declaration *draftsources.AssetDeclaration, content io.
 		}
 		return refuse(sessionpkg.DraftAssetInvalid, codeWrongContentType, fmt.Sprintf("the file is %s, not a supported %s (its bytes decide, not its name or header)", detected, declaration.Type))
 	}
+	received.media = gameversion.MeasureMedia(mimeType, received.content)
 	return received, nil
 }
 
@@ -331,7 +334,7 @@ func receive(key string, declaration *draftsources.AssetDeclaration, content io.
 func (m *Manager) storeAsset(ctx context.Context, received receivedUpload) error {
 	locator := objectstore.LocatorFor(assetObjectPrefix, received.content)
 	if _, err := utils.RunInDBTransaction(ctx, m.dbServicer, func(ctx context.Context, tx *gorm.DB) (struct{}, error) {
-		return struct{}{}, m.uploadAssetRepo.RegisterAssetObject(ctx, tx, locator.SHA256, locator.Size, received.binding.MIMEType, locator.ObjectKey, m.now())
+		return struct{}{}, m.uploadAssetRepo.RegisterAssetObject(ctx, tx, locator.SHA256, locator.Size, received.binding.MIMEType, received.media, locator.ObjectKey, m.now())
 	}); err != nil {
 		return err
 	}
@@ -470,7 +473,7 @@ func (m *Manager) decideAttach(ctx context.Context, tx *gorm.DB, version *intern
 		}
 		if bound, isBound := revision.Assets[key]; isBound && bound.SHA256 == received.binding.SHA256 {
 			state := draftsources.AssetState{Key: key, Status: draftsources.AssetReady, Declaration: &declaration, Binding: &bound}
-			asset := publicAsset(state)
+			asset := withMedia(publicAsset(state), received.media)
 			return sessionpkg.DraftAssetResult{Outcome: sessionpkg.DraftAssetUnchanged, Revision: current, Asset: &asset}, nil, nil
 		}
 		total := received.binding.Size
@@ -508,7 +511,7 @@ func (m *Manager) decideAttach(ctx context.Context, tx *gorm.DB, version *intern
 		}
 		binding := received.binding
 		state := draftsources.AssetState{Key: key, Status: draftsources.AssetReady, Declaration: &declaration, Binding: &binding}
-		asset := publicAsset(state)
+		asset := withMedia(publicAsset(state), received.media)
 		return sessionpkg.DraftAssetResult{Outcome: sessionpkg.DraftAssetAttached, Revision: next, Asset: &asset}, nil, nil
 	}
 	return sessionpkg.DraftAssetResult{}, nil, fmt.Errorf("version %s kept changing while attaching an asset", version.UUID)

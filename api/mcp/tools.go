@@ -18,9 +18,13 @@ import (
 // The change envelope's format (the games operation's own).
 const changeFormat = "playhoot.project-change.v1"
 
-// maxAssetBase64 is the longest base64 an upload may carry: the largest
-// asset plus the one byte that tells a file over the limit, encoded.
-var maxAssetBase64 = base64.StdEncoding.EncodedLen(sessionpkg.MaxDraftAssetBytes + 1)
+// maxInlineAssetBytes is the largest file upload_asset takes in base64: small
+// ones (an SVG, an icon). Anything larger goes through request_asset_upload,
+// so its bytes never pass through the model's context.
+const maxInlineAssetBytes = 256 << 10
+
+// maxAssetBase64 is the longest base64 upload_asset accepts.
+var maxAssetBase64 = base64.StdEncoding.EncodedLen(maxInlineAssetBytes)
 
 type listGamesInput struct{}
 
@@ -119,8 +123,13 @@ type restoreRevisionInput struct {
 type uploadAssetInput struct {
 	GameUUID       string `json:"game_uuid" jsonschema:"the game's uuid"`
 	Key            string `json:"key" jsonschema:"the asset's key, as game.project.json declares it"`
-	ContentBase64  string `json:"content_base64" jsonschema:"the file's bytes in standard base64; its real type must match the declared one (image, audio or video) and stay within its size limit"`
+	ContentBase64  string `json:"content_base64" jsonschema:"the file's bytes in standard base64, at most 256 KiB decoded; its real type must match the declared one (image, audio or video)"`
 	IdempotencyKey string `json:"idempotency_key" jsonschema:"a new random string for this upload"`
+}
+
+type requestAssetUploadInput struct {
+	GameUUID string `json:"game_uuid" jsonschema:"the game's uuid"`
+	Key      string `json:"key" jsonschema:"the asset's key, as game.project.json declares it"`
 }
 
 type removeAssetInput struct {
@@ -289,18 +298,29 @@ func (h *Handler) addTools(server *sdk.Server) {
 			}
 			return markdown(h.games.ReadSDKPage(ctx, in.Page))
 		})
-	sdk.AddTool(server, &sdk.Tool{Name: "upload_asset", Description: "Uploads the file of an asset game.project.json declares, in base64. Limits by type: image 5 MiB, audio 10 MiB, video 50 MiB, 100 MiB in all. If you cannot produce the file, ask the user to upload it in Recursos."},
+	sdk.AddTool(server, &sdk.Tool{Name: "request_asset_upload", Description: "Answers a single-use URL to upload the file of an asset game.project.json declares, without its bytes passing through this conversation: PUT the file's bytes to upload_url (for example curl -T file URL) before expires_at; the answer is the upload's. Limits by type: image 5 MiB, audio 10 MiB, video 50 MiB, 100 MiB in all. A refused or broken upload leaves the URL usable until it expires."},
+		func(ctx context.Context, req *sdk.CallToolRequest, in requestAssetUploadInput) (*sdk.CallToolResult, any, error) {
+			by, err := callerOf(req)
+			if err != nil {
+				return nil, nil, err
+			}
+			return answer(h.games.RequestAssetUpload(ctx, by, in.GameUUID, in.Key))
+		})
+	sdk.AddTool(server, &sdk.Tool{Name: "upload_asset", Description: "Uploads a small file (at most 256 KiB, such as an SVG or an icon) of an asset game.project.json declares, in base64. For anything larger use request_asset_upload. If you cannot produce the file, ask the user to upload it in Recursos."},
 		func(ctx context.Context, req *sdk.CallToolRequest, in uploadAssetInput) (*sdk.CallToolResult, any, error) {
 			by, err := callerOf(req)
 			if err != nil {
 				return nil, nil, err
 			}
 			if len(in.ContentBase64) > maxAssetBase64 {
-				return refusal("asset_too_large", fmt.Sprintf("the file is larger than the largest asset allowed (%d bytes)", sessionpkg.MaxDraftAssetBytes)), nil, nil
+				return refusal("asset_too_large", fmt.Sprintf("upload_asset takes files of at most %d bytes; use request_asset_upload for larger ones", maxInlineAssetBytes)), nil, nil
 			}
 			content, err := base64.StdEncoding.DecodeString(in.ContentBase64)
 			if err != nil {
 				return refusal("invalid_base64", "content_base64 must be standard base64"), nil, nil
+			}
+			if len(content) > maxInlineAssetBytes {
+				return refusal("asset_too_large", fmt.Sprintf("upload_asset takes files of at most %d bytes; use request_asset_upload for larger ones", maxInlineAssetBytes)), nil, nil
 			}
 			return answer(h.games.UploadAsset(ctx, by, in.GameUUID, in.Key, in.IdempotencyKey, bytes.NewReader(content)))
 		})

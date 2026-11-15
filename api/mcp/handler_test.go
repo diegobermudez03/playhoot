@@ -162,6 +162,14 @@ func (f *fakeGames) ListRevisions(ctx context.Context, userUUID string, gameUUID
 	return []games.RevisionResponse{}, f.refusal
 }
 
+func (f *fakeGames) RequestAssetUpload(ctx context.Context, by games.Caller, gameUUID string, key string) (*games.AssetUploadURLResponse, *games.Refusal) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.callers = append(f.callers, by)
+	f.key = key
+	return &games.AssetUploadURLResponse{URL: "https://api/v1/asset-uploads/t", Method: "PUT", Key: key, Type: "image", MaxBytes: 5 << 20}, f.refusal
+}
+
 func (f *fakeGames) UploadAsset(ctx context.Context, by games.Caller, gameUUID string, key string, idempotencyKey string, content io.Reader) (games.AssetEditResponse, *games.Refusal) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -256,7 +264,7 @@ func TestToolsCallTheirGamesOperations(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 	sort.Strings(names)
-	require.Equal(t, []string{"apply_changes", "browse_templates", "create_game", "diff_revisions", "get_build", "get_game_context", "get_sdk_doc", "get_sdk_index", "inspect_template", "list_changes_since", "list_my_games", "list_revisions", "read_files", "read_simulation_state", "read_template_files", "remove_asset", "restore_revision", "search_templates", "simulate", "upload_asset", "use_template"}, names)
+	require.Equal(t, []string{"apply_changes", "browse_templates", "create_game", "diff_revisions", "get_build", "get_game_context", "get_sdk_doc", "get_sdk_index", "inspect_template", "list_changes_since", "list_my_games", "list_revisions", "read_files", "read_simulation_state", "read_template_files", "remove_asset", "request_asset_upload", "restore_revision", "search_templates", "simulate", "upload_asset", "use_template"}, names)
 	require.NotContains(t, names, "publish")
 
 	result, err := session.CallTool(ctx, &sdk.CallToolParams{Name: "apply_changes", Arguments: map[string]any{
@@ -382,7 +390,21 @@ func TestUploadDecodesBase64AndRefusesOversizedContentUnread(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, result.IsError)
 	require.Len(t, fake.callers, 1, "invalid base64 never reaches the operation")
-	require.Greater(t, maxAssetBase64, sessionpkg.MaxDraftAssetBytes)
+
+	large := base64.StdEncoding.EncodeToString(make([]byte, maxInlineAssetBytes+1))
+	result, err = session.CallTool(ctx, &sdk.CallToolParams{Name: "upload_asset", Arguments: map[string]any{
+		"game_uuid": "g1", "key": "cardBack", "content_base64": large, "idempotency_key": "k4",
+	}})
+	require.NoError(t, err)
+	require.True(t, result.IsError, "a large file goes through request_asset_upload")
+	require.Len(t, fake.callers, 1)
+
+	result, err = session.CallTool(ctx, &sdk.CallToolParams{Name: "request_asset_upload", Arguments: map[string]any{"game_uuid": "g1", "key": "music"}})
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+	require.Equal(t, "music", fake.key)
+	require.Equal(t, games.Caller{UserUUID: user, Origin: sessionpkg.DraftOriginMCP}, fake.callers[1])
+	require.Contains(t, result.Content[0].(*sdk.TextContent).Text, `"upload_url":"https://api/v1/asset-uploads/t"`)
 }
 
 type allowAll struct{}
@@ -399,7 +421,11 @@ func TestHTTPAndMCPRefuseAlike(t *testing.T) {
 	gamesHandler := games.NewHandler(allowAll{}, nil, nil, nil, games.AILinks{}, games.Cards{}, nil)
 	mux := http.NewServeMux()
 	for _, route := range gamesHandler.RESTRoutes() {
-		mux.HandleFunc(route.Pattern, route.Authorization(route.Handler))
+		handler := route.Handler
+		if route.Authorization != nil {
+			handler = route.Authorization(handler)
+		}
+		mux.HandleFunc(route.Pattern, handler)
 	}
 	api := httptest.NewServer(mux)
 	t.Cleanup(api.Close)

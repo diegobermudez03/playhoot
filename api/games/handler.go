@@ -24,7 +24,7 @@ import (
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
 
-//go:generate mockgen -package=games -destination=handler_mock_test.go . gameCreator,draftEditor,draftReader,aiLinkOwner,aiLinkStatusReader,linkResolver,cardManager,publisher,templateReader
+//go:generate mockgen -package=games -destination=handler_mock_test.go . gameCreator,draftEditor,draftReader,aiLinkOwner,aiLinkStatusReader,linkResolver,resourceGrants,cardManager,publisher,templateReader
 
 // authorizer is Identity's coarse authorization.
 type authorizer interface {
@@ -91,6 +91,7 @@ type AILinks struct {
 	Owner            aiLinkOwner
 	Status           aiLinkStatusReader
 	Resolver         linkResolver
+	Grants           resourceGrants
 	Guide            sdkGuide
 	PublicBaseURL    string
 	PublicWebBaseURL string
@@ -149,6 +150,9 @@ func (h *Handler) RESTRoutes() []routing.Route {
 		{Pattern: "GET /v1/games/{gameUUID}/draft/simulations/{resultID}/state", Handler: h.handleReadSimulationState, Authorization: edit},
 		{Pattern: "POST /v1/games/{gameUUID}/draft/previews", Handler: h.handleStartPreview, Authorization: edit},
 		{Pattern: "PUT /v1/games/{gameUUID}/draft/assets/{key}", Handler: h.handleUploadAsset, Authorization: edit},
+		// A single-use upload URL is its own credential. Limited by client
+		// first, so a refused request never uses the URL up.
+		{Pattern: "PUT /v1/asset-uploads/{token}", Handler: h.grantUploadAccess(h.handleGrantUpload), Limits: &uploadURLLimits},
 		{Pattern: "POST /v1/games/{gameUUID}/draft/assets/{key}/remove", Handler: h.handleRemoveAsset, Authorization: edit},
 		{Pattern: "POST /v1/games/{gameUUID}/ai-link", Handler: h.handleCreateAILink, Authorization: edit},
 		{Pattern: "GET /v1/games/{gameUUID}/ai-link", Handler: h.handleAILinkStatus, Authorization: edit},
@@ -175,6 +179,7 @@ func (h *Handler) RESTRoutes() []routing.Route {
 		{Pattern: "GET /ai/v1/{token}/simulations/{resultID}/state", Handler: h.handleReadSimulationState, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},
 		{Pattern: "PUT /ai/v1/{token}/assets/{key}", Handler: h.handleUploadAsset, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},
 		{Pattern: "POST /ai/v1/{token}/assets/{key}/remove", Handler: h.handleRemoveAsset, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},
+		{Pattern: "POST /ai/v1/{token}/assets/{key}/upload-url", Handler: h.handleRequestAssetUpload, Authorization: h.aiLinkAccess, Limits: &aiLinkLimits},
 	}
 }
 

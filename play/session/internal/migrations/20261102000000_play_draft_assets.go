@@ -21,6 +21,10 @@ func migration20261102000000PlayDraftAssets() *gormigrate.Migration {
 					size BIGINT NOT NULL,
 					mime_type TEXT NOT NULL,
 					object_key TEXT NOT NULL,
+					-- What the content measures (gameversion.MeasureMedia); NULL when unknown.
+					width INTEGER NULL,
+					height INTEGER NULL,
+					duration_ms BIGINT NULL,
 					created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 					registered_at TIMESTAMPTZ NOT NULL,
 					deleted_at TIMESTAMPTZ NULL

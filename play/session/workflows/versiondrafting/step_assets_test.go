@@ -14,6 +14,7 @@ import (
 
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 	"github.com/diegobermudez03/playhoot/play/session/internal/business/draftsources"
+	"github.com/diegobermudez03/playhoot/play/session/internal/business/gameversion"
 	"github.com/diegobermudez03/playhoot/play/session/internal/objectstore"
 	internalrepo "github.com/diegobermudez03/playhoot/play/session/workflows/versiondrafting/internal/repo"
 )
@@ -112,6 +113,7 @@ func TestReceive(t *testing.T) {
 			locator := objectstore.LocatorFor(assetObjectPrefix, pngBytes)
 			require.Equal(t, draftsources.AssetBinding{SHA256: locator.SHA256, Size: locator.Size, MIMEType: "image/png"}, got.binding)
 			require.Equal(t, pngBytes, got.content)
+			require.Equal(t, gameversion.MeasureMedia("image/png", pngBytes), got.media, "the accepted content is measured")
 		})
 	}
 

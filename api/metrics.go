@@ -80,7 +80,7 @@ func aiRoute(pattern string) bool {
 // authoringRoutePrefixes are the paths of the routes a creator's web app
 // uses while building a game (its version being built and the templates),
 // measured apart from the other REST routes for the same reason.
-var authoringRoutePrefixes = []string{"/v1/games/{gameUUID}/draft", "/v1/templates"}
+var authoringRoutePrefixes = []string{"/v1/games/{gameUUID}/draft", "/v1/templates", "/v1/asset-uploads/"}
 
 // authoringRoute reports whether pattern ("METHOD /path") is a route of
 // building a game.

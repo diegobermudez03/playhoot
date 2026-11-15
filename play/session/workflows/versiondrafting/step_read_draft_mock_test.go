@@ -44,19 +44,19 @@ func (m *MockreadDraftRepo) EXPECT() *MockreadDraftRepoMockRecorder {
 	return m.recorder
 }
 
-// FindAssetObjectKeys mocks base method.
-func (m *MockreadDraftRepo) FindAssetObjectKeys(ctx context.Context, tx *gorm.DB, hashes []string) (map[string]string, error) {
+// FindAssetObjects mocks base method.
+func (m *MockreadDraftRepo) FindAssetObjects(ctx context.Context, tx *gorm.DB, hashes []string) (map[string]repo.StoredAssetObject, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "FindAssetObjectKeys", ctx, tx, hashes)
-	ret0, _ := ret[0].(map[string]string)
+	ret := m.ctrl.Call(m, "FindAssetObjects", ctx, tx, hashes)
+	ret0, _ := ret[0].(map[string]repo.StoredAssetObject)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// FindAssetObjectKeys indicates an expected call of FindAssetObjectKeys.
-func (mr *MockreadDraftRepoMockRecorder) FindAssetObjectKeys(ctx, tx, hashes any) *gomock.Call {
+// FindAssetObjects indicates an expected call of FindAssetObjects.
+func (mr *MockreadDraftRepoMockRecorder) FindAssetObjects(ctx, tx, hashes any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindAssetObjectKeys", reflect.TypeOf((*MockreadDraftRepo)(nil).FindAssetObjectKeys), ctx, tx, hashes)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindAssetObjects", reflect.TypeOf((*MockreadDraftRepo)(nil).FindAssetObjects), ctx, tx, hashes)
 }
 
 // FindBuild mocks base method.

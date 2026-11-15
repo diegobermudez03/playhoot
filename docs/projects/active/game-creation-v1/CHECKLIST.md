@@ -96,8 +96,8 @@ API metrics: the draft and template routes moved to their own family (`api_autho
 
 ### S. Agent asset upload without the model's context (M, AJ)
 
-- [ ] `request_asset_upload(game, key)` (MCP + AI link): answers a short-lived, single-use upload URL to the backend's own asset PUT (bytes still validated by the backend, object-storage standard) bound to the game and key. `upload_asset` with base64 stays only for small files (SVG/icons, a low limit).
-- [ ] Asset reads to the agent carry key, type, size, dimensions/duration and description; never bytes.
+- [x] `request_asset_upload(game, key)` (MCP + AI link `POST /ai/v1/{token}/assets/{key}/upload-url`) (2026-11-07): an Identity single-use grant (`identity/usecases/resourcegrants`, 15 minutes, 20 live per user, only the token's hash stored) whose URL is the backend's own `PUT /v1/asset-uploads/{token}`, bound to the game, the key, the user and the origin; the bytes are checked as any upload. One attached upload uses it up; any other answer releases it until it expires. `upload_asset` with base64 takes at most 256 KiB.
+- [x] Asset reads to the agent carry key, type, size, dimensions/duration and description; never bytes (2026-11-07): `gameversion.MeasureMedia` at upload, kept in `play_asset_objects` (migration edited in place), answered on every asset read and in the AI context's Markdown.
 
 ### T. Compact build results (Q, D P1)
 

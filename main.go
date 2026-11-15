@@ -33,6 +33,7 @@ import (
 	"github.com/diegobermudez03/playhoot/identity/usecases/listoperations"
 	"github.com/diegobermudez03/playhoot/identity/usecases/refreshcredentials"
 	"github.com/diegobermudez03/playhoot/identity/usecases/resourcelinks"
+	"github.com/diegobermudez03/playhoot/identity/usecases/resourcegrants"
 	"github.com/diegobermudez03/playhoot/identity/usecases/setdisplayname"
 	"github.com/diegobermudez03/playhoot/identity/workflows/accountlogin"
 	"github.com/diegobermudez03/playhoot/orchestrator/gameauthoring"
@@ -299,7 +300,7 @@ func run() error {
 		liveConnections,
 		resolvejoincode.New(db),
 		api.Games{Previews: previews, Creator: gameAuthoring, Editor: gameAuthoring, Reader: gameAuthoringReads, AILinks: apigames.AILinks{
-			Owner: gameAuthoring, Status: gameAuthoringReads, Resolver: resourceLinks, Guide: readsdkguide.New(envVars.GameToolchainDir, toolchain), PublicBaseURL: envVars.PublicAPIBaseURL, PublicWebBaseURL: envVars.PublicWebBaseURL,
+			Owner: gameAuthoring, Status: gameAuthoringReads, Resolver: resourceLinks, Grants: resourcegrants.New(db), Guide: readsdkguide.New(envVars.GameToolchainDir, toolchain), PublicBaseURL: envVars.PublicAPIBaseURL, PublicWebBaseURL: envVars.PublicWebBaseURL,
 		}, Cards: apigames.Cards{Card: gameCards, Publisher: gameAuthoring}},
 		api.AI{Server: aiAuthorization},
 		api.Config{

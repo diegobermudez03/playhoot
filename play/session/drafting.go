@@ -277,6 +277,11 @@ type DraftAsset struct {
 	MIMEType     string
 	URL          string
 	URLExpiresAt time.Time
+	// What the bound content measures: an image's width and height in
+	// pixels, an audio or video's duration; zero when unknown.
+	Width      int
+	Height     int
+	DurationMs int64
 }
 
 // MaxDraftAssetBytes is the most one asset upload may weigh, whatever its
