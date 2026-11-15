@@ -6,12 +6,16 @@ PH.package({
   summary: 'The one way to do async work: a queue table and worker per domain, with a dead letter queue.',
   provides: [
     'Enqueue a task in the same transaction as the write that caused it.',
-    'At-least-once delivery to idempotent task handlers, with retries and backoff.',
-    'A dead letter queue per domain; admin sees all of them and can retry or cancel.',
+    'One infrastructure table per domain (<domain>_queue_tasks): task uuid, type, payload, run_at, attempts, lock, status pending | running | dead | cancelled; completed tasks are deleted.',
+    'A worker per domain: picks due tasks with SKIP LOCKED, runs the registered handler, retries with exponential backoff and jitter; after max attempts the task turns dead (that is the dead letter queue).',
+    'At-least-once delivery: every handler must be idempotent.',
+    'Handlers are registered per task type by the owning domain; cross-domain delivery types (notify, analytics-event, spend-event) are registered by the orchestrator, so domains never call each other (D-010).',
+    'Delayed tasks via run_at; periodic tasks re-enqueue themselves on completion.',
+    'A registry over every domain queue for admin: list dead tasks, retry (back to pending), cancel. Reached through flows whose step names this package (D-013).',
     'Service, queue and processor code kept separate, ready to migrate to a real outbox and queue.'
   ],
   doesNotKnow: ['What a task means: each domain owns its task types and handlers.'],
-  sources: ['B: principles']
+  sources: ['B: principles', 'P32§6']
 });
 
 PH.package({

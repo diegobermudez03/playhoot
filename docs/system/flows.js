@@ -392,20 +392,112 @@ PH.flow({
   sources: ['B: plan', 'P12§11']
 });
 
-// ---------- Budget control ----------
+// ---------- Budget control (steps designed by T-100) ----------
 PH.flow({
   id: 'spending-restriction', status: 'planned', coordinator: 'orchestrator', effect: 'write',
   name: 'Spending restriction change',
   summary: 'The ladder moves (restriction, selective pause, automatic emergency shutdown) and the reason is communicated as a service restriction, never as lack of balance.',
-  touches: ['budget', 'notifications'],
+  steps: [
+    { n: 1, domain: 'budget', operation: 'budget.evaluate-ladder', when: 'after spend ingestion and on the periodic queue task', onFailure: 'The queue retries; missing metrics themselves restrict admission.' },
+    { n: 2, domain: 'notifications', operation: 'notifications.accept-entry', when: 'the level changed (notify task left by step 1, addressed to the admin)', onFailure: 'The queue retries; the level change itself is already in force.' }
+  ],
+  persistence: 'queue',
+  idempotency: 'Each ladder move appends exactly one change row; the notify task carries that row’s key, so retries never duplicate the notification.',
+  compensation: 'None: de-escalation below shutdown is automatic when pressure clears; shutdown only leaves through reopen-spending.',
   sources: ['P32§3-6']
+});
+PH.flow({
+  id: 'adjust-cost-controls', status: 'planned', coordinator: 'orchestrator', effect: 'write',
+  name: 'Adjust cost controls',
+  summary: 'The admin changes caps or rates with reinforced authentication; every change keeps actor, reason and history.',
+  steps: [
+    { n: 1, domain: 'identity', operation: 'identity.verify-totp', when: 'always (step-up proof for this action)', onFailure: 'Stop: no control changes without a fresh second factor.' },
+    { n: 2, domain: 'budget', operation: 'budget.admin-set-controls', when: 'the proof is valid', onFailure: 'Propagate; nothing was half-written (append-only rows in one transaction).' }
+  ],
+  persistence: 'none',
+  idempotency: 'The step-up proof is single-use; replaying the request without a new code is refused.',
+  compensation: 'None needed.',
+  sources: ['P32§2', 'P32§7']
+});
+PH.flow({
+  id: 'emergency-cutoff', status: 'planned', coordinator: 'orchestrator', effect: 'write',
+  name: 'Admin emergency cutoff',
+  summary: 'The admin imposes an immediate shutdown with a reason, behind the second factor.',
+  steps: [
+    { n: 1, domain: 'identity', operation: 'identity.verify-totp', when: 'always', onFailure: 'Stop.' },
+    { n: 2, domain: 'budget', operation: 'budget.admin-cutoff', when: 'the proof is valid', onFailure: 'Propagate; retrying while shut down is idempotent.' }
+  ],
+  persistence: 'none',
+  idempotency: 'Cutting off an already shut down platform appends nothing.',
+  compensation: 'None: recovery is reopen-spending.',
+  sources: ['P32§7']
 });
 PH.flow({
   id: 'reopen-spending', status: 'planned', coordinator: 'orchestrator', effect: 'write',
   name: 'Reopen after shutdown',
   summary: 'Only an explicit manual reopening with second factor lifts the shutdown, gradually; restart, deploy or month change never do.',
-  touches: ['identity', 'budget'],
+  steps: [
+    { n: 1, domain: 'identity', operation: 'identity.verify-totp', when: 'always (step-up proof for this action)', onFailure: 'Stop: the shutdown stays.' },
+    { n: 2, domain: 'budget', operation: 'budget.reopen', when: 'the proof is valid', onFailure: 'Propagate; the shutdown stays until a successful reopening.' }
+  ],
+  persistence: 'none',
+  idempotency: 'Each gradual step appends its own change row; repeating a step is refused as already open.',
+  compensation: 'None: the ladder can always be cut again.',
   sources: ['P32§4', 'P32§7']
+});
+
+// ---------- Cross-domain queue delivery (steps designed by T-100) ----------
+// A domain leaves a task in its own queue inside its own transaction; the orchestrator-registered
+// processor delivers it to the owning domain (D-010). Domains never call each other.
+PH.flow({
+  id: 'deliver-notification', status: 'planned', coordinator: 'orchestrator', effect: 'write',
+  name: 'Deliver notification',
+  summary: 'Processes a notify task from any domain’s queue into one logical notification entry.',
+  steps: [
+    { n: 1, domain: 'notifications', operation: 'notifications.accept-entry', when: 'a notify task is due', onFailure: 'The queue retries with backoff; after max attempts the task is dead and admin can retry it.' }
+  ],
+  persistence: 'queue',
+  idempotency: 'The task carries the source domain’s idempotency key; acceptance replays the existing entry.',
+  compensation: 'None.',
+  sources: ['B: notifications', 'P29§1']
+});
+PH.flow({
+  id: 'send-notification-email', status: 'planned', coordinator: 'orchestrator', effect: 'write',
+  name: 'Send notification email',
+  summary: 'Processes an email task: admits the cost, sends through the selected provider, settles the measured cost.',
+  steps: [
+    { n: 1, domain: 'budget', operation: 'budget.admit-work', when: 'the email task is due (category email; Resend sends still count volume at zero cost)', onFailure: 'The task waits and retries: a budget refusal is a pause, not a loss; the in-app entry already exists.' },
+    { n: 2, domain: 'notifications', operation: 'notifications.send-email', when: 'admitted', onFailure: 'Retry within the task; a final failure records the delivery as failed and releases the reservation.' },
+    { n: 3, domain: 'budget', operation: 'budget.settle-work', when: 'always after step 2 decided', onFailure: 'The queue retries settlement idempotently.' }
+  ],
+  persistence: 'queue',
+  idempotency: 'One email task per entry; the delivery record is checked before any provider call, so a retried task never double-sends.',
+  compensation: 'An unsettled reservation expires on its own; the spend that happened stays recorded.',
+  sources: ['P31§1-3', 'P32§1-2']
+});
+PH.flow({
+  id: 'ingest-spend-events', status: 'planned', coordinator: 'orchestrator', effect: 'write',
+  name: 'Ingest spend events',
+  summary: 'Processes spend-event tasks from the domains into the budget’s spend record.',
+  steps: [
+    { n: 1, domain: 'budget', operation: 'budget.record-spend', when: 'a spend-event task is due', onFailure: 'The queue retries; a dead spend task is an admin alert, not a silent loss.' }
+  ],
+  persistence: 'queue',
+  idempotency: 'By (source domain, idempotency key) inside record-spend.',
+  compensation: 'None.',
+  sources: ['P32§1-2', 'P12§4']
+});
+PH.flow({
+  id: 'ingest-analytics-events', status: 'planned', coordinator: 'orchestrator', effect: 'write',
+  name: 'Ingest analytics events',
+  summary: 'Processes analytics-event tasks from the domains into the analytics event store.',
+  steps: [
+    { n: 1, domain: 'analytics', operation: 'analytics.ingest-events', when: 'an analytics-event task is due', onFailure: 'The queue retries; analytics never blocks the operation that emitted the event.' }
+  ],
+  persistence: 'queue',
+  idempotency: 'By (source domain, idempotency key) per event inside ingest-events.',
+  compensation: 'None.',
+  sources: ['P34§3', 'B: principles']
 });
 
 // ---------- Support and moderation ----------
@@ -465,8 +557,25 @@ PH.flow({
 PH.flow({
   id: 'admin-dlqs', status: 'planned', coordinator: 'composer', effect: 'read',
   name: 'Admin dead letter queues',
-  summary: 'Every domain\'s dead letter queue in one view; retry and cancel are single-domain operations on the owning queue.',
-  touches: ['identity', 'game', 'play', 'creation', 'library', 'classroom', 'plan', 'billing', 'budget', 'compliance', 'notifications', 'support', 'moderation', 'analytics'],
+  summary: 'Every domain\'s dead letter queue in one view, through the txqueue registry (infrastructure tables, D-013).',
+  steps: [
+    { n: 1, package: 'txqueue', when: 'always: list dead tasks across every registered domain queue', onFailure: 'A queue that cannot be read is reported as unavailable; the others still show.' }
+  ],
+  persistence: 'none',
+  idempotency: 'Read only.',
+  compensation: 'None.',
+  sources: ['B: principles']
+});
+PH.flow({
+  id: 'manage-dead-task', status: 'planned', coordinator: 'orchestrator', effect: 'write',
+  name: 'Retry or cancel a dead task',
+  summary: 'The admin retries (back to pending) or cancels a dead task on its owning domain queue, through the txqueue registry.',
+  steps: [
+    { n: 1, package: 'txqueue', when: 'always: locate the task on its domain queue and apply retry or cancel', onFailure: 'Propagate; the task stays dead.' }
+  ],
+  persistence: 'none',
+  idempotency: 'Retrying a task that is no longer dead, or cancelling twice, changes nothing.',
+  compensation: 'None.',
   sources: ['B: principles']
 });
 

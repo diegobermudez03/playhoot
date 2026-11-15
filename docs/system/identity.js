@@ -477,3 +477,92 @@ PH.operation({
   reads: ['identity.identity_ai_authorization_requests', 'identity.identity_ai_sessions', 'identity.identity_ai_refresh_tokens'],
   writes: [], rules: [], sources: []
 });
+
+// ---------- H1 design (planned): administrator second factor ----------
+
+PH.table({
+  id: 'identity.identity_admin_grants', domain: 'identity', status: 'planned',
+  name: 'identity_admin_grants',
+  summary: 'Marks the single administrator account of phase 1.',
+  purpose: 'Only a user with an active grant may receive an admin-mode token; roles and more admins stay planned.',
+  columns: [
+    { name: 'id', type: 'bigserial', note: '' },
+    { name: 'user_id', type: 'bigint', note: '' },
+    { name: 'granted_at', type: 'timestamptz', note: '' },
+    { name: 'revoked_at', type: 'timestamptz', note: 'Set once.' },
+    { name: 'note', type: 'text', note: 'Why the grant exists; seeded by migration for the creator\u2019s account.' }
+  ],
+  indexes: ['partial UNIQUE (user_id) while not revoked'],
+  history: 'Write-once: revoked_at.',
+  references: [{ column: 'user_id', to: 'identity.identity_users' }]
+});
+
+PH.table({
+  id: 'identity.identity_totp_credentials', domain: 'identity', status: 'planned',
+  name: 'identity_totp_credentials',
+  summary: 'The TOTP second factor of an account.',
+  purpose: 'One active credential per user; enrollment completes only when a first code confirms it.',
+  columns: [
+    { name: 'id', type: 'bigserial', note: '' },
+    { name: 'user_id', type: 'bigint', note: '' },
+    { name: 'secret_encrypted', type: 'text', note: 'Encrypted at rest; never logged.' },
+    { name: 'confirmed_at', type: 'timestamptz', note: 'Set once, by the first valid code.' },
+    { name: 'revoked_at', type: 'timestamptz', note: 'Set once, on re-enrollment.' },
+    { name: 'created_at', type: 'timestamptz', note: '' }
+  ],
+  indexes: ['partial UNIQUE (user_id) while not revoked'],
+  history: 'Write-once: confirmed_at, revoked_at.',
+  references: [{ column: 'user_id', to: 'identity.identity_users' }]
+});
+
+PH.table({
+  id: 'identity.identity_second_factor_checks', domain: 'identity', status: 'planned',
+  name: 'identity_second_factor_checks',
+  summary: 'Every second-factor verification: the evidence trail of sensitive admin actions.',
+  purpose: 'A successful check with purpose step-up is the short-lived proof a sensitive flow consumes.',
+  columns: [
+    { name: 'id', type: 'bigserial', note: '' },
+    { name: 'user_id', type: 'bigint', note: '' },
+    { name: 'purpose', type: 'text', note: 'admin-token or step-up.' },
+    { name: 'succeeded', type: 'boolean', note: '' },
+    { name: 'used_for', type: 'text', note: 'The sensitive operation the proof was spent on (set once).' },
+    { name: 'expires_at', type: 'timestamptz', note: '10 min for a step-up proof.' },
+    { name: 'created_at', type: 'timestamptz', note: '' }
+  ],
+  indexes: ['(user_id, created_at)'],
+  history: 'It is itself the history (append-only; used_for write-once).',
+  references: [{ column: 'user_id', to: 'identity.identity_users' }]
+});
+
+PH.operation({
+  id: 'identity.enroll-totp', domain: 'identity', kind: 'usecase', effect: 'write', status: 'planned',
+  name: 'EnrollTotp / ConfirmTotp',
+  summary: 'Creates a TOTP credential and confirms it with a first valid code.',
+  reads: ['identity.identity_totp_credentials', 'identity.identity_admin_grants'],
+  writes: ['identity.identity_totp_credentials'],
+  rules: [
+    'Phase 1: only the account with an active admin grant may enroll.',
+    'Re-enrollment requires a valid code from the current credential and revokes it.',
+    'The credential is unusable until confirmed.'
+  ],
+  sources: ['B: admin', 'P16§3']
+});
+
+PH.operation({
+  id: 'identity.verify-totp', domain: 'identity', kind: 'usecase', effect: 'write', status: 'planned',
+  name: 'VerifyTotp',
+  summary: 'Verifies a TOTP code; issues the admin-mode token or a 10-minute step-up proof for one sensitive action.',
+  reads: ['identity.identity_totp_credentials', 'identity.identity_admin_grants', 'identity.identity_second_factor_checks'],
+  writes: ['identity.identity_second_factor_checks'],
+  rules: [
+    'Admin-mode tokens exist only after a grant plus a valid code; the normal login alone never elevates.',
+    'A code value is accepted once within its window (replay refused).',
+    'A step-up proof is consumed by exactly one sensitive operation and records what it was used for.',
+    'Every attempt, failed or not, is recorded.'
+  ],
+  limits: [
+    { what: 'Failed codes per user', value: '5 per 15 min, then locked for 15 min (V-03)', source: 'domain' },
+    { what: 'Step-up proof validity', value: '10 min, single use (V-03)', source: 'domain' }
+  ],
+  sources: ['B: admin', 'P16§3', 'P32§7']
+});
