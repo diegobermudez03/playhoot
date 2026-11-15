@@ -1,76 +1,77 @@
-# AI Agent Bootstrap
+# Playhoot backend — technical entry for agents
 
-This file is the entry point for AI agents working on Playhoot.
+Method, plan, product spec and current task live in the workspace one level up:
+`../AGENTS.md`, `../docs/agente/METODO.md`, `../docs/agente/ESTADO.md`. Read those
+first. This file only holds what is specific to this repository.
 
-Before performing non-trivial work:
+## What this repository is
 
-1. Determine your execution surface: CONVERSATIONAL AI, CODEBASE AGENT, or
-   INDEPENDENT REVIEWER. If you have effective access to this repository
-   checkout and can inspect/modify files, run commands, and persist workflow
-   artifacts, you are acting as a Codebase Agent (or, when reviewing
-   read-only, an Independent Reviewer). Role definitions and authority live in
-   `docs/ai/OPERATING_MODEL.md` — do not redefine them here.
-2. Read `docs/ai/OPERATING_MODEL.md`.
-3. Use `docs/ai/KNOWLEDGE_MAP.md` to identify and load only the context
-   relevant to the task.
-4. For a normal natural-language request, use
-   `docs/ai/protocols/CONVERSATIONAL_ORCHESTRATOR.md` before forcing the
-   human to choose a process: search for a matching open initiative or WORK
-   first, then select the internal process that owns the concern. Skip
-   straight to the matching process/protocol only when clearly resuming a
-   known persisted process.
-5. If a process runbook exists for that type of work, use
-   `docs/ai/processes/*` as the human-facing guide and follow the matching
-   `docs/ai/protocols/*` execution protocol. Human process guides remain
-   human-facing; internal execution mechanics live in the protocols.
-6. Inspect actual code, tests, and migrations whenever current implementation
-   behavior matters.
-7. Do not silently resolve contradictions between canonical documentation and implementation. Report them as drift.
-8. Do not treat ideas, proposals, examples, TODOs, or future-looking
-   documentation as accepted decisions.
-9. Understand the product/business reason for material changes before implementing them.
-10. Escalate material product, architecture, domain, persistence, consistency,
-    security, infrastructure, or engineering-standard decisions instead of
-    inventing them during implementation.
-11. Do not scan every Markdown document by default. Load context through the
-    Knowledge Map.
+Go monolith, one deployable unit. Every top-level package is a domain that must
+be able to become its own service.
 
-## Project Status And History
+- `api` — HTTP, WebSocket and MCP entry; request authentication; rate limits.
+- `orchestrator` — writes that cross domains. `composer` — reads that cross domains.
+- `identity`, `game`, `play` (`session`, `runtime`) — traditional domains.
+- `utils`, `logging`, `monitoring` — shared technical packages. `third_party/qjs` — patched QuickJS.
 
-Playhoot's Session Runtime is a real-time runtime that supports discrete and
-continuous games (`play/docs/decisions/SESSION-ADR-0028-real-time-session-runtime-supersedes-discrete-turn-architecture.md`),
-implemented under `play/` (`play/CURRENT_STATE.md`). The previous
-implementation and its documentation were removed or archived.
+The target domain tree and everything each domain owns is in the system
+documentation site (`../docs/sistema/index.html`; this repo's data in `docs/sistema/`).
 
-`docs/archive/pre-realtime-pivot/` holds the history of the previous design
-(cancelled projects, old WORK, superseded decisions, old package contracts).
-Do NOT read it for normal work, and do not treat anything in it as current
-truth. Read it only when the user explicitly asks about the history of the
-project. The old code is in Git at tag `pre-realtime-pivot`.
+## Architecture rules
 
-## Engineering Standards
+- A top-level domain reads and writes only its own tables. No foreign keys across
+  domains; cross-domain references are public identifiers.
+- No direct calls between top-level domains: only through `orchestrator` or `composer`.
+  `api` may call a single-domain operation directly.
+- No database transaction stays open across a call that leaves the domain.
+- Exported signatures of a domain use only that domain's own types
+  (`orchestrator` and `composer` are the exception).
+- A subdomain is used only by its parent.
+- Domain layout: `usecases/<verb>` (one independent operation),
+  `workflows/<name>` (multi-step lifecycle, one `step_*.go` per step),
+  `internal/business/<behavior>` (pure rules), `internal/repo`, `internal/migrations`.
+- Every write has logical business limits owned by its domain. Capacity limits that
+  depend on the plan arrive as parameters from the caller; the domain applies the
+  stricter of received and own.
+- Every row change is traceable (write-once columns or append-only change tables).
+- Every query is scoped and backed by a declared index.
+- Anything asynchronous goes through the shared transactional queue with dead-letter
+  handling (to be built in H1); do not add ad-hoc queues.
+- External providers sit behind a port with a real local or simulated implementation.
+  Never write code meant to be thrown away at integration time.
+- The HTTP endpoint metric reports only the HTTP result. The domain operation
+  declares its own logical-outcome metric.
 
-Canonical reusable engineering standards live under:
+## Engineering standards
 
-`docs/engineering/standards/`
+`docs/engineering/standards/INDEX.md` lists the canonical standards (testing,
+repositories and SQL, data history, idempotency, error handling, logging, metrics,
+object storage, database constraints, code comments, naming). They stay in force.
+Key points: raw SQL for reads/updates with Go constants bound as parameters, never
+literals; inserts with GORM `Create()`; no `CHECK`/FK; table-driven tests with
+`map[string]func`; repository tests against a disposable real database; signed
+URLs only when the backend never touches the bytes.
 
-Use `docs/engineering/standards/INDEX.md` and the Knowledge Map to load only
-the standards relevant to the task.
+Before the first deployment, schema changes edit the original migration in place;
+tell the creator when the local database must be recreated.
 
-Do not infer new canonical standards from recurring implementation patterns.
-Use the Engineering Standard process for new or changed rules.
+## Commands
 
-## Human Review And Temporary Context
+| Action | Command |
+|---|---|
+| Build / vet | `go build ./...` · `go vet ./...` |
+| Tests | `go test ./...` (repository tests skip without a database) |
+| Tests with database | `docker compose up -d postgres`, export `TEST_DATABASE_HOST/PORT/USERNAME/PASSWORD/NAME/SSL_MODE`, then `go test ./...` |
+| Mocks | `go generate ./...` |
+| Run | `docker compose up -d` and `go run .` with `.env` from `.env.example`; game builds need `GAME_TOOLCHAIN_DIR=../playhoot_frontend` and Node |
 
-For non-trivial AI process checkpoints, `HUMAN_REVIEW.md` is the normal human
-review surface.
+`comment_standard_test.go` fails the build if a comment cites internal documents,
+exceeds five lines, or leaks lower-layer names. Run the three commands above before
+every commit.
 
-`AI_CONTEXT.md` is temporary resumable agent context only. It is not canonical
-truth, not implementation authority, and must not contain hidden material
-decisions.
+## Retired
 
-When acting as CODEBASE AGENT or INDEPENDENT REVIEWER, respect an existing
-active workspace under `docs/ai/workspaces/active/`: do not overwrite its
-design authority, and keep its `AI_CONTEXT.md` resume state current at
-meaningful repository-side checkpoints so an interrupted execution can be
-resumed. See `docs/ai/workspaces/README.md`.
+`docs/ai/`, `docs/work/`, `docs/projects/`, `docs/archive/`, `plans/`,
+`CURRENT_STATE.md` files, `HUMAN_REVIEW.md`, `AI_CONTEXT.md` and
+`ENGINEERING_RADAR.md` belong to the previous process. Do not follow or update
+them; task T-003 removes them.
