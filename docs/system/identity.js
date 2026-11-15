@@ -223,7 +223,7 @@ PH.table({
   id: 'identity.identity_resource_grants', domain: 'identity', status: 'implemented',
   name: 'identity_resource_grants',
   summary: 'A single-use grant over an opaque resource, e.g. an asset upload URL handed to an AI.',
-  purpose: 'Short-lived, claimed once; expired-and-unused rows are swept when the same user creates another.',
+  purpose: 'Short-lived, claimed once; rows expired for more than a day are deleted by the hourly sweep on the identity queue.',
   columns: [
     { name: 'id', type: 'bigserial', note: '' },
     { name: 'uuid', type: 'uuid', note: 'External identifier (phg_ token).' },
@@ -236,8 +236,8 @@ PH.table({
     { name: 'used_at', type: 'timestamptz', note: 'Set once, on claim.' },
     { name: 'created_at', type: 'timestamptz', note: '' }
   ],
-  indexes: ['UNIQUE (uuid)', 'UNIQUE (token_sha256)', '(user_id, expires_at)'],
-  history: 'Write-once: used_at. Expired, unused rows older than 1 day are deleted, not kept.',
+  indexes: ['UNIQUE (uuid)', 'UNIQUE (token_sha256)', '(user_id, expires_at)', '(expires_at)'],
+  history: 'Write-once: used_at. Rows expired for more than 1 day are deleted, not kept.',
   references: [{ column: 'user_id', to: 'identity.identity_users' }]
 });
 
@@ -447,9 +447,21 @@ PH.operation({
   summary: 'Single-use grant over an opaque resource; claim marks it used, release discards it.',
   reads: ['identity.identity_resource_grants'],
   writes: ['identity.identity_resource_grants'],
-  rules: ['At most 20 live grants per user (ErrTooManyResourceGrants); older expired-and-unused grants of the same user are swept on create.'],
+  rules: ['At most 20 live grants per user (ErrTooManyResourceGrants); long-expired grants are removed by identity.sweep-resource-grants, not on create.'],
   limits: [{ what: 'Resource grant lifetime / scope size', value: '15 min / 256 bytes', source: 'domain' }],
   sources: []
+});
+
+PH.operation({
+  id: 'identity.sweep-resource-grants', domain: 'identity', kind: 'usecase', effect: 'write', status: 'implemented',
+  name: 'Sweep expired resource grants',
+  summary: 'Hourly periodic task on the identity queue: deletes single-use grants expired for more than a day.',
+  reads: ['identity.identity_resource_grants'],
+  writes: ['identity.identity_resource_grants'],
+  rules: ['Deletes in batches of 500 until none are left; running it again deletes nothing new.', 'Only grants expired for more than 1 day; live and recently expired grants stay.'],
+  limits: [{ what: 'Run interval / retention after expiry', value: '1 h / 1 day', source: 'domain' }],
+  enqueues: ['sweep-resource-grants (periodic re-enqueue, every hour)'],
+  sources: ['B: principles']
 });
 
 PH.operation({

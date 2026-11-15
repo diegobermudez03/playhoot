@@ -20,6 +20,7 @@ var required = map[identity.Operation]identity.Level{
 	identity.OperationCreateGame:            identity.LevelAccount,
 	identity.OperationEditGame:              identity.LevelAccount,
 	identity.OperationConnectAI:             identity.LevelAccount,
+	identity.OperationManageQueues:          identity.LevelAdmin,
 }
 
 // rank orders the levels; a level missing from it satisfies nothing.
@@ -27,6 +28,7 @@ var rank = map[identity.Level]int{
 	identity.LevelAnonymous: 0,
 	identity.LevelGuest:     1,
 	identity.LevelAccount:   2,
+	identity.LevelAdmin:     3,
 }
 
 // Required returns the minimum level operation requires, or false when the

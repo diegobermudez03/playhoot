@@ -18,13 +18,15 @@ import (
 
 	"github.com/diegobermudez03/playhoot/api"
 	apigames "github.com/diegobermudez03/playhoot/api/games"
+	composerdeadtasks "github.com/diegobermudez03/playhoot/composer/deadtasks"
 	composergameauthoring "github.com/diegobermudez03/playhoot/composer/gameauthoring"
-	"github.com/diegobermudez03/playhoot/game/usecases/checkplayability"
 	"github.com/diegobermudez03/playhoot/discovery/usecases/templatecatalog"
+	"github.com/diegobermudez03/playhoot/game/usecases/checkplayability"
 	"github.com/diegobermudez03/playhoot/game/usecases/findeditableversion"
 	"github.com/diegobermudez03/playhoot/game/usecases/findtemplate"
 	"github.com/diegobermudez03/playhoot/game/workflows/gamecard"
 	"github.com/diegobermudez03/playhoot/game/workflows/gamelifecycle"
+	"github.com/diegobermudez03/playhoot/identity"
 	"github.com/diegobermudez03/playhoot/identity/loginproviders"
 	"github.com/diegobermudez03/playhoot/identity/usecases/aiauthorization"
 	"github.com/diegobermudez03/playhoot/identity/usecases/authorize"
@@ -32,10 +34,12 @@ import (
 	"github.com/diegobermudez03/playhoot/identity/usecases/endsession"
 	"github.com/diegobermudez03/playhoot/identity/usecases/listoperations"
 	"github.com/diegobermudez03/playhoot/identity/usecases/refreshcredentials"
-	"github.com/diegobermudez03/playhoot/identity/usecases/resourcelinks"
 	"github.com/diegobermudez03/playhoot/identity/usecases/resourcegrants"
+	"github.com/diegobermudez03/playhoot/identity/usecases/resourcelinks"
 	"github.com/diegobermudez03/playhoot/identity/usecases/setdisplayname"
+	"github.com/diegobermudez03/playhoot/identity/usecases/sweepresourcegrants"
 	"github.com/diegobermudez03/playhoot/identity/workflows/accountlogin"
+	orchestratordeadtasks "github.com/diegobermudez03/playhoot/orchestrator/deadtasks"
 	"github.com/diegobermudez03/playhoot/orchestrator/gameauthoring"
 	"github.com/diegobermudez03/playhoot/orchestrator/playlifecycle"
 	"github.com/diegobermudez03/playhoot/play/runtime/sandbox"
@@ -52,18 +56,19 @@ import (
 	"github.com/diegobermudez03/playhoot/play/session/usecases/checklivesession"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/checkplayerjoin"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/frontendaccess"
+	"github.com/diegobermudez03/playhoot/play/session/usecases/keepsimulationresults"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/loadruntimemanifest"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/loadsessionlimits"
+	"github.com/diegobermudez03/playhoot/play/session/usecases/readsdkguide"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/recordgamefault"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/recordlimithits"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/resolvejoincode"
-	"github.com/diegobermudez03/playhoot/play/session/usecases/keepsimulationresults"
-	"github.com/diegobermudez03/playhoot/play/session/usecases/readsdkguide"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/storereplaychunk"
 	"github.com/diegobermudez03/playhoot/play/session/workflows/previewlifecycle"
 	"github.com/diegobermudez03/playhoot/play/session/workflows/sessionlifecycle"
 	"github.com/diegobermudez03/playhoot/play/session/workflows/versionbuilding"
 	"github.com/diegobermudez03/playhoot/play/session/workflows/versiondrafting"
+	"github.com/diegobermudez03/playhoot/utils/txqueue"
 	"github.com/joho/godotenv"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -231,6 +236,10 @@ func run() error {
 	toolchain := gametoolchain.Open(envVars.GameToolchainDir)
 	versionBuilding := versionbuilding.New(db, store, toolchain, buildWakeUps, versionbuilding.DefaultWorkers)
 	resourceLinks := resourcelinks.New(db)
+	// Every domain's queue lives in this registry: its workers run below and
+	// admin reads its dead letter queues through it.
+	queues := txqueue.NewRegistry(db, txqueue.DefaultWorkerConfig)
+	sweepresourcegrants.New(db).Register(queues.Queue(identity.QueueDomain))
 	// Previews run on the live controller pinned to a draft build; they are
 	// never Sessions (play/session/workflows/previewlifecycle).
 	previews := liveconnection.NewPreviews(liveconnection.DefaultMaxLivePreviews, sandboxHost, previewlifecycle.New(db, versionDrafting))
@@ -303,6 +312,7 @@ func run() error {
 			Owner: gameAuthoring, Status: gameAuthoringReads, Resolver: resourceLinks, Grants: resourcegrants.New(db), Guide: readsdkguide.New(envVars.GameToolchainDir, toolchain), PublicBaseURL: envVars.PublicAPIBaseURL, PublicWebBaseURL: envVars.PublicWebBaseURL,
 		}, Cards: apigames.Cards{Card: gameCards, Publisher: gameAuthoring}},
 		api.AI{Server: aiAuthorization},
+		api.Queues{Reader: composerdeadtasks.New(queues), Manager: orchestratordeadtasks.New(queues)},
 		api.Config{
 			CORSAllowedOrigins:      envVars.CORSAllowedOrigins,
 			WebSocketAllowedOrigins: envVars.WebSocketAllowedOrigins,
@@ -349,6 +359,19 @@ func run() error {
 	defer func() {
 		stopBuilding()
 		<-building
+	}()
+
+	// Every instance runs every domain queue's worker; a task is claimed by
+	// one worker at a time.
+	queueCtx, stopQueues := context.WithCancel(context.Background())
+	queueing := make(chan struct{})
+	go func() {
+		defer close(queueing)
+		queues.Run(queueCtx)
+	}()
+	defer func() {
+		stopQueues()
+		<-queueing
 	}()
 
 	serveErr := make(chan error, 1)

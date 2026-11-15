@@ -66,14 +66,6 @@ func (r *Repo) LockUser(ctx context.Context, tx *gorm.DB, userUUID string) (int6
 	return ids[0], true, nil
 }
 
-// DeleteExpiredGrants deletes the User's grants that expired before before.
-func (r *Repo) DeleteExpiredGrants(ctx context.Context, tx *gorm.DB, userID int64, before time.Time) error {
-	if err := tx.WithContext(ctx).Exec(`DELETE FROM identity_resource_grants WHERE user_id = ? AND expires_at < ?`, userID, before).Error; err != nil {
-		return fmt.Errorf("deleting expired resource grants: %s", err)
-	}
-	return nil
-}
-
 // CountLiveGrants counts the User's grants neither used nor expired at now.
 func (r *Repo) CountLiveGrants(ctx context.Context, tx *gorm.DB, userID int64, now time.Time) (int64, error) {
 	var count int64

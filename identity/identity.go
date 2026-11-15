@@ -7,6 +7,9 @@ import (
 	"time"
 )
 
+// QueueDomain names Identity's queue: its table is identity_queue_tasks.
+const QueueDomain = "identity"
+
 // Operation names a coarse operation Identity decides whether a caller may
 // perform at all. Object-level permissions (for example, whether a caller
 // created a specific Session) are not decided by Identity.
@@ -51,10 +54,14 @@ const (
 	// caller's games and managing the AI connections they approved. It
 	// requires a real account.
 	OperationConnectAI Operation = "CONNECT_AI"
+
+	// OperationManageQueues is reading every domain's dead letter queue and
+	// retrying or cancelling dead tasks. It requires the administrator.
+	OperationManageQueues Operation = "MANAGE_QUEUES"
 )
 
 // Level is how strongly a caller is authenticated, on the ordered scale
-// anonymous < guest < account.
+// anonymous < guest < account < admin.
 type Level string
 
 const (
@@ -66,6 +73,9 @@ const (
 
 	// LevelAccount is a User with a registered account.
 	LevelAccount Level = "account"
+
+	// LevelAdmin is the administrator in admin mode, after a second factor.
+	LevelAdmin Level = "admin"
 )
 
 // OperationLevel is the minimum Level an Operation requires. It states

@@ -555,7 +555,7 @@ PH.flow({
   sources: ['B: admin', 'P16§3']
 });
 PH.flow({
-  id: 'admin-dlqs', status: 'planned', coordinator: 'composer', effect: 'read',
+  id: 'admin-dlqs', status: 'implemented', coordinator: 'composer', effect: 'read',
   name: 'Admin dead letter queues',
   summary: 'Every domain\'s dead letter queue in one view, through the txqueue registry (infrastructure tables, D-013).',
   steps: [
@@ -567,7 +567,7 @@ PH.flow({
   sources: ['B: principles']
 });
 PH.flow({
-  id: 'manage-dead-task', status: 'planned', coordinator: 'orchestrator', effect: 'write',
+  id: 'manage-dead-task', status: 'implemented', coordinator: 'orchestrator', effect: 'write',
   name: 'Retry or cancel a dead task',
   summary: 'The admin retries (back to pending) or cancels a dead task on its owning domain queue, through the txqueue registry.',
   steps: [

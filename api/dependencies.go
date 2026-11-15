@@ -14,6 +14,7 @@ import (
 	"github.com/diegobermudez03/playhoot/orchestrator/gameauthoring"
 	"github.com/diegobermudez03/playhoot/play/runtime"
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
+	"github.com/diegobermudez03/playhoot/utils/txqueue"
 )
 
 // guestCreator is Identity's guest creation.
@@ -165,6 +166,23 @@ const mcpPath = "/mcp"
 // MCPResource is the MCP resource identifier for an API reached at base.
 func MCPResource(base string) string {
 	return strings.TrimRight(base, "/") + mcpPath
+}
+
+// Queues is admin's access to every domain's dead letter queue.
+type Queues struct {
+	Reader  deadTaskReader
+	Manager deadTaskManager
+}
+
+// deadTaskReader lists every domain's dead tasks.
+type deadTaskReader interface {
+	ListDeadTasks(ctx context.Context) (txqueue.DeadTasks, error)
+}
+
+// deadTaskManager retries or cancels a dead task.
+type deadTaskManager interface {
+	RetryDeadTask(ctx context.Context, taskUUID string) (txqueue.DeadTaskOutcome, error)
+	CancelDeadTask(ctx context.Context, taskUUID string) (txqueue.DeadTaskOutcome, error)
 }
 
 // AI is what AI applications' OAuth access and the MCP server need:

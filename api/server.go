@@ -21,6 +21,7 @@ import (
 	apimcp "github.com/diegobermudez03/playhoot/api/mcp"
 	apioauth "github.com/diegobermudez03/playhoot/api/oauth"
 	apiplay "github.com/diegobermudez03/playhoot/api/play"
+	apiqueues "github.com/diegobermudez03/playhoot/api/queues"
 	"github.com/diegobermudez03/playhoot/logging"
 )
 
@@ -61,7 +62,7 @@ func ParseAllowedOrigins(raw string) ([]string, error) {
 }
 
 // NewServer constructs a Server exposing every route group's endpoints.
-func NewServer(authorizer authorizer, guests guestCreator, operations operationLister, refreshes credentialRefresher, sessionEnder sessionEnder, displayNames displayNameSetter, logins Logins, sessionCreator sessionCreator, owners ownerLocator, admins adminAttacher, players playerAttacher, joinCodes joinCodeResolver, games Games, ai AI, config Config) *Server {
+func NewServer(authorizer authorizer, guests guestCreator, operations operationLister, refreshes credentialRefresher, sessionEnder sessionEnder, displayNames displayNameSetter, logins Logins, sessionCreator sessionCreator, owners ownerLocator, admins adminAttacher, players playerAttacher, joinCodes joinCodeResolver, games Games, ai AI, queues Queues, config Config) *Server {
 	mux := http.NewServeMux()
 	liveConnections := live.New(config.MaxLiveConnections)
 	gamesHandler := apigames.NewHandler(authorizer, games.Creator, games.Editor, games.Reader, games.AILinks, games.Cards, games.Reader)
@@ -76,6 +77,7 @@ func NewServer(authorizer authorizer, guests guestCreator, operations operationL
 		apiplay.NewHandler(authorizer, sessionCreator, owners, admins, players, joinCodes, games.Previews, liveConnections, wsx.OriginPatterns(config.WebSocketAllowedOrigins)),
 		gamesHandler,
 		apioauth.NewHandler(authorizer, ai.Server, apioauth.Config{Issuer: apiBase, Resource: apiBase + mcpPath, Documentation: guide}),
+		apiqueues.NewHandler(authorizer, queues.Reader, queues.Manager),
 		apimcp.NewHandler(ai.Server, gamesHandler, apimcp.Config{ResourceMetadataURL: apiBase + "/.well-known/oauth-protected-resource" + mcpPath, GuideURL: guide}),
 	}
 	clients := throttle.ClientAddress{TrustedProxies: config.TrustedProxyHops}

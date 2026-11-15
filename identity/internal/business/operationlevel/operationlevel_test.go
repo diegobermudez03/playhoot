@@ -40,10 +40,16 @@ func TestSatisfies(t *testing.T) {
 			return test{level: identity.LevelAnonymous, required: identity.LevelGuest, expected: false}
 		},
 		"unknown_level_satisfies_nothing": func(t *testing.T) test {
-			return test{level: "admin", required: identity.LevelAnonymous, expected: false}
+			return test{level: "root", required: identity.LevelAnonymous, expected: false}
 		},
 		"unknown_requirement_is_never_satisfied": func(t *testing.T) test {
-			return test{level: identity.LevelAccount, required: "admin", expected: false}
+			return test{level: identity.LevelAccount, required: "root", expected: false}
+		},
+		"account_does_not_satisfy_admin": func(t *testing.T) test {
+			return test{level: identity.LevelAccount, required: identity.LevelAdmin, expected: false}
+		},
+		"admin_satisfies_account": func(t *testing.T) test {
+			return test{level: identity.LevelAdmin, required: identity.LevelAccount, expected: true}
 		},
 	}
 
@@ -64,6 +70,7 @@ func TestCatalog(t *testing.T) {
 		{Operation: identity.OperationEditGame, RequiredLevel: identity.LevelAccount},
 		{Operation: identity.OperationJoinSessionAsAdmin, RequiredLevel: identity.LevelAccount},
 		{Operation: identity.OperationJoinSessionAsPlayer, RequiredLevel: identity.LevelGuest},
+		{Operation: identity.OperationManageQueues, RequiredLevel: identity.LevelAdmin},
 		{Operation: identity.OperationReportClientTelemetry, RequiredLevel: identity.LevelGuest},
 		{Operation: identity.OperationSetOwnDisplayName, RequiredLevel: identity.LevelGuest},
 		{Operation: identity.OperationViewOwnIdentity, RequiredLevel: identity.LevelGuest},

@@ -26,7 +26,6 @@ import (
 // grantStore persists grants.
 type grantStore interface {
 	LockUser(ctx context.Context, tx *gorm.DB, userUUID string) (int64, bool, error)
-	DeleteExpiredGrants(ctx context.Context, tx *gorm.DB, userID int64, before time.Time) error
 	CountLiveGrants(ctx context.Context, tx *gorm.DB, userID int64, now time.Time) (int64, error)
 	CreateGrant(ctx context.Context, tx *gorm.DB, grantUUID string, userID int64, kind string, resourceID string, scope string, tokenSHA256 string, createdAt time.Time, expiresAt time.Time) error
 	UseGrant(ctx context.Context, tokenSHA256 string, now time.Time) (*internalrepo.Grant, error)
@@ -43,10 +42,6 @@ var (
 		operationLabel,
 	)
 )
-
-// expiredRetention is how long an expired grant is kept before its User's
-// next grant deletes it.
-const expiredRetention = 24 * time.Hour
 
 // Service is Identity's single-use grants use case.
 type Service struct {
@@ -85,9 +80,6 @@ func (s *Service) CreateResourceGrant(ctx context.Context, userUUID string, kind
 		}
 		if !found {
 			return struct{}{}, identity.ErrUserNotFound
-		}
-		if err := s.grants.DeleteExpiredGrants(ctx, tx, userID, now.Add(-expiredRetention)); err != nil {
-			return struct{}{}, err
 		}
 		live, err := s.grants.CountLiveGrants(ctx, tx, userID, now)
 		if err != nil {

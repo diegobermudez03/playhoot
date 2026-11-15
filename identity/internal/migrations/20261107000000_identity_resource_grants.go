@@ -29,6 +29,8 @@ func migration20261107000000IdentityResourceGrants() *gormigrate.Migration {
 				)`,
 				// Counting a User's live grants, and deleting their expired ones.
 				`CREATE INDEX identity_resource_grants_user_idx ON identity_resource_grants (user_id, expires_at)`,
+				// The periodic sweep of long-expired grants.
+				`CREATE INDEX identity_resource_grants_expires_idx ON identity_resource_grants (expires_at)`,
 			}
 			for _, statement := range statements {
 				if err := tx.Exec(statement).Error; err != nil {

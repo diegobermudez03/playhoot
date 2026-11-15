@@ -72,20 +72,6 @@ func (mr *MockgrantStoreMockRecorder) CreateGrant(ctx, tx, grantUUID, userID, ki
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateGrant", reflect.TypeOf((*MockgrantStore)(nil).CreateGrant), ctx, tx, grantUUID, userID, kind, resourceID, scope, tokenSHA256, createdAt, expiresAt)
 }
 
-// DeleteExpiredGrants mocks base method.
-func (m *MockgrantStore) DeleteExpiredGrants(ctx context.Context, tx *gorm.DB, userID int64, before time.Time) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DeleteExpiredGrants", ctx, tx, userID, before)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// DeleteExpiredGrants indicates an expected call of DeleteExpiredGrants.
-func (mr *MockgrantStoreMockRecorder) DeleteExpiredGrants(ctx, tx, userID, before any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteExpiredGrants", reflect.TypeOf((*MockgrantStore)(nil).DeleteExpiredGrants), ctx, tx, userID, before)
-}
-
 // FindGrantByHash mocks base method.
 func (m *MockgrantStore) FindGrantByHash(ctx context.Context, tokenSHA256 string) (*repo.Grant, error) {
 	m.ctrl.T.Helper()
