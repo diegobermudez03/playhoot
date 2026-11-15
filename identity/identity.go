@@ -58,6 +58,10 @@ const (
 	// OperationManageQueues is reading every domain's dead letter queue and
 	// retrying or cancelling dead tasks. It requires the administrator.
 	OperationManageQueues Operation = "MANAGE_QUEUES"
+
+	// OperationUseSecondFactor is enrolling and verifying the caller's second
+	// factor. It requires a real account; only the administrator gets past it.
+	OperationUseSecondFactor Operation = "USE_SECOND_FACTOR"
 )
 
 // Level is how strongly a caller is authenticated, on the ordered scale
@@ -93,8 +97,8 @@ type User struct {
 	// DisplayName is how other people see the User; Identity decides it.
 	DisplayName string
 
-	// Level is how strongly the User is authenticated: LevelGuest or
-	// LevelAccount.
+	// Level is how strongly the User is authenticated: LevelGuest,
+	// LevelAccount, or LevelAdmin in an admin-mode token.
 	Level Level
 }
 
@@ -492,3 +496,102 @@ type AIConnection struct {
 	CreatedAt    time.Time
 	LastUsedAt   time.Time
 }
+
+// SecondFactorOutcome is what a second-factor operation decided.
+type SecondFactorOutcome string
+
+const (
+	// SecondFactorAccepted means the operation succeeded.
+	SecondFactorAccepted SecondFactorOutcome = "accepted"
+
+	// SecondFactorNotAdmin means the caller holds no administrator grant.
+	SecondFactorNotAdmin SecondFactorOutcome = "not_admin"
+
+	// SecondFactorNotEnrolled means the caller has no confirmed credential.
+	SecondFactorNotEnrolled SecondFactorOutcome = "not_enrolled"
+
+	// SecondFactorNoPendingEnrollment means there is no recent unconfirmed
+	// enrollment to confirm: it must start again.
+	SecondFactorNoPendingEnrollment SecondFactorOutcome = "no_pending_enrollment"
+
+	// SecondFactorCurrentCodeRequired means replacing a confirmed credential
+	// needs a valid code from it.
+	SecondFactorCurrentCodeRequired SecondFactorOutcome = "current_code_required"
+
+	// SecondFactorInvalidCode means the code is wrong or was already used.
+	SecondFactorInvalidCode SecondFactorOutcome = "invalid_code"
+
+	// SecondFactorLocked means too many recent wrong codes: no code is
+	// evaluated until LockedUntil.
+	SecondFactorLocked SecondFactorOutcome = "locked"
+)
+
+// SecondFactorPurpose is what a verified code is exchanged for.
+type SecondFactorPurpose string
+
+const (
+	// PurposeAdminToken exchanges the code for an admin-mode access token.
+	PurposeAdminToken SecondFactorPurpose = "admin_token"
+
+	// PurposeStepUp exchanges the code for a single-use step-up proof one
+	// sensitive action consumes.
+	PurposeStepUp SecondFactorPurpose = "step_up"
+)
+
+// TotpEnrollment is a started enrollment. Secret and URI are shown only
+// here and only when Outcome is SecondFactorAccepted.
+type TotpEnrollment struct {
+	Outcome     SecondFactorOutcome
+	Secret      string
+	URI         string
+	ExpiresAt   time.Time
+	LockedUntil time.Time
+}
+
+// TotpConfirmation is what confirming an enrollment decided.
+type TotpConfirmation struct {
+	Outcome     SecondFactorOutcome
+	LockedUntil time.Time
+}
+
+// TotpVerification is what verifying a code decided. When accepted,
+// Credentials holds the admin-mode token (no refresh token) for
+// PurposeAdminToken, or StepUpProof and its expiry for PurposeStepUp.
+type TotpVerification struct {
+	Outcome      SecondFactorOutcome
+	LockedUntil  time.Time
+	Credentials  Credentials
+	StepUpProof  string
+	StepUpExpiry time.Time
+}
+
+// StepUpOutcome is what consuming a step-up proof turned out to be.
+type StepUpOutcome string
+
+const (
+	// StepUpConsumed means the proof was live and is now spent on the action.
+	StepUpConsumed StepUpOutcome = "consumed"
+
+	// StepUpUnknown means no proof of this User has this value.
+	StepUpUnknown StepUpOutcome = "unknown"
+
+	// StepUpExpired means the proof outlived its lifetime unused.
+	StepUpExpired StepUpOutcome = "expired"
+
+	// StepUpUsed means the proof was already spent.
+	StepUpUsed StepUpOutcome = "used"
+)
+
+// AdminGrantOutcome is what seeding the administrator grant did.
+type AdminGrantOutcome string
+
+const (
+	// AdminGrantCreated means the account now holds the grant.
+	AdminGrantCreated AdminGrantOutcome = "created"
+
+	// AdminGrantKept means the account already held it.
+	AdminGrantKept AdminGrantOutcome = "kept"
+
+	// AdminGrantNotAccount means the User does not exist or is a guest.
+	AdminGrantNotAccount AdminGrantOutcome = "not_account"
+)

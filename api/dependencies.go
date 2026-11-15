@@ -168,6 +168,13 @@ func MCPResource(base string) string {
 	return strings.TrimRight(base, "/") + mcpPath
 }
 
+// secondFactor enrolls and verifies the administrator's TOTP credential.
+type secondFactor interface {
+	EnrollTotp(ctx context.Context, userUUID string, currentCode string) (identity.TotpEnrollment, error)
+	ConfirmTotp(ctx context.Context, userUUID string, code string) (identity.TotpConfirmation, error)
+	VerifyTotp(ctx context.Context, userUUID string, code string, purpose identity.SecondFactorPurpose) (identity.TotpVerification, error)
+}
+
 // Queues is admin's access to every domain's dead letter queue.
 type Queues struct {
 	Reader  deadTaskReader

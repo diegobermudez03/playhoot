@@ -22,6 +22,7 @@ import (
 	apioauth "github.com/diegobermudez03/playhoot/api/oauth"
 	apiplay "github.com/diegobermudez03/playhoot/api/play"
 	apiqueues "github.com/diegobermudez03/playhoot/api/queues"
+	apisecondfactor "github.com/diegobermudez03/playhoot/api/secondfactor"
 	"github.com/diegobermudez03/playhoot/logging"
 )
 
@@ -62,7 +63,7 @@ func ParseAllowedOrigins(raw string) ([]string, error) {
 }
 
 // NewServer constructs a Server exposing every route group's endpoints.
-func NewServer(authorizer authorizer, guests guestCreator, operations operationLister, refreshes credentialRefresher, sessionEnder sessionEnder, displayNames displayNameSetter, logins Logins, sessionCreator sessionCreator, owners ownerLocator, admins adminAttacher, players playerAttacher, joinCodes joinCodeResolver, games Games, ai AI, queues Queues, config Config) *Server {
+func NewServer(authorizer authorizer, guests guestCreator, operations operationLister, refreshes credentialRefresher, sessionEnder sessionEnder, displayNames displayNameSetter, logins Logins, sessionCreator sessionCreator, owners ownerLocator, admins adminAttacher, players playerAttacher, joinCodes joinCodeResolver, games Games, ai AI, queues Queues, secondFactor secondFactor, config Config) *Server {
 	mux := http.NewServeMux()
 	liveConnections := live.New(config.MaxLiveConnections)
 	gamesHandler := apigames.NewHandler(authorizer, games.Creator, games.Editor, games.Reader, games.AILinks, games.Cards, games.Reader)
@@ -78,6 +79,7 @@ func NewServer(authorizer authorizer, guests guestCreator, operations operationL
 		gamesHandler,
 		apioauth.NewHandler(authorizer, ai.Server, apioauth.Config{Issuer: apiBase, Resource: apiBase + mcpPath, Documentation: guide}),
 		apiqueues.NewHandler(authorizer, queues.Reader, queues.Manager),
+		apisecondfactor.NewHandler(authorizer, secondFactor),
 		apimcp.NewHandler(ai.Server, gamesHandler, apimcp.Config{ResourceMetadataURL: apiBase + "/.well-known/oauth-protected-resource" + mcpPath, GuideURL: guide}),
 	}
 	clients := throttle.ClientAddress{TrustedProxies: config.TrustedProxyHops}

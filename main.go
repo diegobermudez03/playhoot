@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
@@ -15,6 +17,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/diegobermudez03/playhoot/api"
 	apigames "github.com/diegobermudez03/playhoot/api/games"
@@ -32,10 +36,12 @@ import (
 	"github.com/diegobermudez03/playhoot/identity/usecases/authorize"
 	"github.com/diegobermudez03/playhoot/identity/usecases/createguest"
 	"github.com/diegobermudez03/playhoot/identity/usecases/endsession"
+	"github.com/diegobermudez03/playhoot/identity/usecases/grantadmin"
 	"github.com/diegobermudez03/playhoot/identity/usecases/listoperations"
 	"github.com/diegobermudez03/playhoot/identity/usecases/refreshcredentials"
 	"github.com/diegobermudez03/playhoot/identity/usecases/resourcegrants"
 	"github.com/diegobermudez03/playhoot/identity/usecases/resourcelinks"
+	"github.com/diegobermudez03/playhoot/identity/usecases/secondfactor"
 	"github.com/diegobermudez03/playhoot/identity/usecases/setdisplayname"
 	"github.com/diegobermudez03/playhoot/identity/usecases/sweepresourcegrants"
 	"github.com/diegobermudez03/playhoot/identity/workflows/accountlogin"
@@ -110,6 +116,15 @@ type envVariables struct {
 	// in production; elsewhere a random key is generated when unset, so access
 	// tokens do not survive a restart (refresh tokens do).
 	IdentityAccessTokenKey []byte
+
+	// IdentityTotpKey seals second-factor secrets at rest (IDENTITY_TOTP_KEY,
+	// 64 hex characters). Required in production; elsewhere a fixed
+	// development key is used when unset.
+	IdentityTotpKey []byte
+
+	// IdentityAdminUserUUID is the account made the administrator at
+	// startup (IDENTITY_ADMIN_USER_UUID); empty grants nothing.
+	IdentityAdminUserUUID string
 
 	// IdentityLocalProvider enables the fictitious local sign-in provider, for
 	// development and tests. Never in production.
@@ -240,6 +255,17 @@ func run() error {
 	// admin reads its dead letter queues through it.
 	queues := txqueue.NewRegistry(db, txqueue.DefaultWorkerConfig)
 	sweepresourcegrants.New(db).Register(queues.Queue(identity.QueueDomain))
+	if envVars.IdentityAdminUserUUID != "" {
+		outcome, err := grantadmin.New(db).EnsureAdmin(context.Background(), envVars.IdentityAdminUserUUID)
+		if err != nil {
+			return fmt.Errorf("granting the administrator: %w", err)
+		}
+		log.Printf("administrator grant for IDENTITY_ADMIN_USER_UUID: %s", outcome)
+	}
+	secondFactor, err := secondfactor.New(db, envVars.IdentityTotpKey, envVars.IdentityAccessTokenKey)
+	if err != nil {
+		return fmt.Errorf("creating second factor: %w", err)
+	}
 	// Previews run on the live controller pinned to a draft build; they are
 	// never Sessions (play/session/workflows/previewlifecycle).
 	previews := liveconnection.NewPreviews(liveconnection.DefaultMaxLivePreviews, sandboxHost, previewlifecycle.New(db, versionDrafting))
@@ -313,6 +339,7 @@ func run() error {
 		}, Cards: apigames.Cards{Card: gameCards, Publisher: gameAuthoring}},
 		api.AI{Server: aiAuthorization},
 		api.Queues{Reader: composerdeadtasks.New(queues), Manager: orchestratordeadtasks.New(queues)},
+		secondFactor,
 		api.Config{
 			CORSAllowedOrigins:      envVars.CORSAllowedOrigins,
 			WebSocketAllowedOrigins: envVars.WebSocketAllowedOrigins,
@@ -604,6 +631,28 @@ func readIdentityVariables(envVars *envVariables) error {
 	}
 	if len(envVars.IdentityAccessTokenKey) < 32 {
 		return fmt.Errorf("IDENTITY_ACCESS_TOKEN_KEY must have at least 32 bytes")
+	}
+
+	totpKey := strings.TrimSpace(os.Getenv("IDENTITY_TOTP_KEY"))
+	switch {
+	case totpKey != "":
+		decoded, err := hex.DecodeString(totpKey)
+		if err != nil || len(decoded) != 32 {
+			return fmt.Errorf("IDENTITY_TOTP_KEY must be 64 hex characters")
+		}
+		envVars.IdentityTotpKey = decoded
+	case production:
+		return fmt.Errorf("IDENTITY_TOTP_KEY is required in production")
+	default:
+		developmentKey := sha256.Sum256([]byte("playhoot development totp key"))
+		envVars.IdentityTotpKey = developmentKey[:]
+		log.Printf("IDENTITY_TOTP_KEY unset: sealing second-factor secrets with the development key")
+	}
+	envVars.IdentityAdminUserUUID = strings.TrimSpace(os.Getenv("IDENTITY_ADMIN_USER_UUID"))
+	if envVars.IdentityAdminUserUUID != "" {
+		if _, err := uuid.Parse(envVars.IdentityAdminUserUUID); err != nil {
+			return fmt.Errorf("IDENTITY_ADMIN_USER_UUID must be a user UUID")
+		}
 	}
 
 	localProvider := strings.TrimSpace(os.Getenv("IDENTITY_LOCAL_PROVIDER"))

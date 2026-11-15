@@ -73,6 +73,7 @@ func TestCatalog(t *testing.T) {
 		{Operation: identity.OperationManageQueues, RequiredLevel: identity.LevelAdmin},
 		{Operation: identity.OperationReportClientTelemetry, RequiredLevel: identity.LevelGuest},
 		{Operation: identity.OperationSetOwnDisplayName, RequiredLevel: identity.LevelGuest},
+		{Operation: identity.OperationUseSecondFactor, RequiredLevel: identity.LevelAccount},
 		{Operation: identity.OperationViewOwnIdentity, RequiredLevel: identity.LevelGuest},
 	}, Catalog())
 }
