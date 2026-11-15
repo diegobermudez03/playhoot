@@ -1,15 +1,29 @@
-// Domain: game (Game Management). Only what the create-session path needs; the rest is loaded by a later task.
+// Domain: game (Game Management). Existing detail is loaded by T-004; the planned part by milestone designs.
 PH.domain({
   id: 'game', parent: null, kind: 'traditional', status: 'implemented',
   name: 'Game',
-  summary: 'The authoring life of a game: card, editions, publishing and visibility.',
+  summary: 'The logical game: card, owner, visibility, reuse permission, classification, and the catalog Discovery searches.',
   responsibilities: [
-    'Keep the game card: name, description, images, visibility.',
-    'Open editions and publish them.',
-    'Decide who may play or edit a game.'
+    'Keep the game card: name, description, cover image, visibility, academic mark, one category and tags.',
+    'Know who owns each game and apply holding and creation limits.',
+    'Open editions; hold which version + card combination is approved for Discovery (the review decision belongs to moderation).',
+    'Own the template permission and its provenance and credits chain; keep the featured-template selection.',
+    'Record the private-content declaration of each game.',
+    'Answer Discovery and search: popular, categories, tags, language, template filter, text; approved content only.',
+    'Decide who may play or edit a game (visibility, ownership).',
+    'Record creations as they actually happen (its own usage count).'
   ],
-  doesNotKnow: ['Scripts, executable versions and Sessions (they belong to Play).'],
-  sources: []
+  doesNotKnow: [
+    'Scripts, assets and executable versions (play.versions) and Sessions (play.session).',
+    'Classes and teacher libraries (classroom references games by identifier).',
+    'Review queues and measures (moderation): game stores the resulting state, not the decision.',
+    'Prices and allowances (plan passes capacity limits with each call).'
+  ],
+  references: [
+    'Identity: the owner of each game (user identifier).',
+    'Play: the version approved or offered, by version identifier.'
+  ],
+  sources: ['B: game', 'P04', 'P05', 'P14§2', 'P15§1']
 });
 
 PH.table({

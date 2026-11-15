@@ -5,11 +5,13 @@ PH.domain({
   summary: 'Entry point from outside: HTTP, WebSocket and MCP routes that hand each request to one flow or operation.',
   responsibilities: [
     'Authenticate the caller and check the operation level before anything else.',
-    'Limit requests per user and per client address.',
-    'Call one orchestrator flow, composer read, or single-domain operation per request.'
+    'Limit requests per user and per client address (network limits).',
+    'Call one orchestrator flow, composer read, or single-domain operation per request.',
+    'Map WebSocket and MCP connections to logical users; domains only see their own realtime interface.',
+    'Report metrics at the network level only (path, time, response code).'
   ],
-  doesNotKnow: ['Business rules of any domain.'],
-  sources: []
+  doesNotKnow: ['Business rules of any domain.', 'What an HTTP result means for the business (each domain has its own outcome metric).'],
+  sources: ['B: api']
 });
 
 PH.endpoint({

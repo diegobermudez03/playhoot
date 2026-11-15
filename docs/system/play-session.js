@@ -3,14 +3,23 @@
 PH.domain({
   id: 'play.session', parent: 'play', kind: 'traditional', status: 'implemented',
   name: 'Play session',
-  summary: 'Durable state of Sessions, game versions, drafts, builds, previews and replays.',
+  summary: 'A Session and its lifecycle: lobby, participants, start, closing reasons, original results and history.',
   responsibilities: [
-    'Create Sessions, start them and end them; it is the only path to an end state.',
-    'Issue and release join codes.',
-    'Keep the executable version each Session is pinned to.'
+    'Create Sessions, start them and end them; it is the only path to an end state (completion, host cancellation, expiration, abandonment, technical interruption).',
+    'Issue and release join codes and links; open and close admissions.',
+    'Keep the executable version each Session is pinned to.',
+    'Know participants: who joined, left, was kicked (a kicked identity does not return) or disconnected, with the 60 s seat margin.',
+    'Enforce the duration limits (lobby 30 min, inactivity 10 min, room 4 h).',
+    'Keep the original result per participant delivered by the game, untouched.',
+    'Answer the history of played and hosted Sessions.',
+    'Repeat a closed Session as a new lobby with the same game, version and configuration.'
   ],
-  doesNotKnow: ['Who may play a game (Game decides).', 'Live execution (play.runtime).'],
-  sources: ['P04§3', 'P06']
+  doesNotKnow: [
+    'Who may play a game (game decides).',
+    'Live execution (play.runtime).',
+    'Whether a Session belongs to a class or what a result means academically (classroom).'
+  ],
+  sources: ['B: session', 'P04§3', 'P06', 'P08§2', 'P15§2']
 });
 
 var SESSION_LIFECYCLE = {
