@@ -6,7 +6,7 @@ This index routes engineers and AI agents to accepted reusable engineering stand
 
 - Load only standards relevant to the current task.
 - Absence of a standard does not allow an AI to invent one.
-- Use `docs/ai/processes/ENGINEERING_STANDARD.md` to create or change a reusable standard.
+- A reusable standard is created or changed only through a technical decision recorded in `docs/agent/DECISIONS.md` of the workspace.
 - Global architecture rules remain owned by `ARCHITECTURE.md`; do not duplicate them here.
 - Implementation patterns observed in code are not canonical merely because they exist.
 

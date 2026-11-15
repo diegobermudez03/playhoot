@@ -2,7 +2,7 @@
 
 Status: CANONICAL ENGINEERING STANDARD
 
-This standard owns the reusable distinction between natural and request/command idempotency, required-token semantics, replay/conflict rules, and idempotency responsibility ownership. It does not decide any specific domain's operation list or per-operation payload fields — those belong to the owning domain's canonical documentation/decision records (for example Session lifecycle idempotency: `game/README.md`, `game/docs/decisions/`).
+This standard owns the reusable distinction between natural and request/command idempotency, required-token semantics, replay/conflict rules, and idempotency responsibility ownership. It does not decide any specific domain's operation list or per-operation payload fields — those belong to the owning domain's canonical documentation/decision records (for example Session lifecycle idempotency: `game/README.md`, `docs/technical-decisions/game/`).
 
 ## Natural Idempotency vs Request/Command Idempotency
 

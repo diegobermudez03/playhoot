@@ -2,7 +2,7 @@
 
 Status: CANONICAL ENGINEERING STANDARD
 
-This standard records naming conventions for persisted references to explicitly published cross-domain public entities. The architecture rule is owned by `ARCHITECTURE.md -> Cross-Domain Public Entity References` and its rationale is recorded in `docs/decisions/architecture/ADR-0005-cross-domain-public-entity-references.md`.
+This standard records naming conventions for persisted references to explicitly published cross-domain public entities. The architecture rule is owned by `ARCHITECTURE.md -> Cross-Domain Public Entity References` and its rationale is recorded in `docs/technical-decisions/global/ADR-0005-cross-domain-public-entity-references.md`.
 
 ## Rule
 

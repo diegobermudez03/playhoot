@@ -83,8 +83,8 @@ Detail that does not fit belongs somewhere else, not in a longer comment:
 - what an endpoint answers (status codes, wire shapes, error bodies) belongs
   in the API documentation (for example `api/README.md`) and in its tests;
 - how a flow works end to end belongs in the domain's flow documentation;
-- what a placeholder will eventually do belongs in the owning domain's
-  `CURRENT_STATE.md` (see Placeholders below);
+- what a placeholder will eventually do belongs in the system documentation
+  data of the owning domain, in state `planned` (see Placeholders below);
 - a step-by-step account of the body belongs nowhere: the code already
   says it.
 
@@ -96,7 +96,7 @@ code, tests and documentation carry the rest.
 
 Code that is wired but not real yet says so in one line, `Placeholder:`
 followed by what it does now. Its intended behavior is tracked in the owning
-domain's `CURRENT_STATE.md`, not narrated in the comment.
+domain's system documentation data, not narrated in the comment.
 
 ```go
 // LocateOrClaimOwner returns the owner of sessionUUID, atomically claiming
@@ -186,7 +186,7 @@ contract-level sentence is normally enough.
 ## No Task/History Comments
 
 Source comments must not become a changelog. Do not write things like
-"Added for WORK-0001", "Changed during Slice 1", "Previously this used X",
+"Added for task T-042", "Changed during Slice 1", "Previously this used X",
 references to the AI session or task that introduced the code, or migration
 narration — unless compatibility with old behavior is an active runtime
 requirement. Use git history, WORK documents, or ADRs for that information.
@@ -222,7 +222,7 @@ the line.
 
 Do not cite an ADR, WORK document, workspace file, or engineering-standard
 path (`SESSION-ADR-0017`, `ADR-0005`, `docs/engineering/standards/repositories.md`,
-`docs/work/...`, anything under `docs/ai/...`) as the reason something is
+a work-tracking document) as the reason something is
 true. Assume the reader — human or AI, inside this org or outside it —
 cannot open that document and has never heard of it, even though it
 technically lives in this repository. Whatever reasoning the citation

@@ -2,7 +2,7 @@
 
 Status: CANONICAL ENGINEERING STANDARD
 
-This standard records concrete conventions implementing the intra-domain responsibility boundary owned by `ARCHITECTURE.md -> Intra-Domain Responsibility Boundary` (see `docs/decisions/architecture/ADR-0001-intra-domain-responsibility-boundary.md` for rationale). It does not redefine that boundary.
+This standard records concrete conventions implementing the intra-domain responsibility boundary owned by `ARCHITECTURE.md -> Intra-Domain Responsibility Boundary` (see `docs/technical-decisions/global/ADR-0001-intra-domain-responsibility-boundary.md` for rationale). It does not redefine that boundary.
 
 ## Core Organizing Principle: Behavior Locality
 

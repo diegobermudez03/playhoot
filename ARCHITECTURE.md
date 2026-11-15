@@ -1,6 +1,6 @@
 # Architecture
 
-Status: CANONICAL
+Status: CANONICAL (technical invariants in force)
 
 ## Scope
 
@@ -22,7 +22,7 @@ Playhoot is initially a modular monolith.
 - Technical / Supporting Library: provides reusable behavior without owning business state.
 - Coordination Layer: coordinates work across business domains without owning participating domains' business rules.
 - Transport / Application Edge: exposes user-facing transport entry points and translates transport requests/responses.
-- Infrastructure Service: a separately deployed technical workload, callable over an internal network protocol, that exists for an operational reason (isolating untrusted/high-risk execution, independent scaling, a materially smaller privilege set) rather than a business reason. It is not a business bounded context and does not decide domain behavior; a business domain that depends on one does so through a narrow port/interface it owns, not by depending on the service's own implementation details. Being a separate *deployment* does not by itself make it a repository-wide capability: an Infrastructure Service that exists solely to serve one domain may be placed inside that domain's own package tree (documenting, not merely implying, that no other domain may depend on it); placement signals ownership, deployment topology does not follow package location. No Infrastructure Service currently exists.
+- Infrastructure Service: a separately deployed technical workload, callable over an internal network protocol, that exists for an operational reason (isolating untrusted/high-risk execution, independent scaling, a materially smaller privilege set) rather than a business reason. It is not a business bounded context and does not decide domain behavior; a business domain that depends on one does so through a narrow port/interface it owns, not by depending on the service's own implementation details. Being a separate *deployment* does not by itself make it a repository-wide capability: an Infrastructure Service that exists solely to serve one domain may be placed inside that domain's own package tree (documenting, not merely implying, that no other domain may depend on it); placement signals ownership, deployment topology does not follow package location.
 
 Domain != package. Domain != folder. Domain != deployment. Domain != service.
 
@@ -42,34 +42,9 @@ A trusted authentication/application layer may establish which `Identity.User` i
 
 ## Accepted Business Boundaries
 
-The accepted business bounded contexts currently normalized here are Game Management, Session Runtime, and Identity.
+The accepted business bounded contexts are Game Management (`game`), Session Runtime (`play`) and Identity (`identity`). They are independent siblings of each other and of `composer/` and `orchestrator/` (`docs/technical-decisions/global/ADR-0014-management-session-domain-split.md`). Game Management and Session Runtime share no persistence or transaction boundary.
 
-Game Management and Session Runtime are independent business bounded contexts, siblings to Identity and to `composer/`/`orchestrator/` - not capabilities nested under a shared "Game" bounded context. This is `docs/decisions/architecture/ADR-0014-management-session-domain-split.md` (ACCEPTED).
-
-- Game Management: authored game lifecycle concerns (`game/README.md`).
-- Session Runtime: execution/session lifecycle concerns (`session/README.md`).
-
-Session Runtime is being redesigned as a real-time runtime that supports both discrete and continuous games, with authored JavaScript scripts executed inside Session Runtime's own process rather than by a separately deployed service (`session/docs/decisions/SESSION-ADR-0028-real-time-session-runtime-supersedes-discrete-turn-architecture.md`, ACCEPTED). The previous implementation was removed; the new design is not yet defined beyond that decision, and `session/README.md` owns its current description.
-
-Game Management and Session Runtime do not share a persistence or transaction boundary (`game/docs/decisions/GAME-ADR-0001-game-capability-persistence-transaction-boundary.md`, superseded in part by ADR-0014 - see that ADR's header).
-
-The current physical package layout:
-
-```text
-game/               # Game Management's own package (package game)
-  docs/             # decisions, data model, flows
-session/            # Session Runtime's own package (package session)
-```
-
-`game/` names Game Management alone, after the old shared "Game" bounded context was dissolved into Game Management and Session Runtime.
-
-Identity owns stable Playhoot identity for people interacting with the platform. Its public cross-domain referenceable entity is `User`, identified by stable public `UserUUID` under the Cross-Domain Public Entity References rule below.
-
-`User` is distinct from authentication/account concerns and profile/presentation concerns. Identity also owns accounts with Google as the only provider, Playhoot's own credentials (opaque access tokens, client-held rotating refresh tokens) and each operation's minimum authentication level (`identity/docs/decisions/IDENTITY-ADR-0003-basic-identity-google-accounts-opaque-access-client-held-refresh.md`); role capabilities, mutable global display/profile ownership, and Identity persistence details remain intentionally unresolved. Profile is not an accepted separate bounded context merely because mutable profile/display ownership remains unresolved.
-
-Cross-domain consumers may persist `UserUUID` as a logical reference to `Identity.User` without accessing Identity storage, depending on Identity table layout, or creating cross-domain database foreign keys.
-
-Rationale and alternatives for the Identity boundary are recorded in `identity/docs/decisions/IDENTITY-ADR-0001-identity-user-public-identity-boundary.md`.
+Identity owns stable Playhoot identity for people. Its public cross-domain referenceable entity is `User`, identified by a stable public `UserUUID` under the Cross-Domain Public Entity References rule below. `User` is distinct from authentication/account concerns and from profile/presentation concerns. Cross-domain consumers may persist `UserUUID` as a logical reference without accessing Identity storage or creating foreign keys.
 
 ## Cross-Domain Reads
 
@@ -120,7 +95,7 @@ A cross-domain referenceable/public entity must have a stable public UUID. Inter
 
 Do not infer the inverse rule: a UUID does not by itself mean the entity is public/exported. Public/referenceable status is an explicit domain contract, not something inferred solely from identifier type.
 
-Persisted field/column naming for cross-domain references is governed by `docs/engineering/standards/cross-domain-reference-naming.md`. Rationale and alternatives are recorded in `docs/decisions/architecture/ADR-0005-cross-domain-public-entity-references.md`.
+Persisted field/column naming for cross-domain references is governed by `docs/engineering/standards/cross-domain-reference-naming.md`. Rationale and alternatives are recorded in `docs/technical-decisions/global/ADR-0005-cross-domain-public-entity-references.md`.
 
 ## Application Edge
 
@@ -136,7 +111,7 @@ API is the external transport/application edge.
 
 API may perform BFF response shaping. BFF response shaping is not the same as cross-domain business/data composition; cross-domain read composition belongs to Composer.
 
-Stable User identity is owned by Identity. Identity/Auth proves who a caller is; the receiving domain owns its own business authorization decisions. Identity also owns accounts, authentication credentials and each operation's minimum authentication level (IDENTITY-ADR-0003); this document does not otherwise define where role capabilities or mutable profile/display responsibilities are owned.
+Stable User identity is owned by Identity. Identity/Auth proves who a caller is; the receiving domain owns its own business authorization decisions.
 
 ## State and Transaction Boundaries
 
@@ -152,7 +127,7 @@ A business domain's public operations should primarily expose that domain's own 
 
 Depending directly on another business domain's internal/entity types should be avoided. Supporting behavior-only libraries may expose types intentionally consumed by domains when that dependency does not reverse business-domain ownership.
 
-A consumer importing a producer domain's own exported root-level type to declare its own narrow interface is expected and correct, not a violation — the producer's implementation is not exposed, only its public contract. The actual violation is one level up: a producer domain's own exported type must not itself be composed from a type owned by a third domain or subsystem the producer does not own. When it is, every consumer that only wanted the producer's narrow contract transitively depends on that third package too, and the coupling silently belongs to whichever domain actually owns/consumes that third type, not to the producer merely re-exporting it. See `docs/engineering/standards/domain-logic-placement.md`'s Enforcement section for the concrete Go-level tell, and `docs/decisions/architecture/ADR-0014-management-session-domain-split.md` for a worked example (Game Management's own `Game` type embedding a Game Language `program.Definition` it does not own).
+A consumer importing a producer domain's own exported root-level type to declare its own narrow interface is expected and correct, not a violation — the producer's implementation is not exposed, only its public contract. The actual violation is one level up: a producer domain's own exported type must not itself be composed from a type owned by a third domain or subsystem the producer does not own. When it is, every consumer that only wanted the producer's narrow contract transitively depends on that third package too, and the coupling silently belongs to whichever domain actually owns/consumes that third type, not to the producer merely re-exporting it. See `docs/engineering/standards/domain-logic-placement.md`'s Enforcement section for the concrete Go-level tell, and `docs/technical-decisions/global/ADR-0014-management-session-domain-split.md` for a worked example (Game Management's own `Game` type embedding a Game Language `program.Definition` it does not own).
 
 ## Intra-Domain Responsibility Boundary
 
@@ -178,13 +153,4 @@ Repository interfaces remain narrow and consumer-driven per the Dependency Princ
 
 This is a responsibility/dependency boundary, not a requirement to introduce literal `/domain`, `/application`, `/infrastructure` top-level directories.
 
-Rationale and alternatives considered are recorded in `docs/decisions/architecture/ADR-0001-intra-domain-responsibility-boundary.md`. Concrete package-organization, naming, type-ownership, and migration conventions implementing this boundary are recorded in `docs/engineering/standards/domain-logic-placement.md`.
-
-## Current Boundary Questions
-
-NON-CANONICAL / UNRESOLVED:
-
-- Mutable global profile/display ownership; stable User identity is owned by Identity.
-- Session history ownership.
-- Discovery responsibility/boundary.
-- Community responsibility/boundary.
+Rationale and alternatives considered are recorded in `docs/technical-decisions/global/ADR-0001-intra-domain-responsibility-boundary.md`. Concrete package-organization, naming, type-ownership, and migration conventions implementing this boundary are recorded in `docs/engineering/standards/domain-logic-placement.md`.

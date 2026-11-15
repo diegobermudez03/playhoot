@@ -2,7 +2,7 @@
 
 Status: CANONICAL ENGINEERING STANDARD
 
-Decided by the human on 2026-10-29, in conversation, while reviewing the account login (`identity-v1` WORK-0059).
+Decided by the human on 2026-10-29, in conversation, while reviewing the account login.
 
 This standard applies to every schema migration and to every piece of code that writes persisted rows.
 

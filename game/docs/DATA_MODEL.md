@@ -62,7 +62,7 @@ classDiagram
     games "1" --> "0..1" game_create_requests : "logical: game_create_requests.game_id -> games.id"
 ```
 
-Added by the game creation project (2026-11-01, `docs/projects/active/game-creation-v1`):
+Added by the game creation project (2026-11-01):
 
 - `games.published_at` is written once, when the Game is first published (data-history rule 1); null means unpublished. A Game is created private, named, with an empty description, and its creation recorded in `game_histories` with every field (`is_published` false).
 - `game_editions` are the versions of a Game being built or published. `uuid` is also the uuid of the Play version the edition is built in (Play owns the version, its sources and its readiness; Game Management only references it). `status` is `EDITING` or `PUBLISHED` (`game/internal/business/edition`); a Game has at most one `EDITING` edition (partial unique index `game_editions_one_editing_idx`). Every status change is appended to `game_edition_status_changes` in the same transaction (data-history rule 2); `published_at` is written once.

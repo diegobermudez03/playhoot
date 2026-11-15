@@ -2,7 +2,7 @@
 
 Status: CANONICAL ENGINEERING STANDARD
 
-Accepted by the human on 2026-11-02, while designing DRAFT asset uploads (`docs/projects/active/game-creation-v1`).
+Accepted by the human on 2026-11-02, while designing DRAFT asset uploads.
 
 This standard applies to every flow that moves bytes between a client, the backend and object storage, and to every write that stores an object and references it from the database.
 

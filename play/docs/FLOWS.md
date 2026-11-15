@@ -111,7 +111,7 @@ The lobby's capacity is not checked here: the live controller checks it against 
 
 ## Player Device Check
 
-Decided by the human 2026-10-25 (`play/docs/decisions/SESSION-ADR-0035-game-input-requirements-and-player-device-check.md`): only a device that can play the Session's game attaches as a player.
+Decided by the human 2026-10-25 (`docs/technical-decisions/play/SESSION-ADR-0035-game-input-requirements-and-player-device-check.md`): only a device that can play the Session's game attaches as a player.
 
 1. The client names its class in the `device` query parameter of either player endpoint (`desktop` or `mobile`); the API passes it to the Runtime as it came.
 2. The Session's controller (`liveconnection`, `attachPlayer`) checks the device on every player connection (lobby join, reattach, rejoin and device switch), only once the Session admits the player (decided by the human 2026-10-25): a participant of the game running here; or, from the durable eligibility, a lobby that accepts players, or a running Session recovered here that the player plays. A Session that cannot be joined answers its own reason whatever the device: `session_unavailable` when not found or not joinable, `session_started` for a non-participant of a running game. The device check comes before the lobby's capacity, a reattach or a rejoin, so a refused connection neither takes a lobby place, replaces the player's current connection nor asks the game about a rejoin. The manifest with the input requirements is loaded once per controller when first needed.
@@ -243,7 +243,7 @@ Every change of `play_sessions.status` appends a row to `play_session_status_cha
 
 ## Replay Recording
 
-Design: `play/docs/decisions/SESSION-ADR-0033-replay-recording-produces-immutable-chunks.md`.
+Design: `docs/technical-decisions/play/SESSION-ADR-0033-replay-recording-produces-immutable-chunks.md`.
 
 1. When a controller starts, adopts or recovers a running game, it opens a recording (`replayrecording.Recorder.StartRecording`) and offers the starting state as its first point.
 2. After every committed boundary, the controller offers a `replay.Capture` (state, Session time, revision, participants, COMMAND responses, logical errors, events) without blocking. A recording's goroutine takes it from its bounded inbox (a full inbox drops the tick) and adds it to its active chunk. The first point of a chunk is the full state. Every `REPLAY_STATE_SAMPLE_EVERY_N_TICKS`-th tick adds a JSON Patch from the last state it kept. Transients are always added, in timeline order, with their targets.

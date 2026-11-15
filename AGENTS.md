@@ -69,9 +69,9 @@ tell the creator when the local database must be recreated.
 exceeds five lines, or leaks lower-layer names. Run the three commands above before
 every commit.
 
-## Retired
+## Historical decisions
 
-`docs/ai/`, `docs/work/`, `docs/projects/`, `docs/archive/`, `plans/`,
-`CURRENT_STATE.md` files, `HUMAN_REVIEW.md`, `AI_CONTEXT.md` and
-`ENGINEERING_RADAR.md` belong to the previous process. Do not follow or update
-them; task T-003 removes them.
+`docs/technical-decisions/` keeps the accepted ADRs as a record of why the
+runtime is the way it is. They are history, not current truth; new decisions
+go to `../docs/agent/DECISIONS.md`. `ARCHITECTURE.md` holds the invariants
+still in force.
