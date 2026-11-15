@@ -24,6 +24,9 @@ import (
 	apigames "github.com/diegobermudez03/playhoot/api/games"
 	composerdeadtasks "github.com/diegobermudez03/playhoot/composer/deadtasks"
 	composergameauthoring "github.com/diegobermudez03/playhoot/composer/gameauthoring"
+	"github.com/diegobermudez03/playhoot/compliance/usecases/acceptances"
+	"github.com/diegobermudez03/playhoot/compliance/usecases/marketaccess"
+	"github.com/diegobermudez03/playhoot/compliance/usecases/marketrules"
 	"github.com/diegobermudez03/playhoot/discovery/usecases/templatecatalog"
 	"github.com/diegobermudez03/playhoot/game/usecases/checkplayability"
 	"github.com/diegobermudez03/playhoot/game/usecases/findeditableversion"
@@ -340,6 +343,7 @@ func run() error {
 		api.AI{Server: aiAuthorization},
 		api.Queues{Reader: composerdeadtasks.New(queues), Manager: orchestratordeadtasks.New(queues)},
 		secondFactor,
+		api.Compliance{Declarations: marketaccess.New(db), Acceptances: acceptances.New(db), MarketRules: marketrules.New(db)},
 		api.Config{
 			CORSAllowedOrigins:      envVars.CORSAllowedOrigins,
 			WebSocketAllowedOrigins: envVars.WebSocketAllowedOrigins,

@@ -11,17 +11,20 @@ import (
 
 // required is the catalog. Every identity.Operation must be in it.
 var required = map[identity.Operation]identity.Level{
-	identity.OperationCreateSession:         identity.LevelAccount,
-	identity.OperationJoinSessionAsAdmin:    identity.LevelAccount,
-	identity.OperationJoinSessionAsPlayer:   identity.LevelGuest,
-	identity.OperationReportClientTelemetry: identity.LevelGuest,
-	identity.OperationViewOwnIdentity:       identity.LevelGuest,
-	identity.OperationSetOwnDisplayName:     identity.LevelGuest,
-	identity.OperationCreateGame:            identity.LevelAccount,
-	identity.OperationEditGame:              identity.LevelAccount,
-	identity.OperationConnectAI:             identity.LevelAccount,
-	identity.OperationManageQueues:          identity.LevelAdmin,
-	identity.OperationUseSecondFactor:       identity.LevelAccount,
+	identity.OperationCreateSession:          identity.LevelAccount,
+	identity.OperationJoinSessionAsAdmin:     identity.LevelAccount,
+	identity.OperationJoinSessionAsPlayer:    identity.LevelGuest,
+	identity.OperationReportClientTelemetry:  identity.LevelGuest,
+	identity.OperationViewOwnIdentity:        identity.LevelGuest,
+	identity.OperationSetOwnDisplayName:      identity.LevelGuest,
+	identity.OperationCreateGame:             identity.LevelAccount,
+	identity.OperationEditGame:               identity.LevelAccount,
+	identity.OperationConnectAI:              identity.LevelAccount,
+	identity.OperationManageQueues:           identity.LevelAdmin,
+	identity.OperationUseSecondFactor:        identity.LevelAccount,
+	identity.OperationDeclareResidenceAndAge: identity.LevelAccount,
+	identity.OperationAcceptTexts:            identity.LevelGuest,
+	identity.OperationManageMarkets:          identity.LevelAdmin,
 }
 
 // rank orders the levels; a level missing from it satisfies nothing.

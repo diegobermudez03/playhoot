@@ -64,12 +64,15 @@ func TestSatisfies(t *testing.T) {
 
 func TestCatalog(t *testing.T) {
 	require.Equal(t, []identity.OperationLevel{
+		{Operation: identity.OperationAcceptTexts, RequiredLevel: identity.LevelGuest},
 		{Operation: identity.OperationConnectAI, RequiredLevel: identity.LevelAccount},
 		{Operation: identity.OperationCreateGame, RequiredLevel: identity.LevelAccount},
 		{Operation: identity.OperationCreateSession, RequiredLevel: identity.LevelAccount},
+		{Operation: identity.OperationDeclareResidenceAndAge, RequiredLevel: identity.LevelAccount},
 		{Operation: identity.OperationEditGame, RequiredLevel: identity.LevelAccount},
 		{Operation: identity.OperationJoinSessionAsAdmin, RequiredLevel: identity.LevelAccount},
 		{Operation: identity.OperationJoinSessionAsPlayer, RequiredLevel: identity.LevelGuest},
+		{Operation: identity.OperationManageMarkets, RequiredLevel: identity.LevelAdmin},
 		{Operation: identity.OperationManageQueues, RequiredLevel: identity.LevelAdmin},
 		{Operation: identity.OperationReportClientTelemetry, RequiredLevel: identity.LevelGuest},
 		{Operation: identity.OperationSetOwnDisplayName, RequiredLevel: identity.LevelGuest},

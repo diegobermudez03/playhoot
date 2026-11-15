@@ -7,6 +7,7 @@ import (
 	"time"
 
 	apigames "github.com/diegobermudez03/playhoot/api/games"
+	"github.com/diegobermudez03/playhoot/compliance"
 	composergameauthoring "github.com/diegobermudez03/playhoot/composer/gameauthoring"
 	"github.com/diegobermudez03/playhoot/discovery"
 	"github.com/diegobermudez03/playhoot/game"
@@ -173,6 +174,30 @@ type secondFactor interface {
 	EnrollTotp(ctx context.Context, userUUID string, currentCode string) (identity.TotpEnrollment, error)
 	ConfirmTotp(ctx context.Context, userUUID string, code string) (identity.TotpConfirmation, error)
 	VerifyTotp(ctx context.Context, userUUID string, code string, purpose identity.SecondFactorPurpose) (identity.TotpVerification, error)
+}
+
+// Compliance is what Compliance's endpoints need.
+type Compliance struct {
+	Declarations declarationRecorder
+	Acceptances  acceptanceRecorder
+	MarketRules  marketRuleManager
+}
+
+// declarationRecorder records residence-and-age declarations.
+type declarationRecorder interface {
+	RecordDeclaration(ctx context.Context, declaration compliance.Declaration) (compliance.DeclarationResult, error)
+}
+
+// acceptanceRecorder serves the texts people accept and records acceptances.
+type acceptanceRecorder interface {
+	GetAcceptanceText(ctx context.Context, kind compliance.TextKind, language string, userUUID string) (compliance.AcceptanceText, error)
+	RecordAcceptance(ctx context.Context, request compliance.AcceptanceRequest) (compliance.AcceptanceOutcome, error)
+}
+
+// marketRuleManager is admin's market matrix.
+type marketRuleManager interface {
+	ReadMarketRules(ctx context.Context, country string) (compliance.MarketRules, error)
+	AdminSetMarketRule(ctx context.Context, adminUUID string, rule compliance.MarketRule) (compliance.SetMarketRuleOutcome, error)
 }
 
 // Queues is admin's access to every domain's dead letter queue.

@@ -62,6 +62,19 @@ const (
 	// OperationUseSecondFactor is enrolling and verifying the caller's second
 	// factor. It requires a real account; only the administrator gets past it.
 	OperationUseSecondFactor Operation = "USE_SECOND_FACTOR"
+
+	// OperationDeclareResidenceAndAge is declaring the caller's country,
+	// state or province and having reached the age it requires. It requires
+	// a real account.
+	OperationDeclareResidenceAndAge Operation = "DECLARE_RESIDENCE_AND_AGE"
+
+	// OperationAcceptTexts is reading the texts people accept and recording
+	// the caller's acceptances and marketing withdrawal. Guests may perform it.
+	OperationAcceptTexts Operation = "ACCEPT_TEXTS"
+
+	// OperationManageMarkets is reading and changing the market matrix. It
+	// requires the administrator.
+	OperationManageMarkets Operation = "MANAGE_MARKETS"
 )
 
 // Level is how strongly a caller is authenticated, on the ordered scale
