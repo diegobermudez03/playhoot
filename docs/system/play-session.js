@@ -1,5 +1,4 @@
 // Subdomain: play.session. Durable state of Sessions and game versions.
-// Only the create-session path is detailed here; the rest is loaded by a later task.
 PH.domain({
   id: 'play.session', parent: 'play', kind: 'traditional', status: 'implemented',
   name: 'Play session',
@@ -131,6 +130,63 @@ PH.table({
 });
 
 PH.table({
+  id: 'play.session.play_session_participants', domain: 'play.session', status: 'implemented',
+  name: 'play_session_participants',
+  summary: 'The roster assigned when a Session starts.',
+  purpose: 'Participant ids (P1..Pn) are fixed at start; this is not live presence.',
+  columns: [
+    { name: 'id', type: 'bigserial', note: '' },
+    { name: 'session_id', type: 'bigint', note: '' },
+    { name: 'user_uuid', type: 'uuid', note: '' },
+    { name: 'participant_id', type: 'text', note: 'P1, P2, ...' },
+    { name: 'display_name', type: 'text', note: 'Snapshot at start.' },
+    { name: 'created_at', type: 'timestamptz', note: '' }
+  ],
+  indexes: ['UNIQUE (session_id, participant_id)', 'UNIQUE (session_id, user_uuid)'],
+  history: 'infrastructure',
+  references: [
+    { column: 'session_id', to: 'play.session.play_sessions' },
+    { column: 'user_uuid', to: 'identity user' }
+  ]
+});
+
+PH.table({
+  id: 'play.session.play_session_checkpoints', domain: 'play.session', status: 'implemented',
+  name: 'play_session_checkpoints',
+  summary: 'The latest recoverable state of a running Session.',
+  purpose: 'Overwritten in place every ≥5 s while live; lets a Session recover after a platform failure.',
+  columns: [
+    { name: 'id', type: 'bigserial', note: '' },
+    { name: 'session_id', type: 'bigint', note: '' },
+    { name: 'content', type: 'bytea', note: 'Opaque game state.' },
+    { name: 'context_revision', type: 'bigint', note: '' },
+    { name: 'updated_at', type: 'timestamptz', note: '' }
+  ],
+  indexes: ['UNIQUE (session_id)'],
+  history: 'Overwritten without history, by design: high-frequency live data belongs to checkpoints and replay, not rows.',
+  references: [{ column: 'session_id', to: 'play.session.play_sessions' }]
+});
+
+PH.table({
+  id: 'play.session.play_game_fault_reports', domain: 'play.session', status: 'implemented',
+  name: 'play_game_fault_reports',
+  summary: 'An audit trail of technical game faults, client- or server-reported.',
+  purpose: 'Insert-only; it is read by nobody today, it only audits.',
+  columns: [
+    { name: 'id', type: 'bigserial', note: '' },
+    { name: 'session_id', type: 'bigint', note: '' },
+    { name: 'source', type: 'text', note: 'CLIENT or SERVER.' },
+    { name: 'kind', type: 'text', note: 'ARTIFACT_UNREACHABLE, ARTIFACT_HASH_MISMATCH, READY_TIMEOUT, UNSUPPORTED_BRIDGE_VERSION, CONTAINER_VIOLATION, BRIDGE_ABUSE, INVALID_SAMPLE, INVALID_COMMAND or SERVER_LIMIT.' },
+    { name: 'detail', type: 'jsonb', note: '' },
+    { name: 'occurrences', type: 'int', note: '' },
+    { name: 'created_at', type: 'timestamptz', note: '' }
+  ],
+  indexes: ['(session_id)'],
+  history: 'Insert-only audit log.',
+  references: [{ column: 'session_id', to: 'play.session.play_sessions' }]
+});
+
+PH.table({
   id: 'play.session.play_games', domain: 'play.session', status: 'implemented',
   name: 'play_games',
   summary: 'A game as Play sees it: its identifier and the version played today.',
@@ -210,4 +266,138 @@ PH.operation({
     'Complete the request with the outcome.'
   ],
   sources: ['P04§3', 'P06']
+});
+
+PH.operation({
+  id: 'play.session.commit-start', domain: 'play.session', kind: 'workflow', effect: 'write', status: 'implemented',
+  name: 'CheckStartEligibility / CommitStart',
+  summary: 'Starts a lobby: assigns the roster and the first checkpoint, moves it to RUNNING, releases unused join codes.',
+  reads: ['play.session.play_sessions', 'play.session.play_session_join_codes'],
+  writes: [
+    'play.session.play_sessions', 'play.session.play_session_status_changes',
+    'play.session.play_session_participants', 'play.session.play_session_checkpoints', 'play.session.play_session_join_codes'
+  ],
+  rules: ['One transaction; only from LOBBY.'],
+  sources: []
+});
+
+PH.operation({
+  id: 'play.session.end-session', domain: 'play.session', kind: 'workflow', effect: 'write', status: 'implemented',
+  name: 'EndSession',
+  summary: 'The only path to a terminal Session state.',
+  reads: ['play.session.play_sessions'],
+  writes: ['play.session.play_sessions', 'play.session.play_session_status_changes'],
+  rules: ['Cause determines the resulting terminal state and which starting states accept it (see lifecycle).'],
+  lifecycle: SESSION_LIFECYCLE,
+  sources: []
+});
+
+PH.operation({
+  id: 'play.session.load-running-session', domain: 'play.session', kind: 'usecase', effect: 'read', status: 'implemented',
+  name: 'LoadRunningSession',
+  summary: 'Loads a RUNNING Session\'s pinned version and roster for a reattaching controller.',
+  reads: ['play.session.play_sessions', 'play.session.play_session_participants', 'play.session.play_session_checkpoints'],
+  writes: [], rules: [], sources: []
+});
+
+PH.operation({
+  id: 'play.session.record-owner-heartbeat', domain: 'play.session', kind: 'usecase', effect: 'write', status: 'implemented',
+  name: 'RecordOwnerHeartbeat',
+  summary: 'Renews the live owner lease of a running Session.',
+  reads: [], writes: ['play.session.play_sessions'],
+  rules: ['Overwrites owner_lease_expires_at without history.'],
+  limits: [{ what: 'Owner lease / heartbeat', value: '10 min / every 30 s', source: 'domain' }],
+  sources: []
+});
+
+PH.operation({
+  id: 'play.session.save-checkpoint', domain: 'play.session', kind: 'usecase', effect: 'write', status: 'implemented',
+  name: 'SaveCheckpoint',
+  summary: 'Overwrites the Session\'s recoverable state.',
+  reads: [], writes: ['play.session.play_session_checkpoints'],
+  rules: ['At most every 5 s.'],
+  sources: []
+});
+
+PH.operation({
+  id: 'play.session.check-join', domain: 'play.session', kind: 'usecase', effect: 'read', status: 'implemented',
+  name: 'checkadminjoin / checkplayerjoin / checklivesession / resolvejoincode',
+  summary: 'Eligibility checks and join-code lookup before admitting a WebSocket connection.',
+  reads: ['play.session.play_sessions', 'play.session.play_session_join_codes'],
+  writes: [],
+  rules: [
+    'Admin: RUNNING, or current LOBBY and the caller is the creator.',
+    'Player: current LOBBY; RUNNING answers session_started instead.',
+    'CheckLiveSession: live, not_found, ended or lobby_expired.',
+    'ResolveJoinCode is case-insensitive: found, expired, session_started or invalid.'
+  ],
+  sources: []
+});
+
+PH.operation({
+  id: 'play.session.frontend-access', domain: 'play.session', kind: 'usecase', effect: 'read', status: 'implemented',
+  name: 'FrontendAccess',
+  summary: 'Signed URLs to a Session\'s frontend package and assets.',
+  reads: ['play.versions.play_game_version_signed_urls'], writes: [],
+  rules: ['One signed batch per version, shared across Sessions and instances; 24 h, reused until within 5 min of expiry.'],
+  sources: []
+});
+
+PH.operation({
+  id: 'play.session.load-runtime-manifest', domain: 'play.session', kind: 'usecase', effect: 'read', status: 'implemented',
+  name: 'LoadRuntimeManifest / LoadSessionLimits',
+  summary: 'The version\'s manifest and input requirements, and a Session\'s deadlines.',
+  reads: ['play.session.play_game_versions', 'play.versions.play_game_version_input_requirements', 'play.session.play_sessions'],
+  writes: [], rules: [], sources: []
+});
+
+PH.operation({
+  id: 'play.session.record-game-fault', domain: 'play.session', kind: 'usecase', effect: 'write', status: 'implemented',
+  name: 'recordgamefault',
+  summary: 'Records one game_fault reported by a participant.',
+  reads: [], writes: ['play.session.play_game_fault_reports'],
+  rules: ['Only while RUNNING, only from a participant.'],
+  sources: []
+});
+
+PH.operation({
+  id: 'play.session.record-limit-hits', domain: 'play.session', kind: 'usecase', effect: 'write', status: 'implemented',
+  name: 'recordlimithits',
+  summary: 'Flushes live limit violations (SERVER_LIMIT) into the fault-report audit.',
+  reads: [], writes: ['play.session.play_game_fault_reports'],
+  rules: ['Every 5 s.'],
+  sources: []
+});
+
+PH.operation({
+  id: 'play.session.keep-simulation-result', domain: 'play.session', kind: 'usecase', effect: 'write', status: 'implemented',
+  name: 'KeepSimulationResult / FindSimulationResult / CountSimulations',
+  summary: 'Stores and reads a simulation result produced by play.runtime.',
+  reads: ['play.versions.play_simulation_results'], writes: ['play.versions.play_simulation_results'],
+  rules: ['No cap applied on how many simulations a version may run.'],
+  sources: []
+});
+
+PH.operation({
+  id: 'play.session.read-sdk-guide', domain: 'play.session', kind: 'usecase', effect: 'read', status: 'implemented',
+  name: 'readsdkguide',
+  summary: 'Reads one page of the SDK guide from the toolchain checkout.',
+  reads: [], writes: [],
+  rules: ['Up to 256 KiB per page; unavailable if the toolchain checkout is not configured.'],
+  sources: []
+});
+
+PH.operation({
+  id: 'play.session.reconcile-sessions', domain: 'play.session', kind: 'workflow', effect: 'write', status: 'implemented',
+  name: 'reconcilesessions (batch, every 5 min on every instance)',
+  summary: 'Closes Sessions that have silently overrun their deadlines.',
+  reads: ['play.session.play_sessions'],
+  writes: ['play.session.play_sessions', 'play.session.play_session_status_changes'],
+  rules: [
+    'Expired lobbies end LOBBY_EXPIRED.',
+    'RUNNING past expires_at ends MAX_LIFETIME, or GAME_FINISHED if the replay already finalized.',
+    'RUNNING with an expired owner lease ends OWNER_LOST.',
+    'Processes in pages of 100 with a 5 s lock timeout.'
+  ],
+  sources: []
 });

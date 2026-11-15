@@ -21,3 +21,54 @@ PH.domain({
   ],
   sources: ['B: history', 'P02§10', 'P06§1', 'P06§11', 'P13§5']
 });
+
+PH.table({
+  id: 'play.replay.play_replays', domain: 'play.replay', status: 'implemented',
+  name: 'play_replays',
+  summary: 'The replay manifest for one Session.',
+  purpose: 'Finalized once the Session ends and its last chunk is written.',
+  columns: [
+    { name: 'id', type: 'bigserial', note: '' },
+    { name: 'session_id', type: 'bigint', note: '' },
+    { name: 'final_session_time_ms', type: 'bigint', note: '' },
+    { name: 'finalized_at', type: 'timestamptz', note: 'Set once.' },
+    { name: 'created_at', type: 'timestamptz', note: '' }
+  ],
+  indexes: ['UNIQUE (session_id)'],
+  history: 'Write-once: finalized_at.',
+  references: [{ column: 'session_id', to: 'play.session.play_sessions' }]
+});
+
+PH.table({
+  id: 'play.replay.play_replay_chunks', domain: 'play.replay', status: 'implemented',
+  name: 'play_replay_chunks',
+  summary: 'One recorded chunk of a replay (60 s of game time, zstd-compressed, in object storage).',
+  purpose: 'Chunks are produced in order; the last one is marked final.',
+  columns: [
+    { name: 'id', type: 'bigserial', note: '' },
+    { name: 'recording_uuid', type: 'uuid', note: '' },
+    { name: 'chunk_index', type: 'int', note: '' },
+    { name: 'started_at_ms, ended_at_ms', type: 'bigint, bigint', note: 'Game-time range.' },
+    { name: 'final', type: 'boolean', note: '' },
+    { name: 'object_key', type: 'text', note: '' },
+    { name: 'sha256', type: 'text', note: '' },
+    { name: 'created_at', type: 'timestamptz', note: '' }
+  ],
+  indexes: ['UNIQUE (recording_uuid, chunk_index)'],
+  history: 'infrastructure',
+  references: [{ column: 'recording_uuid', to: 'play.replay.play_replays' }]
+});
+
+PH.operation({
+  id: 'play.replay.store-replay-chunk', domain: 'play.replay', kind: 'usecase', effect: 'write', status: 'implemented',
+  name: 'storereplaychunk (StartRecording / Offer / Finish / StopRecording / Close)',
+  summary: 'Writes a replay chunk\'s bytes to object storage, then registers it.',
+  reads: ['play.replay.play_replays'],
+  writes: ['play.replay.play_replays', 'play.replay.play_replay_chunks'],
+  rules: [
+    'A bounded in-memory queue per instance holds chunks waiting to be stored; the oldest are dropped if it fills up (64 pending, 5 attempts).',
+    'Producer side only: there is no playback and no retention sweep yet.'
+  ],
+  limits: [{ what: 'Chunk duration', value: '60 s', source: 'domain' }],
+  sources: []
+});

@@ -42,10 +42,17 @@ PH.flow({
 
 // ---------- Games, publication and Discovery ----------
 PH.flow({
-  id: 'create-game', status: 'planned', coordinator: 'orchestrator', effect: 'write',
+  id: 'create-game', status: 'implemented', coordinator: 'orchestrator', effect: 'write',
   name: 'Create game',
-  summary: 'Checks the function is available (market, age) and capacity (holding, creations), then creates the logical game and its first draft version.',
-  touches: ['compliance', 'plan', 'game', 'play.versions'],
+  summary: 'Creates the logical game (optionally from a template) and its first draft version, idempotently. Market, age and capacity checks are not implemented yet (see GAPS).',
+  steps: [
+    { n: 1, domain: 'game', operation: 'game.find-template', when: 'a template game uuid was given', onFailure: 'Continue without a template if not found.' },
+    { n: 2, domain: 'game', operation: 'game.game-lifecycle', when: 'always', onFailure: 'Propagate the conflict (same key, different name or template).' },
+    { n: 3, domain: 'play.versions', operation: 'play.versions.create-draft-version', when: 'the game was created', onFailure: 'Retry with the same key completes the missing step.' }
+  ],
+  persistence: 'none',
+  idempotency: 'The Idempotency-Key is passed through; a retry with the same key finishes whatever step did not complete.',
+  compensation: 'None: step 3 failing leaves an unpublished game with no draft, repaired by the retry.',
   sources: ['B: create game', 'P19§1', 'P27', 'P35§5']
 });
 PH.flow({
@@ -158,10 +165,16 @@ PH.flow({
 
 // ---------- Creation ----------
 PH.flow({
-  id: 'start-creation', status: 'planned', coordinator: 'orchestrator', effect: 'write',
+  id: 'start-creation', status: 'implemented', coordinator: 'orchestrator', effect: 'write',
   name: 'Start creation',
-  summary: 'Checks capacity, asks for a name, creates the draft (taking up allowance) and opens the chosen route: own AI by link or integrated chat.',
-  touches: ['compliance', 'plan', 'game', 'play.versions', 'creation'],
+  summary: 'Same underlying mechanism as create-game: creates the game and its first draft version. Capacity checks, the conversational brief and route selection (own AI vs. integrated chat) are not implemented yet (see GAPS); today the creator reaches the draft directly.',
+  steps: [
+    { n: 1, domain: 'game', operation: 'game.game-lifecycle', when: 'always', onFailure: 'Propagate the conflict (same key, different name or template).' },
+    { n: 2, domain: 'play.versions', operation: 'play.versions.create-draft-version', when: 'the game was created', onFailure: 'Retry with the same key completes the missing step.' }
+  ],
+  persistence: 'none',
+  idempotency: 'The Idempotency-Key is passed through; a retry with the same key finishes whatever step did not complete.',
+  compensation: 'None: step 2 failing leaves an unpublished game with no draft, repaired by the retry.',
   sources: ['B: create game', 'P09§1', 'P12§14']
 });
 PH.flow({
@@ -179,10 +192,17 @@ PH.flow({
   sources: ['P10§1-3']
 });
 PH.flow({
-  id: 'external-ai-edit', status: 'planned', coordinator: 'orchestrator', effect: 'write',
+  id: 'external-ai-edit', status: 'implemented', coordinator: 'orchestrator', effect: 'write',
   name: 'External AI edits draft',
-  summary: 'An authorized AI writes scripts, uploads assets, runs simulations and reports errors; concurrent changes do not overwrite, resubmissions are idempotent, platform limits apply.',
-  touches: ['creation', 'play.versions', 'budget'],
+  summary: 'An AI authenticated by a game link (identity.resolve-resource-link) or by its own MCP OAuth connection acts as the owner and applies changes, uploads assets, or simulates, exactly like a human editor. Cost admission and billable metering of the AI\'s work are not implemented yet (see GAPS).',
+  steps: [
+    { n: 1, domain: 'identity', operation: 'identity.resolve-resource-link', when: 'the AI calls through its /ai/v1/{token} link', onFailure: 'Stop with ai_link_invalid.' },
+    { n: 2, domain: 'game', operation: 'game.find-editable-version', when: 'always', onFailure: 'Stop with not_found or not_editable.' },
+    { n: 3, domain: 'play.versions', operation: 'play.versions.apply-changes', when: 'the AI sends file edits, a template, or a restore', onFailure: 'Return its outcome: conflict, invalid or not_editable.' }
+  ],
+  persistence: 'none',
+  idempotency: 'The AI is instructed to send a fresh idempotency key per change; play.versions records each attempt once per version and key.',
+  compensation: 'None needed: each step is transactional within its own domain.',
   sources: ['P10§4-5', 'P32']
 });
 PH.flow({

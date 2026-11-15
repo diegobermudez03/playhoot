@@ -50,6 +50,185 @@ PH.table({
   references: [{ column: 'owner_uuid', to: 'identity user' }]
 });
 
+var EDITION_LIFECYCLE = {
+  states: ['EDITING', 'PUBLISHED'],
+  transitions: [{ from: 'EDITING', to: 'PUBLISHED', on: 'CompletePublication; the edition is then immutable' }]
+};
+
+PH.table({
+  id: 'game.game_histories', domain: 'game', status: 'implemented',
+  name: 'game_histories',
+  summary: 'Every change to a game\'s name, description, visibility or published flag.',
+  purpose: 'Append-only; creation records all fields, later rows only the ones that changed.',
+  columns: [
+    { name: 'id', type: 'bigserial', note: '' },
+    { name: 'game_id', type: 'bigint', note: '' },
+    { name: 'name', type: 'text', note: 'Empty if unchanged.' },
+    { name: 'description', type: 'text', note: 'Empty if unchanged.' },
+    { name: 'visibility', type: 'text', note: 'Empty if unchanged.' },
+    { name: 'is_published', type: 'boolean', note: 'Only on the row that changes it.' },
+    { name: 'created_at', type: 'timestamptz', note: '' }
+  ],
+  indexes: ['(game_id)'],
+  history: 'It is itself the history (append-only).',
+  references: [{ column: 'game_id', to: 'game.games' }]
+});
+
+PH.table({
+  id: 'game.game_editions', domain: 'game', status: 'implemented',
+  name: 'game_editions',
+  summary: 'An authoring edition of a game: a Play version under construction or already published.',
+  purpose: 'Its uuid is the same as the Play version it corresponds to.',
+  columns: [
+    { name: 'id', type: 'bigserial', note: '' },
+    { name: 'uuid', type: 'uuid', note: 'Shared with the Play version.' },
+    { name: 'game_id', type: 'bigint', note: '' },
+    { name: 'status', type: 'text', note: 'EDITING or PUBLISHED.' },
+    { name: 'template_game_uuid', type: 'uuid', note: 'Empty unless started from a template.' },
+    { name: 'template_version_uuid', type: 'uuid', note: 'Empty unless started from a template.' },
+    { name: 'published_at', type: 'timestamptz', note: 'Set once.' },
+    { name: 'created_at', type: 'timestamptz', note: '' }
+  ],
+  indexes: ['UNIQUE (uuid)', 'partial UNIQUE (game_id) while EDITING'],
+  history: 'Change table game_edition_status_changes.',
+  references: [{ column: 'game_id', to: 'game.games' }],
+  lifecycle: EDITION_LIFECYCLE
+});
+
+PH.table({
+  id: 'game.game_edition_status_changes', domain: 'game', status: 'implemented',
+  name: 'game_edition_status_changes',
+  summary: 'Every status an edition went through.',
+  purpose: 'Append-only history.',
+  columns: [
+    { name: 'id', type: 'bigserial', note: '' },
+    { name: 'edition_id', type: 'bigint', note: '' },
+    { name: 'from_status', type: 'text', note: 'Empty for the creation.' },
+    { name: 'to_status', type: 'text', note: '' },
+    { name: 'created_at', type: 'timestamptz', note: '' }
+  ],
+  indexes: ['(edition_id)'],
+  history: 'It is itself the history (append-only).',
+  references: [{ column: 'edition_id', to: 'game.game_editions' }]
+});
+
+PH.table({
+  id: 'game.game_create_requests', domain: 'game', status: 'implemented',
+  name: 'game_create_requests',
+  summary: 'Idempotency of game creation: one row per owner and key.',
+  purpose: 'The same key with a different name or template is a conflict.',
+  columns: [
+    { name: 'id', type: 'bigserial', note: '' },
+    { name: 'owner_uuid', type: 'uuid', note: '' },
+    { name: 'idempotency_key', type: 'text', note: '' },
+    { name: 'name', type: 'text', note: '' },
+    { name: 'template_game_uuid', type: 'uuid', note: 'Empty unless started from a template.' },
+    { name: 'game_id', type: 'bigint', note: 'Set once.' },
+    { name: 'created_at', type: 'timestamptz', note: '' }
+  ],
+  indexes: ['UNIQUE (owner_uuid, idempotency_key)'],
+  history: 'Write-once: claimed and completed in one transaction.',
+  references: [
+    { column: 'game_id', to: 'game.games' },
+    { column: 'owner_uuid', to: 'identity user' }
+  ]
+});
+
+PH.table({
+  id: 'game.game_card_images', domain: 'game', status: 'implemented',
+  name: 'game_card_images',
+  summary: 'The logo and photos currently displayed on a card.',
+  purpose: 'Replacing an image removes the old row (removed_at) rather than overwriting it, which doubles as image history.',
+  columns: [
+    { name: 'id', type: 'bigserial', note: '' },
+    { name: 'game_id', type: 'bigint', note: '' },
+    { name: 'kind', type: 'text', note: 'logo or photo.' },
+    { name: 'sha256', type: 'text', note: '' },
+    { name: 'object_key', type: 'text', note: 'games/card-images/<sha256>.' },
+    { name: 'removed_at', type: 'timestamptz', note: 'Set once.' },
+    { name: 'created_at', type: 'timestamptz', note: '' }
+  ],
+  indexes: ['partial (game_id, kind) while not removed'],
+  history: 'Removed-not-overwritten rows are the history.',
+  references: [{ column: 'game_id', to: 'game.games' }]
+});
+
+PH.table({
+  id: 'game.game_card_objects', domain: 'game', status: 'implemented',
+  name: 'game_card_objects',
+  summary: 'Registry of card-image bytes, recorded before they are stored.',
+  purpose: 'Standard object-storage intent record: register, then write bytes.',
+  columns: [
+    { name: 'id', type: 'bigserial', note: '' },
+    { name: 'sha256', type: 'text', note: '' },
+    { name: 'deleted_at', type: 'timestamptz', note: 'Set once, by cleanup.' },
+    { name: 'created_at', type: 'timestamptz', note: '' }
+  ],
+  indexes: ['UNIQUE (sha256)'],
+  history: 'Write-once: deleted_at.',
+  references: []
+});
+
+PH.table({
+  id: 'game.game_card_image_requests', domain: 'game', status: 'implemented',
+  name: 'game_card_image_requests',
+  summary: 'Idempotency of a card-image upload: one row per game and key.',
+  purpose: '',
+  columns: [
+    { name: 'id', type: 'bigserial', note: '' },
+    { name: 'game_id', type: 'bigint', note: '' },
+    { name: 'idempotency_key', type: 'text', note: '' },
+    { name: 'created_at', type: 'timestamptz', note: '' }
+  ],
+  indexes: ['UNIQUE (game_id, idempotency_key)'],
+  history: 'Write-once: claimed and completed in one transaction.',
+  references: [{ column: 'game_id', to: 'game.games' }]
+});
+
+PH.table({
+  id: 'game.game_releases', domain: 'game', status: 'implemented',
+  name: 'game_releases',
+  summary: 'A publication attempt for an edition: pending until completed or abandoned.',
+  purpose: 'At most one pending release per game; sequence numbers the releases of a game.',
+  columns: [
+    { name: 'id', type: 'bigserial', note: '' },
+    { name: 'uuid', type: 'uuid', note: '' },
+    { name: 'edition_id', type: 'bigint', note: '' },
+    { name: 'sequence', type: 'int', note: 'Per game.' },
+    { name: 'revision', type: 'bigint', note: 'The Play draft revision being published.' },
+    { name: 'visibility', type: 'text', note: 'private or public.' },
+    { name: 'owner_uuid', type: 'uuid', note: '' },
+    { name: 'idempotency_key', type: 'text', note: '' },
+    { name: 'completed_at', type: 'timestamptz', note: 'Set once.' },
+    { name: 'abandoned_at', type: 'timestamptz', note: 'Set once.' },
+    { name: 'abandon_reason', type: 'text', note: '' },
+    { name: 'languages', type: 'jsonb', note: '' },
+    { name: 'created_at', type: 'timestamptz', note: '' }
+  ],
+  indexes: ['UNIQUE (game_id, sequence)', 'UNIQUE (game_id, idempotency_key)', 'partial UNIQUE (game_id) while pending'],
+  history: 'Write-once: completed_at, abandoned_at, abandon_reason.',
+  references: [
+    { column: 'edition_id', to: 'game.game_editions' },
+    { column: 'owner_uuid', to: 'identity user' }
+  ]
+});
+
+PH.table({
+  id: 'game.game_edition_requests', domain: 'game', status: 'implemented',
+  name: 'game_edition_requests',
+  summary: 'Idempotency of opening a new edition: one row per game and key.',
+  purpose: '',
+  columns: [
+    { name: 'id', type: 'bigserial', note: '' },
+    { name: 'game_id', type: 'bigint', note: '' },
+    { name: 'idempotency_key', type: 'text', note: '' },
+    { name: 'created_at', type: 'timestamptz', note: '' }
+  ],
+  indexes: ['UNIQUE (game_id, idempotency_key)'],
+  history: 'Write-once: claimed and completed in one transaction.',
+  references: [{ column: 'game_id', to: 'game.games' }]
+});
+
 PH.operation({
   id: 'game.check-playability', domain: 'game', kind: 'usecase', effect: 'read', status: 'implemented',
   name: 'checkplayability',
@@ -59,6 +238,75 @@ PH.operation({
   rules: [
     'The game must be published and not deleted.',
     'A public game is playable by anyone; a private one only by its owner.'
+  ],
+  sources: []
+});
+
+PH.operation({
+  id: 'game.check-visibility', domain: 'game', kind: 'usecase', effect: 'read', status: 'implemented',
+  name: 'checkvisibility',
+  summary: 'Says whether a game is visible, by its visibility value alone (not wired into any caller today).',
+  reads: ['game.games'], writes: [], rules: [], sources: []
+});
+
+PH.operation({
+  id: 'game.find-editable-version', domain: 'game', kind: 'usecase', effect: 'read', status: 'implemented',
+  name: 'FindEditableVersion',
+  summary: 'Authorizes a user to edit a game and returns the version of its open edition.',
+  reads: ['game.games', 'game.game_editions'],
+  writes: [],
+  rules: ['found only if there is an open edition and the caller is the owner; otherwise not_found or not_editable.'],
+  sources: []
+});
+
+PH.operation({
+  id: 'game.find-template', domain: 'game', kind: 'usecase', effect: 'read', status: 'implemented',
+  name: 'FindTemplate',
+  summary: 'Finds the most recent published version of a game allowed as a template.',
+  reads: ['game.games', 'game.game_editions'],
+  writes: [],
+  rules: ['The game must be published, not deleted and template_allowed.'],
+  sources: []
+});
+
+PH.operation({
+  id: 'game.game-lifecycle', domain: 'game', kind: 'workflow', effect: 'write', status: 'implemented',
+  name: 'CreateGame / BeginPublication / CompletePublication / AbandonPublication / OpenEdition',
+  summary: 'Creates a game with its first edition, publishes an edition, or opens a new one after publication.',
+  reads: ['game.games', 'game.game_editions', 'game.game_releases'],
+  writes: [
+    'game.games', 'game.game_histories', 'game.game_editions', 'game.game_edition_status_changes',
+    'game.game_create_requests', 'game.game_releases', 'game.game_edition_requests'
+  ],
+  rules: [
+    'CreateGame: one transaction creates a private, unpublished game with a first EDITING edition; idempotent by key, conflict if the same key names a different game or template.',
+    'BeginPublication: at most one pending release per game; requires a name; only private or public visibility.',
+    'CompletePublication: edition EDITING to PUBLISHED, games.published_at set once, release completed_at set with languages.',
+    'OpenEdition: only on an already-published game with no open edition and no pending release; idempotent by key.',
+    'visibility values are draft, private, hidden, public; only private and public ever get published.'
+  ],
+  limits: [
+    { what: 'Pending release / open edition', value: '1 per game', source: 'domain' }
+  ],
+  lifecycle: EDITION_LIFECYCLE,
+  sources: []
+});
+
+PH.operation({
+  id: 'game.game-card', domain: 'game', kind: 'workflow', effect: 'write', status: 'implemented',
+  name: 'gamecard (ListGames / ReadCard / UpdateCard / UploadImage / RemoveImage)',
+  summary: 'Reads and edits a game\'s card: text and images.',
+  reads: ['game.games', 'game.game_card_images'],
+  writes: ['game.games', 'game.game_histories', 'game.game_card_images', 'game.game_card_objects', 'game.game_card_image_requests'],
+  rules: [
+    'UploadImage validates PNG, JPEG or WebP by bytes, cuts off by size, and records the intent before saving.',
+    'Images are read back through a 15-minute signed URL from object storage.',
+    'Idempotent by key per upload.'
+  ],
+  limits: [
+    { what: 'Name / description', value: '80 / 2000 runes', source: 'domain' },
+    { what: 'Photos per card', value: '8 (+1 logo)', source: 'domain' },
+    { what: 'Image size', value: 'logo 2 MiB, photo 5 MiB', source: 'domain' }
   ],
   sources: []
 });
