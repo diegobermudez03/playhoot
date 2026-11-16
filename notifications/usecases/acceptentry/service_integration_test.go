@@ -83,6 +83,20 @@ func TestAcceptEntry(t *testing.T) {
 			require.NoError(t, db.Raw(`SELECT run_at FROM notifications_queue_tasks WHERE idempotency_key = ?`, result.EntryUUID).Scan(&runAt).Error)
 			require.WithinDuration(t, n.SendAt, runAt, time.Second)
 		},
+		"an access code keeps no user and still gets its email task": func(t *testing.T) {
+			n := notice(notifications.TypeAccessCode)
+			n.Skeleton = map[string]any{"code": "123456"}
+			result, err := service.AcceptEntry(ctx, n)
+			require.NoError(t, err)
+			require.Equal(t, notifications.Accepted, result.Outcome)
+			require.True(t, result.Email)
+			var withoutUser int
+			require.NoError(t, db.Raw(`SELECT COUNT(*) FROM notifications_entries WHERE entry_uuid = ? AND user_uuid IS NULL`, result.EntryUUID).Scan(&withoutUser).Error)
+			require.Equal(t, 1, withoutUser, "the entry names no user of Playhoot")
+			var payload string
+			require.NoError(t, db.Raw(`SELECT payload FROM notifications_queue_tasks WHERE idempotency_key = ?`, result.EntryUUID).Scan(&payload).Error)
+			require.Contains(t, payload, n.Recipient, "the email task still names the attempt to resolve")
+		},
 		"an unknown type or recipient is invalid": func(t *testing.T) {
 			n := notice("push-alert")
 			result, err := service.AcceptEntry(ctx, n)

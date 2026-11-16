@@ -16,7 +16,7 @@ import (
 	"github.com/diegobermudez03/playhoot/utils/ratelimit"
 )
 
-//go:generate mockgen -package=identity -destination=handler_mock_test.go . guestCreator,operationLister,credentialRefresher,sessionEnder,displayNameSetter,authorizer,loginStarter,loginCallbackHandler,loginCompleter,providerLister,localPages
+//go:generate mockgen -package=identity -destination=handler_mock_test.go . guestCreator,operationLister,credentialRefresher,sessionEnder,displayNameSetter,authorizer,loginStarter,loginCallbackHandler,loginCompleter,providerLister,localPages,providerLinker,emailLoginStarter,emailLoginCompleter,emailLinker,methodReader,methodRemover
 
 // guestCreator creates guest Users idempotently per key. A decline is
 // reported through the result's Outcome; a reused key with another request
@@ -66,6 +66,39 @@ type loginCompleter interface {
 	CompleteLogin(ctx context.Context, code string, codeVerifier string, replacesRefreshToken string) (identitypkg.CompleteLoginResult, error)
 }
 
+// providerLinker adds a provider identity to an account already signed in,
+// through the same round trip as a sign-in.
+type providerLinker interface {
+	StartLinkProvider(ctx context.Context, userUUID string, provider string, codeChallenge string) (identitypkg.StartLoginResult, error)
+	CompleteLinkProvider(ctx context.Context, userUUID string, code string, codeVerifier string) (identitypkg.LinkMethodResult, error)
+}
+
+// emailLoginStarter asks for a one-time code to be sent to an address.
+type emailLoginStarter interface {
+	StartEmailLogin(ctx context.Context, address string, language string, guestUserUUID string) (identitypkg.StartEmailLoginResult, error)
+}
+
+// emailLoginCompleter exchanges an address and its code for credentials.
+type emailLoginCompleter interface {
+	CompleteEmailLogin(ctx context.Context, address string, code string, replacesRefreshToken string) (identitypkg.CompleteEmailLoginResult, error)
+}
+
+// emailLinker adds an address to an account already signed in.
+type emailLinker interface {
+	StartLinkEmail(ctx context.Context, userUUID string, address string, language string) (identitypkg.StartEmailLoginResult, error)
+	CompleteLinkEmail(ctx context.Context, userUUID string, address string, code string) (identitypkg.LinkMethodResult, error)
+}
+
+// methodReader lists an account's ways in.
+type methodReader interface {
+	ListMethods(ctx context.Context, userUUID string) ([]identitypkg.SignInMethod, error)
+}
+
+// methodRemover unlinks one of them.
+type methodRemover interface {
+	RemoveMethod(ctx context.Context, userUUID string, methodID string) (identitypkg.RemoveMethodOutcome, error)
+}
+
 // providerLister lists the enabled login providers.
 type providerLister interface {
 	Enabled() []identitypkg.Provider
@@ -81,6 +114,7 @@ type Logins struct {
 	Starter    loginStarter
 	Callbacks  loginCallbackHandler
 	Completer  loginCompleter
+	Linker     providerLinker
 	Providers  providerLister
 	LocalPages localPages
 	// CompleteURL is the client's sign-in completion route, which every
@@ -97,6 +131,33 @@ var guestCreationLimits = routing.RequestLimits{
 	PerClient: append(slices.Clone(throttle.DefaultLimits.PerClient), ratelimit.Limit{Count: 200, Per: time.Hour}),
 }
 
+// EmailLogins is what the one-time email code needs.
+type EmailLogins struct {
+	Starter   emailLoginStarter
+	Completer emailLoginCompleter
+	Linker    emailLinker
+}
+
+// Methods is what reading and removing an account's ways in needs.
+type Methods struct {
+	Reader  methodReader
+	Remover methodRemover
+}
+
+// emailCodeLimits bound how often one client address may ask for codes;
+// how often one email address may be sent one is Identity's own rule.
+var emailCodeLimits = routing.RequestLimits{
+	PerUser:   throttle.DefaultLimits.PerUser,
+	PerClient: append(slices.Clone(throttle.DefaultLimits.PerClient), ratelimit.Limit{Count: 30, Per: time.Hour}),
+}
+
+// emailCodeTryLimits bound how often one client address may try codes, so
+// six digits cannot be guessed at from one place.
+var emailCodeTryLimits = routing.RequestLimits{
+	PerUser:   throttle.DefaultLimits.PerUser,
+	PerClient: append(slices.Clone(throttle.DefaultLimits.PerClient), ratelimit.Limit{Count: 10, Per: time.Minute}),
+}
+
 // Handler exposes the identity domain's endpoints.
 type Handler struct {
 	guests       guestCreator
@@ -106,11 +167,16 @@ type Handler struct {
 	displayNames displayNameSetter
 	authorizer   authorizer
 	logins       Logins
+	emailLogins  EmailLogins
+	methods      Methods
 }
 
 // NewHandler constructs a Handler.
-func NewHandler(guests guestCreator, operations operationLister, refreshes credentialRefresher, sessions sessionEnder, displayNames displayNameSetter, authorizer authorizer, logins Logins) *Handler {
-	return &Handler{guests: guests, operations: operations, refreshes: refreshes, sessions: sessions, displayNames: displayNames, authorizer: authorizer, logins: logins}
+func NewHandler(guests guestCreator, operations operationLister, refreshes credentialRefresher, sessions sessionEnder, displayNames displayNameSetter, authorizer authorizer, logins Logins, emailLogins EmailLogins, methods Methods) *Handler {
+	return &Handler{
+		guests: guests, operations: operations, refreshes: refreshes, sessions: sessions,
+		displayNames: displayNames, authorizer: authorizer, logins: logins, emailLogins: emailLogins, methods: methods,
+	}
 }
 
 // RESTRoutes returns this group's request/response endpoints. Only `me` and
@@ -129,6 +195,14 @@ func (h *Handler) RESTRoutes() []routing.Route {
 			// A guest sends their access token, so a new account is theirs.
 			Authorization: auth.Optional(h.authorizer, identitypkg.OperationViewOwnIdentity),
 		},
+		{
+			Pattern: "POST /v1/identity/login/email/start",
+			Handler: h.handleStartEmailLogin,
+			// A guest sends their access token, so a new account is theirs.
+			Authorization: auth.Optional(h.authorizer, identitypkg.OperationViewOwnIdentity),
+			Limits:        &emailCodeLimits,
+		},
+		{Pattern: "POST /v1/identity/login/email/complete", Handler: h.handleCompleteEmailLogin, Limits: &emailCodeTryLimits},
 		{Pattern: "GET /v1/identity/login/{provider}/callback", Handler: h.handleLoginCallback},
 		{Pattern: "POST /v1/identity/login/complete", Handler: h.handleCompleteLogin},
 		// this is for the local provider, only for local testing
@@ -143,6 +217,37 @@ func (h *Handler) RESTRoutes() []routing.Route {
 			Pattern:       "PUT /v1/identity/me/display-name",
 			Handler:       h.handleSetDisplayName,
 			Authorization: auth.Require(h.authorizer, identitypkg.OperationSetOwnDisplayName),
+		},
+		{
+			Pattern:       "GET /v1/identity/me/methods",
+			Handler:       h.handleListMethods,
+			Authorization: auth.Require(h.authorizer, identitypkg.OperationManageSignInMethods),
+		},
+		{
+			Pattern:       "POST /v1/identity/me/methods/email/start",
+			Handler:       h.handleStartLinkEmail,
+			Authorization: auth.Require(h.authorizer, identitypkg.OperationManageSignInMethods),
+			Limits:        &emailCodeLimits,
+		},
+		{
+			Pattern:       "POST /v1/identity/me/methods/email/complete",
+			Handler:       h.handleCompleteLinkEmail,
+			Authorization: auth.Require(h.authorizer, identitypkg.OperationManageSignInMethods),
+		},
+		{
+			Pattern:       "POST /v1/identity/me/methods/provider/start",
+			Handler:       h.handleStartLinkProvider,
+			Authorization: auth.Require(h.authorizer, identitypkg.OperationManageSignInMethods),
+		},
+		{
+			Pattern:       "POST /v1/identity/me/methods/provider/complete",
+			Handler:       h.handleCompleteLinkProvider,
+			Authorization: auth.Require(h.authorizer, identitypkg.OperationManageSignInMethods),
+		},
+		{
+			Pattern:       "POST /v1/identity/me/methods/{methodID}/remove",
+			Handler:       h.handleRemoveMethod,
+			Authorization: auth.Require(h.authorizer, identitypkg.OperationManageSignInMethods),
 		},
 	}
 }

@@ -67,7 +67,7 @@ func ParseAllowedOrigins(raw string) ([]string, error) {
 }
 
 // NewServer constructs a Server exposing every route group's endpoints.
-func NewServer(authorizer authorizer, guests guestCreator, operations operationLister, refreshes credentialRefresher, sessionEnder sessionEnder, displayNames displayNameSetter, logins Logins, sessionCreator sessionCreator, owners ownerLocator, admins adminAttacher, players playerAttacher, joinCodes joinCodeResolver, games Games, ai AI, queues Queues, secondFactor secondFactor, compliance Compliance, plan Plan, budget Budget, notifications apinotifications.Dependencies, config Config) *Server {
+func NewServer(authorizer authorizer, guests guestCreator, operations operationLister, refreshes credentialRefresher, sessionEnder sessionEnder, displayNames displayNameSetter, logins Logins, emailLogins EmailLogins, methods Methods, sessionCreator sessionCreator, owners ownerLocator, admins adminAttacher, players playerAttacher, joinCodes joinCodeResolver, games Games, ai AI, queues Queues, secondFactor secondFactor, compliance Compliance, plan Plan, budget Budget, notifications apinotifications.Dependencies, config Config) *Server {
 	mux := http.NewServeMux()
 	liveConnections := live.New(config.MaxLiveConnections)
 	gamesHandler := apigames.NewHandler(authorizer, games.Creator, games.Editor, games.Reader, games.AILinks, games.Cards, games.Reader)
@@ -75,9 +75,11 @@ func NewServer(authorizer authorizer, guests guestCreator, operations operationL
 	guide := strings.TrimRight(games.AILinks.PublicWebBaseURL, "/") + "/docs/sdk/v1/index.md"
 	groups := []routeGroup{
 		apiidentity.NewHandler(guests, operations, refreshes, sessionEnder, displayNames, authorizer, apiidentity.Logins{
-			Starter: logins.Starter, Callbacks: logins.Callbacks, Completer: logins.Completer,
+			Starter: logins.Starter, Callbacks: logins.Callbacks, Completer: logins.Completer, Linker: logins.Linker,
 			Providers: logins.Providers, LocalPages: logins.LocalPages, CompleteURL: logins.CompleteURL,
-		}),
+		}, apiidentity.EmailLogins{
+			Starter: emailLogins.Starter, Completer: emailLogins.Completer, Linker: emailLogins.Linker,
+		}, apiidentity.Methods{Reader: methods.Reader, Remover: methods.Remover}),
 		apiclienttelemetry.NewHandler(authorizer),
 		apiplay.NewHandler(authorizer, sessionCreator, owners, admins, players, joinCodes, games.Previews, liveConnections, wsx.OriginPatterns(config.WebSocketAllowedOrigins)),
 		gamesHandler,

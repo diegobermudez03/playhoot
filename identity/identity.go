@@ -96,6 +96,11 @@ const (
 	// OperationManageEmail is reading the outbound email panel and changing
 	// its mode. It requires the administrator.
 	OperationManageEmail Operation = "MANAGE_EMAIL"
+
+	// OperationManageSignInMethods is listing the ways into the caller's own
+	// account and adding or removing them. It requires a real account: a
+	// guest has no account to keep reachable.
+	OperationManageSignInMethods Operation = "MANAGE_SIGN_IN_METHODS"
 )
 
 // Level is how strongly a caller is authenticated, on the ordered scale
@@ -210,6 +215,28 @@ type RefreshResult struct {
 	Credentials Credentials
 }
 
+// Language is an interface language Playhoot speaks.
+type Language string
+
+const (
+	LanguageSpanish    Language = "es"
+	LanguageEnglish    Language = "en"
+	LanguagePortuguese Language = "pt"
+)
+
+// Languages are the interface languages, in no particular order.
+var Languages = []Language{LanguageSpanish, LanguageEnglish, LanguagePortuguese}
+
+// ValidLanguage reports whether value names an interface language.
+func ValidLanguage(value string) bool {
+	for _, language := range Languages {
+		if string(language) == value {
+			return true
+		}
+	}
+	return false
+}
+
 // Provider names an external identity provider an account signs in with.
 type Provider string
 
@@ -220,6 +247,10 @@ const (
 	// ProviderLocal is a fictitious provider for local development and tests,
 	// never enabled in production.
 	ProviderLocal Provider = "local"
+
+	// ProviderEmail is the address itself, proven by a one-time code sent to
+	// it. It is a way in, not an external provider: nothing is redirected.
+	ProviderEmail Provider = "email"
 )
 
 // StartLoginOutcome is the decision a StartLogin call reached.
@@ -287,6 +318,103 @@ type CompleteLoginResult struct {
 	Outcome     CompleteLoginOutcome
 	Credentials Credentials
 }
+
+// StartEmailLoginOutcome is the decision a StartEmailLogin call reached.
+type StartEmailLoginOutcome string
+
+const (
+	// EmailLoginAcknowledged means the request was taken. It says nothing
+	// about whether a code was sent, so nothing reveals whether an address
+	// has an account or how often it has been asked for.
+	EmailLoginAcknowledged StartEmailLoginOutcome = "acknowledged"
+
+	// EmailLoginInvalidAddress means the value is not an email address at
+	// all; no attempt exists and nothing was sent.
+	EmailLoginInvalidAddress StartEmailLoginOutcome = "invalid_address"
+)
+
+// StartEmailLoginResult is what starting a one-time email code decided.
+type StartEmailLoginResult struct {
+	Outcome StartEmailLoginOutcome
+}
+
+// CompleteEmailLoginOutcome is the decision a CompleteEmailLogin call
+// reached.
+type CompleteEmailLoginOutcome string
+
+const (
+	// EmailLoginCompleted means the person is signed in with new
+	// credentials; the account was registered now if it did not exist.
+	EmailLoginCompleted CompleteEmailLoginOutcome = "completed"
+
+	// EmailLoginInvalidCode means the code is wrong: the live attempt stands
+	// until its wrong codes exhaust it.
+	EmailLoginInvalidCode CompleteEmailLoginOutcome = "invalid_code"
+
+	// EmailLoginAttemptGone means there is no live attempt for the address:
+	// it expired, was superseded by a newer code, was exhausted by wrong
+	// codes, or never existed. A new code must be asked for.
+	EmailLoginAttemptGone CompleteEmailLoginOutcome = "attempt_gone"
+)
+
+// CompleteEmailLoginResult is what completing a one-time email code
+// decided. Credentials are set only when Outcome is EmailLoginCompleted.
+type CompleteEmailLoginResult struct {
+	Outcome     CompleteEmailLoginOutcome
+	Credentials Credentials
+}
+
+// SignInMethod is one way into an account, as its owner sees it. MethodID
+// names it in that account only. Address is the address the method signs in
+// with or last observed; Name is what the provider said about the person.
+type SignInMethod struct {
+	MethodID string
+	Issuer   Provider
+	Address  string
+	Name     string
+	AddedAt  time.Time
+}
+
+// LinkMethodOutcome is the decision completing a method link reached.
+type LinkMethodOutcome string
+
+const (
+	// MethodLinked means the account now has this way in; re-linking one it
+	// already had is this outcome too.
+	MethodLinked LinkMethodOutcome = "linked"
+
+	// MethodInUse means the method belongs to another account. Accounts are
+	// never merged: the person signs in with it instead.
+	MethodInUse LinkMethodOutcome = "method_in_use"
+
+	// MethodInvalidCode means the code or the verifier does not match.
+	MethodInvalidCode LinkMethodOutcome = "invalid_code"
+
+	// MethodAttemptGone means the link attempt expired, was superseded or
+	// was exhausted; it must start again.
+	MethodAttemptGone LinkMethodOutcome = "attempt_gone"
+)
+
+// LinkMethodResult is what completing a method link decided.
+type LinkMethodResult struct {
+	Outcome LinkMethodOutcome
+}
+
+// RemoveMethodOutcome is the decision a RemoveMethod call reached.
+type RemoveMethodOutcome string
+
+const (
+	// MethodRemoved means the method is no longer a way into the account.
+	MethodRemoved RemoveMethodOutcome = "removed"
+
+	// MethodUnknown means the caller has no live method with that
+	// identifier.
+	MethodUnknown RemoveMethodOutcome = "unknown"
+
+	// MethodLastOne means it is the only method left: removing it would
+	// leave the account unreachable.
+	MethodLastOne RemoveMethodOutcome = "last_method"
+)
 
 // SetDisplayNameOutcome is the decision a SetDisplayName call reached.
 type SetDisplayNameOutcome string
@@ -630,10 +758,11 @@ const (
 	AdminGrantNotAccount AdminGrantOutcome = "not_account"
 )
 
-// Contact is how a User is reached outside Playhoot. Found is false for an
-// unknown User; a guest has no Email. Email is the address last observed
-// from a sign-in provider. Language is the interface language the User
-// chose, empty while Identity keeps none.
+// Contact is how a recipient is reached outside Playhoot. Found is false
+// for an unknown recipient; a guest has no Email. Email is the address last
+// observed from a sign-in method, or the address a one-time code was asked
+// for. Language is the interface language chosen or asked in, empty while
+// Identity keeps none.
 type Contact struct {
 	Found    bool
 	Account  bool

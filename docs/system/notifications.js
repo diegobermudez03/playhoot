@@ -39,7 +39,7 @@ PH.table({
   columns: [
     { name: 'id', type: 'bigserial', note: '' },
     { name: 'entry_uuid', type: 'uuid', note: 'External identifier.' },
-    { name: 'user_uuid', type: 'uuid', note: 'Recipient; empty for an access-code entry, whose recipient is the email-code attempt identity resolves (H3, planned).' },
+    { name: 'user_uuid', type: 'uuid', note: 'Recipient; empty for an access-code entry, whose recipient is the email-code attempt identity resolves.' },
     { name: 'source_domain', type: 'text', note: 'The queue the notify task came from.' },
     { name: 'type', type: 'text', note: 'Constant from the P31§4 matrix.' },
     { name: 'external_token', type: 'text', note: 'Opaque entity reference; composer resolves it and builds the URL.' },
@@ -159,6 +159,7 @@ PH.operation({
     'Idempotent by (source domain, idempotency key): a retried task returns the existing entry.',
     'Channels come from the P31§4 matrix (type constants: in-app flag, email rule necessary | standard | optional with its group, no-email-to-students flag): no address means no email; a student under a class type gets no email; necessary and standard types keep email; optional types need their group on, and marketing also the current marketing acceptance. Preferences never trim the in-app entry.',
     'No push of any kind: in-app and email are the only channels (P29). An unknown type, an invalid recipient or a skeleton over 8 KB is invalid.',
+    'A type whose recipient is not a user of Playhoot (access code) keeps no user on the entry and no preferences apply to it; the email task still names what Identity resolves the address from.',
     'The skeleton is stored as given; this domain never interprets the content.'
   ],
   enqueues: ['send-email (at send_at, keyed by the entry, when the email channel applies)'],

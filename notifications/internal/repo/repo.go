@@ -13,11 +13,12 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// Entry is a notifications_entries row.
+// Entry is a notifications_entries row. UserUUID is nil for an entry whose
+// recipient is not a user of Playhoot.
 type Entry struct {
 	ID               int64
 	EntryUUID        string
-	UserUUID         string
+	UserUUID         *string
 	SourceDomain     string
 	Type             string
 	ExternalToken    string

@@ -62,18 +62,23 @@ const (
 	TypeBudgetLevelChanged   Type = "budget-level-changed"
 )
 
-// TypeSpec is a type's row of the matrix. InApp is false for a type shown
-// only as the screen state of its own flow: its entry keeps no content
-// once its email is decided. Group is set for optional email.
-// NoEmailToStudents drops email when the recipient is a student.
-// EmailValues are the only skeleton values an email may carry.
+// TypeSpec is a type's row of the matrix.
 type TypeSpec struct {
-	Type              Type
-	InApp             bool
-	Email             EmailRule
-	Group             Group
+	Type Type
+	// InApp is false for a type shown only as the screen state of its own
+	// flow: its entry keeps no content once its email is decided.
+	InApp bool
+	Email EmailRule
+	// Group is set for optional email.
+	Group Group
+	// NoEmailToStudents drops email when the recipient is a student.
 	NoEmailToStudents bool
-	EmailValues       []string
+	// ExternalRecipient marks a type whose recipient is not a user of
+	// Playhoot: the entry keeps no user, and the identifier only resolves to
+	// an address while the flow that sent it lasts.
+	ExternalRecipient bool
+	// EmailValues are the only skeleton values an email may carry.
+	EmailValues []string
 }
 
 // Necessary reports whether the type ignores preferences.
@@ -83,7 +88,7 @@ func (s TypeSpec) Necessary() bool {
 
 // Matrix is the channel matrix: in Playhoot and by email, per type.
 var Matrix = []TypeSpec{
-	{Type: TypeAccessCode, InApp: false, Email: EmailNecessary, EmailValues: []string{"code"}},
+	{Type: TypeAccessCode, InApp: false, Email: EmailNecessary, ExternalRecipient: true, EmailValues: []string{"code"}},
 	{Type: TypeWelcome, InApp: true, Email: EmailStandard},
 	{Type: TypePurchaseConfirmed, InApp: true, Email: EmailNecessary},
 	{Type: TypePlanChanged, InApp: true, Email: EmailNecessary},
@@ -123,10 +128,8 @@ const (
 const DefaultLanguage = LanguageEnglish
 
 // Notice is one event a domain tells a user about. Recipient is the user's
-// UUID; IdempotencyKey is unique per SourceDomain, so a retried task never
-// duplicates the entry. Skeleton is the source domain's assemblable content.
-// HasEmail, Student and MarketingConsent describe the recipient as the
-// orchestrator found them.
+// UUID, or what the source domain resolves the address from for a type with
+// an external recipient; IdempotencyKey is unique per SourceDomain.
 type Notice struct {
 	SourceDomain     string
 	Recipient        string

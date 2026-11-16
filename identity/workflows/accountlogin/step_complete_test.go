@@ -25,7 +25,7 @@ func TestCompleteInTx(t *testing.T) {
 	now := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
 	attempt := func() *internalrepo.CodeAttempt {
 		return &internalrepo.CodeAttempt{
-			ID: 7, CodeChallenge: challengeOf("verifier"), ExpiresAt: now.Add(30 * time.Second),
+			ID: 7, Intent: string(internalrepo.IntentSignIn), CodeChallenge: challengeOf("verifier"), ExpiresAt: now.Add(30 * time.Second),
 			UserID: 3, UserUUID: "user-3",
 		}
 	}

@@ -11,7 +11,7 @@ import (
 )
 
 func TestGuestCreationIsCappedPerAddressPerHour(t *testing.T) {
-	for _, route := range NewHandler(nil, nil, nil, nil, nil, nil, Logins{}).RESTRoutes() {
+	for _, route := range NewHandler(nil, nil, nil, nil, nil, nil, Logins{}, EmailLogins{}, Methods{}).RESTRoutes() {
 		if route.Pattern != "POST /v1/guests" {
 			continue
 		}

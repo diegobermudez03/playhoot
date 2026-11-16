@@ -57,7 +57,7 @@ func TestHandleSetDisplayName(t *testing.T) {
 
 			request := httptest.NewRequest(http.MethodPut, "/v1/identity/me/display-name", strings.NewReader(tc.body)).WithContext(ctx)
 			recorder := httptest.NewRecorder()
-			NewHandler(nil, nil, nil, nil, names, nil, Logins{}).handleSetDisplayName(recorder, request)
+			NewHandler(nil, nil, nil, nil, names, nil, Logins{}, EmailLogins{}, Methods{}).handleSetDisplayName(recorder, request)
 
 			require.Equal(t, tc.expectedCode, recorder.Code)
 			require.JSONEq(t, tc.expectedBody, recorder.Body.String())

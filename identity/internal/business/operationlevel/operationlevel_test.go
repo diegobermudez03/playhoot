@@ -77,6 +77,7 @@ func TestCatalog(t *testing.T) {
 		{Operation: identity.OperationManageMarkets, RequiredLevel: identity.LevelAdmin},
 		{Operation: identity.OperationManagePlans, RequiredLevel: identity.LevelAdmin},
 		{Operation: identity.OperationManageQueues, RequiredLevel: identity.LevelAdmin},
+		{Operation: identity.OperationManageSignInMethods, RequiredLevel: identity.LevelAccount},
 		{Operation: identity.OperationReadNotifications, RequiredLevel: identity.LevelGuest},
 		{Operation: identity.OperationReportClientTelemetry, RequiredLevel: identity.LevelGuest},
 		{Operation: identity.OperationSetNotificationPreferences, RequiredLevel: identity.LevelAccount},

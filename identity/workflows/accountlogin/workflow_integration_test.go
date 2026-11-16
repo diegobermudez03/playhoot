@@ -285,3 +285,120 @@ func (p staticProviders) Get(name identity.Provider) (loginproviders.Provider, b
 	provider, ok := p[name]
 	return provider, ok
 }
+
+// startedLink starts a link attempt of userUUID, returning state and verifier.
+func (f flow) startedLink(t *testing.T, userUUID string) (string, string) {
+	t.Helper()
+	verifier := uuid.NewString() + uuid.NewString()
+	started, err := f.manager.StartLinkProvider(context.Background(), userUUID, "local", challengeOf(verifier))
+	require.NoError(t, err)
+	require.Equal(t, identity.LoginStarted, started.Outcome)
+	authorization, err := url.Parse(started.AuthorizationURL)
+	require.NoError(t, err)
+	return authorization.Query().Get("state"), verifier
+}
+
+// linkProvider runs the whole round trip that adds the local identity name
+// to userUUID's account.
+func (f flow) linkProvider(t *testing.T, userUUID string, name string) identity.LinkMethodResult {
+	t.Helper()
+	ctx := context.Background()
+	state, verifier := f.startedLink(t, userUUID)
+	answer, err := f.manager.HandleCallback(ctx, "local", state, name, "")
+	require.NoError(t, err)
+	require.Equal(t, identity.LoginCodeIssued, answer.Outcome)
+	linked, err := f.manager.CompleteLinkProvider(ctx, userUUID, answer.LoginCode, verifier)
+	require.NoError(t, err)
+	return linked
+}
+
+// liveMethods counts the ways into userUUID's account.
+func (f flow) liveMethods(t *testing.T, userUUID string) int64 {
+	t.Helper()
+	var methods int64
+	require.NoError(t, f.db.Raw(`
+		SELECT count(*) FROM identity_external_identities e JOIN identity_users u ON u.id = e.user_id
+		WHERE u.user_uuid = ? AND e.removed_at IS NULL`, userUUID).Scan(&methods).Error)
+	return methods
+}
+
+func TestLinkingAProviderIdentity(t *testing.T) {
+	ctx := context.Background()
+	tests := map[string]func(t *testing.T){
+		"an account adds another provider identity": func(t *testing.T) {
+			f := newFlow(t)
+			owner := f.signIn(t, "Ana "+uuid.NewString()[:8], "").User
+			added := "Ana at work " + uuid.NewString()[:8]
+
+			linked := f.linkProvider(t, owner.UUID, added)
+
+			require.Equal(t, identity.MethodLinked, linked.Outcome)
+			require.Equal(t, int64(2), f.liveMethods(t, owner.UUID))
+			// The added identity now signs that same account in.
+			back := f.signIn(t, added, "")
+			require.Equal(t, owner.UUID, back.User.UUID)
+		},
+		"an identity on another account is never merged": func(t *testing.T) {
+			f := newFlow(t)
+			theirs := "Beto " + uuid.NewString()[:8]
+			f.signIn(t, theirs, "")
+			owner := f.signIn(t, "Ana "+uuid.NewString()[:8], "").User
+
+			refused := f.linkProvider(t, owner.UUID, theirs)
+
+			require.Equal(t, identity.MethodInUse, refused.Outcome)
+			require.Equal(t, int64(1), f.liveMethods(t, owner.UUID))
+		},
+		"linking an identity the account already has changes nothing": func(t *testing.T) {
+			f := newFlow(t)
+			name := "Ana " + uuid.NewString()[:8]
+			owner := f.signIn(t, name, "").User
+
+			linked := f.linkProvider(t, owner.UUID, name)
+
+			require.Equal(t, identity.MethodLinked, linked.Outcome)
+			require.Equal(t, int64(1), f.liveMethods(t, owner.UUID))
+		},
+		"a link attempt's code never opens a session": func(t *testing.T) {
+			f := newFlow(t)
+			owner := f.signIn(t, "Ana "+uuid.NewString()[:8], "").User
+			state, verifier := f.startedLink(t, owner.UUID)
+			answer, err := f.manager.HandleCallback(ctx, "local", state, "Ana at work "+uuid.NewString()[:8], "")
+			require.NoError(t, err)
+
+			refused, err := f.manager.CompleteLogin(ctx, answer.LoginCode, verifier, "")
+
+			require.NoError(t, err)
+			require.Equal(t, identity.LoginCodeInvalid, refused.Outcome)
+			require.Contains(t, f.historyOf(t, state), "rejected:link_attempt")
+		},
+		"another account cannot finish somebody else's link": func(t *testing.T) {
+			f := newFlow(t)
+			owner := f.signIn(t, "Ana "+uuid.NewString()[:8], "").User
+			other := f.signIn(t, "Beto "+uuid.NewString()[:8], "").User
+			state, verifier := f.startedLink(t, owner.UUID)
+			answer, err := f.manager.HandleCallback(ctx, "local", state, "Ana at work "+uuid.NewString()[:8], "")
+			require.NoError(t, err)
+
+			refused, err := f.manager.CompleteLinkProvider(ctx, other.UUID, answer.LoginCode, verifier)
+
+			require.NoError(t, err)
+			require.Equal(t, identity.MethodAttemptGone, refused.Outcome)
+		},
+		"a wrong verifier refuses the link": func(t *testing.T) {
+			f := newFlow(t)
+			owner := f.signIn(t, "Ana "+uuid.NewString()[:8], "").User
+			state, _ := f.startedLink(t, owner.UUID)
+			answer, err := f.manager.HandleCallback(ctx, "local", state, "Ana at work "+uuid.NewString()[:8], "")
+			require.NoError(t, err)
+
+			refused, err := f.manager.CompleteLinkProvider(ctx, owner.UUID, answer.LoginCode, "not-the-verifier")
+
+			require.NoError(t, err)
+			require.Equal(t, identity.MethodInvalidCode, refused.Outcome)
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, test)
+	}
+}

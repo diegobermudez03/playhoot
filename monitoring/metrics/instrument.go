@@ -16,8 +16,10 @@ import (
 
 // maxSeriesPerMetric bounds the number of distinct label combinations one
 // metric can produce, so that several individually small labels cannot
-// multiply into an unbounded number of series.
-const maxSeriesPerMetric = 1000
+// multiply into a number of series nobody meant to declare. It leaves room
+// for the request metric labeled by every endpoint, which grows with the
+// product.
+const maxSeriesPerMetric = 4000
 
 var metricNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 

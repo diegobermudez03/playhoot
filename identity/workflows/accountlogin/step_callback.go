@@ -26,13 +26,14 @@ type callbackRepo interface {
 	RecordAttemptEvent(ctx context.Context, tx *gorm.DB, attemptID int64, event internalrepo.AttemptEvent) error
 	FindBoundUser(ctx context.Context, tx *gorm.DB, issuer string, subject string) (int64, error)
 	CreateAccount(ctx context.Context, tx *gorm.DB, userUUID string, identity internalrepo.ExternalIdentity, createdAt time.Time) (int64, bool, error)
+	BindIdentity(ctx context.Context, tx *gorm.DB, userID int64, identity internalrepo.ExternalIdentity, boundAt time.Time) (bool, error)
 	LinkAccount(ctx context.Context, tx *gorm.DB, guestUserID int64, identity internalrepo.ExternalIdentity, linkedAt time.Time) (bool, bool, error)
 	IssueCode(ctx context.Context, tx *gorm.DB, attemptID int64, code string, expiresAt time.Time, issued internalrepo.AttemptEvent) error
 }
 
 var (
 	callbackOutcomeLabel = metrics.NewLabel("outcome", "code_issued", "cancelled", "failed", "unavailable")
-	callbackAccountLabel = metrics.NewLabel("account", "created", "linked_guest", "existing", "none")
+	callbackAccountLabel = metrics.NewLabel("account", "created", "linked_guest", "existing", "linked_method", "method_in_use", "none")
 
 	callbacksTotal = metrics.NewCounter(
 		"identity_login_callbacks_total",
@@ -44,6 +45,10 @@ var (
 // errBoundMeanwhile rolls back an account whose external identity another
 // sign-in bound first.
 var errBoundMeanwhile = errors.New("external identity bound by a concurrent sign-in")
+
+// errNoLinkUser is a link attempt without the account it belongs to, which
+// only a corrupted row can be.
+var errNoLinkUser = errors.New("link attempt without an account")
 
 // HandleCallback takes the provider's answer to the attempt with state:
 // either its code, or providerError when the person did not sign in. It
@@ -128,6 +133,12 @@ const (
 	resolvedLinkedGuest accountResolution = "linked_guest"
 	// resolvedCreated: a new User was created for the account.
 	resolvedCreated accountResolution = "created"
+	// resolvedLinkedMethod: the identity became another way into the account
+	// that started a link attempt.
+	resolvedLinkedMethod accountResolution = "linked_method"
+	// resolvedMethodInUse: the identity is another account's, so it was not
+	// linked; accounts are never merged.
+	resolvedMethodInUse accountResolution = "method_in_use"
 )
 
 // issueCode resolves the external identity to its User and gives the attempt
@@ -148,15 +159,60 @@ func (m *Manager) issueCode(ctx context.Context, attempt internalrepo.AnsweredAt
 }
 
 func (m *Manager) issueCodeInTx(ctx context.Context, tx *gorm.DB, attempt internalrepo.AnsweredAttempt, external internalrepo.ExternalIdentity, code string, now time.Time) (accountResolution, error) {
-	userID, resolution, err := m.resolveAccount(ctx, tx, attempt, external, now)
+	resolve := m.resolveAccount
+	if internalrepo.Intent(attempt.Intent) == internalrepo.IntentLink {
+		resolve = m.resolveLink
+	}
+	userID, resolution, err := resolve(ctx, tx, attempt, external, now)
 	if err != nil {
 		return "", err
 	}
 	issued := internalrepo.AttemptEvent{
-		Reason: string(resolution), UserID: userID,
+		Reason: issuedReason(resolution), UserID: userID,
 		ObservedEmail: external.Email, ObservedName: external.Name, OccurredAt: now,
 	}
 	return resolution, m.callbackRepo.IssueCode(ctx, tx, attempt.ID, code, now.Add(login.CodeLifetime), issued)
+}
+
+// issuedReason is what the issued code carries: a link attempt says whether
+// the method was added, which is what its completion answers.
+func issuedReason(resolution accountResolution) string {
+	switch resolution {
+	case resolvedLinkedMethod:
+		return internalrepo.ReasonLinked
+	case resolvedMethodInUse:
+		return internalrepo.ReasonMethodInUse
+	}
+	return string(resolution)
+}
+
+// resolveLink adds the proven identity to the account that started the
+// attempt, unless it already belongs to another one: an identity match never
+// merges accounts (P03§11). The code is issued either way, so the client
+// learns what happened when it comes back.
+func (m *Manager) resolveLink(ctx context.Context, tx *gorm.DB, attempt internalrepo.AnsweredAttempt, external internalrepo.ExternalIdentity, now time.Time) (int64, accountResolution, error) {
+	if attempt.LinkUserID == nil {
+		return 0, "", errNoLinkUser
+	}
+	linkUserID := *attempt.LinkUserID
+	userID, err := m.callbackRepo.FindBoundUser(ctx, tx, external.Issuer, external.Subject)
+	if err != nil {
+		return 0, "", err
+	}
+	switch {
+	case userID == linkUserID:
+		return linkUserID, resolvedLinkedMethod, nil
+	case userID != 0:
+		return linkUserID, resolvedMethodInUse, nil
+	}
+	bound, err := m.callbackRepo.BindIdentity(ctx, tx, linkUserID, external, now)
+	if err != nil {
+		return 0, "", err
+	}
+	if !bound {
+		return 0, "", errBoundMeanwhile
+	}
+	return linkUserID, resolvedLinkedMethod, nil
 }
 
 func (m *Manager) resolveAccount(ctx context.Context, tx *gorm.DB, attempt internalrepo.AnsweredAttempt, external internalrepo.ExternalIdentity, now time.Time) (int64, accountResolution, error) {

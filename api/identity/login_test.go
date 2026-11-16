@@ -57,7 +57,7 @@ func TestHandleStartLogin(t *testing.T) {
 
 			request := httptest.NewRequest(http.MethodPost, "/v1/identity/login/start", strings.NewReader(tc.body)).WithContext(ctx)
 			recorder := httptest.NewRecorder()
-			NewHandler(nil, nil, nil, nil, nil, nil, Logins{Starter: starter}).handleStartLogin(recorder, request)
+			NewHandler(nil, nil, nil, nil, nil, nil, Logins{Starter: starter}, EmailLogins{}, Methods{}).handleStartLogin(recorder, request)
 
 			require.Equal(t, tc.expectedCode, recorder.Code)
 			require.JSONEq(t, tc.expectedBody, recorder.Body.String())
@@ -84,7 +84,7 @@ func TestHandleStartLoginAsAGuest(t *testing.T) {
 
 			request := httptest.NewRequest(http.MethodPost, "/v1/identity/login/start", strings.NewReader(`{"provider":"local","code_challenge":"challenge"}`)).WithContext(ctx)
 			recorder := httptest.NewRecorder()
-			NewHandler(nil, nil, nil, nil, nil, nil, Logins{Starter: starter}).handleStartLogin(recorder, request)
+			NewHandler(nil, nil, nil, nil, nil, nil, Logins{Starter: starter}, EmailLogins{}, Methods{}).handleStartLogin(recorder, request)
 
 			require.Equal(t, http.StatusOK, recorder.Code)
 		})
@@ -132,7 +132,7 @@ func TestHandleLoginCallback(t *testing.T) {
 			request := httptest.NewRequest(http.MethodGet, "/v1/identity/login/local/callback?"+tc.query, nil)
 			request.SetPathValue("provider", "local")
 			recorder := httptest.NewRecorder()
-			NewHandler(nil, nil, nil, nil, nil, nil, Logins{Callbacks: callbacks, CompleteURL: "/sign-in/complete"}).handleLoginCallback(recorder, request)
+			NewHandler(nil, nil, nil, nil, nil, nil, Logins{Callbacks: callbacks, CompleteURL: "/sign-in/complete"}, EmailLogins{}, Methods{}).handleLoginCallback(recorder, request)
 
 			require.Equal(t, http.StatusFound, recorder.Code)
 			require.Equal(t, tc.expectedLocation, recorder.Header().Get("Location"))
@@ -179,7 +179,7 @@ func TestHandleCompleteLogin(t *testing.T) {
 
 			request := httptest.NewRequest(http.MethodPost, "/v1/identity/login/complete", strings.NewReader(tc.body)).WithContext(ctx)
 			recorder := httptest.NewRecorder()
-			NewHandler(nil, nil, nil, nil, nil, nil, Logins{Completer: completer}).handleCompleteLogin(recorder, request)
+			NewHandler(nil, nil, nil, nil, nil, nil, Logins{Completer: completer}, EmailLogins{}, Methods{}).handleCompleteLogin(recorder, request)
 
 			require.Equal(t, tc.expectedCode, recorder.Code)
 			require.JSONEq(t, tc.expectedBody, recorder.Body.String())
@@ -193,7 +193,7 @@ func TestHandleLocalAuthorize(t *testing.T) {
 		pages.EXPECT().LocalAuthorizePage("s").Return("<html>local</html>", true)
 
 		recorder := httptest.NewRecorder()
-		NewHandler(nil, nil, nil, nil, nil, nil, Logins{LocalPages: pages}).
+		NewHandler(nil, nil, nil, nil, nil, nil, Logins{LocalPages: pages}, EmailLogins{}, Methods{}).
 			handleLocalAuthorize(recorder, httptest.NewRequest(http.MethodGet, "/v1/identity/login/local/authorize?state=s", nil))
 
 		require.Equal(t, http.StatusOK, recorder.Code)
@@ -206,7 +206,7 @@ func TestHandleLocalAuthorize(t *testing.T) {
 		pages.EXPECT().LocalAuthorizePage("s").Return("", false)
 
 		recorder := httptest.NewRecorder()
-		NewHandler(nil, nil, nil, nil, nil, nil, Logins{LocalPages: pages}).
+		NewHandler(nil, nil, nil, nil, nil, nil, Logins{LocalPages: pages}, EmailLogins{}, Methods{}).
 			handleLocalAuthorize(recorder, httptest.NewRequest(http.MethodGet, "/v1/identity/login/local/authorize?state=s", nil))
 
 		require.Equal(t, http.StatusNotFound, recorder.Code)
@@ -218,7 +218,7 @@ func TestHandleListProviders(t *testing.T) {
 	providers.EXPECT().Enabled().Return([]identitypkg.Provider{identitypkg.ProviderGoogle, identitypkg.ProviderLocal})
 
 	recorder := httptest.NewRecorder()
-	NewHandler(nil, nil, nil, nil, nil, nil, Logins{Providers: providers}).
+	NewHandler(nil, nil, nil, nil, nil, nil, Logins{Providers: providers}, EmailLogins{}, Methods{}).
 		handleListProviders(recorder, httptest.NewRequest(http.MethodGet, "/v1/identity/login/providers", nil))
 
 	require.Equal(t, http.StatusOK, recorder.Code)

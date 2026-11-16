@@ -58,6 +58,21 @@ func (mr *MockcallbackRepoMockRecorder) AnswerAttempt(ctx, tx, provider, state, 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AnswerAttempt", reflect.TypeOf((*MockcallbackRepo)(nil).AnswerAttempt), ctx, tx, provider, state, answeredAt, startedAfter)
 }
 
+// BindIdentity mocks base method.
+func (m *MockcallbackRepo) BindIdentity(ctx context.Context, tx *gorm.DB, userID int64, identity repo.ExternalIdentity, boundAt time.Time) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "BindIdentity", ctx, tx, userID, identity, boundAt)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// BindIdentity indicates an expected call of BindIdentity.
+func (mr *MockcallbackRepoMockRecorder) BindIdentity(ctx, tx, userID, identity, boundAt any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BindIdentity", reflect.TypeOf((*MockcallbackRepo)(nil).BindIdentity), ctx, tx, userID, identity, boundAt)
+}
+
 // CreateAccount mocks base method.
 func (m *MockcallbackRepo) CreateAccount(ctx context.Context, tx *gorm.DB, userUUID string, identity repo.ExternalIdentity, createdAt time.Time) (int64, bool, error) {
 	m.ctrl.T.Helper()

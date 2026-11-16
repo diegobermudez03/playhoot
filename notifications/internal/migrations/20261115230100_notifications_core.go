@@ -20,7 +20,9 @@ func migration20261115230100NotificationsCore() *gormigrate.Migration {
 				`CREATE TABLE notifications_entries (
 					id BIGSERIAL PRIMARY KEY,
 					entry_uuid UUID NOT NULL,
-					user_uuid UUID NOT NULL,
+					-- Empty for an entry whose recipient is not a user of
+					-- Playhoot, such as an access code's email-code attempt.
+					user_uuid UUID,
 					source_domain TEXT NOT NULL,
 					type TEXT NOT NULL,
 					external_token TEXT NOT NULL,

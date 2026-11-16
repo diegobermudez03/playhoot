@@ -8,6 +8,8 @@ type loginAttempt struct {
 	ID            int64
 	State         string
 	Provider      string
+	Intent        string
+	LinkUserID    *int64
 	CodeChallenge string
 	Nonce         string
 	// ProviderCodeVerifier is the PKCE verifier toward the provider, which

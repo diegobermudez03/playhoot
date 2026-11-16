@@ -19,6 +19,7 @@ func MigrateTables(db *gorm.DB) error {
 		migration20261107000000IdentityResourceGrants(),
 		migration20261115000000IdentityQueue(),
 		migration20261115100000IdentitySecondFactor(),
+		migration20261116000000IdentityEmailCodes(),
 	}
 
 	migrator := gormigrate.New(db, &gormigrate.Options{

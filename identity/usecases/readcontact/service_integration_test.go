@@ -48,6 +48,24 @@ func TestReadContact(t *testing.T) {
 			require.NoError(t, err)
 			require.False(t, contact.Found)
 		},
+		"a removed method is no longer where an account is reached": func(t *testing.T) {
+			user, userID := newUser(true, "old@x.com", "new@x.com")
+			require.NoError(t, db.Exec(`UPDATE identity_external_identities SET removed_at = now()
+				WHERE user_id = ? AND email = ?`, userID, "new@x.com").Error)
+			contact, err := service.ReadContact(ctx, user)
+			require.NoError(t, err)
+			require.Equal(t, "old@x.com", contact.Email)
+		},
+		"an email code attempt is reached at the address it was asked for": func(t *testing.T) {
+			attempt := uuid.NewString()
+			require.NoError(t, db.Exec(`
+				INSERT INTO identity_email_codes (attempt_uuid, email, intent, code_sha256, language, expires_at, created_at)
+				VALUES (?, ?, ?, ?, ?, now() + interval '10 minutes', now())`,
+				attempt, "nobody@x.com", "sign-in", "a-hash", "pt").Error)
+			contact, err := service.ReadContact(ctx, attempt)
+			require.NoError(t, err)
+			require.Equal(t, identity.Contact{Found: true, Email: "nobody@x.com", Language: "pt"}, contact)
+		},
 		"the administrator is the active grant": func(t *testing.T) {
 			require.NoError(t, db.Exec(`UPDATE identity_admin_grants SET revoked_at = now() WHERE revoked_at IS NULL`).Error)
 			_, found, err := service.AdminUserUUID(ctx)

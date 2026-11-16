@@ -125,19 +125,19 @@ PH.table({
 PH.table({
   id: 'identity.identity_external_identities', domain: 'identity', status: 'implemented',
   name: 'identity_external_identities',
-  summary: 'Links a provider identity (issuer, subject) to a user.',
+  summary: 'Links a sign-in method (issuer, subject) to a user: a provider identity, or an address proven by a one-time code.',
   purpose: 'Lets a later login with the same provider find the same user.',
   columns: [
     { name: 'id', type: 'bigserial', note: '' },
-    { name: 'issuer', type: 'text', note: 'google or local.' },
-    { name: 'subject', type: 'text', note: 'Provider-side subject id.' },
+    { name: 'issuer', type: 'text', note: 'google, local, or email.' },
+    { name: 'subject', type: 'text', note: 'Provider-side subject id, or the normalized address for issuer email.' },
     { name: 'user_id', type: 'bigint', note: '' },
     { name: 'email', type: 'text', note: 'Observed, not verified by Identity itself.' },
     { name: 'name', type: 'text', note: 'Observed.' },
-    { name: 'removed_at', type: 'timestamptz', note: 'Set once when the method is unlinked or the user is deleted (H3, planned).' },
+    { name: 'removed_at', type: 'timestamptz', note: 'Set once when the method is unlinked; deletion will use it too (H3, planned).' },
     { name: 'created_at', type: 'timestamptz', note: '' }
   ],
-  indexes: ['partial UNIQUE (issuer, subject) while not removed (plain UNIQUE until H3)', '(user_id)'],
+  indexes: ['partial UNIQUE (issuer, subject) while not removed', '(user_id)'],
   history: 'Write-once: removed_at.',
   references: [{ column: 'user_id', to: 'identity.identity_users' }]
 });
@@ -145,12 +145,14 @@ PH.table({
 PH.table({
   id: 'identity.identity_login_attempts', domain: 'identity', status: 'implemented',
   name: 'identity_login_attempts',
-  summary: 'One row per account-login attempt, from the authorization URL to completion.',
+  summary: 'One row per provider round trip, from the authorization URL to completion: a sign-in, or the linking of a method to an account.',
   purpose: 'Carries the current state of a login in its own columns; the history of what it went through is the companion events table.',
   columns: [
     { name: 'id', type: 'bigserial', note: '' },
     { name: 'state', type: 'text', note: 'Anti-CSRF state sent to the provider.' },
     { name: 'provider', type: 'text', note: 'google or local.' },
+    { name: 'intent', type: 'text', note: 'sign-in or link.' },
+    { name: 'link_user_id', type: 'bigint', note: 'The account adding this provider identity as a method (intent link).' },
     { name: 'code_challenge', type: 'text', note: 'PKCE S256 from the frontend.' },
     { name: 'nonce', type: 'text', note: '' },
     { name: 'provider_code_verifier', type: 'text', note: 'PKCE verifier this backend uses against the provider.' },
@@ -166,6 +168,7 @@ PH.table({
   history: 'Change table identity_login_attempt_events.',
   references: [
     { column: 'guest_user_id', to: 'identity.identity_users' },
+    { column: 'link_user_id', to: 'identity.identity_users' },
     { column: 'user_id', to: 'identity.identity_users' }
   ],
   lifecycle: LOGIN_ATTEMPT_LIFECYCLE
@@ -175,7 +178,7 @@ PH.table({
   id: 'identity.identity_login_attempt_events', domain: 'identity', status: 'implemented',
   name: 'identity_login_attempt_events',
   summary: 'Every event a login attempt went through.',
-  purpose: 'Append-only history: started, answered, cancelled, failed, unavailable, code_issued, completed, rejected (with reason).',
+  purpose: 'Append-only history: started, answered, cancelled, failed, unavailable, code_issued, completed, rejected (with reason). A link attempt\'s issued code carries what the callback decided: linked or method_in_use.',
   columns: [
     { name: 'id', type: 'bigserial', note: '' },
     { name: 'attempt_id', type: 'bigint', note: '' },
@@ -582,10 +585,10 @@ PH.operation({
   reads: ['identity.identity_users', 'identity.identity_accounts', 'identity.identity_external_identities', 'identity.identity_admin_grants', 'identity.identity_email_codes'],
   writes: [],
   rules: [
-    'The address is the one the latest sign-in provider link observed; a guest has none.',
+    'The address is the one the latest live sign-in method observed; a removed method is no longer one, and a guest has none.',
     'Language is the account\'s interface language once set; empty uses the default (V-07). (H3, planned.)',
     'The administrator is the user of the active grant; none while it is not named.',
-    'A recipient naming an email-code attempt resolves to that attempt\'s address and requested language, so a code can reach a person who has no user yet and notifications never stores an address (H3, planned).'
+    'A recipient naming an email-code attempt resolves to that attempt\'s address and requested language, so a code can reach a person who has no user yet and notifications never stores an address.'
   ],
   sources: ['B: notifications', 'P31§5']
 });
@@ -640,7 +643,7 @@ var EMAIL_CODE_LIFECYCLE = {
 };
 
 PH.table({
-  id: 'identity.identity_email_codes', domain: 'identity', status: 'planned',
+  id: 'identity.identity_email_codes', domain: 'identity', status: 'implemented',
   name: 'identity_email_codes',
   summary: 'One row per one-time email code: a sign-in, registration or method-link attempt.',
   purpose: 'The code itself exists only in the email; identity keeps its hash and the attempt\'s state. No user row is created until a code completes.',
@@ -668,7 +671,7 @@ PH.table({
 });
 
 PH.table({
-  id: 'identity.identity_email_code_events', domain: 'identity', status: 'planned',
+  id: 'identity.identity_email_code_events', domain: 'identity', status: 'implemented',
   name: 'identity_email_code_events',
   summary: 'Every event an email-code attempt went through.',
   purpose: 'Append-only history: sent, wrong_code, superseded, exhausted, completed, refused_in_use. Wrong-code counting and abuse decisions derive from it.',
@@ -684,7 +687,7 @@ PH.table({
 });
 
 PH.operation({
-  id: 'identity.email-login', domain: 'identity', kind: 'workflow', effect: 'write', status: 'planned',
+  id: 'identity.email-login', domain: 'identity', kind: 'workflow', effect: 'write', status: 'implemented',
   name: 'emaillogin (StartEmailLogin / CompleteEmailLogin)',
   summary: 'Signs a person in or registers them with a one-time code sent to their email; the visible alternative to Google (P03§8).',
   reads: ['identity.identity_email_codes', 'identity.identity_external_identities'],
@@ -713,7 +716,7 @@ PH.operation({
 });
 
 PH.operation({
-  id: 'identity.link-method', domain: 'identity', kind: 'workflow', effect: 'write', status: 'planned',
+  id: 'identity.link-method', domain: 'identity', kind: 'workflow', effect: 'write', status: 'implemented',
   name: 'linkmethod (StartLinkEmail / CompleteLinkEmail / StartLinkProvider / CompleteLinkProvider)',
   summary: 'Adds another way into the same account by proving control of both sides; never merges accounts (P03§11).',
   reads: ['identity.identity_email_codes', 'identity.identity_login_attempts', 'identity.identity_external_identities'],
@@ -741,7 +744,7 @@ PH.operation({
 });
 
 PH.operation({
-  id: 'identity.list-methods', domain: 'identity', kind: 'usecase', effect: 'read', status: 'planned',
+  id: 'identity.list-methods', domain: 'identity', kind: 'usecase', effect: 'read', status: 'implemented',
   name: 'ListMethods',
   summary: 'The caller\'s linked sign-in methods: issuer, the address or name observed, when added.',
   reads: ['identity.identity_external_identities'],
@@ -751,14 +754,15 @@ PH.operation({
 });
 
 PH.operation({
-  id: 'identity.remove-method', domain: 'identity', kind: 'usecase', effect: 'write', status: 'planned',
+  id: 'identity.remove-method', domain: 'identity', kind: 'usecase', effect: 'write', status: 'implemented',
   name: 'RemoveMethod',
   summary: 'Unlinks a sign-in method, keeping at least one.',
   reads: ['identity.identity_external_identities'],
   writes: ['identity.identity_external_identities'],
   rules: [
     'Removing the last method is refused: the account must stay reachable (P03§12).',
-    'Write-once removed_at; removing an already-removed method changes nothing.'
+    'Write-once removed_at; removing an already-removed method changes nothing.',
+    'A removed method frees its (issuer, subject): it can be linked again, here or on another account.'
   ],
   sources: ['P03§11-12']
 });

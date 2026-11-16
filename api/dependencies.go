@@ -66,16 +66,64 @@ type localPages interface {
 	LocalAuthorizePage(state string) (string, bool)
 }
 
+// providerLinker is Identity's addition of a provider identity to an
+// account already signed in.
+type providerLinker interface {
+	StartLinkProvider(ctx context.Context, userUUID string, provider string, codeChallenge string) (identity.StartLoginResult, error)
+	CompleteLinkProvider(ctx context.Context, userUUID string, code string, codeVerifier string) (identity.LinkMethodResult, error)
+}
+
 // Logins is what account sign-in needs.
 type Logins struct {
 	Starter    loginStarter
 	Callbacks  loginCallbackHandler
 	Completer  loginCompleter
+	Linker     providerLinker
 	Providers  providerLister
 	LocalPages localPages
 	// CompleteURL is the client's sign-in completion route every provider
 	// callback redirects to.
 	CompleteURL string
+}
+
+// emailLoginStarter is Identity's sending of a one-time code to an address.
+type emailLoginStarter interface {
+	StartEmailLogin(ctx context.Context, address string, language string, guestUserUUID string) (identity.StartEmailLoginResult, error)
+}
+
+// emailLoginCompleter is Identity's exchange of an address and its code for
+// credentials.
+type emailLoginCompleter interface {
+	CompleteEmailLogin(ctx context.Context, address string, code string, replacesRefreshToken string) (identity.CompleteEmailLoginResult, error)
+}
+
+// emailLinker is Identity's addition of an address to an account.
+type emailLinker interface {
+	StartLinkEmail(ctx context.Context, userUUID string, address string, language string) (identity.StartEmailLoginResult, error)
+	CompleteLinkEmail(ctx context.Context, userUUID string, address string, code string) (identity.LinkMethodResult, error)
+}
+
+// EmailLogins is what the one-time email code needs.
+type EmailLogins struct {
+	Starter   emailLoginStarter
+	Completer emailLoginCompleter
+	Linker    emailLinker
+}
+
+// methodReader is Identity's list of an account's ways in.
+type methodReader interface {
+	ListMethods(ctx context.Context, userUUID string) ([]identity.SignInMethod, error)
+}
+
+// methodRemover is Identity's unlinking of one of them.
+type methodRemover interface {
+	RemoveMethod(ctx context.Context, userUUID string, methodID string) (identity.RemoveMethodOutcome, error)
+}
+
+// Methods is what reading and removing an account's ways in needs.
+type Methods struct {
+	Reader  methodReader
+	Remover methodRemover
 }
 
 // displayNameSetter is Identity's naming of a User.

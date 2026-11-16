@@ -31,29 +31,53 @@ type contactRow struct {
 	Email   *string
 }
 
-// ReadContact returns how userUUID is reached. The address is the one the
-// latest sign-in provider link observed.
-func (s *Service) ReadContact(ctx context.Context, userUUID string) (identity.Contact, error) {
+// ReadContact returns how recipient is reached. It is a User's UUID, whose
+// address is the one its latest live sign-in method observed; or the
+// identifier of a one-time email code attempt, which is reached at the
+// address the code was asked for, in the language it was asked in, although
+// nobody has a User yet.
+func (s *Service) ReadContact(ctx context.Context, recipient string) (identity.Contact, error) {
 	defer logging.Step(ctx, "identity.read_contact").Close()
-	if _, err := uuid.Parse(userUUID); err != nil {
+	if _, err := uuid.Parse(recipient); err != nil {
 		return identity.Contact{}, nil
 	}
 	var rows []contactRow
 	err := s.db.WithContext(ctx).Raw(`SELECT a.id IS NOT NULL AS account,
-			(SELECT e.email FROM identity_external_identities e WHERE e.user_id = u.id AND e.email <> ? ORDER BY e.id DESC LIMIT 1) AS email
+			(SELECT e.email FROM identity_external_identities e
+				WHERE e.user_id = u.id AND e.removed_at IS NULL AND e.email <> ? ORDER BY e.id DESC LIMIT 1) AS email
 		FROM identity_users u LEFT JOIN identity_accounts a ON a.user_id = u.id
-		WHERE u.user_uuid = ?`, noEmail, userUUID).Scan(&rows).Error
+		WHERE u.user_uuid = ?`, noEmail, recipient).Scan(&rows).Error
 	if err != nil {
 		return identity.Contact{}, fmt.Errorf("reading contact: %w", err)
 	}
 	if len(rows) == 0 {
-		return identity.Contact{}, nil
+		return s.readAttemptContact(ctx, recipient)
 	}
 	contact := identity.Contact{Found: true, Account: rows[0].Account}
 	if rows[0].Account && rows[0].Email != nil {
 		contact.Email = *rows[0].Email
 	}
 	return contact, nil
+}
+
+type attemptRow struct {
+	Email    string
+	Language string
+}
+
+// readAttemptContact resolves an email-code attempt to where its code goes.
+// Not found when no attempt has that identifier either.
+func (s *Service) readAttemptContact(ctx context.Context, attemptUUID string) (identity.Contact, error) {
+	var rows []attemptRow
+	err := s.db.WithContext(ctx).Raw(`SELECT email, language FROM identity_email_codes WHERE attempt_uuid = ?`, attemptUUID).
+		Scan(&rows).Error
+	if err != nil {
+		return identity.Contact{}, fmt.Errorf("reading an access code's contact: %w", err)
+	}
+	if len(rows) == 0 {
+		return identity.Contact{}, nil
+	}
+	return identity.Contact{Found: true, Email: rows[0].Email, Language: rows[0].Language}, nil
 }
 
 // AdminUserUUID returns the account holding the active administrator

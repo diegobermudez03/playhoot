@@ -33,16 +33,35 @@ type AttemptEvent struct {
 	OccurredAt    time.Time
 }
 
+// Intent is what a login attempt is for.
+type Intent string
+
+const (
+	// IntentSignIn opens a session for whoever the provider vouches for.
+	IntentSignIn Intent = "sign-in"
+	// IntentLink adds the provider identity to an account already signed in.
+	IntentLink Intent = "link"
+)
+
+// Reasons an issued code carries for a link attempt.
+const (
+	ReasonLinked      = "linked"
+	ReasonMethodInUse = "method_in_use"
+)
+
 // NewAttempt is a started login. GuestUserUUID, when set, is the guest who
-// started it.
+// started it; LinkUserUUID, when set, is the account the provider identity
+// will be added to.
 type NewAttempt struct {
 	State         string
 	Provider      string
+	Intent        Intent
 	CodeChallenge string
 	Nonce         string
 	// ProviderCodeVerifier is the PKCE verifier toward the provider.
 	ProviderCodeVerifier string
 	GuestUserUUID        string
+	LinkUserUUID         string
 	StartedAt            time.Time
 }
 
@@ -52,21 +71,25 @@ func (r *Repo) CreateAttempt(ctx context.Context, tx *gorm.DB, attempt NewAttemp
 	created := loginAttempt{
 		State:                attempt.State,
 		Provider:             attempt.Provider,
+		Intent:               string(attempt.Intent),
 		CodeChallenge:        attempt.CodeChallenge,
 		Nonce:                attempt.Nonce,
 		ProviderCodeVerifier: attempt.ProviderCodeVerifier,
 		StartedAt:            attempt.StartedAt,
 	}
 	if attempt.GuestUserUUID != "" {
-		var guestIDs []int64
-		err := tx.WithContext(ctx).Raw(`SELECT id FROM identity_users WHERE user_uuid = ?`, attempt.GuestUserUUID).
-			Scan(&guestIDs).Error
+		guestID, err := userIDOf(ctx, tx, attempt.GuestUserUUID)
 		if err != nil {
-			return fmt.Errorf("finding the guest of a login attempt: %s", err)
+			return err
 		}
-		if len(guestIDs) > 0 {
-			created.GuestUserID = &guestIDs[0]
+		created.GuestUserID = optional(guestID)
+	}
+	if attempt.LinkUserUUID != "" {
+		linkID, err := userIDOf(ctx, tx, attempt.LinkUserUUID)
+		if err != nil {
+			return err
 		}
+		created.LinkUserID = optional(linkID)
 	}
 	if err := tx.WithContext(ctx).Create(&created).Error; err != nil {
 		return fmt.Errorf("recording login attempt: %s", err)
@@ -74,13 +97,28 @@ func (r *Repo) CreateAttempt(ctx context.Context, tx *gorm.DB, attempt NewAttemp
 	return r.RecordAttemptEvent(ctx, tx, created.ID, AttemptEvent{Event: EventStarted, OccurredAt: attempt.StartedAt})
 }
 
-// AnsweredAttempt is a login attempt that was just answered, with the guest
-// who started it, if any.
+// AnsweredAttempt is a login attempt that was just answered, with what it
+// is for and the guest or account that started it, if any.
 type AnsweredAttempt struct {
 	ID                   int64
+	Intent               string
 	Nonce                string
 	ProviderCodeVerifier string
 	GuestUserID          *int64
+	LinkUserID           *int64
+}
+
+// userIDOf returns the internal identifier of userUUID within tx, or zero
+// when no User has it.
+func userIDOf(ctx context.Context, tx *gorm.DB, userUUID string) (int64, error) {
+	var ids []int64
+	if err := tx.WithContext(ctx).Raw(`SELECT id FROM identity_users WHERE user_uuid = ?`, userUUID).Scan(&ids).Error; err != nil {
+		return 0, fmt.Errorf("finding the user of a login attempt: %s", err)
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	return ids[0], nil
 }
 
 // AnswerAttempt marks answered within tx, at answeredAt, the attempt of
@@ -91,7 +129,7 @@ func (r *Repo) AnswerAttempt(ctx context.Context, tx *gorm.DB, provider string, 
 	err := tx.WithContext(ctx).Raw(`
 		UPDATE identity_login_attempts SET answered_at = ?
 		WHERE state = ? AND provider = ? AND answered_at IS NULL AND started_at > ?
-		RETURNING id, nonce, provider_code_verifier, guest_user_id`,
+		RETURNING id, intent, nonce, provider_code_verifier, guest_user_id, link_user_id`,
 		answeredAt, state, provider, startedAfter,
 	).Scan(&attempts).Error
 	if err != nil {
@@ -123,9 +161,14 @@ func (r *Repo) IssueCode(ctx context.Context, tx *gorm.DB, attemptID int64, code
 // in.
 type CodeAttempt struct {
 	ID            int64
+	Intent        string
 	CodeChallenge string
 	ExpiresAt     time.Time
 	CompletedAt   *time.Time
+
+	// IssuedReason is what the callback decided for a link attempt: linked,
+	// or the identity belongs to someone else.
+	IssuedReason string
 
 	UserID      int64
 	UserUUID    string
@@ -137,13 +180,15 @@ type CodeAttempt struct {
 func (r *Repo) LockAttemptByCode(ctx context.Context, tx *gorm.DB, code string) (*CodeAttempt, error) {
 	var attempts []CodeAttempt
 	err := tx.WithContext(ctx).Raw(`
-		SELECT attempt.id, attempt.code_challenge, attempt.login_code_expires_at AS expires_at, attempt.completed_at,
-			attempt.user_id, users.user_uuid, COALESCE(users.display_name, '') AS display_name
+		SELECT attempt.id, attempt.intent, attempt.code_challenge, attempt.login_code_expires_at AS expires_at, attempt.completed_at,
+			attempt.user_id, users.user_uuid, COALESCE(users.display_name, '') AS display_name,
+			COALESCE((SELECT event.reason FROM identity_login_attempt_events event
+				WHERE event.attempt_id = attempt.id AND event.event = ? ORDER BY event.id DESC LIMIT 1), '') AS issued_reason
 		FROM identity_login_attempts attempt
 		JOIN identity_users users ON users.id = attempt.user_id
 		WHERE attempt.login_code = ?
 		FOR UPDATE OF attempt`,
-		code,
+		string(EventCodeIssued), code,
 	).Scan(&attempts).Error
 	if err != nil {
 		return nil, fmt.Errorf("locking login attempt: %s", err)

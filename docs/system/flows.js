@@ -8,7 +8,7 @@
 // old switch-mode flow entry is gone: entitlements never ride the token (P15§5) and my-data is
 // where the frontend learns what a mode has behind it.
 PH.flow({
-  id: 'email-code-sign-in', status: 'planned', coordinator: 'orchestrator', effect: 'write',
+  id: 'email-code-sign-in', status: 'implemented', coordinator: 'orchestrator', effect: 'write',
   name: 'Email code sign-in',
   summary: 'Signs in or registers with a one-time code sent by email (P03§8). The code travels as a notify task (type access-code, necessary email) through the existing deliver-notification and send-notification-email flows; identity resolves the attempt to its address, so notifications never stores one.',
   steps: [

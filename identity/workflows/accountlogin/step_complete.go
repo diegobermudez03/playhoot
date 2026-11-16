@@ -92,6 +92,9 @@ func (m *Manager) completeInTx(ctx context.Context, tx *gorm.DB, code string, co
 		return nil, m.completeRepo.CloseAttempt(ctx, tx, attempt.ID, internalrepo.AttemptEvent{Event: internalrepo.EventRejected, Reason: reason, OccurredAt: now})
 	}
 	switch {
+	case internalrepo.Intent(attempt.Intent) != internalrepo.IntentSignIn:
+		// A link attempt's code never opens a session.
+		return rejected("link_attempt")
 	case attempt.CompletedAt != nil:
 		return rejected("used")
 	case !now.Before(attempt.ExpiresAt):

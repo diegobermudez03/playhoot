@@ -37,7 +37,12 @@ var (
 // if the login creates an account, it is that guest's.
 func (m *Manager) StartLogin(ctx context.Context, provider string, codeChallenge string, guestUserUUID string) (identity.StartLoginResult, error) {
 	defer logging.Step(ctx, "accountlogin.start_login").Close()
+	return m.start(ctx, provider, codeChallenge, internalrepo.IntentSignIn, guestUserUUID, "")
+}
 
+// start records an attempt of either intent and answers where the person
+// proves their identity to the provider.
+func (m *Manager) start(ctx context.Context, provider string, codeChallenge string, intent internalrepo.Intent, guestUserUUID string, linkUserUUID string) (identity.StartLoginResult, error) {
 	chosen, ok := m.providers.Get(identity.Provider(provider))
 	if !ok {
 		startsTotal.Inc(ctx, startOutcomeLabel.Value("provider_unavailable"))
@@ -62,10 +67,12 @@ func (m *Manager) StartLogin(ctx context.Context, provider string, codeChallenge
 	attempt := internalrepo.NewAttempt{
 		State:                state,
 		Provider:             provider,
+		Intent:               intent,
 		CodeChallenge:        codeChallenge,
 		Nonce:                nonce,
 		ProviderCodeVerifier: providerVerifier,
 		GuestUserUUID:        guestUserUUID,
+		LinkUserUUID:         linkUserUUID,
 		StartedAt:            m.now().UTC().Truncate(time.Microsecond),
 	}
 	_, err = utils.RunInDBTransaction(ctx, m.dbServicer, func(ctx context.Context, tx *gorm.DB) (struct{}, error) {

@@ -112,13 +112,13 @@ func TestNewInstrument(t *testing.T) {
 		"within_series_limit": {
 			build: func() *Counter {
 				return NewCounter("instrument_ok_series_total", "Help.",
-					NewLabel("series_a", manyValues(10)...), NewLabel("series_b", manyValues(100)...))
+					NewLabel("series_a", manyValues(40)...), NewLabel("series_b", manyValues(100)...))
 			},
 		},
 		"over_series_limit": {
 			build: func() *Counter {
 				return NewCounter("instrument_big_series_total", "Help.",
-					NewLabel("series_c", manyValues(10)...), NewLabel("series_d", manyValues(101)...))
+					NewLabel("series_c", manyValues(40)...), NewLabel("series_d", manyValues(101)...))
 			},
 			expectPanic: true,
 		},

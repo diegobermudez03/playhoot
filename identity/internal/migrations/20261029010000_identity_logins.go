@@ -6,9 +6,9 @@ import (
 )
 
 // migration20261029010000IdentityLogins creates what accounts sign in with:
-// the external identities bound to each account's User (an issuer and the
-// subject it vouches for; email and name only observed), and login attempts
-// from their start to the one-time code that completes them.
+// the external identities bound to each account's User (unlinked ones keep
+// their removed_at and free the pair again), and login attempts from their
+// start to the one-time code that completes them.
 func migration20261029010000IdentityLogins() *gormigrate.Migration {
 	return &gormigrate.Migration{
 		ID: "20261029010000_identity_logins",
@@ -21,15 +21,21 @@ func migration20261029010000IdentityLogins() *gormigrate.Migration {
 					user_id BIGINT NOT NULL,
 					email TEXT,
 					name TEXT,
+					removed_at TIMESTAMPTZ,
 					created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-					last_login_at TIMESTAMPTZ NOT NULL,
-					UNIQUE (issuer, subject)
+					last_login_at TIMESTAMPTZ NOT NULL
 				)`,
+				// One live binding per (issuer, subject); a removed one no
+				// longer holds the pair, so the method may be linked again.
+				`CREATE UNIQUE INDEX identity_external_identities_live_idx
+					ON identity_external_identities (issuer, subject) WHERE removed_at IS NULL`,
 				`CREATE INDEX identity_external_identities_user_id_idx ON identity_external_identities (user_id)`,
 				`CREATE TABLE identity_login_attempts (
 					id BIGSERIAL PRIMARY KEY,
 					state TEXT NOT NULL UNIQUE,
 					provider TEXT NOT NULL,
+					intent TEXT NOT NULL DEFAULT 'sign-in',
+					link_user_id BIGINT,
 					code_challenge TEXT NOT NULL,
 					nonce TEXT NOT NULL,
 					started_at TIMESTAMPTZ NOT NULL,

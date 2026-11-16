@@ -20,10 +20,10 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/diegobermudez03/playhoot/analytics/usecases/ingestevents"
 	"github.com/diegobermudez03/playhoot/api"
 	apigames "github.com/diegobermudez03/playhoot/api/games"
 	apinotifications "github.com/diegobermudez03/playhoot/api/notifications"
-	"github.com/diegobermudez03/playhoot/analytics/usecases/ingestevents"
 	"github.com/diegobermudez03/playhoot/budget"
 	"github.com/diegobermudez03/playhoot/budget/usecases/admitwork"
 	"github.com/diegobermudez03/playhoot/budget/usecases/manualladder"
@@ -58,8 +58,10 @@ import (
 	"github.com/diegobermudez03/playhoot/identity/usecases/resourcelinks"
 	"github.com/diegobermudez03/playhoot/identity/usecases/secondfactor"
 	"github.com/diegobermudez03/playhoot/identity/usecases/setdisplayname"
+	"github.com/diegobermudez03/playhoot/identity/usecases/signinmethods"
 	"github.com/diegobermudez03/playhoot/identity/usecases/sweepresourcegrants"
 	"github.com/diegobermudez03/playhoot/identity/workflows/accountlogin"
+	"github.com/diegobermudez03/playhoot/identity/workflows/emaillogin"
 	"github.com/diegobermudez03/playhoot/notifications"
 	"github.com/diegobermudez03/playhoot/notifications/emailproviders"
 	"github.com/diegobermudez03/playhoot/notifications/usecases/acceptentry"
@@ -70,10 +72,10 @@ import (
 	"github.com/diegobermudez03/playhoot/notifications/usecases/preferences"
 	"github.com/diegobermudez03/playhoot/notifications/usecases/recordsuppression"
 	"github.com/diegobermudez03/playhoot/notifications/usecases/sendemail"
+	"github.com/diegobermudez03/playhoot/orchestrator/analyticsingestion"
 	"github.com/diegobermudez03/playhoot/orchestrator/costcontrol"
 	orchestratordeadtasks "github.com/diegobermudez03/playhoot/orchestrator/deadtasks"
 	"github.com/diegobermudez03/playhoot/orchestrator/gameauthoring"
-	"github.com/diegobermudez03/playhoot/orchestrator/analyticsingestion"
 	"github.com/diegobermudez03/playhoot/orchestrator/notificationdelivery"
 	"github.com/diegobermudez03/playhoot/orchestrator/playlifecycle"
 	"github.com/diegobermudez03/playhoot/orchestrator/spendingestion"
@@ -379,6 +381,11 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("creating account login: %w", err)
 	}
+	emailLogins, err := emaillogin.New(db, queues.Queue(identity.QueueDomain), envVars.IdentityAccessTokenKey)
+	if err != nil {
+		return fmt.Errorf("creating email code sign-in: %w", err)
+	}
+	signInMethods := signinmethods.New(db)
 	publicAPI := strings.TrimRight(envVars.PublicAPIBaseURL, "/")
 	aiAuthorization, err := aiauthorization.New(db, envVars.IdentityAccessTokenKey, aiauthorization.Config{
 		Issuer: publicAPI, Resource: api.MCPResource(publicAPI), ConsentURL: strings.TrimRight(envVars.PublicWebBaseURL, "/") + "/connect-ai",
@@ -397,10 +404,13 @@ func run() error {
 			Starter:     accountLogins,
 			Callbacks:   accountLogins,
 			Completer:   accountLogins,
+			Linker:      accountLogins,
 			Providers:   loginProviders,
 			LocalPages:  loginProviders,
 			CompleteURL: envVars.WebSignInCompleteURL,
 		},
+		api.EmailLogins{Starter: emailLogins, Completer: emailLogins, Linker: emailLogins},
+		api.Methods{Reader: signInMethods, Remover: signInMethods},
 		playLifecycle,
 		owners,
 		liveConnections,

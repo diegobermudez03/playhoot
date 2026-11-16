@@ -55,7 +55,7 @@ func (s *Service) mark(ctx context.Context, userUUID, entryUUID string) (notific
 	if err != nil {
 		return "", err
 	}
-	if entry == nil || entry.UserUUID != userUUID || !entry.InApp {
+	if entry == nil || entry.UserUUID == nil || *entry.UserUUID != userUUID || !entry.InApp {
 		return notifications.UnknownEntry, nil
 	}
 	return notifications.AlreadyRead, nil

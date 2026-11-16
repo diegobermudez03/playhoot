@@ -93,9 +93,13 @@ func (s *Service) accept(ctx context.Context, notice notifications.Notice) (noti
 		if existing != nil {
 			return duplicate(existing), nil
 		}
-		preferences, err := prefs.Current(ctx, s.repo, tx, notice.Recipient)
-		if err != nil {
-			return notifications.Acceptance{}, err
+		// A type with an external recipient reaches someone who has no user,
+		// so it keeps no user on the entry and no preferences apply to it.
+		preferences := notifications.DefaultPreferences
+		if !spec.ExternalRecipient {
+			if preferences, err = prefs.Current(ctx, s.repo, tx, notice.Recipient); err != nil {
+				return notifications.Acceptance{}, err
+			}
 		}
 		decision := channels.Decide(spec, notice.HasEmail, notice.Student, notice.MarketingConsent, preferences)
 		now := s.now().UTC()
@@ -103,8 +107,12 @@ func (s *Service) accept(ctx context.Context, notice notifications.Notice) (noti
 		if sendAt.Before(now) {
 			sendAt = now
 		}
+		var recipient *string
+		if !spec.ExternalRecipient {
+			recipient = &notice.Recipient
+		}
 		entry := internalrepo.Entry{
-			EntryUUID: uuid.NewString(), UserUUID: notice.Recipient, SourceDomain: notice.SourceDomain, Type: string(notice.Type),
+			EntryUUID: uuid.NewString(), UserUUID: recipient, SourceDomain: notice.SourceDomain, Type: string(notice.Type),
 			ExternalToken: notice.ExternalToken, IdempotencyKey: notice.IdempotencyKey, Skeleton: string(content), SendAt: sendAt,
 			InApp: decision.InApp, EmailChannel: decision.Email, Necessary: spec.Necessary(), CreatedAt: now,
 		}
@@ -121,7 +129,7 @@ func (s *Service) accept(ctx context.Context, notice notifications.Notice) (noti
 			return duplicate(existing), nil
 		}
 		if decision.Email {
-			task := notifications.SendTask{EntryUUID: entry.EntryUUID, Recipient: entry.UserUUID, Necessary: entry.Necessary}
+			task := notifications.SendTask{EntryUUID: entry.EntryUUID, Recipient: notice.Recipient, Necessary: entry.Necessary}
 			if err := s.queue.Enqueue(tx, notifications.SendTaskType, task, sendAt, entry.EntryUUID); err != nil {
 				return notifications.Acceptance{}, err
 			}

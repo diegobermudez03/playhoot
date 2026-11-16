@@ -23,7 +23,8 @@ type ExternalIdentity struct {
 func (r *Repo) FindBoundUser(ctx context.Context, tx *gorm.DB, issuer string, subject string) (int64, error) {
 	var userIDs []int64
 	err := tx.WithContext(ctx).Raw(`
-		SELECT user_id FROM identity_external_identities WHERE issuer = ? AND subject = ?`,
+		SELECT user_id FROM identity_external_identities
+		WHERE issuer = ? AND subject = ? AND removed_at IS NULL`,
 		issuer, subject,
 	).Scan(&userIDs).Error
 	if err != nil {
@@ -90,6 +91,12 @@ func (r *Repo) CreateAccount(ctx context.Context, tx *gorm.DB, userUUID string, 
 	}
 	bound, err := bindIdentity(ctx, tx, created.ID, identity, createdAt)
 	return created.ID, bound, err
+}
+
+// BindIdentity binds the external identity to userID within tx, keeping
+// what the provider said when it was bound. False when it was bound already.
+func (r *Repo) BindIdentity(ctx context.Context, tx *gorm.DB, userID int64, identity ExternalIdentity, boundAt time.Time) (bool, error) {
+	return bindIdentity(ctx, tx, userID, identity, boundAt)
 }
 
 // bindIdentity binds the external identity to userID within tx, keeping what
