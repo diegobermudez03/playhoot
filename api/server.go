@@ -21,6 +21,7 @@ import (
 	"github.com/diegobermudez03/playhoot/api/internal/throttle"
 	"github.com/diegobermudez03/playhoot/api/internal/wsx"
 	apimcp "github.com/diegobermudez03/playhoot/api/mcp"
+	apinotifications "github.com/diegobermudez03/playhoot/api/notifications"
 	apioauth "github.com/diegobermudez03/playhoot/api/oauth"
 	apiplan "github.com/diegobermudez03/playhoot/api/plan"
 	apiplay "github.com/diegobermudez03/playhoot/api/play"
@@ -66,7 +67,7 @@ func ParseAllowedOrigins(raw string) ([]string, error) {
 }
 
 // NewServer constructs a Server exposing every route group's endpoints.
-func NewServer(authorizer authorizer, guests guestCreator, operations operationLister, refreshes credentialRefresher, sessionEnder sessionEnder, displayNames displayNameSetter, logins Logins, sessionCreator sessionCreator, owners ownerLocator, admins adminAttacher, players playerAttacher, joinCodes joinCodeResolver, games Games, ai AI, queues Queues, secondFactor secondFactor, compliance Compliance, plan Plan, budget Budget, config Config) *Server {
+func NewServer(authorizer authorizer, guests guestCreator, operations operationLister, refreshes credentialRefresher, sessionEnder sessionEnder, displayNames displayNameSetter, logins Logins, sessionCreator sessionCreator, owners ownerLocator, admins adminAttacher, players playerAttacher, joinCodes joinCodeResolver, games Games, ai AI, queues Queues, secondFactor secondFactor, compliance Compliance, plan Plan, budget Budget, notifications apinotifications.Dependencies, config Config) *Server {
 	mux := http.NewServeMux()
 	liveConnections := live.New(config.MaxLiveConnections)
 	gamesHandler := apigames.NewHandler(authorizer, games.Creator, games.Editor, games.Reader, games.AILinks, games.Cards, games.Reader)
@@ -86,6 +87,7 @@ func NewServer(authorizer authorizer, guests guestCreator, operations operationL
 		apicompliance.NewHandler(authorizer, compliance.Declarations, compliance.Acceptances, compliance.MarketRules),
 		apiplan.NewHandler(authorizer, plan.FreeLimits),
 		apibudget.NewHandler(authorizer, budget.Status, budget.Controls),
+		apinotifications.NewHandler(authorizer, notifications),
 		apimcp.NewHandler(ai.Server, gamesHandler, apimcp.Config{ResourceMetadataURL: apiBase + "/.well-known/oauth-protected-resource" + mcpPath, GuideURL: guide}),
 	}
 	clients := throttle.ClientAddress{TrustedProxies: config.TrustedProxyHops}

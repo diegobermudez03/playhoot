@@ -564,6 +564,20 @@ PH.operation({
 });
 
 PH.operation({
+  id: 'identity.read-contact', domain: 'identity', kind: 'usecase', effect: 'read', status: 'implemented',
+  name: 'ReadContact',
+  summary: 'How a user is reached (found, account, address, language) and who the administrator is; read by the orchestrator for notifications.',
+  reads: ['identity.identity_users', 'identity.identity_accounts', 'identity.identity_external_identities', 'identity.identity_admin_grants'],
+  writes: [],
+  rules: [
+    'The address is the one the latest sign-in provider link observed; a guest has none.',
+    'Language stays empty while Identity keeps no interface language; the caller uses the default (V-07).',
+    'The administrator is the user of the active grant; none while it is not named.'
+  ],
+  sources: ['B: notifications', 'P31§5']
+});
+
+PH.operation({
   id: 'identity.enroll-totp', domain: 'identity', kind: 'usecase', effect: 'write', status: 'implemented',
   name: 'EnrollTotp / ConfirmTotp',
   summary: 'Starts a TOTP enrollment (secret and otpauth URI shown once) and confirms it with a first valid code.',

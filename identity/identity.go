@@ -84,6 +84,18 @@ const (
 	// step-up proof, changing caps and rates, cutting off or reopening. It
 	// requires the administrator.
 	OperationManageBudget Operation = "MANAGE_BUDGET"
+
+	// OperationReadNotifications is listing the caller's notifications and
+	// marking them read. Guests may perform it.
+	OperationReadNotifications Operation = "READ_NOTIFICATIONS"
+
+	// OperationSetNotificationPreferences is reading and changing the
+	// caller's optional email choices. It requires a real account.
+	OperationSetNotificationPreferences Operation = "SET_NOTIFICATION_PREFERENCES"
+
+	// OperationManageEmail is reading the outbound email panel and changing
+	// its mode. It requires the administrator.
+	OperationManageEmail Operation = "MANAGE_EMAIL"
 )
 
 // Level is how strongly a caller is authenticated, on the ordered scale
@@ -617,3 +629,14 @@ const (
 	// AdminGrantNotAccount means the User does not exist or is a guest.
 	AdminGrantNotAccount AdminGrantOutcome = "not_account"
 )
+
+// Contact is how a User is reached outside Playhoot. Found is false for an
+// unknown User; a guest has no Email. Email is the address last observed
+// from a sign-in provider. Language is the interface language the User
+// chose, empty while Identity keeps none.
+type Contact struct {
+	Found    bool
+	Account  bool
+	Email    string
+	Language string
+}

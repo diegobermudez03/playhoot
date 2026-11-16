@@ -450,11 +450,13 @@ PH.flow({
 // A domain leaves a task in its own queue inside its own transaction; the orchestrator-registered
 // processor delivers it to the owning domain (D-010). Domains never call each other.
 PH.flow({
-  id: 'deliver-notification', status: 'planned', coordinator: 'orchestrator', effect: 'write',
+  id: 'deliver-notification', status: 'implemented', coordinator: 'orchestrator', effect: 'write',
   name: 'Deliver notification',
   summary: 'Processes a notify task from any domain’s queue into one logical notification entry.',
   steps: [
-    { n: 1, domain: 'notifications', operation: 'notifications.accept-entry', when: 'a notify task is due', onFailure: 'The queue retries with backoff; after max attempts the task is dead and admin can retry it.' }
+    { n: 1, domain: 'identity', operation: 'identity.read-contact', when: 'a notify task is due (recipient admin resolves to the active administrator)', onFailure: 'No administrator yet: the task retries. Unknown recipient: the task turns dead at once.' },
+    { n: 2, domain: 'compliance', operation: 'compliance.get-acceptance-text', when: 'the type is marketing', onFailure: 'The queue retries.' },
+    { n: 3, domain: 'notifications', operation: 'notifications.accept-entry', when: 'always, with whether the recipient has an address, is a student and consented to marketing', onFailure: 'The queue retries with backoff; an invalid notice turns the task dead at once (admin alert).' }
   ],
   persistence: 'queue',
   idempotency: 'The task carries the source domain’s idempotency key; acceptance replays the existing entry.',
@@ -462,17 +464,18 @@ PH.flow({
   sources: ['B: notifications', 'P29§1']
 });
 PH.flow({
-  id: 'send-notification-email', status: 'planned', coordinator: 'orchestrator', effect: 'write',
+  id: 'send-notification-email', status: 'implemented', coordinator: 'orchestrator', effect: 'write',
   name: 'Send notification email',
-  summary: 'Processes an email task: admits the cost, sends through the selected provider, settles the measured cost.',
+  summary: 'Processes an email task: reads the current address, admits the cost, sends through the selected provider, releases the reservation.',
   steps: [
-    { n: 1, domain: 'budget', operation: 'budget.admit-work', when: 'the email task is due (category email; Resend sends still count volume at zero cost)', onFailure: 'The task waits and retries: a budget refusal is a pause, not a loss; the in-app entry already exists.' },
-    { n: 2, domain: 'notifications', operation: 'notifications.send-email', when: 'admitted', onFailure: 'Retry within the task; a final failure records the delivery as failed and releases the reservation.' },
-    { n: 3, domain: 'budget', operation: 'budget.settle-work', when: 'always after step 2 decided', onFailure: 'The queue retries settlement idempotently.' }
+    { n: 1, domain: 'identity', operation: 'identity.read-contact', when: 'the email task is due (address and language read now, never stored by notifications)', onFailure: 'The queue retries.' },
+    { n: 2, domain: 'budget', operation: 'budget.admit-work', when: 'always (category email, one email at the SES rate; optional email is discretionary, necessary email is not)', onFailure: 'The task waits and retries: a budget refusal is a pause, not a loss; the in-app entry already exists.' },
+    { n: 3, domain: 'notifications', operation: 'notifications.send-email', when: 'admitted', onFailure: 'Resend only out of quota or a clear provider failure: the task retries later. Accepted, refused or uncertain: decided for good.' },
+    { n: 4, domain: 'budget', operation: 'budget.settle-work', when: 'always after step 3, with zero quantity: it only releases the reservation', onFailure: 'Logged; the reservation expires on its own.' }
   ],
   persistence: 'queue',
-  idempotency: 'One email task per entry; the delivery record is checked before any provider call, so a retried task never double-sends.',
-  compensation: 'An unsettled reservation expires on its own; the spend that happened stays recorded.',
+  idempotency: 'One email task per entry; the delivery records are checked under a lock before any provider call, so a retried task never double-sends. The measured spend is a spend-event task written with the sent record (flow ingest-spend-events), so it is never lost or counted twice.',
+  compensation: 'An unreleased reservation expires on its own; the spend that happened stays recorded.',
   sources: ['P31§1-3', 'P32§1-2']
 });
 PH.flow({

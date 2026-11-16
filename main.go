@@ -22,7 +22,9 @@ import (
 
 	"github.com/diegobermudez03/playhoot/api"
 	apigames "github.com/diegobermudez03/playhoot/api/games"
+	apinotifications "github.com/diegobermudez03/playhoot/api/notifications"
 	"github.com/diegobermudez03/playhoot/budget"
+	"github.com/diegobermudez03/playhoot/budget/usecases/admitwork"
 	"github.com/diegobermudez03/playhoot/budget/usecases/manualladder"
 	"github.com/diegobermudez03/playhoot/budget/usecases/recordspend"
 	"github.com/diegobermudez03/playhoot/budget/usecases/setcontrols"
@@ -48,6 +50,7 @@ import (
 	"github.com/diegobermudez03/playhoot/identity/usecases/endsession"
 	"github.com/diegobermudez03/playhoot/identity/usecases/grantadmin"
 	"github.com/diegobermudez03/playhoot/identity/usecases/listoperations"
+	"github.com/diegobermudez03/playhoot/identity/usecases/readcontact"
 	"github.com/diegobermudez03/playhoot/identity/usecases/refreshcredentials"
 	"github.com/diegobermudez03/playhoot/identity/usecases/resourcegrants"
 	"github.com/diegobermudez03/playhoot/identity/usecases/resourcelinks"
@@ -55,9 +58,20 @@ import (
 	"github.com/diegobermudez03/playhoot/identity/usecases/setdisplayname"
 	"github.com/diegobermudez03/playhoot/identity/usecases/sweepresourcegrants"
 	"github.com/diegobermudez03/playhoot/identity/workflows/accountlogin"
+	"github.com/diegobermudez03/playhoot/notifications"
+	"github.com/diegobermudez03/playhoot/notifications/emailproviders"
+	"github.com/diegobermudez03/playhoot/notifications/usecases/acceptentry"
+	"github.com/diegobermudez03/playhoot/notifications/usecases/emailadmin"
+	"github.com/diegobermudez03/playhoot/notifications/usecases/expiredeliveries"
+	"github.com/diegobermudez03/playhoot/notifications/usecases/listentries"
+	"github.com/diegobermudez03/playhoot/notifications/usecases/markread"
+	"github.com/diegobermudez03/playhoot/notifications/usecases/preferences"
+	"github.com/diegobermudez03/playhoot/notifications/usecases/recordsuppression"
+	"github.com/diegobermudez03/playhoot/notifications/usecases/sendemail"
 	"github.com/diegobermudez03/playhoot/orchestrator/costcontrol"
 	orchestratordeadtasks "github.com/diegobermudez03/playhoot/orchestrator/deadtasks"
 	"github.com/diegobermudez03/playhoot/orchestrator/gameauthoring"
+	"github.com/diegobermudez03/playhoot/orchestrator/notificationdelivery"
 	"github.com/diegobermudez03/playhoot/orchestrator/playlifecycle"
 	"github.com/diegobermudez03/playhoot/orchestrator/spendingestion"
 	"github.com/diegobermudez03/playhoot/orchestrator/stepup"
@@ -135,6 +149,13 @@ type envVariables struct {
 	// 64 hex characters). Required in production; elsewhere a fixed
 	// development key is used when unset.
 	IdentityTotpKey []byte
+
+	// NotificationsUnsubscribeKey seals addresses into unsubscribe links
+	// (NOTIFICATIONS_UNSUBSCRIBE_KEY, 64 hex characters) and
+	// NotificationsWebhookSecret signs the email providers' callbacks
+	// (NOTIFICATIONS_WEBHOOK_SECRET). Required in production.
+	NotificationsUnsubscribeKey []byte
+	NotificationsWebhookSecret  []byte
 
 	// IdentityAdminUserUUID is the account made the administrator at
 	// startup (IDENTITY_ADMIN_USER_UUID); empty grants nothing.
@@ -285,7 +306,28 @@ func run() error {
 	settlework.New(db).Register(budgetQueue)
 	// Spend events are delivered from every domain queue; a domain whose
 	// queue is added later joins this list.
-	spendingestion.New(recordspend.New(db, budgetQueue)).Register(queues.Queue(identity.QueueDomain), budgetQueue)
+	notificationsQueue := queues.Queue(notifications.QueueDomain)
+	spendingestion.New(recordspend.New(db, budgetQueue)).Register(queues.Queue(identity.QueueDomain), budgetQueue, notificationsQueue)
+	// Notify tasks are delivered from every domain queue, like spend events.
+	contacts := readcontact.New(db)
+	notificationdelivery.New(contacts, acceptances.New(db), acceptentry.New(db, notificationsQueue)).Register(queues.Queue(identity.QueueDomain), budgetQueue, notificationsQueue)
+	// Delivery 1 sends through the simulated providers (same contract as the
+	// real ones); nothing leaves the machine.
+	resendProvider := emailproviders.NewResend(envVars.NotificationsWebhookSecret)
+	sesProvider := emailproviders.NewSES(envVars.NotificationsWebhookSecret)
+	emailSender, err := sendemail.New(db, notificationsQueue, envVars.NotificationsUnsubscribeKey, sendemail.Links{
+		OpenURL:        strings.TrimRight(envVars.PublicWebBaseURL, "/") + "/notifications",
+		UnsubscribeURL: strings.TrimRight(envVars.PublicAPIBaseURL, "/") + "/v1/email/unsubscribe/",
+	}, resendProvider, sesProvider)
+	if err != nil {
+		return fmt.Errorf("creating email sending: %w", err)
+	}
+	suppressions, err := recordsuppression.New(db, envVars.NotificationsUnsubscribeKey, resendProvider, sesProvider)
+	if err != nil {
+		return fmt.Errorf("creating suppressions: %w", err)
+	}
+	notificationdelivery.NewEmail(contacts, admitwork.New(db), emailSender, settlework.New(db)).Register(notificationsQueue)
+	expiredeliveries.New(db).Register(notificationsQueue)
 	costControls := costcontrol.New(stepup.New(secondFactor), setcontrols.New(db), manualladder.New(db, budgetQueue))
 	// Previews run on the live controller pinned to a draft build; they are
 	// never Sessions (play/session/workflows/previewlifecycle).
@@ -364,6 +406,11 @@ func run() error {
 		api.Compliance{Declarations: marketaccess.New(db), Acceptances: acceptances.New(db), MarketRules: marketrules.New(db)},
 		api.Plan{FreeLimits: freelimits.New(db)},
 		api.Budget{Status: budgetstatus.New(db), Controls: costControls},
+		apinotifications.Dependencies{
+			Entries: listentries.New(db), Reads: markread.New(db), Preferences: preferences.New(db),
+			Suppression: suppressions,
+			Panel:       emailadmin.New(db, resendProvider, sesProvider),
+		},
 		api.Config{
 			CORSAllowedOrigins:      envVars.CORSAllowedOrigins,
 			WebSocketAllowedOrigins: envVars.WebSocketAllowedOrigins,
@@ -549,6 +596,9 @@ func readEnvVariables() (*envVariables, error) {
 	if envVars.Replay.MaxPendingChunks, err = optionalPositiveInt("REPLAY_MAX_PENDING_CHUNKS"); err != nil {
 		return nil, err
 	}
+	if err := readNotificationsVariables(envVars); err != nil {
+		return nil, err
+	}
 	if err := readIdentityVariables(envVars); err != nil {
 		return nil, err
 	}
@@ -637,6 +687,36 @@ var localProviderEnvironments = map[string]bool{"development": true, "local": tr
 
 // readIdentityVariables reads Identity's key, its local provider (refused in
 // production) and where sign-ins complete.
+// readNotificationsVariables reads the unsubscribe key and the webhook
+// secret; outside production fixed development values apply when unset.
+func readNotificationsVariables(envVars *envVariables) error {
+	production := strings.EqualFold(envVars.Environment, "production")
+	unsubscribeKey := strings.TrimSpace(os.Getenv("NOTIFICATIONS_UNSUBSCRIBE_KEY"))
+	switch {
+	case unsubscribeKey != "":
+		decoded, err := hex.DecodeString(unsubscribeKey)
+		if err != nil || len(decoded) != 32 {
+			return fmt.Errorf("NOTIFICATIONS_UNSUBSCRIBE_KEY must be 64 hex characters")
+		}
+		envVars.NotificationsUnsubscribeKey = decoded
+	case production:
+		return fmt.Errorf("NOTIFICATIONS_UNSUBSCRIBE_KEY is required in production")
+	default:
+		developmentKey := sha256.Sum256([]byte("playhoot development unsubscribe key"))
+		envVars.NotificationsUnsubscribeKey = developmentKey[:]
+	}
+	secret := os.Getenv("NOTIFICATIONS_WEBHOOK_SECRET")
+	switch {
+	case secret != "":
+		envVars.NotificationsWebhookSecret = []byte(secret)
+	case production:
+		return fmt.Errorf("NOTIFICATIONS_WEBHOOK_SECRET is required in production")
+	default:
+		envVars.NotificationsWebhookSecret = []byte("playhoot development webhook secret")
+	}
+	return nil
+}
+
 func readIdentityVariables(envVars *envVariables) error {
 	production := strings.EqualFold(envVars.Environment, "production")
 	key := os.Getenv("IDENTITY_ACCESS_TOKEN_KEY")

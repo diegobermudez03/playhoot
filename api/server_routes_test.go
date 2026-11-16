@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	apinotifications "github.com/diegobermudez03/playhoot/api/notifications"
 )
 
 const buildServerEnv = "PLAYHOOT_TEST_BUILD_SERVER"
@@ -16,7 +18,7 @@ const buildServerEnv = "PLAYHOOT_TEST_BUILD_SERVER"
 // declared once per process, and other tests declare them over test routes.
 func TestNewServerDeclaresEveryRoute(t *testing.T) {
 	if os.Getenv(buildServerEnv) == "1" {
-		NewServer(nil, nil, nil, nil, nil, nil, Logins{}, nil, nil, nil, nil, nil, Games{}, AI{}, Queues{}, nil, Compliance{}, Plan{}, Budget{}, Config{})
+		NewServer(nil, nil, nil, nil, nil, nil, Logins{}, nil, nil, nil, nil, nil, Games{}, AI{}, Queues{}, nil, Compliance{}, Plan{}, Budget{}, apinotifications.Dependencies{}, Config{})
 		return
 	}
 	cmd := exec.Command(os.Args[0], "-test.run=^TestNewServerDeclaresEveryRoute$")
