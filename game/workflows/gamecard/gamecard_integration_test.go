@@ -1,6 +1,7 @@
 package gamecard
 
 import (
+	"github.com/diegobermudez03/playhoot/utils/txqueue"
 	"bytes"
 	"context"
 	"os"
@@ -48,7 +49,7 @@ func TestCardIntegration(t *testing.T) {
 	db := testdb.OpenGameDB(t)
 	store := &memoryStore{objects: map[string][]byte{}}
 	cards := New(db, store)
-	lifecycle := gamelifecycle.New(db)
+	lifecycle := gamelifecycle.New(db, txqueue.NewRegistry(db, txqueue.DefaultWorkerConfig).Queue("game"))
 	ctx := context.Background()
 
 	newGame := func(t *testing.T) (string, string) {

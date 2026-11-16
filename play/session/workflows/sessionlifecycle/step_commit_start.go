@@ -15,6 +15,7 @@ import (
 	"github.com/diegobermudez03/playhoot/play/session/internal/business/sessionstatus"
 	internalrepo "github.com/diegobermudez03/playhoot/play/session/workflows/sessionlifecycle/internal/repo"
 	"github.com/diegobermudez03/playhoot/utils"
+	"github.com/diegobermudez03/playhoot/utils/txqueue"
 )
 
 //go:generate mockgen -package=sessionlifecycle -destination=step_commit_start_mock_test.go . commitStartRepo
@@ -104,7 +105,22 @@ func (m *Manager) commitStartInTx(ctx context.Context, tx *gorm.DB, sessionUUID 
 	if err := m.commitStartRepo.ReleaseJoinCodes(ctx, tx, session.ID, now); err != nil {
 		return "", err
 	}
+	// The event leaves with the start; delivery is asynchronous.
+	event := sessionpkg.SessionStartedEvent(session.CreatedByUserUUID, sessionUUID, hasOtherThan(participants, session.CreatedByUserUUID), now)
+	if err := m.queue.Enqueue(tx, txqueue.TypeAnalyticsEvent, event, time.Time{}, event.IdempotencyKey); err != nil {
+		return "", err
+	}
 	return sessionpkg.CommitStartCommitted, nil
+}
+
+// hasOtherThan reports whether the roster has a player besides creator.
+func hasOtherThan(participants []internalrepo.Participant, creator string) bool {
+	for _, p := range participants {
+		if !sameUUID(p.UserUUID, creator) {
+			return true
+		}
+	}
+	return false
 }
 
 // validStartCommit checks commit and returns its roster: at least one

@@ -1,6 +1,7 @@
 package sessionlifecycle
 
 import (
+	"github.com/diegobermudez03/playhoot/utils/txqueue"
 	"context"
 	"testing"
 	"time"
@@ -46,7 +47,7 @@ func TestCheckStartEligibilityIntegration(t *testing.T) {
 	for name, setup := range tests {
 		t.Run(name, func(t *testing.T) {
 			tc := setup(t)
-			manager := New(db, store, 0)
+			manager := New(db, store, txqueue.NewRegistry(db, txqueue.DefaultWorkerConfig).Queue(sessionpkg.QueueDomain), 0)
 
 			eligibility, err := manager.CheckStartEligibility(context.Background(), tc.sessionUUID, tc.userUUID, tc.playerCount)
 

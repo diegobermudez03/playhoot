@@ -1,6 +1,6 @@
-// Domain: analytics (planned). Ingestion in the H1 design; reports in H10.
+// Domain: analytics. Ingestion implemented in H1; reports are the H10 design.
 PH.domain({
-  id: 'analytics', parent: null, kind: 'traditional', status: 'planned',
+  id: 'analytics', parent: null, kind: 'traditional', status: 'implemented',
   name: 'Analytics',
   summary: 'Long-term numbers in their own tables, fed by events the domains enqueue; decoupled from the business logic.',
   responsibilities: [
@@ -19,7 +19,7 @@ PH.domain({
 // ---------- H1 design (planned): ingestion. Reports and admin queries are the H10 design. ----------
 
 PH.table({
-  id: 'analytics.analytics_events', domain: 'analytics', status: 'planned',
+  id: 'analytics.analytics_events', domain: 'analytics', status: 'implemented',
   name: 'analytics_events',
   summary: 'The event store the P34 metrics are computed from, decoupled from the operational tables.',
   purpose: 'Only the events and dates the activation, retention, frequency and churn metrics need; never every click.',
@@ -42,13 +42,15 @@ PH.table({
 });
 
 PH.operation({
-  id: 'analytics.ingest-events', domain: 'analytics', kind: 'usecase', effect: 'write', status: 'planned',
+  id: 'analytics.ingest-events', domain: 'analytics', kind: 'usecase', effect: 'write', status: 'implemented',
   name: 'IngestEvents',
   summary: 'Stores a batch of events from the queue, idempotently.',
   reads: ['analytics.analytics_events'],
   writes: ['analytics.analytics_events'],
   rules: [
-    'Idempotent by (source domain, idempotency key) per event.',
+    'Idempotent by (source domain, idempotency key) per event; a batch stores its valid events, skips and counts the invalid ones (unknown type or kind, user reference that is not a creator UUID, oversized properties) and takes at most 500 events.',
+    'An event dated in the future is stored as occurring now.',
+    'Until accounts (H3) and plans (H6) provide real values, emitters send account kind personal and plan kind free.',
     'No individual student tracking, answers, grades or materials; internal tests are marked so they are never shown as real use.',
     'Ingestion respects the economic limits of P32 like any other queue work.'
   ],

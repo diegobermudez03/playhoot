@@ -1,6 +1,7 @@
 package gamelifecycle
 
 import (
+	"github.com/diegobermudez03/playhoot/utils/txqueue"
 	"context"
 	"testing"
 
@@ -14,7 +15,7 @@ import (
 
 func TestPublicationIntegration(t *testing.T) {
 	db := testdb.OpenGameDB(t)
-	manager := New(db)
+	manager := New(db, txqueue.NewRegistry(db, txqueue.DefaultWorkerConfig).Queue(game.QueueDomain))
 	ctx := context.Background()
 
 	named := func(t *testing.T) (string, game.CreatedGame) {

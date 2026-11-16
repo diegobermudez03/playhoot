@@ -491,11 +491,11 @@ PH.flow({
   sources: ['P32§1-2', 'P12§4']
 });
 PH.flow({
-  id: 'ingest-analytics-events', status: 'planned', coordinator: 'orchestrator', effect: 'write',
+  id: 'ingest-analytics-events', status: 'implemented', coordinator: 'orchestrator', effect: 'write',
   name: 'Ingest analytics events',
   summary: 'Processes analytics-event tasks from the domains into the analytics event store.',
   steps: [
-    { n: 1, domain: 'analytics', operation: 'analytics.ingest-events', when: 'an analytics-event task is due', onFailure: 'The queue retries; analytics never blocks the operation that emitted the event.' }
+    { n: 1, domain: 'analytics', operation: 'analytics.ingest-events', when: 'an analytics-event task is due', onFailure: 'A storage failure retries; an unreadable payload or an invalid event turns the task dead for admin after the valid events were stored. Analytics never blocks the operation that emitted the event: the task is written in the same transaction as the emitting write and delivered asynchronously.' }
   ],
   persistence: 'queue',
   idempotency: 'By (source domain, idempotency key) per event inside ingest-events.',

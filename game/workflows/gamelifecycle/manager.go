@@ -13,6 +13,11 @@ import (
 	"github.com/diegobermudez03/playhoot/utils"
 )
 
+// enqueuer leaves a task in Game's queue inside a transaction.
+type enqueuer interface {
+	Enqueue(tx *gorm.DB, taskType string, payload any, runAt time.Time, idempotencyKey string) error
+}
+
 // Manager is the Game lifecycle workflow controller. Each step depends on its
 // own narrow persistence contract, even though one internal/repo.Repo
 // satisfies all of them.
@@ -25,18 +30,22 @@ type Manager struct {
 	// on; it is the same Repo, which owns the database handle.
 	dbServicer utils.DBServicer
 
+	// queue is Game's queue: events leave there in the writing transaction.
+	queue enqueuer
+
 	now     func() time.Time
 	newUUID func() string
 }
 
-// New constructs a Manager persisting to db.
-func New(db *gorm.DB) *Manager {
+// New constructs a Manager persisting to db, leaving events in queue.
+func New(db *gorm.DB, queue enqueuer) *Manager {
 	repo := internalrepo.New(db)
 	return &Manager{
 		createGameRepo:  repo,
 		publishRepo:     repo,
 		openEditionRepo: repo,
 		dbServicer:      repo,
+		queue:           queue,
 		now:             time.Now,
 		newUUID:         uuid.NewString,
 	}

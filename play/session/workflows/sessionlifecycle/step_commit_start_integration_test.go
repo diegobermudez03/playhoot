@@ -1,6 +1,7 @@
 package sessionlifecycle
 
 import (
+	"github.com/diegobermudez03/playhoot/utils/txqueue"
 	"context"
 	"testing"
 	"time"
@@ -119,6 +120,56 @@ func statusHistory(t *testing.T, db *gorm.DB, sessionID uint) []string {
 	return history
 }
 
+func TestCommitStartEmitsSessionStarted(t *testing.T) {
+	db := testdb.OpenSessionDB(t)
+	store := objectstore.NewFake()
+	manager := New(db, store, txqueue.NewRegistry(db, txqueue.DefaultWorkerConfig).Queue(sessionpkg.QueueDomain), 0)
+	checkpoint := sessionpkg.Checkpoint{ContextRevision: 1, Content: []byte(`{"schema_version":1}`)}
+	events := func(t *testing.T, sessionUUID string) []string {
+		var payloads []string
+		require.NoError(t, db.Raw(`SELECT payload::text FROM play_session_queue_tasks WHERE type = ? AND idempotency_key = ?`, "analytics-event", "session-started:"+sessionUUID).Scan(&payloads).Error)
+		return payloads
+	}
+
+	tests := map[string]func(t *testing.T){
+		"real_participants_are_flagged_and_the_start_commits_with_the_event": func(t *testing.T) {
+			session := seedStartableSession(t, db, store, "LOBBY", time.Now().UTC().Add(time.Hour))
+			outcome, err := manager.CommitStart(context.Background(), session.UUID, session.CreatorUUID, sessionpkg.StartCommit{
+				Participants: []sessionpkg.StartParticipant{{UserUUID: session.CreatorUUID, ParticipantID: "P1"}, {UserUUID: uuid.NewString(), ParticipantID: "P2"}},
+				Checkpoint:   checkpoint,
+			})
+			require.NoError(t, err)
+			require.Equal(t, sessionpkg.CommitStartCommitted, outcome)
+			payloads := events(t, session.UUID)
+			require.Len(t, payloads, 1)
+			require.Contains(t, payloads[0], `"real_participants": true`)
+			require.Contains(t, payloads[0], `"user_ref": "`+session.CreatorUUID+`"`)
+		},
+		"a_creator_playing_alone_is_not_real_use": func(t *testing.T) {
+			session := seedStartableSession(t, db, store, "LOBBY", time.Now().UTC().Add(time.Hour))
+			_, err := manager.CommitStart(context.Background(), session.UUID, session.CreatorUUID, sessionpkg.StartCommit{
+				Participants: []sessionpkg.StartParticipant{{UserUUID: session.CreatorUUID, ParticipantID: "P1"}},
+				Checkpoint:   checkpoint,
+			})
+			require.NoError(t, err)
+			require.Contains(t, events(t, session.UUID)[0], `"real_participants": false`)
+		},
+		"a_start_that_does_not_happen_emits_nothing": func(t *testing.T) {
+			session := seedStartableSession(t, db, store, "LOBBY", time.Now().UTC().Add(-time.Minute))
+			outcome, err := manager.CommitStart(context.Background(), session.UUID, session.CreatorUUID, sessionpkg.StartCommit{
+				Participants: []sessionpkg.StartParticipant{{UserUUID: uuid.NewString(), ParticipantID: "P1"}},
+				Checkpoint:   checkpoint,
+			})
+			require.NoError(t, err)
+			require.Equal(t, sessionpkg.CommitStartNotInLobby, outcome)
+			require.Empty(t, events(t, session.UUID))
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, test)
+	}
+}
+
 func TestCommitStartIntegration(t *testing.T) {
 	type test struct {
 		session startableSession
@@ -193,7 +244,7 @@ func TestCommitStartIntegration(t *testing.T) {
 	for name, setup := range tests {
 		t.Run(name, func(t *testing.T) {
 			tc := setup(t)
-			manager := New(db, store, 0)
+			manager := New(db, store, txqueue.NewRegistry(db, txqueue.DefaultWorkerConfig).Queue(sessionpkg.QueueDomain), 0)
 
 			outcome, err := manager.CommitStart(context.Background(), tc.session.UUID, tc.session.CreatorUUID, tc.commit)
 

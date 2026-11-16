@@ -1,6 +1,7 @@
 package sessionlifecycle
 
 import (
+	"github.com/diegobermudez03/playhoot/utils/txqueue"
 	"context"
 	"testing"
 	"time"
@@ -16,7 +17,7 @@ import (
 func TestLoadRunningSessionIntegration(t *testing.T) {
 	db := testdb.OpenSessionDB(t)
 	store := objectstore.NewFake()
-	manager := New(db, store, 0)
+	manager := New(db, store, txqueue.NewRegistry(db, txqueue.DefaultWorkerConfig).Queue(sessionpkg.QueueDomain), 0)
 	ctx := context.Background()
 
 	t.Run("committed_start_is_read_back", func(t *testing.T) {

@@ -1,6 +1,7 @@
 package gamelifecycle
 
 import (
+	"github.com/diegobermudez03/playhoot/utils/txqueue"
 	"context"
 	"sync"
 	"testing"
@@ -32,7 +33,7 @@ type persistedEdition struct {
 
 func TestCreateGameIntegration(t *testing.T) {
 	db := testdb.OpenGameDB(t)
-	manager := New(db)
+	manager := New(db, txqueue.NewRegistry(db, txqueue.DefaultWorkerConfig).Queue(game.QueueDomain))
 	ctx := context.Background()
 
 	readGame := func(t *testing.T, gameUUID string) persistedGame {
@@ -77,6 +78,30 @@ func TestCreateGameIntegration(t *testing.T) {
 		var published []bool
 		require.NoError(t, db.Raw(`SELECT is_published FROM game_histories WHERE game_id = ?`, persisted.ID).Scan(&published).Error)
 		require.Equal(t, []bool{false}, published)
+	})
+
+	t.Run("creating_leaves_one_analytics_event_in_the_same_transaction_and_a_retry_no_second", func(t *testing.T) {
+		owner := uuid.NewString()
+		queued := func(gameUUID string) []string {
+			var payloads []string
+			require.NoError(t, db.Raw(`SELECT payload::text FROM game_queue_tasks WHERE type = ? AND idempotency_key = ?`, "analytics-event", "game-created:"+gameUUID).Scan(&payloads).Error)
+			return payloads
+		}
+
+		created, err := manager.CreateGame(ctx, owner, "Memoria", "key-ev", nil)
+		require.NoError(t, err)
+		_, err = manager.CreateGame(ctx, owner, "Memoria", "key-ev", nil)
+		require.NoError(t, err)
+
+		payloads := queued(created.GameUUID)
+		require.Len(t, payloads, 1)
+		require.JSONEq(t, `{"event_type":"game-created","user_ref":"`+owner+`","account_kind":"personal","plan_kind":"free","entity_ref":"`+created.GameUUID+`","properties":{},"idempotency_key":"game-created:`+created.GameUUID+`","occurred_at":"`+created.CreatedAt.Format(time.RFC3339Nano)+`"}`, payloads[0])
+		// A rejected request leaves nothing behind.
+		_, err = manager.CreateGame(ctx, owner, "   ", "key-bad", nil)
+		require.Error(t, err)
+		var all int
+		require.NoError(t, db.Raw(`SELECT COUNT(*) FROM game_queue_tasks WHERE payload->>'user_ref' = ?`, owner).Scan(&all).Error)
+		require.Equal(t, 1, all)
 	})
 
 	t.Run("a_retry_answers_the_same_game_and_a_new_key_another", func(t *testing.T) {

@@ -16,6 +16,7 @@ import (
 	"github.com/diegobermudez03/playhoot/monitoring"
 	"github.com/diegobermudez03/playhoot/monitoring/metrics"
 	"github.com/diegobermudez03/playhoot/utils"
+	"github.com/diegobermudez03/playhoot/utils/txqueue"
 )
 
 //go:generate mockgen -package=gamelifecycle -destination=step_create_game_mock_test.go . createGameRepo
@@ -152,6 +153,11 @@ func (m *Manager) createGameInTx(ctx context.Context, tx *gorm.DB, ownerUUID str
 		return createGameAttempt{}, err
 	}
 	if err := m.createGameRepo.CompleteCreateGameRequest(ctx, tx, requestID, gameID); err != nil {
+		return createGameAttempt{}, err
+	}
+	// The event leaves with the creation; delivery is asynchronous.
+	event := game.GameCreatedEvent(ownerUUID, newGame.UUID, now)
+	if err := m.queue.Enqueue(tx, txqueue.TypeAnalyticsEvent, event, time.Time{}, event.IdempotencyKey); err != nil {
 		return createGameAttempt{}, err
 	}
 	return createGameAttempt{created: game.CreatedGame{

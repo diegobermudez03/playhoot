@@ -26,6 +26,14 @@ const (
 
 var startNow = time.Date(2026, 10, 17, 12, 0, 0, 123456789, time.UTC)
 
+// recordingQueue keeps what a step enqueued, without a database.
+type recordingQueue struct{ tasks []string }
+
+func (q *recordingQueue) Enqueue(_ *gorm.DB, taskType string, _ any, _ time.Time, key string) error {
+	q.tasks = append(q.tasks, taskType+":"+key)
+	return nil
+}
+
 func TestCommitStartInTx(t *testing.T) {
 	type dependencies struct {
 		repo *MockcommitStartRepo
@@ -99,7 +107,7 @@ func TestCommitStartInTx(t *testing.T) {
 			if tc.userUUID == "" {
 				tc.userUUID = startCreatorUUID
 			}
-			manager := &Manager{commitStartRepo: deps.repo, now: func() time.Time { return startNow }, ownerLease: 10 * time.Minute}
+			manager := &Manager{commitStartRepo: deps.repo, queue: &recordingQueue{}, now: func() time.Time { return startNow }, ownerLease: 10 * time.Minute}
 
 			outcome, err := manager.commitStartInTx(ctx, tx, startSessionUUID, tc.userUUID, participants, checkpoint)
 

@@ -1,6 +1,7 @@
 package sessionlifecycle
 
 import (
+	"github.com/diegobermudez03/playhoot/utils/txqueue"
 	"context"
 	"testing"
 	"time"
@@ -68,7 +69,7 @@ func TestSaveCheckpointIntegration(t *testing.T) {
 	for name, setup := range tests {
 		t.Run(name, func(t *testing.T) {
 			tc := setup(t)
-			manager := New(db, store, 0)
+			manager := New(db, store, txqueue.NewRegistry(db, txqueue.DefaultWorkerConfig).Queue(sessionpkg.QueueDomain), 0)
 			if tc.stored != nil {
 				_, err := manager.SaveCheckpoint(context.Background(), tc.session.UUID, *tc.stored)
 				require.NoError(t, err)

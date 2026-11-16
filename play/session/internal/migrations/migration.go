@@ -1,6 +1,8 @@
 package migrations
 
 import (
+	"github.com/diegobermudez03/playhoot/play/session"
+	"github.com/diegobermudez03/playhoot/utils/txqueue"
 	"github.com/go-gormigrate/gormigrate/v2"
 	"gorm.io/gorm"
 )
@@ -20,6 +22,7 @@ func MigrateTables(db *gorm.DB) error {
 		migration20261102200000PlayDraftBuilds(),
 		migration20261102300000PlayPreviews(),
 		migration20261106000000PlaySimulationResults(),
+		txqueue.Migration("20261115230200_play_session_queue", session.QueueDomain),
 	}
 
 	// gormigrate refuses to run with an empty list.

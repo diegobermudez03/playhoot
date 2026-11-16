@@ -23,6 +23,7 @@ import (
 	"github.com/diegobermudez03/playhoot/api"
 	apigames "github.com/diegobermudez03/playhoot/api/games"
 	apinotifications "github.com/diegobermudez03/playhoot/api/notifications"
+	"github.com/diegobermudez03/playhoot/analytics/usecases/ingestevents"
 	"github.com/diegobermudez03/playhoot/budget"
 	"github.com/diegobermudez03/playhoot/budget/usecases/admitwork"
 	"github.com/diegobermudez03/playhoot/budget/usecases/manualladder"
@@ -37,6 +38,7 @@ import (
 	composerdeadtasks "github.com/diegobermudez03/playhoot/composer/deadtasks"
 	composergameauthoring "github.com/diegobermudez03/playhoot/composer/gameauthoring"
 	"github.com/diegobermudez03/playhoot/discovery/usecases/templatecatalog"
+	"github.com/diegobermudez03/playhoot/game"
 	"github.com/diegobermudez03/playhoot/game/usecases/checkplayability"
 	"github.com/diegobermudez03/playhoot/game/usecases/findeditableversion"
 	"github.com/diegobermudez03/playhoot/game/usecases/findtemplate"
@@ -71,6 +73,7 @@ import (
 	"github.com/diegobermudez03/playhoot/orchestrator/costcontrol"
 	orchestratordeadtasks "github.com/diegobermudez03/playhoot/orchestrator/deadtasks"
 	"github.com/diegobermudez03/playhoot/orchestrator/gameauthoring"
+	"github.com/diegobermudez03/playhoot/orchestrator/analyticsingestion"
 	"github.com/diegobermudez03/playhoot/orchestrator/notificationdelivery"
 	"github.com/diegobermudez03/playhoot/orchestrator/playlifecycle"
 	"github.com/diegobermudez03/playhoot/orchestrator/spendingestion"
@@ -81,6 +84,7 @@ import (
 	"github.com/diegobermudez03/playhoot/play/runtime/usecases/simulategame"
 	"github.com/diegobermudez03/playhoot/play/runtime/workflows/liveconnection"
 	"github.com/diegobermudez03/playhoot/play/runtime/workflows/replayrecording"
+	"github.com/diegobermudez03/playhoot/play/session"
 	"github.com/diegobermudez03/playhoot/play/session/batches/reconcilesessions"
 	"github.com/diegobermudez03/playhoot/play/session/buildsignal"
 	"github.com/diegobermudez03/playhoot/play/session/gametoolchain"
@@ -275,7 +279,11 @@ func run() error {
 		}
 	}()
 
-	sessionLifecycle := sessionlifecycle.New(db, store, envVars.MaxActiveSessionsPerCreator)
+	// Every domain's queue lives in this registry: its workers run below and
+	// admin reads its dead letter queues through it.
+	queues := txqueue.NewRegistry(db, txqueue.DefaultWorkerConfig)
+	sessionQueue := queues.Queue(session.QueueDomain)
+	sessionLifecycle := sessionlifecycle.New(db, store, sessionQueue, envVars.MaxActiveSessionsPerCreator)
 	playLifecycle := playlifecycle.New(checkplayability.New(db), sessionLifecycle)
 	editableVersions := findeditableversion.New(db)
 	templates := findtemplate.New(db)
@@ -286,9 +294,6 @@ func run() error {
 	toolchain := gametoolchain.Open(envVars.GameToolchainDir)
 	versionBuilding := versionbuilding.New(db, store, toolchain, buildWakeUps, versionbuilding.DefaultWorkers)
 	resourceLinks := resourcelinks.New(db)
-	// Every domain's queue lives in this registry: its workers run below and
-	// admin reads its dead letter queues through it.
-	queues := txqueue.NewRegistry(db, txqueue.DefaultWorkerConfig)
 	sweepresourcegrants.New(db).Register(queues.Queue(identity.QueueDomain))
 	if envVars.IdentityAdminUserUUID != "" {
 		outcome, err := grantadmin.New(db).EnsureAdmin(context.Background(), envVars.IdentityAdminUserUUID)
@@ -333,7 +338,11 @@ func run() error {
 	// never Sessions (play/session/workflows/previewlifecycle).
 	previews := liveconnection.NewPreviews(liveconnection.DefaultMaxLivePreviews, sandboxHost, previewlifecycle.New(db, versionDrafting))
 	defer previews.Close()
-	gameLifecycle := gamelifecycle.New(db)
+	gameQueue := queues.Queue(game.QueueDomain)
+	// Analytics events are delivered from the queues of the domains that emit
+	// them; a domain that starts emitting joins this list.
+	analyticsingestion.New(ingestevents.New(db)).Register(gameQueue, sessionQueue)
+	gameLifecycle := gamelifecycle.New(db, gameQueue)
 	gameCards := gamecard.New(db, store)
 	gameAuthoring := gameauthoring.New(gameLifecycle, editableVersions, versionDrafting, resourceLinks, previews, gameLifecycle, versionDrafting, gameCards, templates)
 	gameAuthoringReads := composergameauthoring.New(editableVersions, versionDrafting, resourceLinks, simulategame.New(sandboxHost, keepsimulationresults.New(db)), gameCards, templates, templatecatalog.New())

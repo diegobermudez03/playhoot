@@ -1,6 +1,7 @@
 package sessionlifecycle
 
 import (
+	"github.com/diegobermudez03/playhoot/utils/txqueue"
 	"context"
 	"fmt"
 	"strings"
@@ -359,7 +360,7 @@ func TestCreateSessionIntegration(t *testing.T) {
 
 	for name, setup := range tests {
 		t.Run(name, func(t *testing.T) {
-			manager := New(db, objectstore.NewFake(), 0)
+			manager := New(db, objectstore.NewFake(), txqueue.NewRegistry(db, txqueue.DefaultWorkerConfig).Queue(sessionpkg.QueueDomain), 0)
 			manager.now = func() time.Time { return now }
 			tc := setup(t, db, manager)
 			if tc.joinCodes != nil {
@@ -397,7 +398,7 @@ func TestCreateSessionIntegrationConcurrentRetries(t *testing.T) {
 	const calls = 10
 
 	db := testdb.OpenSessionDB(t)
-	manager := New(db, objectstore.NewFake(), 0)
+	manager := New(db, objectstore.NewFake(), txqueue.NewRegistry(db, txqueue.DefaultWorkerConfig).Queue(sessionpkg.QueueDomain), 0)
 	userUUID := uuid.NewString()
 	gameUUID, _ := seedIntegrationGame(t, db, "EXECUTABLE")
 
@@ -432,7 +433,7 @@ func TestCreateSessionIntegrationActiveLimit(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("a_second_active_session_is_refused_and_the_refusal_replays", func(t *testing.T) {
-		manager := New(db, objectstore.NewFake(), 0)
+		manager := New(db, objectstore.NewFake(), txqueue.NewRegistry(db, txqueue.DefaultWorkerConfig).Queue(sessionpkg.QueueDomain), 0)
 		userUUID := uuid.NewString()
 		gameUUID, _ := seedIntegrationGame(t, db, "EXECUTABLE")
 		first, err := manager.CreateSession(ctx, userUUID, gameUUID, "key-1")
@@ -450,7 +451,7 @@ func TestCreateSessionIntegrationActiveLimit(t *testing.T) {
 	})
 
 	t.Run("an_expired_lobby_or_an_ended_session_does_not_count", func(t *testing.T) {
-		manager := New(db, objectstore.NewFake(), 0)
+		manager := New(db, objectstore.NewFake(), txqueue.NewRegistry(db, txqueue.DefaultWorkerConfig).Queue(sessionpkg.QueueDomain), 0)
 		userUUID := uuid.NewString()
 		gameUUID, _ := seedIntegrationGame(t, db, "EXECUTABLE")
 		_, err := manager.CreateSession(ctx, userUUID, gameUUID, "key-1")
@@ -467,7 +468,7 @@ func TestCreateSessionIntegrationActiveLimit(t *testing.T) {
 	})
 
 	t.Run("a_running_session_counts", func(t *testing.T) {
-		manager := New(db, objectstore.NewFake(), 0)
+		manager := New(db, objectstore.NewFake(), txqueue.NewRegistry(db, txqueue.DefaultWorkerConfig).Queue(sessionpkg.QueueDomain), 0)
 		userUUID := uuid.NewString()
 		gameUUID, _ := seedIntegrationGame(t, db, "EXECUTABLE")
 		first, err := manager.CreateSession(ctx, userUUID, gameUUID, "key-1")
@@ -480,7 +481,7 @@ func TestCreateSessionIntegrationActiveLimit(t *testing.T) {
 	})
 
 	t.Run("concurrent_creations_with_different_keys_create_one", func(t *testing.T) {
-		manager := New(db, objectstore.NewFake(), 0)
+		manager := New(db, objectstore.NewFake(), txqueue.NewRegistry(db, txqueue.DefaultWorkerConfig).Queue(sessionpkg.QueueDomain), 0)
 		userUUID := uuid.NewString()
 		gameUUID, _ := seedIntegrationGame(t, db, "EXECUTABLE")
 		const calls = 6
@@ -509,7 +510,7 @@ func TestCreateSessionIntegrationActiveLimit(t *testing.T) {
 	})
 
 	t.Run("the_limit_is_configurable", func(t *testing.T) {
-		manager := New(db, objectstore.NewFake(), 3)
+		manager := New(db, objectstore.NewFake(), txqueue.NewRegistry(db, txqueue.DefaultWorkerConfig).Queue(sessionpkg.QueueDomain), 3)
 		userUUID := uuid.NewString()
 		gameUUID, _ := seedIntegrationGame(t, db, "EXECUTABLE")
 		for i := range 3 {

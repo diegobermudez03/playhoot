@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 
+	analyticsmigrations "github.com/diegobermudez03/playhoot/analytics/migration"
 	budgetmigrations "github.com/diegobermudez03/playhoot/budget/migration"
 	compliancemigrations "github.com/diegobermudez03/playhoot/compliance/migration"
 	gamemigrations "github.com/diegobermudez03/playhoot/game/migration"
@@ -40,6 +41,10 @@ func PostgresMigrate(db *gorm.DB) error {
 
 	if err := notificationsmigrations.Migrate(db); err != nil {
 		return fmt.Errorf("migrating notifications pkg: %w", err)
+	}
+
+	if err := analyticsmigrations.Migrate(db); err != nil {
+		return fmt.Errorf("migrating analytics pkg: %w", err)
 	}
 
 	return nil

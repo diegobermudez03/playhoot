@@ -30,6 +30,11 @@ const DefaultMaxActiveSessionsPerCreator = 1
 // to recover it, so reconciliation aborts it as OWNER_LOST.
 const defaultOwnerLease = 10 * time.Minute
 
+// enqueuer leaves a task in Session's queue inside a transaction.
+type enqueuer interface {
+	Enqueue(tx *gorm.DB, taskType string, payload any, runAt time.Time, idempotencyKey string) error
+}
+
 // Manager is the Session lifecycle workflow controller. Each step depends on
 // its own narrow persistence contract, even though one internal/repo.Repo
 // satisfies all of them, so adding a method for one step never changes
@@ -51,6 +56,9 @@ type Manager struct {
 	// on; it is the same Repo, which owns the database handle.
 	dbServicer utils.DBServicer
 
+	// queue is Session's queue: events leave there in the writing transaction.
+	queue enqueuer
+
 	now         func() time.Time
 	newJoinCode func() (string, error)
 	lobbyTTL    time.Duration
@@ -63,7 +71,7 @@ type Manager struct {
 // New constructs a Manager persisting to db and reading game version content
 // from store. maxActiveSessionsPerCreator zero takes
 // DefaultMaxActiveSessionsPerCreator.
-func New(db *gorm.DB, store storage.Store, maxActiveSessionsPerCreator int) *Manager {
+func New(db *gorm.DB, store storage.Store, queue enqueuer, maxActiveSessionsPerCreator int) *Manager {
 	if maxActiveSessionsPerCreator <= 0 {
 		maxActiveSessionsPerCreator = DefaultMaxActiveSessionsPerCreator
 	}
@@ -79,6 +87,7 @@ func New(db *gorm.DB, store storage.Store, maxActiveSessionsPerCreator int) *Man
 		recordOwnerHeartbeatRepo: repo,
 		scripts:                  objectstore.NewLoader(store, objectstore.DefaultLoaderEntries),
 		dbServicer:               repo,
+		queue:                    queue,
 		now:                      time.Now,
 		newJoinCode:              newJoinCode,
 		lobbyTTL:                 defaultLobbyTTL,

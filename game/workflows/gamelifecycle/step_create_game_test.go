@@ -14,6 +14,14 @@ import (
 	internalrepo "github.com/diegobermudez03/playhoot/game/workflows/gamelifecycle/internal/repo"
 )
 
+// recordingQueue keeps what a step enqueued, without a database.
+type recordingQueue struct{ tasks []string }
+
+func (q *recordingQueue) Enqueue(_ *gorm.DB, taskType string, _ any, _ time.Time, key string) error {
+	q.tasks = append(q.tasks, taskType+":"+key)
+	return nil
+}
+
 func TestCreateGameInTx(t *testing.T) {
 	type dependencies struct {
 		repo *MockcreateGameRepo
@@ -109,6 +117,7 @@ func TestCreateGameInTx(t *testing.T) {
 			uuids := []string{gameUUID, editionUUID}
 			manager := &Manager{
 				createGameRepo: deps.repo,
+				queue:          &recordingQueue{},
 				now:            func() time.Time { return now },
 				newUUID: func() string {
 					next := uuids[0]

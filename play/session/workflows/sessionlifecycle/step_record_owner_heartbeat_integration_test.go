@@ -1,6 +1,7 @@
 package sessionlifecycle
 
 import (
+	"github.com/diegobermudez03/playhoot/utils/txqueue"
 	"context"
 	"testing"
 	"time"
@@ -36,7 +37,7 @@ func TestRecordOwnerHeartbeatIntegration(t *testing.T) {
 		},
 		"ended_session_tells_how_it_ended": func(t *testing.T) test {
 			session := seedStartableSession(t, db, store, "RUNNING", now.Add(time.Hour))
-			_, err := New(db, store, 0).EndSession(context.Background(), session.UUID, sessionpkg.SessionEnd{Cause: sessionpkg.EndOwnerLost})
+			_, err := New(db, store, txqueue.NewRegistry(db, txqueue.DefaultWorkerConfig).Queue(sessionpkg.QueueDomain), 0).EndSession(context.Background(), session.UUID, sessionpkg.SessionEnd{Cause: sessionpkg.EndOwnerLost})
 			require.NoError(t, err)
 			return test{
 				session:  session,
@@ -49,7 +50,7 @@ func TestRecordOwnerHeartbeatIntegration(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			tc := setup(t)
 
-			result, err := New(db, store, 0).RecordOwnerHeartbeat(context.Background(), tc.session.UUID)
+			result, err := New(db, store, txqueue.NewRegistry(db, txqueue.DefaultWorkerConfig).Queue(sessionpkg.QueueDomain), 0).RecordOwnerHeartbeat(context.Background(), tc.session.UUID)
 
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, result)
