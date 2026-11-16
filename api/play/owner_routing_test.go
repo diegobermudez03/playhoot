@@ -3,6 +3,7 @@ package play
 import (
 	"context"
 	"errors"
+	"github.com/diegobermudez03/playhoot/api/geolocation"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -261,7 +262,7 @@ func TestSessionRoutesRefuseReadably(t *testing.T) {
 				if tc.placement != nil {
 					locator.EXPECT().LocateOrClaimOwner(gomock.Any(), tc.sessionUUID).Return(*tc.placement, nil)
 				}
-				handler := NewHandler(nil, nil, locator, nil, nil, nil, nil, live.New(0), nil)
+				handler := NewHandler(nil, nil, locator, nil, nil, nil, nil, live.New(0), allowingMarket(), geolocation.Resolver{}, nil)
 				serve := routeHandler(t, handler.WebSocketRoutes(), "GET /v1/play/join/sessions/{sessionUUID}/"+endpoint)
 				mux := http.NewServeMux()
 				mux.HandleFunc("GET /v1/play/join/sessions/{sessionUUID}/"+endpoint, func(w http.ResponseWriter, r *http.Request) {

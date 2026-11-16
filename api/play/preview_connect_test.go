@@ -3,6 +3,7 @@ package play
 import (
 	"context"
 	"fmt"
+	"github.com/diegobermudez03/playhoot/api/geolocation"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -111,7 +112,7 @@ func (p *scriptedPreview) AttachPreview(_ context.Context, previewUUID string, o
 // the owner.
 func connectPreview(t *testing.T, preview previewAttacher) (*websocket.Conn, context.Context) {
 	t.Helper()
-	handler := NewHandler(nil, nil, nil, nil, nil, nil, preview, live.New(0), nil)
+	handler := NewHandler(nil, nil, nil, nil, nil, nil, preview, live.New(0), allowingMarket(), geolocation.Resolver{}, nil)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r.SetPathValue("previewUUID", testPreviewUUID)
 		handler.handlePreviewConnect(w, r.WithContext(auth.WithCaller(r.Context(), identity.User{UUID: testOwnerUUID})))

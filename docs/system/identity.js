@@ -57,12 +57,12 @@ PH.table({
     { name: 'id', type: 'bigserial', note: 'Internal key.' },
     { name: 'user_uuid', type: 'uuid', note: 'External identifier.' },
     { name: 'display_name', type: 'text', note: 'Empty for a new account until it sets one; cleared by deletion.' },
-    { name: 'interface_language', type: 'text', note: 'es, en or pt; empty until an account sets one. Read at email send time (H3, planned).' },
+    { name: 'interface_language', type: 'text', note: 'es, en or pt; empty until an account sets one. Read at email send time, so emails follow it.' },
     { name: 'deleted_at', type: 'timestamptz', note: 'Set once, by deletion or guest expiry; the uuid then resolves to a neutral deleted reference (H3, planned).' },
     { name: 'created_at', type: 'timestamptz', note: '' }
   ],
   indexes: ['UNIQUE (user_uuid)'],
-  history: 'Display name changes tracked in identity_display_name_changes. Write-once: deleted_at.',
+  history: 'Display name changes tracked in identity_display_name_changes, language changes in identity_setting_changes. Write-once: deleted_at.',
   references: []
 });
 
@@ -74,11 +74,29 @@ PH.table({
   columns: [
     { name: 'id', type: 'bigserial', note: '' },
     { name: 'user_id', type: 'bigint', note: '' },
-    { name: 'mode', type: 'text', note: 'normal or teacher; remembered across sign-ins. Student is a separate identity, never this column (H3, planned).' },
+    { name: 'mode', type: 'text', note: 'normal or teacher; remembered across sign-ins. Student is a separate identity, never this column.' },
     { name: 'created_at', type: 'timestamptz', note: '' }
   ],
   indexes: ['UNIQUE (user_id)'],
-  history: 'Mode changes tracked by the data trail of the row (previous value, when).',
+  history: 'Mode changes tracked in identity_setting_changes.',
+  references: [{ column: 'user_id', to: 'identity.identity_users' }]
+});
+
+PH.table({
+  id: 'identity.identity_setting_changes', domain: 'identity', status: 'implemented',
+  name: 'identity_setting_changes',
+  summary: 'Append-only history of the settings a person chooses: their mode and their interface language.',
+  purpose: 'Every change to a setting that is overwritten in place stays readable: what it was, what it became, and when.',
+  columns: [
+    { name: 'id', type: 'bigserial', note: '' },
+    { name: 'user_id', type: 'bigint', note: '' },
+    { name: 'setting', type: 'text', note: 'Constant: mode or language.' },
+    { name: 'from_value', type: 'text', note: 'What it was; empty when nothing was chosen yet.' },
+    { name: 'to_value', type: 'text', note: 'What it became.' },
+    { name: 'changed_at', type: 'timestamptz', note: '' }
+  ],
+  indexes: ['INDEX (user_id, setting)'],
+  history: 'This table is the history: rows are only ever added.',
   references: [{ column: 'user_id', to: 'identity.identity_users' }]
 });
 
@@ -399,7 +417,8 @@ PH.operation({
   writes: ['identity.identity_users', 'identity.identity_display_name_changes'],
   rules: [
     'Up to 64 runes.',
-    'At most 3 changes per rolling 30 days (V-10); the change history is the counter (H3, planned).'
+    'At most 3 changes per rolling 30 days (V-10); the change history is the counter, and the refusal names when the next change is possible.',
+    'Choosing the name already in force is not a change and does not count.'
   ],
   sources: ['B: identity']
 });
@@ -768,17 +787,21 @@ PH.operation({
 });
 
 PH.operation({
-  id: 'identity.read-profile', domain: 'identity', kind: 'usecase', effect: 'read', status: 'planned',
+  id: 'identity.read-profile', domain: 'identity', kind: 'usecase', effect: 'read', status: 'implemented',
   name: 'ReadProfile',
   summary: 'Who the caller is, for the profile and my-data: display name, guest or account, mode, interface language, methods.',
   reads: ['identity.identity_users', 'identity.identity_accounts', 'identity.identity_external_identities'],
   writes: [],
-  rules: ['A deleted user resolves to the neutral deleted reference; a guest has mode normal and no methods.'],
+  rules: [
+    'A guest has mode normal, no language of their own and no methods: their only way in is the credential their browser keeps.',
+    'An account that never switched reads as normal; the ways in are the same list the methods screen shows.',
+    'Resolving a deleted user to the neutral deleted reference arrives with deletion (H3, planned).'
+  ],
   sources: ['B: identity', 'P03§9']
 });
 
 PH.operation({
-  id: 'identity.set-language', domain: 'identity', kind: 'usecase', effect: 'write', status: 'planned',
+  id: 'identity.set-language', domain: 'identity', kind: 'usecase', effect: 'write', status: 'implemented',
   name: 'SetLanguage',
   summary: 'Stores the account\'s interface language, so emails arrive in it (P31§5) and a new browser starts in it.',
   reads: ['identity.identity_users'],
@@ -791,15 +814,17 @@ PH.operation({
 });
 
 PH.operation({
-  id: 'identity.set-mode', domain: 'identity', kind: 'usecase', effect: 'write', status: 'planned',
+  id: 'identity.set-mode', domain: 'identity', kind: 'usecase', effect: 'write', status: 'implemented',
   name: 'SetMode',
   summary: 'Switches the account between normal and teacher mode and answers a fresh access token carrying it.',
   reads: ['identity.identity_users', 'identity.identity_accounts'],
-  writes: ['identity.identity_accounts'],
+  writes: ['identity.identity_accounts', 'identity.identity_setting_changes'],
   rules: [
     'Normal and teacher are the same account; switching never creates one (P03§9). Guests are refused: they are always normal.',
     'The mode is remembered across sign-ins and rides the access token; entitlements never do — operations that need them verify them when called (P15§5).',
-    'Student mode is not set here: it is a separate per-class identity (H8); leaving it never reopens the adult account without signing in again (P03§7).'
+    'Student mode is not set here: it is a separate per-class identity (H8); leaving it never reopens the adult account without signing in again (P03§7).',
+    'The answer carries a fresh access token and no refresh token: the client keeps the session it has.',
+    'Every switch is kept in the settings history; asking for the mode already in force writes nothing.'
   ],
   sources: ['P03§7', 'P03§9', 'P15§5']
 });

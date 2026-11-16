@@ -30,7 +30,7 @@ PH.endpoint({
 PH.endpoint({
   id: 'WS:/v1/play/join/sessions/{sessionUUID}/admin', transport: 'ws', access: 'account', status: 'implemented',
   name: 'Join session as admin',
-  summary: 'Live connection that drives a Session as its host (lobby control, start, perspectives).',
+  summary: 'Live connection that drives a Session as its host (lobby control, start, perspectives), behind the market-and-age gate.',
   invokes: 'play.runtime.live-connection',
   networkLimit: '120 msg/s and 6000/min per connection; select_perspective 5/s, start/cancel 2/s.'
 });
@@ -38,7 +38,7 @@ PH.endpoint({
 PH.endpoint({
   id: 'WS:/v1/play/join/sessions/{sessionUUID}/player', transport: 'ws', access: 'guest', status: 'implemented',
   name: 'Join session as player',
-  summary: 'Live connection as a participant; ?device=desktop|mobile.',
+  summary: 'Live connection as a participant, behind the market-and-age gate; ?device=desktop|mobile.',
   invokes: 'play.runtime.live-connection',
   networkLimit: '120 msg/s and 6000/min per connection; sample 60/s (queue 64), command 20/s.'
 });
@@ -46,7 +46,7 @@ PH.endpoint({
 PH.endpoint({
   id: 'WS:/v1/play/join/{joinCode}', transport: 'ws', access: 'guest', status: 'implemented',
   name: 'Join session by code',
-  summary: 'Resolves a 6-character join code, then connects as a player the same way as the direct player route.',
+  summary: 'Passes the market-and-age gate, resolves a 6-character join code, then connects as a player the same way as the direct player route.',
   invokes: 'play.runtime.live-connection',
   networkLimit: '120 msg/s and 6000/min per connection.'
 });
@@ -152,7 +152,7 @@ PH.endpoint({
 PH.endpoint({
   id: 'POST:/v1/games', transport: 'http', access: 'account', status: 'implemented',
   name: 'Create game',
-  summary: 'Creates a game (optionally from a template) with its first draft version.',
+  summary: 'Creates a game (optionally from a template) with its first draft version; declaration_required or market_restricted (403) when the gate refuses.',
   invokes: 'create-game', networkLimit: DEFAULT_LIMIT
 });
 PH.endpoint({
@@ -577,9 +577,9 @@ PH.endpoint({ id: 'POST:/v1/identity/me/methods/email/complete', transport: 'htt
 PH.endpoint({ id: 'POST:/v1/identity/me/methods/provider/start', transport: 'http', access: 'account', status: 'implemented', name: 'Start linking a provider', summary: 'Returns the provider authorization URL for a link-intent attempt; the shared callback brings the person back.', invokes: 'identity.link-method', networkLimit: DEFAULT_LIMIT });
 PH.endpoint({ id: 'POST:/v1/identity/me/methods/provider/complete', transport: 'http', access: 'account', status: 'implemented', name: 'Complete linking a provider', summary: 'Validates the one-time code and verifier and links the provider identity; method_in_use (409).', invokes: 'identity.link-method', networkLimit: DEFAULT_LIMIT });
 PH.endpoint({ id: 'POST:/v1/identity/me/methods/{methodID}/remove', transport: 'http', access: 'account', status: 'implemented', name: 'Remove sign-in method', summary: 'Unlinks a method; no_such_method (404) when the caller has no live method with that identifier; last_method (409) when it is the only one left.', invokes: 'identity.remove-method', networkLimit: DEFAULT_LIMIT });
-PH.endpoint({ id: 'PUT:/v1/identity/me/language', transport: 'http', access: 'account', status: 'planned', name: 'Set interface language', summary: 'Stores es, en or pt on the account.', invokes: 'identity.set-language', networkLimit: DEFAULT_LIMIT });
-PH.endpoint({ id: 'PUT:/v1/identity/me/mode', transport: 'http', access: 'account', status: 'planned', name: 'Switch mode', summary: 'Normal or teacher; answers a fresh access token carrying the mode.', invokes: 'identity.set-mode', networkLimit: DEFAULT_LIMIT });
+PH.endpoint({ id: 'PUT:/v1/identity/me/language', transport: 'http', access: 'account', status: 'implemented', name: 'Set interface language', summary: 'Stores es, en or pt on the account; a guest is refused (403).', invokes: 'identity.set-language', networkLimit: DEFAULT_LIMIT });
+PH.endpoint({ id: 'PUT:/v1/identity/me/mode', transport: 'http', access: 'account', status: 'implemented', name: 'Switch mode', summary: 'Normal or teacher; answers a fresh access token carrying the mode, and no refresh token. A guest is refused (403).', invokes: 'identity.set-mode', networkLimit: DEFAULT_LIMIT });
 PH.endpoint({ id: 'POST:/v1/identity/me/delete', transport: 'http', access: 'guest', status: 'planned', name: 'Delete my identity', summary: 'Deletes the caller — guest or account — withdrawing access at once; the cross-domain cleanup follows (D-036).', invokes: 'delete-account', networkLimit: DEFAULT_LIMIT });
-PH.endpoint({ id: 'GET:/v1/me', transport: 'http', access: 'guest', status: 'planned', name: 'My data', summary: 'Who the caller is, their mode, language, methods, declaration and capacities, in one read (B: identity, P03§9).', invokes: 'my-data', networkLimit: DEFAULT_LIMIT });
-PH.endpoint({ id: 'GET:/admin/v1/texts', transport: 'http', access: 'admin', status: 'planned', name: 'Acceptance texts (admin)', summary: 'Kinds by language with versions and publish dates, missing pairs included.', invokes: 'compliance.admin-list-texts', networkLimit: DEFAULT_LIMIT });
-PH.endpoint({ id: 'PUT:/admin/v1/texts', transport: 'http', access: 'admin', status: 'planned', name: 'Publish acceptance text', summary: 'Publishes a new immutable version for one kind and language; invalid (400).', invokes: 'compliance.admin-publish-text', networkLimit: DEFAULT_LIMIT });
+PH.endpoint({ id: 'GET:/v1/me', transport: 'http', access: 'guest', status: 'implemented', name: 'My data', summary: 'Who the caller is, their mode, language, methods, declaration and capacities, in one read; a piece that could not be read is answered as missing (B: identity, P03§9).', invokes: 'my-data', networkLimit: DEFAULT_LIMIT });
+PH.endpoint({ id: 'GET:/admin/v1/texts', transport: 'http', access: 'admin', status: 'implemented', name: 'Acceptance texts (admin)', summary: 'Kinds by language with versions and publish dates, missing pairs included.', invokes: 'compliance.admin-list-texts', networkLimit: DEFAULT_LIMIT });
+PH.endpoint({ id: 'PUT:/admin/v1/texts', transport: 'http', access: 'admin', status: 'implemented', name: 'Publish acceptance text', summary: 'Publishes a new immutable version for one kind and language; invalid (400).', invokes: 'compliance.admin-publish-text', networkLimit: DEFAULT_LIMIT });

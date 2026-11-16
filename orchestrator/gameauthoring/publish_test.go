@@ -18,7 +18,9 @@ func newPublishTestManager(t *testing.T) (*Manager, dependencies) {
 	ctrl := gomock.NewController(t)
 	deps := dependencies{games: NewMockgameCreator(ctrl), editions: NewMockeditableVersionFinder(ctrl), drafts: NewMockdraftWriter(ctrl), links: NewMockresourceLinkWriter(ctrl), previews: NewMockpreviewStarter(ctrl), publications: NewMockgamePublisher(ctrl), versions: NewMockversionPublisher(ctrl), cards: NewMockcardNamer(ctrl), templates: NewMocktemplateFinder(ctrl)}
 	deps.publications.EXPECT().FindPublication(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
-	return New(deps.games, deps.editions, deps.drafts, deps.links, deps.previews, deps.publications, deps.versions, deps.cards, deps.templates), deps
+	gate, market := allowingMarket()
+	deps.market = market
+	return New(gate, deps.games, deps.editions, deps.drafts, deps.links, deps.previews, deps.publications, deps.versions, deps.cards, deps.templates), deps
 }
 
 func TestPublish(t *testing.T) {
@@ -149,7 +151,8 @@ func TestPublishRetryOfAnEndedRelease(t *testing.T) {
 	release := game.Release{UUID: "r-1", VersionUUID: testVersionUUID, Revision: 3}
 	ctrl := gomock.NewController(t)
 	deps := dependencies{publications: NewMockgamePublisher(ctrl)}
-	m := New(nil, nil, nil, nil, nil, deps.publications, nil, nil, nil)
+	gate, _ := allowingMarket()
+	m := New(gate, nil, nil, nil, nil, nil, deps.publications, nil, nil, nil)
 	gomock.InOrder(
 		deps.publications.EXPECT().FindPendingPublication(ctx, testUserUUID, testGameUUID).Return(nil, nil),
 		deps.publications.EXPECT().FindPublication(ctx, testUserUUID, testGameUUID, testKey).Return(&game.Publication{Outcome: game.PublicationCompleted, Release: &release}, nil),

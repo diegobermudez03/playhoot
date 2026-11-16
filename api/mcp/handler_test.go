@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/base64"
+	"github.com/diegobermudez03/playhoot/api/geolocation"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -418,7 +419,7 @@ func (allowAll) Authorize(ctx context.Context, token string, operation identity.
 // before any domain is called, so the handler needs none.
 func TestHTTPAndMCPRefuseAlike(t *testing.T) {
 	ctx := context.Background()
-	gamesHandler := games.NewHandler(allowAll{}, nil, nil, nil, games.AILinks{}, games.Cards{}, nil)
+	gamesHandler := games.NewHandler(allowAll{}, nil, nil, nil, games.AILinks{}, games.Cards{}, nil, geolocation.Resolver{})
 	mux := http.NewServeMux()
 	for _, route := range gamesHandler.RESTRoutes() {
 		handler := route.Handler

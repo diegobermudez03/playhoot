@@ -7,10 +7,12 @@ import (
 
 	"github.com/coder/websocket"
 
+	"github.com/diegobermudez03/playhoot/api/geolocation"
 	"github.com/diegobermudez03/playhoot/api/internal/auth"
 	"github.com/diegobermudez03/playhoot/api/internal/live"
 	"github.com/diegobermudez03/playhoot/api/internal/routing"
 	"github.com/diegobermudez03/playhoot/identity"
+	"github.com/diegobermudez03/playhoot/orchestrator/marketgate"
 	"github.com/diegobermudez03/playhoot/play/runtime"
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
@@ -70,13 +72,16 @@ type Handler struct {
 	joinCodes               joinCodeResolver
 	previews                previewAttacher
 	live                    liveRunner
+	market                  *marketgate.Gate
+	geo                     geolocation.Resolver
 	webSocketOriginPatterns []string
 }
 
 // NewHandler constructs a Handler. webSocketOriginPatterns are the extra
 // origin hosts browser pages may open live connections from.
-// previews attaches draft owners to their previews.
-func NewHandler(authorizer authorizer, creator sessionCreator, owners ownerLocator, admins adminAttacher, players playerAttacher, joinCodes joinCodeResolver, previews previewAttacher, live liveRunner, webSocketOriginPatterns []string) *Handler {
+// previews attaches draft owners to their previews; market and geo are the
+// market-and-age gate every interactive entry passes.
+func NewHandler(authorizer authorizer, creator sessionCreator, owners ownerLocator, admins adminAttacher, players playerAttacher, joinCodes joinCodeResolver, previews previewAttacher, live liveRunner, market *marketgate.Gate, geo geolocation.Resolver, webSocketOriginPatterns []string) *Handler {
 	return &Handler{
 		authorizer:              authorizer,
 		creator:                 creator,
@@ -86,6 +91,8 @@ func NewHandler(authorizer authorizer, creator sessionCreator, owners ownerLocat
 		joinCodes:               joinCodes,
 		previews:                previews,
 		live:                    live,
+		market:                  market,
+		geo:                     geo,
 		webSocketOriginPatterns: webSocketOriginPatterns,
 	}
 }
@@ -104,8 +111,10 @@ func (h *Handler) RESTRoutes() []routing.Route {
 // WebSocketRoutes returns this group's live endpoints. Authorization and rate
 // limiting run before join code and owner routing, so an unauthorized or
 // limited caller never learns a Session nor makes one owned; a limit's
-// refusal is told on the upgraded connection, like any other refusal.
+// refusal is told on the upgraded connection, like any other refusal. The
+// market-and-age gate runs next, before anything names a Session.
 func (h *Handler) WebSocketRoutes() []routing.Route {
+	market := requireMarketAccess(h.market, h.geo, h.refuseUpgraded)
 	return []routing.Route{
 		{
 			Pattern:       "GET /v1/play/join/sessions/{sessionUUID}/admin",
@@ -113,6 +122,7 @@ func (h *Handler) WebSocketRoutes() []routing.Route {
 			Authorization: auth.RequireWebSocket(h.authorizer, identity.OperationJoinSessionAsAdmin),
 			RefuseLimit:   h.refuseLimit,
 			Middlewares: []routing.Middleware{
+				market,
 				requireOwner(h.owners, h.refuseUpgraded, "sessionUUID"),
 			},
 		},
@@ -122,6 +132,7 @@ func (h *Handler) WebSocketRoutes() []routing.Route {
 			Authorization: auth.RequireWebSocket(h.authorizer, identity.OperationJoinSessionAsPlayer),
 			RefuseLimit:   h.refuseLimit,
 			Middlewares: []routing.Middleware{
+				market,
 				requireOwner(h.owners, h.refuseUpgraded, "sessionUUID"),
 			},
 		},
@@ -138,6 +149,7 @@ func (h *Handler) WebSocketRoutes() []routing.Route {
 			Authorization: auth.RequireWebSocket(h.authorizer, identity.OperationJoinSessionAsPlayer),
 			RefuseLimit:   h.refuseLimit,
 			Middlewares: []routing.Middleware{
+				market,
 				resolveJoinCode(h.joinCodes, h.refuseUpgraded, "joinCode", "sessionUUID"),
 				requireOwner(h.owners, h.refuseUpgraded, "sessionUUID"),
 			},

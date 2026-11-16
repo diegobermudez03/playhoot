@@ -10,6 +10,7 @@ import (
 	"github.com/diegobermudez03/playhoot/budget"
 	"github.com/diegobermudez03/playhoot/compliance"
 	composergameauthoring "github.com/diegobermudez03/playhoot/composer/gameauthoring"
+	"github.com/diegobermudez03/playhoot/composer/mydata"
 	"github.com/diegobermudez03/playhoot/discovery"
 	"github.com/diegobermudez03/playhoot/game"
 	"github.com/diegobermudez03/playhoot/identity"
@@ -162,9 +163,9 @@ type joinCodeResolver interface {
 }
 
 // gameCreator is game authoring's creation of a game with its version being
-// built.
+// built, gated on the market the caller is in.
 type gameCreator interface {
-	CreateGame(ctx context.Context, userUUID string, name string, idempotencyKey string, templateGameUUID string) (gameauthoring.CreatedGame, error)
+	CreateGame(ctx context.Context, userUUID string, name string, idempotencyKey string, templateGameUUID string, approximateCountry string) (gameauthoring.CreatedGame, error)
 }
 
 // draftEditor is game authoring's changes to a game's version being built.
@@ -231,6 +232,37 @@ type Compliance struct {
 	Declarations declarationRecorder
 	Acceptances  acceptanceRecorder
 	MarketRules  marketRuleManager
+	Texts        textPublisher
+}
+
+// textPublisher is admin's publication of the texts people accept.
+type textPublisher interface {
+	AdminListTexts(ctx context.Context) ([]compliance.TextCatalogEntry, error)
+	AdminPublishText(ctx context.Context, kind compliance.TextKind, language string, content string) (compliance.PublishedText, error)
+}
+
+// Me is what the caller's own data needs: the one composed read, and the
+// two settings only they decide.
+type Me struct {
+	Data      myDataReader
+	Modes     modeSetter
+	Languages languageSetter
+}
+
+// myDataReader composes who the caller is, what they declared and what they
+// are entitled to.
+type myDataReader interface {
+	ReadMyData(ctx context.Context, userUUID string) (mydata.MyData, error)
+}
+
+// modeSetter is Identity's switch between an account's modes.
+type modeSetter interface {
+	SetMode(ctx context.Context, userUUID string, mode string) (identity.SetModeResult, error)
+}
+
+// languageSetter is Identity's store of the language an account reads in.
+type languageSetter interface {
+	SetLanguage(ctx context.Context, userUUID string, language string) (identity.SetLanguageOutcome, error)
 }
 
 // declarationRecorder records residence-and-age declarations.

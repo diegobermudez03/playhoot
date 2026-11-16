@@ -23,7 +23,7 @@ func TestLockUserAndChangeDisplayName(t *testing.T) {
 
 	unnamed, err := repo.LockUser(ctx, db, userUUID)
 	require.NoError(t, err)
-	require.Equal(t, &User{ID: userID, HasAccount: true}, unnamed)
+	require.Equal(t, &User{ID: userID, HasAccount: true, Mode: "normal"}, unnamed)
 
 	require.NoError(t, repo.ChangeDisplayName(ctx, db, userID, nil, "Ana", now))
 	first := "Ana"

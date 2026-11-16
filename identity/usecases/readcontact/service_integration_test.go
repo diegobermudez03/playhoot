@@ -39,6 +39,21 @@ func TestReadContact(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, identity.Contact{Found: true, Account: true, Email: "new@x.com"}, contact)
 		},
+		"an email goes out in the language the account chose": func(t *testing.T) {
+			user, userID := newUser(true, "ana@x.com")
+			require.NoError(t, db.Exec(`UPDATE identity_users SET interface_language = ? WHERE id = ?`, "pt", userID).Error)
+
+			contact, err := service.ReadContact(ctx, user)
+			require.NoError(t, err)
+			require.Equal(t, "pt", contact.Language)
+		},
+		"an account that chose none leaves the language to the default": func(t *testing.T) {
+			user, _ := newUser(true, "bea@x.com")
+
+			contact, err := service.ReadContact(ctx, user)
+			require.NoError(t, err)
+			require.Empty(t, contact.Language)
+		},
 		"a guest has no address and an unknown user is not found": func(t *testing.T) {
 			guest, _ := newUser(false)
 			contact, err := service.ReadContact(ctx, guest)

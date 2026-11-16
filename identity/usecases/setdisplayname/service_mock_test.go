@@ -57,6 +57,21 @@ func (mr *MockuserStoreMockRecorder) ChangeDisplayName(ctx, tx, userID, fromName
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ChangeDisplayName", reflect.TypeOf((*MockuserStore)(nil).ChangeDisplayName), ctx, tx, userID, fromName, displayName, changedAt)
 }
 
+// ChangesSince mocks base method.
+func (m *MockuserStore) ChangesSince(ctx context.Context, tx *gorm.DB, userID int64, since time.Time) ([]time.Time, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ChangesSince", ctx, tx, userID, since)
+	ret0, _ := ret[0].([]time.Time)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ChangesSince indicates an expected call of ChangesSince.
+func (mr *MockuserStoreMockRecorder) ChangesSince(ctx, tx, userID, since any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ChangesSince", reflect.TypeOf((*MockuserStore)(nil).ChangesSince), ctx, tx, userID, since)
+}
+
 // LockUser mocks base method.
 func (m *MockuserStore) LockUser(ctx context.Context, tx *gorm.DB, userUUID string) (*repo.User, error) {
 	m.ctrl.T.Helper()

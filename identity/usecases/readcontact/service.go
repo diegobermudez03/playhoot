@@ -27,22 +27,22 @@ func New(db *gorm.DB) *Service {
 const noEmail = ""
 
 type contactRow struct {
-	Account bool
-	Email   *string
+	Account  bool
+	Email    *string
+	Language string
 }
 
-// ReadContact returns how recipient is reached. It is a User's UUID, whose
-// address is the one its latest live sign-in method observed; or the
-// identifier of a one-time email code attempt, which is reached at the
-// address the code was asked for, in the language it was asked in, although
-// nobody has a User yet.
+// ReadContact returns how recipient is reached: a User's UUID, at the
+// address its latest live sign-in method observed and in the language the
+// account chose; or a one-time email code attempt, at the address the code
+// was asked for and in the language it was asked in.
 func (s *Service) ReadContact(ctx context.Context, recipient string) (identity.Contact, error) {
 	defer logging.Step(ctx, "identity.read_contact").Close()
 	if _, err := uuid.Parse(recipient); err != nil {
 		return identity.Contact{}, nil
 	}
 	var rows []contactRow
-	err := s.db.WithContext(ctx).Raw(`SELECT a.id IS NOT NULL AS account,
+	err := s.db.WithContext(ctx).Raw(`SELECT a.id IS NOT NULL AS account, u.interface_language AS language,
 			(SELECT e.email FROM identity_external_identities e
 				WHERE e.user_id = u.id AND e.removed_at IS NULL AND e.email <> ? ORDER BY e.id DESC LIMIT 1) AS email
 		FROM identity_users u LEFT JOIN identity_accounts a ON a.user_id = u.id
@@ -53,7 +53,7 @@ func (s *Service) ReadContact(ctx context.Context, recipient string) (identity.C
 	if len(rows) == 0 {
 		return s.readAttemptContact(ctx, recipient)
 	}
-	contact := identity.Contact{Found: true, Account: rows[0].Account}
+	contact := identity.Contact{Found: true, Account: rows[0].Account, Language: rows[0].Language}
 	if rows[0].Account && rows[0].Email != nil {
 		contact.Email = *rows[0].Email
 	}

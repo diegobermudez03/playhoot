@@ -30,7 +30,7 @@ func TestCreateGameFromATemplate(t *testing.T) {
 				Return(sessionpkg.DraftVersion{Outcome: sessionpkg.DraftCreated, Revision: 1}, nil),
 		)
 
-		created, err := manager.CreateGame(ctx, testUserUUID, "Quiz", testKey, testTemplateGame)
+		created, err := manager.CreateGame(ctx, testUserUUID, "Quiz", testKey, testTemplateGame, "")
 
 		require.NoError(t, err)
 		require.Equal(t, CreatedGame{GameUUID: testGameUUID, VersionUUID: testVersionUUID, Revision: 1}, created)
@@ -40,7 +40,7 @@ func TestCreateGameFromATemplate(t *testing.T) {
 		manager, deps := newTestManager(t)
 		deps.templates.EXPECT().FindTemplate(ctx, testTemplateGame).Return(game.Template{Outcome: game.TemplateNotFound}, nil)
 
-		_, err := manager.CreateGame(ctx, testUserUUID, "Quiz", testKey, testTemplateGame)
+		_, err := manager.CreateGame(ctx, testUserUUID, "Quiz", testKey, testTemplateGame, "")
 
 		require.ErrorIs(t, err, ErrTemplateNotFound)
 	})

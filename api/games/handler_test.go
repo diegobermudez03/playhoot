@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/diegobermudez03/playhoot/api/geolocation"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,10 +15,12 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/diegobermudez03/playhoot/api/internal/auth"
+	"github.com/diegobermudez03/playhoot/compliance"
 	composergameauthoring "github.com/diegobermudez03/playhoot/composer/gameauthoring"
 	"github.com/diegobermudez03/playhoot/game"
 	"github.com/diegobermudez03/playhoot/identity"
 	"github.com/diegobermudez03/playhoot/orchestrator/gameauthoring"
+	"github.com/diegobermudez03/playhoot/orchestrator/marketgate"
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
 
@@ -53,7 +56,7 @@ func newTestHandler(ctrl *gomock.Controller) (*Handler, dependencies) {
 		card: NewMockcardManager(ctrl), pub: NewMockpublisher(ctrl), template: NewMocktemplateReader(ctrl),
 		grants: NewMockresourceGrants(ctrl),
 	}
-	h := NewHandler(nil, deps.creator, deps.editor, deps.reader, AILinks{Owner: deps.owner, Status: deps.status, Resolver: deps.resolver, Grants: deps.grants, PublicBaseURL: testPublicBaseURL + "/", PublicWebBaseURL: testPublicWebBaseURL + "/"}, Cards{Card: deps.card, Publisher: deps.pub}, deps.template)
+	h := NewHandler(nil, deps.creator, deps.editor, deps.reader, AILinks{Owner: deps.owner, Status: deps.status, Resolver: deps.resolver, Grants: deps.grants, PublicBaseURL: testPublicBaseURL + "/", PublicWebBaseURL: testPublicWebBaseURL + "/"}, Cards{Card: deps.card, Publisher: deps.pub}, deps.template, geolocation.Resolver{})
 	h.now = func() time.Time { return time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC) }
 	return h, deps
 }
@@ -117,7 +120,7 @@ func TestHandleCreateGame(t *testing.T) {
 	}
 	tests := map[string]func(t *testing.T, deps dependencies) test{
 		"game_created": func(t *testing.T, deps dependencies) test {
-			deps.creator.EXPECT().CreateGame(gomock.Any(), callerUUID, "Memoria", "key-1", "").
+			deps.creator.EXPECT().CreateGame(gomock.Any(), callerUUID, "Memoria", "key-1", "", "").
 				Return(gameauthoring.CreatedGame{GameUUID: gameUUID, VersionUUID: versionUUID, Revision: 1}, nil)
 			tc := post(`{"name":"Memoria","idempotency_key":"key-1"}`)
 			tc.expectedCode = http.StatusCreated
@@ -125,13 +128,13 @@ func TestHandleCreateGame(t *testing.T) {
 			return tc
 		},
 		"a_name_refused": func(t *testing.T, deps dependencies) test {
-			deps.creator.EXPECT().CreateGame(gomock.Any(), callerUUID, "", "key-1", "").Return(gameauthoring.CreatedGame{}, fmt.Errorf("x: %w", game.ErrInvalidCard))
+			deps.creator.EXPECT().CreateGame(gomock.Any(), callerUUID, "", "key-1", "", "").Return(gameauthoring.CreatedGame{}, fmt.Errorf("x: %w", game.ErrInvalidCard))
 			tc := post(`{"idempotency_key":"key-1"}`)
 			tc.expectedCode = http.StatusUnprocessableEntity
 			return tc
 		},
 		"a_key_reused_with_another_name": func(t *testing.T, deps dependencies) test {
-			deps.creator.EXPECT().CreateGame(gomock.Any(), callerUUID, "Otro", "key-1", "").Return(gameauthoring.CreatedGame{}, game.ErrIdempotencyConflict)
+			deps.creator.EXPECT().CreateGame(gomock.Any(), callerUUID, "Otro", "key-1", "", "").Return(gameauthoring.CreatedGame{}, game.ErrIdempotencyConflict)
 			tc := post(`{"name":"Otro","idempotency_key":"key-1"}`)
 			tc.expectedCode = http.StatusConflict
 			return tc
@@ -146,8 +149,24 @@ func TestHandleCreateGame(t *testing.T) {
 			tc.expectedCode = http.StatusBadRequest
 			return tc
 		},
+		"a_declaration_is_owed_and_the_client_is_told_what_for": func(t *testing.T, deps dependencies) test {
+			deps.creator.EXPECT().CreateGame(gomock.Any(), callerUUID, "Memoria", "key-1", "", "").
+				Return(gameauthoring.CreatedGame{}, &marketgate.DeclarationRequiredError{Function: compliance.FunctionCreateGames})
+			tc := post(`{"name":"Memoria","idempotency_key":"key-1"}`)
+			tc.expectedCode = http.StatusForbidden
+			tc.expectedBody = `{"code":"declaration_required","message":"tell us where you live and that you have the age it asks for","function":"create-games"}`
+			return tc
+		},
+		"a_blocked_market_refuses_as_a_service_restriction": func(t *testing.T, deps dependencies) test {
+			deps.creator.EXPECT().CreateGame(gomock.Any(), callerUUID, "Memoria", "key-1", "", "").
+				Return(gameauthoring.CreatedGame{}, &marketgate.RestrictedError{Function: compliance.FunctionCreateGames, Reason: compliance.BlockMarketUnavailable})
+			tc := post(`{"name":"Memoria","idempotency_key":"key-1"}`)
+			tc.expectedCode = http.StatusForbidden
+			tc.expectedBody = `{"code":"market_restricted","message":"creating games is not available in your area"}`
+			return tc
+		},
 		"creation_fails": func(t *testing.T, deps dependencies) test {
-			deps.creator.EXPECT().CreateGame(gomock.Any(), callerUUID, "Memoria", "key-1", "").Return(gameauthoring.CreatedGame{}, errors.New("down"))
+			deps.creator.EXPECT().CreateGame(gomock.Any(), callerUUID, "Memoria", "key-1", "", "").Return(gameauthoring.CreatedGame{}, errors.New("down"))
 			tc := post(`{"name":"Memoria","idempotency_key":"key-1"}`)
 			tc.expectedCode = http.StatusInternalServerError
 			return tc

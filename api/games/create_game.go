@@ -12,7 +12,16 @@ import (
 	"github.com/diegobermudez03/playhoot/game"
 	"github.com/diegobermudez03/playhoot/logging"
 	"github.com/diegobermudez03/playhoot/orchestrator/gameauthoring"
+	"github.com/diegobermudez03/playhoot/orchestrator/marketgate"
 )
+
+// declarationRefusal tells the client which function the person must declare
+// for, so it can send them to declare it and bring them back.
+type declarationRefusal struct {
+	Code     string `json:"code"`
+	Message  string `json:"message"`
+	Function string `json:"function"`
+}
 
 // CreateGameRequest never names the owner: it is the caller.
 type CreateGameRequest struct {
@@ -68,10 +77,20 @@ func (h *Handler) CreateGame(ctx context.Context, userUUID string, req CreateGam
 		req.TemplateGameUUID = template.String()
 		logging.LogFields(ctx, logging.Field("template_game_uuid", req.TemplateGameUUID))
 	}
-	created, err := h.creator.CreateGame(ctx, userUUID, req.Name, req.IdempotencyKey, req.TemplateGameUUID)
+	created, err := h.creator.CreateGame(ctx, userUUID, req.Name, req.IdempotencyKey, req.TemplateGameUUID, h.geo.Country(ctx))
 	if err != nil {
 		logging.LogError(ctx, err)
+		var declaration *marketgate.DeclarationRequiredError
+		var restricted *marketgate.RestrictedError
 		switch {
+		case errors.As(err, &declaration):
+			return CreateGameResponse{}, &Refusal{Status: http.StatusForbidden, Body: declarationRefusal{
+				Code:     codeDeclarationRequired,
+				Message:  "tell us where you live and that you have the age it asks for",
+				Function: string(declaration.Function),
+			}}
+		case errors.As(err, &restricted):
+			return CreateGameResponse{}, refuseCoded(http.StatusForbidden, codeMarketRestricted, "creating games is not available in your area")
 		case errors.Is(err, game.ErrInvalidCard):
 			return CreateGameResponse{}, refuseCoded(http.StatusUnprocessableEntity, codeInvalidCard, "name is required and holds at most 80 characters")
 		case errors.Is(err, gameauthoring.ErrTemplateNotFound):

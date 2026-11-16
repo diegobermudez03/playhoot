@@ -21,7 +21,8 @@ type stubAuthorizer struct{}
 func (stubAuthorizer) Authorize(_ context.Context, token string, operation identity.Operation) (identity.User, identity.AccessDecision, error) {
 	levels := map[string]identity.Level{"admin": identity.LevelAdmin, "account": identity.LevelAccount, "guest": identity.LevelGuest}
 	required := map[identity.Operation]identity.Level{
-		identity.OperationManageMarkets: identity.LevelAdmin, identity.OperationDeclareResidenceAndAge: identity.LevelAccount, identity.OperationAcceptTexts: identity.LevelGuest,
+		identity.OperationManageMarkets: identity.LevelAdmin, identity.OperationDeclareResidenceAndAge: identity.LevelAccount,
+		identity.OperationAcceptTexts: identity.LevelGuest, identity.OperationManageTexts: identity.LevelAdmin,
 	}
 	rank := map[identity.Level]int{identity.LevelGuest: 1, identity.LevelAccount: 2, identity.LevelAdmin: 3}
 	level, ok := levels[token]
@@ -45,6 +46,20 @@ type stubCompliance struct {
 	ruleAdmin   string
 	rule        compliance.MarketRule
 	ruleOutcome compliance.SetMarketRuleOutcome
+	catalog     []compliance.TextCatalogEntry
+	published   compliance.PublishedText
+	publishKind compliance.TextKind
+	publishLang string
+	publishText string
+}
+
+func (s *stubCompliance) AdminListTexts(context.Context) ([]compliance.TextCatalogEntry, error) {
+	return s.catalog, nil
+}
+
+func (s *stubCompliance) AdminPublishText(_ context.Context, kind compliance.TextKind, language string, content string) (compliance.PublishedText, error) {
+	s.publishKind, s.publishLang, s.publishText = kind, language, content
+	return s.published, nil
 }
 
 func (s *stubCompliance) RecordDeclaration(_ context.Context, declaration compliance.Declaration) (compliance.DeclarationResult, error) {
@@ -77,7 +92,7 @@ func (s *stubCompliance) AdminSetMarketRule(_ context.Context, adminUUID string,
 func TestHandler(t *testing.T) {
 	serve := func(stub *stubCompliance, method, path, token, body string, headers ...string) *httptest.ResponseRecorder {
 		mux := http.NewServeMux()
-		for _, route := range NewHandler(stubAuthorizer{}, stub, stub, stub).RESTRoutes() {
+		for _, route := range NewHandler(stubAuthorizer{}, stub, stub, stub, stub).RESTRoutes() {
 			mux.HandleFunc(route.Pattern, route.Authorization(route.Handler))
 		}
 		request := httptest.NewRequest(method, path, strings.NewReader(body))
@@ -98,6 +113,31 @@ func TestHandler(t *testing.T) {
 			require.Equal(t, http.StatusForbidden, serve(stub, http.MethodGet, "/admin/v1/markets", "account", "").Code)
 			require.Equal(t, http.StatusUnauthorized, serve(stub, http.MethodPut, "/admin/v1/markets", "", `{}`).Code)
 			require.Equal(t, http.StatusOK, serve(stub, http.MethodGet, "/admin/v1/markets?country=co", "admin", "").Code)
+		},
+		"the texts panel is the administrator's, lists missing pairs and publishes a version": func(t *testing.T) {
+			stub := &stubCompliance{
+				catalog: []compliance.TextCatalogEntry{
+					{Kind: compliance.TextTerms, Language: "es", Versions: []compliance.TextVersion{{Version: 2, PublishedAt: time.Date(2026, 11, 16, 12, 0, 0, 0, time.UTC)}}},
+					{Kind: compliance.TextTerms, Language: "pt", Versions: []compliance.TextVersion{}},
+				},
+				published: compliance.PublishedText{Outcome: compliance.TextPublished, Version: 3, PublishedAt: time.Date(2026, 11, 16, 13, 0, 0, 0, time.UTC)},
+			}
+			require.Equal(t, http.StatusForbidden, serve(stub, http.MethodGet, "/admin/v1/texts", "account", "").Code)
+
+			listed := serve(stub, http.MethodGet, "/admin/v1/texts", "admin", "")
+			require.Equal(t, http.StatusOK, listed.Code)
+			require.JSONEq(t, `{"texts":[
+				{"kind":"terms","language":"es","versions":[{"version":2,"published_at":"2026-11-16T12:00:00Z"}]},
+				{"kind":"terms","language":"pt","versions":[]}]}`, listed.Body.String())
+
+			published := serve(stub, http.MethodPut, "/admin/v1/texts", "admin", `{"kind":"terms","language":"es","content":"Tercera version"}`)
+			require.Equal(t, http.StatusOK, published.Code)
+			require.JSONEq(t, `{"kind":"terms","language":"es","version":3,"published_at":"2026-11-16T13:00:00Z"}`, published.Body.String())
+			require.Equal(t, compliance.TextTerms, stub.publishKind)
+			require.Equal(t, "Tercera version", stub.publishText)
+
+			stub.published = compliance.PublishedText{Outcome: compliance.TextInvalid}
+			require.Equal(t, http.StatusBadRequest, serve(stub, http.MethodPut, "/admin/v1/texts", "admin", `{"kind":"terms","language":"es","content":""}`).Code)
 		},
 		"a declaration needs an account and records the caller's answer": func(t *testing.T) {
 			stub := &stubCompliance{declared: compliance.DeclarationRecorded}

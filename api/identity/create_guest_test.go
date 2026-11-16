@@ -38,7 +38,7 @@ func TestHandleCreateGuest(t *testing.T) {
 		AccessExpiresAt: time.Date(2026, 10, 27, 12, 15, 0, 0, time.UTC),
 		RefreshToken:    "phr_refresh",
 	}
-	credentialsJSON := `{"user":{"user_uuid":"` + userUUID + `","display_name":"Ana","level":"guest"},` +
+	credentialsJSON := `{"user":{"user_uuid":"` + userUUID + `","display_name":"Ana","level":"guest","mode":"normal"},` +
 		`"access_token":"access-jwt","access_expires_at":"2026-10-27T12:15:00Z","access_expires_in":900,"refresh_token":"phr_refresh"}`
 
 	tests := map[string]func(t *testing.T, deps dependencies) test{

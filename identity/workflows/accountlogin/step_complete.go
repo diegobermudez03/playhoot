@@ -126,6 +126,9 @@ func (m *Manager) completeInTx(ctx context.Context, tx *gorm.DB, code string, co
 	if err != nil {
 		return nil, err
 	}
-	user := identity.User{UUID: attempt.UserUUID, DisplayName: attempt.DisplayName, Level: identity.LevelAccount}
+	user := identity.User{
+		UUID: attempt.UserUUID, DisplayName: attempt.DisplayName, Level: identity.LevelAccount,
+		Mode: identity.NormalizeMode(identity.Mode(attempt.Mode)),
+	}
 	return &signedIn{user: user, refreshToken: refreshToken}, nil
 }

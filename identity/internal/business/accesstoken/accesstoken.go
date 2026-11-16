@@ -30,6 +30,7 @@ type claims struct {
 	jwt.Claims
 	Level       string `json:"lvl"`
 	DisplayName string `json:"name"`
+	Mode        string `json:"mode,omitempty"`
 }
 
 // Signer issues and verifies access tokens with one key.
@@ -62,6 +63,7 @@ func (s *Signer) Issue(user identity.User, issuedAt time.Time) (string, time.Tim
 		},
 		Level:       string(user.Level),
 		DisplayName: user.DisplayName,
+		Mode:        string(identity.NormalizeMode(user.Mode)),
 	}).Serialize()
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("signing access token: %s", err)
@@ -90,5 +92,8 @@ func (s *Signer) Verify(token string, now time.Time) (identity.User, error) {
 		c.ValidateWithLeeway(jwt.Expected{Time: now}, ClockSkew) != nil {
 		return identity.User{}, ErrInvalid
 	}
-	return identity.User{UUID: c.Subject, DisplayName: c.DisplayName, Level: identity.Level(c.Level)}, nil
+	return identity.User{
+		UUID: c.Subject, DisplayName: c.DisplayName, Level: identity.Level(c.Level),
+		Mode: identity.NormalizeMode(identity.Mode(c.Mode)),
+	}, nil
 }

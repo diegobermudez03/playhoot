@@ -37,6 +37,12 @@ type acceptances interface {
 	RecordAcceptance(ctx context.Context, request compliance.AcceptanceRequest) (compliance.AcceptanceOutcome, error)
 }
 
+// texts is admin's publication of the texts people accept.
+type texts interface {
+	AdminListTexts(ctx context.Context) ([]compliance.TextCatalogEntry, error)
+	AdminPublishText(ctx context.Context, kind compliance.TextKind, language string, content string) (compliance.PublishedText, error)
+}
+
 // marketRules is admin's market matrix.
 type marketRules interface {
 	ReadMarketRules(ctx context.Context, country string) (compliance.MarketRules, error)
@@ -44,8 +50,11 @@ type marketRules interface {
 }
 
 const (
-	maxBodyBytes    = 4 << 10
-	defaultLanguage = "en"
+	maxBodyBytes = 4 << 10
+	// maxTextBodyBytes holds a whole acceptance text, which is much larger
+	// than any other body this group takes.
+	maxTextBodyBytes = 512 << 10
+	defaultLanguage  = "en"
 )
 
 // Handler exposes the compliance endpoints.
@@ -54,22 +63,26 @@ type Handler struct {
 	declarations declarations
 	acceptances  acceptances
 	marketRules  marketRules
+	texts        texts
 }
 
 // NewHandler constructs a Handler.
-func NewHandler(authorizer authorizer, declarations declarations, acceptances acceptances, marketRules marketRules) *Handler {
-	return &Handler{authorizer: authorizer, declarations: declarations, acceptances: acceptances, marketRules: marketRules}
+func NewHandler(authorizer authorizer, declarations declarations, acceptances acceptances, marketRules marketRules, texts texts) *Handler {
+	return &Handler{authorizer: authorizer, declarations: declarations, acceptances: acceptances, marketRules: marketRules, texts: texts}
 }
 
 // RESTRoutes returns this group's endpoints.
 func (h *Handler) RESTRoutes() []routing.Route {
 	admin := auth.Require(h.authorizer, identity.OperationManageMarkets)
+	manageTexts := auth.Require(h.authorizer, identity.OperationManageTexts)
 	return []routing.Route{
 		{Pattern: "POST /v1/compliance/declaration", Handler: h.handleDeclaration, Authorization: auth.Require(h.authorizer, identity.OperationDeclareResidenceAndAge)},
 		{Pattern: "POST /v1/compliance/acceptances", Handler: h.handleAcceptance, Authorization: auth.Require(h.authorizer, identity.OperationAcceptTexts)},
 		{Pattern: "GET /v1/compliance/texts/{kind}", Handler: h.handleText, Authorization: auth.Optional(h.authorizer, identity.OperationAcceptTexts)},
 		{Pattern: "GET /admin/v1/markets", Handler: h.handleReadMarkets, Authorization: admin},
 		{Pattern: "PUT /admin/v1/markets", Handler: h.handleSetMarket, Authorization: admin},
+		{Pattern: "GET /admin/v1/texts", Handler: h.handleListTexts, Authorization: manageTexts},
+		{Pattern: "PUT /admin/v1/texts", Handler: h.handlePublishText, Authorization: manageTexts},
 	}
 }
 

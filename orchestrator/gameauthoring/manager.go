@@ -9,12 +9,14 @@ import (
 
 	"github.com/diegobermudez03/playhoot/game"
 	"github.com/diegobermudez03/playhoot/monitoring"
+	"github.com/diegobermudez03/playhoot/orchestrator/marketgate"
 )
 
 // Manager coordinates the game-authoring operations. Each operation lives in
 // its own file and declares its own narrow interfaces for the capabilities it
 // calls. It owns no business entity.
 type Manager struct {
+	market       *marketgate.Gate
 	games        gameCreator
 	editions     editableVersionFinder
 	drafts       draftWriter
@@ -26,11 +28,12 @@ type Manager struct {
 	templates    templateFinder
 }
 
-// New constructs a Manager from Game Management's game creation, edit
-// authorization, releases, card and templates; Play's version being built, previews and
-// freezing; and Identity's links an AI uses for a game.
-func New(games gameCreator, editions editableVersionFinder, drafts draftWriter, links resourceLinkWriter, previews previewStarter, publications gamePublisher, versions versionPublisher, cards cardNamer, templates templateFinder) *Manager {
-	return &Manager{games: games, editions: editions, drafts: drafts, links: links, previews: previews, publications: publications, versions: versions, cards: cards, templates: templates}
+// New constructs a Manager from Compliance's market-and-age gate; Game
+// Management's game creation, edit authorization, releases, card and
+// templates; Play's version being built, previews and freezing; and
+// Identity's links an AI uses for a game.
+func New(market *marketgate.Gate, games gameCreator, editions editableVersionFinder, drafts draftWriter, links resourceLinkWriter, previews previewStarter, publications gamePublisher, versions versionPublisher, cards cardNamer, templates templateFinder) *Manager {
+	return &Manager{market: market, games: games, editions: editions, drafts: drafts, links: links, previews: previews, publications: publications, versions: versions, cards: cards, templates: templates}
 }
 
 // editableVersionFinder is Game Management's decision of whether a user may

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/diegobermudez03/playhoot/compliance"
 	"github.com/diegobermudez03/playhoot/game"
 	"github.com/diegobermudez03/playhoot/logging"
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
@@ -38,12 +39,16 @@ type CreatedGame struct {
 	Revision    int64
 }
 
-// CreateGame creates a game for userUUID in Game Management, then its version
-// being built in Play: the starter project, or a copy of the template
-// templateGameUUID (ErrTemplateNotFound when it is not one). Idempotent per
-// key; a version left missing is created later from the same start.
-func (m *Manager) CreateGame(ctx context.Context, userUUID string, name string, idempotencyKey string, templateGameUUID string) (CreatedGame, error) {
+// CreateGame gates the caller on the market matrix (approximateCountry is
+// what their address suggests), creates their game in Game Management, then
+// its version being built in Play: the starter project, or a copy of
+// templateGameUUID. Idempotent per key.
+func (m *Manager) CreateGame(ctx context.Context, userUUID string, name string, idempotencyKey string, templateGameUUID string, approximateCountry string) (CreatedGame, error) {
 	defer logging.Step(ctx, "orchestrator.create_game").Close()
+
+	if err := m.market.Require(ctx, userUUID, compliance.FunctionCreateGames, approximateCountry); err != nil {
+		return CreatedGame{}, err
+	}
 
 	var template *game.TemplateSource
 	start := sessionpkg.DraftStart{}

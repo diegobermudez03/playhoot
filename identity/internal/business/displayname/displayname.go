@@ -4,6 +4,7 @@ package displayname
 
 import (
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 )
@@ -24,4 +25,27 @@ func Normalize(name string) (string, bool) {
 		}
 	}
 	return trimmed, true
+}
+
+// ChangeWindow is how far back changes are counted, and MaxChangesPerWindow
+// how many a User may make inside it.
+const (
+	ChangeWindow        = 30 * 24 * time.Hour
+	MaxChangesPerWindow = 3
+)
+
+// NextChangeAt returns when the User may change their name again, given the
+// times they changed it inside the window, oldest first. The zero time means
+// they may change it now.
+func NextChangeAt(inWindow []time.Time, now time.Time) time.Time {
+	if len(inWindow) < MaxChangesPerWindow {
+		return time.Time{}
+	}
+	// The oldest change of the window leaves it first, freeing a place.
+	oldest := inWindow[len(inWindow)-MaxChangesPerWindow]
+	next := oldest.Add(ChangeWindow)
+	if !next.After(now) {
+		return time.Time{}
+	}
+	return next
 }

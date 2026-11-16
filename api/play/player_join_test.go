@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/diegobermudez03/playhoot/api/geolocation"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -683,7 +684,7 @@ func TestHandlePlayerJoin(t *testing.T) {
 				_, err := connections.Reserve(context.Background(), callerUUID)
 				require.NoError(t, err)
 			}
-			handler := NewHandler(nil, nil, nil, nil, deps.players, nil, nil, connections, nil)
+			handler := NewHandler(nil, nil, nil, nil, deps.players, nil, nil, connections, allowingMarket(), geolocation.Resolver{}, nil)
 			handlerDone := make(chan struct{})
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				defer close(handlerDone)

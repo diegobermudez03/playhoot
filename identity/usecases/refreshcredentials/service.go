@@ -148,5 +148,8 @@ func userOf(session internalrepo.Session) identity.User {
 	if session.HasAccount {
 		level = identity.LevelAccount
 	}
-	return identity.User{UUID: session.UserUUID, DisplayName: session.DisplayName, Level: level}
+	return identity.User{
+		UUID: session.UserUUID, DisplayName: session.DisplayName, Level: level,
+		Mode: identity.NormalizeMode(identity.Mode(session.Mode)),
+	}
 }

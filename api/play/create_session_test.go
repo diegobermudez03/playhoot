@@ -3,6 +3,7 @@ package play
 import (
 	"context"
 	"errors"
+	"github.com/diegobermudez03/playhoot/api/geolocation"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -215,7 +216,7 @@ func TestHandleCreateSession(t *testing.T) {
 			deps := dependencies{creator: NewMocksessionCreator(ctrl)}
 			tc := setup(t, deps)
 
-			handler := NewHandler(nil, deps.creator, nil, nil, nil, nil, nil, nil, nil)
+			handler := NewHandler(nil, deps.creator, nil, nil, nil, nil, nil, nil, allowingMarket(), geolocation.Resolver{}, nil)
 			request := httptest.NewRequest(http.MethodPost, "/sessions", strings.NewReader(tc.body)).WithContext(tc.ctx)
 			recorder := httptest.NewRecorder()
 

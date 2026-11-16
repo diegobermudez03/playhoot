@@ -25,8 +25,8 @@ func TestRefreshInTx(t *testing.T) {
 	ago := func(d time.Duration) *time.Time { at := now.Add(-d); return &at }
 	in := func(d time.Duration) *time.Time { at := now.Add(d); return &at }
 	successorID := int64(2)
-	guest := identity.User{UUID: "user-1", DisplayName: "Ana", Level: identity.LevelGuest}
-	account := identity.User{UUID: "user-2", DisplayName: "Bea", Level: identity.LevelAccount}
+	guest := identity.User{UUID: "user-1", DisplayName: "Ana", Level: identity.LevelGuest, Mode: identity.ModeNormal}
+	account := identity.User{UUID: "user-2", DisplayName: "Bea", Level: identity.LevelAccount, Mode: identity.ModeNormal}
 
 	session := func(token string, issuedAgo time.Duration) internalrepo.Session {
 		return internalrepo.Session{

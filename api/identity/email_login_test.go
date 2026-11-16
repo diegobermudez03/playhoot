@@ -133,7 +133,7 @@ func TestHandleCompleteEmailLogin(t *testing.T) {
 				Return(identitypkg.CompleteEmailLoginResult{Outcome: identitypkg.EmailLoginCompleted, Credentials: credentials}, nil)
 			return test{
 				expectedCode: http.StatusOK,
-				expectedBody: `{"user":{"user_uuid":"7c9e6679-7425-40de-944b-e07fc1f90ae7","display_name":"","level":"account"},
+				expectedBody: `{"user":{"user_uuid":"7c9e6679-7425-40de-944b-e07fc1f90ae7","display_name":"","level":"account","mode":"normal"},
 					"access_token":"access","access_expires_at":"2026-11-16T12:15:00Z","access_expires_in":900,"refresh_token":"phr_next"}`,
 			}
 		},

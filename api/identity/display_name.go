@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 	"unicode/utf8"
 
 	"github.com/diegobermudez03/playhoot/api/internal/auth"
@@ -15,6 +16,18 @@ import (
 type setDisplayNameRequest struct {
 	DisplayName string `json:"display_name"`
 }
+
+// changeLimitResponse says when the next name change is possible, so the
+// screen can say it instead of only refusing.
+type changeLimitResponse struct {
+	Code         string `json:"code"`
+	Message      string `json:"message"`
+	NextChangeAt string `json:"next_change_at"`
+}
+
+// codeChangeLimitReached means the rolling window allows no further change
+// yet.
+const codeChangeLimitReached = "change_limit_reached"
 
 const maxSetDisplayNameBodyBytes = 2 << 10
 
@@ -54,6 +67,12 @@ func (h *Handler) handleSetDisplayName(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteJSON(w, http.StatusOK, meResponse{User: toUserResponse(result.User)})
 	case identitypkg.DisplayNameInvalid:
 		httpx.WriteCodedError(w, http.StatusBadRequest, codeInvalidDisplayName, "display_name is not allowed")
+	case identitypkg.DisplayNameLimitReached:
+		httpx.WriteJSON(w, http.StatusTooManyRequests, changeLimitResponse{
+			Code:         codeChangeLimitReached,
+			Message:      "you have changed your name as often as allowed for now",
+			NextChangeAt: result.NextChangeAt.UTC().Format(time.RFC3339),
+		})
 	default:
 		logging.LogFields(ctx, logging.Field("set_display_name_outcome", string(result.Outcome)))
 		httpx.WriteError(w, http.StatusInternalServerError, "choosing the name failed")

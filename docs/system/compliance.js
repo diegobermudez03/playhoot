@@ -97,7 +97,7 @@ PH.table({
   columns: [
     { name: 'id', type: 'bigserial', note: '' },
     { name: 'kind', type: 'text', note: 'terms, own-data, class-data-agreement or marketing.' },
-    { name: 'version', type: 'int', note: '' },
+    { name: 'version', type: 'int', note: 'Counted per kind and language: publishing one language never moves another.' },
     { name: 'language', type: 'text', note: 'es, en or pt.' },
     { name: 'content', type: 'text', note: 'The text itself, never edited after publishing.' },
     { name: 'published_at', type: 'timestamptz', note: '' },
@@ -190,7 +190,7 @@ PH.operation({
 });
 
 PH.operation({
-  id: 'compliance.read-declaration', domain: 'compliance', kind: 'usecase', effect: 'read', status: 'planned',
+  id: 'compliance.read-declaration', domain: 'compliance', kind: 'usecase', effect: 'read', status: 'implemented',
   name: 'ReadDeclaration',
   summary: 'The caller\'s current residence-and-age declaration — country, subdivision, threshold, date — or none; read by my-data and shown in the profile.',
   reads: ['compliance.compliance_declarations'],
@@ -203,17 +203,20 @@ PH.operation({
 });
 
 PH.operation({
-  id: 'compliance.admin-list-texts', domain: 'compliance', kind: 'usecase', effect: 'read', status: 'planned',
+  id: 'compliance.admin-list-texts', domain: 'compliance', kind: 'usecase', effect: 'read', status: 'implemented',
   name: 'AdminListTexts',
   summary: 'Every acceptance text for admin: the four kinds by language, with versions and publish dates.',
   reads: ['compliance.compliance_acceptance_texts'],
   writes: [],
-  rules: ['Shows which kind-language pairs have no version yet — production serves nothing until the real texts are published (CREATOR_TODO P-23).'],
+  rules: [
+    'Shows which kind-language pairs have no version yet — production serves nothing until the real texts are published (CREATOR_TODO P-23).',
+    'Versions only, newest first: the content of each one is read where it is served.'
+  ],
   sources: ['P22§2-3']
 });
 
 PH.operation({
-  id: 'compliance.admin-publish-text', domain: 'compliance', kind: 'usecase', effect: 'write', status: 'planned',
+  id: 'compliance.admin-publish-text', domain: 'compliance', kind: 'usecase', effect: 'write', status: 'implemented',
   name: 'AdminPublishText',
   summary: 'Publishes a new immutable version of an acceptance text for one kind and language.',
   reads: ['compliance.compliance_acceptance_texts'],
@@ -221,7 +224,8 @@ PH.operation({
   rules: [
     'Append-only: a published version is never edited; the new version supersedes for new acceptances, and recorded acceptances keep pointing at the exact version accepted.',
     'Versions are per kind and language; publishing one language neither hides nor changes the others.',
-    'Operations that require a current acceptance start asking again once a kind has a newer version (D-037).'
+    'Operations that require a current acceptance start asking again once a kind has a newer version (D-037).',
+    'The version is the next one of that kind and language; an unknown kind or language, an empty text or one beyond the size limit is refused.'
   ],
   sources: ['P22§2-3', 'P35§6']
 });

@@ -23,6 +23,7 @@ import (
 	"github.com/diegobermudez03/playhoot/analytics/usecases/ingestevents"
 	"github.com/diegobermudez03/playhoot/api"
 	apigames "github.com/diegobermudez03/playhoot/api/games"
+	"github.com/diegobermudez03/playhoot/api/geolocation"
 	apinotifications "github.com/diegobermudez03/playhoot/api/notifications"
 	"github.com/diegobermudez03/playhoot/budget"
 	"github.com/diegobermudez03/playhoot/budget/usecases/admitwork"
@@ -33,10 +34,13 @@ import (
 	budgetstatus "github.com/diegobermudez03/playhoot/budget/usecases/status"
 	"github.com/diegobermudez03/playhoot/budget/workflows/evaluateladder"
 	"github.com/diegobermudez03/playhoot/compliance/usecases/acceptances"
+	"github.com/diegobermudez03/playhoot/compliance/usecases/admintexts"
 	"github.com/diegobermudez03/playhoot/compliance/usecases/marketaccess"
 	"github.com/diegobermudez03/playhoot/compliance/usecases/marketrules"
+	"github.com/diegobermudez03/playhoot/compliance/usecases/readdeclaration"
 	composerdeadtasks "github.com/diegobermudez03/playhoot/composer/deadtasks"
 	composergameauthoring "github.com/diegobermudez03/playhoot/composer/gameauthoring"
+	"github.com/diegobermudez03/playhoot/composer/mydata"
 	"github.com/diegobermudez03/playhoot/discovery/usecases/templatecatalog"
 	"github.com/diegobermudez03/playhoot/game"
 	"github.com/diegobermudez03/playhoot/game/usecases/checkplayability"
@@ -53,11 +57,14 @@ import (
 	"github.com/diegobermudez03/playhoot/identity/usecases/grantadmin"
 	"github.com/diegobermudez03/playhoot/identity/usecases/listoperations"
 	"github.com/diegobermudez03/playhoot/identity/usecases/readcontact"
+	"github.com/diegobermudez03/playhoot/identity/usecases/readprofile"
 	"github.com/diegobermudez03/playhoot/identity/usecases/refreshcredentials"
 	"github.com/diegobermudez03/playhoot/identity/usecases/resourcegrants"
 	"github.com/diegobermudez03/playhoot/identity/usecases/resourcelinks"
 	"github.com/diegobermudez03/playhoot/identity/usecases/secondfactor"
 	"github.com/diegobermudez03/playhoot/identity/usecases/setdisplayname"
+	"github.com/diegobermudez03/playhoot/identity/usecases/setlanguage"
+	"github.com/diegobermudez03/playhoot/identity/usecases/setmode"
 	"github.com/diegobermudez03/playhoot/identity/usecases/signinmethods"
 	"github.com/diegobermudez03/playhoot/identity/usecases/sweepresourcegrants"
 	"github.com/diegobermudez03/playhoot/identity/workflows/accountlogin"
@@ -76,11 +83,13 @@ import (
 	"github.com/diegobermudez03/playhoot/orchestrator/costcontrol"
 	orchestratordeadtasks "github.com/diegobermudez03/playhoot/orchestrator/deadtasks"
 	"github.com/diegobermudez03/playhoot/orchestrator/gameauthoring"
+	"github.com/diegobermudez03/playhoot/orchestrator/marketgate"
 	"github.com/diegobermudez03/playhoot/orchestrator/notificationdelivery"
 	"github.com/diegobermudez03/playhoot/orchestrator/playlifecycle"
 	"github.com/diegobermudez03/playhoot/orchestrator/spendingestion"
 	"github.com/diegobermudez03/playhoot/orchestrator/stepup"
 	"github.com/diegobermudez03/playhoot/plan/usecases/freelimits"
+	"github.com/diegobermudez03/playhoot/plan/usecases/getuserlimits"
 	"github.com/diegobermudez03/playhoot/play/runtime/sandbox"
 	"github.com/diegobermudez03/playhoot/play/runtime/usecases/ownership"
 	"github.com/diegobermudez03/playhoot/play/runtime/usecases/simulategame"
@@ -346,7 +355,8 @@ func run() error {
 	analyticsingestion.New(ingestevents.New(db)).Register(gameQueue, sessionQueue)
 	gameLifecycle := gamelifecycle.New(db, gameQueue)
 	gameCards := gamecard.New(db, store)
-	gameAuthoring := gameauthoring.New(gameLifecycle, editableVersions, versionDrafting, resourceLinks, previews, gameLifecycle, versionDrafting, gameCards, templates)
+	marketGate := marketgate.New(marketaccess.New(db))
+	gameAuthoring := gameauthoring.New(marketGate, gameLifecycle, editableVersions, versionDrafting, resourceLinks, previews, gameLifecycle, versionDrafting, gameCards, templates)
 	gameAuthoringReads := composergameauthoring.New(editableVersions, versionDrafting, resourceLinks, simulategame.New(sandboxHost, keepsimulationresults.New(db)), gameCards, templates, templatecatalog.New())
 	owners := ownership.New(checklivesession.New(db))
 	replayRecorder := replayrecording.New(storereplaychunk.New(db, store), envVars.Replay)
@@ -386,6 +396,10 @@ func run() error {
 		return fmt.Errorf("creating email code sign-in: %w", err)
 	}
 	signInMethods := signinmethods.New(db)
+	modes, err := setmode.New(db, envVars.IdentityAccessTokenKey)
+	if err != nil {
+		return fmt.Errorf("creating mode switching: %w", err)
+	}
 	publicAPI := strings.TrimRight(envVars.PublicAPIBaseURL, "/")
 	aiAuthorization, err := aiauthorization.New(db, envVars.IdentityAccessTokenKey, aiauthorization.Config{
 		Issuer: publicAPI, Resource: api.MCPResource(publicAPI), ConsentURL: strings.TrimRight(envVars.PublicWebBaseURL, "/") + "/connect-ai",
@@ -411,18 +425,27 @@ func run() error {
 		},
 		api.EmailLogins{Starter: emailLogins, Completer: emailLogins, Linker: emailLogins},
 		api.Methods{Reader: signInMethods, Remover: signInMethods},
+		api.Me{
+			Data:      mydata.New(readprofile.New(db, signInMethods), readdeclaration.New(db), getuserlimits.New(db)),
+			Modes:     modes,
+			Languages: setlanguage.New(db),
+		},
 		playLifecycle,
 		owners,
 		liveConnections,
 		liveConnections,
 		resolvejoincode.New(db),
+		marketGate,
 		api.Games{Previews: previews, Creator: gameAuthoring, Editor: gameAuthoring, Reader: gameAuthoringReads, AILinks: apigames.AILinks{
 			Owner: gameAuthoring, Status: gameAuthoringReads, Resolver: resourceLinks, Grants: resourcegrants.New(db), Guide: readsdkguide.New(envVars.GameToolchainDir, toolchain), PublicBaseURL: envVars.PublicAPIBaseURL, PublicWebBaseURL: envVars.PublicWebBaseURL,
 		}, Cards: apigames.Cards{Card: gameCards, Publisher: gameAuthoring}},
 		api.AI{Server: aiAuthorization},
 		api.Queues{Reader: composerdeadtasks.New(queues), Manager: orchestratordeadtasks.New(queues)},
 		secondFactor,
-		api.Compliance{Declarations: marketaccess.New(db), Acceptances: acceptances.New(db), MarketRules: marketrules.New(db)},
+		api.Compliance{
+			Declarations: marketaccess.New(db), Acceptances: acceptances.New(db),
+			MarketRules: marketrules.New(db), Texts: admintexts.New(db),
+		},
 		api.Plan{FreeLimits: freelimits.New(db)},
 		api.Budget{Status: budgetstatus.New(db), Controls: costControls},
 		apinotifications.Dependencies{
@@ -435,6 +458,7 @@ func run() error {
 			WebSocketAllowedOrigins: envVars.WebSocketAllowedOrigins,
 			TrustedProxyHops:        envVars.TrustedProxyHops,
 			MaxLiveConnections:      envVars.MaxLiveConnections,
+			Locator:                 geolocation.Unknown{},
 		},
 	)
 

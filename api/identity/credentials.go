@@ -13,6 +13,9 @@ type userResponse struct {
 	UserUUID    string `json:"user_uuid"`
 	DisplayName string `json:"display_name"`
 	Level       string `json:"level"`
+	// Mode is the face of the account the credential was issued for; a guest
+	// is always normal.
+	Mode string `json:"mode"`
 }
 
 // credentialsResponse is what every endpoint that opens or renews a session
@@ -29,7 +32,10 @@ type credentialsResponse struct {
 }
 
 func toUserResponse(user identitypkg.User) userResponse {
-	return userResponse{UserUUID: user.UUID, DisplayName: user.DisplayName, Level: string(user.Level)}
+	return userResponse{
+		UserUUID: user.UUID, DisplayName: user.DisplayName, Level: string(user.Level),
+		Mode: string(identitypkg.NormalizeMode(user.Mode)),
+	}
 }
 
 // writeCredentials writes credentials, never to be cached.

@@ -158,7 +158,7 @@ func TestHandleCompleteLogin(t *testing.T) {
 		"completed": func(t *testing.T, completer *MockloginCompleter) test {
 			completer.EXPECT().CompleteLogin(ctx, "phl_code", "verifier", "phr_guest").
 				Return(identitypkg.CompleteLoginResult{Outcome: identitypkg.LoginCompleted, Credentials: account}, nil)
-			return test{body: body, expectedCode: http.StatusOK, expectedBody: `{"user":{"user_uuid":"0f8fad5b-d9cb-469f-a165-70867728950e","display_name":"Ana","level":"account"},` +
+			return test{body: body, expectedCode: http.StatusOK, expectedBody: `{"user":{"user_uuid":"0f8fad5b-d9cb-469f-a165-70867728950e","display_name":"Ana","level":"account","mode":"normal"},` +
 				`"access_token":"access-jwt","access_expires_at":"2026-10-27T12:15:00Z","access_expires_in":900,"refresh_token":"phr_refresh"}`}
 		},
 		"invalid_code": func(t *testing.T, completer *MockloginCompleter) test {

@@ -25,11 +25,13 @@ func (r *Repo) GetDB() *gorm.DB {
 	return r.db
 }
 
-// User is a User's current name and whether they have an account.
+// User is a User's current name, whether they have an account, and the mode
+// that account is in.
 type User struct {
 	ID          int64
 	DisplayName *string
 	HasAccount  bool
+	Mode        string
 }
 
 // LockUser returns the User with userUUID locked for the rest of tx, or nil
@@ -37,7 +39,8 @@ type User struct {
 func (r *Repo) LockUser(ctx context.Context, tx *gorm.DB, userUUID string) (*User, error) {
 	var users []User
 	err := tx.WithContext(ctx).Raw(`
-		SELECT users.id, users.display_name, account.id IS NOT NULL AS has_account
+		SELECT users.id, users.display_name, account.id IS NOT NULL AS has_account,
+			COALESCE(account.mode, '') AS mode
 		FROM identity_users users
 		LEFT JOIN identity_accounts account ON account.user_id = users.id
 		WHERE users.user_uuid = ?
@@ -62,6 +65,21 @@ type displayNameChange struct {
 }
 
 func (displayNameChange) TableName() string { return "identity_display_name_changes" }
+
+// ChangesSince returns when the User changed their name since since,
+// oldest first.
+func (r *Repo) ChangesSince(ctx context.Context, tx *gorm.DB, userID int64, since time.Time) ([]time.Time, error) {
+	var changedAt []time.Time
+	err := tx.WithContext(ctx).Raw(`
+		SELECT changed_at FROM identity_display_name_changes
+		WHERE user_id = ? AND changed_at > ? ORDER BY changed_at`,
+		userID, since,
+	).Scan(&changedAt).Error
+	if err != nil {
+		return nil, fmt.Errorf("reading display name changes: %s", err)
+	}
+	return changedAt, nil
+}
 
 // ChangeDisplayName names the User displayName within tx, keeping the change
 // in their history.

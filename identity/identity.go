@@ -101,6 +101,19 @@ const (
 	// account and adding or removing them. It requires a real account: a
 	// guest has no account to keep reachable.
 	OperationManageSignInMethods Operation = "MANAGE_SIGN_IN_METHODS"
+
+	// OperationSetOwnMode is switching the caller's account between normal
+	// and teacher mode. It requires a real account: a guest is always normal.
+	OperationSetOwnMode Operation = "SET_OWN_MODE"
+
+	// OperationSetInterfaceLanguage is choosing the language the interface
+	// and the emails use. It requires a real account; a guest's preference
+	// stays in their browser.
+	OperationSetInterfaceLanguage Operation = "SET_INTERFACE_LANGUAGE"
+
+	// OperationManageTexts is reading every acceptance text and publishing
+	// new versions of them. It requires the administrator.
+	OperationManageTexts Operation = "MANAGE_TEXTS"
 )
 
 // Level is how strongly a caller is authenticated, on the ordered scale
@@ -129,6 +142,41 @@ type OperationLevel struct {
 	RequiredLevel Level
 }
 
+// Mode is which face of the same account a person is using.
+type Mode string
+
+const (
+	// ModeNormal is playing, creating and everything an account does by
+	// default. It is what an empty mode means.
+	ModeNormal Mode = "normal"
+
+	// ModeTeacher is the teaching face of the same account: classes,
+	// students and their results.
+	ModeTeacher Mode = "teacher"
+)
+
+// Modes are the modes an account switches between, in no particular order.
+var Modes = []Mode{ModeNormal, ModeTeacher}
+
+// ValidMode reports whether value names a mode.
+func ValidMode(value string) bool {
+	for _, mode := range Modes {
+		if string(mode) == value {
+			return true
+		}
+	}
+	return false
+}
+
+// NormalizeMode returns mode, or ModeNormal when it is empty: a guest and an
+// account that never switched are both normal.
+func NormalizeMode(mode Mode) Mode {
+	if mode == "" {
+		return ModeNormal
+	}
+	return mode
+}
+
 // User is who a credential stands for, as Identity resolves it.
 type User struct {
 	UUID string
@@ -139,6 +187,11 @@ type User struct {
 	// Level is how strongly the User is authenticated: LevelGuest,
 	// LevelAccount, or LevelAdmin in an admin-mode token.
 	Level Level
+
+	// Mode is the face of the account the credential was issued for. It is
+	// state, never an entitlement: what a mode may do is verified when it
+	// is done, never read from here.
+	Mode Mode
 }
 
 // AccessDecision is Identity's answer to whether a caller may perform an
@@ -425,13 +478,70 @@ const (
 
 	// DisplayNameInvalid means the name breaks Identity's rules.
 	DisplayNameInvalid SetDisplayNameOutcome = "invalid_display_name"
+
+	// DisplayNameLimitReached means the User changed their name as often as
+	// the rolling window allows; NextChangeAt says when the next one is
+	// possible.
+	DisplayNameLimitReached SetDisplayNameOutcome = "change_limit_reached"
 )
 
 // SetDisplayNameResult is what a SetDisplayName call decided. User is set
-// only when Outcome is DisplayNameSet.
+// only when Outcome is DisplayNameSet, NextChangeAt only when it is
+// DisplayNameLimitReached.
 type SetDisplayNameResult struct {
-	Outcome SetDisplayNameOutcome
-	User    User
+	Outcome      SetDisplayNameOutcome
+	User         User
+	NextChangeAt time.Time
+}
+
+// SetModeOutcome is the decision a SetMode call reached.
+type SetModeOutcome string
+
+const (
+	// ModeSet means the account is now in the mode asked for; asking for
+	// the mode it already had is this outcome too.
+	ModeSet SetModeOutcome = "set"
+
+	// ModeInvalid means the value names no mode.
+	ModeInvalid SetModeOutcome = "invalid_mode"
+
+	// ModeNotAccount means the caller is a guest: guests are always normal.
+	ModeNotAccount SetModeOutcome = "not_account"
+)
+
+// SetModeResult is what a SetMode call decided. Credentials hold a fresh
+// access token carrying the new mode, with no refresh token: the client
+// keeps the one it has. They are set only when Outcome is ModeSet.
+type SetModeResult struct {
+	Outcome     SetModeOutcome
+	Credentials Credentials
+}
+
+// SetLanguageOutcome is the decision a SetLanguage call reached.
+type SetLanguageOutcome string
+
+const (
+	// LanguageSet means the account's interface language is the one asked
+	// for.
+	LanguageSet SetLanguageOutcome = "set"
+
+	// LanguageInvalid means the value names no interface language.
+	LanguageInvalid SetLanguageOutcome = "invalid_language"
+
+	// LanguageNotAccount means the caller is a guest: their preference
+	// stays in their browser.
+	LanguageNotAccount SetLanguageOutcome = "not_account"
+)
+
+// Profile is who the caller is, as their own profile shows them. Language is
+// empty while no account chose one. Methods are empty for a guest.
+type Profile struct {
+	UUID        string
+	DisplayName string
+	Level       Level
+	Mode        Mode
+	Language    string
+	Methods     []SignInMethod
 }
 
 // ErrUserNotFound is returned when a User an operation names does not exist.
@@ -761,8 +871,8 @@ const (
 // Contact is how a recipient is reached outside Playhoot. Found is false
 // for an unknown recipient; a guest has no Email. Email is the address last
 // observed from a sign-in method, or the address a one-time code was asked
-// for. Language is the interface language chosen or asked in, empty while
-// Identity keeps none.
+// for. Language is the interface language the account chose, or the one a
+// one-time code was asked in, empty while Identity keeps none.
 type Contact struct {
 	Found    bool
 	Account  bool

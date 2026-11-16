@@ -286,3 +286,42 @@ func (r *Repo) InsertAcceptance(ctx context.Context, tx *gorm.DB, acceptance Acc
 	}
 	return nil
 }
+
+// TextVersionRow is one published version of a text, without its content.
+type TextVersionRow struct {
+	Kind        string
+	Language    string
+	Version     int
+	PublishedAt time.Time
+}
+
+// AllTextVersions returns every published version of every kind and
+// language, newest first within each pair.
+func (r *Repo) AllTextVersions(ctx context.Context) ([]TextVersionRow, error) {
+	var rows []TextVersionRow
+	err := r.db.WithContext(ctx).Raw(`SELECT kind, language, version, published_at
+		FROM compliance_acceptance_texts ORDER BY kind, language, version DESC`).Scan(&rows).Error
+	if err != nil {
+		return nil, fmt.Errorf("reading acceptance text versions: %s", err)
+	}
+	return rows, nil
+}
+
+// NextTextVersion returns the version a new text of kind and language takes.
+func (r *Repo) NextTextVersion(ctx context.Context, tx *gorm.DB, kind, language string) (int, error) {
+	var version int
+	err := tx.WithContext(ctx).Raw(`SELECT COALESCE(MAX(version), 0) + 1 FROM compliance_acceptance_texts
+		WHERE kind = ? AND language = ?`, kind, language).Scan(&version).Error
+	if err != nil {
+		return 0, fmt.Errorf("reading the next text version: %s", err)
+	}
+	return version, nil
+}
+
+// InsertText appends a text version.
+func (r *Repo) InsertText(ctx context.Context, tx *gorm.DB, text AcceptanceText) error {
+	if err := tx.WithContext(ctx).Create(&text).Error; err != nil {
+		return fmt.Errorf("inserting acceptance text: %s", err)
+	}
+	return nil
+}

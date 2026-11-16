@@ -78,10 +78,13 @@ func TestCatalog(t *testing.T) {
 		{Operation: identity.OperationManagePlans, RequiredLevel: identity.LevelAdmin},
 		{Operation: identity.OperationManageQueues, RequiredLevel: identity.LevelAdmin},
 		{Operation: identity.OperationManageSignInMethods, RequiredLevel: identity.LevelAccount},
+		{Operation: identity.OperationManageTexts, RequiredLevel: identity.LevelAdmin},
 		{Operation: identity.OperationReadNotifications, RequiredLevel: identity.LevelGuest},
 		{Operation: identity.OperationReportClientTelemetry, RequiredLevel: identity.LevelGuest},
+		{Operation: identity.OperationSetInterfaceLanguage, RequiredLevel: identity.LevelAccount},
 		{Operation: identity.OperationSetNotificationPreferences, RequiredLevel: identity.LevelAccount},
 		{Operation: identity.OperationSetOwnDisplayName, RequiredLevel: identity.LevelGuest},
+		{Operation: identity.OperationSetOwnMode, RequiredLevel: identity.LevelAccount},
 		{Operation: identity.OperationUseSecondFactor, RequiredLevel: identity.LevelAccount},
 		{Operation: identity.OperationViewOwnIdentity, RequiredLevel: identity.LevelGuest},
 	}, Catalog())

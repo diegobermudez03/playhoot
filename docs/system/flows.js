@@ -48,7 +48,7 @@ PH.flow({
   sources: ['P02§9-10']
 });
 PH.flow({
-  id: 'my-data', status: 'planned', coordinator: 'composer', effect: 'read',
+  id: 'my-data', status: 'implemented', coordinator: 'composer', effect: 'read',
   name: 'My data',
   summary: 'One read that tells the frontend who the caller is: identity and mode, interface language, linked methods, the current declaration, and the capacities the plan gives (B: identity, P03§9). The shell keeps reading identity from the credential (D-028); this serves the profile and mode-dependent screens.',
   steps: [
@@ -66,9 +66,9 @@ PH.flow({
 PH.flow({
   id: 'create-game', status: 'implemented', coordinator: 'orchestrator', effect: 'write',
   name: 'Create game',
-  summary: 'Creates the logical game (optionally from a template) and its first draft version, idempotently. H3 adds the market-and-age gate (step 1, planned, D-038); capacity checks arrive with H4 (see GAPS).',
+  summary: 'Creates the logical game (optionally from a template) and its first draft version, idempotently, behind the market-and-age gate (step 1, D-038). Capacity checks arrive with H4 (see GAPS).',
   steps: [
-    { n: 1, domain: 'compliance', operation: 'compliance.check-market-access', when: 'always once H3 wires the gate (planned): function create-games, place from the declared residence or the approximate country', onFailure: 'needs-declaration sends the person to the declaration screen and back (D-038); a blocked market refuses with a service-restriction notice.' },
+    { n: 1, domain: 'compliance', operation: 'compliance.check-market-access', when: 'always: function create-games, place from the declared residence or the approximate country', onFailure: 'declaration_required sends the person to the declaration screen and back (D-038); a blocked market refuses with a service-restriction notice.' },
     { n: 2, domain: 'game', operation: 'game.find-template', when: 'a template game uuid was given', onFailure: 'Continue without a template if not found.' },
     { n: 3, domain: 'game', operation: 'game.game-lifecycle', when: 'always', onFailure: 'Propagate the conflict (same key, different name or template).' },
     { n: 4, domain: 'play.versions', operation: 'play.versions.create-draft-version', when: 'the game was created', onFailure: 'Retry with the same key completes the missing step.' }
@@ -144,11 +144,11 @@ PH.flow({
 
 // ---------- Sessions, history and replays ----------
 PH.flow({
-  id: 'join-session', status: 'planned', coordinator: 'orchestrator', effect: 'write',
+  id: 'join-session', status: 'implemented', coordinator: 'orchestrator', effect: 'write',
   name: 'Join session',
   summary: 'Admits a participant: the H3 market gate at entry, then the existing eligibility checks and the seat; a guest is asked only for a display name (C-01). The H5 design extends admission (host modes, close/reopen, kick, 60 s) and H8 adds class or group membership through classroom.',
   steps: [
-    { n: 1, domain: 'compliance', operation: 'compliance.check-market-access', when: 'always at admission (H3): function interactive-use, place from the declared residence or, for a guest, the approximate country only (C-01)', onFailure: 'A blocked market refuses with a service-restriction notice; unknown location admits (the local locator always answers unknown).' },
+    { n: 1, domain: 'compliance', operation: 'compliance.check-market-access', when: 'always at admission, before anything names the Session: function interactive-use, place from the declared residence or, for a guest, the approximate country only (C-01)', onFailure: 'A blocked market refuses with a service-restriction notice and a declaration owed sends the person to declare it; unknown location admits (the local locator always answers unknown).' },
     { n: 2, domain: 'play.session', operation: 'play.session.check-join', when: 'the market allows interactive use', onFailure: 'Refusals keep their existing outcomes (full, started, unknown code).' }
   ],
   persistence: 'none',

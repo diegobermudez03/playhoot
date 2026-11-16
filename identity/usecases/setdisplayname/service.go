@@ -20,11 +20,13 @@ import (
 // userStore persists display names.
 type userStore interface {
 	LockUser(ctx context.Context, tx *gorm.DB, userUUID string) (*internalrepo.User, error)
+	ChangesSince(ctx context.Context, tx *gorm.DB, userID int64, since time.Time) ([]time.Time, error)
 	ChangeDisplayName(ctx context.Context, tx *gorm.DB, userID int64, fromName *string, displayName string, changedAt time.Time) error
 }
 
 var (
-	outcomeLabel = metrics.NewLabel("outcome", "first", "changed", "unchanged", "invalid_display_name")
+	outcomeLabel = metrics.NewLabel("outcome", "first", "changed", "unchanged",
+		string(identity.DisplayNameInvalid), string(identity.DisplayNameLimitReached))
 
 	changesTotal = metrics.NewCounter(
 		"identity_display_name_changes_total",
@@ -46,12 +48,13 @@ func New(db *gorm.DB) *Service {
 	return &Service{db: repo, users: repo, now: time.Now}
 }
 
-// SetDisplayName names the User with userUUID. identity.ErrUserNotFound when
-// there is no such User.
+// SetDisplayName names the User with userUUID. A User may change their name
+// a few times per rolling window; beyond that the refusal says when the next
+// change is possible. identity.ErrUserNotFound when there is no such User.
 func (s *Service) SetDisplayName(ctx context.Context, userUUID string, displayName string) (identity.SetDisplayNameResult, error) {
 	name, ok := displayname.Normalize(displayName)
 	if !ok {
-		changesTotal.Inc(ctx, outcomeLabel.Value("invalid_display_name"))
+		changesTotal.Inc(ctx, outcomeLabel.Value(string(identity.DisplayNameInvalid)))
 		return identity.SetDisplayNameResult{Outcome: identity.DisplayNameInvalid}, nil
 	}
 	now := s.now().UTC().Truncate(time.Microsecond)
@@ -74,7 +77,7 @@ func (s *Service) setInTx(ctx context.Context, tx *gorm.DB, userUUID string, nam
 	}
 	named := identity.SetDisplayNameResult{
 		Outcome: identity.DisplayNameSet,
-		User:    identity.User{UUID: userUUID, DisplayName: name, Level: level},
+		User:    identity.User{UUID: userUUID, DisplayName: name, Level: level, Mode: identity.NormalizeMode(identity.Mode(user.Mode))},
 	}
 	outcome := "changed"
 	switch {
@@ -83,6 +86,14 @@ func (s *Service) setInTx(ctx context.Context, tx *gorm.DB, userUUID string, nam
 	case *user.DisplayName == name:
 		changesTotal.Inc(ctx, outcomeLabel.Value("unchanged"))
 		return named, nil
+	}
+	inWindow, err := s.users.ChangesSince(ctx, tx, user.ID, now.Add(-displayname.ChangeWindow))
+	if err != nil {
+		return identity.SetDisplayNameResult{}, err
+	}
+	if next := displayname.NextChangeAt(inWindow, now); !next.IsZero() {
+		changesTotal.Inc(ctx, outcomeLabel.Value(string(identity.DisplayNameLimitReached)))
+		return identity.SetDisplayNameResult{Outcome: identity.DisplayNameLimitReached, NextChangeAt: next}, nil
 	}
 	if err := s.users.ChangeDisplayName(ctx, tx, user.ID, user.DisplayName, name, now); err != nil {
 		return identity.SetDisplayNameResult{}, err

@@ -40,7 +40,7 @@ func TestHandleRefresh(t *testing.T) {
 			return test{
 				body:         `{"refresh_token":"phr_refresh"}`,
 				expectedCode: http.StatusOK,
-				expectedBody: `{"user":{"user_uuid":"0f8fad5b-d9cb-469f-a165-70867728950e","display_name":"Ana","level":"guest"},` +
+				expectedBody: `{"user":{"user_uuid":"0f8fad5b-d9cb-469f-a165-70867728950e","display_name":"Ana","level":"guest","mode":"normal"},` +
 					`"access_token":"access-jwt","access_expires_at":"2026-10-27T12:15:00Z","access_expires_in":900,"refresh_token":"phr_refresh"}`,
 			}
 		},
@@ -112,5 +112,5 @@ func TestHandleMe(t *testing.T) {
 	NewHandler(nil, nil, nil, nil, nil, nil, Logins{}, EmailLogins{}, Methods{}).handleMe(recorder, request)
 
 	require.Equal(t, http.StatusOK, recorder.Code)
-	require.JSONEq(t, `{"user":{"user_uuid":"0f8fad5b-d9cb-469f-a165-70867728950e","display_name":"Ana","level":"guest"}}`, recorder.Body.String())
+	require.JSONEq(t, `{"user":{"user_uuid":"0f8fad5b-d9cb-469f-a165-70867728950e","display_name":"Ana","level":"guest","mode":"normal"}}`, recorder.Body.String())
 }

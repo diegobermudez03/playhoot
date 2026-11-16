@@ -13,7 +13,7 @@ import (
 var (
 	key   = []byte("0123456789abcdef0123456789abcdef")
 	other = []byte("fedcba9876543210fedcba9876543210")
-	user  = identity.User{UUID: "0f8fad5b-d9cb-469f-a165-70867728950e", DisplayName: "Ana", Level: identity.LevelGuest}
+	user  = identity.User{UUID: "0f8fad5b-d9cb-469f-a165-70867728950e", DisplayName: "Ana", Level: identity.LevelGuest, Mode: identity.ModeNormal}
 	now   = time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
 )
 

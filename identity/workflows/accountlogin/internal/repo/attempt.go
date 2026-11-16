@@ -173,6 +173,8 @@ type CodeAttempt struct {
 	UserID      int64
 	UserUUID    string
 	DisplayName string
+	// Mode is the mode the account was left in, empty when it has none yet.
+	Mode string
 }
 
 // LockAttemptByCode returns the attempt the one-time code belongs to, locked
@@ -182,10 +184,12 @@ func (r *Repo) LockAttemptByCode(ctx context.Context, tx *gorm.DB, code string) 
 	err := tx.WithContext(ctx).Raw(`
 		SELECT attempt.id, attempt.intent, attempt.code_challenge, attempt.login_code_expires_at AS expires_at, attempt.completed_at,
 			attempt.user_id, users.user_uuid, COALESCE(users.display_name, '') AS display_name,
+			COALESCE(account.mode, '') AS mode,
 			COALESCE((SELECT event.reason FROM identity_login_attempt_events event
 				WHERE event.attempt_id = attempt.id AND event.event = ? ORDER BY event.id DESC LIMIT 1), '') AS issued_reason
 		FROM identity_login_attempts attempt
 		JOIN identity_users users ON users.id = attempt.user_id
+		LEFT JOIN identity_accounts account ON account.user_id = attempt.user_id
 		WHERE attempt.login_code = ?
 		FOR UPDATE OF attempt`,
 		string(EventCodeIssued), code,

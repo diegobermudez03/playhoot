@@ -127,11 +127,11 @@ func TestHandleUseTemplate(t *testing.T) {
 func TestCreateGameFromATemplate(t *testing.T) {
 	run(t, map[string]func(t *testing.T, deps dependencies) test{
 		"from_a_template": func(t *testing.T, deps dependencies) test {
-			deps.creator.EXPECT().CreateGame(gomock.Any(), callerUUID, "Quiz", "key-1", testTemplateGame).Return(gameauthoring.CreatedGame{GameUUID: gameUUID, VersionUUID: versionUUID, Revision: 1}, nil)
+			deps.creator.EXPECT().CreateGame(gomock.Any(), callerUUID, "Quiz", "key-1", testTemplateGame, "").Return(gameauthoring.CreatedGame{GameUUID: gameUUID, VersionUUID: versionUUID, Revision: 1}, nil)
 			return test{method: http.MethodPost, target: "/v1/games", body: `{"name":"Quiz","idempotency_key":"key-1","template_game_uuid":"` + testTemplateGame + `"}`, expectedCode: http.StatusCreated}
 		},
 		"not_a_template": func(t *testing.T, deps dependencies) test {
-			deps.creator.EXPECT().CreateGame(gomock.Any(), callerUUID, "Quiz", "key-1", testTemplateGame).Return(gameauthoring.CreatedGame{}, gameauthoring.ErrTemplateNotFound)
+			deps.creator.EXPECT().CreateGame(gomock.Any(), callerUUID, "Quiz", "key-1", testTemplateGame, "").Return(gameauthoring.CreatedGame{}, gameauthoring.ErrTemplateNotFound)
 			return test{method: http.MethodPost, target: "/v1/games", body: `{"name":"Quiz","idempotency_key":"key-1","template_game_uuid":"` + testTemplateGame + `"}`, expectedCode: http.StatusNotFound,
 				expectedBody: `{"code":"template_not_found","message":"no published game allowed as a template has that uuid"}`}
 		},

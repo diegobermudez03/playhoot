@@ -14,6 +14,7 @@ import (
 	apiclienttelemetry "github.com/diegobermudez03/playhoot/api/clienttelemetry"
 	apicompliance "github.com/diegobermudez03/playhoot/api/compliance"
 	apigames "github.com/diegobermudez03/playhoot/api/games"
+	"github.com/diegobermudez03/playhoot/api/geolocation"
 	apiidentity "github.com/diegobermudez03/playhoot/api/identity"
 	"github.com/diegobermudez03/playhoot/api/internal/cors"
 	"github.com/diegobermudez03/playhoot/api/internal/live"
@@ -21,6 +22,7 @@ import (
 	"github.com/diegobermudez03/playhoot/api/internal/throttle"
 	"github.com/diegobermudez03/playhoot/api/internal/wsx"
 	apimcp "github.com/diegobermudez03/playhoot/api/mcp"
+	apime "github.com/diegobermudez03/playhoot/api/me"
 	apinotifications "github.com/diegobermudez03/playhoot/api/notifications"
 	apioauth "github.com/diegobermudez03/playhoot/api/oauth"
 	apiplan "github.com/diegobermudez03/playhoot/api/plan"
@@ -28,6 +30,7 @@ import (
 	apiqueues "github.com/diegobermudez03/playhoot/api/queues"
 	apisecondfactor "github.com/diegobermudez03/playhoot/api/secondfactor"
 	"github.com/diegobermudez03/playhoot/logging"
+	"github.com/diegobermudez03/playhoot/orchestrator/marketgate"
 )
 
 // routeGroup exposes one workflow/feature's endpoints, split by transport
@@ -57,6 +60,10 @@ type Config struct {
 	// MaxLiveConnections bounds this instance's live connections; 0 takes the
 	// default.
 	MaxLiveConnections int
+	// Locator answers the approximate country of a client address, for the
+	// market-and-age gates. Nil never knows one, which the gates read as
+	// unknown and let through.
+	Locator geolocation.Locator
 }
 
 // ParseAllowedOrigins parses a comma-separated list of browser origins, such
@@ -67,10 +74,11 @@ func ParseAllowedOrigins(raw string) ([]string, error) {
 }
 
 // NewServer constructs a Server exposing every route group's endpoints.
-func NewServer(authorizer authorizer, guests guestCreator, operations operationLister, refreshes credentialRefresher, sessionEnder sessionEnder, displayNames displayNameSetter, logins Logins, emailLogins EmailLogins, methods Methods, sessionCreator sessionCreator, owners ownerLocator, admins adminAttacher, players playerAttacher, joinCodes joinCodeResolver, games Games, ai AI, queues Queues, secondFactor secondFactor, compliance Compliance, plan Plan, budget Budget, notifications apinotifications.Dependencies, config Config) *Server {
+func NewServer(authorizer authorizer, guests guestCreator, operations operationLister, refreshes credentialRefresher, sessionEnder sessionEnder, displayNames displayNameSetter, logins Logins, emailLogins EmailLogins, methods Methods, me Me, sessionCreator sessionCreator, owners ownerLocator, admins adminAttacher, players playerAttacher, joinCodes joinCodeResolver, market *marketgate.Gate, games Games, ai AI, queues Queues, secondFactor secondFactor, compliance Compliance, plan Plan, budget Budget, notifications apinotifications.Dependencies, config Config) *Server {
 	mux := http.NewServeMux()
 	liveConnections := live.New(config.MaxLiveConnections)
-	gamesHandler := apigames.NewHandler(authorizer, games.Creator, games.Editor, games.Reader, games.AILinks, games.Cards, games.Reader)
+	geo := geolocation.Resolver{Locator: config.Locator}
+	gamesHandler := apigames.NewHandler(authorizer, games.Creator, games.Editor, games.Reader, games.AILinks, games.Cards, games.Reader, geo)
 	apiBase := strings.TrimRight(games.AILinks.PublicBaseURL, "/")
 	guide := strings.TrimRight(games.AILinks.PublicWebBaseURL, "/") + "/docs/sdk/v1/index.md"
 	groups := []routeGroup{
@@ -80,13 +88,14 @@ func NewServer(authorizer authorizer, guests guestCreator, operations operationL
 		}, apiidentity.EmailLogins{
 			Starter: emailLogins.Starter, Completer: emailLogins.Completer, Linker: emailLogins.Linker,
 		}, apiidentity.Methods{Reader: methods.Reader, Remover: methods.Remover}),
+		apime.NewHandler(authorizer, apime.Dependencies{Data: me.Data, Modes: me.Modes, Languages: me.Languages}),
 		apiclienttelemetry.NewHandler(authorizer),
-		apiplay.NewHandler(authorizer, sessionCreator, owners, admins, players, joinCodes, games.Previews, liveConnections, wsx.OriginPatterns(config.WebSocketAllowedOrigins)),
+		apiplay.NewHandler(authorizer, sessionCreator, owners, admins, players, joinCodes, games.Previews, liveConnections, market, geo, wsx.OriginPatterns(config.WebSocketAllowedOrigins)),
 		gamesHandler,
 		apioauth.NewHandler(authorizer, ai.Server, apioauth.Config{Issuer: apiBase, Resource: apiBase + mcpPath, Documentation: guide}),
 		apiqueues.NewHandler(authorizer, queues.Reader, queues.Manager),
 		apisecondfactor.NewHandler(authorizer, secondFactor),
-		apicompliance.NewHandler(authorizer, compliance.Declarations, compliance.Acceptances, compliance.MarketRules),
+		apicompliance.NewHandler(authorizer, compliance.Declarations, compliance.Acceptances, compliance.MarketRules, compliance.Texts),
 		apiplan.NewHandler(authorizer, plan.FreeLimits),
 		apibudget.NewHandler(authorizer, budget.Status, budget.Controls),
 		apinotifications.NewHandler(authorizer, notifications),
@@ -178,11 +187,23 @@ func routeMiddlewares(route routing.Route, clients throttle.ClientAddress, edge 
 		limits = *route.Limits
 	}
 	mws := append([]routing.Middleware{}, edge...)
+	mws = append(mws, noteClientAddress(clients))
 	if route.Authorization != nil {
 		mws = append(mws, route.Authorization)
 	}
 	mws = append(mws, throttle.Requests(limits, clients, time.Now, route.RefuseLimit))
 	return append(mws, route.Middlewares...)
+}
+
+// noteClientAddress puts the address the request came from in its context,
+// where the handlers that need an approximate country read it from. The
+// locator itself is never asked unless one of them asks.
+func noteClientAddress(clients throttle.ClientAddress) routing.Middleware {
+	return func(next http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			next(w, r.WithContext(geolocation.WithClientAddress(r.Context(), clients.Of(r))))
+		}
+	}
 }
 
 // preflightRoutes answer the CORS preflight of every path of routes, allowing

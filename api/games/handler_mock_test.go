@@ -50,18 +50,18 @@ func (m *MockgameCreator) EXPECT() *MockgameCreatorMockRecorder {
 }
 
 // CreateGame mocks base method.
-func (m *MockgameCreator) CreateGame(ctx context.Context, userUUID, name, idempotencyKey, templateGameUUID string) (gameauthoring0.CreatedGame, error) {
+func (m *MockgameCreator) CreateGame(ctx context.Context, userUUID, name, idempotencyKey, templateGameUUID, approximateCountry string) (gameauthoring0.CreatedGame, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateGame", ctx, userUUID, name, idempotencyKey, templateGameUUID)
+	ret := m.ctrl.Call(m, "CreateGame", ctx, userUUID, name, idempotencyKey, templateGameUUID, approximateCountry)
 	ret0, _ := ret[0].(gameauthoring0.CreatedGame)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // CreateGame indicates an expected call of CreateGame.
-func (mr *MockgameCreatorMockRecorder) CreateGame(ctx, userUUID, name, idempotencyKey, templateGameUUID any) *gomock.Call {
+func (mr *MockgameCreatorMockRecorder) CreateGame(ctx, userUUID, name, idempotencyKey, templateGameUUID, approximateCountry any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateGame", reflect.TypeOf((*MockgameCreator)(nil).CreateGame), ctx, userUUID, name, idempotencyKey, templateGameUUID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateGame", reflect.TypeOf((*MockgameCreator)(nil).CreateGame), ctx, userUUID, name, idempotencyKey, templateGameUUID, approximateCountry)
 }
 
 // MockdraftEditor is a mock of draftEditor interface.

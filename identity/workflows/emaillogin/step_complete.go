@@ -172,7 +172,10 @@ func (m *Manager) completeInTx(ctx context.Context, tx *gorm.DB, address string,
 	if err := m.completeRepo.CloseAttempt(ctx, tx, attempt.ID, internalrepo.EventCompleted, now); err != nil {
 		return nil, "", err
 	}
-	user := identity.User{UUID: resolved.UserUUID, DisplayName: resolved.DisplayName, Level: identity.LevelAccount}
+	user := identity.User{
+		UUID: resolved.UserUUID, DisplayName: resolved.DisplayName, Level: identity.LevelAccount,
+		Mode: identity.NormalizeMode(identity.Mode(resolved.Mode)),
+	}
 	return &signedIn{user: user, refreshToken: refreshToken, resolution: resolution}, identity.EmailLoginCompleted, nil
 }
 

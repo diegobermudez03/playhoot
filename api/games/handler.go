@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/diegobermudez03/playhoot/api/geolocation"
 	"github.com/diegobermudez03/playhoot/api/internal/auth"
 	"github.com/diegobermudez03/playhoot/api/internal/httpx"
 	"github.com/diegobermudez03/playhoot/api/internal/routing"
@@ -34,7 +35,7 @@ type authorizer interface {
 // gameCreator creates a game with its version being built, idempotently per
 // caller and key.
 type gameCreator interface {
-	CreateGame(ctx context.Context, userUUID string, name string, idempotencyKey string, templateGameUUID string) (gameauthoring.CreatedGame, error)
+	CreateGame(ctx context.Context, userUUID string, name string, idempotencyKey string, templateGameUUID string, approximateCountry string) (gameauthoring.CreatedGame, error)
 }
 
 // draftEditor changes a game's version being built for a user Game
@@ -107,14 +108,16 @@ type Handler struct {
 	links      AILinks
 	cards      Cards
 	templates  templateReader
+	geo        geolocation.Resolver
 	now        func() time.Time
 }
 
-// NewHandler constructs a Handler.
-func NewHandler(authorizer authorizer, creator gameCreator, editor draftEditor, reader draftReader, links AILinks, cards Cards, templates templateReader) *Handler {
+// NewHandler constructs a Handler. geo answers the approximate country the
+// market-and-age gate of creating games is checked against.
+func NewHandler(authorizer authorizer, creator gameCreator, editor draftEditor, reader draftReader, links AILinks, cards Cards, templates templateReader, geo geolocation.Resolver) *Handler {
 	links.PublicBaseURL = strings.TrimRight(links.PublicBaseURL, "/")
 	links.GuideBaseURL = strings.TrimRight(links.PublicWebBaseURL, "/") + guidePath
-	return &Handler{authorizer: authorizer, creator: creator, editor: editor, reader: reader, links: links, cards: cards, templates: templates, now: time.Now}
+	return &Handler{authorizer: authorizer, creator: creator, editor: editor, reader: reader, links: links, cards: cards, templates: templates, geo: geo, now: time.Now}
 }
 
 // RESTRoutes returns this group's request/response endpoints.
@@ -196,6 +199,14 @@ const (
 	codeRevisionNotFound    = "revision_not_found"
 	codeInvalidChange       = "invalid_change"
 	codeIdempotencyConflict = "idempotency_conflict"
+
+	// codeDeclarationRequired means the person must say where they live and
+	// that they have the age it asks for before creating games.
+	codeDeclarationRequired = "declaration_required"
+
+	// codeMarketRestricted means the service does not offer creating games
+	// where the person is.
+	codeMarketRestricted = "market_restricted"
 )
 
 // caller returns the authorized caller and the path's game, or answers the

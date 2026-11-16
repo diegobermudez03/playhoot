@@ -45,13 +45,19 @@ type Identified struct {
 	UserID      int64
 	UserUUID    string
 	DisplayName string
+	// Mode is the mode the account was left in, empty when it has none yet.
+	Mode string
 }
 
 // ReadUser returns who userID is within tx.
 func (r *Repo) ReadUser(ctx context.Context, tx *gorm.DB, userID int64) (Identified, error) {
 	var rows []Identified
 	err := tx.WithContext(ctx).Raw(`
-		SELECT id AS user_id, user_uuid, COALESCE(display_name, '') AS display_name FROM identity_users WHERE id = ?`,
+		SELECT users.id AS user_id, users.user_uuid, COALESCE(users.display_name, '') AS display_name,
+			COALESCE(account.mode, '') AS mode
+		FROM identity_users users
+		LEFT JOIN identity_accounts account ON account.user_id = users.id
+		WHERE users.id = ?`,
 		userID,
 	).Scan(&rows).Error
 	if err != nil {

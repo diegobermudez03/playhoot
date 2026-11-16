@@ -125,6 +125,18 @@ type DeclarationResult struct {
 	ThresholdAge int
 }
 
+// CurrentDeclaration is the declaration in force for a person, as their own
+// profile shows it. Found is false while they have declared nothing;
+// everything else is set only when it is true.
+type CurrentDeclaration struct {
+	Found        bool
+	Country      string
+	Subdivision  string
+	MeetsAge     bool
+	ThresholdAge int
+	DeclaredAt   time.Time
+}
+
 // TextKind is a kind of text people accept.
 type TextKind string
 
@@ -199,6 +211,39 @@ type AcceptanceText struct {
 
 // ErrTextNotFound means no text of that kind is published in that language.
 var ErrTextNotFound = errors.New("acceptance text not found")
+
+// TextVersion is one published version of a text, without its content.
+type TextVersion struct {
+	Version     int
+	PublishedAt time.Time
+}
+
+// TextCatalogEntry is every version published of one kind in one language,
+// newest first. An entry with no versions is a pair nothing is served for
+// yet.
+type TextCatalogEntry struct {
+	Kind     TextKind
+	Language string
+	Versions []TextVersion
+}
+
+// PublishTextOutcome is what AdminPublishText decided.
+type PublishTextOutcome string
+
+const (
+	// TextPublished means the new version is the one served from now on.
+	TextPublished PublishTextOutcome = "published"
+	// TextInvalid means the kind, the language or the content is not valid.
+	TextInvalid PublishTextOutcome = "invalid"
+)
+
+// PublishedText is what AdminPublishText decided. Version is the version
+// just published, set only when Outcome is TextPublished.
+type PublishedText struct {
+	Outcome     PublishTextOutcome
+	Version     int
+	PublishedAt time.Time
+}
 
 // MarketRule is one row of the market matrix: whether Function is enabled
 // in Country (and Subdivision, empty for the whole country) from EffectiveAt,

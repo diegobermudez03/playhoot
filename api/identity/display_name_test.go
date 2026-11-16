@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -31,13 +32,22 @@ func TestHandleSetDisplayName(t *testing.T) {
 			names.EXPECT().SetDisplayName(ctx, caller.UUID, " Bea ").
 				Return(identitypkg.SetDisplayNameResult{Outcome: identitypkg.DisplayNameSet, User: named}, nil)
 			return test{body: `{"display_name":" Bea "}`, expectedCode: http.StatusOK,
-				expectedBody: `{"user":{"user_uuid":"0f8fad5b-d9cb-469f-a165-70867728950e","display_name":"Bea","level":"account"}}`}
+				expectedBody: `{"user":{"user_uuid":"0f8fad5b-d9cb-469f-a165-70867728950e","display_name":"Bea","level":"account","mode":"normal"}}`}
 		},
 		"name_identity_refuses": func(t *testing.T, names *MockdisplayNameSetter) test {
 			names.EXPECT().SetDisplayName(ctx, caller.UUID, "\t").
 				Return(identitypkg.SetDisplayNameResult{Outcome: identitypkg.DisplayNameInvalid}, nil)
 			return test{body: `{"display_name":"\t"}`, expectedCode: http.StatusBadRequest,
 				expectedBody: `{"code":"invalid_display_name","message":"display_name is not allowed"}`}
+		},
+		"the_change_limit_says_when_the_next_one_is_possible": func(t *testing.T, names *MockdisplayNameSetter) test {
+			names.EXPECT().SetDisplayName(ctx, caller.UUID, "Bea").
+				Return(identitypkg.SetDisplayNameResult{
+					Outcome:      identitypkg.DisplayNameLimitReached,
+					NextChangeAt: time.Date(2026, 12, 1, 12, 0, 0, 0, time.UTC),
+				}, nil)
+			return test{body: `{"display_name":"Bea"}`, expectedCode: http.StatusTooManyRequests,
+				expectedBody: `{"code":"change_limit_reached","message":"you have changed your name as often as allowed for now","next_change_at":"2026-12-01T12:00:00Z"}`}
 		},
 		"missing_or_too_long": func(t *testing.T, names *MockdisplayNameSetter) test {
 			return test{body: `{"display_name":"` + strings.Repeat("x", 65) + `"}`, expectedCode: http.StatusBadRequest,

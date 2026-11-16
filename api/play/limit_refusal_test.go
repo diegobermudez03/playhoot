@@ -3,6 +3,7 @@ package play
 import (
 	"context"
 	"encoding/json"
+	"github.com/diegobermudez03/playhoot/api/geolocation"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -123,7 +124,7 @@ func TestLimitRefusals(t *testing.T) {
 				_, ok := connections.ReserveRefusal(context.Background(), limitRefusalCaller)
 				require.True(t, ok)
 			}
-			handler := NewHandler(nil, nil, nil, nil, nil, nil, nil, connections, nil)
+			handler := NewHandler(nil, nil, nil, nil, nil, nil, nil, connections, allowingMarket(), geolocation.Resolver{}, nil)
 			handlerDone := make(chan struct{})
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				defer close(handlerDone)
@@ -182,7 +183,7 @@ func TestRefusalOfASilentClientEndsAtItsLinger(t *testing.T) {
 	t.Cleanup(func() { refusalLinger = previous })
 
 	connections := live.New(0)
-	handler := NewHandler(nil, nil, nil, nil, nil, nil, nil, connections, nil)
+	handler := NewHandler(nil, nil, nil, nil, nil, nil, nil, connections, allowingMarket(), geolocation.Resolver{}, nil)
 	handlerDone := make(chan time.Time, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		handler.refuseLimit(w, r.WithContext(auth.WithCaller(r.Context(), identity.User{UUID: limitRefusalCaller})), routing.LimitRefusal{Reason: routing.RefusedServerBusy})
@@ -214,7 +215,7 @@ func TestRefusalOfASilentClientEndsAtItsLinger(t *testing.T) {
 }
 
 func TestOnlyLiveRoutesRefuseLimitsOnTheConnection(t *testing.T) {
-	handler := NewHandler(nil, nil, nil, nil, nil, nil, nil, live.New(0), nil)
+	handler := NewHandler(nil, nil, nil, nil, nil, nil, nil, live.New(0), allowingMarket(), geolocation.Resolver{}, nil)
 	for _, route := range handler.WebSocketRoutes() {
 		require.NotNil(t, route.RefuseLimit, route.Pattern)
 	}

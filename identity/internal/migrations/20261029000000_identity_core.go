@@ -5,10 +5,10 @@ import (
 	"gorm.io/gorm"
 )
 
-// migration20261029000000IdentityCore creates Identity's persistence: Users,
-// the accounts that make a User registered, sessions (one row per refresh
-// token; the active one has no deactivated_at), and guest creation requests
-// for idempotency.
+// migration20261029000000IdentityCore creates Identity's persistence: Users
+// with the language they read in, the accounts that make a User registered
+// and remember their mode, sessions (one row per refresh token; the active
+// one has no deactivated_at), and guest creation requests for idempotency.
 func migration20261029000000IdentityCore() *gormigrate.Migration {
 	return &gormigrate.Migration{
 		ID: "20261029000000_identity_core",
@@ -18,11 +18,13 @@ func migration20261029000000IdentityCore() *gormigrate.Migration {
 					id BIGSERIAL PRIMARY KEY,
 					user_uuid UUID NOT NULL UNIQUE,
 					display_name TEXT NOT NULL,
+					interface_language TEXT NOT NULL DEFAULT '',
 					created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 				)`,
 				`CREATE TABLE identity_accounts (
 					id BIGSERIAL PRIMARY KEY,
 					user_id BIGINT NOT NULL UNIQUE,
+					mode TEXT NOT NULL DEFAULT 'normal',
 					created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 				)`,
 				`CREATE TABLE identity_sessions (

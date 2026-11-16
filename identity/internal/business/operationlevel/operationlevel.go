@@ -31,6 +31,9 @@ var required = map[identity.Operation]identity.Level{
 	identity.OperationSetNotificationPreferences: identity.LevelAccount,
 	identity.OperationManageEmail:                identity.LevelAdmin,
 	identity.OperationManageSignInMethods:        identity.LevelAccount,
+	identity.OperationSetOwnMode:                 identity.LevelAccount,
+	identity.OperationSetInterfaceLanguage:       identity.LevelAccount,
+	identity.OperationManageTexts:                identity.LevelAdmin,
 }
 
 // rank orders the levels; a level missing from it satisfies nothing.

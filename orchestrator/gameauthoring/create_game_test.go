@@ -9,7 +9,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	"github.com/diegobermudez03/playhoot/compliance"
 	"github.com/diegobermudez03/playhoot/game"
+	"github.com/diegobermudez03/playhoot/orchestrator/marketgate"
 	sessionpkg "github.com/diegobermudez03/playhoot/play/session"
 )
 
@@ -30,6 +32,7 @@ type dependencies struct {
 	versions     *MockversionPublisher
 	cards        *MockcardNamer
 	templates    *MocktemplateFinder
+	market       *marketStub
 }
 
 func newTestManager(t *testing.T) (*Manager, dependencies) {
@@ -37,7 +40,9 @@ func newTestManager(t *testing.T) (*Manager, dependencies) {
 	deps := dependencies{games: NewMockgameCreator(ctrl), editions: NewMockeditableVersionFinder(ctrl), drafts: NewMockdraftWriter(ctrl), links: NewMockresourceLinkWriter(ctrl), previews: NewMockpreviewStarter(ctrl), publications: NewMockgamePublisher(ctrl), versions: NewMockversionPublisher(ctrl), cards: NewMockcardNamer(ctrl), templates: NewMocktemplateFinder(ctrl)}
 	// No release is left being published unless a test says so.
 	deps.publications.EXPECT().FindPendingPublication(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
-	return New(deps.games, deps.editions, deps.drafts, deps.links, deps.previews, deps.publications, deps.versions, deps.cards, deps.templates), deps
+	gate, market := allowingMarket()
+	deps.market = market
+	return New(gate, deps.games, deps.editions, deps.drafts, deps.links, deps.previews, deps.publications, deps.versions, deps.cards, deps.templates), deps
 }
 
 func TestCreateGame(t *testing.T) {
@@ -94,7 +99,7 @@ func TestCreateGame(t *testing.T) {
 			manager, deps := newTestManager(t)
 			tc := setup(t, deps)
 
-			result, err := manager.CreateGame(ctx, testUserUUID, "Memoria", testKey, "")
+			result, err := manager.CreateGame(ctx, testUserUUID, "Memoria", testKey, "", "")
 
 			if tc.expectErr {
 				require.Error(t, err)
@@ -104,4 +109,52 @@ func TestCreateGame(t *testing.T) {
 			require.Equal(t, tc.expected, result)
 		})
 	}
+}
+
+// Creating games is gated on the market matrix: a person who has not said
+// where they live is sent to declare it, and nothing is created until they
+// have. A blocked market refuses as a service restriction.
+func TestCreateGameMarketGate(t *testing.T) {
+	ctx := context.Background()
+	created := game.CreatedGame{GameUUID: testGameUUID, EditionVersionUUID: testVersionUUID, CreatedAt: time.Date(2026, 11, 16, 12, 0, 0, 0, time.UTC)}
+
+	t.Run("a person who owes a declaration creates nothing", func(t *testing.T) {
+		manager, deps := newTestManager(t)
+		deps.market.decision = compliance.AccessDecision{Outcome: compliance.AccessNeedsDeclaration}
+
+		_, err := manager.CreateGame(ctx, testUserUUID, "Memoria", testKey, "", "CO")
+
+		var required *marketgate.DeclarationRequiredError
+		require.ErrorAs(t, err, &required)
+		require.Equal(t, compliance.FunctionCreateGames, required.Function)
+		require.Equal(t, compliance.AccessRequest{
+			UserUUID: testUserUUID, Function: compliance.FunctionCreateGames, ApproximateCountry: "CO",
+		}, deps.market.asked)
+	})
+
+	t.Run("once declared the same call creates the game", func(t *testing.T) {
+		manager, deps := newTestManager(t)
+		deps.market.decision = compliance.AccessDecision{Outcome: compliance.AccessAllowed, Country: "CO"}
+		gomock.InOrder(
+			deps.games.EXPECT().CreateGame(ctx, testUserUUID, "Memoria", testKey, (*game.TemplateSource)(nil)).Return(created, nil),
+			deps.drafts.EXPECT().CreateDraftVersion(ctx, testGameUUID, testVersionUUID, sessionpkg.DraftStart{}).
+				Return(sessionpkg.DraftVersion{Outcome: sessionpkg.DraftCreated, GameUUID: testGameUUID, VersionUUID: testVersionUUID, Revision: 1}, nil),
+		)
+
+		result, err := manager.CreateGame(ctx, testUserUUID, "Memoria", testKey, "", "CO")
+
+		require.NoError(t, err)
+		require.Equal(t, CreatedGame{GameUUID: testGameUUID, VersionUUID: testVersionUUID, Revision: 1}, result)
+	})
+
+	t.Run("a blocked market refuses as a service restriction", func(t *testing.T) {
+		manager, deps := newTestManager(t)
+		deps.market.decision = compliance.AccessDecision{Outcome: compliance.AccessBlocked, Reason: compliance.BlockMarketUnavailable}
+
+		_, err := manager.CreateGame(ctx, testUserUUID, "Memoria", testKey, "", "CU")
+
+		var restricted *marketgate.RestrictedError
+		require.ErrorAs(t, err, &restricted)
+		require.Equal(t, compliance.BlockMarketUnavailable, restricted.Reason)
+	})
 }

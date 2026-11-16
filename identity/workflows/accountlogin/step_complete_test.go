@@ -30,7 +30,7 @@ func TestCompleteInTx(t *testing.T) {
 		}
 	}
 	// A new account has no display name until the person chooses one.
-	ana := identity.User{UUID: "user-3", DisplayName: "", Level: identity.LevelAccount}
+	ana := identity.User{UUID: "user-3", DisplayName: "", Level: identity.LevelAccount, Mode: identity.ModeNormal}
 	rejected := func(reason string) internalrepo.AttemptEvent {
 		return internalrepo.AttemptEvent{Event: internalrepo.EventRejected, Reason: reason, OccurredAt: now}
 	}

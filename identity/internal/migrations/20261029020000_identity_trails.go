@@ -36,6 +36,15 @@ func migration20261029020000IdentityTrails() *gormigrate.Migration {
 					changed_at TIMESTAMPTZ NOT NULL
 				)`,
 				`CREATE INDEX identity_display_name_changes_user_id_idx ON identity_display_name_changes (user_id)`,
+				`CREATE TABLE identity_setting_changes (
+					id BIGSERIAL PRIMARY KEY,
+					user_id BIGINT NOT NULL,
+					setting TEXT NOT NULL,
+					from_value TEXT NOT NULL,
+					to_value TEXT NOT NULL,
+					changed_at TIMESTAMPTZ NOT NULL
+				)`,
+				`CREATE INDEX identity_setting_changes_user_setting_idx ON identity_setting_changes (user_id, setting)`,
 				// Guests created so far were named at creation: their first change.
 				`INSERT INTO identity_display_name_changes (user_id, from_name, to_name, changed_at)
 					SELECT id, NULL, display_name, created_at FROM identity_users WHERE display_name IS NOT NULL`,
@@ -49,6 +58,7 @@ func migration20261029020000IdentityTrails() *gormigrate.Migration {
 		},
 		Rollback: func(tx *gorm.DB) error {
 			statements := []string{
+				`DROP TABLE identity_setting_changes`,
 				`DROP TABLE identity_display_name_changes`,
 				`UPDATE identity_users SET display_name = 'Player' WHERE display_name IS NULL`,
 				`ALTER TABLE identity_users ALTER COLUMN display_name SET NOT NULL`,
