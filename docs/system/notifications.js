@@ -32,7 +32,7 @@ var EMAIL_DELIVERY_LIFECYCLE = {
 };
 
 PH.table({
-  id: 'notifications.notifications_entries', domain: 'notifications', status: 'implemented',
+  id: 'notifications.notifications_entries', domain: 'notifications', status: 'verified',
   name: 'notifications_entries',
   summary: 'One logical entry per event: the skeleton, its channels and whether it was read.',
   purpose: 'Retries never duplicate entries or counters; sending is separate from reading.',
@@ -78,7 +78,7 @@ PH.table({
 });
 
 PH.table({
-  id: 'notifications.notifications_email_deliveries', domain: 'notifications', status: 'implemented',
+  id: 'notifications.notifications_email_deliveries', domain: 'notifications', status: 'verified',
   name: 'notifications_email_deliveries',
   summary: 'Delivery record of each email attempt: provider, state, never bodies, addresses or codes.',
   purpose: 'Kept 30 days; admin distinguishes pending, sent, rejected and failed.',
@@ -100,7 +100,7 @@ PH.table({
 });
 
 PH.table({
-  id: 'notifications.notifications_suppressions', domain: 'notifications', status: 'implemented',
+  id: 'notifications.notifications_suppressions', domain: 'notifications', status: 'verified',
   name: 'notifications_suppressions',
   summary: 'Addresses that must not be emailed: unsubscribes, bounces, complaints.',
   purpose: 'Honored on both providers; switching providers never evades a suppression.',
@@ -134,7 +134,7 @@ PH.table({
 });
 
 PH.table({
-  id: 'notifications.notifications_provider_usage', domain: 'notifications', status: 'implemented',
+  id: 'notifications.notifications_provider_usage', domain: 'notifications', status: 'verified',
   name: 'notifications_provider_usage',
   summary: 'Joint daily send counters per provider account; the month is the sum of its days.',
   purpose: 'Resend respects 100/day and 3,000/month across the whole account, never multiplied by domain, instance or key.',
@@ -150,7 +150,7 @@ PH.table({
 });
 
 PH.operation({
-  id: 'notifications.accept-entry', domain: 'notifications', kind: 'usecase', effect: 'write', status: 'implemented',
+  id: 'notifications.accept-entry', domain: 'notifications', kind: 'usecase', effect: 'write', status: 'verified',
   name: 'AcceptEntry',
   summary: 'Accepts one logical entry per event and decides its channels; enqueues its email task when email applies.',
   reads: ['notifications.notifications_entries', 'notifications.notifications_preferences'],
@@ -166,7 +166,7 @@ PH.operation({
 });
 
 PH.operation({
-  id: 'notifications.send-email', domain: 'notifications', kind: 'usecase', effect: 'write', status: 'implemented',
+  id: 'notifications.send-email', domain: 'notifications', kind: 'usecase', effect: 'write', status: 'verified',
   name: 'SendEmail',
   summary: 'Sends one entry email: picks the provider by mode and quota, renders minimal content in the user language, records each attempt.',
   reads: ['notifications.notifications_entries', 'notifications.notifications_provider_settings', 'notifications.notifications_provider_usage', 'notifications.notifications_suppressions', 'notifications.notifications_email_deliveries'],
@@ -197,7 +197,7 @@ PH.operation({
 });
 
 PH.operation({
-  id: 'notifications.mark-read', domain: 'notifications', kind: 'usecase', effect: 'write', status: 'implemented',
+  id: 'notifications.mark-read', domain: 'notifications', kind: 'usecase', effect: 'write', status: 'verified',
   name: 'MarkRead',
   summary: 'Marks an entry read: on opening its content, seeing the update, or explicitly.',
   reads: ['notifications.notifications_entries'],
@@ -207,7 +207,7 @@ PH.operation({
 });
 
 PH.operation({
-  id: 'notifications.list-entries', domain: 'notifications', kind: 'usecase', effect: 'read', status: 'implemented',
+  id: 'notifications.list-entries', domain: 'notifications', kind: 'usecase', effect: 'read', status: 'verified',
   name: 'ListEntries',
   summary: 'The user in-app notifications, newest first, with filters by domain, type and date, plus the unread count.',
   reads: ['notifications.notifications_entries'],
@@ -237,7 +237,7 @@ PH.operation({
 });
 
 PH.operation({
-  id: 'notifications.record-suppression', domain: 'notifications', kind: 'usecase', effect: 'write', status: 'implemented',
+  id: 'notifications.record-suppression', domain: 'notifications', kind: 'usecase', effect: 'write', status: 'verified',
   name: 'RecordSuppression',
   summary: 'Records an unsubscribe from the own link, or bounces and complaints from a provider verified webhook.',
   reads: ['notifications.notifications_suppressions'],

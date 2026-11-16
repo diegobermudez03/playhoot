@@ -407,7 +407,7 @@ PH.flow({
   sources: ['P32§3-6']
 });
 PH.flow({
-  id: 'adjust-cost-controls', status: 'implemented', coordinator: 'orchestrator', effect: 'write',
+  id: 'adjust-cost-controls', status: 'verified', coordinator: 'orchestrator', effect: 'write',
   name: 'Adjust cost controls',
   summary: 'The admin changes caps or rates with reinforced authentication; every change keeps actor, reason and history.',
   steps: [
@@ -433,7 +433,7 @@ PH.flow({
   sources: ['P32§7']
 });
 PH.flow({
-  id: 'reopen-spending', status: 'implemented', coordinator: 'orchestrator', effect: 'write',
+  id: 'reopen-spending', status: 'verified', coordinator: 'orchestrator', effect: 'write',
   name: 'Reopen after shutdown',
   summary: 'Only an explicit manual reopening with second factor lifts the shutdown, gradually; restart, deploy or month change never do.',
   steps: [
@@ -450,7 +450,7 @@ PH.flow({
 // A domain leaves a task in its own queue inside its own transaction; the orchestrator-registered
 // processor delivers it to the owning domain (D-010). Domains never call each other.
 PH.flow({
-  id: 'deliver-notification', status: 'implemented', coordinator: 'orchestrator', effect: 'write',
+  id: 'deliver-notification', status: 'verified', coordinator: 'orchestrator', effect: 'write',
   name: 'Deliver notification',
   summary: 'Processes a notify task from any domain’s queue into one logical notification entry.',
   steps: [
@@ -464,7 +464,7 @@ PH.flow({
   sources: ['B: notifications', 'P29§1']
 });
 PH.flow({
-  id: 'send-notification-email', status: 'implemented', coordinator: 'orchestrator', effect: 'write',
+  id: 'send-notification-email', status: 'verified', coordinator: 'orchestrator', effect: 'write',
   name: 'Send notification email',
   summary: 'Processes an email task: reads the current address, admits the cost, sends through the selected provider, releases the reservation.',
   steps: [
@@ -479,7 +479,7 @@ PH.flow({
   sources: ['P31§1-3', 'P32§1-2']
 });
 PH.flow({
-  id: 'ingest-spend-events', status: 'implemented', coordinator: 'orchestrator', effect: 'write',
+  id: 'ingest-spend-events', status: 'verified', coordinator: 'orchestrator', effect: 'write',
   name: 'Ingest spend events',
   summary: 'Processes spend-event tasks from the domains into the budget’s spend record.',
   steps: [
@@ -491,7 +491,7 @@ PH.flow({
   sources: ['P32§1-2', 'P12§4']
 });
 PH.flow({
-  id: 'ingest-analytics-events', status: 'implemented', coordinator: 'orchestrator', effect: 'write',
+  id: 'ingest-analytics-events', status: 'verified', coordinator: 'orchestrator', effect: 'write',
   name: 'Ingest analytics events',
   summary: 'Processes analytics-event tasks from the domains into the analytics event store.',
   steps: [
@@ -570,7 +570,7 @@ PH.flow({
   sources: ['B: principles']
 });
 PH.flow({
-  id: 'manage-dead-task', status: 'implemented', coordinator: 'orchestrator', effect: 'write',
+  id: 'manage-dead-task', status: 'verified', coordinator: 'orchestrator', effect: 'write',
   name: 'Retry or cancel a dead task',
   summary: 'The admin retries (back to pending) or cancels a dead task on its owning domain queue, through the txqueue registry.',
   steps: [

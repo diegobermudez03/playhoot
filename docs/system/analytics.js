@@ -19,7 +19,7 @@ PH.domain({
 // ---------- H1 design (planned): ingestion. Reports and admin queries are the H10 design. ----------
 
 PH.table({
-  id: 'analytics.analytics_events', domain: 'analytics', status: 'implemented',
+  id: 'analytics.analytics_events', domain: 'analytics', status: 'verified',
   name: 'analytics_events',
   summary: 'The event store the P34 metrics are computed from, decoupled from the operational tables.',
   purpose: 'Only the events and dates the activation, retention, frequency and churn metrics need; never every click.',
@@ -42,7 +42,7 @@ PH.table({
 });
 
 PH.operation({
-  id: 'analytics.ingest-events', domain: 'analytics', kind: 'usecase', effect: 'write', status: 'implemented',
+  id: 'analytics.ingest-events', domain: 'analytics', kind: 'usecase', effect: 'write', status: 'verified',
   name: 'IngestEvents',
   summary: 'Stores a batch of events from the queue, idempotently.',
   reads: ['analytics.analytics_events'],

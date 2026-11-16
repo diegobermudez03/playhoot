@@ -39,7 +39,7 @@ var RESTRICTION_LADDER = {
 };
 
 PH.table({
-  id: 'budget.budget_rates', domain: 'budget', status: 'implemented',
+  id: 'budget.budget_rates', domain: 'budget', status: 'verified',
   name: 'budget_rates',
   summary: 'What a unit of each service costs Playhoot: the editable cost inputs.',
   purpose: 'Spend events carry quantities; rates turn them into USD. Registered rates also back AI credit consumption later (H6/H7). Seeded: ses-outbound 0.0001 USD/email, resend-outbound 0 (counts volume), and placeholder estimates for object storage (0.02 USD/GB-month) and compute (0.05 USD/vCPU-hour) flagged as such in their reason.',
@@ -60,7 +60,7 @@ PH.table({
 });
 
 PH.table({
-  id: 'budget.budget_caps', domain: 'budget', status: 'implemented',
+  id: 'budget.budget_caps', domain: 'budget', status: 'verified',
   name: 'budget_caps',
   summary: 'Monetary and volume ceilings per window: global and per category.',
   purpose: 'Hourly, daily and monthly USD limits plus concurrency and volume caps; a category without a current cap admits nothing. Seeded with V-04: global 1/hour, 8/day, 120/month; email 1/day.',
@@ -82,7 +82,7 @@ PH.table({
 });
 
 PH.table({
-  id: 'budget.budget_spend_events', domain: 'budget', status: 'implemented',
+  id: 'budget.budget_spend_events', domain: 'budget', status: 'verified',
   name: 'budget_spend_events',
   summary: 'Every measured or estimated cost that occurred, fed by the domains through the queue.',
   purpose: 'The single spend record: windows are summed from here; compensating a user never hides a spend that happened.',
@@ -107,7 +107,7 @@ PH.table({
 });
 
 PH.table({
-  id: 'budget.budget_reservations', domain: 'budget', status: 'implemented',
+  id: 'budget.budget_reservations', domain: 'budget', status: 'verified',
   name: 'budget_reservations',
   summary: 'Estimated cost of admitted work still in progress: it already occupies budget.',
   purpose: 'Stops many concurrent requests from spending the same budget; settled against measured cost when the work ends.',
@@ -128,7 +128,7 @@ PH.table({
 });
 
 PH.table({
-  id: 'budget.budget_restriction_changes', domain: 'budget', status: 'implemented',
+  id: 'budget.budget_restriction_changes', domain: 'budget', status: 'verified',
   name: 'budget_restriction_changes',
   summary: 'Every move of the restriction ladder; the current level is the latest row.',
   purpose: 'Normal, restricted, paused (with categories) or shutdown, with reason and actor; shutdown only leaves by a manual row.',
@@ -148,7 +148,7 @@ PH.table({
 });
 
 PH.operation({
-  id: 'budget.record-spend', domain: 'budget', kind: 'usecase', effect: 'write', status: 'implemented',
+  id: 'budget.record-spend', domain: 'budget', kind: 'usecase', effect: 'write', status: 'verified',
   name: 'RecordSpend',
   summary: 'Ingests a spend event idempotently, pricing it with the registered rate.',
   reads: ['budget.budget_rates', 'budget.budget_spend_events'],
@@ -165,7 +165,7 @@ PH.operation({
 });
 
 PH.operation({
-  id: 'budget.admit-work', domain: 'budget', kind: 'usecase', effect: 'write', status: 'implemented',
+  id: 'budget.admit-work', domain: 'budget', kind: 'usecase', effect: 'write', status: 'verified',
   name: 'AdmitWork',
   summary: 'Admits or refuses a cost-bearing operation: checks the ladder, caps and windows, then reserves the estimate.',
   reads: ['budget.budget_caps', 'budget.budget_rates', 'budget.budget_spend_events', 'budget.budget_reservations', 'budget.budget_restriction_changes'],
@@ -183,7 +183,7 @@ PH.operation({
 });
 
 PH.operation({
-  id: 'budget.settle-work', domain: 'budget', kind: 'usecase', effect: 'write', status: 'implemented',
+  id: 'budget.settle-work', domain: 'budget', kind: 'usecase', effect: 'write', status: 'verified',
   name: 'SettleWork',
   summary: 'Closes a reservation: records the measured cost and releases the unspent remainder.',
   reads: ['budget.budget_reservations', 'budget.budget_rates'],
@@ -198,7 +198,7 @@ PH.operation({
 });
 
 PH.operation({
-  id: 'budget.evaluate-ladder', domain: 'budget', kind: 'workflow', effect: 'write', status: 'implemented',
+  id: 'budget.evaluate-ladder', domain: 'budget', kind: 'workflow', effect: 'write', status: 'verified',
   name: 'EvaluateLadder',
   summary: 'Moves the restriction ladder from the numbers: escalates on pressure, de-escalates automatically below shutdown.',
   reads: ['budget.budget_caps', 'budget.budget_spend_events', 'budget.budget_reservations', 'budget.budget_restriction_changes'],
@@ -223,7 +223,7 @@ PH.operation({
 });
 
 PH.operation({
-  id: 'budget.admin-set-controls', domain: 'budget', kind: 'usecase', effect: 'write', status: 'implemented',
+  id: 'budget.admin-set-controls', domain: 'budget', kind: 'usecase', effect: 'write', status: 'verified',
   name: 'AdminSetControls',
   summary: 'Appends cap or rate rows with effective date, actor and reason; reached only through the step-up flow.',
   reads: ['budget.budget_caps', 'budget.budget_rates'],
@@ -246,7 +246,7 @@ PH.operation({
 });
 
 PH.operation({
-  id: 'budget.reopen', domain: 'budget', kind: 'usecase', effect: 'write', status: 'implemented',
+  id: 'budget.reopen', domain: 'budget', kind: 'usecase', effect: 'write', status: 'verified',
   name: 'Reopen',
   summary: 'The only way out of shutdown: manual, second-factor verified, gradual.',
   reads: ['budget.budget_restriction_changes'],
@@ -260,7 +260,7 @@ PH.operation({
 });
 
 PH.operation({
-  id: 'budget.status', domain: 'budget', kind: 'usecase', effect: 'read', status: 'implemented',
+  id: 'budget.status', domain: 'budget', kind: 'usecase', effect: 'read', status: 'verified',
   name: 'Status',
   summary: 'The control panel numbers: level, caps, window consumption measured versus estimated, reservations, spend speed and projected exhaustion.',
   reads: ['budget.budget_caps', 'budget.budget_rates', 'budget.budget_spend_events', 'budget.budget_reservations', 'budget.budget_restriction_changes'],

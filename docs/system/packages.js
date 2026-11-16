@@ -1,7 +1,7 @@
 // Shared technical packages. They are not domains: any domain may use them directly,
 // they hold no business rules, and their tables (if any) are infrastructure.
 PH.package({
-  id: 'txqueue', status: 'implemented',
+  id: 'txqueue', status: 'verified',
   name: 'Transactional queue',
   summary: 'The one way to do async work: a queue table and worker per domain, with a dead letter queue.',
   provides: [

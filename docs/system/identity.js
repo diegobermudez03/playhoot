@@ -493,7 +493,7 @@ PH.operation({
 // ---------- Administrator second factor (designed by T-100, built by T-102) ----------
 
 PH.table({
-  id: 'identity.identity_admin_grants', domain: 'identity', status: 'implemented',
+  id: 'identity.identity_admin_grants', domain: 'identity', status: 'verified',
   name: 'identity_admin_grants',
   summary: 'Marks the single administrator account of phase 1.',
   purpose: 'Only a user with an active grant may enroll a second factor and receive an admin-mode token or a step-up proof; roles and more admins stay planned.',
@@ -510,7 +510,7 @@ PH.table({
 });
 
 PH.table({
-  id: 'identity.identity_totp_credentials', domain: 'identity', status: 'implemented',
+  id: 'identity.identity_totp_credentials', domain: 'identity', status: 'verified',
   name: 'identity_totp_credentials',
   summary: 'The TOTP second factor of an account.',
   purpose: 'At most one confirmed and one pending credential per user; a pending one is unusable until a first code confirms it, and confirming it replaces the confirmed one.',
@@ -528,7 +528,7 @@ PH.table({
 });
 
 PH.table({
-  id: 'identity.identity_second_factor_checks', domain: 'identity', status: 'implemented',
+  id: 'identity.identity_second_factor_checks', domain: 'identity', status: 'verified',
   name: 'identity_second_factor_checks',
   summary: 'Every second-factor attempt: the evidence trail of admin access and sensitive actions.',
   purpose: 'Lockout and replay are decided from it; an accepted step-up row is the single-use proof a sensitive flow spends.',
@@ -550,7 +550,7 @@ PH.table({
 });
 
 PH.operation({
-  id: 'identity.grant-admin', domain: 'identity', kind: 'usecase', effect: 'write', status: 'implemented',
+  id: 'identity.grant-admin', domain: 'identity', kind: 'usecase', effect: 'write', status: 'verified',
   name: 'EnsureAdmin',
   summary: 'At startup, makes the account named by IDENTITY_ADMIN_USER_UUID the single administrator.',
   reads: ['identity.identity_users', 'identity.identity_accounts', 'identity.identity_admin_grants'],
@@ -564,7 +564,7 @@ PH.operation({
 });
 
 PH.operation({
-  id: 'identity.read-contact', domain: 'identity', kind: 'usecase', effect: 'read', status: 'implemented',
+  id: 'identity.read-contact', domain: 'identity', kind: 'usecase', effect: 'read', status: 'verified',
   name: 'ReadContact',
   summary: 'How a user is reached (found, account, address, language) and who the administrator is; read by the orchestrator for notifications.',
   reads: ['identity.identity_users', 'identity.identity_accounts', 'identity.identity_external_identities', 'identity.identity_admin_grants'],
@@ -578,7 +578,7 @@ PH.operation({
 });
 
 PH.operation({
-  id: 'identity.enroll-totp', domain: 'identity', kind: 'usecase', effect: 'write', status: 'implemented',
+  id: 'identity.enroll-totp', domain: 'identity', kind: 'usecase', effect: 'write', status: 'verified',
   name: 'EnrollTotp / ConfirmTotp',
   summary: 'Starts a TOTP enrollment (secret and otpauth URI shown once) and confirms it with a first valid code.',
   reads: ['identity.identity_totp_credentials', 'identity.identity_admin_grants', 'identity.identity_second_factor_checks'],
@@ -597,7 +597,7 @@ PH.operation({
 });
 
 PH.operation({
-  id: 'identity.verify-totp', domain: 'identity', kind: 'usecase', effect: 'write', status: 'implemented',
+  id: 'identity.verify-totp', domain: 'identity', kind: 'usecase', effect: 'write', status: 'verified',
   name: 'VerifyTotp / ConsumeStepUpProof',
   summary: 'Verifies a TOTP code for the admin-mode token or a 10-minute step-up proof; a sensitive flow then spends the proof on its own action.',
   reads: ['identity.identity_totp_credentials', 'identity.identity_admin_grants', 'identity.identity_second_factor_checks'],

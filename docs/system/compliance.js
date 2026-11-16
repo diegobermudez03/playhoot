@@ -29,7 +29,7 @@ PH.domain({
 // ---------- H1 core (implemented in T-103): market matrix, declarations, acceptances ----------
 
 PH.table({
-  id: 'compliance.compliance_market_rules', domain: 'compliance', status: 'implemented',
+  id: 'compliance.compliance_market_rules', domain: 'compliance', status: 'verified',
   name: 'compliance_market_rules',
   summary: 'The market-and-function matrix: what each place may do and from what age.',
   purpose: 'Configurable per market and function; a function with no enabled current row is unavailable there. Seeded by the migration from P35§1-3: CO/MX all enabled (18); AR/CL/PE present but disabled with a conditions note; US per state + DC (18; AL/NE 19; MS 21) and CA per province without Quebec (18 in AB/MB/ON/PE/SK, 19 elsewhere), adult functions enabled and minor functions disabled. Minor functions carry min_age 0. Nothing else has rows.',
@@ -52,7 +52,7 @@ PH.table({
 });
 
 PH.table({
-  id: 'compliance.compliance_declarations', domain: 'compliance', status: 'implemented',
+  id: 'compliance.compliance_declarations', domain: 'compliance', status: 'verified',
   name: 'compliance_declarations',
   summary: 'Declared residence and age: country, subdivision, and having reached the required age, with the date.',
   purpose: 'Stored as declared, never "verified". The current declaration is the latest row per user.',
@@ -130,7 +130,7 @@ PH.table({
 });
 
 PH.operation({
-  id: 'compliance.check-market-access', domain: 'compliance', kind: 'usecase', effect: 'read', status: 'implemented',
+  id: 'compliance.check-market-access', domain: 'compliance', kind: 'usecase', effect: 'read', status: 'verified',
   name: 'CheckMarketAccess',
   summary: 'Answers whether a function is available to this person in this place: allowed, needs-declaration, or blocked with a reason.',
   reads: ['compliance.compliance_market_rules', 'compliance.compliance_declarations', 'compliance.compliance_minority_signals'],
@@ -148,7 +148,7 @@ PH.operation({
 });
 
 PH.operation({
-  id: 'compliance.record-declaration', domain: 'compliance', kind: 'usecase', effect: 'write', status: 'implemented',
+  id: 'compliance.record-declaration', domain: 'compliance', kind: 'usecase', effect: 'write', status: 'verified',
   name: 'RecordDeclaration',
   summary: 'Records the residence-and-age declaration, once.',
   reads: ['compliance.compliance_declarations', 'compliance.compliance_market_rules'],
