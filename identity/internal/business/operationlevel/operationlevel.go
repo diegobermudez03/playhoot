@@ -34,6 +34,7 @@ var required = map[identity.Operation]identity.Level{
 	identity.OperationSetOwnMode:                 identity.LevelAccount,
 	identity.OperationSetInterfaceLanguage:       identity.LevelAccount,
 	identity.OperationManageTexts:                identity.LevelAdmin,
+	identity.OperationDeleteOwnIdentity:          identity.LevelGuest,
 }
 
 // rank orders the levels; a level missing from it satisfies nothing.

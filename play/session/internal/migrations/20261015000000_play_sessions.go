@@ -137,6 +137,8 @@ func migration20261015000000PlaySessions() *gormigrate.Migration {
 					UNIQUE (session_id, participant_id),
 					UNIQUE (session_id, user_uuid)
 				)`,
+				// Clearing the name snapshots of one person, everywhere.
+				`CREATE INDEX play_session_participants_user_idx ON play_session_participants (user_uuid)`,
 
 				// The latest recovery checkpoint of each started Session, written
 				// with the start and replaced by newer ones. content is opaque

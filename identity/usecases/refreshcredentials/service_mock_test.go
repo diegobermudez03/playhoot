@@ -74,6 +74,20 @@ func (mr *MocksessionStoreMockRecorder) LockSessionByRefreshToken(ctx, tx, refre
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LockSessionByRefreshToken", reflect.TypeOf((*MocksessionStore)(nil).LockSessionByRefreshToken), ctx, tx, refreshToken)
 }
 
+// NoteSessionUsed mocks base method.
+func (m *MocksessionStore) NoteSessionUsed(ctx context.Context, tx *gorm.DB, id int64, usedAt time.Time) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "NoteSessionUsed", ctx, tx, id, usedAt)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// NoteSessionUsed indicates an expected call of NoteSessionUsed.
+func (mr *MocksessionStoreMockRecorder) NoteSessionUsed(ctx, tx, id, usedAt any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NoteSessionUsed", reflect.TypeOf((*MocksessionStore)(nil).NoteSessionUsed), ctx, tx, id, usedAt)
+}
+
 // RotateSession mocks base method.
 func (m *MocksessionStore) RotateSession(ctx context.Context, tx *gorm.DB, current repo.Session, refreshToken string, issuedAt time.Time, expiresAt *time.Time) error {
 	m.ctrl.T.Helper()

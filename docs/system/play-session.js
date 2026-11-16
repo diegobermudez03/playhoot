@@ -139,10 +139,10 @@ PH.table({
     { name: 'session_id', type: 'bigint', note: '' },
     { name: 'user_uuid', type: 'uuid', note: '' },
     { name: 'participant_id', type: 'text', note: 'P1, P2, ...' },
-    { name: 'display_name', type: 'text', note: 'Snapshot at start.' },
+    { name: 'display_name', type: 'text', note: 'Snapshot at start; emptied when that person\'s identity is deleted.' },
     { name: 'created_at', type: 'timestamptz', note: '' }
   ],
-  indexes: ['UNIQUE (session_id, participant_id)', 'UNIQUE (session_id, user_uuid)'],
+  indexes: ['UNIQUE (session_id, participant_id)', 'UNIQUE (session_id, user_uuid)', '(user_uuid)'],
   history: 'infrastructure',
   references: [
     { column: 'session_id', to: 'play.session.play_sessions' },
@@ -388,7 +388,7 @@ PH.operation({
 });
 
 PH.operation({
-  id: 'play.session.anonymize-user', domain: 'play.session', kind: 'usecase', effect: 'write', status: 'planned',
+  id: 'play.session.anonymize-user', domain: 'play.session', kind: 'usecase', effect: 'write', status: 'implemented',
   name: 'AnonymizeUser',
   summary: 'Clears a deleted user\'s display-name snapshots from every roster; a step of the account-cleanup of H3 (D-036).',
   reads: ['play.session.play_session_participants'],

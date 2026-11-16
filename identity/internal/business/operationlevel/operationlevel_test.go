@@ -69,6 +69,7 @@ func TestCatalog(t *testing.T) {
 		{Operation: identity.OperationCreateGame, RequiredLevel: identity.LevelAccount},
 		{Operation: identity.OperationCreateSession, RequiredLevel: identity.LevelAccount},
 		{Operation: identity.OperationDeclareResidenceAndAge, RequiredLevel: identity.LevelAccount},
+		{Operation: identity.OperationDeleteOwnIdentity, RequiredLevel: identity.LevelGuest},
 		{Operation: identity.OperationEditGame, RequiredLevel: identity.LevelAccount},
 		{Operation: identity.OperationJoinSessionAsAdmin, RequiredLevel: identity.LevelAccount},
 		{Operation: identity.OperationJoinSessionAsPlayer, RequiredLevel: identity.LevelGuest},

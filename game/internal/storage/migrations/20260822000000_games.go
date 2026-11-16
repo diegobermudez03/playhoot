@@ -9,7 +9,7 @@ func migration20260822000000Games() *gormigrate.Migration {
 	return &gormigrate.Migration{
 		ID: "20260822000000_games",
 		Migrate: func(tx *gorm.DB) error {
-			return tx.Exec(`
+			err := tx.Exec(`
 				CREATE TABLE games (
 					id BIGSERIAL PRIMARY KEY,
 					uuid UUID NOT NULL UNIQUE,
@@ -27,6 +27,11 @@ func migration20260822000000Games() *gormigrate.Migration {
 					deleted_at TIMESTAMPTZ NULL
 				)
 			`).Error
+			if err != nil {
+				return err
+			}
+			// Reading, and deleting, the games one owner has.
+			return tx.Exec(`CREATE INDEX games_owner_idx ON games (owner_uuid) WHERE deleted_at IS NULL`).Error
 		},
 		Rollback: func(tx *gorm.DB) error {
 			return tx.Exec(`DROP TABLE games`).Error

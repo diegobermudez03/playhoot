@@ -34,6 +34,7 @@ type sessionRow struct {
 	IssuedAt     time.Time
 	StartedAt    time.Time
 	ExpiresAt    *time.Time
+	LastUsedAt   *time.Time
 }
 
 func (sessionRow) TableName() string { return "identity_sessions" }
@@ -48,6 +49,9 @@ type Session struct {
 	ExpiresAt     *time.Time
 	DeactivatedAt *time.Time
 	ReplacedByID  *int64
+	// LastUsedAt is when this session was last noted as used. It is written
+	// rarely on purpose: a refresh every few minutes must not be a write.
+	LastUsedAt *time.Time
 
 	UserID      int64
 	UserUUID    string
@@ -60,7 +64,7 @@ type Session struct {
 
 const sessionColumns = `
 	session.id, session.session_uuid, session.refresh_token, session.issued_at, session.started_at,
-	session.expires_at, session.deactivated_at, session.replaced_by_id,
+	session.expires_at, session.deactivated_at, session.replaced_by_id, session.last_used_at,
 	session.user_id, users.user_uuid, COALESCE(users.display_name, '') AS display_name,
 	account.id IS NOT NULL AS has_account, COALESCE(account.mode, '') AS mode`
 
@@ -109,12 +113,25 @@ func (r *Repo) RotateSession(ctx context.Context, tx *gorm.DB, current Session, 
 		IssuedAt:     issuedAt,
 		StartedAt:    current.StartedAt,
 		ExpiresAt:    expiresAt,
+		// The rotation is itself a use: the new row carries it, so no
+		// separate statement notes it.
+		LastUsedAt: &issuedAt,
 	}
 	if err := tx.WithContext(ctx).Create(&successor).Error; err != nil {
 		return fmt.Errorf("creating rotated session row: %s", err)
 	}
 	if err := tx.WithContext(ctx).Exec(`UPDATE identity_sessions SET replaced_by_id = ? WHERE id = ?`, successor.ID, current.ID).Error; err != nil {
 		return fmt.Errorf("linking rotated session row: %s", err)
+	}
+	return nil
+}
+
+// NoteSessionUsed records that the session row id was used at usedAt. The
+// caller writes it only when the session has not been noted today: the
+// column measures how long a guest has been gone, not every request.
+func (r *Repo) NoteSessionUsed(ctx context.Context, tx *gorm.DB, id int64, usedAt time.Time) error {
+	if err := tx.WithContext(ctx).Exec(`UPDATE identity_sessions SET last_used_at = ? WHERE id = ?`, usedAt, id).Error; err != nil {
+		return fmt.Errorf("noting the session as used: %s", err)
 	}
 	return nil
 }

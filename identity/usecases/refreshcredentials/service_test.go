@@ -38,7 +38,21 @@ func TestRefreshInTx(t *testing.T) {
 	tests := map[string]func(t *testing.T, sessions *MocksessionStore) test{
 		"active_token_renews_and_is_kept": func(t *testing.T, sessions *MocksessionStore) test {
 			current := session("phr_a", time.Hour)
+			current.LastUsedAt = ago(time.Minute)
 			sessions.EXPECT().LockSessionByRefreshToken(ctx, nil, "phr_a").Return(&current, nil)
+			return test{token: "phr_a", expected: renewal{user: guest, refreshToken: "phr_a", outcome: "renewed"}}
+		},
+		"a_renewal_notes_the_session_as_used_once_a_day": func(t *testing.T, sessions *MocksessionStore) test {
+			current := session("phr_a", time.Hour)
+			current.LastUsedAt = ago(noteUseEvery + time.Minute)
+			sessions.EXPECT().LockSessionByRefreshToken(ctx, nil, "phr_a").Return(&current, nil)
+			sessions.EXPECT().NoteSessionUsed(ctx, nil, current.ID, now).Return(nil)
+			return test{token: "phr_a", expected: renewal{user: guest, refreshToken: "phr_a", outcome: "renewed"}}
+		},
+		"a_session_never_noted_is_noted_on_its_first_renewal": func(t *testing.T, sessions *MocksessionStore) test {
+			current := session("phr_a", time.Hour)
+			sessions.EXPECT().LockSessionByRefreshToken(ctx, nil, "phr_a").Return(&current, nil)
+			sessions.EXPECT().NoteSessionUsed(ctx, nil, current.ID, now).Return(nil)
 			return test{token: "phr_a", expected: renewal{user: guest, refreshToken: "phr_a", outcome: "renewed"}}
 		},
 		"old_active_token_rotates": func(t *testing.T, sessions *MocksessionStore) test {

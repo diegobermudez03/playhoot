@@ -20,6 +20,7 @@ The database must show how every row got to its current state. A previous state 
 ## Exceptions
 
 - The live Session's high-frequency data (samples, commands, views, ticks) is not kept change by change: keeping all of it would be far too heavy. It is approximated by checkpoints and replay chunks. That data is not database row changes; every row the platform writes about a Session follows the rules above.
+- `identity_sessions.last_used_at`, overwritten at most once a day by a refresh (`identity/usecases/refreshcredentials`), has no history (agent decision D-041, 16-nov-2026): it is the same kind of value as the owner lease below — a periodic activity mark whose only reader asks how long ago the last one was, never which ones there were. Keeping one row per session per day for every session that ever existed would cost far more than it tells.
 - `play_sessions.owner_lease_expires_at`, overwritten by every owner heartbeat (`play/session/workflows/sessionlifecycle/internal/repo/owner_lease.go`), has no history (accepted by the human 2026-10-29): it is purely infrastructure and periodic, and logging covers it. Infrastructure data is otherwise not exempt; only this periodic heartbeat is. A history of heartbeats would still help debug infrastructure: the human wants it revisited later.
 
 ## Review

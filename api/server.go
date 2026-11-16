@@ -88,7 +88,7 @@ func NewServer(authorizer authorizer, guests guestCreator, operations operationL
 		}, apiidentity.EmailLogins{
 			Starter: emailLogins.Starter, Completer: emailLogins.Completer, Linker: emailLogins.Linker,
 		}, apiidentity.Methods{Reader: methods.Reader, Remover: methods.Remover}),
-		apime.NewHandler(authorizer, apime.Dependencies{Data: me.Data, Modes: me.Modes, Languages: me.Languages}),
+		apime.NewHandler(authorizer, apime.Dependencies{Data: me.Data, Modes: me.Modes, Languages: me.Languages, Deletion: me.Deletion}),
 		apiclienttelemetry.NewHandler(authorizer),
 		apiplay.NewHandler(authorizer, sessionCreator, owners, admins, players, joinCodes, games.Previews, liveConnections, market, geo, wsx.OriginPatterns(config.WebSocketAllowedOrigins)),
 		gamesHandler,

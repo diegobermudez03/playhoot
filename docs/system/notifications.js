@@ -238,14 +238,14 @@ PH.operation({
 });
 
 PH.operation({
-  id: 'notifications.delete-user-entries', domain: 'notifications', kind: 'usecase', effect: 'write', status: 'planned',
+  id: 'notifications.delete-user-entries', domain: 'notifications', kind: 'usecase', effect: 'write', status: 'implemented',
   name: 'DeleteUserEntries',
   summary: 'Deletes a deleted user\'s entries and preferences; a step of the account-cleanup of H3 (D-036).',
   reads: ['notifications.notifications_entries', 'notifications.notifications_preferences'],
-  writes: ['notifications.notifications_entries', 'notifications.notifications_preferences'],
+  writes: ['notifications.notifications_entries', 'notifications.notifications_preferences', 'notifications.notifications_email_deliveries'],
   rules: [
     'Entries and preferences go; suppressions stay — they are keyed by the address and protect it, not the account (P31§3).',
-    'Delivery records keep expiring on their own 30-day clock (P31§5); nothing here waits for them.',
+    'The delivery records of those entries go with them, in the same transaction: a record points at an entry by row (D-041).',
     'Idempotent: a second run deletes nothing new.'
   ],
   sources: ['P02§11', 'P31§3-5']

@@ -21,12 +21,12 @@ PH.flow({
   sources: ['P03§8', 'P03§10', 'P31§3-4']
 });
 PH.flow({
-  id: 'delete-account', status: 'planned', coordinator: 'orchestrator', effect: 'write',
+  id: 'delete-account', status: 'implemented', coordinator: 'orchestrator', effect: 'write',
   name: 'Delete account',
   summary: 'Withdraws access immediately, then a queued cleanup clears what identifies the person across the domains; shared history survives with a neutral, distinguishable reference (P02§10). H5 (replay content), H6 (billing) and H8 (classroom) append their steps when those domains hold user data.',
   steps: [
     { n: 1, domain: 'identity', operation: 'identity.delete-user', when: 'always, synchronously: access ends before the call returns', onFailure: 'Propagate; nothing was half-deleted (one transaction).' },
-    { n: 2, domain: 'game', operation: 'game.delete-user-games', when: 'the account-cleanup task runs', onFailure: 'The queue retries; a dead cleanup task is an admin alert (V-12).' },
+    { n: 2, domain: 'game', operation: 'game.delete-user-games', when: 'the account-cleanup task runs, carried by the orchestrator', onFailure: 'The queue retries; a dead cleanup task is an admin alert (V-12).' },
     { n: 3, domain: 'play.session', operation: 'play.session.anonymize-user', when: 'always, after the games', onFailure: 'The queue retries; a dead cleanup task is an admin alert (V-12).' },
     { n: 4, domain: 'notifications', operation: 'notifications.delete-user-entries', when: 'always', onFailure: 'The queue retries; a dead cleanup task is an admin alert (V-12).' }
   ],
@@ -36,7 +36,7 @@ PH.flow({
   sources: ['P02§10-11', 'P04§6']
 });
 PH.flow({
-  id: 'expire-guests', status: 'planned', coordinator: 'orchestrator', effect: 'write',
+  id: 'expire-guests', status: 'implemented', coordinator: 'orchestrator', effect: 'write',
   name: 'Expire inactive guests',
   summary: 'Daily sweep: a guest 90 days without session use goes through the same deletion and cleanup as a requested one (the delete-account steps); the term is disclosed where the guest is created.',
   steps: [

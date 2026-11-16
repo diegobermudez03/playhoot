@@ -37,11 +37,13 @@ type profileRow struct {
 	Language    string
 	HasAccount  bool
 	Mode        string
+	Deleted     bool
 }
 
 // ReadProfile returns who userUUID is. identity.ErrUserNotFound when there
 // is no such User. A guest is normal, has no language of their own and no
-// methods: their only way in is the credential their browser keeps.
+// methods: their only way in is the credential their browser keeps. A
+// deleted User resolves to nobody in particular.
 func (s *Service) ReadProfile(ctx context.Context, userUUID string) (identity.Profile, error) {
 	defer logging.Step(ctx, "identity.read_profile").Close()
 
@@ -51,7 +53,8 @@ func (s *Service) ReadProfile(ctx context.Context, userUUID string) (identity.Pr
 	var rows []profileRow
 	err := s.db.WithContext(ctx).Raw(`
 		SELECT COALESCE(users.display_name, '') AS display_name, users.interface_language AS language,
-			account.id IS NOT NULL AS has_account, COALESCE(account.mode, '') AS mode
+			account.id IS NOT NULL AS has_account, COALESCE(account.mode, '') AS mode,
+			users.deleted_at IS NOT NULL AS deleted
 		FROM identity_users users
 		LEFT JOIN identity_accounts account ON account.user_id = users.id
 		WHERE users.user_uuid = ?`,
@@ -64,6 +67,14 @@ func (s *Service) ReadProfile(ctx context.Context, userUUID string) (identity.Pr
 		return identity.Profile{}, identity.ErrUserNotFound
 	}
 	row := rows[0]
+	if row.Deleted {
+		// A deleted User still resolves, and names nobody: what shows in
+		// their place is the neutral reference the reader chooses.
+		return identity.Profile{
+			UUID: userUUID, Level: identity.LevelGuest, Mode: identity.ModeNormal,
+			Methods: []identity.SignInMethod{}, Deleted: true,
+		}, nil
+	}
 	profile := identity.Profile{
 		UUID:        userUUID,
 		DisplayName: row.DisplayName,

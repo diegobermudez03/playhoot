@@ -1,6 +1,7 @@
 // Package me is the route group of the caller's own data: the one read that
-// says who they are, and the two settings only they decide — the mode their
-// account is in and the language they read Playhoot in.
+// says who they are, the two settings only they decide — the mode their
+// account is in and the language they read Playhoot in — and the end of
+// their identity.
 package me
 
 import (
@@ -12,7 +13,7 @@ import (
 	"github.com/diegobermudez03/playhoot/identity"
 )
 
-//go:generate mockgen -package=me -destination=handler_mock_test.go . authorizer,dataReader,modeSetter,languageSetter
+//go:generate mockgen -package=me -destination=handler_mock_test.go . authorizer,dataReader,modeSetter,languageSetter,identityDeleter
 
 // authorizer resolves an access token to its caller.
 type authorizer interface {
@@ -34,11 +35,17 @@ type languageSetter interface {
 	SetLanguage(ctx context.Context, userUUID string, language string) (identity.SetLanguageOutcome, error)
 }
 
+// identityDeleter ends the caller's own identity.
+type identityDeleter interface {
+	DeleteUser(ctx context.Context, userUUID string, origin identity.DeleteOrigin) (identity.DeleteUserOutcome, error)
+}
+
 // Dependencies are what this group needs.
 type Dependencies struct {
 	Data      dataReader
 	Modes     modeSetter
 	Languages languageSetter
+	Deletion  identityDeleter
 }
 
 // Handler exposes the caller's own data.
@@ -47,6 +54,7 @@ type Handler struct {
 	data       dataReader
 	modes      modeSetter
 	languages  languageSetter
+	deletion   identityDeleter
 }
 
 // NewHandler constructs a Handler.
@@ -54,11 +62,12 @@ func NewHandler(authorizer authorizer, dependencies Dependencies) *Handler {
 	return &Handler{
 		authorizer: authorizer, data: dependencies.Data,
 		modes: dependencies.Modes, languages: dependencies.Languages,
+		deletion: dependencies.Deletion,
 	}
 }
 
-// RESTRoutes returns this group's endpoints. Reading needs only a guest's
-// credential; the two settings belong to an account.
+// RESTRoutes returns this group's endpoints. Reading and deleting need only
+// a guest's credential; the two settings belong to an account.
 func (h *Handler) RESTRoutes() []routing.Route {
 	return []routing.Route{
 		{
@@ -75,6 +84,11 @@ func (h *Handler) RESTRoutes() []routing.Route {
 			Pattern:       "PUT /v1/identity/me/language",
 			Handler:       h.handleSetLanguage,
 			Authorization: auth.Require(h.authorizer, identity.OperationSetInterfaceLanguage),
+		},
+		{
+			Pattern:       "POST /v1/identity/me/delete",
+			Handler:       h.handleDelete,
+			Authorization: auth.Require(h.authorizer, identity.OperationDeleteOwnIdentity),
 		},
 	}
 }

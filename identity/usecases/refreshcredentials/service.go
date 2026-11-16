@@ -24,7 +24,13 @@ type sessionStore interface {
 	LockSessionByRefreshToken(ctx context.Context, tx *gorm.DB, refreshToken string) (*internalrepo.Session, error)
 	LockSessionByID(ctx context.Context, tx *gorm.DB, id int64) (*internalrepo.Session, error)
 	RotateSession(ctx context.Context, tx *gorm.DB, current internalrepo.Session, refreshToken string, issuedAt time.Time, expiresAt *time.Time) error
+	NoteSessionUsed(ctx context.Context, tx *gorm.DB, id int64, usedAt time.Time) error
 }
+
+// noteUseEvery is how often a renewal notes the session as used. Renewing is
+// frequent and the note only has to say roughly when someone was last here,
+// so a session writes it once a day at most.
+const noteUseEvery = 24 * time.Hour
 
 // accessIssuer issues access tokens.
 type accessIssuer interface {
@@ -113,6 +119,11 @@ func (s *Service) refreshInTx(ctx context.Context, tx *gorm.DB, refreshToken str
 			return invalid, nil
 		}
 		if !refreshtoken.ShouldRotate(session.IssuedAt, now) {
+			if noteUse(session.LastUsedAt, now) {
+				if err := s.sessions.NoteSessionUsed(ctx, tx, session.ID, now); err != nil {
+					return renewal{}, err
+				}
+			}
 			return renewal{user: userOf(*session), refreshToken: session.RefreshToken, outcome: "renewed"}, nil
 		}
 		successor, err := s.newRefresh()
@@ -141,6 +152,12 @@ func (s *Service) refreshInTx(ctx context.Context, tx *gorm.DB, refreshToken str
 		return invalid, nil
 	}
 	return renewal{user: userOf(*successor), refreshToken: successor.RefreshToken, outcome: "previous"}, nil
+}
+
+// noteUse reports whether a renewal at now should note the session as used,
+// which it does when nothing noted it today.
+func noteUse(lastUsedAt *time.Time, now time.Time) bool {
+	return lastUsedAt == nil || now.Sub(*lastUsedAt) >= noteUseEvery
 }
 
 func userOf(session internalrepo.Session) identity.User {

@@ -43,10 +43,10 @@ PH.table({
     { name: 'template_featured', type: 'boolean', note: 'Featured to AIs.' },
     { name: 'created_at', type: 'timestamptz', note: '' },
     { name: 'updated_at', type: 'timestamptz', note: '' },
-    { name: 'deleted_at', type: 'timestamptz', note: 'Filtered on read.' }
+    { name: 'deleted_at', type: 'timestamptz', note: 'Set once; filtered on read.' }
   ],
-  indexes: ['UNIQUE (uuid)'],
-  history: 'Change table game_histories: name, description, visibility, published.',
+  indexes: ['UNIQUE (uuid)', 'partial (owner_uuid) while not deleted'],
+  history: 'Change table game_histories: name, description, visibility, published. Write-once: deleted_at.',
   references: [{ column: 'owner_uuid', to: 'identity user' }]
 });
 
@@ -230,13 +230,14 @@ PH.table({
 });
 
 PH.operation({
-  id: 'game.delete-user-games', domain: 'game', kind: 'usecase', effect: 'write', status: 'planned',
+  id: 'game.delete-user-games', domain: 'game', kind: 'usecase', effect: 'write', status: 'implemented',
   name: 'DeleteUserGames',
   summary: 'Deletes every game a deleted user owns; a step of the account-cleanup of H3 (D-036).',
   reads: ['game.games'],
-  writes: ['game.games', 'game.game_histories'],
+  writes: ['game.games'],
   rules: [
-    'Sets deleted_at on each of the owner\'s games — the first writer of that column — and records the change.',
+    'Sets deleted_at on each of the owner\'s games — the first writer of that column — in batches of 500.',
+    'The deletion needs no history row: deleted_at is written once and is its own record (D-041).',
     'Existing Sessions and other people\'s history are untouched: ordinary deletion never interrupts them (P04§6).',
     'Idempotent: games already deleted are skipped. Single-game withdrawal and unpublication are H4\'s withdraw-game.'
   ],

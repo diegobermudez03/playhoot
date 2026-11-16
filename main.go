@@ -44,6 +44,7 @@ import (
 	"github.com/diegobermudez03/playhoot/discovery/usecases/templatecatalog"
 	"github.com/diegobermudez03/playhoot/game"
 	"github.com/diegobermudez03/playhoot/game/usecases/checkplayability"
+	"github.com/diegobermudez03/playhoot/game/usecases/deleteusergames"
 	"github.com/diegobermudez03/playhoot/game/usecases/findeditableversion"
 	"github.com/diegobermudez03/playhoot/game/usecases/findtemplate"
 	"github.com/diegobermudez03/playhoot/game/workflows/gamecard"
@@ -53,7 +54,9 @@ import (
 	"github.com/diegobermudez03/playhoot/identity/usecases/aiauthorization"
 	"github.com/diegobermudez03/playhoot/identity/usecases/authorize"
 	"github.com/diegobermudez03/playhoot/identity/usecases/createguest"
+	"github.com/diegobermudez03/playhoot/identity/usecases/deleteuser"
 	"github.com/diegobermudez03/playhoot/identity/usecases/endsession"
+	"github.com/diegobermudez03/playhoot/identity/usecases/expireguests"
 	"github.com/diegobermudez03/playhoot/identity/usecases/grantadmin"
 	"github.com/diegobermudez03/playhoot/identity/usecases/listoperations"
 	"github.com/diegobermudez03/playhoot/identity/usecases/readcontact"
@@ -72,6 +75,7 @@ import (
 	"github.com/diegobermudez03/playhoot/notifications"
 	"github.com/diegobermudez03/playhoot/notifications/emailproviders"
 	"github.com/diegobermudez03/playhoot/notifications/usecases/acceptentry"
+	"github.com/diegobermudez03/playhoot/notifications/usecases/deleteuserentries"
 	"github.com/diegobermudez03/playhoot/notifications/usecases/emailadmin"
 	"github.com/diegobermudez03/playhoot/notifications/usecases/expiredeliveries"
 	"github.com/diegobermudez03/playhoot/notifications/usecases/listentries"
@@ -79,6 +83,7 @@ import (
 	"github.com/diegobermudez03/playhoot/notifications/usecases/preferences"
 	"github.com/diegobermudez03/playhoot/notifications/usecases/recordsuppression"
 	"github.com/diegobermudez03/playhoot/notifications/usecases/sendemail"
+	"github.com/diegobermudez03/playhoot/orchestrator/accountcleanup"
 	"github.com/diegobermudez03/playhoot/orchestrator/analyticsingestion"
 	"github.com/diegobermudez03/playhoot/orchestrator/costcontrol"
 	orchestratordeadtasks "github.com/diegobermudez03/playhoot/orchestrator/deadtasks"
@@ -101,6 +106,7 @@ import (
 	"github.com/diegobermudez03/playhoot/play/session/gametoolchain"
 	sessionmigration "github.com/diegobermudez03/playhoot/play/session/migration"
 	"github.com/diegobermudez03/playhoot/play/session/storage"
+	"github.com/diegobermudez03/playhoot/play/session/usecases/anonymizeuser"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/checkadminjoin"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/checklivesession"
 	"github.com/diegobermudez03/playhoot/play/session/usecases/checkplayerjoin"
@@ -305,7 +311,14 @@ func run() error {
 	toolchain := gametoolchain.Open(envVars.GameToolchainDir)
 	versionBuilding := versionbuilding.New(db, store, toolchain, buildWakeUps, versionbuilding.DefaultWorkers)
 	resourceLinks := resourcelinks.New(db)
-	sweepresourcegrants.New(db).Register(queues.Queue(identity.QueueDomain))
+	identityQueue := queues.Queue(identity.QueueDomain)
+	sweepresourcegrants.New(db).Register(identityQueue)
+	// Deleting a person withdraws access at once and leaves the cleanup of
+	// the other domains on this queue; the guest sweep feeds the same
+	// deletion on a daily timer.
+	userDeletion := deleteuser.New(db, identityQueue)
+	accountcleanup.New(deleteusergames.New(db), anonymizeuser.New(db), deleteuserentries.New(db)).Register(identityQueue)
+	expireguests.New(db, userDeletion).Register(identityQueue)
 	if envVars.IdentityAdminUserUUID != "" {
 		outcome, err := grantadmin.New(db).EnsureAdmin(context.Background(), envVars.IdentityAdminUserUUID)
 		if err != nil {
@@ -323,10 +336,10 @@ func run() error {
 	// Spend events are delivered from every domain queue; a domain whose
 	// queue is added later joins this list.
 	notificationsQueue := queues.Queue(notifications.QueueDomain)
-	spendingestion.New(recordspend.New(db, budgetQueue)).Register(queues.Queue(identity.QueueDomain), budgetQueue, notificationsQueue)
+	spendingestion.New(recordspend.New(db, budgetQueue)).Register(identityQueue, budgetQueue, notificationsQueue)
 	// Notify tasks are delivered from every domain queue, like spend events.
 	contacts := readcontact.New(db)
-	notificationdelivery.New(contacts, acceptances.New(db), acceptentry.New(db, notificationsQueue)).Register(queues.Queue(identity.QueueDomain), budgetQueue, notificationsQueue)
+	notificationdelivery.New(contacts, acceptances.New(db), acceptentry.New(db, notificationsQueue)).Register(identityQueue, budgetQueue, notificationsQueue)
 	// Delivery 1 sends through the simulated providers (same contract as the
 	// real ones); nothing leaves the machine.
 	resendProvider := emailproviders.NewResend(envVars.NotificationsWebhookSecret)
@@ -391,7 +404,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("creating account login: %w", err)
 	}
-	emailLogins, err := emaillogin.New(db, queues.Queue(identity.QueueDomain), envVars.IdentityAccessTokenKey)
+	emailLogins, err := emaillogin.New(db, identityQueue, envVars.IdentityAccessTokenKey)
 	if err != nil {
 		return fmt.Errorf("creating email code sign-in: %w", err)
 	}
@@ -429,6 +442,7 @@ func run() error {
 			Data:      mydata.New(readprofile.New(db, signInMethods), readdeclaration.New(db), getuserlimits.New(db)),
 			Modes:     modes,
 			Languages: setlanguage.New(db),
+			Deletion:  userDeletion,
 		},
 		playLifecycle,
 		owners,

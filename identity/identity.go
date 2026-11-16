@@ -114,6 +114,10 @@ const (
 	// OperationManageTexts is reading every acceptance text and publishing
 	// new versions of them. It requires the administrator.
 	OperationManageTexts Operation = "MANAGE_TEXTS"
+
+	// OperationDeleteOwnIdentity is ending the caller's own identity. A
+	// guest may perform it: it deletes nobody else.
+	OperationDeleteOwnIdentity Operation = "DELETE_OWN_IDENTITY"
 )
 
 // Level is how strongly a caller is authenticated, on the ordered scale
@@ -542,7 +546,36 @@ type Profile struct {
 	Mode        Mode
 	Language    string
 	Methods     []SignInMethod
+
+	// Deleted marks a User whose identity was deleted: nothing names them
+	// any more, and readers show the neutral deleted reference.
+	Deleted bool
 }
+
+// DeleteOrigin says what caused a deletion.
+type DeleteOrigin string
+
+const (
+	// DeleteRequested is the person asking to be deleted.
+	DeleteRequested DeleteOrigin = "requested"
+
+	// DeleteExpiry is a guest reaching the inactivity term disclosed when
+	// they were created.
+	DeleteExpiry DeleteOrigin = "expiry"
+)
+
+// DeleteUserOutcome is the decision a DeleteUser call reached.
+type DeleteUserOutcome string
+
+const (
+	// UserDeleted means access ended and the cross-domain cleanup is
+	// queued.
+	UserDeleted DeleteUserOutcome = "deleted"
+
+	// UserAlreadyDeleted means the User was already deleted: nothing
+	// changed, which is what deleting twice must do.
+	UserAlreadyDeleted DeleteUserOutcome = "already_deleted"
+)
 
 // ErrUserNotFound is returned when a User an operation names does not exist.
 var ErrUserNotFound = errors.New("user not found")

@@ -58,11 +58,12 @@ PH.table({
     { name: 'user_uuid', type: 'uuid', note: 'External identifier.' },
     { name: 'display_name', type: 'text', note: 'Empty for a new account until it sets one; cleared by deletion.' },
     { name: 'interface_language', type: 'text', note: 'es, en or pt; empty until an account sets one. Read at email send time, so emails follow it.' },
-    { name: 'deleted_at', type: 'timestamptz', note: 'Set once, by deletion or guest expiry; the uuid then resolves to a neutral deleted reference (H3, planned).' },
+    { name: 'deleted_at', type: 'timestamptz', note: 'Set once, by deletion or guest expiry; the uuid then resolves to a neutral deleted reference.' },
+    { name: 'deleted_origin', type: 'text', note: 'Written with deleted_at: requested or expiry.' },
     { name: 'created_at', type: 'timestamptz', note: '' }
   ],
-  indexes: ['UNIQUE (user_uuid)'],
-  history: 'Display name changes tracked in identity_display_name_changes, language changes in identity_setting_changes. Write-once: deleted_at.',
+  indexes: ['UNIQUE (user_uuid)', 'partial (created_at) while not deleted, for the guest sweep'],
+  history: 'Display name changes tracked in identity_display_name_changes, language changes in identity_setting_changes. Write-once: deleted_at and deleted_origin.',
   references: []
 });
 
@@ -115,10 +116,10 @@ PH.table({
     { name: 'expires_at', type: 'timestamptz', note: 'Empty for a guest session: it never expires.' },
     { name: 'deactivated_at', type: 'timestamptz', note: 'Set once, by logout or replacement.' },
     { name: 'replaced_by_id', type: 'bigint', note: 'Set once, on rotation.' },
-    { name: 'last_used_at', type: 'timestamptz', note: 'Written by refresh at most once per day; guest inactivity is measured from it (H3, planned).' }
+    { name: 'last_used_at', type: 'timestamptz', note: 'Written by refresh at most once per day; guest inactivity is measured from it.' }
   ],
-  indexes: ['UNIQUE (refresh_token)', 'partial UNIQUE (session_uuid) while not deactivated', '(user_id)'],
-  history: 'Write-once: deactivated_at, replaced_by_id.',
+  indexes: ['UNIQUE (refresh_token)', 'partial UNIQUE (session_uuid) while not deactivated', '(user_id)', '(user_id, last_used_at)'],
+  history: 'Write-once: deactivated_at, replaced_by_id. last_used_at keeps no history: it is a periodic activity mark, like the Session owner lease (D-041).',
   references: [{ column: 'user_id', to: 'identity.identity_users' }]
 });
 
@@ -393,7 +394,7 @@ PH.operation({
     'Rotates if the current refresh token is more than 5 h old.',
     'The immediate predecessor is still accepted for 5 min after rotation (replaced_by_id).',
     'Otherwise refresh_invalid.',
-    'Records last_used_at, at most once per day per session; guest expiry reads it (H3, planned).'
+    'Records last_used_at, at most once per day per session; guest expiry reads it. A rotation carries the mark onto the new row.'
   ],
   limits: [
     { what: 'Account refresh lifetime', value: '30 d without use / 90 d from login; guests never expire', source: 'domain' },
@@ -795,7 +796,7 @@ PH.operation({
   rules: [
     'A guest has mode normal, no language of their own and no methods: their only way in is the credential their browser keeps.',
     'An account that never switched reads as normal; the ways in are the same list the methods screen shows.',
-    'Resolving a deleted user to the neutral deleted reference arrives with deletion (H3, planned).'
+    'A deleted User still resolves, and names nobody: no display name, no language and no methods.'
   ],
   sources: ['B: identity', 'P03§9']
 });
@@ -830,13 +831,15 @@ PH.operation({
 });
 
 PH.operation({
-  id: 'identity.delete-user', domain: 'identity', kind: 'usecase', effect: 'write', status: 'planned',
+  id: 'identity.delete-user', domain: 'identity', kind: 'usecase', effect: 'write', status: 'implemented',
   name: 'DeleteUser',
   summary: 'Deletes the caller\'s identity — guest or account — withdrawing access before the call returns and leaving the cross-domain cleanup task.',
-  reads: ['identity.identity_users', 'identity.identity_sessions', 'identity.identity_external_identities', 'identity.identity_resource_links', 'identity.identity_resource_grants'],
-  writes: ['identity.identity_users', 'identity.identity_sessions', 'identity.identity_external_identities', 'identity.identity_resource_links', 'identity.identity_resource_grants'],
+  reads: ['identity.identity_users', 'identity.identity_accounts', 'identity.identity_sessions', 'identity.identity_external_identities', 'identity.identity_resource_links', 'identity.identity_resource_grants'],
+  writes: ['identity.identity_users', 'identity.identity_accounts', 'identity.identity_sessions', 'identity.identity_external_identities', 'identity.identity_resource_links', 'identity.identity_resource_grants', 'identity.identity_ai_sessions', 'identity.identity_display_name_changes', 'identity.identity_setting_changes'],
   rules: [
-    'In one transaction: every session deactivated, every method removed, resource links and grants revoked, the display name cleared, deleted_at set, and the account-cleanup task enqueued (keyed by the user uuid).',
+    'In one transaction: every session deactivated, every method removed, resource links and AI connections revoked, grants deleted, the display name, the language and the account mode cleared, deleted_at and deleted_origin set, and the account-cleanup task enqueued (keyed by the user uuid).',
+    'A removed method keeps only that it existed and when it went: its address, its name and its provider subject are cleared, as is the name kept with a guest\'s creation request (D-041).',
+    'The account row stays: it is what says the User was never a guest, so the guest sweep never reaches them.',
     'The uuid keeps resolving — to a neutral deleted reference — so shared history stays playable and distinguishable (P02§10).',
     'Idempotent: deleting a deleted user changes nothing.',
     'Compliance evidence (declarations, acceptances, minority signals) is not touched: it is the restricted legal exception of P02§11, retired by H11\'s privacy design.'
@@ -846,13 +849,13 @@ PH.operation({
 });
 
 PH.operation({
-  id: 'identity.expire-guests', domain: 'identity', kind: 'usecase', effect: 'write', status: 'planned',
+  id: 'identity.expire-guests', domain: 'identity', kind: 'usecase', effect: 'write', status: 'implemented',
   name: 'ExpireGuests',
   summary: 'Daily periodic task on the identity queue: guests inactive for 90 days go through the same deletion as a requested one.',
   reads: ['identity.identity_users', 'identity.identity_accounts', 'identity.identity_sessions'],
   writes: ['identity.identity_users', 'identity.identity_sessions', 'identity.identity_external_identities', 'identity.identity_resource_links', 'identity.identity_resource_grants'],
   rules: [
-    'A guest is a user with no account row; inactivity is measured from the newest session use (last_used_at, else created_at).',
+    'A guest is a user with no account row; inactivity is measured from the newest session use (last_used_at, else their creation).',
     'Each expired guest runs delete-user (origin expiry) and leaves its own cleanup task; batches of 500 until none are left (V-11).',
     'No warning is sent — a guest has no address; the term is disclosed where the guest is created (P02§9, C-01).',
     'An upgraded guest is an account and never expires here.'

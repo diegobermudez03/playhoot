@@ -32,9 +32,10 @@ const (
 	TypeNotify         = "notify"
 	TypeAnalyticsEvent = "analytics-event"
 	TypeSpendEvent     = "spend-event"
+	TypeAccountCleanup = "account-cleanup"
 )
 
-var deliveryTypes = map[string]bool{TypeNotify: true, TypeAnalyticsEvent: true, TypeSpendEvent: true}
+var deliveryTypes = map[string]bool{TypeNotify: true, TypeAnalyticsEvent: true, TypeSpendEvent: true, TypeAccountCleanup: true}
 
 // IsDeliveryType reports whether taskType is a cross-domain delivery type.
 func IsDeliveryType(taskType string) bool {

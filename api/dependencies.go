@@ -241,12 +241,18 @@ type textPublisher interface {
 	AdminPublishText(ctx context.Context, kind compliance.TextKind, language string, content string) (compliance.PublishedText, error)
 }
 
-// Me is what the caller's own data needs: the one composed read, and the
-// two settings only they decide.
+// Me is what the caller's own data needs: the one composed read, the two
+// settings only they decide, and the end of their identity.
 type Me struct {
 	Data      myDataReader
 	Modes     modeSetter
 	Languages languageSetter
+	Deletion  identityDeleter
+}
+
+// identityDeleter is Identity's deletion of the caller themself.
+type identityDeleter interface {
+	DeleteUser(ctx context.Context, userUUID string, origin identity.DeleteOrigin) (identity.DeleteUserOutcome, error)
 }
 
 // myDataReader composes who the caller is, what they declared and what they
