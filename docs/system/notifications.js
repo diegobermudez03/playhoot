@@ -39,7 +39,7 @@ PH.table({
   columns: [
     { name: 'id', type: 'bigserial', note: '' },
     { name: 'entry_uuid', type: 'uuid', note: 'External identifier.' },
-    { name: 'user_uuid', type: 'uuid', note: 'Recipient.' },
+    { name: 'user_uuid', type: 'uuid', note: 'Recipient; empty for an access-code entry, whose recipient is the email-code attempt identity resolves (H3, planned).' },
     { name: 'source_domain', type: 'text', note: 'The queue the notify task came from.' },
     { name: 'type', type: 'text', note: 'Constant from the P31§4 matrix.' },
     { name: 'external_token', type: 'text', note: 'Opaque entity reference; composer resolves it and builds the URL.' },
@@ -234,6 +234,20 @@ PH.operation({
   writes: ['notifications.notifications_preferences'],
   rules: ['Necessary notifications have no switch.', 'Marketing email additionally requires the compliance marketing acceptance, checked per notice at acceptance.'],
   sources: ['P31§4', 'P22§3']
+});
+
+PH.operation({
+  id: 'notifications.delete-user-entries', domain: 'notifications', kind: 'usecase', effect: 'write', status: 'planned',
+  name: 'DeleteUserEntries',
+  summary: 'Deletes a deleted user\'s entries and preferences; a step of the account-cleanup of H3 (D-036).',
+  reads: ['notifications.notifications_entries', 'notifications.notifications_preferences'],
+  writes: ['notifications.notifications_entries', 'notifications.notifications_preferences'],
+  rules: [
+    'Entries and preferences go; suppressions stay — they are keyed by the address and protect it, not the account (P31§3).',
+    'Delivery records keep expiring on their own 30-day clock (P31§5); nothing here waits for them.',
+    'Idempotent: a second run deletes nothing new.'
+  ],
+  sources: ['P02§11', 'P31§3-5']
 });
 
 PH.operation({

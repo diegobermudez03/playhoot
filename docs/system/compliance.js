@@ -1,4 +1,5 @@
-// Domain: compliance. Core implemented in T-103; authorizations and the guardian page in H8; privacy requests in H11.
+// Domain: compliance. Core implemented in T-103; declaration reads and admin text publishing
+// designed by T-300 (planned, H3); authorizations and the guardian page in H8; privacy requests in H11.
 PH.domain({
   id: 'compliance', parent: null, kind: 'traditional', status: 'implemented',
   name: 'Compliance',
@@ -186,6 +187,43 @@ PH.operation({
   writes: [],
   rules: ['Language from the query parameter, else the browser preference among es/en/pt, else English; no fallback to another language.', 'Any text is downloadable as a file, the class data agreement included.', 'Accepted means the caller standing action on the kind is accepting its newest version, in any language.'],
   sources: ['P22§2']
+});
+
+PH.operation({
+  id: 'compliance.read-declaration', domain: 'compliance', kind: 'usecase', effect: 'read', status: 'planned',
+  name: 'ReadDeclaration',
+  summary: 'The caller\'s current residence-and-age declaration — country, subdivision, threshold, date — or none; read by my-data and shown in the profile.',
+  reads: ['compliance.compliance_declarations'],
+  writes: [],
+  rules: [
+    'The current declaration is the latest row per user; it is presented as declared, never "verified" (P19§1).',
+    'Corrections are not offered here: they go through support (P19§3).'
+  ],
+  sources: ['P19§1-3']
+});
+
+PH.operation({
+  id: 'compliance.admin-list-texts', domain: 'compliance', kind: 'usecase', effect: 'read', status: 'planned',
+  name: 'AdminListTexts',
+  summary: 'Every acceptance text for admin: the four kinds by language, with versions and publish dates.',
+  reads: ['compliance.compliance_acceptance_texts'],
+  writes: [],
+  rules: ['Shows which kind-language pairs have no version yet — production serves nothing until the real texts are published (CREATOR_TODO P-23).'],
+  sources: ['P22§2-3']
+});
+
+PH.operation({
+  id: 'compliance.admin-publish-text', domain: 'compliance', kind: 'usecase', effect: 'write', status: 'planned',
+  name: 'AdminPublishText',
+  summary: 'Publishes a new immutable version of an acceptance text for one kind and language.',
+  reads: ['compliance.compliance_acceptance_texts'],
+  writes: ['compliance.compliance_acceptance_texts'],
+  rules: [
+    'Append-only: a published version is never edited; the new version supersedes for new acceptances, and recorded acceptances keep pointing at the exact version accepted.',
+    'Versions are per kind and language; publishing one language neither hides nor changes the others.',
+    'Operations that require a current acceptance start asking again once a kind has a newer version (D-037).'
+  ],
+  sources: ['P22§2-3', 'P35§6']
 });
 
 PH.operation({

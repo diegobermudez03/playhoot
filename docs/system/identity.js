@@ -1,5 +1,6 @@
-// Domain: identity. Existing tables and operations loaded by T-004; future ones (student credentials,
-// email codes, teacher/student modes, admin second factor) by milestone designs.
+// Domain: identity. Existing tables and operations loaded by T-004; the admin second factor by
+// T-100/T-102; email codes, method linking, modes, language, deletion and guest expiry designed
+// by T-300 (planned, H3). Student credentials arrive with H8.
 PH.domain({
   id: 'identity', parent: null, kind: 'traditional', status: 'implemented',
   name: 'Identity',
@@ -13,6 +14,8 @@ PH.domain({
     'Issue and revoke the individual per-class student credential, and protect the adult account behind student mode.',
     'Hold the single administrator account with its second factor.',
     'Decide the general permission for each operation (account type, role, mode); limit display-name changes per window.',
+    'Keep the account\'s remembered mode (normal or teacher) and its interface language.',
+    'Delete a user on request and expire inactive guests: withdraw access at once, clear what identifies them, and feed the cross-domain cleanup.',
     'Authenticate external AI clients (OAuth for MCP).'
   ],
   doesNotKnow: [
@@ -53,26 +56,29 @@ PH.table({
   columns: [
     { name: 'id', type: 'bigserial', note: 'Internal key.' },
     { name: 'user_uuid', type: 'uuid', note: 'External identifier.' },
-    { name: 'display_name', type: 'text', note: 'Empty for a new account until it sets one.' },
+    { name: 'display_name', type: 'text', note: 'Empty for a new account until it sets one; cleared by deletion.' },
+    { name: 'interface_language', type: 'text', note: 'es, en or pt; empty until an account sets one. Read at email send time (H3, planned).' },
+    { name: 'deleted_at', type: 'timestamptz', note: 'Set once, by deletion or guest expiry; the uuid then resolves to a neutral deleted reference (H3, planned).' },
     { name: 'created_at', type: 'timestamptz', note: '' }
   ],
   indexes: ['UNIQUE (user_uuid)'],
-  history: 'Display name changes tracked in identity_display_name_changes.',
+  history: 'Display name changes tracked in identity_display_name_changes. Write-once: deleted_at.',
   references: []
 });
 
 PH.table({
   id: 'identity.identity_accounts', domain: 'identity', status: 'implemented',
   name: 'identity_accounts',
-  summary: 'Marks a user as a registered account rather than a guest.',
-  purpose: 'Presence of the row is the "registered" fact; no other column.',
+  summary: 'Marks a user as a registered account rather than a guest, and remembers its mode.',
+  purpose: 'Presence of the row is the "registered" fact; the mode is the only other state.',
   columns: [
     { name: 'id', type: 'bigserial', note: '' },
     { name: 'user_id', type: 'bigint', note: '' },
+    { name: 'mode', type: 'text', note: 'normal or teacher; remembered across sign-ins. Student is a separate identity, never this column (H3, planned).' },
     { name: 'created_at', type: 'timestamptz', note: '' }
   ],
   indexes: ['UNIQUE (user_id)'],
-  history: 'infrastructure',
+  history: 'Mode changes tracked by the data trail of the row (previous value, when).',
   references: [{ column: 'user_id', to: 'identity.identity_users' }]
 });
 
@@ -90,7 +96,8 @@ PH.table({
     { name: 'started_at', type: 'timestamptz', note: 'When the session began (login time).' },
     { name: 'expires_at', type: 'timestamptz', note: 'Empty for a guest session: it never expires.' },
     { name: 'deactivated_at', type: 'timestamptz', note: 'Set once, by logout or replacement.' },
-    { name: 'replaced_by_id', type: 'bigint', note: 'Set once, on rotation.' }
+    { name: 'replaced_by_id', type: 'bigint', note: 'Set once, on rotation.' },
+    { name: 'last_used_at', type: 'timestamptz', note: 'Written by refresh at most once per day; guest inactivity is measured from it (H3, planned).' }
   ],
   indexes: ['UNIQUE (refresh_token)', 'partial UNIQUE (session_uuid) while not deactivated', '(user_id)'],
   history: 'Write-once: deactivated_at, replaced_by_id.',
@@ -127,10 +134,11 @@ PH.table({
     { name: 'user_id', type: 'bigint', note: '' },
     { name: 'email', type: 'text', note: 'Observed, not verified by Identity itself.' },
     { name: 'name', type: 'text', note: 'Observed.' },
+    { name: 'removed_at', type: 'timestamptz', note: 'Set once when the method is unlinked or the user is deleted (H3, planned).' },
     { name: 'created_at', type: 'timestamptz', note: '' }
   ],
-  indexes: ['UNIQUE (issuer, subject)', '(user_id)'],
-  history: 'infrastructure',
+  indexes: ['partial UNIQUE (issuer, subject) while not removed (plain UNIQUE until H3)', '(user_id)'],
+  history: 'Write-once: removed_at.',
   references: [{ column: 'user_id', to: 'identity.identity_users' }]
 });
 
@@ -363,7 +371,8 @@ PH.operation({
   rules: [
     'Rotates if the current refresh token is more than 5 h old.',
     'The immediate predecessor is still accepted for 5 min after rotation (replaced_by_id).',
-    'Otherwise refresh_invalid.'
+    'Otherwise refresh_invalid.',
+    'Records last_used_at, at most once per day per session; guest expiry reads it (H3, planned).'
   ],
   limits: [
     { what: 'Account refresh lifetime', value: '30 d without use / 90 d from login; guests never expire', source: 'domain' },
@@ -383,10 +392,13 @@ PH.operation({
   id: 'identity.set-display-name', domain: 'identity', kind: 'usecase', effect: 'write', status: 'implemented',
   name: 'SetDisplayName',
   summary: 'Sets the display name and records the change.',
-  reads: ['identity.identity_users'],
+  reads: ['identity.identity_users', 'identity.identity_display_name_changes'],
   writes: ['identity.identity_users', 'identity.identity_display_name_changes'],
-  rules: ['Up to 64 runes.'],
-  sources: []
+  rules: [
+    'Up to 64 runes.',
+    'At most 3 changes per rolling 30 days (V-10); the change history is the counter (H3, planned).'
+  ],
+  sources: ['B: identity']
 });
 
 PH.operation({
@@ -567,12 +579,13 @@ PH.operation({
   id: 'identity.read-contact', domain: 'identity', kind: 'usecase', effect: 'read', status: 'verified',
   name: 'ReadContact',
   summary: 'How a user is reached (found, account, address, language) and who the administrator is; read by the orchestrator for notifications.',
-  reads: ['identity.identity_users', 'identity.identity_accounts', 'identity.identity_external_identities', 'identity.identity_admin_grants'],
+  reads: ['identity.identity_users', 'identity.identity_accounts', 'identity.identity_external_identities', 'identity.identity_admin_grants', 'identity.identity_email_codes'],
   writes: [],
   rules: [
     'The address is the one the latest sign-in provider link observed; a guest has none.',
-    'Language stays empty while Identity keeps no interface language; the caller uses the default (V-07).',
-    'The administrator is the user of the active grant; none while it is not named.'
+    'Language is the account\'s interface language once set; empty uses the default (V-07). (H3, planned.)',
+    'The administrator is the user of the active grant; none while it is not named.',
+    'A recipient naming an email-code attempt resolves to that attempt\'s address and requested language, so a code can reach a person who has no user yet and notifications never stores an address (H3, planned).'
   ],
   sources: ['B: notifications', 'P31§5']
 });
@@ -613,4 +626,208 @@ PH.operation({
     { what: 'Step-up proof validity', value: '10 min, single use (V-03)', source: 'domain' }
   ],
   sources: ['B: admin', 'P16§3', 'P32§7']
+});
+
+// ---------- H3: ways in, modes, profile, deletion (designed by T-300, planned) ----------
+
+var EMAIL_CODE_LIFECYCLE = {
+  states: ['sent', 'completed'],
+  transitions: [
+    { from: 'sent', to: 'completed', on: 'the right code arrives within 10 minutes (V-09); signs in, registers, or links, per the attempt\'s intent' },
+    { from: 'sent', to: 'superseded', on: 'a newer code is requested for the same address' },
+    { from: 'sent', to: 'exhausted', on: '5 wrong codes, or the 10 minutes pass' }
+  ]
+};
+
+PH.table({
+  id: 'identity.identity_email_codes', domain: 'identity', status: 'planned',
+  name: 'identity_email_codes',
+  summary: 'One row per one-time email code: a sign-in, registration or method-link attempt.',
+  purpose: 'The code itself exists only in the email; identity keeps its hash and the attempt\'s state. No user row is created until a code completes.',
+  columns: [
+    { name: 'id', type: 'bigserial', note: '' },
+    { name: 'attempt_uuid', type: 'uuid', note: 'External identifier; the notify task and read-contact name the attempt by it.' },
+    { name: 'email', type: 'text', note: 'Normalized (lower case, trimmed); never shown back in full to an unauthenticated caller.' },
+    { name: 'intent', type: 'text', note: 'sign-in or link.' },
+    { name: 'code_sha256', type: 'text', note: 'The 6-digit code is never stored.' },
+    { name: 'language', type: 'text', note: 'The interface language the request was made in; the email is written in it.' },
+    { name: 'guest_user_id', type: 'bigint', note: 'Optional guest to upgrade if completing creates a user (intent sign-in).' },
+    { name: 'link_user_id', type: 'bigint', note: 'The account adding this address as a method (intent link).' },
+    { name: 'expires_at', type: 'timestamptz', note: '10 min from creation (V-09).' },
+    { name: 'superseded_at', type: 'timestamptz', note: 'Set once, when a newer code for the same address replaces this one.' },
+    { name: 'completed_at', type: 'timestamptz', note: 'Set once.' },
+    { name: 'created_at', type: 'timestamptz', note: '' }
+  ],
+  indexes: ['UNIQUE (attempt_uuid)', '(email, created_at)'],
+  history: 'Change table identity_email_code_events.',
+  references: [
+    { column: 'guest_user_id', to: 'identity.identity_users' },
+    { column: 'link_user_id', to: 'identity.identity_users' }
+  ],
+  lifecycle: EMAIL_CODE_LIFECYCLE
+});
+
+PH.table({
+  id: 'identity.identity_email_code_events', domain: 'identity', status: 'planned',
+  name: 'identity_email_code_events',
+  summary: 'Every event an email-code attempt went through.',
+  purpose: 'Append-only history: sent, wrong_code, superseded, exhausted, completed, refused_in_use. Wrong-code counting and abuse decisions derive from it.',
+  columns: [
+    { name: 'id', type: 'bigserial', note: '' },
+    { name: 'code_id', type: 'bigint', note: '' },
+    { name: 'event', type: 'text', note: '' },
+    { name: 'created_at', type: 'timestamptz', note: '' }
+  ],
+  indexes: ['(code_id)'],
+  history: 'It is itself the history (append-only).',
+  references: [{ column: 'code_id', to: 'identity.identity_email_codes' }]
+});
+
+PH.operation({
+  id: 'identity.email-login', domain: 'identity', kind: 'workflow', effect: 'write', status: 'planned',
+  name: 'emaillogin (StartEmailLogin / CompleteEmailLogin)',
+  summary: 'Signs a person in or registers them with a one-time code sent to their email; the visible alternative to Google (P03§8).',
+  reads: ['identity.identity_email_codes', 'identity.identity_external_identities'],
+  writes: [
+    'identity.identity_email_codes', 'identity.identity_email_code_events',
+    'identity.identity_users', 'identity.identity_accounts',
+    'identity.identity_external_identities', 'identity.identity_sessions'
+  ],
+  rules: [
+    'Starting always answers the same neutral acknowledgement: nothing reveals whether an address has an account (nor does a rate refusal).',
+    'One live attempt per address: a new code supersedes the previous one; 5 wrong codes exhaust the attempt; the code lives 10 minutes (V-09).',
+    'Completing resolves (issuer email, subject address) exactly like a provider callback: an existing user signs in, a guest passed at start upgrades keeping identity and history (P03§10), otherwise a new user and account are created — only at completion, never for an unverified address.',
+    'Completing ends the replaced guest\'s session in the same transaction, as the provider login does.',
+    'The code travels only in the email; identity stores its hash; delivery records keep no codes (P31§5).'
+  ],
+  limits: [
+    { what: 'Code sends per address / completion tries', value: '3 per 15 min and 10 per day / 10 per min per client IP (V-09)', source: 'domain' }
+  ],
+  steps: [
+    'StartEmailLogin: normalize the address, supersede any live attempt, record the new one, enqueue the notify task (type access-code, recipient the attempt) on the identity queue.',
+    'CompleteEmailLogin: verify the hash against the live attempt, resolve the user, open the credentials session.'
+  ],
+  enqueues: ['notify (type access-code, recipient the email-code attempt, keyed by it)'],
+  lifecycle: EMAIL_CODE_LIFECYCLE,
+  sources: ['P03§8', 'P03§10', 'P31§3-5']
+});
+
+PH.operation({
+  id: 'identity.link-method', domain: 'identity', kind: 'workflow', effect: 'write', status: 'planned',
+  name: 'linkmethod (StartLinkEmail / CompleteLinkEmail / StartLinkProvider / CompleteLinkProvider)',
+  summary: 'Adds another way into the same account by proving control of both sides; never merges accounts (P03§11).',
+  reads: ['identity.identity_email_codes', 'identity.identity_login_attempts', 'identity.identity_external_identities'],
+  writes: [
+    'identity.identity_email_codes', 'identity.identity_email_code_events',
+    'identity.identity_login_attempts', 'identity.identity_login_attempt_events',
+    'identity.identity_external_identities'
+  ],
+  rules: [
+    'The caller is a signed-in account (control of the current account); the code or the provider round trip proves control of the method being added.',
+    'Linking an email reuses the email-code attempt with intent link; linking a provider reuses the login attempt with intent link — completion links instead of opening a session.',
+    'A method already on another user is refused (method_in_use): an email match never merges accounts, and neither does anything else here.',
+    'Re-linking a method the account already has is idempotent.',
+    'Changing an address in a profile never links a method by itself; a Google identity is the same method while it is the same Google subject (P03§11).'
+  ],
+  limits: [
+    { what: 'Code sends per address', value: 'as email-login (V-09)', source: 'domain' }
+  ],
+  steps: [
+    'Start: record the attempt bound to the calling account (email: enqueue the code; provider: return the authorization URL).',
+    'Complete: verify (code, or callback plus verifier), refuse if the identity belongs to another user, else link it.'
+  ],
+  enqueues: ['notify (type access-code, recipient the email-code attempt, keyed by it; email linking only)'],
+  sources: ['P03§11-12']
+});
+
+PH.operation({
+  id: 'identity.list-methods', domain: 'identity', kind: 'usecase', effect: 'read', status: 'planned',
+  name: 'ListMethods',
+  summary: 'The caller\'s linked sign-in methods: issuer, the address or name observed, when added.',
+  reads: ['identity.identity_external_identities'],
+  writes: [],
+  rules: ['Removed methods are not listed; nothing here is a secret (the profile shows it to its owner only).'],
+  sources: ['P03§11-12']
+});
+
+PH.operation({
+  id: 'identity.remove-method', domain: 'identity', kind: 'usecase', effect: 'write', status: 'planned',
+  name: 'RemoveMethod',
+  summary: 'Unlinks a sign-in method, keeping at least one.',
+  reads: ['identity.identity_external_identities'],
+  writes: ['identity.identity_external_identities'],
+  rules: [
+    'Removing the last method is refused: the account must stay reachable (P03§12).',
+    'Write-once removed_at; removing an already-removed method changes nothing.'
+  ],
+  sources: ['P03§11-12']
+});
+
+PH.operation({
+  id: 'identity.read-profile', domain: 'identity', kind: 'usecase', effect: 'read', status: 'planned',
+  name: 'ReadProfile',
+  summary: 'Who the caller is, for the profile and my-data: display name, guest or account, mode, interface language, methods.',
+  reads: ['identity.identity_users', 'identity.identity_accounts', 'identity.identity_external_identities'],
+  writes: [],
+  rules: ['A deleted user resolves to the neutral deleted reference; a guest has mode normal and no methods.'],
+  sources: ['B: identity', 'P03§9']
+});
+
+PH.operation({
+  id: 'identity.set-language', domain: 'identity', kind: 'usecase', effect: 'write', status: 'planned',
+  name: 'SetLanguage',
+  summary: 'Stores the account\'s interface language, so emails arrive in it (P31§5) and a new browser starts in it.',
+  reads: ['identity.identity_users'],
+  writes: ['identity.identity_users'],
+  rules: [
+    'es, en or pt only; accounts only — a guest\'s preference stays in the browser (D-022).',
+    'Language never determines the regulatory country (P14§3).'
+  ],
+  sources: ['P14§3', 'P31§5']
+});
+
+PH.operation({
+  id: 'identity.set-mode', domain: 'identity', kind: 'usecase', effect: 'write', status: 'planned',
+  name: 'SetMode',
+  summary: 'Switches the account between normal and teacher mode and answers a fresh access token carrying it.',
+  reads: ['identity.identity_users', 'identity.identity_accounts'],
+  writes: ['identity.identity_accounts'],
+  rules: [
+    'Normal and teacher are the same account; switching never creates one (P03§9). Guests are refused: they are always normal.',
+    'The mode is remembered across sign-ins and rides the access token; entitlements never do — operations that need them verify them when called (P15§5).',
+    'Student mode is not set here: it is a separate per-class identity (H8); leaving it never reopens the adult account without signing in again (P03§7).'
+  ],
+  sources: ['P03§7', 'P03§9', 'P15§5']
+});
+
+PH.operation({
+  id: 'identity.delete-user', domain: 'identity', kind: 'usecase', effect: 'write', status: 'planned',
+  name: 'DeleteUser',
+  summary: 'Deletes the caller\'s identity — guest or account — withdrawing access before the call returns and leaving the cross-domain cleanup task.',
+  reads: ['identity.identity_users', 'identity.identity_sessions', 'identity.identity_external_identities', 'identity.identity_resource_links', 'identity.identity_resource_grants'],
+  writes: ['identity.identity_users', 'identity.identity_sessions', 'identity.identity_external_identities', 'identity.identity_resource_links', 'identity.identity_resource_grants'],
+  rules: [
+    'In one transaction: every session deactivated, every method removed, resource links and grants revoked, the display name cleared, deleted_at set, and the account-cleanup task enqueued (keyed by the user uuid).',
+    'The uuid keeps resolving — to a neutral deleted reference — so shared history stays playable and distinguishable (P02§10).',
+    'Idempotent: deleting a deleted user changes nothing.',
+    'Compliance evidence (declarations, acceptances, minority signals) is not touched: it is the restricted legal exception of P02§11, retired by H11\'s privacy design.'
+  ],
+  enqueues: ['account-cleanup (keyed by the user uuid; carried by the delete-account flow)'],
+  sources: ['P02§9-11']
+});
+
+PH.operation({
+  id: 'identity.expire-guests', domain: 'identity', kind: 'usecase', effect: 'write', status: 'planned',
+  name: 'ExpireGuests',
+  summary: 'Daily periodic task on the identity queue: guests inactive for 90 days go through the same deletion as a requested one.',
+  reads: ['identity.identity_users', 'identity.identity_accounts', 'identity.identity_sessions'],
+  writes: ['identity.identity_users', 'identity.identity_sessions', 'identity.identity_external_identities', 'identity.identity_resource_links', 'identity.identity_resource_grants'],
+  rules: [
+    'A guest is a user with no account row; inactivity is measured from the newest session use (last_used_at, else created_at).',
+    'Each expired guest runs delete-user (origin expiry) and leaves its own cleanup task; batches of 500 until none are left (V-11).',
+    'No warning is sent — a guest has no address; the term is disclosed where the guest is created (P02§9, C-01).',
+    'An upgraded guest is an account and never expires here.'
+  ],
+  enqueues: ['expire-guests (periodic re-enqueue, daily)', 'account-cleanup (one per expired guest)'],
+  sources: ['P02§9-10', 'P03§10']
 });

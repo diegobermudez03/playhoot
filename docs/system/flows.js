@@ -4,55 +4,78 @@
 // create-session is not here: it is already implemented and lives in orchestrator.js.
 
 // ---------- Identity and access ----------
+// H3 steps designed by T-300. Switching modes is identity-only (identity.set-mode, D-034), so the
+// old switch-mode flow entry is gone: entitlements never ride the token (P15§5) and my-data is
+// where the frontend learns what a mode has behind it.
 PH.flow({
   id: 'email-code-sign-in', status: 'planned', coordinator: 'orchestrator', effect: 'write',
   name: 'Email code sign-in',
-  summary: 'Signs in or registers with a one-time code sent by email.',
-  touches: ['identity', 'notifications'],
-  sources: ['P03§8', 'P31§4']
-});
-PH.flow({
-  id: 'switch-mode', status: 'planned', coordinator: 'orchestrator', effect: 'write',
-  name: 'Switch account mode',
-  summary: 'Changes between normal, teacher and student mode; teacher mode is confirmed against current entitlements before issuing the token.',
-  touches: ['plan', 'identity'],
-  sources: ['B: plan', 'P03§9', 'P15§5']
+  summary: 'Signs in or registers with a one-time code sent by email (P03§8). The code travels as a notify task (type access-code, necessary email) through the existing deliver-notification and send-notification-email flows; identity resolves the attempt to its address, so notifications never stores one.',
+  steps: [
+    { n: 1, domain: 'identity', operation: 'identity.email-login', when: 'the person asks for a code (StartEmailLogin)', onFailure: 'Rate refusals and unknown addresses answer the same neutral acknowledgement: nothing reveals whether an address has an account.' },
+    { n: 2, domain: 'identity', operation: 'identity.email-login', when: 'the person submits the code (CompleteEmailLogin)', onFailure: '5 wrong codes exhaust the attempt; an expired, superseded or exhausted attempt asks for a new code.' }
+  ],
+  persistence: 'queue',
+  idempotency: 'One live attempt per address (a new code supersedes it); completion consumes the attempt once; the notify task is keyed by the attempt.',
+  compensation: 'A lost or undelivered email is recovered by asking for a new code (P31§3); nothing else to undo.',
+  sources: ['P03§8', 'P03§10', 'P31§3-4']
 });
 PH.flow({
   id: 'delete-account', status: 'planned', coordinator: 'orchestrator', effect: 'write',
   name: 'Delete account',
-  summary: 'Withdraws access immediately and removes the account\'s data everywhere, replacing its identity in replays with a neutral reference; shared replays survive.',
-  touches: ['identity', 'compliance', 'plan', 'billing', 'classroom', 'play.replay', 'notifications'],
-  sources: ['P02§10-11', 'P22§5']
+  summary: 'Withdraws access immediately, then a queued cleanup clears what identifies the person across the domains; shared history survives with a neutral, distinguishable reference (P02§10). H5 (replay content), H6 (billing) and H8 (classroom) append their steps when those domains hold user data.',
+  steps: [
+    { n: 1, domain: 'identity', operation: 'identity.delete-user', when: 'always, synchronously: access ends before the call returns', onFailure: 'Propagate; nothing was half-deleted (one transaction).' },
+    { n: 2, domain: 'game', operation: 'game.delete-user-games', when: 'the account-cleanup task runs', onFailure: 'The queue retries; a dead cleanup task is an admin alert (V-12).' },
+    { n: 3, domain: 'play.session', operation: 'play.session.anonymize-user', when: 'always, after the games', onFailure: 'The queue retries; a dead cleanup task is an admin alert (V-12).' },
+    { n: 4, domain: 'notifications', operation: 'notifications.delete-user-entries', when: 'always', onFailure: 'The queue retries; a dead cleanup task is an admin alert (V-12).' }
+  ],
+  persistence: 'queue',
+  idempotency: 'The cleanup task is keyed by the user uuid and every step is idempotent: running it again deletes nothing new.',
+  compensation: 'None: deletion is not undone. Compliance evidence stays restricted (P02§11, resolved by H11); analytics events stay but their uuid no longer resolves to anyone (D-036).',
+  sources: ['P02§10-11', 'P04§6']
 });
 PH.flow({
   id: 'expire-guests', status: 'planned', coordinator: 'orchestrator', effect: 'write',
   name: 'Expire inactive guests',
-  summary: 'After 90 days of inactivity a guest and its data are removed, without breaking shared replays.',
-  touches: ['identity', 'play.replay'],
+  summary: 'Daily sweep: a guest 90 days without session use goes through the same deletion and cleanup as a requested one (the delete-account steps); the term is disclosed where the guest is created.',
+  steps: [
+    { n: 1, domain: 'identity', operation: 'identity.expire-guests', when: 'the daily periodic task on the identity queue is due', onFailure: 'The queue retries; a partial sweep continues on the next run.' }
+  ],
+  persistence: 'queue',
+  idempotency: 'A guest already deleted is skipped; batches of 500 until none are left (V-11). Each expired guest leaves its own account-cleanup task.',
+  compensation: 'None; shared history keeps working through the same neutral reference as deletion.',
   sources: ['P02§9-10']
 });
 PH.flow({
   id: 'my-data', status: 'planned', coordinator: 'composer', effect: 'read',
   name: 'My data',
-  summary: 'Tells the frontend who the caller is, their current mode and what their plan enables, so it renders the right experience.',
-  touches: ['identity', 'plan'],
-  sources: ['B: identity', 'P03§9']
+  summary: 'One read that tells the frontend who the caller is: identity and mode, interface language, linked methods, the current declaration, and the capacities the plan gives (B: identity, P03§9). The shell keeps reading identity from the credential (D-028); this serves the profile and mode-dependent screens.',
+  steps: [
+    { n: 1, domain: 'identity', operation: 'identity.read-profile', when: 'always', onFailure: 'Propagate: without an identity there is no answer.' },
+    { n: 2, domain: 'compliance', operation: 'compliance.read-declaration', when: 'the caller is an account', onFailure: 'Answer without the declaration and say so; the profile shows it as unknown.' },
+    { n: 3, domain: 'plan', operation: 'plan.get-user-limits', when: 'always', onFailure: 'Answer without capacities and say so.' }
+  ],
+  persistence: 'none',
+  idempotency: 'Read only.',
+  compensation: 'None.',
+  sources: ['B: identity', 'P03§9', 'P15§5']
 });
 
 // ---------- Games, publication and Discovery ----------
 PH.flow({
   id: 'create-game', status: 'implemented', coordinator: 'orchestrator', effect: 'write',
   name: 'Create game',
-  summary: 'Creates the logical game (optionally from a template) and its first draft version, idempotently. Market, age and capacity checks are not implemented yet (see GAPS).',
+  summary: 'Creates the logical game (optionally from a template) and its first draft version, idempotently. H3 adds the market-and-age gate (step 1, planned, D-038); capacity checks arrive with H4 (see GAPS).',
   steps: [
-    { n: 1, domain: 'game', operation: 'game.find-template', when: 'a template game uuid was given', onFailure: 'Continue without a template if not found.' },
-    { n: 2, domain: 'game', operation: 'game.game-lifecycle', when: 'always', onFailure: 'Propagate the conflict (same key, different name or template).' },
-    { n: 3, domain: 'play.versions', operation: 'play.versions.create-draft-version', when: 'the game was created', onFailure: 'Retry with the same key completes the missing step.' }
+    { n: 1, domain: 'compliance', operation: 'compliance.check-market-access', when: 'always once H3 wires the gate (planned): function create-games, place from the declared residence or the approximate country', onFailure: 'needs-declaration sends the person to the declaration screen and back (D-038); a blocked market refuses with a service-restriction notice.' },
+    { n: 2, domain: 'game', operation: 'game.find-template', when: 'a template game uuid was given', onFailure: 'Continue without a template if not found.' },
+    { n: 3, domain: 'game', operation: 'game.game-lifecycle', when: 'always', onFailure: 'Propagate the conflict (same key, different name or template).' },
+    { n: 4, domain: 'play.versions', operation: 'play.versions.create-draft-version', when: 'the game was created', onFailure: 'Retry with the same key completes the missing step.' }
   ],
   persistence: 'none',
   idempotency: 'The Idempotency-Key is passed through; a retry with the same key finishes whatever step did not complete.',
-  compensation: 'None: step 3 failing leaves an unpublished game with no draft, repaired by the retry.',
+  compensation: 'None: the last step failing leaves an unpublished game with no draft, repaired by the retry.',
   sources: ['B: create game', 'P19§1', 'P27', 'P35§5']
 });
 PH.flow({
@@ -123,8 +146,14 @@ PH.flow({
 PH.flow({
   id: 'join-session', status: 'planned', coordinator: 'orchestrator', effect: 'write',
   name: 'Join session',
-  summary: 'Admits a participant into a lobby: market entry check, class or group membership when the Session has one, then the seat; a guest is asked only for a display name.',
-  touches: ['compliance', 'classroom', 'play.session'],
+  summary: 'Admits a participant: the H3 market gate at entry, then the existing eligibility checks and the seat; a guest is asked only for a display name (C-01). The H5 design extends admission (host modes, close/reopen, kick, 60 s) and H8 adds class or group membership through classroom.',
+  steps: [
+    { n: 1, domain: 'compliance', operation: 'compliance.check-market-access', when: 'always at admission (H3): function interactive-use, place from the declared residence or, for a guest, the approximate country only (C-01)', onFailure: 'A blocked market refuses with a service-restriction notice; unknown location admits (the local locator always answers unknown).' },
+    { n: 2, domain: 'play.session', operation: 'play.session.check-join', when: 'the market allows interactive use', onFailure: 'Refusals keep their existing outcomes (full, started, unknown code).' }
+  ],
+  persistence: 'none',
+  idempotency: 'Read-side checks; the seat itself stays idempotent per user inside play.session.',
+  compensation: 'None.',
   sources: ['B: session', 'P06§2', 'P35§5', 'C-01']
 });
 PH.flow({

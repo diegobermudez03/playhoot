@@ -388,6 +388,20 @@ PH.operation({
 });
 
 PH.operation({
+  id: 'play.session.anonymize-user', domain: 'play.session', kind: 'usecase', effect: 'write', status: 'planned',
+  name: 'AnonymizeUser',
+  summary: 'Clears a deleted user\'s display-name snapshots from every roster; a step of the account-cleanup of H3 (D-036).',
+  reads: ['play.session.play_session_participants'],
+  writes: ['play.session.play_session_participants'],
+  rules: [
+    'The snapshot is cleared, never the row: readers render the neutral deleted reference, and participant ids keep several deleted participants distinguishable within a Session (P02§10).',
+    'Original results and the rest of the Session are untouched; replay content substitution is the H5 recording design\'s burden (P02§10).',
+    'Idempotent: an already-cleared snapshot stays cleared.'
+  ],
+  sources: ['P02§10-11']
+});
+
+PH.operation({
   id: 'play.session.reconcile-sessions', domain: 'play.session', kind: 'workflow', effect: 'write', status: 'implemented',
   name: 'reconcilesessions (batch, every 5 min on every instance)',
   summary: 'Closes Sessions that have silently overrun their deadlines.',

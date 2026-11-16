@@ -230,6 +230,20 @@ PH.table({
 });
 
 PH.operation({
+  id: 'game.delete-user-games', domain: 'game', kind: 'usecase', effect: 'write', status: 'planned',
+  name: 'DeleteUserGames',
+  summary: 'Deletes every game a deleted user owns; a step of the account-cleanup of H3 (D-036).',
+  reads: ['game.games'],
+  writes: ['game.games', 'game.game_histories'],
+  rules: [
+    'Sets deleted_at on each of the owner\'s games — the first writer of that column — and records the change.',
+    'Existing Sessions and other people\'s history are untouched: ordinary deletion never interrupts them (P04§6).',
+    'Idempotent: games already deleted are skipped. Single-game withdrawal and unpublication are H4\'s withdraw-game.'
+  ],
+  sources: ['P02§11', 'P04§6']
+});
+
+PH.operation({
   id: 'game.check-playability', domain: 'game', kind: 'usecase', effect: 'read', status: 'implemented',
   name: 'checkplayability',
   summary: 'Says whether a person may start a Session of a game.',
