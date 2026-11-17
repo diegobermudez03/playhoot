@@ -6,6 +6,7 @@ package marketgate
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/diegobermudez03/playhoot/compliance"
@@ -69,4 +70,17 @@ func (g *Gate) Require(ctx context.Context, userUUID string, function compliance
 	default:
 		return fmt.Errorf("unknown market access outcome %q", decision.Outcome)
 	}
+}
+
+// Admit is Require for an entry, such as joining a game, where nobody is
+// asked anything: a declaration that would be owed is not asked for, and the
+// person is treated as meeting the age unless their minority is known. Only a
+// restriction where they are refuses them.
+func (g *Gate) Admit(ctx context.Context, userUUID string, function compliance.Function, approximateCountry string) error {
+	err := g.Require(ctx, userUUID, function, approximateCountry)
+	var owed *DeclarationRequiredError
+	if errors.As(err, &owed) {
+		return nil
+	}
+	return err
 }

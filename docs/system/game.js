@@ -230,7 +230,7 @@ PH.table({
 });
 
 PH.operation({
-  id: 'game.delete-user-games', domain: 'game', kind: 'usecase', effect: 'write', status: 'implemented',
+  id: 'game.delete-user-games', domain: 'game', kind: 'usecase', effect: 'write', status: 'verified',
   name: 'DeleteUserGames',
   summary: 'Deletes every game a deleted user owns; a step of the account-cleanup of H3 (D-036).',
   reads: ['game.games'],

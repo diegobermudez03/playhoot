@@ -84,7 +84,7 @@ PH.table({
 });
 
 PH.table({
-  id: 'identity.identity_setting_changes', domain: 'identity', status: 'implemented',
+  id: 'identity.identity_setting_changes', domain: 'identity', status: 'verified',
   name: 'identity_setting_changes',
   summary: 'Append-only history of the settings a person chooses: their mode and their interface language.',
   purpose: 'Every change to a setting that is overwritten in place stays readable: what it was, what it became, and when.',
@@ -411,7 +411,7 @@ PH.operation({
 });
 
 PH.operation({
-  id: 'identity.set-display-name', domain: 'identity', kind: 'usecase', effect: 'write', status: 'implemented',
+  id: 'identity.set-display-name', domain: 'identity', kind: 'usecase', effect: 'write', status: 'verified',
   name: 'SetDisplayName',
   summary: 'Sets the display name and records the change.',
   reads: ['identity.identity_users', 'identity.identity_display_name_changes'],
@@ -663,7 +663,7 @@ var EMAIL_CODE_LIFECYCLE = {
 };
 
 PH.table({
-  id: 'identity.identity_email_codes', domain: 'identity', status: 'implemented',
+  id: 'identity.identity_email_codes', domain: 'identity', status: 'verified',
   name: 'identity_email_codes',
   summary: 'One row per one-time email code: a sign-in, registration or method-link attempt.',
   purpose: 'The code itself exists only in the email; identity keeps its hash and the attempt\'s state. No user row is created until a code completes.',
@@ -691,7 +691,7 @@ PH.table({
 });
 
 PH.table({
-  id: 'identity.identity_email_code_events', domain: 'identity', status: 'implemented',
+  id: 'identity.identity_email_code_events', domain: 'identity', status: 'verified',
   name: 'identity_email_code_events',
   summary: 'Every event an email-code attempt went through.',
   purpose: 'Append-only history: sent, wrong_code, superseded, exhausted, completed, refused_in_use. Wrong-code counting and abuse decisions derive from it.',
@@ -707,7 +707,7 @@ PH.table({
 });
 
 PH.operation({
-  id: 'identity.email-login', domain: 'identity', kind: 'workflow', effect: 'write', status: 'implemented',
+  id: 'identity.email-login', domain: 'identity', kind: 'workflow', effect: 'write', status: 'verified',
   name: 'emaillogin (StartEmailLogin / CompleteEmailLogin)',
   summary: 'Signs a person in or registers them with a one-time code sent to their email; the visible alternative to Google (P03§8).',
   reads: ['identity.identity_email_codes', 'identity.identity_external_identities'],
@@ -736,7 +736,7 @@ PH.operation({
 });
 
 PH.operation({
-  id: 'identity.link-method', domain: 'identity', kind: 'workflow', effect: 'write', status: 'implemented',
+  id: 'identity.link-method', domain: 'identity', kind: 'workflow', effect: 'write', status: 'verified',
   name: 'linkmethod (StartLinkEmail / CompleteLinkEmail / StartLinkProvider / CompleteLinkProvider)',
   summary: 'Adds another way into the same account by proving control of both sides; never merges accounts (P03§11).',
   reads: ['identity.identity_email_codes', 'identity.identity_login_attempts', 'identity.identity_external_identities'],
@@ -764,7 +764,7 @@ PH.operation({
 });
 
 PH.operation({
-  id: 'identity.list-methods', domain: 'identity', kind: 'usecase', effect: 'read', status: 'implemented',
+  id: 'identity.list-methods', domain: 'identity', kind: 'usecase', effect: 'read', status: 'verified',
   name: 'ListMethods',
   summary: 'The caller\'s linked sign-in methods: issuer, the address or name observed, when added.',
   reads: ['identity.identity_external_identities'],
@@ -774,7 +774,7 @@ PH.operation({
 });
 
 PH.operation({
-  id: 'identity.remove-method', domain: 'identity', kind: 'usecase', effect: 'write', status: 'implemented',
+  id: 'identity.remove-method', domain: 'identity', kind: 'usecase', effect: 'write', status: 'verified',
   name: 'RemoveMethod',
   summary: 'Unlinks a sign-in method, keeping at least one.',
   reads: ['identity.identity_external_identities'],
@@ -788,7 +788,7 @@ PH.operation({
 });
 
 PH.operation({
-  id: 'identity.read-profile', domain: 'identity', kind: 'usecase', effect: 'read', status: 'implemented',
+  id: 'identity.read-profile', domain: 'identity', kind: 'usecase', effect: 'read', status: 'verified',
   name: 'ReadProfile',
   summary: 'Who the caller is, for the profile and my-data: display name, guest or account, mode, interface language, methods.',
   reads: ['identity.identity_users', 'identity.identity_accounts', 'identity.identity_external_identities'],
@@ -815,7 +815,7 @@ PH.operation({
 });
 
 PH.operation({
-  id: 'identity.set-mode', domain: 'identity', kind: 'usecase', effect: 'write', status: 'implemented',
+  id: 'identity.set-mode', domain: 'identity', kind: 'usecase', effect: 'write', status: 'verified',
   name: 'SetMode',
   summary: 'Switches the account between normal and teacher mode and answers a fresh access token carrying it.',
   reads: ['identity.identity_users', 'identity.identity_accounts'],
@@ -831,7 +831,7 @@ PH.operation({
 });
 
 PH.operation({
-  id: 'identity.delete-user', domain: 'identity', kind: 'usecase', effect: 'write', status: 'implemented',
+  id: 'identity.delete-user', domain: 'identity', kind: 'usecase', effect: 'write', status: 'verified',
   name: 'DeleteUser',
   summary: 'Deletes the caller\'s identity — guest or account — withdrawing access before the call returns and leaving the cross-domain cleanup task.',
   reads: ['identity.identity_users', 'identity.identity_accounts', 'identity.identity_sessions', 'identity.identity_external_identities', 'identity.identity_resource_links', 'identity.identity_resource_grants'],
@@ -849,7 +849,7 @@ PH.operation({
 });
 
 PH.operation({
-  id: 'identity.expire-guests', domain: 'identity', kind: 'usecase', effect: 'write', status: 'implemented',
+  id: 'identity.expire-guests', domain: 'identity', kind: 'usecase', effect: 'write', status: 'verified',
   name: 'ExpireGuests',
   summary: 'Daily periodic task on the identity queue: guests inactive for 90 days go through the same deletion as a requested one.',
   reads: ['identity.identity_users', 'identity.identity_accounts', 'identity.identity_sessions'],

@@ -8,7 +8,7 @@
 // old switch-mode flow entry is gone: entitlements never ride the token (P15§5) and my-data is
 // where the frontend learns what a mode has behind it.
 PH.flow({
-  id: 'email-code-sign-in', status: 'implemented', coordinator: 'orchestrator', effect: 'write',
+  id: 'email-code-sign-in', status: 'verified', coordinator: 'orchestrator', effect: 'write',
   name: 'Email code sign-in',
   summary: 'Signs in or registers with a one-time code sent by email (P03§8). The code travels as a notify task (type access-code, necessary email) through the existing deliver-notification and send-notification-email flows; identity resolves the attempt to its address, so notifications never stores one.',
   steps: [
@@ -21,7 +21,7 @@ PH.flow({
   sources: ['P03§8', 'P03§10', 'P31§3-4']
 });
 PH.flow({
-  id: 'delete-account', status: 'implemented', coordinator: 'orchestrator', effect: 'write',
+  id: 'delete-account', status: 'verified', coordinator: 'orchestrator', effect: 'write',
   name: 'Delete account',
   summary: 'Withdraws access immediately, then a queued cleanup clears what identifies the person across the domains; shared history survives with a neutral, distinguishable reference (P02§10). H5 (replay content), H6 (billing) and H8 (classroom) append their steps when those domains hold user data.',
   steps: [
@@ -36,7 +36,7 @@ PH.flow({
   sources: ['P02§10-11', 'P04§6']
 });
 PH.flow({
-  id: 'expire-guests', status: 'implemented', coordinator: 'orchestrator', effect: 'write',
+  id: 'expire-guests', status: 'verified', coordinator: 'orchestrator', effect: 'write',
   name: 'Expire inactive guests',
   summary: 'Daily sweep: a guest 90 days without session use goes through the same deletion and cleanup as a requested one (the delete-account steps); the term is disclosed where the guest is created.',
   steps: [
@@ -48,7 +48,7 @@ PH.flow({
   sources: ['P02§9-10']
 });
 PH.flow({
-  id: 'my-data', status: 'implemented', coordinator: 'composer', effect: 'read',
+  id: 'my-data', status: 'verified', coordinator: 'composer', effect: 'read',
   name: 'My data',
   summary: 'One read that tells the frontend who the caller is: identity and mode, interface language, linked methods, the current declaration, and the capacities the plan gives (B: identity, P03§9). The shell keeps reading identity from the credential (D-028); this serves the profile and mode-dependent screens.',
   steps: [
@@ -64,7 +64,7 @@ PH.flow({
 
 // ---------- Games, publication and Discovery ----------
 PH.flow({
-  id: 'create-game', status: 'implemented', coordinator: 'orchestrator', effect: 'write',
+  id: 'create-game', status: 'verified', coordinator: 'orchestrator', effect: 'write',
   name: 'Create game',
   summary: 'Creates the logical game (optionally from a template) and its first draft version, idempotently, behind the market-and-age gate (step 1, D-038). Capacity checks arrive with H4 (see GAPS).',
   steps: [
@@ -144,11 +144,11 @@ PH.flow({
 
 // ---------- Sessions, history and replays ----------
 PH.flow({
-  id: 'join-session', status: 'implemented', coordinator: 'orchestrator', effect: 'write',
+  id: 'join-session', status: 'verified', coordinator: 'orchestrator', effect: 'write',
   name: 'Join session',
   summary: 'Admits a participant: the H3 market gate at entry, then the existing eligibility checks and the seat; a guest is asked only for a display name (C-01). The H5 design extends admission (host modes, close/reopen, kick, 60 s) and H8 adds class or group membership through classroom.',
   steps: [
-    { n: 1, domain: 'compliance', operation: 'compliance.check-market-access', when: 'always at admission, before anything names the Session: function interactive-use, place from the declared residence or, for a guest, the approximate country only (C-01)', onFailure: 'A blocked market refuses with a service-restriction notice and a declaration owed sends the person to declare it; unknown location admits (the local locator always answers unknown).' },
+    { n: 1, domain: 'compliance', operation: 'compliance.check-market-access', when: 'always at admission, before anything names the Session: function interactive-use, place from the declared residence or else the approximate country; joining asks nothing (C-01), so a declaration that would be owed is not asked for and the person counts as meeting the age unless their minority is known (P21§6)', onFailure: 'Only a restriction refuses: a market not offered where the person is, or known minority, answers market_restricted with a service-restriction notice. Unknown location admits (the local locator always answers unknown). Corrected by T-307 (D-044).' },
     { n: 2, domain: 'play.session', operation: 'play.session.check-join', when: 'the market allows interactive use', onFailure: 'Refusals keep their existing outcomes (full, started, unknown code).' }
   ],
   persistence: 'none',

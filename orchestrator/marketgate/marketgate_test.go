@@ -64,3 +64,27 @@ func TestRequire(t *testing.T) {
 		require.NotErrorIs(t, err, required)
 	})
 }
+
+func TestAdmit(t *testing.T) {
+	ctx := context.Background()
+	const person = "0f8fad5b-d9cb-469f-a165-70867728950e"
+
+	tests := map[string]func(t *testing.T){
+		"an_entry_never_asks_for_a_declaration": func(t *testing.T) {
+			stub := &checkerStub{decision: compliance.AccessDecision{Outcome: compliance.AccessNeedsDeclaration}}
+			require.NoError(t, New(stub).Admit(ctx, person, compliance.FunctionInteractiveUse, ""))
+		},
+		"a_restriction_still_refuses": func(t *testing.T) {
+			stub := &checkerStub{decision: compliance.AccessDecision{Outcome: compliance.AccessBlocked, Reason: compliance.BlockMarketUnavailable}}
+			var restricted *RestrictedError
+			require.ErrorAs(t, New(stub).Admit(ctx, person, compliance.FunctionInteractiveUse, "AR"), &restricted)
+		},
+		"a_failed_check_is_still_an_error": func(t *testing.T) {
+			stub := &checkerStub{err: errors.New("down")}
+			require.Error(t, New(stub).Admit(ctx, person, compliance.FunctionInteractiveUse, ""))
+		},
+	}
+	for name, run := range tests {
+		t.Run(name, run)
+	}
+}

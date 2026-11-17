@@ -165,7 +165,7 @@ PH.operation({
 });
 
 PH.operation({
-  id: 'compliance.record-acceptance', domain: 'compliance', kind: 'usecase', effect: 'write', status: 'implemented',
+  id: 'compliance.record-acceptance', domain: 'compliance', kind: 'usecase', effect: 'write', status: 'verified',
   name: 'RecordAcceptance',
   summary: 'Records the acceptance of a specific text version, or a marketing withdrawal.',
   reads: ['compliance.compliance_acceptance_texts'],
@@ -190,7 +190,7 @@ PH.operation({
 });
 
 PH.operation({
-  id: 'compliance.read-declaration', domain: 'compliance', kind: 'usecase', effect: 'read', status: 'implemented',
+  id: 'compliance.read-declaration', domain: 'compliance', kind: 'usecase', effect: 'read', status: 'verified',
   name: 'ReadDeclaration',
   summary: 'The caller\'s current residence-and-age declaration — country, subdivision, threshold, date — or none; read by my-data and shown in the profile.',
   reads: ['compliance.compliance_declarations'],
@@ -203,7 +203,7 @@ PH.operation({
 });
 
 PH.operation({
-  id: 'compliance.admin-list-texts', domain: 'compliance', kind: 'usecase', effect: 'read', status: 'implemented',
+  id: 'compliance.admin-list-texts', domain: 'compliance', kind: 'usecase', effect: 'read', status: 'verified',
   name: 'AdminListTexts',
   summary: 'Every acceptance text for admin: the four kinds by language, with versions and publish dates.',
   reads: ['compliance.compliance_acceptance_texts'],
@@ -216,7 +216,7 @@ PH.operation({
 });
 
 PH.operation({
-  id: 'compliance.admin-publish-text', domain: 'compliance', kind: 'usecase', effect: 'write', status: 'implemented',
+  id: 'compliance.admin-publish-text', domain: 'compliance', kind: 'usecase', effect: 'write', status: 'verified',
   name: 'AdminPublishText',
   summary: 'Publishes a new immutable version of an acceptance text for one kind and language.',
   reads: ['compliance.compliance_acceptance_texts'],

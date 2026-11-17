@@ -407,7 +407,17 @@ func TestH1Walkthrough(t *testing.T) {
 			mu.Lock()
 			require.Len(t, flakyRuns, 1, "a failed task waits out its backoff before running again")
 			mu.Unlock()
-			s.drainFor(t, 2*time.Second)
+			// Drain until the retries are spent, however slow the database is.
+			for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); {
+				s.drainFor(t, 500*time.Millisecond)
+				mu.Lock()
+				spent := len(flakyRuns) >= walkthroughQueues.MaxAttempts && doomedRuns >= walkthroughQueues.MaxAttempts
+				mu.Unlock()
+				if spent {
+					break
+				}
+			}
+			s.drainFor(t, time.Second)
 
 			mu.Lock()
 			require.Len(t, flakyRuns, walkthroughQueues.MaxAttempts, "retried up to the attempt limit, then dead")
@@ -675,23 +685,29 @@ func TestH1Walkthrough(t *testing.T) {
 		{"P32§6 the shutdown reaches queued work and its retries: no provider is called", func(t *testing.T) {
 			resendBefore, sesBefore := len(resend.Sent()), len(ses.Sent())
 			s.notify(t, carla, notifications.TypeAccountSecurity, "security-carla")
-			s.drainFor(t, 2*time.Second)
+			s.drain(t)
 			entry, _ := s.entry(t, carla, notifications.TypeAccountSecurity)
+			// The retries' backoff is short but real: keep draining until they
+			// run out, however slow the database is today.
+			found := false
+			for deadline := time.Now().Add(30 * time.Second); !found && time.Now().Before(deadline); {
+				s.drainFor(t, 500*time.Millisecond)
+				dead, err := s.queues.ListDeadTasks(ctx)
+				require.NoError(t, err)
+				for _, task := range dead.Tasks {
+					if task.Type == notifications.SendTaskType && json.Valid(task.Payload) {
+						var payload notifications.SendTask
+						require.NoError(t, json.Unmarshal(task.Payload, &payload))
+						found = found || payload.EntryUUID == entry.EntryUUID
+					}
+				}
+			}
+			require.True(t, found, "the email's retries ran out while shut down and wait for an admin")
+			entry, _ = s.entry(t, carla, notifications.TypeAccountSecurity)
 			require.Nil(t, entry.ReadAt)
 			require.Empty(t, s.deliveries(t, entry.EntryUUID), "no attempt reached a provider")
 			require.Equal(t, resendBefore, len(resend.Sent()))
 			require.Equal(t, sesBefore, len(ses.Sent()))
-			dead, err := s.queues.ListDeadTasks(ctx)
-			require.NoError(t, err)
-			found := false
-			for _, task := range dead.Tasks {
-				if task.Type == notifications.SendTaskType && json.Valid(task.Payload) {
-					var payload notifications.SendTask
-					require.NoError(t, json.Unmarshal(task.Payload, &payload))
-					found = found || payload.EntryUUID == entry.EntryUUID
-				}
-			}
-			require.True(t, found, "the email's retries ran out while shut down and wait for an admin")
 		}},
 		{"P32§7 neither a restart nor raised caps lift the shutdown", func(t *testing.T) {
 			s = wireH1(t, db, resend, ses)

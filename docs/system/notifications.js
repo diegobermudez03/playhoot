@@ -238,7 +238,7 @@ PH.operation({
 });
 
 PH.operation({
-  id: 'notifications.delete-user-entries', domain: 'notifications', kind: 'usecase', effect: 'write', status: 'implemented',
+  id: 'notifications.delete-user-entries', domain: 'notifications', kind: 'usecase', effect: 'write', status: 'verified',
   name: 'DeleteUserEntries',
   summary: 'Deletes a deleted user\'s entries and preferences; a step of the account-cleanup of H3 (D-036).',
   reads: ['notifications.notifications_entries', 'notifications.notifications_preferences'],

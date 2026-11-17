@@ -388,7 +388,7 @@ PH.operation({
 });
 
 PH.operation({
-  id: 'play.session.anonymize-user', domain: 'play.session', kind: 'usecase', effect: 'write', status: 'implemented',
+  id: 'play.session.anonymize-user', domain: 'play.session', kind: 'usecase', effect: 'write', status: 'verified',
   name: 'AnonymizeUser',
   summary: 'Clears a deleted user\'s display-name snapshots from every roster; a step of the account-cleanup of H3 (D-036).',
   reads: ['play.session.play_session_participants'],

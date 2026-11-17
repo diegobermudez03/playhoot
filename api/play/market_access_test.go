@@ -39,10 +39,17 @@ func TestJoinPassesTheMarketGate(t *testing.T) {
 				expectedRejection: `{"type":"rejected","reason":"market_restricted"}`,
 			}
 		},
-		"a_declaration_owed_sends_the_person_to_declare_it": func(t *testing.T) test {
+		"a_declaration_that_would_be_owed_is_not_asked_for_at_entry": func(t *testing.T) test {
 			return test{
 				decision:          compliance.AccessDecision{Outcome: compliance.AccessNeedsDeclaration},
-				expectedRejection: `{"type":"rejected","reason":"declaration_required"}`,
+				routed:            true,
+				expectedRejection: `{"type":"rejected","reason":"invalid_session"}`,
+			}
+		},
+		"a_known_minority_refuses_like_a_restriction": func(t *testing.T) test {
+			return test{
+				decision:          compliance.AccessDecision{Outcome: compliance.AccessBlocked, Reason: compliance.BlockAgeRequirement},
+				expectedRejection: `{"type":"rejected","reason":"market_restricted"}`,
 			}
 		},
 		"an_unknown_location_admits_and_the_Session_decides": func(t *testing.T) test {
