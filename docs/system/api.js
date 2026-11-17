@@ -158,7 +158,7 @@ PH.endpoint({
 PH.endpoint({
   id: 'GET:/v1/games', transport: 'http', access: 'account', status: 'implemented',
   name: 'List my games',
-  summary: 'Lists the caller\'s games.',
+  summary: 'Lists the caller\'s games. H4 (T-404/T-406): gains name search and category, tag and date filters, each game\'s public state, and the holding capacity for the "X of Y" line (it then invokes the composed my-games read).',
   invokes: 'game.game-card', networkLimit: DEFAULT_LIMIT
 });
 PH.endpoint({
@@ -170,7 +170,7 @@ PH.endpoint({
 PH.endpoint({
   id: 'PATCH:/v1/games/{g}', transport: 'http', access: 'account', status: 'implemented',
   name: 'Update game card',
-  summary: 'Edits a game\'s name, description or visibility.',
+  summary: 'Edits a game\'s working card. H4 (T-402/T-403): visibility leaves this endpoint (publication is its own act); category, tags and the academic claim join it; edits never change the approved snapshot (P04§2).',
   invokes: 'game.game-card', networkLimit: DEFAULT_LIMIT
 });
 PH.endpoint({
@@ -199,8 +199,8 @@ PH.endpoint({
 });
 PH.endpoint({
   id: 'POST:/v1/games/{g}/publish', transport: 'http', access: 'account', status: 'implemented',
-  name: 'Publish game',
-  summary: 'Publishes the owner\'s open edition.',
+  name: 'Publish game (retired by H4)',
+  summary: 'Publishes the owner\'s open edition. T-401 removes this endpoint: finishing a version is POST /v1/games/{g}/versions/finish and going public is POST /v1/games/{g}/publication (P04§1,§4).',
   invokes: 'publish-game', networkLimit: DEFAULT_LIMIT
 });
 PH.endpoint({
@@ -583,3 +583,149 @@ PH.endpoint({ id: 'POST:/v1/identity/me/delete', transport: 'http', access: 'gue
 PH.endpoint({ id: 'GET:/v1/me', transport: 'http', access: 'guest', status: 'verified', name: 'My data', summary: 'Who the caller is, their mode, language, methods, declaration and capacities, in one read; a piece that could not be read is answered as missing (B: identity, P03§9).', invokes: 'my-data', networkLimit: DEFAULT_LIMIT });
 PH.endpoint({ id: 'GET:/admin/v1/texts', transport: 'http', access: 'admin', status: 'verified', name: 'Acceptance texts (admin)', summary: 'Kinds by language with versions and publish dates, missing pairs included.', invokes: 'compliance.admin-list-texts', networkLimit: DEFAULT_LIMIT });
 PH.endpoint({ id: 'PUT:/admin/v1/texts', transport: 'http', access: 'admin', status: 'verified', name: 'Publish acceptance text', summary: 'Publishes a new immutable version for one kind and language; invalid (400).', invokes: 'compliance.admin-publish-text', networkLimit: DEFAULT_LIMIT });
+
+// ---------- H4 (T-400 design): versions, publication, Discovery, templates, taxonomy ----------
+PH.endpoint({
+  id: 'POST:/v1/games/{g}/versions/finish', transport: 'http', access: 'account', status: 'planned',
+  name: 'Finish version',
+  summary: 'The creator declares the open draft finished: ready checks, freeze with assets, and by default it becomes the version new Sessions use (P04§1).',
+  invokes: 'finalize-version', networkLimit: DEFAULT_LIMIT
+});
+PH.endpoint({
+  id: 'GET:/v1/games/{g}/versions', transport: 'http', access: 'account', status: 'planned',
+  name: 'List game versions',
+  summary: 'The owner\'s version history with each version\'s condition (P04§5, P15§2).',
+  invokes: 'list-game-versions', networkLimit: DEFAULT_LIMIT
+});
+PH.endpoint({
+  id: 'PUT:/v1/games/{g}/versions/current', transport: 'http', access: 'account', status: 'planned',
+  name: 'Choose version for new sessions',
+  summary: 'Chooses an EXECUTABLE version for new Sessions, returns to a previous one, or makes the game unavailable (body without a version).',
+  invokes: 'switch-current-version', networkLimit: DEFAULT_LIMIT
+});
+PH.endpoint({
+  id: 'POST:/v1/games/{g}/publication', transport: 'http', access: 'account', status: 'planned',
+  name: 'Request publication',
+  summary: 'Submits the version + card + assets combination for review; declaration_required or market_restricted (403) when the publish-games gate refuses.',
+  invokes: 'request-publication', networkLimit: DEFAULT_LIMIT
+});
+PH.endpoint({
+  id: 'POST:/v1/games/{g}/unpublish', transport: 'http', access: 'account', status: 'planned',
+  name: 'Unpublish game',
+  summary: 'Withdraws the game from Discovery; private use and existing Sessions continue (P04§6).',
+  invokes: 'withdraw-game', networkLimit: DEFAULT_LIMIT
+});
+PH.endpoint({
+  id: 'POST:/v1/games/{g}/republish', transport: 'http', access: 'account', status: 'planned',
+  name: 'Republish game',
+  summary: 'Offers the approved, unchanged combination again; no new review (D-046).',
+  invokes: 'withdraw-game', networkLimit: DEFAULT_LIMIT
+});
+PH.endpoint({
+  id: 'POST:/v1/games/{g}/delete', transport: 'http', access: 'account', status: 'planned',
+  name: 'Delete game',
+  summary: 'Deletes one game; existing Sessions and other people\'s replays are untouched (P04§6).',
+  invokes: 'withdraw-game', networkLimit: DEFAULT_LIMIT
+});
+PH.endpoint({
+  id: 'POST:/v1/games/{g}/template', transport: 'http', access: 'account', status: 'planned',
+  name: 'Enable as template',
+  summary: 'Enables reuse with the recorded acceptance of the standard permission and the asset-rights confirmation (P05§1,§5).',
+  invokes: 'enable-template', networkLimit: DEFAULT_LIMIT
+});
+PH.endpoint({
+  id: 'POST:/v1/games/{g}/template/disable', transport: 'http', access: 'account', status: 'planned',
+  name: 'Disable template',
+  summary: 'Stops new copies; existing derivations keep their permissions (P05§4).',
+  invokes: 'enable-template', networkLimit: DEFAULT_LIMIT
+});
+PH.endpoint({
+  id: 'GET:/v1/discovery', transport: 'http', access: 'anonymous', status: 'planned',
+  name: 'Discovery',
+  summary: 'The public catalog sections: popular, categories with samples and, for a signed caller, recently played (P14§1-2). The server-rendered pages read it.',
+  invokes: 'browse-discovery', networkLimit: DEFAULT_LIMIT
+});
+PH.endpoint({
+  id: 'GET:/v1/discovery/search', transport: 'http', access: 'anonymous', status: 'planned',
+  name: 'Discovery search',
+  summary: 'Text search and the category, tags (any/all), language and template filters over offered approved content (P14§2).',
+  invokes: 'browse-discovery', networkLimit: DEFAULT_LIMIT
+});
+PH.endpoint({
+  id: 'GET:/v1/discovery/taxonomy', transport: 'http', access: 'anonymous', status: 'planned',
+  name: 'Categories and tags',
+  summary: 'The live categories and allowed tags with their names in the three languages.',
+  invokes: 'game.read-taxonomy', networkLimit: DEFAULT_LIMIT
+});
+PH.endpoint({
+  id: 'GET:/v1/discovery/games/{gameUUID}', transport: 'http', access: 'anonymous', status: 'planned',
+  name: 'Public game card',
+  summary: 'The approved public card of an offered game (P14§2); not available otherwise. The server-rendered card page reads it.',
+  invokes: 'view-game-card', networkLimit: DEFAULT_LIMIT
+});
+PH.endpoint({
+  id: 'GET:/v1/discovery/sitemap', transport: 'http', access: 'anonymous', status: 'planned',
+  name: 'Discovery sitemap feed',
+  summary: 'Public card and category addresses for the host\'s dynamic sitemap section (D-019, D-051), paged.',
+  invokes: 'game.search-discovery', networkLimit: DEFAULT_LIMIT
+});
+PH.endpoint({
+  id: 'GET:/v1/compliance/requirements', transport: 'http', access: 'anonymous', status: 'planned',
+  name: 'Place requirements',
+  summary: 'What one place asks for one function: offered, age threshold, whether a state or province is needed (D-042 gap).',
+  invokes: 'compliance.read-place-requirements', networkLimit: DEFAULT_LIMIT
+});
+PH.endpoint({
+  id: 'GET:/admin/v1/reviews', transport: 'http', access: 'admin', status: 'planned',
+  name: 'Review queue',
+  summary: 'Pending publication reviews (oldest first) and decided history, each with its submitted combination.',
+  invokes: 'review-queue', networkLimit: DEFAULT_LIMIT
+});
+PH.endpoint({
+  id: 'POST:/admin/v1/reviews/{reviewUUID}/decide', transport: 'http', access: 'admin', status: 'planned',
+  name: 'Decide review',
+  summary: 'Approves or denies the exact submitted combination; deny carries the note the creator reads (P04§4).',
+  invokes: 'review-publication', networkLimit: DEFAULT_LIMIT
+});
+PH.endpoint({
+  id: 'GET:/admin/v1/taxonomy', transport: 'http', access: 'admin', status: 'planned',
+  name: 'Admin taxonomy',
+  summary: 'Categories and tags including retired ones and their change history.',
+  invokes: 'game.read-taxonomy', networkLimit: DEFAULT_LIMIT
+});
+PH.endpoint({
+  id: 'POST:/admin/v1/taxonomy', transport: 'http', access: 'admin', status: 'planned',
+  name: 'Change taxonomy',
+  summary: 'Creates, renames, reorders or retires a category or tag, with reason.',
+  invokes: 'game.admin-taxonomy', networkLimit: DEFAULT_LIMIT
+});
+PH.endpoint({
+  id: 'GET:/admin/v1/featured-templates', transport: 'http', access: 'admin', status: 'planned',
+  name: 'Featured templates',
+  summary: 'The current featured selection and its history.',
+  invokes: 'game.admin-featured-templates', networkLimit: DEFAULT_LIMIT
+});
+PH.endpoint({
+  id: 'POST:/admin/v1/featured-templates', transport: 'http', access: 'admin', status: 'planned',
+  name: 'Change featured templates',
+  summary: 'Adds, reorders or removes a featured template, with reason.',
+  invokes: 'game.admin-featured-templates', networkLimit: DEFAULT_LIMIT
+});
+PH.endpoint({
+  id: 'GET:/admin/v1/games', transport: 'http', access: 'admin', status: 'planned',
+  name: 'Admin find games',
+  summary: 'Finds any game by uuid, name or owner with its full state (the complete panel is H10).',
+  invokes: 'game.admin-find-games', networkLimit: DEFAULT_LIMIT
+});
+PH.endpoint({
+  id: 'POST:/admin/v1/games/{g}/block', transport: 'http', access: 'admin', status: 'planned',
+  name: 'Block game',
+  summary: 'Applies the administrative block with a reason (P04§6, P13§5).',
+  invokes: 'block-game', networkLimit: DEFAULT_LIMIT
+});
+PH.endpoint({
+  id: 'POST:/admin/v1/games/{g}/unblock', transport: 'http', access: 'admin', status: 'planned',
+  name: 'Unblock game',
+  summary: 'Lifts the administrative block as a new recorded measure.',
+  invokes: 'block-game', networkLimit: DEFAULT_LIMIT
+});

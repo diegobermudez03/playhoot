@@ -1,7 +1,7 @@
-// Subdomain: play.versions. Code package: play/session (versiondrafting, versionbuilding, previews).
-// Status stays planned at the domain level (the four conditions and the split from play.session
-// are future design); the tables and operations that already exist are loaded individually as
-// implemented by T-004.
+// Subdomain: play.versions. Code package today: play/session (versiondrafting, versionbuilding,
+// previews); T-401 (H4) moves it to play/versions and re-homes play_games and play_game_versions
+// here. The tables and operations that already exist are loaded as implemented; the H4 design
+// (T-400) added the planned ones.
 PH.domain({
   id: 'play.versions', parent: 'play', kind: 'traditional', status: 'planned',
   name: 'Play versions',
@@ -25,6 +25,53 @@ PH.domain({
     'Library: platform assets included in a version (asset identifiers).'
   ],
   sources: ['B: play', 'P04', 'P10§5', 'P15§2']
+});
+
+// Re-homed from play.session by the H4 design (T-400): the two tables belong to the versions
+// subdomain; the code moves with the T-401 split.
+PH.table({
+  id: 'play.versions.play_games', domain: 'play.versions', status: 'implemented',
+  name: 'play_games',
+  summary: 'A game as Play sees it: the anchor its versions hang off.',
+  purpose: 'Maps Game\'s external identifier to the version rows. H4 (planned) drops current_version_id: which version new Sessions use is game\'s selection (games.chosen_version_uuid, D-045), and create-session receives the version to pin from the orchestrator.',
+  columns: [
+    { name: 'id', type: 'bigserial', note: '' },
+    { name: 'game_uuid', type: 'uuid', note: 'External identifier from Game.' },
+    { name: 'current_version_id', type: 'bigint', note: 'H4 (planned): dropped — the choice moves to game (migration edited in place).' },
+    { name: 'created_at', type: 'timestamptz', note: '' },
+    { name: 'updated_at', type: 'timestamptz', note: '' }
+  ],
+  indexes: ['UNIQUE (game_uuid)'],
+  history: 'infrastructure (a mapping row; the facts live in the version rows).',
+  references: [
+    { column: 'game_uuid', to: 'game game' }
+  ]
+});
+
+PH.table({
+  id: 'play.versions.play_game_versions', domain: 'play.versions', status: 'implemented',
+  name: 'play_game_versions',
+  summary: 'The versions of a game; only an EXECUTABLE one can be played.',
+  purpose: 'Content locators and the executable condition of each version. The four P15§2 conditions: DRAFT here is "in editing"; EXECUTABLE + chosen in play_games is "ready and chosen"; "approved for Discovery" lives in game (game_publications); "pinned" lives in play_sessions.',
+  columns: [
+    { name: 'id', type: 'bigserial', note: '' },
+    { name: 'uuid', type: 'uuid', note: 'Same as the Game edition.' },
+    { name: 'game_id', type: 'bigint', note: '' },
+    { name: 'status', type: 'text', note: 'DRAFT or EXECUTABLE.' },
+    { name: 'manifest', type: 'jsonb', note: 'Structural facts the runtime needs.' },
+    { name: 'script_object_key, script_sha256, script_size', type: 'text, text, bigint', note: 'Backend script in object storage.' },
+    { name: 'script_profile', type: 'text', note: 'Rules the script is checked against.' },
+    { name: 'frontend_object_key, frontend_sha256, frontend_size', type: 'text, text, bigint', note: 'Frontend package in object storage.' },
+    { name: 'aspect_ratio', type: 'text', note: '' },
+    { name: 'languages', type: 'jsonb', note: '' },
+    { name: 'current_revision', type: 'bigint', note: 'Draft revision.' },
+    { name: 'executable_at', type: 'timestamptz', note: 'Set once, when frozen (assets included, P04§2).' },
+    { name: 'created_at', type: 'timestamptz', note: '' }
+  ],
+  indexes: ['UNIQUE (uuid)', '(game_id)', 'UNIQUE (game_id) only for DRAFT', '(script_sha256)', '(frontend_sha256)'],
+  history: 'Write-once: executable_at freezes the row; the revisions table is the draft history.',
+  references: [{ column: 'game_id', to: 'play.versions.play_games' }],
+  lifecycle: { states: ['DRAFT', 'EXECUTABLE'], transitions: [{ from: 'DRAFT', to: 'EXECUTABLE', on: 'the creator declares the version finished (finalize-version freezes it, P04§1)' }] }
 });
 
 var BUILD_LIFECYCLE = {
@@ -59,7 +106,7 @@ PH.table({
   ],
   indexes: ['UNIQUE (version_id, number)'],
   history: 'Write-once: the revision itself is one change, never edited.',
-  references: [{ column: 'version_id', to: 'play.session.play_game_versions' }]
+  references: [{ column: 'version_id', to: 'play.versions.play_game_versions' }]
 });
 
 PH.table({
@@ -97,7 +144,7 @@ PH.table({
   ],
   indexes: ['UNIQUE (version_id, idempotency_key)', '(created_at)'],
   history: 'Write-once: claimed and completed in one transaction.',
-  references: [{ column: 'version_id', to: 'play.session.play_game_versions' }]
+  references: [{ column: 'version_id', to: 'play.versions.play_game_versions' }]
 });
 
 PH.table({
@@ -135,7 +182,7 @@ PH.table({
   ],
   indexes: ['UNIQUE (version_id, key)'],
   history: 'Removal clears object_key rather than deleting the row.',
-  references: [{ column: 'version_id', to: 'play.session.play_game_versions' }]
+  references: [{ column: 'version_id', to: 'play.versions.play_game_versions' }]
 });
 
 PH.table({
@@ -152,7 +199,7 @@ PH.table({
   ],
   indexes: ['UNIQUE (game_version_id)'],
   history: 'Overwritten without history: a cache, not a fact.',
-  references: [{ column: 'game_version_id', to: 'play.session.play_game_versions' }]
+  references: [{ column: 'game_version_id', to: 'play.versions.play_game_versions' }]
 });
 
 PH.table({
@@ -169,7 +216,7 @@ PH.table({
   ],
   indexes: ['UNIQUE (version_id)', '(devices, version_id)'],
   history: 'infrastructure',
-  references: [{ column: 'version_id', to: 'play.session.play_game_versions' }]
+  references: [{ column: 'version_id', to: 'play.versions.play_game_versions' }]
 });
 
 PH.table({
@@ -197,7 +244,7 @@ PH.table({
   indexes: ['UNIQUE (version_id, revision)', 'partial index on status for QUEUED (the queue)', '(version_id, inputs_sha256)'],
   history: 'Change table play_game_version_build_status_changes.',
   references: [
-    { column: 'version_id', to: 'play.session.play_game_versions' },
+    { column: 'version_id', to: 'play.versions.play_game_versions' },
     { column: 'reused_build_id', to: 'play.versions.play_game_version_builds' }
   ],
   lifecycle: BUILD_LIFECYCLE
@@ -256,7 +303,7 @@ PH.table({
   indexes: ['partial UNIQUE (version_id) while ended_at IS NULL'],
   history: 'Write-once: ended_at, end_reason.',
   references: [
-    { column: 'version_id', to: 'play.session.play_game_versions' },
+    { column: 'version_id', to: 'play.versions.play_game_versions' },
     { column: 'owner_user_uuid', to: 'identity user' }
   ]
 });
@@ -275,15 +322,15 @@ PH.table({
   ],
   indexes: ['(expires_at)'],
   history: 'infrastructure',
-  references: [{ column: 'version_id', to: 'play.session.play_game_versions' }]
+  references: [{ column: 'version_id', to: 'play.versions.play_game_versions' }]
 });
 
 PH.operation({
   id: 'play.versions.create-draft-version', domain: 'play.versions', kind: 'usecase', effect: 'write', status: 'implemented',
   name: 'CreateDraftVersion',
   summary: 'Creates a DRAFT version for a game, optionally seeded from a template or a previous version.',
-  reads: ['play.session.play_game_versions'],
-  writes: ['play.session.play_game_versions', 'play.versions.play_game_version_revisions'],
+  reads: ['play.versions.play_game_versions'],
+  writes: ['play.versions.play_game_versions', 'play.versions.play_game_version_revisions'],
   rules: ['A game has at most one DRAFT version at a time (partial index).'],
   sources: []
 });
@@ -336,14 +383,39 @@ PH.operation({
   id: 'play.versions.freeze-version', domain: 'play.versions', kind: 'workflow', effect: 'write', status: 'implemented',
   name: 'FreezeVersion / SignBuiltFrontend / CleanUnusedObjects',
   summary: 'Freezes a DRAFT into an immutable EXECUTABLE version at publication, and cleans up objects no revision references any more.',
-  reads: ['play.versions.play_game_version_builds', 'play.session.play_game_versions'],
-  writes: ['play.session.play_game_versions'],
+  reads: ['play.versions.play_game_version_builds', 'play.versions.play_game_versions'],
+  writes: ['play.versions.play_game_versions'],
   rules: [
     'Requires a SUCCEEDED build of the current revision; already_frozen is idempotent, revision_changed if the draft moved since.',
-    'CleanUnusedObjects runs best-effort after a successful publish.'
+    'CleanUnusedObjects runs best-effort after a successful freeze.',
+    'H4 (planned, T-401): invoked by the finalize-version flow — finishing a version is the creator\'s explicit act and freezes it, assets included (P04§1-2); it no longer makes anything public.'
   ],
   lifecycle: { states: ['DRAFT', 'EXECUTABLE'], transitions: [{ from: 'DRAFT', to: 'EXECUTABLE', on: 'FreezeVersion' }] },
-  sources: []
+  sources: ['P04§1-2']
+});
+
+PH.operation({
+  id: 'play.versions.list-versions', domain: 'play.versions', kind: 'usecase', effect: 'read', status: 'planned',
+  name: 'ListVersions',
+  summary: 'The version history of a game: each version\'s executable condition and dates.',
+  reads: ['play.versions.play_game_versions', 'play.versions.play_games'],
+  writes: [],
+  rules: ['Newest first; the composed read joins each version\'s chosen and publication state from game (D-045).'],
+  sources: ['P04§5', 'B: versions history']
+});
+
+PH.operation({
+  id: 'play.versions.read-version-facts', domain: 'play.versions', kind: 'usecase', effect: 'read', status: 'planned',
+  name: 'ReadVersionFacts',
+  summary: 'The structural facts of an EXECUTABLE version a publication snapshot copies: languages, players, devices, grade support.',
+  reads: ['play.versions.play_game_versions', 'play.versions.play_game_version_input_requirements'],
+  writes: [],
+  rules: [
+    'Languages and devices come from the build; player counts from the manifest.',
+    'Grade support answers false until the H5 results contract exists in the manifest.',
+    'Game stores the answer in the snapshot without ever knowing scripts (P15§2).'
+  ],
+  sources: ['P14§2', 'P15§2']
 });
 
 PH.operation({
@@ -369,7 +441,8 @@ PH.operation({
   rules: [
     'One worker per instance, woken by an in-process signal and every 5 s otherwise.',
     'Validates the script against its profile (handwritten or sdk-v1) and parses the manifest.',
-    'An infrastructure failure (toolchain unavailable, timeout) is staged as infrastructure, never blamed on the game.'
+    'An infrastructure failure (toolchain unavailable, timeout) is staged as infrastructure, never blamed on the game.',
+    'H4 (planned, T-401): the ad-hoc QUEUED-row polling moves onto the transactional queue — applying a change enqueues a run-build task on the play queue keyed by the version, and the handler builds that version\'s newest QUEUED revision; the builds table stays as the record of every attempt (D-050).'
   ],
   limits: [{ what: 'Build timeout / heap / workers', value: '60 s / 512 MiB / 1 per instance', source: 'domain' }],
   lifecycle: BUILD_LIFECYCLE,

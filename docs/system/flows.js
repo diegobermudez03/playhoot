@@ -63,83 +63,193 @@ PH.flow({
 });
 
 // ---------- Games, publication and Discovery ----------
+// H4 steps designed by T-400 (D-045…D-051). The old edit-public-card flow is retired: card edits
+// only touch the working card, and reaching Discovery again is a new request-publication (D-046).
+// copy-template is folded into create-game: a copy IS a creation with a template source (D-047).
 PH.flow({
   id: 'create-game', status: 'verified', coordinator: 'orchestrator', effect: 'write',
   name: 'Create game',
-  summary: 'Creates the logical game (optionally from a template) and its first draft version, idempotently, behind the market-and-age gate (step 1, D-038). Capacity checks arrive with H4 (see GAPS).',
+  summary: 'Creates the logical game (optionally copied from a template version, with provenance) and its first draft version, idempotently, behind the market-and-age gate and the plan\'s holding and creation capacities.',
   steps: [
     { n: 1, domain: 'compliance', operation: 'compliance.check-market-access', when: 'always: function create-games, place from the declared residence or the approximate country', onFailure: 'declaration_required sends the person to the declaration screen and back (D-038); a blocked market refuses with a service-restriction notice.' },
-    { n: 2, domain: 'game', operation: 'game.find-template', when: 'a template game uuid was given', onFailure: 'Continue without a template if not found.' },
-    { n: 3, domain: 'game', operation: 'game.game-lifecycle', when: 'always', onFailure: 'Propagate the conflict (same key, different name or template).' },
-    { n: 4, domain: 'play.versions', operation: 'play.versions.create-draft-version', when: 'the game was created', onFailure: 'Retry with the same key completes the missing step.' }
+    { n: 2, domain: 'plan', operation: 'plan.get-user-limits', when: 'always (H4, planned, T-404): the saved-games and creations capacities travel to game, which applies the stricter of received and own count (D-049)', onFailure: 'Stop: without capacities nothing is created (free defaults answer for unknown users, so this only fails if plan is down).' },
+    { n: 3, domain: 'game', operation: 'game.find-template', when: 'a template game uuid was given (H4: the copy starts from the offered approved version and requires a live template grant, P05§3)', onFailure: 'Stop with template_unavailable: a copy from nothing is not a copy (H4 changes this from the old silent continue).' },
+    { n: 4, domain: 'game', operation: 'game.game-lifecycle', when: 'always; with a template the same transaction writes the provenance row (D-047)', onFailure: 'Propagate the conflict (same key, different name or template) or the capacity refusal (game_limit_reached, creation_limit_reached).' },
+    { n: 5, domain: 'play.versions', operation: 'play.versions.create-draft-version', when: 'the game was created; a template copy seeds the draft from the source version, authorized content only — never chats, students, grades or private context (P05§3)', onFailure: 'Retry with the same key completes the missing step.' }
   ],
   persistence: 'none',
   idempotency: 'The Idempotency-Key is passed through; a retry with the same key finishes whatever step did not complete.',
   compensation: 'None: the last step failing leaves an unpublished game with no draft, repaired by the retry.',
-  sources: ['B: create game', 'P19§1', 'P27', 'P35§5']
+  sources: ['B: create game', 'P19§1', 'P27', 'P35§5', 'P05§3', 'P12§14']
+});
+PH.flow({
+  id: 'finalize-version', status: 'planned', coordinator: 'orchestrator', effect: 'write',
+  name: 'Finalize version',
+  summary: 'The creator explicitly declares the version finished: the ready checks pass and the version freezes, assets included (P04§1-2). By default it becomes the version new Sessions use. H7 adds creation\'s validation results to the ready checks (P09§2-3).',
+  steps: [
+    { n: 1, domain: 'game', operation: 'game.find-editable-version', when: 'always', onFailure: 'Stop with not_found or not_editable.' },
+    { n: 2, domain: 'play.versions', operation: 'play.versions.read-draft', when: 'always (CheckPublication: a SUCCEEDED build of the current revision, required assets present)', onFailure: 'Stop with the blocker; finishing stays an explicit act that only completes when the checks pass (P04§1).' },
+    { n: 3, domain: 'game', operation: 'game.game-lifecycle', when: 'the draft is ready (BeginPublication claims the release)', onFailure: 'Stop with name_required or a pending-release conflict.' },
+    { n: 4, domain: 'play.versions', operation: 'play.versions.freeze-version', when: 'always: the version freezes with its assets (P04§2)', onFailure: 'Abandon the release in Game (AbandonPublication).' },
+    { n: 5, domain: 'game', operation: 'game.game-lifecycle', when: 'the version froze (CompletePublication closes the edition)', onFailure: 'n/a.' },
+    { n: 6, domain: 'game', operation: 'game.choose-version', when: 'the creator did not untick "use for new sessions" (the default choice is recorded as the platform\'s)', onFailure: 'Retry; the finished version exists either way and can be chosen later.' }
+  ],
+  persistence: 'none',
+  idempotency: 'A pending release is resumed on retry instead of starting another; freezing twice is already_frozen.',
+  compensation: 'A Play rejection after the release opened abandons that release instead of leaving it pending.',
+  sources: ['P04§1-2', 'P09§2-3']
+});
+PH.flow({
+  id: 'switch-current-version', status: 'planned', coordinator: 'orchestrator', effect: 'write',
+  name: 'Change version for new sessions',
+  summary: 'Keeps working on the next version while the current one stays playable, makes the game unavailable, or returns to a previous version (P04§5). Existing Sessions and replays never move.',
+  steps: [
+    { n: 1, domain: 'game', operation: 'game.check-ownership', when: 'always', onFailure: 'Stop: only the owner chooses.' },
+    { n: 2, domain: 'play.versions', operation: 'play.versions.read-version-facts', when: 'a version is being chosen (not when clearing): verifies it is EXECUTABLE and belongs to this game', onFailure: 'Stop with version_not_ready or not_found.' },
+    { n: 3, domain: 'game', operation: 'game.choose-version', when: 'always: records the choice and recomputes the offering — a chosen version with a retained approval is offered publicly again without a new review (P04§5)', onFailure: 'Propagate; nothing was half-written.' }
+  ],
+  persistence: 'none',
+  idempotency: 'Choosing the already-chosen version appends nothing.',
+  compensation: 'None: the choice can always be changed again.',
+  sources: ['P04§3', 'P04§5']
 });
 PH.flow({
   id: 'request-publication', status: 'planned', coordinator: 'orchestrator', effect: 'write',
   name: 'Request publication',
-  summary: 'Submits a specific version + card + assets combination for review; Discovery keeps the previously approved one meanwhile.',
-  touches: ['game', 'play.versions', 'moderation'],
-  sources: ['P04§4']
+  summary: 'Submits a specific version + card + assets combination for review, behind the adult-function gate; Discovery keeps offering the previously approved one meanwhile (P04§4).',
+  steps: [
+    { n: 1, domain: 'compliance', operation: 'compliance.check-market-access', when: 'always: function publish-games (an adult function, P02§1), place from the declared residence or the approximate country', onFailure: 'declaration_required sends the person to the declaration screen and back (D-038); a restricted market refuses with a service-restriction notice.' },
+    { n: 2, domain: 'play.versions', operation: 'play.versions.read-version-facts', when: 'always: the facts of the version being offered (languages, players, devices, grade support) are copied into the snapshot', onFailure: 'Stop with version_not_ready: only an EXECUTABLE version is offered.' },
+    { n: 3, domain: 'game', operation: 'game.request-publication', when: 'always: the working card freezes into the SUBMITTED combination; the private-content declaration must be "no" (B)', onFailure: 'Propagate: private_content, category_required, blocked or not the owner.' },
+    { n: 4, domain: 'moderation', operation: 'moderation.submit-review', when: 'the combination was created (a superseded previous request has its task cancelled here too)', onFailure: 'Retry with the same key completes this step; a SUBMITTED combination without a task is repaired by the retry.' }
+  ],
+  persistence: 'none',
+  idempotency: 'Idempotent per game and key at step 3; step 4 is idempotent by publication uuid.',
+  compensation: 'None: an orphan SUBMITTED row without a task is completed by retry, and the owner can always withdraw the request.',
+  sources: ['P04§4', 'P02§1', 'P19§1']
 });
 PH.flow({
   id: 'review-publication', status: 'planned', coordinator: 'orchestrator', effect: 'write',
   name: 'Review publication',
-  summary: 'The admin approves or denies the submitted combination; the outcome lands in the game\'s public state and notifies the creator.',
-  touches: ['moderation', 'game', 'notifications'],
-  sources: ['P04§4', 'P31§4']
-});
-PH.flow({
-  id: 'edit-public-card', status: 'planned', coordinator: 'orchestrator', effect: 'write',
-  name: 'Edit card of a public game',
-  summary: 'Name, description and cover image are edited apart from versions; when the game is public the change goes through review.',
-  touches: ['game', 'moderation'],
-  sources: ['P04§2', 'P04§4']
+  summary: 'The admin approves or denies the exact submitted combination; the outcome lands in game and the creator is notified (P04§4, P31§4). Never automatic, even saturated.',
+  steps: [
+    { n: 1, domain: 'moderation', operation: 'moderation.decide-review', when: 'always: the admin decides, with a note on a denial', onFailure: 'Propagate; the task stays pending.' },
+    { n: 2, domain: 'game', operation: 'game.apply-review-decision', when: 'always: approval recomputes the offering (the previously approved combination stops being shown only now); a game deleted, withdrawn or blocked meanwhile answers moot and the task lands CANCELLED', onFailure: 'Retry with the same decision completes this step (idempotent by publication uuid).' },
+    { n: 3, domain: 'notifications', operation: 'notifications.accept-entry', when: 'the notify task (type discovery-review, left on the moderation queue by step 1 with the outcome and the denial note) is delivered', onFailure: 'The queue retries; the decision is already in force.' }
+  ],
+  persistence: 'queue',
+  idempotency: 'The decision is idempotent by publication uuid; the notify task is keyed by the review task, so retries never duplicate the notification.',
+  compensation: 'None: a denial is answered by fixing and submitting a new combination.',
+  sources: ['P04§4', 'P13§6', 'P31§4']
 });
 PH.flow({
   id: 'withdraw-game', status: 'planned', coordinator: 'orchestrator', effect: 'write',
-  name: 'Unpublish or delete game',
-  summary: 'Ordinary withdrawal or deletion; existing Sessions and other people\'s replays are untouched.',
-  touches: ['game', 'play.versions'],
-  sources: ['P04§6']
+  name: 'Unpublish, republish or delete game',
+  summary: 'Three distinct acts (P04§6): the owner withdraws the game from Discovery, offers the approved combination again, or deletes the game. None of them interrupts existing Sessions or deletes other people\'s replays.',
+  steps: [
+    { n: 1, domain: 'game', operation: 'game.set-offering', when: 'unpublishing or republishing: the offering flag moves, the approval record stays (D-046)', onFailure: 'Propagate; republishing a blocked game or one with no approval refuses.' },
+    { n: 2, domain: 'game', operation: 'game.delete-game', when: 'deleting: deleted_at is set once; versions keep what replays need through their retention', onFailure: 'Propagate; idempotent on retry.' },
+    { n: 3, domain: 'moderation', operation: 'moderation.cancel-review', when: 'a pending review existed and the game was unpublished or deleted', onFailure: 'Retry; a decision on a moot task lands CANCELLED anyway (game.apply-review-decision answers moot).' }
+  ],
+  persistence: 'none',
+  idempotency: 'Every step is idempotent; repeating the request changes nothing.',
+  compensation: 'None: unpublishing is undone by republishing; deletion is not undone (P02§11).',
+  sources: ['P04§5-6', 'P02§11']
 });
 PH.flow({
-  id: 'switch-current-version', status: 'planned', coordinator: 'orchestrator', effect: 'write',
-  name: 'Change offered version',
-  summary: 'Keeps the current version playable while the next is prepared, makes the game unavailable, or returns to a previous available and authorized version.',
-  touches: ['game', 'play.versions'],
-  sources: ['P04§5']
+  id: 'block-game', status: 'planned', coordinator: 'orchestrator', effect: 'write',
+  name: 'Administrative block of a game',
+  summary: 'The admin blocks or unblocks a game for a security or content problem: a measure with its own scope, distinct from unpublish and delete (P04§6). The owner is notified as a service restriction; appeals arrive with H9.',
+  steps: [
+    { n: 1, domain: 'moderation', operation: 'moderation.record-measure', when: 'always: the decision is recorded with reason, scope and actor (P13§6)', onFailure: 'Propagate; nothing executed.' },
+    { n: 2, domain: 'game', operation: 'game.apply-block', when: 'always: out of Discovery, no new Sessions for anyone, no publication requests, no template copies; existing Sessions are not interrupted (stopping one is an H9 measure)', onFailure: 'Retry with the measure uuid completes it (idempotent).' },
+    { n: 3, domain: 'moderation', operation: 'moderation.cancel-review', when: 'a block cancelled a pending review of the game', onFailure: 'Retry; the moot guard covers it.' },
+    { n: 4, domain: 'notifications', operation: 'notifications.accept-entry', when: 'the notify task (type discovery-restriction, necessary, left on the moderation queue by step 1) is delivered to the owner', onFailure: 'The queue retries; the block is already in force.' }
+  ],
+  persistence: 'queue',
+  idempotency: 'Each measure executes once (game records the measure uuid); blocking a blocked game appends nothing.',
+  compensation: 'An unblock is a new measure through the same flow, never an erasure of the block.',
+  sources: ['P04§6', 'P13§5-6', 'P31§4']
 });
 PH.flow({
   id: 'enable-template', status: 'planned', coordinator: 'orchestrator', effect: 'write',
-  name: 'Enable game as template',
-  summary: 'Explicit acceptance of the lasting reuse permission; assets not authorized for reuse are excluded or replaced first.',
-  touches: ['game', 'play.versions', 'library'],
-  sources: ['P05']
-});
-PH.flow({
-  id: 'copy-template', status: 'planned', coordinator: 'orchestrator', effect: 'write',
-  name: 'Copy template',
-  summary: 'Creates an independent game from a specific version keeping provenance and credits; consumes one creation; private context never carries over.',
-  touches: ['plan', 'game', 'play.versions', 'library'],
-  sources: ['P05', 'P12§14']
+  name: 'Enable or disable game as template',
+  summary: 'Publishing and allowing reuse are separate decisions (P05§1): enabling takes the explicit acceptance of the standard permission at its exact version and the asset-rights confirmation; disabling stops new copies without touching existing derivations.',
+  steps: [
+    { n: 1, domain: 'compliance', operation: 'compliance.check-market-access', when: 'enabling: function publish-games (templates are the same adult function, P02§1)', onFailure: 'declaration_required or a service-restriction refusal (D-038).' },
+    { n: 2, domain: 'compliance', operation: 'compliance.get-acceptance-text', when: 'enabling: the current template-permission text, whose exact version the grant records', onFailure: 'Stop: without a published permission text nothing can be enabled (the creator loads it, CREATOR_TODO P-23).' },
+    { n: 3, domain: 'game', operation: 'game.manage-template', when: 'always: the grant or the disable row is appended', onFailure: 'Propagate: needs an offered publication and no block to enable.' }
+  ],
+  persistence: 'none',
+  idempotency: 'Enabling what is enabled, or disabling what is disabled, appends nothing.',
+  compensation: 'None: disabling is the ordinary way back, and it never retires permissions already granted to copies (P05§4).',
+  sources: ['P05§1', 'P05§4-5', 'P02§1']
 });
 PH.flow({
   id: 'browse-discovery', status: 'planned', coordinator: 'composer', effect: 'read',
   name: 'Browse Discovery',
-  summary: 'Popular, categories, recent, text search and filters over approved content, with real statistics or none.',
-  touches: ['game', 'play.session'],
-  sources: ['B: search', 'P14§2']
+  summary: 'The public entry (P14§1-2): popular games, categories with samples, the viewer\'s recently played, text search and the category, tag, language and template filters — approved and offered content only, real statistics or none. Server-rendered for crawlers (D-019).',
+  steps: [
+    { n: 1, domain: 'game', operation: 'game.search-discovery', when: 'always: the sections or the search results, from the approved snapshots', onFailure: 'Propagate; an empty catalog answers honestly empty (D-029).' },
+    { n: 2, domain: 'game', operation: 'game.read-taxonomy', when: 'the default view: category names for the section headers and the tag helper', onFailure: 'Answer without the taxonomy and say so.' },
+    { n: 3, domain: 'play.session', operation: 'play.session.list-recent-games', when: 'the caller is signed (guest counts): the recently-played section (B: search)', onFailure: 'Answer without that section; it is personal, never invented.' }
+  ],
+  persistence: 'none',
+  idempotency: 'Read only.',
+  compensation: 'None.',
+  sources: ['B: search', 'P14§1-2']
 });
 PH.flow({
   id: 'view-game-card', status: 'planned', coordinator: 'composer', effect: 'read',
-  name: 'View game card',
-  summary: 'The public card: languages, players, devices, academic data, template mark, screenshots of the offered version and statistics.',
-  touches: ['game', 'play.versions', 'play.session'],
-  sources: ['P14§2']
+  name: 'View public game card',
+  summary: 'The approved public card (P14§2): cover and screenshots of the offered version, languages, players, devices, academic mark, grade support, template permission with credits, and real statistics or none. Server-rendered with its metadata (D-019).',
+  steps: [
+    { n: 1, domain: 'game', operation: 'game.read-public-card', when: 'always: only the offered approved combination answers', onFailure: 'A withdrawn, blocked, deleted or never-approved game answers not available; the page explains and offers Discovery.' },
+    { n: 2, domain: 'play.session', operation: 'play.session.frontend-access', when: 'the card shows the snapshot images: short-lived signed URLs for the stored objects', onFailure: 'The card renders without images rather than failing.' }
+  ],
+  persistence: 'none',
+  idempotency: 'Read only.',
+  compensation: 'None.',
+  sources: ['P14§2', 'P05§3']
+});
+PH.flow({
+  id: 'my-games', status: 'planned', coordinator: 'composer', effect: 'read',
+  name: 'My games',
+  summary: 'The account\'s own games with name search and category, tag and date filters (B: my games), each with its public state, next to the plan\'s holding capacity so the screen can say "X of Y games".',
+  steps: [
+    { n: 1, domain: 'game', operation: 'game.game-card', when: 'always (ListGames with the H4 filters)', onFailure: 'Propagate.' },
+    { n: 2, domain: 'plan', operation: 'plan.get-user-limits', when: 'always: the saved-games capacity for the usage line', onFailure: 'Answer without capacities and say so.' }
+  ],
+  persistence: 'none',
+  idempotency: 'Read only.',
+  compensation: 'None.',
+  sources: ['B: my games', 'P27']
+});
+PH.flow({
+  id: 'list-game-versions', status: 'planned', coordinator: 'composer', effect: 'read',
+  name: 'Game versions',
+  summary: 'The owner\'s version history: each version\'s condition (in editing, ready, chosen, approved, offered), so returning to a previous one is an informed choice (P04§5).',
+  steps: [
+    { n: 1, domain: 'game', operation: 'game.check-ownership', when: 'always', onFailure: 'Stop: only the owner sees the history.' },
+    { n: 2, domain: 'play.versions', operation: 'play.versions.list-versions', when: 'always', onFailure: 'Propagate.' },
+    { n: 3, domain: 'game', operation: 'game.game-card', when: 'always: the chosen version and each version\'s publication state join the list (ReadCard)', onFailure: 'Propagate.' }
+  ],
+  persistence: 'none',
+  idempotency: 'Read only.',
+  compensation: 'None.',
+  sources: ['P04§5', 'P15§2']
+});
+PH.flow({
+  id: 'ingest-game-usage', status: 'planned', coordinator: 'orchestrator', effect: 'write',
+  name: 'Ingest game usage',
+  summary: 'Delivers session-started events from play\'s queue into game\'s daily counters, the way spend and analytics events already travel (D-010, D-048). Domains never call each other.',
+  steps: [
+    { n: 1, domain: 'game', operation: 'game.record-game-usage', when: 'a game-usage task from the play queue is due', onFailure: 'The queue retries; an unknown game turns the task dead for admin.' }
+  ],
+  persistence: 'queue',
+  idempotency: 'By the task\'s key (the Session uuid) inside record-game-usage.',
+  compensation: 'None.',
+  sources: ['B: search', 'P14§2']
 });
 
 // ---------- Sessions, history and replays ----------
@@ -234,13 +344,7 @@ PH.flow({
   compensation: 'None needed: each step is transactional within its own domain.',
   sources: ['P10§4-5', 'P32']
 });
-PH.flow({
-  id: 'finalize-version', status: 'planned', coordinator: 'orchestrator', effect: 'write',
-  name: 'Finalize version',
-  summary: 'The creator explicitly declares the version finished; ready checks pass and the version freezes, assets included.',
-  touches: ['creation', 'play.versions', 'game'],
-  sources: ['P04§1', 'P09§2-3']
-});
+// finalize-version is detailed in the games section above (H4); H7 adds creation's validation step.
 PH.flow({
   id: 'report-creation-error', status: 'planned', coordinator: 'orchestrator', effect: 'write',
   name: 'Report creation error',
@@ -564,9 +668,16 @@ PH.flow({
 PH.flow({
   id: 'review-queue', status: 'planned', coordinator: 'composer', effect: 'read',
   name: 'Publication review queue',
-  summary: 'The admin\'s pending reviews, each with the submitted version, card and assets.',
-  touches: ['moderation', 'game', 'play.versions'],
-  sources: ['P04§4']
+  summary: 'The admin\'s pending reviews (oldest first) and decided history, each joined with the exact submitted combination: snapshot card, images through signed URLs, version facts and the game\'s current state (deleted or withdrawn tasks read as moot). Detailed by the H4 design (T-400).',
+  steps: [
+    { n: 1, domain: 'moderation', operation: 'moderation.list-reviews', when: 'always', onFailure: 'Propagate.' },
+    { n: 2, domain: 'game', operation: 'game.admin-find-games', when: 'always: each task\'s publication snapshot, image URLs and game state join the row', onFailure: 'A task whose game cannot be read is shown with what moderation has and marked unreadable.' },
+    { n: 3, domain: 'play.versions', operation: 'play.versions.read-version-facts', when: 'opening one task: the submitted version\'s facts beside the snapshot', onFailure: 'The detail renders without them and says so.' }
+  ],
+  persistence: 'none',
+  idempotency: 'Read only.',
+  compensation: 'None.',
+  sources: ['P04§4', 'B: admin']
 });
 
 // ---------- Notifications ----------

@@ -16,16 +16,16 @@ PH.domain({
 PH.flow({
   id: 'create-session', status: 'implemented',
   name: 'Create session',
-  summary: 'Checks that the caller may play the game, then creates a Session in lobby with a join code.',
+  summary: 'Resolves which version the caller plays, then creates a Session in lobby pinned to it with a join code. H4 (T-401) replaces the old playability check: the owner plays their chosen version, anyone else the offered approved one (D-045). Session, player and room quotas stay H5\'s (GAPS).',
   coordinator: 'orchestrator', effect: 'write',
   steps: [
-    { n: 1, domain: 'game', operation: 'game.check-playability', when: 'always', onFailure: 'Stop with game_unavailable.' },
-    { n: 2, domain: 'play.session', operation: 'play.session.create-session', when: 'the game is playable', onFailure: 'Return its outcome: active_session_limit, game_unavailable or idempotency conflict.' }
+    { n: 1, domain: 'game', operation: 'game.resolve-playable-version', when: 'always (H4, T-401; today the flow checks playability and play resolves the current version itself)', onFailure: 'Stop: game_unavailable, not available (no offering for a non-owner), or blocked/deleted refusals.' },
+    { n: 2, domain: 'play.session', operation: 'play.session.create-session', when: 'a version was resolved; it is passed in and pinned', onFailure: 'Return its outcome: active_session_limit, game_unavailable or idempotency conflict.' }
   ],
   persistence: 'none',
   idempotency: 'The Idempotency-Key is passed to Play, which records each request once per user and key.',
   compensation: 'None needed: step 1 only reads.',
-  sources: ['P04§3', 'P06']
+  sources: ['P04§3-4', 'P06', 'D-045']
 });
 
 PH.flow({
@@ -87,8 +87,8 @@ PH.flow({
 
 PH.flow({
   id: 'publish-game', status: 'implemented', coordinator: 'orchestrator', effect: 'write',
-  name: 'Publish game',
-  summary: 'Publishes the owner\'s open edition: freezes the draft and marks the game published. There is no review step today (see GAPS: request-publication / review-publication are not implemented).',
+  name: 'Publish game (retired by H4)',
+  summary: 'Publishes the owner\'s open edition: freezes the draft and marks the game published. There is no review step today. H4 (T-401/T-402) retires this flow: finishing a version (finalize-version) and making a game public (request-publication + review) become separate acts, as P04§1,§4 require.',
   steps: [
     { n: 1, domain: 'game', operation: 'game.find-editable-version', when: 'always', onFailure: 'Stop with not_found or not_editable.' },
     { n: 2, domain: 'play.versions', operation: 'play.versions.read-draft', when: 'always (CheckPublication)', onFailure: 'Stop with the publication blocker (missing build, missing assets, revision changed).' },

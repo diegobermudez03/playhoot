@@ -143,9 +143,24 @@ PH.operation({
     'An approximate location different from the declared residence is reported as a discrepancy and never blocks on its own (travel, VPN); unknown location is no discrepancy. No GPS.',
     'A known minority signal binds even against an adult declaration.',
     'From a disabled market only public information is reachable; language never widens coverage.',
-    'The refusal reason is a service restriction message, never legal advice.'
+    'The refusal reason is a service restriction message, never legal advice.',
+    'H4 (planned, T-402): the matrix gains the function publish-games — publishing and offering templates are one adult function (P02§1) — seeded like create-games in the open markets (migration edited in place).'
   ],
-  sources: ['P35§1-5', 'P21§6', 'P19§1']
+  sources: ['P35§1-5', 'P21§6', 'P19§1', 'P02§1']
+});
+
+PH.operation({
+  id: 'compliance.read-place-requirements', domain: 'compliance', kind: 'usecase', effect: 'read', status: 'planned',
+  name: 'ReadPlaceRequirements',
+  summary: 'The public read of what one place asks for one function: offered or not, the age threshold and whether a state or province must be named (closes the D-042 gap).',
+  reads: ['compliance.compliance_market_rules'],
+  writes: [],
+  rules: [
+    'Anonymous and about rules only: it never reads declarations or signals, so it reveals nothing about anyone.',
+    'Lets the declaration screen name the required age before it is answered (P19§2) and say whether the country needs a subdivision, instead of guessing from a closed list (D-042).',
+    'A place with no rows answers the default: not offered, threshold 18.'
+  ],
+  sources: ['P19§2', 'P35§1-3']
 });
 
 PH.operation({

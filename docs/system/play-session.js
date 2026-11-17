@@ -1,4 +1,5 @@
-// Subdomain: play.session. Durable state of Sessions and game versions.
+// Subdomain: play.session. Durable state of Sessions; the version tables moved to play.versions
+// with the H4 design (T-400; the code split is T-401).
 PH.domain({
   id: 'play.session', parent: 'play', kind: 'traditional', status: 'implemented',
   name: 'Play session',
@@ -63,7 +64,7 @@ PH.table({
   ],
   history: 'Change table play_session_status_changes, written in the same transaction.',
   references: [
-    { column: 'game_version_id', to: 'play.session.play_game_versions' },
+    { column: 'game_version_id', to: 'play.versions.play_game_versions' },
     { column: 'created_by_user_uuid', to: 'identity user' }
   ],
   lifecycle: SESSION_LIFECYCLE
@@ -186,57 +187,11 @@ PH.table({
   references: [{ column: 'session_id', to: 'play.session.play_sessions' }]
 });
 
-PH.table({
-  id: 'play.session.play_games', domain: 'play.session', status: 'implemented',
-  name: 'play_games',
-  summary: 'A game as Play sees it: its identifier and the version played today.',
-  purpose: 'Points to the executable version new Sessions use.',
-  columns: [
-    { name: 'id', type: 'bigserial', note: '' },
-    { name: 'game_uuid', type: 'uuid', note: 'External identifier from Game.' },
-    { name: 'current_version_id', type: 'bigint', note: 'Version used by new Sessions.' },
-    { name: 'created_at', type: 'timestamptz', note: '' },
-    { name: 'updated_at', type: 'timestamptz', note: '' }
-  ],
-  indexes: ['UNIQUE (game_uuid)', '(current_version_id)'],
-  history: 'Detailed by a later task.',
-  references: [
-    { column: 'game_uuid', to: 'game game' },
-    { column: 'current_version_id', to: 'play.session.play_game_versions' }
-  ]
-});
-
-PH.table({
-  id: 'play.session.play_game_versions', domain: 'play.session', status: 'implemented',
-  name: 'play_game_versions',
-  summary: 'The versions of a game; only an EXECUTABLE one can be played.',
-  purpose: 'Content locators and the executable condition of each version.',
-  columns: [
-    { name: 'id', type: 'bigserial', note: '' },
-    { name: 'uuid', type: 'uuid', note: 'Same as the Game edition.' },
-    { name: 'game_id', type: 'bigint', note: '' },
-    { name: 'status', type: 'text', note: 'DRAFT or EXECUTABLE.' },
-    { name: 'manifest', type: 'jsonb', note: 'Structural facts the runtime needs.' },
-    { name: 'script_object_key, script_sha256, script_size', type: 'text, text, bigint', note: 'Backend script in object storage.' },
-    { name: 'script_profile', type: 'text', note: 'Rules the script is checked against.' },
-    { name: 'frontend_object_key, frontend_sha256, frontend_size', type: 'text, text, bigint', note: 'Frontend package in object storage.' },
-    { name: 'aspect_ratio', type: 'text', note: '' },
-    { name: 'languages', type: 'jsonb', note: '' },
-    { name: 'current_revision', type: 'bigint', note: 'Draft revision.' },
-    { name: 'executable_at', type: 'timestamptz', note: 'Set once, when frozen.' },
-    { name: 'created_at', type: 'timestamptz', note: '' }
-  ],
-  indexes: ['UNIQUE (uuid)', '(game_id)', 'UNIQUE (game_id) only for DRAFT', '(script_sha256)', '(frontend_sha256)'],
-  history: 'Detailed by a later task.',
-  references: [{ column: 'game_id', to: 'play.session.play_games' }],
-  lifecycle: { states: ['DRAFT', 'EXECUTABLE'], transitions: [{ from: 'DRAFT', to: 'EXECUTABLE', on: 'publication freezes the version' }] }
-});
-
 PH.operation({
   id: 'play.session.create-session', domain: 'play.session', kind: 'workflow', effect: 'write', status: 'implemented',
   name: 'CreateSession',
   summary: 'Creates a Session in lobby on the game\'s current executable version, with a join code.',
-  reads: ['play.session.play_games', 'play.session.play_game_versions', 'play.session.play_sessions'],
+  reads: ['play.versions.play_games', 'play.versions.play_game_versions', 'play.session.play_sessions'],
   writes: [
     'play.session.play_create_session_requests',
     'play.session.play_sessions',
@@ -249,7 +204,8 @@ PH.operation({
     'A creator has at most the allowed number of live Sessions (lobby or running); otherwise active_session_limit.',
     'A game without a current version is game_unavailable.',
     'The Session is pinned to that version for its whole life.',
-    'The join code has 6 characters from an alphabet without 0, O, 1, I, L.'
+    'The join code has 6 characters from an alphabet without 0, O, 1, I, L.',
+    'H4 (planned, T-401): the version to pin arrives from the orchestrator, which resolved it in game (the owner\'s chosen version, or the offered approved one for anyone else, D-045); play.session only verifies it is EXECUTABLE and pins it.'
   ],
   limits: [
     { what: 'Live Sessions per creator', value: '1 by default (environment setting)', source: 'plan' },
@@ -260,12 +216,26 @@ PH.operation({
   steps: [
     'Claim the request (user, key).',
     'Lock the creator and count their live Sessions.',
-    'Find the game\'s current executable version.',
+    'Verify the version handed in by the orchestrator is EXECUTABLE (H4; until T-401 it still resolves the game\'s current version itself).',
     'Create the LOBBY Session and record its first status.',
     'Assign a free join code.',
     'Complete the request with the outcome.'
   ],
   sources: ['P04§3', 'P06']
+});
+
+PH.operation({
+  id: 'play.session.list-recent-games', domain: 'play.session', kind: 'usecase', effect: 'read', status: 'planned',
+  name: 'ListRecentGames',
+  summary: 'The distinct games a person recently played or hosted, newest first, for Discovery\'s "recently played" section.',
+  reads: ['play.session.play_session_participants', 'play.session.play_sessions', 'play.versions.play_game_versions', 'play.versions.play_games'],
+  writes: [],
+  rules: [
+    'Answers game identifiers only; composer joins the cards and drops games that are no longer offered to the viewer.',
+    'Any signed identity counts, guests included (B: search).'
+  ],
+  limits: [{ what: 'Games answered', value: '12 (V-13)', source: 'domain' }],
+  sources: ['B: search']
 });
 
 PH.operation({
@@ -277,7 +247,11 @@ PH.operation({
     'play.session.play_sessions', 'play.session.play_session_status_changes',
     'play.session.play_session_participants', 'play.session.play_session_checkpoints', 'play.session.play_session_join_codes'
   ],
-  rules: ['One transaction; only from LOBBY.'],
+  rules: [
+    'One transaction; only from LOBBY.',
+    'H4 (planned, T-403): the start transaction also writes a game-usage task on the play queue, so game\'s daily counters follow real starts (D-048).'
+  ],
+  enqueues: ['game-usage (H4, planned): one event per started Session, keyed by the Session uuid.'],
   sources: []
 });
 
@@ -347,7 +321,7 @@ PH.operation({
   id: 'play.session.load-runtime-manifest', domain: 'play.session', kind: 'usecase', effect: 'read', status: 'implemented',
   name: 'LoadRuntimeManifest / LoadSessionLimits',
   summary: 'The version\'s manifest and input requirements, and a Session\'s deadlines.',
-  reads: ['play.session.play_game_versions', 'play.versions.play_game_version_input_requirements', 'play.session.play_sessions'],
+  reads: ['play.versions.play_game_versions', 'play.versions.play_game_version_input_requirements', 'play.session.play_sessions'],
   writes: [], rules: [], sources: []
 });
 

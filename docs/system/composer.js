@@ -52,7 +52,7 @@ PH.flow({
 PH.flow({
   id: 'browse-game-templates', status: 'implemented', coordinator: 'composer', effect: 'read',
   name: 'Browse and inspect templates',
-  summary: 'Featured and searched templates, and a template\'s card, manifest and files (never its code). The Discovery catalog behind it is a stub that returns empty lists today (see GAPS).',
+  summary: 'Featured and searched templates, and a template\'s card, manifest and files (never its code). The catalog behind it is a stub that returns empty lists today; H4 (T-404) backs it with the featured-template selection and the Discovery search\'s template filter (D-047/D-048).',
   steps: [
     { n: 1, domain: 'game', operation: 'game.find-template', when: 'inspecting or copying a specific template', onFailure: 'Stop with not_found.' }
   ],
